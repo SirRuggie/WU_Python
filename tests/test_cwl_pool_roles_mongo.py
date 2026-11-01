@@ -235,3 +235,141 @@ def test_real_mongo_ninety_one_job_copy_cost_is_coalesced(tmp_path):
             state.close()
         client.drop_database(db.name)
         client.close()
+
+
+def test_remote_only_recovery_stays_paused_across_another_restart_until_staff_clears(
+    tmp_path,
+):
+    assert URI == "mongodb://127.0.0.1:27154"
+    client = MongoClient(URI, tz_aware=True)
+    db = client["wu_roles_pause_" + uuid4().hex]
+    state = second = third = fourth = None
+    try:
+        state, store = seed(tmp_path, db)
+        save(store)
+        signup(store)
+        state.close()
+        state = None
+        remote_path = tmp_path / "remote-only.sqlite"
+        second = MongoDashboardState(db.state)
+        second.restore(remote_path)
+        recovered = Store(str(remote_path), durability=second)
+        assert recovered.role_recovery_error
+        with recovered.role_tx() as sql:
+            assert roles.recovery_paused(sql)
+            assert roles.claim(sql) is None
+        second.close()
+        second = None
+        third = MongoDashboardState(db.state)
+        third.restore(remote_path)
+        again = Store(str(remote_path), durability=third)
+        assert again.role_recovery_error
+        with again.role_tx() as sql:
+            assert roles.recovery_paused(sql)
+            assert roles.claim(sql) is None
+        save(again, role=None)
+        with again.tx() as sql:
+            assert not roles.recovery_paused(sql)
+        save(again)
+        third.close()
+        third = None
+        fourth = MongoDashboardState(db.state)
+        fourth.restore(remote_path)
+        cleared = Store(str(remote_path), durability=fourth)
+        assert not cleared.role_recovery_error
+        assert claim(cleared) is not None
+    finally:
+        for item in (state, second, third, fourth):
+            if item:
+                item.close()
+        client.drop_database(db.name)
+        client.close()
+
+
+def test_obsolete_higher_role_copy_heals_only_for_actual_head_owner(tmp_path):
+    client = MongoClient(URI, tz_aware=True)
+    db = client["wu_roles_fence_" + uuid4().hex]
+    state = None
+    try:
+        state, store = seed(tmp_path, db)
+        save(store)
+        signup(store)
+        with store.role_tx(track=False) as sql:
+            image = roles.progress_image(sql)
+        key = state.key + ":pool-roles-progress"
+        db.state.insert_one(
+            {
+                "_id": key,
+                **image,
+                "dashboard_revision": state.revision + 999,
+                "writer": "obsolete",
+                "saved_at": datetime.now(timezone.utc),
+            }
+        )
+        assert state.save_role_progress(image)
+        assert db.state.find_one({"_id": key})["writer"] == state.owner
+        db.state.update_one({"_id": state.key}, {"$set": {"owner": "new-owner"}})
+        before = db.state.find_one({"_id": key})
+        from utils.cwl_dashboard_state import DashboardDurabilityError
+
+        with pytest.raises(DashboardDurabilityError, match="writer lease"):
+            state.save_role_progress(image)
+        assert db.state.find_one({"_id": key}) == before
+        assert not state.poisoned  # Independent role backup never poisons core.
+    finally:
+        if state:
+            state.close()
+        client.drop_database(db.name)
+        client.close()
+
+
+def test_crash_after_restore_preserves_unconsumed_proof_and_pauses(tmp_path):
+    client = MongoClient(URI, tz_aware=True)
+    db = client["wu_roles_restore_crash_" + uuid4().hex]
+    states = []
+    try:
+        first, store = seed(tmp_path, db)
+        states.append(first)
+        save(store)
+        signup(store)
+        job = claim(store)
+        bot, _, _, _ = bot_fixture()
+        asyncio.run(worker.process_job(bot, job, send=send_for(store)))
+        path = store.path
+        first.close()
+        interrupted = MongoDashboardState(db.state)
+        states.append(interrupted)
+        interrupted.restore(path)
+        proof = interrupted.previous_local_path
+        before = proof.read_bytes()
+        # Process died here, before Store could merge/commit local receipts.
+        interrupted.close()
+        final = MongoDashboardState(db.state)
+        states.append(final)
+        final.restore(path)
+        assert final.local_recovery_interrupted
+        assert proof.read_bytes() == before
+        recovered = Store(str(path), durability=final)
+        assert recovered.role_recovery_error
+        with recovered.role_tx(track=False) as sql:
+            assert roles.recovery_paused(sql)
+            assert (
+                sql.execute(
+                    "SELECT state FROM cwl_pool_role_jobs WHERE id=?", (job["id"],)
+                ).fetchone()[0]
+                == "done"
+            )
+            assert roles.claim(sql) is None
+        final.close()
+        again = MongoDashboardState(db.state)
+        states.append(again)
+        again.restore(path)
+        recovered_again = Store(str(path), durability=again)
+        assert recovered_again.role_recovery_error
+        with recovered_again.role_tx(track=False) as sql:
+            assert roles.recovery_paused(sql)
+    finally:
+        for state in states:
+            state.close()
+        client.drop_database(db.name)
+        client.close()

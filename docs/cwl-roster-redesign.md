@@ -1004,3 +1004,32 @@ copy. An owned empty-schema migration/reopen rehearsal preserves all old table
 counts and rows and accepts only the exact additive default role rows. This is
 not a production-copy rehearsal; fresh backup/restore, current runtime boundaries
 and no queued Standardize remain activation requirements after Claude ACCEPT.
+
+
+### Prompt98 recovery and intent corrections (development; not live)
+
+A cancellation with another signed-up account never replaces a pending add intent.
+Switching the member-facing draft season queues that season's existing members
+once, within the existing durable settings transaction. Re-saving an unchanged
+role remains a no-op. Blank roles still cause no Discord lookup; configured roles
+load their saved names on the initial read. Progress polls remain local. A busy
+shared management lane sends only authenticated liveness, without claiming work.
+
+Recovery pause is a durable SQLite flag, included in the independent role image;
+restarting does not clear it. Staff must turn both roles off before configuring
+again. Restore retains an unconsumed `.before-mongo` proof across an interrupted
+startup and saves the interrupted working copy separately. A hash receipt is
+fsynced only after the role merge commits. Ambiguous/older/incomplete progress
+pauses role work; core signups/settings keep their existing protection. Legacy
+unconsumed proofs are treated conservatively. These private recovery files stay
+for investigation and are not served by the dashboard.
+
+An obsolete higher-revision role image can be replaced automatically only by the
+actual current dashboard-head owner, after a projected head check and an exact
+metadata compare-and-swap. This never updates or poisons the core head. Release
+capture comparison now rejects thin equal snapshots with empty active/replacement
+state, even when a streak row and profile proof are present.
+
+Focused evidence is recorded in `.local/p98-*`; development remains incomplete
+until all requested mutation, full-suite, build and layout gates pass. No real
+Discord role grant, removal, nickname change or notification has been tested.

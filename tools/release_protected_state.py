@@ -44,9 +44,12 @@ def compare_protected(
             not isinstance(snapshot, dict)
             or not required <= set(snapshot)
             or not isinstance(snapshot["active"], list)
+            or not snapshot["active"]
             or not isinstance(snapshot["streaks"], list)
             or not snapshot["streaks"]
             or not isinstance(snapshot["replacement"], dict)
+            or not snapshot["replacement"]
+            or not any(snapshot["replacement"].values())
             or type(snapshot["member_profiles_count"]) is not int
             or snapshot["member_profiles_count"] <= 0
             or any(

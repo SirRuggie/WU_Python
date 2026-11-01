@@ -222,3 +222,153 @@ def test_serialization_failure_warns_staff_without_hot_loop_or_signup_poison(tmp
     assert store.flush_role_progress.call_count == 1
     assert store.role_backup_error and not publisher.poisoned
     signup(store, "NEW", uid=OTHER)
+
+
+def test_newer_global_image_cannot_reopen_a_terminal_member_job(tmp_path):
+    import hashlib, zlib
+
+    store, _ = seeded(tmp_path)
+    job = claim(store)
+    with store.role_tx(track=False) as db:
+        pending = roles.progress_image(db)
+    with store.role_tx() as db:
+        roles.finish(db, job["id"], job["lease_token"], job["generation"])
+    tables = roles.decode_progress(pending)
+    # Other work may advance an image's global clock without making its stale
+    # member receipt authoritative over a confirmed terminal local result.
+    clock = tables["cwl_pool_role_clock"]
+    clock["rows"][0][clock["columns"].index("progress_version")] += 100
+    raw = json.dumps({"format": 1, "tables": tables}, separators=(",", ":")).encode()
+    pending.update(
+        payload=zlib.compress(raw),
+        raw_bytes=len(raw),
+        sha256=hashlib.sha256(raw).hexdigest(),
+        version=pending["version"] + 100,
+    )
+    with store.role_tx() as db:
+        roles.recover_progress(db, pending)
+        assert (
+            db.execute(
+                "SELECT state FROM cwl_pool_role_jobs WHERE id=?", (job["id"],)
+            ).fetchone()[0]
+            == "done"
+        )
+
+
+def test_older_image_does_not_erase_a_pending_retry_or_its_backoff(tmp_path):
+    store, _ = seeded(tmp_path)
+    job = claim(store)
+    with store.role_tx(track=False) as db:
+        old = roles.progress_image(db)
+    with store.role_tx() as db:
+        roles.finish(
+            db,
+            job["id"],
+            job["lease_token"],
+            job["generation"],
+            retry=True,
+            message="Retry later",
+        )
+        before = dict(
+            db.execute(
+                "SELECT * FROM cwl_pool_role_jobs WHERE id=?", (job["id"],)
+            ).fetchone()
+        )
+    with store.role_tx() as db:
+        result = roles.recover_progress(db, old)
+        assert result["older"]
+        assert (
+            dict(
+                db.execute(
+                    "SELECT * FROM cwl_pool_role_jobs WHERE id=?", (job["id"],)
+                ).fetchone()
+            )
+            == before
+        )
+        assert before["state"] == "pending" and before["next_at"] > 0
+
+
+@pytest.mark.parametrize("compressed_limit", [False, True])
+def test_actual_role_image_payload_limits_reject_without_publishing(
+    tmp_path, compressed_limit
+):
+    import base64
+
+    store, publisher = seeded(tmp_path)
+    # Real data sizes exercise both separate caps; no patched compressor/limit.
+    text = (
+        base64.b64encode(os.urandom(17 * 1024 * 1024)).decode()
+        if compressed_limit
+        else "x" * (33 * 1024 * 1024)
+    )
+    with store.role_tx() as db:
+        db.execute(
+            "INSERT INTO cwl_pool_role_audit(pool,action,details_json) VALUES(?,?,?)",
+            ("main", "role_fixture", text),
+        )
+    before = publisher.main
+    with pytest.raises(
+        ValueError, match="backup limit" if compressed_limit else "too large"
+    ):
+        with store.role_tx(track=False) as db:
+            roles.progress_image(db)
+    assert publisher.main == before and not publisher.progress
+
+
+def test_recovery_keeps_completed_expiry_cursor_instead_of_repeating_month(tmp_path):
+    store, _ = seeded(tmp_path)
+    with store.role_tx() as db:
+        db.execute(
+            "UPDATE cwl_pool_role_settings SET next_expiry='2027-02-16T00:00:00+00:00' WHERE pool='main'"
+        )
+        image = roles.progress_image(db)
+    with store.role_tx(track=False) as db:
+        db.execute(
+            "UPDATE cwl_pool_role_settings SET next_expiry='2027-01-16T00:00:00+00:00' WHERE pool='main'"
+        )
+        # Capture the committed global version with the completed future cursor.
+        tables = roles.decode_progress(image)
+        tables["cwl_pool_role_clock"]["rows"][0][
+            tables["cwl_pool_role_clock"]["columns"].index("progress_version")
+        ] += 1
+        import hashlib, zlib
+
+        raw = json.dumps(
+            {"format": 1, "tables": tables}, separators=(",", ":")
+        ).encode()
+        image.update(
+            payload=zlib.compress(raw),
+            raw_bytes=len(raw),
+            sha256=hashlib.sha256(raw).hexdigest(),
+            version=image["version"] + 1,
+        )
+        roles.recover_progress(db, image)
+        assert (
+            db.execute(
+                "SELECT next_expiry FROM cwl_pool_role_settings WHERE pool='main'"
+            ).fetchone()[0]
+            == "2027-02-16T00:00:00+00:00"
+        )
+
+
+def test_local_copy_missing_a_new_authoritative_intent_is_not_complete_proof(tmp_path):
+    store, _ = seeded(tmp_path)
+    with store.role_tx(track=False) as db:
+        image = roles.progress_image(db)
+    signup(store, "NEW", uid=OTHER)
+    # A copy may have a later global clock from unrelated work, but still lack
+    # an authoritative signup intent. It must not grant blanket replay trust.
+    import hashlib, zlib
+
+    tables = roles.decode_progress(image)
+    clock = tables["cwl_pool_role_clock"]
+    clock["rows"][0][clock["columns"].index("progress_version")] += 100
+    raw = json.dumps({"format": 1, "tables": tables}, separators=(",", ":")).encode()
+    image.update(
+        payload=zlib.compress(raw),
+        raw_bytes=len(raw),
+        sha256=hashlib.sha256(raw).hexdigest(),
+        version=image["version"] + 100,
+    )
+    with store.role_tx() as db:
+        assert roles.recover_progress(db, image)["uncovered"]

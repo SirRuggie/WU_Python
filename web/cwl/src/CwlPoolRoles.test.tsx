@@ -271,3 +271,46 @@ it("disables unchanged Save during cleanup and clears controls on picker permiss
     vi.mocked(api).mock.calls.filter((call) => call[1] === "POST"),
   ).toHaveLength(0);
 });
+
+it("shows the saved name immediately and retains it through local progress polling", async () => {
+  vi.useFakeTimers();
+  const initial = data();
+  initial.pools[0].role_id = ROLE;
+  initial.pools[0].progress = { pending: 1 };
+  vi.mocked(api).mockResolvedValue({
+    ...initial,
+    roles: [],
+    saved_roles: { main: { name: "CWL & <safe text>", allowed: false } },
+  });
+  await render();
+  expect(host.querySelector("select")?.selectedOptions[0].textContent).toBe(
+    "CWL & <safe text>",
+  );
+  expect(host.textContent).toContain("Saved role is no longer eligible");
+  expect(host.querySelector("safe")).toBeNull();
+  vi.mocked(api).mockResolvedValue({ ...initial, roles: undefined });
+  await act(async () => vi.advanceTimersByTime(5000));
+  expect(host.querySelector("select")?.selectedOptions[0].textContent).toBe(
+    "CWL & <safe text>",
+  );
+  expect(host.textContent).toContain("Saved role is no longer eligible");
+  await choose("");
+  expect(button("Save Main role").disabled).toBe(false);
+});
+
+it("offers a plain saved-role fallback and turn-off when names are unavailable", async () => {
+  const initial = data();
+  initial.pools[0].role_id = ROLE;
+  vi.mocked(api).mockResolvedValue({
+    ...initial,
+    roles: [],
+    roles_error: "Role choices unavailable. Refresh or turn off a saved role.",
+  });
+  await render();
+  expect(host.querySelector("select")?.selectedOptions[0].textContent).toBe(
+    "Saved role",
+  );
+  expect(host.textContent).not.toContain(ROLE);
+  await choose("");
+  expect(button("Save Main role").disabled).toBe(false);
+});

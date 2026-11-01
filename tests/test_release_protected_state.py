@@ -167,3 +167,28 @@ def test_coordinator_gate_rejects_equal_empty_metrics_before_any_switch(tmp_path
     with pytest.raises((ValueError, KeyError)):
         compare_capture_files(tmp_path, "before", "after")
     assert not (tmp_path / "after-comparison.json").exists()
+
+
+@pytest.mark.parametrize("replacement", [{}, {"1": []}])
+def test_thin_nonempty_streak_snapshot_cannot_bypass_coordinator(tmp_path, replacement):
+    from tools.release_protected_state import compare_capture_files
+    from bson import json_util
+    import json
+
+    old, _, p, _ = fixture()
+    old["active"] = []
+    old["replacement"] = replacement
+    for name in ("before", "after"):
+        path = tmp_path / (name + ".json")
+        path.write_text(json.dumps(old))
+        path.with_name(path.stem + "-profiles.json").write_text(
+            json_util.dumps(
+                {
+                    "started": NOW - timedelta(seconds=1),
+                    "ended": NOW,
+                    "profiles": list(p.values()),
+                }
+            )
+        )
+    with pytest.raises(ValueError, match="empty or incomplete"):
+        compare_capture_files(tmp_path, "before", "after")

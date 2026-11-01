@@ -19,17 +19,23 @@ def require_settings(request):
     return actor
 
 
-async def choices(request):
+async def role_context(request):
     actor = await identity(request)
     roles, guild, bot, person = await hierarchy(request, actor)
     forbidden = await dashboard_grant_roles(request, actor, include_owner=True)
-    return [
+    options = [
         {"id": str(role.id), "name": role.name}
         for role in roles.values()
         if str(role.id) not in forbidden
         and role_is_safe_for_pool(guild, bot, role)
         and actor_can_manage_role(person, guild, role)
     ]
+    return options, {str(role.id): role.name for role in roles.values()}
+
+
+async def choices(request):
+    options, _ = await role_context(request)
+    return options
 
 
 async def get(request):
@@ -49,10 +55,13 @@ async def get(request):
         warning = "Role worker is unavailable. Signups are unchanged."
     if warning and any(row["role_id"] for row in result["pools"]):
         result["worker_warning"] = warning
-    if request.query.get("choices") != "1":
+    configured = any(row["role_id"] for row in result["pools"])
+    if request.query.get("choices") != "1" and (
+        request.query.get("status") == "1" or not configured
+    ):
         return web.json_response(result)
     try:
-        options = await choices(request)
+        options, names = await role_context(request)
     except (web.HTTPServiceUnavailable, web.HTTPForbidden, web.HTTPNotFound):
         return web.json_response(
             result
@@ -61,7 +70,15 @@ async def get(request):
                 "roles_error": "Role choices unavailable. Refresh or turn off a saved role.",
             }
         )
-    return web.json_response(result | {"roles": options})
+    saved = {
+        row["pool"]: {
+            "name": names.get(row["role_id"], "Saved role"),
+            "allowed": any(role["id"] == row["role_id"] for role in options),
+        }
+        for row in result["pools"]
+        if row["role_id"]
+    }
+    return web.json_response(result | {"roles": options, "saved_roles": saved})
 
 
 async def save(request):
@@ -167,6 +184,13 @@ async def bridge(request):
     action = body.get("action")
     if not isinstance(action, str):
         _fail(400, "Invalid role action.")
+    if action == "health":
+        if set(body) != {"guild_id", "action"}:
+            _fail(400, "Invalid health check.")
+        import time
+
+        _store(request).role_last_contact = time.time()
+        return web.json_response({"alive": True})
     if action == "claim":
         if set(body) != {"guild_id", "action"}:
             _fail(400, "Invalid claim.")

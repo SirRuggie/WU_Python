@@ -285,9 +285,10 @@ def signup_timestamps(db, season_id):
         "SELECT tag,MAX(id) AS id FROM roster_audit WHERE season_id=? "
         "AND action IN ('member_signup','staff_signup') "
         "AND (before_json IS NULL OR before_json='null') GROUP BY tag"
-        ") latest ON a.id=latest.id", (season_id,)
+        ") latest ON a.id=latest.id",
+        (season_id,),
     ).fetchall()
-    return {row['tag']: row['created_at'].replace(' ', 'T') + 'Z' for row in rows}
+    return {row["tag"]: row["created_at"].replace(" ", "T") + "Z" for row in rows}
 
 
 class Store:
@@ -298,6 +299,7 @@ class Store:
         self.role_next_backup = 0
         self.role_recovery_error = None
         import time
+
         self.role_started_at = time.time()
         self.role_last_contact = None
         self.path = str(Path(path).expanduser())
@@ -305,55 +307,109 @@ class Store:
         with self.tx() as db:
             db.executescript(SCHEMA)
             from utils.roster_player_marks import SCHEMA as MARK_SCHEMA
+
             db.executescript(MARK_SCHEMA)
             from utils.cwl_roster_image_store import migrate as migrate_image_status
+
             migrate_image_status(db)
-            if "signup_clan_type" not in {row[1] for row in db.execute("PRAGMA table_info(signups)")}:
+            if "signup_clan_type" not in {
+                row[1] for row in db.execute("PRAGMA table_info(signups)")
+            }:
                 db.execute("ALTER TABLE signups ADD COLUMN signup_clan_type TEXT")
-            if "withdrawn_at" not in {row[1] for row in db.execute("PRAGMA table_info(roster_publications)")}:
-                db.execute("ALTER TABLE roster_publications ADD COLUMN withdrawn_at TEXT")
+            if "withdrawn_at" not in {
+                row[1] for row in db.execute("PRAGMA table_info(roster_publications)")
+            }:
+                db.execute(
+                    "ALTER TABLE roster_publications ADD COLUMN withdrawn_at TEXT"
+                )
             from .player_weights import SCHEMA as WEIGHT_SCHEMA, migrate
+
             db.executescript(WEIGHT_SCHEMA)
-            if 'permissions' not in {row['name'] for row in db.execute('PRAGMA table_info(grants)')}:
-                db.execute("ALTER TABLE grants ADD COLUMN permissions TEXT NOT NULL DEFAULT '[\"cwl\"]'")
-            clan_columns = {row['name'] for row in db.execute('PRAGMA table_info(clans)')}
-            if 'pool' not in clan_columns:
-                db.execute("ALTER TABLE clans ADD COLUMN pool TEXT CHECK(pool IN ('main','lazy'))")
-            columns = {row["name"] for row in db.execute("PRAGMA table_info(roster_entries)")}
+            if "permissions" not in {
+                row["name"] for row in db.execute("PRAGMA table_info(grants)")
+            }:
+                db.execute(
+                    "ALTER TABLE grants ADD COLUMN permissions TEXT NOT NULL DEFAULT '[\"cwl\"]'"
+                )
+            clan_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(clans)")
+            }
+            if "pool" not in clan_columns:
+                db.execute(
+                    "ALTER TABLE clans ADD COLUMN pool TEXT CHECK(pool IN ('main','lazy'))"
+                )
+            columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(roster_entries)")
+            }
             if "source_modified_at" not in columns:
-                db.execute("ALTER TABLE roster_entries ADD COLUMN source_modified_at TEXT")
+                db.execute(
+                    "ALTER TABLE roster_entries ADD COLUMN source_modified_at TEXT"
+                )
             columns = {row[1] for row in db.execute("PRAGMA table_info(sessions)")}
             if "display_name" not in columns:
                 db.execute("ALTER TABLE sessions ADD COLUMN display_name TEXT")
             if "avatar_url" not in columns:
                 db.execute("ALTER TABLE sessions ADD COLUMN avatar_url TEXT")
             if "is_bot" not in columns:
-                db.execute("ALTER TABLE sessions ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0")
-            source_columns = {row[1] for row in db.execute("PRAGMA table_info(participation_source_results)")}
+                db.execute(
+                    "ALTER TABLE sessions ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0"
+                )
+            source_columns = {
+                row[1]
+                for row in db.execute("PRAGMA table_info(participation_source_results)")
+            }
             if "roster_token" not in source_columns:
-                db.execute("ALTER TABLE participation_source_results ADD COLUMN roster_token TEXT")
-            columns = {row["name"] for row in db.execute("PRAGMA table_info(participation_records)")}
+                db.execute(
+                    "ALTER TABLE participation_source_results ADD COLUMN roster_token TEXT"
+                )
+            columns = {
+                row["name"]
+                for row in db.execute("PRAGMA table_info(participation_records)")
+            }
             if "attacks_override" not in columns:
-                db.execute("ALTER TABLE participation_records ADD COLUMN attacks_override INTEGER NOT NULL DEFAULT 0")
-                db.execute("UPDATE participation_records SET attacks_override=1 WHERE attacks IS NOT NULL")
+                db.execute(
+                    "ALTER TABLE participation_records ADD COLUMN attacks_override INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execute(
+                    "UPDATE participation_records SET attacks_override=1 WHERE attacks IS NOT NULL"
+                )
             if "stars_override" not in columns:
-                db.execute("ALTER TABLE participation_records ADD COLUMN stars_override INTEGER NOT NULL DEFAULT 0")
-                db.execute("UPDATE participation_records SET stars_override=1 WHERE stars IS NOT NULL")
-            columns = {row["name"] for row in db.execute("PRAGMA table_info(participation_group_observations)")}
+                db.execute(
+                    "ALTER TABLE participation_records ADD COLUMN stars_override INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execute(
+                    "UPDATE participation_records SET stars_override=1 WHERE stars IS NOT NULL"
+                )
+            columns = {
+                row["name"]
+                for row in db.execute(
+                    "PRAGMA table_info(participation_group_observations)"
+                )
+            }
             if "members_json" not in columns:
-                db.execute("ALTER TABLE participation_group_observations ADD COLUMN members_json TEXT")
-            columns = {row["name"] for row in db.execute("PRAGMA table_info(bonus_batches)")}
+                db.execute(
+                    "ALTER TABLE participation_group_observations ADD COLUMN members_json TEXT"
+                )
+            columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(bonus_batches)")
+            }
             if "snapshot_json" not in columns:
-                db.execute("ALTER TABLE bonus_batches ADD COLUMN snapshot_json TEXT NOT NULL DEFAULT '{}' ")
+                db.execute(
+                    "ALTER TABLE bonus_batches ADD COLUMN snapshot_json TEXT NOT NULL DEFAULT '{}' "
+                )
 
             from utils.cwl_bonus_raffle_store import SCHEMA as RAFFLE_SCHEMA
+
             db.executescript(RAFFLE_SCHEMA)
             from utils.cwl_bonus_allowance import SCHEMA as ALLOWANCE_SCHEMA
+
             db.executescript(ALLOWANCE_SCHEMA)
             migrate(db)
             from utils.clan_weight_store import initialize as initialize_clan_weights
+
             initialize_clan_weights(db)
             from utils.cwl_pool_roles import initialize as initialize_pool_roles
+
             initialize_pool_roles(db)
         self.durability = durability
         self._recover_role_progress()
@@ -448,9 +504,19 @@ class Store:
                     "SELECT 1 FROM cwl_pool_role_settings WHERE role_id IS NOT NULL"
                 ).fetchone()
                 if not configured:
+                    if hasattr(self.durability, "mark_local_recovery_complete"):
+                        self.durability.mark_local_recovery_complete()
                     return
                 previous = getattr(self.durability, "previous_local_path", None)
-                image = roles.local_progress(previous) if previous else None
+                paths = getattr(self.durability, "previous_local_paths", None) or (
+                    [previous] if previous else []
+                )
+                images = [roles.local_progress(path) for path in paths]
+                image = max(
+                    (value for value in images if value is not None),
+                    key=lambda value: value.get("version", -1),
+                    default=None,
+                )
                 local = image is not None
                 if hasattr(self.durability, "load_role_progress"):
                     try:
@@ -464,17 +530,31 @@ class Store:
                         if image is None:
                             raise
                 if image is not None:
-                    roles.recover_progress(db, image)
+                    recovery = roles.recover_progress(db, image)
+                    if recovery.get("older") or recovery.get("uncovered"):
+                        local = False
                 unfinished = db.execute(
                     "SELECT 1 FROM cwl_pool_role_jobs WHERE state IN ('pending','leased') LIMIT 1"
                 ).fetchone()
-                if not local and unfinished:
+                if (not local and unfinished) or getattr(
+                    self.durability, "local_recovery_interrupted", False
+                ):
+                    roles.pause_recovery(db)
+                if roles.recovery_paused(db):
                     self.role_recovery_error = "Role work is paused after recovery. Check roles, turn both settings off, then save them again. Signups are unchanged."
                 clock = db.execute(
                     "SELECT progress_version,last_backup_version FROM cwl_pool_role_clock WHERE id=1"
                 ).fetchone()
                 self.role_dirty = clock[0] > clock[1]
+            if hasattr(self.durability, "mark_local_recovery_complete"):
+                self.durability.mark_local_recovery_complete()
         except Exception:
+            with self.role_tx(track=False) as db:
+                roles.pause_recovery(db)
+                clock = db.execute(
+                    "SELECT progress_version,last_backup_version FROM cwl_pool_role_clock WHERE id=1"
+                ).fetchone()
+                self.role_dirty = clock[0] > clock[1]
             self.role_recovery_error = "Role progress could not be recovered. Check roles, turn both settings off, then save them again. Signups are unchanged."
             logging.getLogger(__name__).warning(
                 "Role progress recovery unavailable; role work paused"

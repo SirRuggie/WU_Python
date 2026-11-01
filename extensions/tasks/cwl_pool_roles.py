@@ -162,6 +162,8 @@ async def process_job(bot, job, *, send=bridge):
 async def poll_once(bot, *, send=bridge):
     lock = queue_lock()
     if lock.locked():
+        # Report a live, busy worker without claiming work or occupying the lane.
+        await send("health")
         return
     # An off/unavailable bridge never occupies the Discord mutation lane.
     result = await send("claim")

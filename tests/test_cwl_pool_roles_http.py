@@ -538,3 +538,95 @@ class PoolRolesHTTP(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(body["roles"], [])
                 self.assertTrue(all(row["role_id"] is None for row in body["pools"]))
                 self.assertNotIn("worker_warning", body)
+
+    async def test_real_bridge_policy_rejects_a_new_dashboard_grant_before_execution(
+        self,
+    ):
+        from utils.dashboard_access import DOCUMENT_ID
+        from test_cwl_pool_roles import signup
+
+        self.assertEqual((await self.configure()).status, 200)
+        signup(self.app["store"])
+        job = claim(self.app["store"])
+        headers = {"X-CWL-Discord-Secret": "s" * 40}
+
+        async def send(action, **body):
+            response = await self.call(
+                "POST",
+                "/discord/pool-roles",
+                headers,
+                json={"guild_id": str(service.GUILD_ID), "action": action, **body},
+            )
+            self.assertEqual(response.status, 200, await response.text())
+            return await response.json()
+
+        receipt = {key: job[key] for key in ("id", "lease_token", "generation")}
+        self.assertTrue((await send("validate", **receipt))["role_allowed"])
+        self.app["server_management_mongo"].bot_config.documents[DOCUMENT_ID] = {
+            "_id": DOCUMENT_ID,
+            "revision": 1,
+            "grants": [{"kind": "role", "id": ROLE, "permissions": ["cwl_settings"]}],
+        }
+        blocked = await send("validate", **receipt)
+        self.assertTrue(blocked["valid"])
+        self.assertFalse(blocked["role_allowed"])
+        bot, _, _, _ = bot_fixture()
+        await process_job(bot, job, send=send)
+        bot.rest.add_role_to_member.assert_not_awaited()
+        bot.rest.remove_role_from_member.assert_not_awaited()
+
+    async def test_busy_worker_health_is_authenticated_and_does_not_claim(self):
+        from extensions.tasks import cwl_pool_roles as transport
+        from unittest.mock import patch
+
+        self.assertEqual((await self.configure()).status, 200)
+        body = {"guild_id": str(service.GUILD_ID), "action": "health"}
+        path = "/discord/pool-roles"
+        response = await self.call("POST", path, json=body)
+        self.assertEqual(response.status, 403)
+        store = self.app["store"]
+        store.role_last_contact = 0
+        with store.tx() as db:
+            before = [
+                dict(row) for row in db.execute("SELECT * FROM cwl_pool_role_jobs")
+            ]
+        bot, _, _, _ = bot_fixture()
+        with patch.dict(
+            os.environ, {"CWL_DISCORD_BRIDGE_URL": str(self.client.make_url("/"))}
+        ):
+            async with transport.queue_lock():
+                await transport.poll_once(bot)
+        self.assertGreater(store.role_last_contact, 0)
+        with store.tx() as db:
+            self.assertEqual(
+                [dict(row) for row in db.execute("SELECT * FROM cwl_pool_role_jobs")],
+                before,
+            )
+        bot.rest.fetch_roles.assert_not_awaited()
+        bot.rest.add_role_to_member.assert_not_awaited()
+        response = await self.call("GET", "/pool-roles", self.owner)
+        self.assertNotIn("worker_warning", await response.json())
+
+    async def test_configured_default_read_loads_saved_name_but_status_is_local(self):
+        self.assertEqual((await self.configure()).status, 200)
+        self.discord.reset_mock()
+        response = await self.call("GET", "/pool-roles", self.owner)
+        self.assertEqual(response.status, 200)
+        state = await response.json()
+        self.assertEqual(state["saved_roles"]["main"], {"name": "CWL", "allowed": True})
+        self.assertGreater(self.discord.await_count, 0)
+        self.discord.reset_mock()
+        response = await self.call("GET", "/pool-roles?status=1", self.owner)
+        self.assertEqual(response.status, 200)
+        self.discord.assert_not_awaited()
+
+    async def test_saved_name_retained_when_role_no_longer_eligible(self):
+        self.assertEqual((await self.configure()).status, 200)
+        actor = http.identity.return_value
+        next(role for role in actor["roles"] if role["id"] == ROLE)["permissions"] = 8
+        response = await self.call("GET", "/pool-roles", self.owner)
+        state = await response.json()
+        self.assertEqual(
+            state["saved_roles"]["main"], {"name": "CWL", "allowed": False}
+        )
+        self.assertNotIn(ROLE, [role["id"] for role in state["roles"]])

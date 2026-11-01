@@ -21,6 +21,7 @@ type Setting = {
 type State = {
   pools: Setting[];
   roles?: RoleChoice[];
+  saved_roles?: Partial<Record<Pool, { name: string; allowed: boolean }>>;
   roles_error?: string;
   worker_warning?: string;
 };
@@ -52,6 +53,15 @@ function validState(value: State) {
         value.roles.every(
           (role) =>
             typeof role.id === "string" && typeof role.name === "string",
+        ))) &&
+    (value.saved_roles === undefined ||
+      (!!value.saved_roles &&
+        typeof value.saved_roles === "object" &&
+        Object.values(value.saved_roles).every(
+          (role) =>
+            !!role &&
+            typeof role.name === "string" &&
+            typeof role.allowed === "boolean",
         ))) &&
     (value.roles_error === undefined ||
       typeof value.roles_error === "string") &&
@@ -125,6 +135,7 @@ export default function CwlPoolRoles({
     setData((previous) => ({
       ...result,
       roles: result.roles || previous?.roles || [],
+      saved_roles: result.saved_roles || previous?.saved_roles,
       roles_error:
         result.roles === undefined ? previous?.roles_error : result.roles_error,
     }));
@@ -257,6 +268,7 @@ export default function CwlPoolRoles({
       setData((previous) => ({
         ...result,
         roles: result.roles || previous?.roles || [],
+        saved_roles: result.saved_roles || previous?.saved_roles,
         roles_error:
           result.roles === undefined
             ? previous?.roles_error
@@ -309,9 +321,7 @@ export default function CwlPoolRoles({
               label={title(row.pool) + " role"}
               roles={data.roles || []}
               unavailableLabel={
-                choicesRequested.current
-                  ? "Unavailable role"
-                  : "Saved role · open to load names"
+                data.saved_roles?.[row.pool]?.name || "Saved role"
               }
               value={selected}
               disabled={loading || saving}
@@ -320,6 +330,12 @@ export default function CwlPoolRoles({
                 setDrafts((old) => ({ ...old, [row.pool]: value }))
               }
             />
+            {row.role_id && data.saved_roles?.[row.pool]?.allowed === false && (
+              <p role="status">
+                Saved role is no longer eligible. Choose another role or turn it
+                off.
+              </p>
+            )}
             <Button
               disabled={
                 loading ||

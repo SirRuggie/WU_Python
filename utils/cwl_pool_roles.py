@@ -110,6 +110,10 @@ def initialize(db):
         ("progress_version", "INTEGER NOT NULL DEFAULT 0"),
         ("last_backup_version", "INTEGER NOT NULL DEFAULT 0"),
         ("last_backup_attempt", "REAL NOT NULL DEFAULT 0"),
+        (
+            "recovery_paused",
+            "INTEGER NOT NULL DEFAULT 0 CHECK(recovery_paused IN (0,1))",
+        ),
     ):
         if name not in clock_columns:
             db.execute(
@@ -128,6 +132,11 @@ def initialize(db):
             if intent == "add"
             else ""
         )
+        cancel_guard = (
+            f" AND NOT EXISTS (SELECT 1 FROM signups s WHERE s.season_id={season} AND s.pool={pool} AND s.user_id={uid})"
+            if intent == "cancel"
+            else ""
+        )
         return supersede + f"""
         INSERT INTO cwl_pool_role_jobs
           (id,job_key,pool,role_id,setting_revision,kind,intent,season_id,user_id,requested_at)
@@ -139,7 +148,7 @@ def initialize(db):
           AND {season}=(SELECT season_id FROM member_season WHERE id=1)
           AND EXISTS(SELECT 1 FROM seasons WHERE id={season} AND status='draft')
           AND {uid} NOT GLOB '*[^0-9]*' AND length({uid}) BETWEEN 15 AND 22
-          AND substr({uid},1,1)<>'0'
+          AND substr({uid},1,1)<>'0' {cancel_guard}
         ON CONFLICT(job_key) DO UPDATE SET generation=generation+1,
           intent=excluded.intent,season_id=excluded.season_id,
           state='pending',attempts=0,next_at=0,lease_token=NULL,lease_until=NULL,requested_at={stamp};
@@ -163,7 +172,7 @@ def initialize(db):
             + enqueue("NEW.user_id", "NEW.pool", "NEW.season_id", "add"),
         ),
     ):
-        for suffix in ("", "_v2"):
+        for suffix in ("", "_v2", "_v3"):
             db.execute(f"DROP TRIGGER IF EXISTS cwl_pool_role_{name}{suffix}")
         condition = (
             "WHEN OLD.user_id<>NEW.user_id OR OLD.pool<>NEW.pool OR OLD.season_id<>NEW.season_id"
@@ -171,8 +180,46 @@ def initialize(db):
             else ""
         )
         db.executescript(
-            f"CREATE TRIGGER IF NOT EXISTS cwl_pool_role_{name}_v3 AFTER {event} ON signups {condition} BEGIN {body} END;"
+            f"CREATE TRIGGER IF NOT EXISTS cwl_pool_role_{name}_v4 AFTER {event} ON signups {condition} BEGIN {body} END;"
         )
+
+    # Only a deliberate season switch backfills its existing signups.
+    db.executescript(f"""
+        CREATE TRIGGER IF NOT EXISTS cwl_pool_role_season_v1
+        AFTER UPDATE OF season_id ON member_season
+        WHEN OLD.season_id IS NOT NEW.season_id
+        BEGIN
+          INSERT INTO cwl_pool_role_jobs
+            (id,job_key,pool,role_id,setting_revision,kind,intent,season_id,user_id,requested_at)
+          SELECT lower(hex(randomblob(16))),
+            'sync:'||r.pool||':'||NEW.season_id||':'||s.user_id||':'||r.revision,
+            r.pool,r.role_id,r.revision,'sync','add',NEW.season_id,s.user_id,{stamp}
+          FROM cwl_pool_role_settings r
+          JOIN (SELECT DISTINCT season_id,pool,user_id FROM signups) s
+            ON s.pool=r.pool AND s.season_id=NEW.season_id
+          WHERE r.role_id IS NOT NULL
+            AND EXISTS(SELECT 1 FROM seasons WHERE id=NEW.season_id AND status='draft')
+            AND s.user_id NOT GLOB '*[^0-9]*' AND length(s.user_id) BETWEEN 15 AND 22
+            AND substr(s.user_id,1,1)<>'0'
+          ON CONFLICT(job_key) DO UPDATE SET generation=generation+1,
+            intent='add',state='pending',attempts=0,next_at=0,
+            lease_token=NULL,lease_until=NULL,requested_at={stamp};
+        END;
+    """)
+
+
+def recovery_paused(db):
+    return bool(
+        db.execute(
+            "SELECT recovery_paused FROM cwl_pool_role_clock WHERE id=1"
+        ).fetchone()[0]
+    )
+
+
+def pause_recovery(db):
+    db.execute(
+        "UPDATE cwl_pool_role_clock SET recovery_paused=1,progress_version=progress_version+1 WHERE id=1 AND recovery_paused=0"
+    )
 
 
 def audit(db, pool, action, details, *, role_id=None, user_id=None, actor_id=None):
@@ -287,8 +334,6 @@ def save(db, pool, role_id, revision, basis, actor, *, now=None):
         if role_id
         else None
     )
-    if role_id is not None and role_id == old["role_id"] and old["next_expiry"]:
-        next_expiry = old["next_expiry"]
     db.execute(
         "UPDATE cwl_pool_role_settings SET role_id=?,revision=revision+1,next_expiry=?,"
         "updated_by=? WHERE pool=?",
@@ -299,6 +344,11 @@ def save(db, pool, role_id, revision, basis, actor, *, now=None):
         "WHERE pool=? AND state IN ('pending','leased')",
         (pool,),
     )
+    if not db.execute(
+        "SELECT 1 FROM cwl_pool_role_settings WHERE role_id IS NOT NULL"
+    ).fetchone():
+        db.execute("UPDATE cwl_pool_role_clock SET recovery_paused=0 WHERE id=1")
+
     setting = dict(old) | {
         "role_id": role_id,
         "revision": revision + 1,
@@ -400,6 +450,8 @@ def skip_change(db, job):
 
 
 def claim(db, *, now=None):
+    if recovery_paused(db):
+        return None
     now = now or datetime.now(timezone.utc)
     _due(db, now)
     stamp = now.timestamp()
@@ -464,6 +516,8 @@ def claim(db, *, now=None):
 
 
 def owned(db, job_id, token, generation):
+    if recovery_paused(db):
+        return None
     row = db.execute(
         "SELECT * FROM cwl_pool_role_jobs WHERE id=? AND state='leased' "
         "AND lease_token=? AND generation=?",
@@ -721,6 +775,8 @@ def recover_progress(db, image):
         else:
             continue  # Never restore a signup intent missing from the authoritative head.
         restored += 1
+    if compatible and clocks[0]["recovery_paused"]:
+        pause_recovery(db)
     for pool in compatible:
         old, new = current[pool]["next_expiry"], settings[pool]["next_expiry"]
         if new and (
@@ -764,7 +820,18 @@ def recover_progress(db, image):
             )
         ),
     )
-    return {"restored": restored, "older": False}
+    covered = {
+        (row["id"], row["generation"], row["job_key"], row["intent"])
+        for row in decoded[PROGRESS_TABLES[1]]
+        if row["pool"] in compatible
+    }
+    uncovered = any(
+        (row["id"], row["generation"], row["job_key"], row["intent"]) not in covered
+        for row in db.execute(
+            "SELECT id,generation,job_key,intent FROM cwl_pool_role_jobs WHERE state IN ('pending','leased')"
+        )
+    )
+    return {"restored": restored, "older": False, "uncovered": uncovered}
 
 
 def local_progress(path):

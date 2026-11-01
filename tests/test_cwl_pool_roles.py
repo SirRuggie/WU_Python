@@ -148,7 +148,7 @@ def test_last_account_cancel_resignup_and_pool_independence(store):
         bot.rest.add_role_to_member.assert_awaited_once()
         with store.tx() as db:
             db.execute("DELETE FROM signups WHERE tag='P'")
-        await worker.process_job(bot, claim(store), send=send_for(store))
+        assert claim(store) is None
         bot.rest.remove_role_from_member.assert_not_awaited()
         with store.tx() as db:
             db.execute("DELETE FROM signups WHERE tag='Q'")
@@ -632,7 +632,9 @@ def test_cancel_after_expiry_never_adds_while_another_account_remains(store):
         members[USER].role_ids.clear()  # The monthly cleanup already removed it.
         with store.tx() as db:
             db.execute("DELETE FROM signups WHERE tag='P'")
-        await worker.process_job(bot, claim(store), send=send_for(store))
+        pending = claim(store)
+        if pending is not None:
+            await worker.process_job(bot, pending, send=send_for(store))
         assert members[USER].role_ids == []
         assert bot.rest.add_role_to_member.await_count == 1
         bot.rest.remove_role_from_member.assert_not_awaited()
@@ -744,6 +746,18 @@ def test_only_member_facing_season_counts_and_metadata_edits_do_not_readd(store)
         assert dict(db.execute("SELECT * FROM cwl_pool_role_jobs").fetchone()) == prior
         db.execute("UPDATE member_season SET season_id=2 WHERE id=1")
         assert roles.members(db, "main") == [OTHER]
+        jobs = list(db.execute("SELECT * FROM cwl_pool_role_jobs WHERE season_id=2"))
+        assert len(jobs) == 1
+        assert jobs[0]["user_id"] == OTHER
+        assert jobs[0]["intent"] == "add"
+        generation = jobs[0]["generation"]
+        db.execute("UPDATE member_season SET season_id=2 WHERE id=1")
+        assert (
+            db.execute(
+                "SELECT generation FROM cwl_pool_role_jobs WHERE id=?", (jobs[0]["id"],)
+            ).fetchone()[0]
+            == generation
+        )
         assert roles.owned(db, prior["id"], "invalid", prior["generation"]) is None
 
 
@@ -793,3 +807,83 @@ def test_positive_but_expired_lease_cannot_validate_or_finish(store):
         assert not roles.finish(db, job["id"], job["lease_token"], job["generation"])[
             "accepted"
         ]
+
+
+@pytest.mark.parametrize("backfill", [True, False])
+def test_cancel_one_of_two_accounts_does_not_erase_a_pending_add(store, backfill):
+    if not backfill:
+        save(store)
+    signup(store, "A")
+    signup(store, "B")
+    if backfill:
+        save(store)
+    before = store.one("SELECT * FROM cwl_pool_role_jobs WHERE kind='sync'")
+    assert before["intent"] == "add" and before["state"] == "pending"
+    with store.tx() as db:
+        db.execute("DELETE FROM signups WHERE tag='A'")
+    after = store.one("SELECT * FROM cwl_pool_role_jobs WHERE id=?", (before["id"],))
+    assert after["intent"] == "add" and after["generation"] == before["generation"]
+
+    async def run():
+        bot, people, _, _ = bot_fixture()
+        await worker.process_job(bot, claim(store), send=send_for(store))
+        assert people[USER].role_ids == [int(ROLE)]
+        bot.rest.add_role_to_member.assert_awaited_once()
+        bot.rest.remove_role_from_member.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_post_cutoff_signup_then_cancel_other_account_keeps_the_role(store):
+    from datetime import timedelta
+
+    signup(store, "A")
+    save(store)
+    cutoff = datetime.fromisoformat(
+        store.one("SELECT next_expiry FROM cwl_pool_role_settings WHERE pool='main'")[
+            "next_expiry"
+        ]
+    )
+    signup(store, "B")
+    with store.tx() as db:
+        db.execute(
+            "UPDATE cwl_pool_role_jobs SET requested_at=? WHERE kind='sync'",
+            ((cutoff + timedelta(seconds=1)).timestamp(),),
+        )
+        db.execute("DELETE FROM signups WHERE tag='A'")
+    now = cutoff + timedelta(seconds=2)
+    scan = claim(store, now=now)
+    assert scan["kind"] == "scan"
+    with store.role_tx() as db:
+        roles.finish(
+            db,
+            scan["id"],
+            scan["lease_token"],
+            scan["generation"],
+            page=[USER],
+            cursor=USER,
+        )
+    # A complete second scan page advances the scan receipt to terminal.
+    scan = claim(store, now=now + timedelta(seconds=4))
+    assert scan["kind"] == "scan"
+    with store.role_tx() as db:
+        roles.finish(
+            db,
+            scan["id"],
+            scan["lease_token"],
+            scan["generation"],
+            page=[],
+            cursor=USER,
+        )
+
+    async def run():
+        bot, people, _, _ = bot_fixture()
+        people[USER].role_ids = [int(ROLE)]
+        for step in range(3):
+            job = claim(store, now=now + timedelta(seconds=8 + step * 4))
+            if job:
+                await worker.process_job(bot, job, send=send_for(store))
+        assert people[USER].role_ids == [int(ROLE)]
+        bot.rest.remove_role_from_member.assert_not_awaited()
+
+    asyncio.run(run())
