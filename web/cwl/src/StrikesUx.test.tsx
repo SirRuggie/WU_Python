@@ -16,7 +16,7 @@ vi.mock("./api", async (original) => ({
 vi.mock("./StrikeTrackingStatus", () => ({ default: () => null }));
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {
-  history.replaceState({}, "", "/strikes");
+  history.replaceState({}, "", "/strikes?activity_view=all");
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.useFakeTimers();
   sessionStorage.clear();
@@ -183,7 +183,7 @@ it("loads the family once, filters locally and clears protected data on authoriz
     />,
   );
   await settle();
-  expect(host.textContent).toContain("1 at risk · 0 watch · 0 active");
+  expect(host.textContent).toContain("Showing 1 of 1");
   expect(host.textContent).toContain("Aspen");
   await input('input[type="search"]', "No match");
   await settle();
@@ -641,7 +641,7 @@ it("returns from a routed account to the filtered roster when browser history cl
     isOwner: false,
     userId: "1",
     memory,
-    activityState: "q=Routed",
+    activityState: "activity_view=all&q=Routed",
     onAccountRoute: vi.fn(),
   };
   await render(<StrikesWorkspace {...props} targetTag="#P2Y" />);
@@ -701,4 +701,111 @@ it("keeps a saved quarantine visible and identifies its hold without claiming no
   expect(
     host.querySelector(".strike-review-resolution")?.textContent,
   ).toContain("Missing final");
+});
+it("retains historical strike details when the activity directory has no such account", async () => {
+  const historical = {
+    player_tag: "#P2Y",
+    player_name: "Historical fixture",
+    active_strikes: 0,
+    total_strikes: 3,
+  };
+  transport.mockImplementation(async (path: string) =>
+    path.startsWith("/strikes/accounts")
+      ? {
+          accounts: path.includes("activity=true") ? [] : [historical],
+          clans: [],
+        }
+      : { entries: [], total: 0, clans: [] },
+  );
+  await render(
+    <StrikesWorkspace
+      permissions={["strikes_remove"]}
+      isOwner={false}
+      userId="1"
+      targetTag="#P2Y"
+    />,
+  );
+  await settle();
+  expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
+    "Historical fixture",
+  );
+  expect(
+    transport.mock.calls.some(([path]) =>
+      String(path).includes("activity=true"),
+    ),
+  ).toBe(true);
+});
+it("refreshes canonical historical counts after removal and preserves direct-link status", async () => {
+  let active = 2;
+  transport.mockImplementation(async (path: string) => {
+    if (path.endsWith("/remove")) {
+      active = 1;
+      return {};
+    }
+    if (path.startsWith("/strikes/accounts"))
+      return {
+        clans: [],
+        accounts: path.includes("activity=true")
+          ? []
+          : [
+              {
+                player_tag: "#P2Y",
+                player_name: "Historical",
+                discord_id: "12345",
+                active_strikes: active,
+                total_strikes: 2,
+                link_status: "unlinked",
+              },
+            ],
+      };
+    if (path.startsWith("/strikes/overview"))
+      return {
+        total: 1,
+        clans: [],
+        entries: [
+          {
+            id: "historic",
+            player_tag: "#P2Y",
+            player_name: "Historical",
+            kind: "strike",
+            status: active === 2 ? "active" : "removed",
+            source: "manual",
+            reason: "Fixture",
+          },
+        ],
+      };
+    return { entries: [], total: 0, clans: [] };
+  });
+  await render(
+    <StrikesWorkspace
+      permissions={["strikes_remove"]}
+      isOwner={false}
+      userId="1"
+      targetTag="#P2Y"
+    />,
+  );
+  await settle();
+  expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
+    "Not linked",
+  );
+  expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
+    "2 active",
+  );
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".strike-row-more")!.click(),
+  );
+  await click("Remove strike");
+  await input(".strike-row-details form input", "Correction");
+  await act(async () =>
+    host
+      .querySelector(".strike-row-details form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  await settle();
+  expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
+    "1 active",
+  );
+  expect(
+    host.querySelector(".strikes-detail-context")?.textContent,
+  ).not.toContain("2 active");
 });

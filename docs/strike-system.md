@@ -75,11 +75,33 @@ checks are not live delivery or a full assistive-technology audit.
 
 The **Strikes** dashboard has Accounts, Leave, and Settings tabs. Exempt roles and Import past wars are in Settings. **Replacements** is a child page beneath Strikes in the sidebar.
 
-History starts with one row per player account with active strikes, ordered by active strike count. All accounts also shows inactive and missed-only accounts. Accounts linked to the same Discord member remain separate. Open an account to see strike dates, war matchups, and removal history. One-missed records stay hidden unless selected. Find a war by clan or opponent, then choose its date to see that war’s missed attacks. History supports player, Discord member, clan, and status searches; add a manual strike with a reason, or remove a strike with a reason. Choosing a member lets staff choose the player account.
+The Accounts list uses Not attacking (default: no attacks in the last three or
+more known wars), Inactive (quiet for fourteen or more days), Replacements and
+All views. Ruggie removed At risk/Watch/Active badges on October 31, 2026. Each
+row shows name, TH, clan, weight, a plain strike count and one compact activity
+summary. Only Chopping Block gets a small red label; High is quiet amber and
+Normal has no label. Desktop uses a semantic table. Open an account for full
+activity evidence, strike dates, matchups, removal history and the existing
+in-place priority editor. Find war and Leave/Settings actions are unchanged.
 
-The Replacements page defaults to manually marked accounts and accounts with at least three active strikes. Show 1–2 strikes too includes the lower counts. This fixed threshold is independent of the over-limit setting. Clans start collapsed, ordered by urgency, with listed/3+/Chopping Block counts; multiple clans can stay open. The global Top 10 orders Chopping Block, High, then Normal, followed by most strikes and lowest weight. Town Hall, search and sort apply before server paging (25 rows per expanded clan). Use Add accounts to choose a family clan and check accounts from its current roster, or enter a player tag. Selected accounts share Chopping Block, High priority, or Normal and an optional note. Accounts already manually listed are left unchanged. The clan roster is checked again on save. Marking or clearing a replacement never adds or removes strikes. Clearing a priority removes its note and manual listing; an account with active strikes still appears as a normal candidate. Preferences apply to the clan where they were set, so moving clans does not transfer that preference. Existing filler marks appear as Chopping Block.
+The sticky search/sort/filter toolbar keeps every predicate visible as a
+removable applied chip. The filter panel includes searchable clans, known-war
+thresholds, quiet days, raid misses, strike conditions, priorities, TH, weight,
+left/current membership and no observations since tracking began. Unknown or
+unusable samples do not become misses or numeric zero; unknown sort values stay
+last in both directions. The last-attack sort uses the last attacking war's end,
+not an exact attack timestamp. URL state preserves thresholds through Back and
+sign-in. Copy list copies all matching accounts, rather than just the current
+page. Manager-only Select all is bounded to fifty matching accounts and its
+confirmation lists every selection, including accounts on another page.
 
-The visible recruit box accepts 149 or 149000 and returns the three closest known-weight FWA slots, using priority and strikes to break ties. Unknown weights are excluded from matching but remain in the ordinary list. Ordinary reads use saved weights without upstream requests. Cards open the account’s Strikes history. Find replacement opens a clan/tag deep link; Back retains origin filters, expanded clans and scroll in memory for the signed-in session. The Strikes account detail offers the same in-place priority editor. Single add/edit/clear requires the displayed revision; stale writes return 409 and retain the draft until explicit Reload. Clear and unsaved changes use in-app dialogs. The obsolete PUT /replacements/{tag} route has no callers and is removed; replacement-roster reads require a Strikes view grant. The public bot panel and bulk add behavior are unchanged.
+The Replacements view retains the existing marked/eligible rules and optional
+Include 1–2 strikes behavior. Marking or clearing a replacement never changes
+strikes. Priorities and notes retain revision checks, conflict drafts and current
+clan ownership. Unknown weights stay in the account list but are excluded from
+recruit matching. Match a recruit’s weight stays behind its labeled disclosure,
+accepts 149 or 149000, and fetches the three closest eligible known-weight FWA
+slots only on request. Existing lookup, tie-breaking and Discord behavior remain.
 
 Leave starts when approved and resumes tracking at **00:00 UTC on the selected date**. All currently linked accounts are selected initially; staff can uncheck individual accounts.
 

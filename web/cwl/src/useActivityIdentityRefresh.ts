@@ -38,12 +38,11 @@ export default function useActivityIdentityRefresh({
     let alive = true,
       attempts = 0,
       timer: ReturnType<typeof setTimeout>;
-    const deadline = Date.now() + 90_000;
-    const schedule = () => {
-      if (alive) timer = setTimeout(poll, 2000);
+    const schedule = (delay = 2000) => {
+      if (alive) timer = setTimeout(poll, delay);
     };
     const poll = async () => {
-      if (!alive || Date.now() >= deadline || attempts >= 6) return;
+      if (!alive) return;
       if (document.hidden || callbacks.current.busy()) {
         schedule();
         return;
@@ -55,7 +54,10 @@ export default function useActivityIdentityRefresh({
         );
         if (!alive || !Array.isArray(result.accounts)) return;
         callbacks.current.onResult(result);
-        if (result.identity_updating) schedule();
+        if (result.identity_updating || result.identity_warning) {
+          schedule(result.identity_updating && attempts < 6 ? 2000 : 120_000);
+          if (attempts >= 6) attempts = 0;
+        }
       } catch (cause) {
         if (
           alive &&
@@ -63,6 +65,7 @@ export default function useActivityIdentityRefresh({
           [401, 403].includes(cause.status)
         )
           callbacks.current.onDenied();
+        else if (alive) schedule(120_000);
       }
     };
     schedule();

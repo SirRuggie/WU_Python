@@ -2,7 +2,7 @@ import {
   activityFilterKeys,
   activityFilterQuery,
   parseActivityFilters,
-} from "./strikeActivityView";
+} from "./strikeActivityFilters";
 import { managementTarget } from "./managementLinks";
 import { cwlTarget } from "./staffLinks";
 export type MemberView =

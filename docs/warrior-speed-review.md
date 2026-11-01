@@ -85,11 +85,14 @@ Claude's post-release smoke. Ruggie's required real nickname test remains a
 separate human gate for PR119; record the revision that test actually covers.
 
 Prompt 70 validation: 84 focused Warrior cases and three actual isolated Mongo
-cases passed. Six behavioral mutants were killed: cached final rename guard,
-missing between-role authorization, missing interaction lock, missing background
-load lock, cached settings authorization and shutdown cancellation omitted.
-The full guarded backend result is recorded in the handoff once complete.
-The unchanged frontend checks from prompt 68 remain 1248 tests, tsc/build.
+cases passed. The earlier report claimed six killed behavioral mutants. Claude's
+entry251 refuter found that the between-role read mutant survived, so that claim
+is corrected: it was not established by the old aliased REST/cache fixture. The
+other reported cases were cached final rename guard, missing interaction lock,
+missing background load lock, cached settings authorization and omitted shutdown
+cancellation. The follow-up below adds detached-object role-definition evidence.
+The final combined70/73 guarded backend result is5556passed,29skipped and221subtests; all owned Mongo fixtures stopped.
+Combined73frontend validation is1249tests/230files,tsc/build;20wizard scenarios at360/1440 include visible AU/US/all-zone menus.
 All owned Mongo daemons stopped. No migration or live rename was performed.
 
 Prompt73 is included before READY so the zone picker shares the same bot restart.
@@ -97,3 +100,40 @@ Its country maps and regional alias labels are shared data; country options page
 at24 plusOther, and full zone choices remain within25. Display abbreviations
 never enter a nickname. Dashboard editor integration is carried on PR119 before
 that feature's release. Full combined validation is recorded in the handoff.
+
+## Partial role results and no-op reads (entry251 follow-up)
+
+Quick Set-up and Town Hall changes have an addition phase followed by a removal
+phase. If authorization is lost between them, or a later display read fails, the
+panel now keeps confirmed additions/removals and their counts beside the reason
+the operation stopped. The same protection covers individual and clan-role
+actions. A partial panel offers Return only; it never retries the role writes.
+Mention parsing remains disabled. Text is bounded in UTF-16 within Components V2
+limits. Audit behavior is unchanged: the storage owner retains confirmed partial
+results and warns if the audit itself cannot be saved.
+
+Known no-op roles share the batch's initial fresh authorization context. The
+two-item no-op fixture now makes five REST reads total instead of ten (one guild,
+one role directory and three members), plus its normal config read and audit.
+Every actual write after an earlier attempt still obtains all five fresh REST
+inputs and re-evaluates actor/bot hierarchy, permissions, role definitions and
+the target's roles. Avoiding fresh metadata for real writes would miss changed
+role privileges or guild ownership, so this optimization deliberately reduces
+no-op reads rather than reusing authorization for writes. Role changes remain
+incremental PUT/DELETE operations; a full role-list PATCH could overwrite unrelated
+concurrent edits and is not used.
+
+The new role-definition regression keeps gateway and REST objects detached, makes
+the second role privileged after the first write, and verifies that the second
+write is refused. This is the required protection against a surviving fresh-read
+mutant, rather than mutating a shared fake object that also changes the cache.
+
+The existing cleanup at `extensions/warrior/walkthrough.py` removes the run's
+configured New Recruit role two hours after a successful tour completes. It
+marks `cleanup_done` only after Discord accepts removal; failure leaves it pending
+with a one-hour next-attempt time. The legacy cleanup is separate. This follow-up
+documents that behavior and does not alter cleanup, tour scheduling, persistent
+schema or delivery retries.
+
+Tests and approximate Discord previews use isolated fake data. No role edit,
+nickname write, live message or human Warrior test was performed by the agent.

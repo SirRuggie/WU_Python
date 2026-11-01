@@ -1,6 +1,8 @@
 import StrikeReviewResolution from "./StrikeReviewResolution";
 import ReplacementDeparture from "./ReplacementDeparture";
-import { parseActivityFilters } from "./strikeActivityView";
+import { parseActivityFilters } from "./strikeActivityFilters";
+import type { ActivityAccount } from "./strikeActivityView";
+import StrikeActivityDetail from "./StrikeActivityDetail";
 import StrikeActivityRoster from "./StrikeActivityRoster";
 import StrikeReplacementRow from "./StrikeReplacementRow";
 import {
@@ -89,7 +91,7 @@ type Overview = {
   total: number;
   streak?: StrikeStreakState | null;
 };
-type StrikeAccount = {
+type StrikeAccount = Partial<ActivityAccount> & {
   left_clan?: boolean;
   last_clan_name?: string | null;
   departed_at?: string | null;
@@ -316,6 +318,12 @@ export default function StrikesWorkspace({
   const [status, setStatus] = useViewState(memory, "status", "all");
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [showWarSearch, setShowWarSearch] = useState(false);
+  const warSearchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!showWarSearch) return;
+    warSearchRef.current?.scrollIntoView?.({ block: "center" });
+    warSearchRef.current?.focus({ preventScroll: true });
+  }, [showWarSearch]);
   const [warQuery, setWarQuery] = useState("");
   const [wars, setWars] = useState<War[]>([]);
   const [warPage, setWarPage] = useState(0);
@@ -654,6 +662,23 @@ export default function StrikesWorkspace({
       clearWar();
       onAccountRoute?.("");
     });
+  const loadAccountDetail = async (tag: string) => {
+    const query = `/strikes/accounts?query=${encodeURIComponent(tag)}&status=all`;
+    const [ledger, activity] = await Promise.all([
+      api<AccountOverview>(query),
+      api<AccountOverview>(`${query}&activity=true`),
+    ]);
+    const canonical = ledger.accounts.find((row) => row.player_tag === tag);
+    const observed = activity.accounts.find((row) => row.player_tag === tag);
+    if (!canonical) return observed;
+    return {
+      ...canonical,
+      ...observed,
+      active_strikes: canonical.active_strikes,
+      total_strikes: canonical.total_strikes,
+      link_status: canonical.link_status,
+    };
+  };
   const chooseAccount = (account: StrikeAccount) => {
     setSelectedAccount(account);
     setSelectedWar(null);
@@ -674,23 +699,9 @@ export default function StrikesWorkspace({
     if (!access.view || accessLost || selectedAccount?.player_tag === targetTag)
       return;
     let active = true;
-    void api<AccountOverview>(
-      `/strikes/accounts?query=${encodeURIComponent(targetTag)}&status=all`,
-    )
-      .then(async (data) => {
+    void loadAccountDetail(targetTag)
+      .then((found) => {
         if (!active) return;
-        let found = data.accounts.find(
-          (account) => account.player_tag === targetTag,
-        );
-        if (!found) {
-          const family = await api<AccountOverview>(
-            "/strikes/accounts?activity=true",
-          );
-          if (!active) return;
-          found = family.accounts.find(
-            (account) => account.player_tag === targetTag,
-          );
-        }
         if (found) {
           setTab("history");
           chooseAccount(found);
@@ -714,13 +725,11 @@ export default function StrikesWorkspace({
     if (selectedAccount || selectedWar) await refreshHistory();
     else await refreshAccounts();
     if (selectedAccount) {
-      const data = await api<AccountOverview>(
-        `/strikes/accounts?query=${encodeURIComponent(selectedAccount.player_tag)}&status=all`,
-      );
-      const updated = data.accounts.find(
-        (account) => account.player_tag === selectedAccount.player_tag,
-      );
-      if (updated) setSelectedAccount(updated);
+      const updated = await loadAccountDetail(selectedAccount.player_tag);
+      if (updated)
+        setSelectedAccount((current) =>
+          current?.player_tag === updated.player_tag ? updated : current,
+        );
     }
   };
   const selected = members.find((item) => item.id === selectedMember);
@@ -973,68 +982,75 @@ export default function StrikesWorkspace({
       )}
       {tab === "history" && !manualOpen && (
         <>
-          <div
-            className={`strikes-toolbar${selectedAccount ? " strikes-toolbar-player" : !selectedWar ? " strikes-toolbar-actions" : ""}`}
-          >
-            {selectedAccount && (
-              <button onClick={backToAccounts}>← Players</button>
-            )}
-            {selectedAccount && (
-              <label>
-                Status
-                <select
-                  value={status}
-                  disabled={!!selectedWar}
-                  onChange={(event) => {
-                    const value = event.target.value;
+          {(selectedAccount || selectedWar) && (
+            <div
+              className={`strikes-toolbar${selectedAccount ? " strikes-toolbar-player" : !selectedWar ? " strikes-toolbar-actions" : ""}`}
+            >
+              {selectedAccount && (
+                <button onClick={backToAccounts}>← Players</button>
+              )}
+              {selectedAccount && (
+                <label>
+                  Status
+                  <select
+                    value={status}
+                    disabled={!!selectedWar}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      leaveDraft(() => {
+                        setRemoveId("");
+                        setRemoveReason("");
+                        setStatus(value);
+                      });
+                    }}
+                  >
+                    <option value="active">Active strikes</option>
+                    <option value="expired">Expired strikes</option>
+                    <option value="removed">Removed strikes</option>
+                    <option value="recorded">
+                      One attack missed (no strike)
+                    </option>
+                    <option value="cwl">CWL miss (no strike)</option>
+                    <option value="mismatch">Mismatch war (no strike)</option>
+                    <option value="exempt">Exempt (no strike)</option>
+                    <option value="all">Everything</option>
+                  </select>
+                </label>
+              )}
+
+              {!selectedAccount && !selectedWar && (
+                <StrikeHelp compact limit={settings?.strike_limit} />
+              )}
+              {access.add && (
+                <button
+                  className="primary"
+                  disabled={busy}
+                  onClick={() =>
                     leaveDraft(() => {
-                      setRemoveId("");
-                      setRemoveReason("");
-                      setStatus(value);
-                    });
+                      setNotice("");
+                      setError("");
+                      setManualOpen(true);
+                    })
+                  }
+                >
+                  {manualOpen ? "Close" : "Add strike"}
+                </button>
+              )}
+              {!selectedAccount && !selectedWar && (
+                <button
+                  aria-expanded={showWarSearch}
+                  onClick={(event) => {
+                    event.currentTarget
+                      .closest("details")
+                      ?.removeAttribute("open");
+                    setShowWarSearch((open) => !open);
                   }}
                 >
-                  <option value="active">Active strikes</option>
-                  <option value="expired">Expired strikes</option>
-                  <option value="removed">Removed strikes</option>
-                  <option value="recorded">
-                    One attack missed (no strike)
-                  </option>
-                  <option value="cwl">CWL miss (no strike)</option>
-                  <option value="mismatch">Mismatch war (no strike)</option>
-                  <option value="exempt">Exempt (no strike)</option>
-                  <option value="all">Everything</option>
-                </select>
-              </label>
-            )}
-
-            {!selectedAccount && !selectedWar && (
-              <StrikeHelp compact limit={settings?.strike_limit} />
-            )}
-            {access.add && (
-              <button
-                className="primary"
-                disabled={busy}
-                onClick={() =>
-                  leaveDraft(() => {
-                    setNotice("");
-                    setError("");
-                    setManualOpen(true);
-                  })
-                }
-              >
-                {manualOpen ? "Close" : "Add strike"}
-              </button>
-            )}
-            {!selectedAccount && !selectedWar && (
-              <button
-                aria-expanded={showWarSearch}
-                onClick={() => setShowWarSearch((open) => !open)}
-              >
-                {showWarSearch ? "Close war search" : "Find war"}
-              </button>
-            )}
-          </div>
+                  {showWarSearch ? "Close war search" : "Find war"}
+                </button>
+              )}
+            </div>
+          )}
           {!selectedAccount && selectedWar && (
             <div className="strikes-war-tools">
               {selectedWar && (
@@ -1047,7 +1063,12 @@ export default function StrikesWorkspace({
               )}
               <button
                 aria-expanded={showWarSearch}
-                onClick={() => setShowWarSearch((open) => !open)}
+                onClick={(event) => {
+                  event.currentTarget
+                    .closest("details")
+                    ?.removeAttribute("open");
+                  setShowWarSearch((open) => !open);
+                }}
               >
                 {showWarSearch ? "Close war search" : "Find war"}
               </button>
@@ -1103,6 +1124,7 @@ export default function StrikesWorkspace({
               <label>
                 Find war
                 <input
+                  ref={warSearchRef}
                   type="search"
                   value={warQuery}
                   onChange={(event) => {
@@ -1220,6 +1242,7 @@ export default function StrikesWorkspace({
                       seenAt={selectedAccount.departed_at}
                     />
                   )}
+                  <StrikeActivityDetail account={selectedAccount} />
                   <StrikeReplacementRow
                     key={selectedAccount.player_tag}
                     tag={selectedAccount.player_tag}
@@ -1358,6 +1381,36 @@ export default function StrikesWorkspace({
             </>
           ) : (
             <StrikeActivityRoster
+              overviewActions={
+                <>
+                  {access.add && (
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        leaveDraft(() => {
+                          setNotice("");
+                          setError("");
+                          setManualOpen(true);
+                        })
+                      }
+                    >
+                      Add strike
+                    </button>
+                  )}
+                  <button
+                    aria-expanded={showWarSearch}
+                    onClick={(event) => {
+                      event.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                      setShowWarSearch((open) => !open);
+                    }}
+                  >
+                    {showWarSearch ? "Close war search" : "Find war"}
+                  </button>
+                  <StrikeHelp compact limit={settings?.strike_limit} />
+                </>
+              }
               selectionReset={selectionReset}
               canManage={access.manage}
               onWorking={setBusy}

@@ -241,28 +241,33 @@ async def change_roles(bot, mongo, c, *, add=(), remove=()):
     try:
         c = await context(bot, mongo, c["guild"].id, c["actor"].id, c["member"].id)
         manageable_target(c)
-        first = True
+        observed_roles = set(c["member"].role_ids)
+        refresh_before_write = False
         for operation, ids in (
             ("added", set(map(int, add))),
             ("removed", set(map(int, remove))),
         ):
             for rid in sorted(ids):
-                if not first:
+                # A known no-op needs no additional REST context. Every possible
+                # write after an earlier attempt still refreshes all five inputs.
+                wants_role = operation == "added"
+                if refresh_before_write and ((rid in observed_roles) != wants_role):
                     c = await context(
                         bot, mongo, c["guild"].id, c["actor"].id, c["member"].id
                     )
-                first = False
+                    observed_roles = set(c["member"].role_ids)
+                    refresh_before_write = False
                 manageable_target(c)
                 role = next((r for r in c["roles"] if int(r.id) == rid), None)
                 name = role.name if role else f"Missing role {rid}"
                 if not role_allowed(c, role):
                     result["failed"].append(f"{name} (missing or not permitted)")
                     continue
-                current = c["member"]
-                if (rid in current.role_ids) == (operation == "added"):
+                if (rid in observed_roles) == wants_role:
                     result["unchanged"].append(name)
                     continue
                 try:
+                    refresh_before_write = True
                     fn = (
                         bot.rest.add_role_to_member
                         if operation == "added"
@@ -281,6 +286,10 @@ async def change_roles(bot, mongo, c, *, add=(), remove=()):
                         role_id=rid,
                     )
                     result[operation].append(name)
+                    if wants_role:
+                        observed_roles.add(rid)
+                    else:
+                        observed_roles.discard(rid)
                 except hikari.HTTPError as error:
                     log.warning(
                         "warrior role mutation failed guild=%s member=%s role=%s error=%s",

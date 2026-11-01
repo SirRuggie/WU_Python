@@ -84,6 +84,7 @@ def test_stale_cached_staff_or_bot_role_never_authorizes_mutation():
 def test_each_role_write_rechecks_authorization():
     async def check():
         c, m, b, by_id = fixture()
+        c["member"].role_ids = []  # Both selected roles require an actual write.
 
         async def added(*args, **kwargs):
             c["actor"].role_ids = []

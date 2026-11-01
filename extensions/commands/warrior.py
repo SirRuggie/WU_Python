@@ -71,6 +71,25 @@ async def show(ctx, components):
     )
 
 
+def partial_role_panel(sid, result, message):
+    """Preserve confirmed writes even when a later phase/display read fails."""
+    added, removed = result.get("added", []), result.get("removed", [])
+    lines = [f"**Confirmed role changes:** {len(added)} added, {len(removed)} removed."]
+    for label, values in (("Added", added), ("Removed", removed)):
+        if values:
+            text = ", ".join(map(str, values))
+            lines.append(
+                f"**{label}:** " + (text[:399] + "…" if len(text) > 400 else text)
+            )
+    return panel(
+        "Set-up needs attention",
+        Text(content=str(message)[:500]),
+        Text(content="\n".join(lines)),
+        *back(sid),
+        color=RED_ACCENT,
+    )
+
+
 async def home(data, c, mongo, note=""):
     sid = data["_id"]
     cfg = await core.settings(mongo, c["guild"].id)
@@ -466,6 +485,7 @@ async def action(
             ],
         )
         return
+    role_result = None
     try:
         data, c = await core.session(ctx, bot, mongo, sid)
         await nickname_setup.abandon(mongo, data)
@@ -497,6 +517,7 @@ async def action(
                 c,
                 **({"add": selected} if verb == "role_add" else {"remove": selected}),
             )
+            role_result = result
             c = await core.refresh_target(bot, c)
             output = await home(data, c, mongo, core.result_text(result))
         elif verb == "quick":
@@ -506,6 +527,7 @@ async def action(
                 c,
                 add=[cfg["roles"][x] for x in ("family", "recruit", "strike_accepted")],
             )
+            role_result = result
             if not result["failed"]:
                 removed = await core.change_roles(
                     bot, mongo, c, remove=[cfg["roles"]["visitor"]]
@@ -525,6 +547,7 @@ async def action(
                 )
             # Add first. Do not strip working roles if replacements cannot be added.
             result = await core.change_roles(bot, mongo, c, add=selected)
+            role_result = result
             if not result["failed"]:
                 removed = await core.change_roles(
                     bot, mongo, c, remove=allowed - selected
@@ -548,6 +571,7 @@ async def action(
                 c,
                 add=[r["role_id"] for r in available if r["tag"] in selected],
             )
+            role_result = result
             c = await core.refresh_target(bot, c)
             output = await home(data, c, mongo, core.result_text(result))
         elif verb == "advanced":
@@ -628,6 +652,7 @@ async def action(
                         else {"remove": roles}
                     ),
                 )
+                role_result = result
                 c = await core.refresh_target(bot, c)
                 output = await home(data, c, mongo, core.result_text(result))
         elif verb == "tour" or verb.startswith("tourpage:"):
@@ -723,12 +748,28 @@ async def action(
             raise core.SetupError(
                 "This action is no longer available. Refresh the dashboard."
             )
+        if (
+            role_result
+            and role_result.get("failed")
+            and (role_result.get("added") or role_result.get("removed"))
+        ):
+            output = partial_role_panel(
+                sid, role_result, "\n".join(role_result["failed"])
+            )
         await show(ctx, output)
     except Exception as error:
         log.exception("warrior action error")
         log.warning(
             "warrior action failed action=%s error=%s", verb, type(error).__name__
         )
+        if role_result and (role_result.get("added") or role_result.get("removed")):
+            message = (
+                str(error)
+                if isinstance(error, (core.SetupError, ValueError))
+                else "The later operation or status read could not finish. Confirmed changes are listed below; inspect current roles before another attempt."
+            )
+            await show(ctx, partial_role_panel(sid, role_result, message))
+            return
         await show(
             ctx,
             panel(
