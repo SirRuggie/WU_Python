@@ -81,3 +81,21 @@ After PR 1 goes live, Ruggie must perform one real `/warrior` nickname run on
 himself or an agreed test member and verify Discord plus the saved profile.
 Codex posts the exact steps as a WAIT and never performs that live rename.
 PR 2 release stays blocked until Ruggie confirms that transport check passed.
+
+## Prompt 66 final delta
+
+Real `hikari.BadRequestError` field errors now retain the nickname validation
+reason (for example, `nick: Must be 32 or fewer in length`). Discord refusal
+sentences end before the explicit unchanged/profile-not-saved statement. After
+confirmed Discord success, uncertain storage says `profile save not confirmed`;
+it does not claim a saved profile is absent. Returning from an applying wizard
+cannot silently discard a later definite refusal: it is sent independently as
+an ephemeral outcome, without retrying the nickname edit.
+
+A real hikari 50035 object, Return while applying, stale consume nonce and each
+persist guard are covered. Final focused checks: 36 passed. Full guarded backend:
+5,532 passed, 29 skipped, 221 subtests; full frontend: 1,248 passed across 230 files.
+The first focused run exposed an incomplete new test double, corrected before
+these passing runs. Prior Mongo, mutation, build and eight-layout evidence still
+applies; this delta changes no frontend or persistence schema. No live Discord
+rename was performed. Ruggie's real Warrior test remains the PR 2 release gate.

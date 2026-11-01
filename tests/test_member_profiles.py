@@ -312,3 +312,37 @@ def test_preview_cannot_be_consumed_for_another_target_actor_or_guild():
         )
 
     asyncio.run(run())
+
+
+def test_consume_preview_rejects_a_replaced_nonce(monkeypatch):
+    from utils import component_state
+
+    async def run():
+        record = {
+            "_id": "s",
+            "type": "warrior_setup",
+            "guild_id": 10,
+            "user_id": int(USER),
+            "recruiter_id": int(ACTOR),
+            "nickname_setup.nonce": "new",
+            "nickname_setup.step": "preview",
+        }
+
+        async def update(mongo, query, change):
+            matched = all(record.get(key) == value for key, value in query.items())
+            if matched:
+                record.update(change["$set"])
+            return S(matched_count=int(matched))
+
+        monkeypatch.setattr(component_state, "update_state", update)
+        store = MemberProfiles(S(member_profiles=object()))
+        assert not await store.consume_preview(
+            "s", "old", guild_id=10, discord_id=USER, actor_id=ACTOR
+        )
+        assert record["nickname_setup.step"] == "preview"
+        assert await store.consume_preview(
+            "s", "new", guild_id=10, discord_id=USER, actor_id=ACTOR
+        )
+        assert record["nickname_setup.step"] == "applying"
+
+    asyncio.run(run())

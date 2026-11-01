@@ -218,6 +218,23 @@ async def save(ctx, data, c, mongo, state, bot):
                 hikari.NotFoundError,
             ) as error:
                 reason = str(error.message or "Discord refused the nickname change.")
+                if isinstance(error, hikari.BadRequestError) and error.errors:
+                    details = []
+
+                    def collect(fields, path=""):
+                        if not isinstance(fields, dict):
+                            return
+                        for key, value in fields.items():
+                            if key == "_errors" and isinstance(value, list):
+                                for item in value:
+                                    if isinstance(item, dict) and item.get("message"):
+                                        details.append(f"{path}: {item['message']}")
+                            elif isinstance(value, dict):
+                                collect(value, f"{path}.{key}" if path else key)
+
+                    collect(error.errors)
+                    if details:
+                        reason += ". " + "; ".join(details)[:900]
                 if isinstance(error, hikari.ForbiddenError):
                     reason = (
                         "Missing permission, or that member is above the bot. " + reason
@@ -225,7 +242,8 @@ async def save(ctx, data, c, mongo, state, bot):
                 if isinstance(error, hikari.NotFoundError):
                     reason = "That member is no longer available. " + reason
                 raise core.SetupError(
-                    reason + " Nothing changed in Discord; no profile was saved."
+                    reason.rstrip(" .!?")
+                    + ". Nothing changed in Discord; no profile was saved."
                 ) from error
             discord_confirmed = True
 
@@ -251,9 +269,12 @@ async def save(ctx, data, c, mongo, state, bot):
             )
         if discord_confirmed and isinstance(error, Exception):
             await ctx.respond(
-                "Nickname changed in Discord; profile not saved. Storage did not confirm the save; check the profile before another edit.",
+                "Nickname changed in Discord; profile save not confirmed. Storage did not confirm the save; check the profile before another edit.",
                 ephemeral=True,
             )
+            return
+        if current is False and isinstance(error, core.SetupError):
+            await ctx.respond(str(error), ephemeral=True)
             return
         if current is False and isinstance(error, Exception):
             log.warning(
