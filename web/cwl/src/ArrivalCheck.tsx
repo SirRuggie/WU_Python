@@ -4,14 +4,27 @@ import useDeclarationData from "./useDeclarationData";
 import { declarationSnapshot } from "./declarationData";
 import { declarationGroups } from "./declarationGroups";
 import DeclarationClan from "./DeclarationClan";
+import DeclarationPingPanel from "./DeclarationPingPanel";
+import useDeclarationExtras from "./useDeclarationExtras";
+import DeclarationExtras from "./DeclarationExtras";
 import useStaffDetailsPage from "./useStaffDetailsPage";
 import { useCwlPool } from "./CwlPoolTabs";
 import { hiddenPublicationStatus } from "./publicationStatus";
-import { comparisonAge } from "./comparisonLocation";
+import { comparisonAge, comparisonLocation } from "./comparisonLocation";
 import { Button, Input } from "./rosterUi/primitives";
 import "./ArrivalCheck.css";
 
-export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
+export default function ArrivalCheck({
+  seasonId,
+  onDirty = () => {},
+  onWorking = () => {},
+}: {
+  seasonId: string;
+  onDirty?: (dirty: boolean) => void;
+  onWorking?: (working: boolean) => void;
+}) {
+  const pingDirty = useRef(false);
+  const pingWorking = useRef(false);
   const { data, error, refresh, records, now, checkedAt, checking } =
     useDeclarationData(seasonId);
   const [pool, setPool] = useCwlPool();
@@ -19,12 +32,21 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
   const [activeClan, setActiveClan] = useState("");
+  const [onlyExtras, setOnlyExtras] = useState(false);
   const root = useRef<HTMLElement>(null);
   const directTag = useRef(new URLSearchParams(location.search).get("account"));
   const published =
     !!data?.publication.published &&
     data.arrival.source === "published" &&
     data.arrival.publication_available;
+  const extras = useDeclarationExtras(
+    seasonId,
+    data?.arrival.source || "published",
+    data?.arrival.source === "published"
+      ? data.arrival.version
+      : (data?.roster.revision ?? null),
+    !!data && published,
+  );
   const context = useMemo(
     () =>
       data && published
@@ -43,7 +65,15 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
         : [],
     [data, context, records, now],
   );
-  const visible = groups.filter((g) => g.pool === pool);
+  const poolGroups = groups.filter((g) => g.pool === pool);
+  const visible = poolGroups.filter(
+    (g) =>
+      pool !== "lazy" ||
+      !onlyExtras ||
+      !!extras.data?.clans.find(
+        (c) => c.tag === g.tag && c.status === "current" && (c.count || 0) > 0,
+      ),
+  );
   const needle = search.trim().toLowerCase();
   function openClan(key: string) {
     setActiveClan(key);
@@ -98,6 +128,18 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
     order: ordered.map((a) => a.tag),
   });
   const hosts = groups.filter((g) => g.tag);
+  const extraOnlyHosts =
+    extras.data?.clans.filter((c) => !groups.some((g) => g.tag === c.tag)) ||
+    [];
+  const failedExtras =
+    (extras.data?.clans.filter((c) => c.status !== "current").length || 0) +
+    groups.filter(
+      (g) =>
+        g.pool === "lazy" &&
+        !!g.tag &&
+        !!extras.data &&
+        !extras.data.clans.some((c) => c.tag === g.tag),
+    ).length;
   return (
     <section
       ref={root}
@@ -133,6 +175,14 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
             </strong>{" "}
             · {hosts.reduce((n, g) => n + g.late.length, 0)} players not in
             their clan
+            {" · "}
+            {extras.error
+              ? "Couldn't check clan members"
+              : extras.loading || !extras.data
+                ? "Checking clan members…"
+                : `${extras.data.clans.reduce((n, c) => n + (c.count || 0), 0)} ${failedExtras ? "confirmed " : ""}not on roster`}
+            {failedExtras > 0 &&
+              ` · ${failedExtras} ${failedExtras === 1 ? "clan" : "clans"} couldn't be checked`}
             <button
               type="button"
               className="declaration-info"
@@ -149,10 +199,30 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
                 ? `Last checked ${comparisonAge(checkedAt, now)}`
                 : "Checking…"}
             </span>
-            <Button icon={RefreshCw} onClick={refresh}>
-              {checking ? "Checking…" : "Refresh"}
+            <Button
+              icon={RefreshCw}
+              disabled={extras.loading}
+              onClick={() => {
+                refresh();
+                extras.refresh();
+              }}
+            >
+              {checking || extras.loading ? "Checking…" : "Refresh"}
             </Button>
           </div>
+          <p className="declaration-extras-status">
+            Not-on-roster checks cover Lazy hosting clans only.
+          </p>
+          {pool === "lazy" && (
+            <label className="declaration-extras-filter">
+              <input
+                type="checkbox"
+                checked={onlyExtras}
+                onChange={(e) => setOnlyExtras(e.target.checked)}
+              />
+              Clans with not-on-roster players
+            </label>
+          )}
           {helpOpen && (
             <p className="declaration-help">
               Ready = enough players in their clan for its war size, checked in
@@ -171,6 +241,14 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
                 key={p}
                 aria-pressed={pool === p}
                 onClick={() => {
+                  if (pingWorking.current) return;
+                  if (
+                    pingDirty.current &&
+                    !window.confirm("Discard the unsaved ping channel change?")
+                  )
+                    return;
+                  pingDirty.current = false;
+                  onDirty(false);
                   setPool(p);
                   setActiveClan("");
                 }}
@@ -181,6 +259,31 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
               </Button>
             ))}
           </div>
+          <DeclarationPingPanel
+            key={`${seasonId}:${pool}`}
+            seasonId={seasonId}
+            pool={pool}
+            missing={poolGroups.reduce(
+              (count, g) =>
+                count +
+                (g.tag
+                  ? g.accounts.filter(
+                      (a) =>
+                        comparisonLocation(records[a.tag], g.tag, now, g.name)
+                          .state === "missing",
+                    ).length
+                  : 0),
+              0,
+            )}
+            onWorking={(working) => {
+              pingWorking.current = working;
+              onWorking(working);
+            }}
+            onDirty={(dirty) => {
+              pingDirty.current = dirty;
+              onDirty(dirty);
+            }}
+          />
           <Input
             label="Find a player or clan"
             type="search"
@@ -188,10 +291,42 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {pool === "lazy" &&
+            extraOnlyHosts
+              .filter((c) => !onlyExtras || (c.count || 0) > 0)
+              .map((c) => (
+                <section className="declaration-extra-only" key={c.tag}>
+                  <h3>{c.name}</h3>
+                  <p>
+                    No assigned accounts in the shown roster. Member flags only;
+                    excluded from readiness.
+                  </p>
+                  <DeclarationExtras
+                    row={c}
+                    loading={extras.loading}
+                    error={extras.error}
+                    now={now}
+                  />
+                </section>
+              ))}
           {!visible.length && (
             <p>
-              No {pool === "main" ? "Main" : "Lazy"} CWL accounts in this
-              published roster.
+              {pool === "lazy" && onlyExtras ? (
+                <>
+                  No checked clans have not-on-roster players.{" "}
+                  {(extras.error ||
+                    extras.data?.clans.some((c) => c.status !== "current")) &&
+                    "Some checks are unavailable. "}
+                  <Button onClick={() => setOnlyExtras(false)}>
+                    Clear filter
+                  </Button>
+                </>
+              ) : (
+                <>
+                  No {pool === "main" ? "Main" : "Lazy"} CWL accounts in this
+                  published roster.
+                </>
+              )}
             </p>
           )}
           {needle &&
@@ -209,6 +344,9 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
               records={records}
               now={now}
               search={needle}
+              extra={extras.data?.clans.find((c) => c.tag === group.tag)}
+              extraLoading={extras.loading}
+              extraError={extras.error}
               request={{
                 seasonId,
                 viewOnly: "declaration",
