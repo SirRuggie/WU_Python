@@ -207,7 +207,7 @@ export default function MemberAssignments({
                           <h2>{group.clanName}</h2>
                           <small>
                             {group.clanTag
-                              ? `${group.clanTag} · ${group.accounts.length} account${group.accounts.length === 1 ? "" : "s"}`
+                              ? `${group.clanTag} · ${group.accounts.every((account) => account.arrival_status === "arrived") ? `All ${group.accounts.length} in clan` : `${group.accounts.filter((account) => account.arrival_status === "arrived").length} of ${group.accounts.length} in clan`}`
                               : `${group.accounts.length} account${group.accounts.length === 1 ? "" : "s"} without a hosting clan`}
                           </small>
                         </div>
@@ -247,7 +247,15 @@ export default function MemberAssignments({
                         {group.accounts.map((account) => (
                           <div className="member-clan-row" key={account.tag}>
                             <div>
-                              <strong>{account.player_name}</strong>
+                              <strong>
+                                {account.player_name}
+                                {account.arrival_status === "arrived" && (
+                                  <span role="img" aria-label="In clan">
+                                    {" "}
+                                    ✅
+                                  </span>
+                                )}
+                              </strong>
                               <small>{account.tag}</small>
                             </div>
                             <span>

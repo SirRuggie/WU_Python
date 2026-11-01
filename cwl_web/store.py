@@ -624,6 +624,10 @@ class Store:
             db.row_factory = sqlite3.Row
             return [dict(row) for row in db.execute(sql, args)]
 
+    def active_hosting_tags(self):
+        """All configured hosting clans that have not been archived."""
+        return {row['tag'] for row in self.rows('SELECT tag FROM clans WHERE archived=0')}
+
     def one(self, sql, args=()):
         rows = self.rows(sql, args)
         return rows[0] if rows else None

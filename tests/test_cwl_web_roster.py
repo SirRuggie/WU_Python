@@ -710,7 +710,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("published_by", str(mine))
         self.assertEqual(mine["accounts"], [{"tag": "#P2Y", "player_name": "Main", "town_hall": 16,
                                             "pool": "main", "assigned_clan_tag": "#C2Y",
-                                            "assigned_clan_name": "Host #C2Y"}])
+                                            "assigned_clan_name": "Host #C2Y", "arrival_status": "missing"}])
         self.assertNotIn("weight", str(mine).lower())
         self.assertNotIn("user_id", str(mine))
         response = await self.call("GET", f"/seasons/{self.sid}/my-assignments", other)

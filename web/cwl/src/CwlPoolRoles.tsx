@@ -309,59 +309,63 @@ export default function CwlPoolRoles({
       {data?.worker_warning && <p role="status">{data.worker_warning}</p>}
       {data?.roles_error && <p role="status">{data.roles_error}</p>}
       {notice && <p role="status">{notice}</p>}
-      {data?.pools.map((row) => {
-        const selected = drafts[row.pool] ?? row.role_id ?? "";
-        const progress = row.progress;
-        const done = (progress.done || 0) + (progress.failed || 0);
-        const total = Object.values(progress).reduce((a, b) => a + b, 0);
-        return (
-          <fieldset className="cwl-pool-role" key={row.pool}>
-            <legend>{title(row.pool)}</legend>
-            <RoleSelect
-              label={title(row.pool) + " role"}
-              roles={data.roles || []}
-              unavailableLabel={
-                data.saved_roles?.[row.pool]?.name || "Saved role"
-              }
-              value={selected}
-              disabled={loading || saving}
-              onOpen={() => void openChoices()}
-              onChange={(value) =>
-                setDrafts((old) => ({ ...old, [row.pool]: value }))
-              }
-            />
-            {row.role_id && data.saved_roles?.[row.pool]?.allowed === false && (
+      {data?.pools
+        .slice()
+        .sort((a, b) => Number(a.pool !== "main") - Number(b.pool !== "main"))
+        .map((row) => {
+          const selected = drafts[row.pool] ?? row.role_id ?? "";
+          const progress = row.progress;
+          const done = (progress.done || 0) + (progress.failed || 0);
+          const total = Object.values(progress).reduce((a, b) => a + b, 0);
+          return (
+            <fieldset className="cwl-pool-role" key={row.pool}>
+              <legend>{title(row.pool)}</legend>
+              <RoleSelect
+                label={title(row.pool) + " role"}
+                roles={data.roles || []}
+                unavailableLabel={
+                  data.saved_roles?.[row.pool]?.name || "Saved role"
+                }
+                value={selected}
+                disabled={loading || saving}
+                onOpen={() => void openChoices()}
+                onChange={(value) =>
+                  setDrafts((old) => ({ ...old, [row.pool]: value }))
+                }
+              />
+              {row.role_id &&
+                data.saved_roles?.[row.pool]?.allowed === false && (
+                  <p role="status">
+                    Saved role is no longer eligible. Choose another role or
+                    turn it off.
+                  </p>
+                )}
+              <Button
+                disabled={
+                  loading ||
+                  saving ||
+                  choicesLoading ||
+                  selected === (row.role_id || "")
+                }
+                onClick={(event) => void review(row.pool, event.currentTarget)}
+              >
+                Save {title(row.pool)} role
+              </Button>
               <p role="status">
-                Saved role is no longer eligible. Choose another role or turn it
-                off.
+                {row.scanning
+                  ? "Checking role holders…"
+                  : total
+                    ? `${done} of ${total} done${progress.failed ? ` · ${progress.failed} failed` : ""}`
+                    : row.failure
+                      ? "Needs attention."
+                      : row.role_id
+                        ? "Role is on."
+                        : "Off."}
+                {row.failure && ` · ${row.failure}`}
               </p>
-            )}
-            <Button
-              disabled={
-                loading ||
-                saving ||
-                choicesLoading ||
-                selected === (row.role_id || "")
-              }
-              onClick={(event) => void review(row.pool, event.currentTarget)}
-            >
-              Save {title(row.pool)} role
-            </Button>
-            <p role="status">
-              {row.scanning
-                ? "Checking role holders…"
-                : total
-                  ? `${done} of ${total} done${progress.failed ? ` · ${progress.failed} failed` : ""}`
-                  : row.failure
-                    ? "Needs attention."
-                    : row.role_id
-                      ? "Role is on."
-                      : "Off."}
-              {row.failure && ` · ${row.failure}`}
-            </p>
-          </fieldset>
-        );
-      })}
+            </fieldset>
+          );
+        })}
       {confirmation && (
         <ConfirmDialog
           returnFocus={() => opener.current}
