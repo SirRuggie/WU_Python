@@ -176,7 +176,7 @@ class MemberProfiles:
             and current.get("source") in ("warrior", "staff")
         ):
             return current
-        checked = profile_fields(fields)
+        checked = profile_fields(fields, source=source)
         at = now or datetime.now(timezone.utc)
         row = dict(
             checked,

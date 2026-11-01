@@ -89,15 +89,26 @@ def zone(zone_id):
                 "gmt_label": key.upper(),
                 "utc_offset_minutes": offset,
             }
-    raise ValueError("Choose a time zone from the menu.")
+    from utils.member_timezone_import import canonical_zone
+
+    if isinstance(zone_id, str):
+        match = re.fullmatch(r"gmt([+-])([0-9]{1,2})(?::([0-5][0-9]))?", zone_id)
+        if match:
+            offset = (int(match[2]) * 60 + int(match[3] or 0)) * (
+                -1 if match[1] == "-" else 1
+            )
+            checked = canonical_zone(offset)
+            if checked["zone_id"] == zone_id:
+                return checked
+    raise ValueError("Choose a valid GMT time zone.")
 
 
-def profile_fields(fields):
+def profile_fields(fields, *, source=None):
     values = zone(fields.get("zone_id"))
     country = fields.get("country")
     values.update(
         country=country.upper() if isinstance(country, str) else country,
-        flag=flag(country),
+        flag=None if country is None and source == "nickname_import" else flag(country),
     )
     tag = fields.get("name_source_tag")
     if tag is not None and (
