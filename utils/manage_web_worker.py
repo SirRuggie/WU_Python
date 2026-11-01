@@ -227,7 +227,7 @@ async def _poll(bot, mongo):
     await mongo.bot_config.update_one({'_id':WORKER_ID},{'$set':{'checked_at':time.time()}},upsert=True)
     from utils.return_bulk import activate
     await activate(mongo)
-    from utils.member_profile_runs import ProfileRuns
+    from utils.member_profile_runs import ProfileRuns, ProfileRunStopped
     try:
         await ProfileRuns(mongo).advance()
     except Exception:
@@ -245,6 +245,8 @@ async def _poll(bot, mongo):
             ctx=await context(bot,mongo,row)
             result=await asyncio.wait_for(dispatch(bot,mongo,row,ctx),120)
             update={'status':'done','message':result.get('message','Completed.'),'result':result}
+        except ProfileRunStopped as exc:
+            update={'status':'stopped','message':str(exc)[:400]}
         except ProfileOutcomeUncertain as exc:
             update={'status':'uncertain','message':str(exc)[:400]}
         except ValueError as exc:

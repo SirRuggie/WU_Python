@@ -18,7 +18,7 @@ ITEM = dict(
 def test_unticked_and_unmanageable_never_become_work():
     skipped = dict(ITEM, discord_id=ACTOR, skip_reason="Above bot")
     assert selected_manifest([ITEM, skipped], [UID]) == [ITEM]
-    assert selected_manifest([ITEM,dict(ITEM,discord_id=ACTOR)], [UID]) == [ITEM]
+    assert selected_manifest([ITEM, dict(ITEM, discord_id=ACTOR)], [UID]) == [ITEM]
     with pytest.raises(ValueError):
         selected_manifest([ITEM, skipped], [ACTOR])
     with pytest.raises(ValueError):
@@ -95,3 +95,34 @@ def test_pace_does_not_release_next_member_early():
 def isolated_pruning(monkeypatch):
     # These cases exercise scheduling; retention is covered against real Mongo.
     monkeypatch.setattr(ProfileRuns, "prune", AsyncMock())
+
+
+@pytest.mark.parametrize("running", [False, True])
+def test_stop_barrier_prevents_materializing_another_child(running):
+    async def check():
+        parent = dict(
+            _id="run",
+            kind="member_profile_standardize",
+            state="queued",
+            stop_requested=True,
+            cursor=0,
+            items=[ITEM],
+            next_at=9999,
+        )
+        coll = S(
+            find_one=AsyncMock(
+                side_effect=[parent, {"status": "running"} if running else None]
+            ),
+            update_many=AsyncMock(),
+            update_one=AsyncMock(),
+            insert_one=AsyncMock(),
+        )
+        await ProfileRuns(S(bot_config=coll)).advance(now=500)
+        coll.insert_one.assert_not_awaited()
+        assert coll.update_many.call_args.args[0]["status"] == "pending"
+        if running:
+            coll.update_one.assert_not_awaited()
+        else:
+            assert coll.update_one.call_args.args[1]["$set"]["state"] == "stopped"
+
+    asyncio.run(check())

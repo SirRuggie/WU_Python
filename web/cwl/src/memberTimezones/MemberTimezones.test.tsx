@@ -198,3 +198,73 @@ it("leaves a preserved unknown suffix unticked for explicit review", async () =>
   expect(host.textContent).toContain("Needs review");
   expect(host.textContent).toContain("Bob | Co-Leader | GMT-5");
 });
+it("stops a run, lists named skipped outcomes and never resumes terminal polling", async () => {
+  vi.useFakeTimers();
+  let stopped = false;
+  transport.mockImplementation(async (path: string, method = "GET") => {
+    if (path.endsWith("/runs"))
+      return { runs: [{ run_id: "run", state: "queued" }] };
+    if (path.endsWith("/stop")) {
+      expect(method).toBe("POST");
+      stopped = true;
+      return { run_id: "run", state: "stopped" };
+    }
+    return {
+      run_id: "run",
+      state: stopped ? "stopped" : "queued",
+      rows: [
+        {
+          discord_id: uid,
+          name: "Ada",
+          old_nickname: "Old",
+          new_nickname: "New",
+          revision: 1,
+          status: "done",
+          message: "Changed",
+        },
+        {
+          discord_id: "234567890123456789",
+          name: "Skipped member",
+          revision: 1,
+          status: "skipped",
+          message: "Above bot",
+        },
+        {
+          discord_id: "345678901234567890",
+          name: "Waiting member",
+          revision: 1,
+          status: stopped ? "stopped" : "waiting",
+          message: stopped ? "Stopped before this member started." : "Waiting",
+        },
+      ],
+    };
+  });
+  await act(async () =>
+    root.render(<Standardize disabled={false} onDenied={() => {}} />),
+  );
+  await act(async () => host.querySelector("summary")!.click());
+  await act(async () => {
+    const select = host.querySelector("select")!;
+    select.value = "run";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const stop = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent === "Stop run",
+  )!;
+  await act(async () => stop.click());
+  expect(host.textContent).toContain("Stopped");
+  expect(host.textContent).toContain("Skipped member");
+  expect(host.textContent).toContain("Above bot");
+  expect(host.textContent).toContain("Waiting member");
+  expect(host.textContent).toContain("Stopped before this member started.");
+  const count = transport.mock.calls.length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(30_000);
+  });
+  expect(transport.mock.calls).toHaveLength(count);
+  expect(
+    [...host.querySelectorAll("button")].some(
+      (b) => b.textContent === "Stop run",
+    ),
+  ).toBe(false);
+});

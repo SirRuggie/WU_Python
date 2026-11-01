@@ -12,10 +12,14 @@ from pymongo.errors import DuplicateKeyError
 from utils.member_profiles import member_id
 
 KIND = "member_profile_standardize"
-TERMINAL = frozenset(("done", "failed", "uncertain"))
+TERMINAL = frozenset(("done", "failed", "uncertain", "stopped"))
 MAX_MEMBERS = 10000
 MAX_BYTES = 2_000_000
 PACE_SECONDS = 3
+
+
+class ProfileRunStopped(ValueError):
+    """A stopped manifest cannot start a new Discord operation."""
 
 
 def fingerprint(value):
@@ -56,7 +60,13 @@ def selected_manifest(preview, selected):
         if type(revision) is not int or revision < 1:
             raise ValueError("Save the member profile before standardizing.")
         result.append(
-            dict(discord_id=uid, old_nickname=old, new_nickname=new, revision=revision)
+            dict(
+                discord_id=uid,
+                old_nickname=old,
+                new_nickname=new,
+                revision=revision,
+                **({"name": str(item["name"])[:100]} if item.get("name") else {}),
+            )
         )
     if chosen - known or not result:
         raise ValueError("Choose at least one available member from this preview.")
@@ -203,6 +213,21 @@ class ProfileRuns:
             cursor=0,
             created_at=time.time(),
             next_at=0,
+            skipped=[
+                dict(
+                    discord_id=str(item["discord_id"]),
+                    name=str(
+                        item.get("name")
+                        or item.get("display_name")
+                        or item["discord_id"]
+                    )[:100],
+                    status="skipped",
+                    message=item.get("skip_reason")
+                    or "Not selected in the reviewed preview.",
+                )
+                for item in preview
+                if str(item["discord_id"]) not in {row["discord_id"] for row in items}
+            ],
             **payload,
         )
         try:
@@ -220,7 +245,12 @@ class ProfileRuns:
         parent = await self.collection.find_one(
             {"kind": KIND, "state": "queued"}, sort=[("created_at", 1)]
         )
-        if not parent or at < parent.get("next_at", 0):
+        if not parent:
+            return
+        if parent.get("stop_requested"):
+            await self._settle_stop(parent, at)
+            return
+        if at < parent.get("next_at", 0):
             return
         index = parent["cursor"]
         if index >= len(parent["items"]):
@@ -260,10 +290,60 @@ class ProfileRuns:
         except DuplicateKeyError:
             pass
 
+    async def stop(self, run_id, *, actor_id, guild_id):
+        actor = member_id(actor_id)
+        query = {
+            "_id": run_id,
+            "kind": KIND,
+            "user_id": actor,
+            "guild_id": int(guild_id),
+        }
+        parent = await self.collection.find_one(query)
+        if not parent:
+            raise ValueError("This run is no longer available.")
+        await self.collection.update_one(
+            dict(query, state="queued"), {"$set": {"stop_requested": True}}
+        )
+        parent = await self.collection.find_one(query)
+        if parent.get("state") == "queued" and parent.get("stop_requested"):
+            await self._settle_stop(parent, time.time())
+        return await self.collection.find_one(query)
+
+    async def _settle_stop(self, parent, at):
+        # Keep the single queued lane until the already claimed member finishes.
+        await self.collection.update_many(
+            {
+                "parent_id": parent["_id"],
+                "kind": "manage_web_request",
+                "status": "pending",
+            },
+            {
+                "$set": {
+                    "status": "stopped",
+                    "finished_at": at,
+                    "message": "Stopped before this member started.",
+                }
+            },
+        )
+        running = await self.collection.find_one(
+            {
+                "parent_id": parent["_id"],
+                "kind": "manage_web_request",
+                "status": "running",
+            }
+        )
+        if not running:
+            await self.collection.update_one(
+                {"_id": parent["_id"], "state": "queued", "stop_requested": True},
+                {"$set": {"state": "stopped", "finished_at": at}},
+            )
+
     async def prune(self):
         # Keep 20 terminal runs at most, for at most 30 days. Never touch active work.
         rows = (
-            await self.collection.find({"kind": KIND, "state": "done"})
+            await self.collection.find(
+                {"kind": KIND, "state": {"$in": ["done", "stopped"]}}
+            )
             .sort("finished_at", -1)
             .to_list(length=10001)
         )
@@ -280,7 +360,7 @@ class ProfileRuns:
                 }
             )
             await self.collection.delete_one(
-                {"_id": row["_id"], "kind": KIND, "state": "done"}
+                {"_id": row["_id"], "kind": KIND, "state": {"$in": ["done", "stopped"]}}
             )
 
         # Older crashed requests had no completion timestamp. Establish it once

@@ -420,3 +420,79 @@ def test_uncertain_receipt_missing_completion_is_retained_for_its_full_lifetime(
             await client.close()
 
     asyncio.run(run())
+
+
+def test_real_standardize_stop_retains_inflight_and_never_resumes(monkeypatch):
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def check():
+        import time
+
+        at = time.time()
+        from utils.member_profile_runs import ProfileRuns, KIND, ProfileRunStopped
+        from extensions.warrior import profile_dashboard as actions
+        from unittest.mock import AsyncMock
+
+        client = AsyncMongoClient(URI)
+        db = client["wu_stop_fixture_" + uuid4().hex]
+        m = S(
+            bot_config=db.bot_config,
+            component_state=db.component_state,
+            member_profiles=db.member_profiles,
+        )
+        runs = ProfileRuns(m)
+        item = dict(
+            discord_id=USER,
+            name="Fixture member",
+            old_nickname="Old",
+            new_nickname="Name | GMT-5 🇺🇸",
+            revision=1,
+        )
+        other = dict(
+            item, discord_id=ACTOR, name="Skipped fixture", skip_reason="Above bot"
+        )
+        try:
+            token = await runs.preview(
+                actor_id=ACTOR, guild_id=actions.GUILD_ID, rows=[item, other]
+            )
+            parent = await runs.confirm(
+                actor_id=ACTOR, guild_id=actions.GUILD_ID, nonce=token, selected=[USER]
+            )
+            assert parent["skipped"][0]["name"] == "Skipped fixture"
+            await runs.advance(now=at)
+            child = await db.bot_config.find_one({"parent_id": parent["_id"]})
+            await db.bot_config.update_one(
+                {"_id": child["_id"]}, {"$set": {"status": "running"}}
+            )
+            stopped = await runs.stop(
+                parent["_id"], actor_id=ACTOR, guild_id=actions.GUILD_ID
+            )
+            assert stopped["state"] == "queued" and stopped["stop_requested"]
+            monkeypatch.setattr(actions, "target_context", AsyncMock(return_value={}))
+            bot = S(rest=S(edit_member=AsyncMock()))
+            with pytest.raises(ProfileRunStopped):
+                await actions.apply(bot, m, child)
+            bot.rest.edit_member.assert_not_awaited()
+            await db.bot_config.update_one(
+                {"_id": child["_id"]},
+                {"$set": {"status": "done", "finished_at": at + 1}},
+            )
+            await runs.advance(now=at + 2)
+            assert (await db.bot_config.find_one({"_id": parent["_id"]}))[
+                "state"
+            ] == "stopped"
+            replay = await runs.confirm(
+                actor_id=ACTOR, guild_id=actions.GUILD_ID, nonce=token, selected=[USER]
+            )
+            assert replay["state"] == "stopped"
+            await runs.advance(now=at + 9999)
+            assert (
+                await db.bot_config.count_documents({"parent_id": parent["_id"]}) == 1
+            )
+            with pytest.raises(ValueError):
+                await runs.stop(parent["_id"], actor_id=USER, guild_id=actions.GUILD_ID)
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(check())

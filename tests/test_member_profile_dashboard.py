@@ -29,6 +29,7 @@ def test_every_profile_route_checks_existing_member_roles_access(monkeypatch):
             routes.standardize_confirm,
             routes.standardize_status,
             routes.standardize_runs,
+            routes.standardize_stop,
         ):
             with pytest.raises(web.HTTPForbidden):
                 await handler(request)

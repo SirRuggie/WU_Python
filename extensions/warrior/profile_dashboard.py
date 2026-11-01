@@ -105,6 +105,10 @@ async def apply(bot, mongo, row):
                 "guild_id": GUILD_ID,
             }
         )
+        if parent and parent.get("stop_requested"):
+            from utils.member_profile_runs import ProfileRunStopped
+
+            raise ProfileRunStopped("Stopped before this member started.")
         if not parent or parent.get("state") != "queued":
             raise ValueError("This reviewed Standardize run is no longer active.")
         index = parent["cursor"]

@@ -324,6 +324,31 @@ async def standardize_runs(request):
     )
 
 
+async def standardize_stop(request):
+    actor = await require_manage(request, "member_profiles")
+    from utils.member_profile_runs import ProfileRuns
+
+    async with mongo(request) as db:
+        try:
+            run = await ProfileRuns(db).stop(
+                request.match_info["run_id"],
+                actor_id=actor["user_id"],
+                guild_id=GUILD_ID,
+            )
+        except ValueError as error:
+            raise web.HTTPNotFound(text=str(error)) from error
+    return web.json_response(
+        dict(
+            run_id=run["_id"],
+            state=(
+                "stopping"
+                if run["state"] == "queued" and run.get("stop_requested")
+                else run["state"]
+            ),
+        )
+    )
+
+
 async def standardize_status(request):
     actor = await require_manage(request, "member_profiles")
     from utils.member_profile_runs import KIND
@@ -349,11 +374,31 @@ async def standardize_status(request):
         rows.append(
             dict(
                 item,
-                status=child.get("status", "waiting"),
-                message=child.get("message", "Waiting for the previous member."),
+                status=child.get(
+                    "status", "stopped" if run.get("stop_requested") else "waiting"
+                ),
+                message=child.get(
+                    "message",
+                    (
+                        "Stopped before this member started."
+                        if run.get("stop_requested")
+                        else "Waiting for the previous member."
+                    ),
+                ),
             )
         )
-    return web.json_response(dict(run_id=run["_id"], state=run["state"], rows=rows))
+    rows.extend(run.get("skipped", []))
+    return web.json_response(
+        dict(
+            run_id=run["_id"],
+            state=(
+                "stopping"
+                if run["state"] == "queued" and run.get("stop_requested")
+                else run["state"]
+            ),
+            rows=rows,
+        )
+    )
 
 
 routes = [
@@ -361,6 +406,7 @@ routes = [
     web.post(API + "/member-timezones/preview", standardize_preview),
     web.post(API + "/member-timezones/confirm", standardize_confirm),
     web.get(API + "/member-timezones/runs/{run_id}", standardize_status),
+    web.post(API + "/member-timezones/runs/{run_id}/stop", standardize_stop),
     web.get(API + "/member-timezones", overview),
     web.get(API + "/member-timezones/{member_id}/choices", choices),
     web.post(API + "/member-timezones/save", save),

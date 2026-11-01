@@ -52,7 +52,7 @@ export default function Standardize({
     };
   }, [open]);
   useEffect(() => {
-    if (!open || !run || run.state === "done") return;
+    if (!open || !run || ["done", "stopped"].includes(run.state)) return;
     let cancelled = false,
       inflight = false;
     const id = run.run_id;
@@ -60,11 +60,12 @@ export default function Standardize({
       if (cancelled || inflight || document.visibilityState === "hidden")
         return;
       inflight = true;
+      const current = generation.current;
       try {
         const result = await api<Run>(
           `/manage/member-timezones/runs/${encodeURIComponent(id)}`,
         );
-        if (!cancelled) setRun(result);
+        if (!cancelled && generation.current === current) setRun(result);
       } catch (e) {
         if (!cancelled) fail(e);
       } finally {
@@ -143,6 +144,27 @@ export default function Standardize({
       if (alive.current) setBusy(false);
     }
   }
+  async function stopRun() {
+    if (!run) return;
+    setBusy(true);
+    setError("");
+    const current = ++generation.current;
+    try {
+      await api(
+        `/manage/member-timezones/runs/${encodeURIComponent(run.run_id)}/stop`,
+        "POST",
+        {},
+      );
+      const result = await api<Run>(
+        `/manage/member-timezones/runs/${encodeURIComponent(run.run_id)}`,
+      );
+      if (alive.current && generation.current === current) setRun(result);
+    } catch (e) {
+      fail(e);
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }
   return (
     <section>
       {error && <p role="alert">{error}</p>}
@@ -159,12 +181,17 @@ export default function Standardize({
         <summary>Standardize nicknames</summary>
         <p>
           Review every old → new nickname, then untick anyone to leave
-          unchanged. The bot works one member at a time. A stopped run resumes
-          unattempted members; uncertain changes require manual review and are
-          never repeated automatically.
+          unchanged. The bot works one member at a time. Stop prevents new
+          members from starting; the current member may finish. Stopped runs
+          never resume. Uncertain changes require manual review and are never
+          repeated automatically.
         </p>
         <button
-          disabled={busy || disabled || run?.state === "queued"}
+          disabled={
+            busy ||
+            disabled ||
+            ["queued", "stopping"].includes(run?.state || "")
+          }
           onClick={() => void build()}
         >
           Preview all nickname changes
@@ -234,10 +261,30 @@ export default function Standardize({
           <>
             <h2>
               Standardize progress ·{" "}
-              {run.state === "done" ? "Finished" : "Working"}
+              {run.state === "done"
+                ? "Finished"
+                : run.state === "stopped"
+                  ? "Stopped"
+                  : run.state === "stopping"
+                    ? "Stopping after current member"
+                    : "Working"}
             </h2>
+            {["queued", "stopping"].includes(run.state) && (
+              <button
+                disabled={busy || disabled || run.state === "stopping"}
+                onClick={() => void stopRun()}
+              >
+                Stop run
+              </button>
+            )}
             <p role="status">
-              {run.rows.filter((r) => r.status === "done").length} saved ·{" "}
+              {run.rows.filter((r) => r.status === "done").length} changed ·{" "}
+              {
+                run.rows.filter(
+                  (r) => r.status === "skipped" || r.status === "stopped",
+                ).length
+              }{" "}
+              skipped or stopped ·{" "}
               {run.rows.filter((r) => r.status === "failed").length} failed ·{" "}
               {run.rows.filter((r) => r.status === "uncertain").length} need
               manual checking
@@ -246,7 +293,8 @@ export default function Standardize({
               {run.rows.map((r) => (
                 <li key={r.discord_id}>
                   <strong>
-                    {r.old_nickname || r.discord_id} → {r.new_nickname}
+                    {r.name || r.old_nickname || r.discord_id}
+                    {r.new_nickname ? ` → ${r.new_nickname}` : ""}
                   </strong>
                   <p>
                     {r.status}: {r.message}
