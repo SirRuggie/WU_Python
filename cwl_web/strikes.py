@@ -411,7 +411,7 @@ async def activity_accounts(request):
         indexed = {row["tag"]: row["war_weight"] for row in effective["accounts"]}
         for row in rows:
             row["weight"] = indexed.get(row["player_tag"])
-    identity_warning = "Discord names are loading or unavailable. Search by player name, tag or known Discord ID." if link_warning else None
+    identity_warning = "Discord names are temporarily unavailable. Retrying automatically; search by player name, tag or known Discord ID." if link_warning else None
     return web.json_response(
         public(
             {

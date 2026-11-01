@@ -171,3 +171,51 @@ it("defers identity reads while an edit is busy without consuming the poll budge
   expect(api).toHaveBeenCalledTimes(1);
   expect(result).toHaveBeenCalledOnce();
 });
+
+it("recovers automatically after the server failure cooldown without reload", async () => {
+  vi.mocked(api)
+    .mockResolvedValueOnce({
+      accounts: [],
+      identity_updating: false,
+      identity_warning: "Temporarily unavailable",
+    })
+    .mockResolvedValueOnce({
+      accounts: [{ player_tag: "#PYY", discord_name: "Recovered" }],
+    });
+  const result = vi.fn();
+  await act(async () =>
+    root.render(<Fixture result={result} denied={vi.fn()} />),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  expect(api).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(119000));
+  expect(api).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(api).toHaveBeenCalledTimes(2);
+  expect(result.mock.calls.at(-1)![0].accounts[0].discord_name).toBe(
+    "Recovered",
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(120000));
+  expect(api).toHaveBeenCalledTimes(2);
+});
+it("continues the slow retry for a partial response that already contains names", async () => {
+  vi.mocked(api)
+    .mockResolvedValueOnce({
+      accounts: [{ player_tag: "#PYY", discord_name: "Cached" }],
+      identity_warning: "One provider unavailable",
+      identity_updating: false,
+    })
+    .mockResolvedValueOnce({
+      accounts: [{ player_tag: "#PYY", discord_name: "Recovered" }],
+      identity_updating: false,
+    });
+  const result = vi.fn();
+  await act(async () =>
+    root.render(<Fixture result={result} denied={vi.fn()} />),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  expect(result.mock.calls[0][0].accounts[0].discord_name).toBe("Cached");
+  await act(async () => vi.advanceTimersByTimeAsync(120000));
+  expect(api).toHaveBeenCalledTimes(2);
+  expect(result.mock.calls[1][0].accounts[0].discord_name).toBe("Recovered");
+});
