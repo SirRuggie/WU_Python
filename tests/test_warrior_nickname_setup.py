@@ -302,7 +302,7 @@ def test_confirmed_discord_success_survives_both_storage_failures(monkeypatch):
         )
         await ui.save(ctx, {"_id": "1"}, c, object(), state, bot)
         assert ctx.respond.await_args.args[0].startswith(
-            "Nickname changed in Discord; profile not saved"
+            "Nickname changed in Discord; profile save not confirmed"
         )
         assert ctx.respond.await_args.kwargs["ephemeral"]
         bot.rest.edit_member.assert_awaited_once()
@@ -343,5 +343,112 @@ def test_step_persist_cannot_replace_a_consumed_applying_receipt(monkeypatch):
                 object(), {"_id": "1"}, dict(step="country"), old_nonce="n"
             )
         assert record == {"nonce": "n", "step": "applying"}
+
+    asyncio.run(run())
+
+
+def test_real_discord_form_error_keeps_field_reason_and_sentence_boundary(monkeypatch):
+    import hikari
+
+    async def run():
+        error = hikari.BadRequestError(
+            url="https://discord.com/api",
+            headers={},
+            raw_body="",
+            message="Invalid Form Body",
+            code=50035,
+            errors={
+                "nick": {
+                    "_errors": [
+                        {
+                            "code": "BASE_TYPE_MAX_LENGTH",
+                            "message": "Must be 32 or fewer in length",
+                        }
+                    ]
+                }
+            },
+        )
+        ctx, c, state, bot, store = save_fixture(monkeypatch, edit_error=error)
+        with pytest.raises(core.SetupError) as result:
+            await ui.save(ctx, {"_id": "1"}, c, object(), state, bot)
+        assert "nick: Must be 32 or fewer in length. Nothing changed" in str(
+            result.value
+        )
+        bot.rest.edit_member.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_return_during_applying_does_not_silence_discord_refusal(monkeypatch):
+    import hikari
+
+    async def run():
+        error = hikari.ForbiddenError(
+            url="https://discord.com/api",
+            headers={},
+            raw_body="",
+            message="Missing Permissions",
+        )
+        ctx, c, state, bot, store = save_fixture(monkeypatch, edit_error=error)
+        # Return removed nickname_setup while the edit awaited Discord.
+        store.finish_preview.return_value = False
+        await ui.save(ctx, {"_id": "1"}, c, object(), state, bot)
+        assert "Missing Permissions. Nothing changed" in ctx.respond.await_args.args[0]
+        assert ctx.respond.await_args.kwargs["ephemeral"]
+        bot.rest.edit_member.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "step,nonce,old_nonce,allowed",
+    [
+        ("applying", "n", None, False),
+        ("preview", "n", None, True),
+        ("applying", "n", "n", False),
+        ("saved", "n", "n", False),
+        ("needs_attention", "n", "n", False),
+        ("preview", "changed", "n", False),
+        ("name", "n", "n", True),
+        ("country", "n", "n", True),
+        ("zone", "n", "n", True),
+        ("preview", "n", "n", True),
+    ],
+)
+def test_each_persist_guard_preserves_newer_or_consumed_state(
+    monkeypatch, step, nonce, old_nonce, allowed
+):
+    async def run():
+        record = {"step": step, "nonce": nonce}
+        original = dict(record)
+
+        async def update(mongo, query, change):
+            match = True
+            for key, expected in query.items():
+                actual = "1" if key == "_id" else record.get(key.split(".")[-1])
+                if isinstance(expected, dict):
+                    match &= (
+                        actual in expected["$in"]
+                        if "$in" in expected
+                        else actual != expected["$ne"]
+                    )
+                else:
+                    match &= actual == expected
+            if match:
+                record.update(change["$set"]["nickname_setup"])
+            return S(matched_count=int(match))
+
+        monkeypatch.setattr(ui, "update_state", update)
+        if allowed:
+            await ui.persist(
+                object(), {"_id": "1"}, {"step": "country"}, old_nonce=old_nonce
+            )
+            assert record["nonce"] != nonce
+        else:
+            with pytest.raises(core.SetupError):
+                await ui.persist(
+                    object(), {"_id": "1"}, {"step": "country"}, old_nonce=old_nonce
+                )
+            assert record == original
 
     asyncio.run(run())
