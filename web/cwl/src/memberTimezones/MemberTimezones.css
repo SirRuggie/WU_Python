@@ -1,0 +1,233 @@
+.member-timezones {
+  max-width: 1000px;
+  margin: auto;
+  padding: 16px;
+}
+.member-timezones h1 {
+  margin-top: 0;
+}
+.mt-toolbar,
+.mt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-block: 16px;
+}
+.member-timezones label {
+  display: grid;
+  gap: 6px;
+  margin-block: 10px;
+}
+.member-timezones input:not([type="checkbox"]),
+.member-timezones select {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+.member-timezones button,
+.member-timezones summary {
+  min-height: 44px;
+  padding: 10px 12px;
+}
+.member-timezones :focus-visible {
+  outline: 3px solid #eebc48;
+  outline-offset: 3px;
+}
+.mt-list {
+  list-style: none;
+  padding: 0;
+}
+.mt-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid #657080;
+  overflow-wrap: anywhere;
+}
+.mt-list li > div {
+  min-width: 0;
+}
+.mt-list p {
+  margin: 5px 0;
+}
+.member-timezones .mt-check {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 10px;
+}
+.mt-check input {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.mt-editor {
+  max-width: 560px;
+}
+.member-timezones details {
+  margin-top: 20px;
+  border-top: 1px solid #657080;
+  padding-top: 8px;
+}
+@media (max-width: 500px) {
+  .mt-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .mt-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .mt-list button {
+    width: 100%;
+  }
+}
+.mt-top-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+.mt-top-actions details {
+  margin-top: 0;
+}
+.mt-top-actions > details[open],
+.mt-top-actions > section:has(details[open]) {
+  grid-column: 1 / -1;
+}
+.mt-search-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #18191b;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 8px;
+  padding: 4px 0;
+  margin: 8px 0;
+}
+.member-timezones .mt-search-toolbar label {
+  margin: 0;
+  font-size: 12px;
+}
+.mt-pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.mt-member-list {
+  margin: 8px 0;
+}
+.mt-member-list li {
+  display: block;
+  padding: 0;
+}
+.member-timezones .mt-member-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  height: 86px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  box-sizing: border-box;
+}
+.mt-member-row > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.mt-member-nickname,
+.mt-member-zone {
+  font-size: 12px;
+}
+.mt-member-zone {
+  color: #bfbbae;
+}
+.shell .member-timezones :is(input, select, button, summary) {
+  scroll-margin-block: 150px 140px;
+}
+@media (max-width: 900px) {
+  .shell .mt-search-toolbar {
+    top: 70px;
+  }
+}
+.member-timezones h1 {
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+.member-timezones .mt-intro {
+  font-size: 12px;
+  margin: 6px 0 10px;
+}
+.mt-top-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.member-timezones .mt-top-actions :is(summary, button) {
+  font-size: 12px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+.mt-directory-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0;
+  min-width: 0;
+}
+.mt-directory-summary p {
+  margin: 0;
+  min-width: 0;
+  font-size: 12px;
+}
+.mt-directory-summary p span,
+.mt-directory-summary p small {
+  display: block;
+}
+.mt-directory-summary p small {
+  color: #bfbbae;
+}
+.mt-pagination {
+  flex: none;
+  gap: 4px;
+}
+.member-timezones .mt-pagination button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  box-sizing: border-box;
+}
+.member-timezones .mt-member-row {
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  justify-items: stretch;
+}
+
+.mt-standardize-actions {
+  position: sticky;
+  top: 64px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: #222326;
+  border: 1px solid #59503d;
+  border-radius: 8px;
+}
+.mt-top-actions[hidden] {
+  display: none;
+}

@@ -228,3 +228,432 @@ def test_receipt_nonce_cas_preserves_newer_drafts(monkeypatch):
             await client.close()
 
     asyncio.run(run())
+
+
+def test_real_standardize_selection_restart_pacing_and_bounded_receipts():
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def run():
+        from utils.member_profile_runs import ProfileRuns, KIND
+        import time
+
+        client = AsyncMongoClient(URI)
+        db = client["wu_runs_fixture_" + uuid4().hex]
+        mongo = S(bot_config=db.bot_config, component_state=db.component_state)
+        runs = ProfileRuns(mongo)
+        item = dict(
+            discord_id=USER,
+            old_nickname="Old",
+            new_nickname="Name | GMT-5 🇺🇸",
+            revision=1,
+        )
+        other = dict(item, discord_id=ACTOR)
+        try:
+            token = await runs.preview(actor_id=ACTOR, guild_id=1, rows=[item, other])
+            parent = await runs.confirm(
+                actor_id=ACTOR, guild_id=1, nonce=token, selected=[USER]
+            )
+            assert parent["items"] == [item]
+            assert (
+                await runs.confirm(
+                    actor_id=ACTOR, guild_id=1, nonce=token, selected=[USER]
+                )
+            )["_id"] == parent["_id"]
+            with pytest.raises(ValueError):
+                await runs.confirm(
+                    actor_id=ACTOR, guild_id=1, nonce=token, selected=[ACTOR]
+                )
+            await runs.advance()
+            child = await db.bot_config.find_one({"parent_id": parent["_id"]})
+            assert child["values"] == item
+            assert (
+                await db.bot_config.count_documents({"parent_id": parent["_id"]}) == 1
+            )
+            # An accepted-but-unconfirmed rename is never made pending again after restart.
+            await db.bot_config.update_one(
+                {"_id": child["_id"]}, {"$set": {"status": "uncertain"}}
+            )
+            restarted = ProfileRuns(mongo)
+            await restarted.advance(now=time.time() + 4)
+            assert (await db.bot_config.find_one({"_id": child["_id"]}))[
+                "status"
+            ] == "uncertain"
+            await restarted.advance(now=time.time() + 8)
+            assert (await db.bot_config.find_one({"_id": parent["_id"]}))[
+                "state"
+            ] == "done"
+            assert (
+                await db.bot_config.count_documents({"parent_id": parent["_id"]}) == 1
+            )
+            # Retention removes matching terminal children, never active children.
+            for index in range(25):
+                key = "old:" + str(index)
+                await db.bot_config.insert_one(
+                    dict(
+                        _id=key,
+                        kind=KIND,
+                        state="done",
+                        finished_at=time.time() - index,
+                        created_at=time.time() - index,
+                    )
+                )
+                await db.bot_config.insert_one(
+                    dict(
+                        _id=key + ":0",
+                        kind="manage_web_request",
+                        parent_id=key,
+                        status="done",
+                    )
+                )
+            await restarted.prune()
+            assert (
+                await db.bot_config.count_documents({"kind": KIND, "state": "done"})
+                == 20
+            )
+            assert not await db.bot_config.find_one({"parent_id": "old:24"})
+            replacement = await runs.preview(actor_id=ACTOR, guild_id=1, rows=[other])
+            with pytest.raises(ValueError):
+                await runs.confirm(
+                    actor_id=ACTOR, guild_id=1, nonce=token, selected=[USER]
+                )
+            assert replacement != token
+            # Pruning a completed/uncertain run must not make its old confirmation reusable.
+            last = await runs.confirm(
+                actor_id=ACTOR, guild_id=1, nonce=replacement, selected=[ACTOR]
+            )
+            await db.bot_config.delete_one({"_id": last["_id"]})
+            with pytest.raises(ValueError, match="already used"):
+                await runs.confirm(
+                    actor_id=ACTOR, guild_id=1, nonce=replacement, selected=[ACTOR]
+                )
+            # Standalone save/import receipts are bounded without touching other sections.
+            for index in range(25):
+                await db.bot_config.insert_one(
+                    dict(
+                        _id="save:" + str(index),
+                        kind="manage_web_request",
+                        section="member_profiles",
+                        status="done",
+                        finished_at=time.time() - index,
+                    )
+                )
+            await db.bot_config.insert_one(
+                dict(
+                    _id="other",
+                    kind="manage_web_request",
+                    section="clans",
+                    status="done",
+                    finished_at=0,
+                )
+            )
+            await runs.prune()
+            assert (
+                await db.bot_config.count_documents(
+                    {"section": "member_profiles", "parent_id": {"$exists": False}}
+                )
+                == 20
+            )
+            assert await db.bot_config.find_one({"_id": "other"})
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_uncertain_receipt_missing_completion_is_retained_for_its_full_lifetime(
+    monkeypatch,
+):
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def run():
+        from utils import member_profile_runs as module
+
+        clock = [1_800_000_000.0]
+        monkeypatch.setattr(module.time, "time", lambda: clock[0])
+        client = AsyncMongoClient(URI)
+        db = client["wu_receipt_fixture_" + uuid4().hex]
+        try:
+            await db.bot_config.insert_many(
+                [
+                    {
+                        "_id": "uncertain",
+                        "kind": "manage_web_request",
+                        "section": "member_profiles",
+                        "status": "uncertain",
+                        "created_at": clock[0] - 600,
+                    },
+                    {
+                        "_id": "other",
+                        "kind": "manage_web_request",
+                        "section": "unrelated",
+                        "status": "uncertain",
+                    },
+                    {
+                        "_id": "active",
+                        "kind": "manage_web_request",
+                        "section": "member_profiles",
+                        "status": "running",
+                    },
+                ]
+            )
+            store = module.ProfileRuns(S(bot_config=db.bot_config))
+            await store.prune()
+            row = await db.bot_config.find_one({"_id": "uncertain"})
+            assert row["finished_at"] == clock[0]
+            finish = row["finished_at"]
+            clock[0] += 100
+            await store.prune()
+            assert (await db.bot_config.find_one({"_id": "uncertain"}))[
+                "finished_at"
+            ] == finish
+            clock[0] = finish + 30 * 86400 - 1
+            await store.prune()
+            assert await db.bot_config.find_one({"_id": "uncertain"})
+            clock[0] = finish + 30 * 86400 + 1
+            await store.prune()
+            assert not await db.bot_config.find_one({"_id": "uncertain"})
+            assert await db.bot_config.find_one({"_id": "other"})
+            assert await db.bot_config.find_one({"_id": "active"})
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_real_standardize_stop_retains_inflight_and_never_resumes(monkeypatch):
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def check():
+        import time
+
+        at = time.time()
+        from utils.member_profile_runs import ProfileRuns, KIND, ProfileRunStopped
+        from extensions.warrior import profile_dashboard as actions
+        from unittest.mock import AsyncMock
+
+        client = AsyncMongoClient(URI)
+        db = client["wu_stop_fixture_" + uuid4().hex]
+        m = S(
+            bot_config=db.bot_config,
+            component_state=db.component_state,
+            member_profiles=db.member_profiles,
+        )
+        runs = ProfileRuns(m)
+        item = dict(
+            discord_id=USER,
+            name="Fixture member",
+            old_nickname="Old",
+            new_nickname="Name | GMT-5 🇺🇸",
+            revision=1,
+        )
+        other = dict(
+            item, discord_id=ACTOR, name="Skipped fixture", skip_reason="Above bot"
+        )
+        try:
+            await MemberProfiles(m).write(
+                USER, FIELDS, expected_revision=0, updated_by=ACTOR, source="staff"
+            )
+            token = await runs.preview(
+                actor_id=ACTOR, guild_id=actions.GUILD_ID, rows=[item, other]
+            )
+            parent = await runs.confirm(
+                actor_id=ACTOR, guild_id=actions.GUILD_ID, nonce=token, selected=[USER]
+            )
+            assert parent["skipped"][0]["name"] == "Skipped fixture"
+            await runs.advance(now=at)
+            child = await db.bot_config.find_one({"parent_id": parent["_id"]})
+            await db.bot_config.update_one(
+                {"_id": child["_id"]}, {"$set": {"status": "running"}}
+            )
+            stopped = await runs.stop(
+                parent["_id"], actor_id=ACTOR, guild_id=actions.GUILD_ID
+            )
+            assert stopped["state"] == "queued" and stopped["stop_requested"]
+            monkeypatch.setattr(
+                actions,
+                "target_context",
+                AsyncMock(
+                    return_value={
+                        "member": S(nickname="Old"),
+                        "bot_permissions": __import__(
+                            "hikari"
+                        ).Permissions.MANAGE_NICKNAMES,
+                    }
+                ),
+            )
+            bot = S(rest=S(edit_member=AsyncMock()))
+            with pytest.raises(ProfileRunStopped):
+                await actions.apply(bot, m, child)
+            bot.rest.edit_member.assert_not_awaited()
+            await db.bot_config.update_one(
+                {"_id": child["_id"]},
+                {"$set": {"status": "done", "finished_at": at + 1}},
+            )
+            await runs.advance(now=at + 2)
+            assert (await db.bot_config.find_one({"_id": parent["_id"]}))[
+                "state"
+            ] == "stopped"
+            replay = await runs.confirm(
+                actor_id=ACTOR, guild_id=actions.GUILD_ID, nonce=token, selected=[USER]
+            )
+            assert replay["state"] == "stopped"
+            await runs.advance(now=at + 9999)
+            assert (
+                await db.bot_config.count_documents({"parent_id": parent["_id"]}) == 1
+            )
+            assert (
+                await runs.stop(parent["_id"], actor_id=USER, guild_id=actions.GUILD_ID)
+            )["state"] == "stopped"
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(check())
+
+
+def test_stopped_run_never_starts_the_next_member(monkeypatch):
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def check():
+        import time, hikari
+        from utils.member_profile_runs import ProfileRuns
+        from extensions.warrior import profile_dashboard as actions
+
+        client = AsyncMongoClient(URI)
+        db = client["wu_stop_next_" + uuid4().hex]
+        m = S(
+            bot_config=db.bot_config,
+            component_state=db.component_state,
+            member_profiles=db.member_profiles,
+        )
+        uid2 = "345678901234567890"
+        at = time.time()
+        runs = ProfileRuns(m)
+        try:
+            for uid in [USER, uid2]:
+                await MemberProfiles(m).write(
+                    uid, FIELDS, expected_revision=0, updated_by=ACTOR, source="staff"
+                )
+            rows = [
+                dict(
+                    discord_id=uid,
+                    name="Fixture " + uid[-2:],
+                    old_nickname="Old",
+                    new_nickname="Name | GMT-5 🇺🇸",
+                    revision=1,
+                )
+                for uid in [USER, uid2]
+            ]
+            token = await runs.preview(
+                actor_id=ACTOR, guild_id=actions.GUILD_ID, rows=rows
+            )
+            parent = await runs.confirm(
+                actor_id=ACTOR,
+                guild_id=actions.GUILD_ID,
+                nonce=token,
+                selected=[USER, uid2],
+            )
+            await runs.advance(now=at)
+            first = await db.bot_config.find_one({"parent_id": parent["_id"]})
+            await db.bot_config.update_one(
+                {"_id": first["_id"]}, {"$set": {"status": "running"}}
+            )
+            await runs.stop(parent["_id"], actor_id=ACTOR, guild_id=actions.GUILD_ID)
+            await db.bot_config.update_one(
+                {"_id": first["_id"]},
+                {"$set": {"status": "done", "finished_at": at + 1}},
+            )
+            await runs.advance(now=at + 2)
+            await runs.advance(now=at + 20)
+            next_child = await db.bot_config.find_one({"_id": parent["_id"] + ":1"})
+            bot = S(rest=S(edit_member=AsyncMock()))
+            monkeypatch.setattr(
+                actions,
+                "target_context",
+                AsyncMock(
+                    return_value={
+                        "member": S(nickname="Old"),
+                        "bot_permissions": hikari.Permissions.MANAGE_NICKNAMES,
+                    }
+                ),
+            )
+            if next_child:
+                await actions.apply(bot, m, next_child)
+            bot.rest.edit_member.assert_not_awaited()
+            assert next_child is None
+            assert (await db.bot_config.find_one({"_id": parent["_id"]}))[
+                "state"
+            ] == "stopped"
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(check())
+
+
+def test_cross_staff_stop_and_uncertain_receipt_survives_newer_history():
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def run():
+        from utils.member_profile_runs import ProfileRuns, KIND
+        import time
+
+        client = AsyncMongoClient(URI)
+        db = client["wu_stop_retention_fixture_" + uuid4().hex]
+        store = ProfileRuns(
+            S(bot_config=db.bot_config, component_state=db.component_state)
+        )
+        now = time.time()
+        try:
+            await db.bot_config.insert_one(
+                dict(
+                    _id="run",
+                    kind=KIND,
+                    guild_id=1,
+                    user_id=ACTOR,
+                    state="queued",
+                    items=[],
+                    created_at=now,
+                )
+            )
+            stopped = await store.stop("run", actor_id=USER, guild_id=1)
+            assert stopped["state"] == "stopped" and stopped["stopped_by"] == USER
+            stamp = stopped["finished_at"]
+            await store.stop("run", actor_id=ACTOR, guild_id=1)
+            unchanged = await db.bot_config.find_one({"_id": "run"})
+            assert unchanged["finished_at"] == stamp and unchanged["stopped_by"] == USER
+            with pytest.raises(ValueError):
+                await store.stop("run", actor_id=USER, guild_id=2)
+            for i in range(25):
+                await db.bot_config.insert_one(
+                    dict(
+                        _id=f"save:{i}",
+                        kind="manage_web_request",
+                        section="member_profiles",
+                        status="done",
+                        finished_at=now - i,
+                    )
+                )
+            await db.bot_config.insert_one(
+                dict(
+                    _id="uncertain",
+                    kind="manage_web_request",
+                    section="member_profiles",
+                    status="uncertain",
+                    finished_at=now - 3600,
+                )
+            )
+            await store.prune()
+            assert await db.bot_config.find_one({"_id": "uncertain"})
+            await db.bot_config.update_one(
+                {"_id": "uncertain"}, {"$set": {"finished_at": now - 31 * 86400}}
+            )
+            await store.prune()
+            assert not await db.bot_config.find_one({"_id": "uncertain"})
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())

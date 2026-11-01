@@ -16,7 +16,7 @@ class EmptyCursor:
 
 class ManageWorkerTests(unittest.IsolatedAsyncioTestCase):
     def db(self,row):
-        config=SimpleNamespace(find=lambda query: EmptyCursor(),update_one=AsyncMock(),update_many=AsyncMock(),find_one_and_update=AsyncMock(side_effect=[row,None]))
+        config=SimpleNamespace(find_one=AsyncMock(return_value=None),find=lambda query: EmptyCursor(),update_one=AsyncMock(),update_many=AsyncMock(),find_one_and_update=AsyncMock(side_effect=[row,None]))
         return SimpleNamespace(bot_config=config,fwa_data=SimpleNamespace(find_one=AsyncMock(return_value={})))
 
     def row(self,**kw):
@@ -133,3 +133,27 @@ class ManageWorkerTests(unittest.IsolatedAsyncioTestCase):
         db = SimpleNamespace(bot_config=SimpleNamespace(update_one=AsyncMock()))
         result = await worker.dispatch(None, db, row, None)
         self.assertEqual(result['message'], 'BAND status refreshed.')
+
+
+class MemberProfileOutcomeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_confirmed_split_outcome_remains_uncertain_with_its_exact_message(self):
+        from utils.member_profiles import ProfileOutcomeUncertain
+        helper=ManageWorkerTests()
+        db=helper.db(helper.row())
+        message='Nickname changed in Discord; profile save was not confirmed.'
+        with patch.object(worker,'context',AsyncMock()),patch.object(worker,'dispatch',AsyncMock(side_effect=ProfileOutcomeUncertain(message))):
+            await worker.poll(None,db)
+        update=db.bot_config.update_one.call_args.args[1]['$set']
+        self.assertEqual(update['status'],'uncertain')
+        self.assertEqual(update['message'],message)
+
+
+class RecoveredReceiptTests(unittest.IsolatedAsyncioTestCase):
+    async def test_crash_recovery_establishes_a_completion_time(self):
+        helper=ManageWorkerTests();db=helper.db(None)
+        await worker.poll(None,db)
+        recovery=[call for call in db.bot_config.update_many.await_args_list if call.args[0].get('status')=='running']
+        self.assertEqual(len(recovery),1)
+        update=recovery[0].args[1]['$set']
+        self.assertEqual(update['status'],'uncertain')
+        self.assertIsInstance(update['finished_at'],float)
