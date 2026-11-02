@@ -26,6 +26,38 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _group_season_diagnostic(value):
+    if value is None:
+        return "none", "-"
+    if value == "":
+        return "empty", "-"
+    if isinstance(value, str) and _CYCLE.fullmatch(value):
+        return "valid", "-"
+    shape = (
+        "".join(
+            "d" if char.isdigit() else "a" if char.isalpha() else "x"
+            for char in value[:12]
+        )
+        if isinstance(value, str)
+        else "-"
+    )
+    return "invalid", shape
+
+
+def _log_group_month(clan_tag, state, observed, inferred, matching):
+    kind, shape = _group_season_diagnostic(observed)
+    logging.getLogger(__name__).info(
+        "CWL group month clan=%s group_state=%s season_present=%s inferred_current=%s matching_tags=%s season_kind=%s season_shape=%s",
+        clan_tag,
+        state if state in LEAGUE_GROUP_DIAGNOSTIC_STATES else "other",
+        observed is not None,
+        inferred,
+        matching,
+        kind,
+        shape,
+    )
+
+
 def _upcoming_cycle(cycle: str | None) -> bool:
     if not isinstance(cycle, str) or not _CYCLE.fullmatch(cycle):
         return False
@@ -260,7 +292,10 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     if isinstance(group, dict)
                     else ""
                 )
-                missing = isinstance(group, dict) and observed is None
+                missing = isinstance(group, dict) and (
+                    observed is None
+                    or (isinstance(observed, str) and not _CYCLE.fullmatch(observed))
+                )
                 if missing and state not in {"PREPARATION", "INWAR", "WAR", "ENDED"}:
                     raise ProviderUnavailable("CWL group state is unavailable")
                 matching_final = False
@@ -277,11 +312,7 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                         or cycle != datetime.now(timezone.utc).strftime("%Y-%m")
                     ):
                         if _upcoming_cycle(cycle):
-                            logging.getLogger(__name__).info(
-                                "CWL group month clan=%s group_state=%s season_present=False inferred_current=False matching_tags=False",
-                                clan_tag,
-                                state,
-                            )
+                            _log_group_month(clan_tag, state, observed, False, False)
                             return clan_tag, None, "no_group"
                 inferred = missing and (
                     matching_final
@@ -300,11 +331,10 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                 validated = _valid_group(
                     effective, cycle if inferred else observed, clan_tag
                 )
-                logging.getLogger(__name__).info(
-                    "CWL group month clan=%s group_state=%s season_present=%s inferred_current=%s matching_tags=%s",
+                _log_group_month(
                     clan_tag,
-                    state if state in LEAGUE_GROUP_DIAGNOSTIC_STATES else "other",
-                    not missing,
+                    state,
+                    observed,
                     inferred and not matching_final,
                     matching_final,
                 )

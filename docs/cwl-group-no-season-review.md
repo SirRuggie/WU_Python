@@ -1,15 +1,35 @@
-# CWL groups without a season
+# CWL groups with an unreadable month
 
-Prompts 107/108/110 follow ordinary capture diagnostics in handoff 671. At
-06:23:52 UTC on November 2, seven normalized groups had no season value:
-four `ENDED`, three `PREPARATION`. Three other clans returned leaguegroup 404.
+Prompts 107/108/110/114 follow ordinary capture diagnostics in handoff 671. At
+06:23:52 UTC on November 2, seven groups were logged with reason `missing_month`:
+four `ENDED`, three `PREPARATION`. This was misread as an absent season.
+The first live capture after PR158 still failed. Provider validation and capture
+control flow prove that these responses contain a string failing the month
+pattern, not None. The exact value is unknown and is not proven empty. Three other clans returned leaguegroup 404.
 No agent provider probe or Check Clash request was made.
+
+## Prompt 114 correction
+
+An unreadable month string now follows the same no-month rules as an absent or
+null season. This includes empty, whitespace, malformed dates, words and invalid
+month numbers. No raw value is logged. Group diagnostics classify season_kind as
+none, empty, invalid or valid; invalid values have a shape capped at 12 characters
+using d for digits, a for letters and x for everything else. Explicit valid months
+remain authoritative, and war-month conflicts still reject inferred groups.
+Provider-level regressions pass raw stubbed HTTP bodies through the real public
+league_group parser before capture. No live API probe or forced capture is used.
+Release of this correction is held for Ruggie. The next ordinary post-release
+capture is required before claiming the production issue works.
+
+In the rules below, "missing-season" means None or an unreadable string under
+prompt 114. It is a capture classification, not a claim that the provider omitted
+the season key.
 
 ## Month attribution and completion
 
 A valid missing-season `PREPARATION`, `INWAR` or `WAR` group is attributed only
 to a selection equal to the current UTC month. This is the explicit inference
-requested in prompt 107, not a verified provider contract. Explicit month values
+requested in prompt 107, not a verified provider contract. Explicit valid month values
 always win. The state restriction applies only to the missing-month path;
 explicit-season responses keep their existing validation behavior.
 
@@ -55,17 +75,19 @@ rather than unrelated global fetch evidence.
 
 ## Boundaries and evidence
 
-Group diagnostics log a validated clan tag, whitelisted state and boolean season
-presence/inference/tag-proof values, never response bodies. Results and Bonus
+Group diagnostics log a validated clan tag, whitelisted state, boolean season
+presence/inference/tag-proof values, season_kind and a masked shape capped at
+12 characters, never a raw season value or response body. Results and Bonus
 consume cycle-keyed observations rather than independently guessing raw group
 months. The strict group validator receives a local effective copy; normalized
 provider evidence remains unchanged. No schema migration or polling was added.
 
 The official [API documentation](https://developer.clashofclans.com/#/documentation)
 was checked read-only. Its JavaScript shell exposed no readable specification
-of when season is omitted. Existing normalization preserves absent/null season
-as `None`; safe recorded diagnostics establish those seven values, not a general
-API omission rule. Isolated tests are not evidence of live November delivery.
+of when season is omitted. Normalization preserves absent/null as `None`, but
+the seven production failures are invalid month strings, not None. The original
+reason code did not reveal their exact value or shape; no general API omission
+rule was established. Isolated tests are not evidence of live November delivery.
 
 Checks include consecutive mixed captures with real war tags for missing-season
 ENDED, 404 and explicit older groups; own evidence, per-season scope, next-month
@@ -78,3 +100,14 @@ Prompt 110 checks also cover every unreadable state on first and later captures,
 neutral mixed captures with cached ended wars, a lagging sixth-round group
 finishing with seven rounds, and separate guards on fresh-group success stamps,
 failure-free stamps and rejected-clan freshness.
+
+### Group-season reader audit (114)
+
+The public provider rejects non-string/non-null season values but deliberately
+preserves the raw string. `_fetch_groups` is the only normalized group-season
+consumer: it classifies the value, validates a local effective copy, and applies
+explicit valid month comparison. `_valid_group` retains its strict supplied-month
+check. Stored group/war readers use the season/cycle keys, not an independent
+raw-season inference. The separate Todo coc.py group reader uses state and rounds,
+not the group season. War-season validation and explicit-war mismatch rejection
+remain unchanged. No provider method was called live for this audit.
