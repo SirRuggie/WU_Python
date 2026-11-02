@@ -431,3 +431,96 @@ def test_cross_cycle_field_after_whole_clock_tie_inherits_until_later_whole_save
         )
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("source_cycle", [CURRENT, "2026-10"])
+def test_pause_resume_never_supersedes_saved_future_roster_text(
+    monkeypatch, source_cycle
+):
+    mongo = fixture(monkeypatch)
+    source = mongo.bot_config.documents.setdefault(
+        campaign.cycle_id(GUILD, source_cycle),
+        {
+            "_id": campaign.cycle_id(GUILD, source_cycle),
+            "kind": "cwl_campaign_cycle",
+            "guild_id": GUILD,
+            "cycle": source_cycle,
+            "revision": 1,
+        },
+    )
+    source.update(
+        recurring_campaign=campaign.default_campaign(),
+        recurring_updated_at="2026-10-20T00:00:00+00:00",
+    )
+
+    async def run():
+        loaded = await campaign.load_campaign(mongo, GUILD, CURRENT)
+        await campaign.save_updated_roster_variant(
+            mongo,
+            guild_id=GUILD,
+            cycle=CURRENT,
+            pool="main",
+            user_id=200,
+            candidate=CANDIDATE,
+            expected_generation=bridge.campaign_generation(loaded),
+            future_months=True,
+        )
+        for index, paused in enumerate([True, False, True, False]):
+            monkeypatch.setattr(
+                campaign, "_utcnow", lambda: f"2026-11-02T2{index}:00:00+00:00"
+            )
+            await campaign.set_paused(mongo, GUILD, paused, CURRENT, 200)
+            for cycle in [CURRENT, "2026-12", "2027-01"]:
+                after = await campaign.load_campaign(mongo, GUILD, cycle)
+                assert (
+                    after["campaign"]["messages"]["roster"]["variants"]["main"]["body"]
+                    == CANDIDATE["body"]
+                )
+                assert after["campaign"]["paused"] is paused
+
+    asyncio.run(run())
+
+
+def test_pause_field_save_then_real_whole_save_still_supersedes_future_copy(
+    monkeypatch,
+):
+    mongo = fixture(monkeypatch)
+    current = mongo.bot_config.documents[campaign.cycle_id(GUILD, CURRENT)]
+    current.update(
+        recurring_campaign=campaign.default_campaign(),
+        recurring_updated_at="2026-10-20T00:00:00+00:00",
+    )
+
+    async def run():
+        await campaign.set_paused(mongo, GUILD, True, CURRENT, 200)
+        loaded = await campaign.load_campaign(mongo, GUILD, CURRENT)
+        await campaign.save_updated_roster_variant(
+            mongo,
+            guild_id=GUILD,
+            cycle=CURRENT,
+            pool="main",
+            user_id=200,
+            candidate=CANDIDATE,
+            expected_generation=bridge.campaign_generation(loaded),
+            future_months=True,
+        )
+        await campaign.set_paused(mongo, GUILD, False, CURRENT, 200)
+        before = await campaign.load_campaign(mongo, GUILD, "2027-01")
+        assert (
+            before["campaign"]["messages"]["roster"]["variants"]["main"]["body"]
+            == CANDIDATE["body"]
+        )
+        draft = await campaign.new_draft(mongo, GUILD, 200, "2027-01")
+        value = deepcopy(draft["campaign"])
+        value["messages"]["roster"]["variants"]["main"][
+            "body"
+        ] = "Later explicit monthly template"
+        await campaign.patch_draft(mongo, draft["_id"], {"campaign": value})
+        await campaign.apply_draft(mongo, draft["_id"], 200, repeat_monthly=True)
+        after = await campaign.load_campaign(mongo, GUILD, "2027-02")
+        assert (
+            after["campaign"]["messages"]["roster"]["variants"]["main"]["body"]
+            == "Later explicit monthly template"
+        )
+
+    asyncio.run(run())

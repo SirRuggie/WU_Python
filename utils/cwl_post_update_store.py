@@ -17,6 +17,8 @@ from pymongo.errors import DuplicateKeyError
 KIND = "cwl_roster_post_update"
 ACTIVE = ("pending_preview", "previewing", "pending_update", "updating")
 PENDING_INDEX = "cwl_post_update_pending"
+UPDATE_START_MAX_AGE = timedelta(minutes=5)
+UPDATE_EXPIRED_MESSAGE = "Not updated. Preview again."
 
 
 def now():
@@ -256,9 +258,32 @@ class PostUpdateStore:
         expected = row["status"]
         if expected not in ("pending_preview", "pending_update"):
             return None
+        clock = now()
+        query = {"_id": row["_id"], "kind": KIND, "status": expected}
+        if expected == "pending_update":
+            # Competes atomically with claiming. Missing timestamps from older
+            # queued rows fail closed; TTL is retention, not start authority.
+            await self.collection.update_one(
+                {
+                    **query,
+                    "$or": [
+                        {"update_requested_at": {"$lte": clock - UPDATE_START_MAX_AGE}},
+                        {"update_requested_at": {"$exists": False}},
+                    ],
+                },
+                {
+                    "$set": {
+                        "status": "failed",
+                        "error": UPDATE_EXPIRED_MESSAGE,
+                        "updated_at": clock,
+                        "expires_at": clock + timedelta(days=90),
+                    }
+                },
+            )
+            query["update_requested_at"] = {"$gt": now() - UPDATE_START_MAX_AGE}
         status = "previewing" if expected == "pending_preview" else "updating"
         result = await self.collection.update_one(
-            {"_id": row["_id"], "kind": KIND, "status": expected},
+            query,
             {
                 "$set": {
                     "status": status,
@@ -283,6 +308,7 @@ class PostUpdateStore:
         if set(fields) - {
             "target",
             "live_preview",
+            "has_changes",
             "draft_preview",
             "message_url",
             "error",
@@ -329,6 +355,8 @@ class PostUpdateStore:
             raise ValueError("Choose whether to use the copy for future months")
         if row["status"] in ("pending_update", "updating", "done", "uncertain"):
             return row
+        if row.get("has_changes") is False:
+            raise PostUpdateConflict("No changes")
         if row["status"] != "ready" or not row.get("target"):
             raise PostUpdateConflict("Preview this post before updating it")
         expiry = row.get("expires_at")
@@ -348,6 +376,7 @@ class PostUpdateStore:
             {
                 "$set": {
                     "status": "pending_update",
+                    "update_requested_at": now(),
                     "updated_at": now(),
                     "future_months": future_months,
                 },
@@ -370,7 +399,7 @@ class PostUpdateStore:
             (
                 "updating",
                 "uncertain",
-                "Update outcome is unconfirmed after worker restart. Check the post before a new preview.",
+                "Not sure it updated. Check the post.",
             ),
         ):
             await self.collection.update_many(

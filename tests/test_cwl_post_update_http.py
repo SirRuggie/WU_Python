@@ -277,3 +277,50 @@ class PostUpdateHTTPTests(unittest.IsolatedAsyncioTestCase):
             ).status,
             409,
         )
+
+    async def test_editor_without_send_scope_cannot_even_open_private_review(self):
+        with self.app["store"].tx() as db:
+            db.execute(
+                "INSERT INTO grants(user_id,granted_by,permissions) VALUES (?,?,?)",
+                ("100", "fixture-owner", json.dumps(["cwl_roster"])),
+            )
+        response = await self.call("GET", self.route + "/" + "a" * 32, self.member)
+        self.assertEqual(response.status, 403)
+        self.assertNotIn("cwl:post-update", await response.text())
+
+    async def test_internal_validation_rejects_changed_binding_while_claim_and_draft_remain_valid(
+        self,
+    ):
+        row = await self.queued()
+        claimed = await PostUpdateStore(self.mongo).claim(row, runtime_id="fixture")
+        body = {
+            key: claimed[key]
+            for key in (
+                "guild_id",
+                "user_id",
+                "season_id",
+                "cycle",
+                "pool",
+                "worker_epoch",
+            )
+        }
+        body["workflow_id"] = claimed["_id"]
+        with patch.dict("os.environ", {"CWL_DISCORD_BRIDGE_SECRET": "q" * 40}):
+            headers = {"X-CWL-Discord-Secret": "q" * 40}
+            good = await self.call(
+                "POST", "/discord/post-updates/validate", headers, json=body
+            )
+            self.assertTrue((await good.json())["valid"])
+            with self.app["store"].tx() as db:
+                db.execute(
+                    "UPDATE manage_campaign_bindings SET cycle='2026-11' WHERE season_id=?",
+                    (self.sid,),
+                )
+            rejected = await self.call(
+                "POST", "/discord/post-updates/validate", headers, json=body
+            )
+            self.assertEqual(rejected.status, 200)
+            self.assertFalse((await rejected.json())["valid"])
+            self.assertEqual(
+                self.mongo.bot_config.documents[row["_id"]]["status"], "previewing"
+            )

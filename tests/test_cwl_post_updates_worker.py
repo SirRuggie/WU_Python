@@ -65,6 +65,10 @@ def fixture():
                     hikari.impl.TextDisplayComponentBuilder(content="<@&888>"),
                     hikari.impl.SeparatorComponentBuilder(divider=True),
                     hikari.impl.TextDisplayComponentBuilder(
+                        content="## Original live title"
+                    ),
+                    hikari.impl.SeparatorComponentBuilder(divider=True),
+                    hikari.impl.TextDisplayComponentBuilder(
                         content="Original live text"
                     ),
                     hikari.impl.MediaGalleryComponentBuilder(
@@ -76,11 +80,17 @@ def fixture():
                             )
                         ]
                     ),
+                    hikari.impl.MessageActionRowBuilder().add_link_button(
+                        "https://example.com", label="Old link"
+                    ),
                 ]
             )
         ],
     )
     rest = NS(
+        fetch_roles=AsyncMock(
+            return_value=[NS(id=888, name="Roster staff"), NS(id=999, name="Main team")]
+        ),
         fetch_channel=AsyncMock(
             return_value=NS(guild_id=GUILD, name="roster-announcements")
         ),
@@ -430,3 +440,137 @@ def test_attachment_fingerprint_ignores_only_rotating_discord_signatures():
     assert _fingerprint(message) == before
     attachment.url = "https://cdn.discordapp.com/attachments/100/600/observed.png?ex=new&is=new&hm=new&width=800"
     assert _fingerprint(message) != before
+
+
+@pytest.mark.parametrize("stage", ["authorization", "load", "fetch", "edit"])
+def test_only_an_attempted_discord_edit_may_have_an_uncertain_outcome(
+    monkeypatch, stage
+):
+    async def run():
+        mongo, bot, message = fixture()
+        row = await review(mongo)
+        worker = PostUpdateWorker(mongo, bot, runtime_id="one")
+        allowed = AsyncMock(return_value=True)
+        await worker.poll(guild_id=GUILD, authorize=allowed)
+        ready = await worker.store.collection.find_one({"_id": row["_id"]})
+        assert ready["status"] == "ready"
+        await worker.store.request_update(ready)
+        if stage == "authorization":
+            allowed.side_effect = RuntimeError("before any edit")
+        elif stage == "load":
+            monkeypatch.setattr(
+                campaign,
+                "load_campaign",
+                AsyncMock(side_effect=RuntimeError("before any edit")),
+            )
+        elif stage == "fetch":
+            bot.rest.fetch_message.side_effect = RuntimeError("before any edit")
+        else:
+            bot.rest.edit_message.side_effect = RuntimeError("could be accepted")
+        await worker.poll(guild_id=GUILD, authorize=allowed)
+        done = await worker.store.collection.find_one({"_id": row["_id"]})
+        assert done["status"] == ("uncertain" if stage == "edit" else "failed")
+        assert done["error"] == (
+            "Not sure it updated. Check the post."
+            if stage == "edit"
+            else "Not updated. Preview again."
+        )
+        assert bot.rest.edit_message.await_count == int(stage == "edit")
+
+    asyncio.run(run())
+
+
+def test_real_preview_resolves_role_names_and_never_displays_role_ids():
+    async def run():
+        import json
+
+        mongo, bot, _ = fixture()
+        row = await review(mongo)
+        worker = PostUpdateWorker(mongo, bot, runtime_id="one")
+        await worker.poll(guild_id=GUILD, authorize=AsyncMock(return_value=True))
+        ready = await worker.store.collection.find_one({"_id": row["_id"]})
+        visible = json.dumps([ready["live_preview"], ready["draft_preview"]])
+        assert "@Roster staff" in visible and "@Main team" in visible
+        assert "888" not in visible and "999" not in visible
+        assert ready["has_changes"] is True
+
+    asyncio.run(run())
+
+
+def test_gallery_before_title_keeps_its_exact_original_position():
+    async def run():
+        mongo, bot, message = fixture()
+        children = list(message.components[0].components)
+        gallery = children.pop(5)
+        children.insert(2, gallery)
+        message.components = [
+            hikari.impl.ContainerComponentBuilder(components=children)
+        ]
+        row = await review(mongo)
+        worker = PostUpdateWorker(mongo, bot, runtime_id="one")
+        allowed = AsyncMock(return_value=True)
+        await worker.poll(guild_id=GUILD, authorize=allowed)
+        ready = await worker.store.collection.find_one({"_id": row["_id"]})
+        assert ready["status"] == "ready"
+        await worker.store.request_update(ready)
+        await worker.poll(guild_id=GUILD, authorize=allowed)
+        rendered = bot.rest.edit_message.call_args.kwargs["components"][0].components
+        assert [int(node.type) for node in rendered] == [
+            int(node.type) for node in children
+        ]
+        assert int(rendered[2].type) == 12
+        assert rendered[2].items[0].media == gallery.items[0].media
+
+    asyncio.run(run())
+
+
+def test_identical_proposal_has_no_changes_and_cannot_queue_an_edit():
+    from utils.cwl_post_update_store import PostUpdateConflict
+
+    async def run():
+        mongo, bot, _ = fixture()
+        loaded = await campaign.load_campaign(mongo, GUILD, CYCLE)
+        row = await create_review(
+            mongo,
+            guild_id=GUILD,
+            user_id=USER,
+            season_id="42",
+            cycle=CYCLE,
+            pool="main",
+            nonce="a" * 32,
+            generation=bridge.campaign_generation(loaded),
+            candidate={
+                "title": "Original live title",
+                "body": "Original live text",
+                "buttons": [{"label": "Old link", "url": "https://example.com"}],
+            },
+        )
+        worker = PostUpdateWorker(mongo, bot, runtime_id="one")
+        await worker.poll(guild_id=GUILD, authorize=AsyncMock(return_value=True))
+        ready = await worker.store.collection.find_one({"_id": row["_id"]})
+        assert ready["status"] == "ready" and ready["has_changes"] is False
+        with pytest.raises(PostUpdateConflict, match="No changes"):
+            await worker.store.request_update(ready)
+        bot.rest.edit_message.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_authorization_member_404_is_access_changed_not_deleted_post():
+    async def run():
+        mongo, bot, _ = fixture()
+        row = await review(mongo)
+        worker = PostUpdateWorker(mongo, bot, runtime_id="one")
+        error = hikari.NotFoundError(
+            url="https://discord.invalid/member",
+            headers={},
+            raw_body=b"",
+            message="missing member",
+        )
+        await worker.poll(guild_id=GUILD, authorize=AsyncMock(side_effect=error))
+        failed = await worker.store.collection.find_one({"_id": row["_id"]})
+        assert failed["status"] == "failed"
+        assert "access" in failed["error"] and "deleted" not in failed["error"]
+        bot.rest.edit_message.assert_not_awaited()
+
+    asyncio.run(run())

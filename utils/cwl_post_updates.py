@@ -24,7 +24,7 @@ async def create_review(
     candidate = cwl_campaign.validate_roster_copy(candidate)
     loaded = await cwl_campaign.load_campaign(mongo, guild_id, cycle)
     if cwl_web_bridge.campaign_generation(loaded) != generation:
-        raise PostUpdateConflict("Campaign changed. Refresh before previewing.")
+        raise PostUpdateConflict("Settings changed. Refresh before previewing.")
     receipt = cwl_web_bridge.native_receipt(loaded, pool)
     if not receipt or not receipt.get("channel_id") or not receipt.get("message_id"):
         raise PostUpdateConflict("There is no recorded sent roster post to update.")
@@ -49,7 +49,7 @@ async def create_review(
             or draft.get("recurring_roster_base_version")
             != loaded.get("recurring_roster_version")
         ):
-            raise PostUpdateConflict("Campaign changed. Refresh before previewing.")
+            raise PostUpdateConflict("Settings changed. Refresh before previewing.")
         await cwl_campaign.patch_draft(mongo, draft["_id"], {"campaign": complete})
         row, created = await PostUpdateStore(mongo).create(
             guild_id=guild_id,
@@ -112,15 +112,27 @@ class PostUpdateWorker:
         confirmed_url = None
         result = None
         status = "failed"
+        edit_attempted = False
+
+        def mark_edit_attempt():
+            nonlocal edit_attempted
+            edit_attempted = True
+
+        async def permitted():
+            try:
+                return await authorize({**row, "requested_by": row["user_id"]})
+            except hikari.NotFoundError as exc:
+                raise PermissionError("Announcement access changed") from exc
+
         try:
             async with asyncio.timeout(120):
-                if not await authorize({**row, "requested_by": row["user_id"]}):
+                if not await permitted():
                     raise PermissionError("Announcement permission was removed")
                 loaded = await cwl_campaign.load_campaign(
                     self.mongo, row["guild_id"], row["cycle"]
                 )
                 if cwl_web_bridge.campaign_generation(loaded) != row["generation"]:
-                    raise PostUpdateConflict("Campaign changed. Preview again.")
+                    raise PostUpdateConflict("Settings changed. Preview again.")
                 draft = await cwl_campaign.load_draft(self.mongo, row["draft_id"])
                 if not draft or any(
                     draft["campaign"]["messages"]["roster"]["variants"][
@@ -147,16 +159,20 @@ class PostUpdateWorker:
                         include_preview=True,
                         preserve_media=True,
                     )
+                    has_changes = target.pop("has_changes")
                     observed = target.pop("observed_preview")
                     proposed = target.pop("draft_preview")
                     result = dict(
-                        target=target, live_preview=observed, draft_preview=proposed
+                        target=target,
+                        live_preview=observed,
+                        draft_preview=proposed,
+                        has_changes=has_changes,
                     )
                     status = "ready"
                 else:
 
                     async def before_edit():
-                        return await authorize({**row, "requested_by": row["user_id"]})
+                        return await permitted()
 
                     confirmed_url = await cwl_publishing.update_published_post(
                         self.mongo,
@@ -164,6 +180,7 @@ class PostUpdateWorker:
                         **kwargs,
                         target=row["target"],
                         before_edit=before_edit,
+                        on_edit_attempt=mark_edit_attempt,
                     )
                     try:
                         saved = await cwl_campaign.save_updated_roster_variant(
@@ -218,12 +235,12 @@ class PostUpdateWorker:
                     "save_warning": "The post was updated, but its saved copy could not be confirmed. Refresh before making another update.",
                 }
             else:
-                status = "uncertain" if updating else "failed"
+                status = "uncertain" if edit_attempted else "failed"
                 result = {
                     "error": (
-                        "The update outcome is unconfirmed. Check the post before a new preview."
-                        if updating
-                        else "Preview is unavailable. Preview again."
+                        "Not sure it updated. Check the post."
+                        if edit_attempted
+                        else "Not updated. Preview again."
                     )
                 }
         await self.store.finish(

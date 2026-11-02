@@ -63,6 +63,7 @@ def _public(row, ready):
             "generation",
             "future_months",
             "live_preview",
+            "has_changes",
             "draft_preview",
             "error",
             "error_code",
@@ -81,9 +82,7 @@ def _public(row, ready):
         message_url=row.get("message_url") or target.get("message_url"),
     )
     if status == "uncertain":
-        result["error"] = (
-            "The update outcome is unconfirmed. Check the post before a new preview."
-        )
+        result["error"] = "Not sure it updated. Check the post."
     return result
 
 

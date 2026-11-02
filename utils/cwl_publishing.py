@@ -4,6 +4,7 @@ The scheduler's delivery ledger is the authority for the target. Preparing an
 edit reads and fingerprints the actual Discord message; applying rechecks it
 under a short lease so another editor's update is never silently overwritten.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -19,7 +20,11 @@ from pymongo.errors import DuplicateKeyError
 from utils import cwl_campaign
 from utils.component_state import utcnow
 
-NO_MENTIONS = {"user_mentions": False, "role_mentions": False, "mentions_everyone": False}
+NO_MENTIONS = {
+    "user_mentions": False,
+    "role_mentions": False,
+    "mentions_everyone": False,
+}
 _log = logging.getLogger(__name__)
 
 
@@ -149,7 +154,11 @@ def post_preview_parts(components, *, content=None, attachments=()):
         if kind == 2:
             emoji = node.get("emoji")
             if isinstance(emoji, dict):
-                emoji = (f"<{'a' if emoji.get('animated') else ''}:{emoji.get('name') or 'emoji'}:{emoji['id']}>" if emoji.get("id") else str(emoji.get("name") or ""))
+                emoji = (
+                    f"<{'a' if emoji.get('animated') else ''}:{emoji.get('name') or 'emoji'}:{emoji['id']}>"
+                    if emoji.get("id")
+                    else str(emoji.get("name") or "")
+                )
             return {
                 "type": "button",
                 "label": str(node.get("label", "")),
@@ -177,13 +186,20 @@ def post_preview_parts(components, *, content=None, attachments=()):
 
 async def _owned_draft(mongo, *, draft_id, guild_id, user_id, cycle, occurrence_id):
     draft = await cwl_campaign.load_draft(mongo, draft_id)
-    if not draft or int(draft["guild_id"]) != int(guild_id) or int(draft["user_id"]) != int(user_id):
+    if (
+        not draft
+        or int(draft["guild_id"]) != int(guild_id)
+        or int(draft["user_id"]) != int(user_id)
+    ):
         raise ValueError("Open your own CWL draft before updating a post.")
     parts = occurrence_id.split("|", 2)
     if len(parts) != 3 or parts[0] != cycle or draft["cycle"] != cycle:
         raise ValueError("Choose a delivered message from this draft's month.")
     _, key, audience = parts
-    if key not in draft["campaign"]["messages"] or audience not in cwl_campaign.AUDIENCES:
+    if (
+        key not in draft["campaign"]["messages"]
+        or audience not in cwl_campaign.AUDIENCES
+    ):
         raise ValueError("That message version is no longer in this draft.")
     return draft, key, audience
 
@@ -262,11 +278,19 @@ async def _render_post_update(
                 divider=bool(getattr(observed_children[1], "divider", True))
             ),
         ]
-    position = next(
-        (index for index, node in enumerate(children) if int(node.type) == 1),
-        len(children),
-    )
-    children[position:position] = galleries
+    # Native roster sender: [optional mention, divider], title, divider,
+    # body, [gallery], [button row]. Never guess where images belong in a
+    # foreign layout. Keep every original gallery at its exact child index.
+    original_nonmedia = [node for node in observed_children if int(node.type) != 12]
+    if [int(node.type) for node in original_nonmedia] != [
+        int(node.type) for node in children
+    ]:
+        raise ValueError("This post layout cannot be kept. Not updated.")
+    for index, gallery in zip(
+        [index for index, node in enumerate(observed_children) if int(node.type) == 12],
+        galleries,
+    ):
+        children.insert(index, gallery)
     observed = message.components[0]
     accent = getattr(observed, "accent_color", None)
     result = [
@@ -335,7 +359,10 @@ async def prepare_post_update(
             "There is no recorded published post for this message version."
         )
     channel_id, message_id = int(delivery["channel_id"]), int(delivery["message_id"])
-    channel = await bot.rest.fetch_channel(channel_id)
+    try:
+        channel = await bot.rest.fetch_channel(channel_id)
+    except hikari.NotFoundError as exc:
+        raise PermissionError("Post channel access changed") from exc
     if int(getattr(channel, "guild_id", 0)) != int(guild_id):
         raise ValueError("That published post belongs to another server.")
     message = await bot.rest.fetch_message(channel_id, message_id)
@@ -376,6 +403,44 @@ async def prepare_post_update(
                 attachments=getattr(message, "attachments", ()),
             ),
         )
+        from types import SimpleNamespace
+
+        target["has_changes"] = _fingerprint(message) != _fingerprint(
+            SimpleNamespace(
+                content=getattr(message, "content", None),
+                components=rendered,
+                attachments=getattr(message, "attachments", ()),
+            )
+        )
+        # Presentation only: identity/fingerprint/rendered payload retain exact
+        # mentions; private previews display real role names, never snowflakes.
+        role_ids = set(
+            re.findall(
+                r"<@&([0-9]+)>",
+                json.dumps([target["observed_preview"], target["draft_preview"]]),
+            )
+        )
+        try:
+            roles = await bot.rest.fetch_roles(int(guild_id)) if role_ids else ()
+        except hikari.NotFoundError as exc:
+            raise PermissionError("Server access changed") from exc
+        names = {str(role.id): str(role.name) for role in roles}
+
+        def role_labels(value):
+            if isinstance(value, str):
+                return re.sub(
+                    r"<@&([0-9]+)>",
+                    lambda match: "@" + names.get(match[1], "role"),
+                    value,
+                )
+            if isinstance(value, list):
+                return [role_labels(item) for item in value]
+            if isinstance(value, dict):
+                return {key: role_labels(item) for key, item in value.items()}
+            return value
+
+        target["observed_preview"] = role_labels(target["observed_preview"])
+        target["draft_preview"] = role_labels(target["draft_preview"])
     return target
 
 
@@ -390,6 +455,7 @@ async def update_published_post(
     draft_id,
     target,
     before_edit=None,
+    on_edit_attempt=None,
 ):
     draft, key, audience = await _owned_draft(
         mongo,
@@ -482,6 +548,8 @@ async def update_published_post(
                 raise ValueError(
                     "That post changed since you reviewed it. Preview the update again."
                 )
+        if on_edit_attempt is not None:
+            on_edit_attempt()
         await bot.rest.edit_message(
             target["channel_id"],
             target["message_id"],

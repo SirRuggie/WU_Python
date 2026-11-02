@@ -44,6 +44,18 @@ class Collection(MemoryCollection):
         self.indexes = []
         self.hints = []
 
+    @classmethod
+    def _matches(cls, document, query):
+        # Model the native atomic freshness predicate, not equality on $gt.
+        for key, value in query.items():
+            if isinstance(value, dict) and "$gt" in value:
+                actual = cls._path(document, key, None)
+                if actual is None or actual <= value["$gt"]:
+                    return False
+            elif not super()._matches(document, {key: value}):
+                return False
+        return True
+
     async def create_index(self, keys, **kwargs):
         self.indexes.append((keys, kwargs))
         return kwargs["name"]
@@ -239,5 +251,42 @@ def test_worker_identity_required_before_claim_or_recovery(runtime_id):
         with pytest.raises(ValueError, match="process identity"):
             await store.recover_interrupted(guild_id=100, runtime_id=runtime_id)
         assert store.collection.documents == before
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "age_seconds,starts", [(299.999, True), (300, False), (86400 - 1, False)]
+)
+def test_queued_update_has_atomic_five_minute_start_deadline(
+    monkeypatch, age_seconds, starts
+):
+    from utils import cwl_post_update_store as module
+
+    async def run():
+        store = fixture()
+        row, _ = await create(store)
+        active = await store.claim(row, runtime_id="one")
+        await store.finish(
+            active, status="ready", target={"fingerprint": "old"}, has_changes=True
+        )
+        ready = await store.collection.find_one({"_id": row["_id"]})
+        queued = await store.request_update(ready)
+        clock = queued["update_requested_at"] + timedelta(seconds=age_seconds)
+        monkeypatch.setattr(module, "now", lambda: clock)
+        claims = await asyncio.gather(
+            store.claim(queued, runtime_id="one"), store.claim(queued, runtime_id="two")
+        )
+        assert sum(item is not None for item in claims) == int(starts)
+        final = await store.collection.find_one({"_id": row["_id"]})
+        assert final["status"] == ("updating" if starts else "failed")
+        if not starts:
+            assert final["error"] == "Not updated. Preview again."
+        else:
+            monkeypatch.setattr(module, "now", lambda: clock + timedelta(days=1))
+            assert await store.claim(queued, runtime_id="late") is None
+            assert (await store.collection.find_one({"_id": row["_id"]}))[
+                "status"
+            ] == "updating"
 
     asyncio.run(run())
