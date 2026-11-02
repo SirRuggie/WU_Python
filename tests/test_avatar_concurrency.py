@@ -35,7 +35,7 @@ class AvatarPool(unittest.IsolatedAsyncioTestCase):
     async def test_twelve_parallel_avatars_share_one_pool_and_auth_every_request(self):
         import asyncio
         from types import SimpleNamespace
-        from cwl_web import member_events, server_management
+        from cwl_web import member_events, server_management, mongo_client
         from unittest.mock import Mock
         app = {}
         lifetime = server_management.mongo_lifecycle(app)
@@ -60,7 +60,7 @@ class AvatarPool(unittest.IsolatedAsyncioTestCase):
             return {'avatar': b'fixture', 'avatar_type':'image/png'}
 
         requests = [SimpleNamespace(app=app, match_info={'event_id':'1792972800000:'+f'{i:032x}'}) for i in range(12)]
-        with patch.dict('os.environ', {'MONGODB_URI':'mongodb://fixture.invalid'}), patch.object(server_management, 'MongoClient', side_effect=make_client), patch.object(member_events, 'require_manage', new=AsyncMock(side_effect=auth)) as authorize, patch.object(member_events, 'MemberEventStore', return_value=SimpleNamespace(avatar=AsyncMock(side_effect=avatar))):
+        with patch.dict('os.environ', {'MONGODB_URI':'mongodb://fixture.invalid'}), patch.object(mongo_client, 'MongoClient', side_effect=make_client), patch.object(member_events, 'require_manage', new=AsyncMock(side_effect=auth)) as authorize, patch.object(member_events, 'MemberEventStore', return_value=SimpleNamespace(avatar=AsyncMock(side_effect=avatar))):
             responses = await asyncio.gather(*(member_events.avatar(request) for request in requests))
             self.assertEqual([r.status for r in responses], [200]*12)
             self.assertEqual(authorize.await_count, 12)

@@ -97,7 +97,16 @@ if not _mongodb_uri:
         "before starting the bot."
     )
 
-mongo_client = MongoClient(uri=_mongodb_uri)
+mongo_client = MongoClient(
+    uri=_mongodb_uri,
+    # Index bootstrap and maintenance cursors get headroom; unreachable servers
+    # have a 30-second total operation budget, including server selection.
+    # CSOT can override the shorter selection setting. Discord budgets are independent.
+    timeoutMS=30000,
+    serverSelectionTimeoutMS=3000,
+    maxPoolSize=20,
+    appName="wu-bot",
+)
 clash_client: coc.Client | None = None
 
 # Uploaded clan logos, banners and FWA base images live on Cloudflare R2.

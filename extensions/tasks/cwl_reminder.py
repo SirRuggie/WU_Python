@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 import lightbulb
 import hikari
@@ -2014,15 +2015,18 @@ async def schedule_cwl_reminder(
 
 async def _poll_web_roster_bridge() -> None:
     """Deliver reviewed web requests through the native campaign sender."""
+    from utils.manage_poll_cache import timed_step
+
     if mongo_client is None or bot_instance is None:
         return
     try:
         try:
-            await cwl_web_bridge.reconcile_campaign_changes(
-                mongo_client,
-                _sync_all_campaigns,
-                guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
-            )
+            with timed_step(logging.getLogger(__name__), "reconcile_campaign_changes"):
+                await cwl_web_bridge.reconcile_campaign_changes(
+                    mongo_client,
+                    _sync_all_campaigns,
+                    guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
+                )
         except Exception as exc:
             # A bad schedule must not block the independent reviewed roster queue.
             # No acknowledgement is written; the next poll retries reconciliation.
@@ -2055,32 +2059,67 @@ async def _poll_web_roster_bridge() -> None:
             )
             return "cwl_send" in expand_legacy(grant.get("permissions", []))
 
-        await cwl_web_bridge.process_pending_roster_requests(
-            mongo_client,
-            send_campaign_message,
-            authorize=can_send_roster,
-            guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
-        )
+        with timed_step(logging.getLogger(__name__), "process_pending_roster_requests"):
+            await cwl_web_bridge.process_pending_roster_requests(
+                mongo_client,
+                send_campaign_message,
+                authorize=can_send_roster,
+                guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
+            )
     except Exception as exc:
         # Leave pending or sending rows in place for inspection. In particular,
         # never auto-reset a possibly posted sending row after an outage.
         print(f"[CWL Web Bridge] Poll failed: {type(exc).__name__}")
 
 
-async def _poll_web_roster_requests() -> None:
-    from utils.manage_web_worker import queue_lock
+_roster_driver = None
 
-    # Both paths can edit campaign/management state; preserve serial execution.
-    async with queue_lock():
-        await _poll_web_roster_bridge()
-    # Independent bot-owned management queue: a CWL reconciliation failure must
-    # not prevent staff from managing tickets, templates, or FWA settings.
+
+async def _drive_web_roster_requests():
+    from utils.manage_web_worker import queue_lock, maintain_worker_heartbeat
+    from utils.manage_poll_cache import timed_step
+
+    logger = logging.getLogger(__name__)
+    heartbeat = asyncio.create_task(maintain_worker_heartbeat(mongo_client))
     try:
-        from utils.manage_web_worker import poll as poll_management
+        # Preserve the shared side-effect lane. Timing separates waiting for it
+        # from actual Mongo/Discord work; admission ticks never start a duplicate.
+        lock = queue_lock()
+        with timed_step(logger, "cwl_queue_wait"):
+            await lock.acquire()
+        try:
+            with timed_step(logger, "cwl_bridge"):
+                await _poll_web_roster_bridge()
+        finally:
+            lock.release()
+        try:
+            from utils.manage_web_worker import poll as poll_management
 
-        await poll_management(bot_instance, mongo_client)
+            with timed_step(logger, "management_poll"):
+                await poll_management(bot_instance, mongo_client)
+        except Exception as exc:
+            logger.warning("Manage Web Bridge poll failed: %s", type(exc).__name__)
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
-        print(f"[Manage Web Bridge] Poll failed: {type(exc).__name__}")
+        logger.warning("CWL Web Bridge driver failed: %s", type(exc).__name__)
+    finally:
+        heartbeat.cancel()
+        import contextlib
+
+        try:
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat
+        except Exception as exc:
+            logger.warning("Management heartbeat unavailable: %s", type(exc).__name__)
+
+
+async def _poll_web_roster_requests() -> None:
+    global _roster_driver
+    if _management_stopping:
+        return
+    if _roster_driver is None or _roster_driver.done():
+        _roster_driver = asyncio.create_task(_drive_web_roster_requests())
 
 
 _management_driver = None
@@ -2103,7 +2142,10 @@ async def _poll_web_management_fast():
     if _management_stopping or bot_instance is None or mongo_client is None:
         return
     if _management_driver is None or _management_driver.done():
-        _management_driver = asyncio.create_task(_drive_web_management())
+        from utils.manage_web_worker import idle_poll_due
+
+        if idle_poll_due(mongo_client):
+            _management_driver = asyncio.create_task(_drive_web_management())
 
 
 def _silence_fast_job_logs():
@@ -2111,9 +2153,9 @@ def _silence_fast_job_logs():
 
     class FastJobFilter(logging.Filter):
         def filter(self, record):
-            return (
-                record.levelno > logging.INFO
-                or "_poll_web_management_fast" not in record.getMessage()
+            return record.levelno > logging.INFO or not any(
+                name in record.getMessage()
+                for name in ("_poll_web_management_fast", "_poll_web_roster_requests")
             )
 
     logger = logging.getLogger("apscheduler.executors.default")
@@ -2296,15 +2338,16 @@ async def on_bot_started(
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Shutdown scheduler when bot stops"""
-    global startup_reconciler, _management_driver, _management_stopping
+    global startup_reconciler, _management_driver, _management_stopping, _roster_driver
     _management_stopping = True
-    if _management_driver is not None:
-        _management_driver.cancel()
-        import contextlib
+    import contextlib
 
-        with contextlib.suppress(asyncio.CancelledError):
-            await _management_driver
-        _management_driver = None
+    for driver in (_management_driver, _roster_driver):
+        if driver is not None:
+            driver.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await driver
+    _management_driver = _roster_driver = None
     if startup_reconciler is not None:
         await startup_reconciler.stop()
         startup_reconciler = None

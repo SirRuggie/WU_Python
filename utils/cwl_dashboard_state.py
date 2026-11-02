@@ -2,7 +2,7 @@
 
 SQLite remains the relational working copy. A changed transaction is published
 in Mongo *before* its local commit/success response. Only one leased writer may
-publish. Ambiguous writes fence this process until recovery from Mongo on restart.
+publish. Ambiguous writes fence this process until authoritative recovery from Mongo.
 """
 
 from contextlib import contextmanager
@@ -31,6 +31,10 @@ LEASE_SECONDS = 90
 
 class DashboardDurabilityError(RuntimeError):
     """Do not report success or retry external delivery after this error."""
+
+
+class DashboardDurabilityAttention(DashboardDurabilityError):
+    """A permanent fence requires operator attention, not a transient retry."""
 
 
 def utcnow():
@@ -103,6 +107,102 @@ def decode(document):
         raise
 
 
+def reconcile_sqlite(target, recovered):
+    """Replace rows inside the caller's transaction, preserving current schema.
+
+    Never replace the working file underneath open connections. Reject schema
+    changes rather than guessing how to migrate a recovery image.
+    SQLite sequences remain monotonic even when an uncertain insert rolled back.
+    """
+
+    def tables(db):
+        return {
+            row[0]
+            for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+
+    names = tables(target)
+    if names != tables(recovered):
+        raise DashboardDurabilityAttention(
+            "Recovery schema differs from the running dashboard."
+        )
+
+    def triggers(db):
+        return dict(
+            db.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'")
+        )
+
+    owned_triggers = triggers(target)
+    if owned_triggers != triggers(recovered):
+        raise DashboardDurabilityAttention(
+            "Recovery trigger schema differs from the running dashboard."
+        )
+
+    def quoted(name):
+        return '"' + name.replace('"', '""') + '"'
+
+    columns = {}
+    for name in names:
+        current = [
+            tuple(row)
+            for row in target.execute("PRAGMA table_info(" + quoted(name) + ")")
+        ]
+        prior = [
+            tuple(row)
+            for row in recovered.execute("PRAGMA table_info(" + quoted(name) + ")")
+        ]
+        if current != prior:
+            raise DashboardDurabilityAttention(
+                "Recovery columns differ from the running dashboard."
+            )
+        columns[name] = [row[1] for row in current]
+
+    def sequences(db):
+        exists = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='sqlite_sequence'"
+        ).fetchone()
+        return (
+            dict(db.execute("SELECT name,seq FROM sqlite_sequence")) if exists else {}
+        )
+
+    sequence = sequences(target)
+    for name, number in sequences(recovered).items():
+        sequence[name] = max(sequence.get(name, 0), number)
+    target.execute("PRAGMA defer_foreign_keys=ON")
+    # Transactional DDL prevents revision/audit triggers replaying restored rows.
+    # The exact current definitions are recreated before commit (rollback restores
+    # them too); no application write can interleave with BEGIN IMMEDIATE.
+    for name in owned_triggers:
+        target.execute("DROP TRIGGER " + quoted(name))
+    for name in names:
+        target.execute("DELETE FROM " + quoted(name))
+    for name in names:
+        fields = ",".join(map(quoted, columns[name]))
+        marks = ",".join("?" for _ in columns[name])
+        target.executemany(
+            "INSERT INTO " + quoted(name) + "(" + fields + ") VALUES(" + marks + ")",
+            recovered.execute("SELECT " + fields + " FROM " + quoted(name)),
+        )
+    for name, number in sequence.items():
+        row = target.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name=?", (name,)
+        ).fetchone()
+        if row:
+            target.execute(
+                "UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name=?", (number, name)
+            )
+        else:
+            target.execute(
+                "INSERT INTO sqlite_sequence(name,seq) VALUES(?,?)", (name, number)
+            )
+    for definition in owned_triggers.values():
+        target.execute(definition)
+    if target.execute("PRAGMA foreign_key_check").fetchone():
+        raise DashboardDurabilityAttention("Recovery rows violate current relationships.")
+
+
 @contextmanager
 def database_lock(path):
     """Prevent a recovery/seed operation racing the local web process."""
@@ -113,7 +213,7 @@ def database_lock(path):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise DashboardDurabilityError(
+            raise DashboardDurabilityAttention(
                 "The dashboard database is already in use."
             ) from None
         try:
@@ -133,6 +233,8 @@ class MongoDashboardState:
         self.previous_local_path = None
         self.previous_local_paths = []
         self.local_recovery_interrupted = False
+        self._known_head = None
+        self._receipts = {}
 
     @classmethod
     def open(cls, uri, *, routes=None):
@@ -141,7 +243,12 @@ class MongoDashboardState:
                 "MONGODB_URI is required for dashboard recovery."
             )
         client = MongoClient(
-            uri, serverSelectionTimeoutMS=5000, timeoutMS=10000, tz_aware=True
+            uri,
+            serverSelectionTimeoutMS=5000,
+            timeoutMS=10000,
+            tz_aware=True,
+            appName="wu-dashboard-durability",
+            maxPoolSize=10,
         )
         collection = collection_for(
             client, "cwl_dashboard_state", routes=routes
@@ -196,6 +303,7 @@ class MongoDashboardState:
             )
         self.revision = document["revision"]
         self.acquired = True
+        self._known_head = self._fingerprint(document)
         return document
 
     def restore(self, path):
@@ -285,7 +393,9 @@ class MongoDashboardState:
             # rename but before cleanup; retain the base investigation proof.
             for pending in backup.parent.glob(backup.name + ".pending-*"):
                 suffix = pending.name.removeprefix(backup.name + ".pending-")
-                if len(suffix) == 32 and all(char in "0123456789abcdef" for char in suffix):
+                if len(suffix) == 32 and all(
+                    char in "0123456789abcdef" for char in suffix
+                ):
                     pending.unlink(missing_ok=True)
             directory = os.open(receipt.parent, os.O_RDONLY)
             try:
@@ -346,10 +456,23 @@ class MongoDashboardState:
     def load_role_progress(self):
         return self.collection.find_one({"_id": self.key + ":pool-roles-progress"})
 
+    def require_attention(self, reason):
+        if not getattr(self, "attention_reason", None):
+            self.attention_reason = reason
+            logging.getLogger(__name__).critical(
+                "Dashboard storage needs attention; saves remain fenced: %s", reason
+            )
+        self.poisoned = True
+        return DashboardDurabilityAttention(
+            "Dashboard storage needs attention. Saves are unavailable; contact an administrator."
+        )
+
     def check(self):
+        if getattr(self, "attention_reason", None):
+            raise self.require_attention(self.attention_reason)
         if self.poisoned:
             raise DashboardDurabilityError(
-                "Durable storage needs recovery. Restart the dashboard before making more changes."
+                "Dashboard storage is recovering; saves are temporarily unavailable. Check saved results before retrying."
             )
 
     def heartbeat(self):
@@ -360,7 +483,9 @@ class MongoDashboardState:
                 {"$set": {"lease_until": utcnow() + timedelta(seconds=LEASE_SECONDS)}},
             )
             if result.matched_count != 1:
-                raise DashboardDurabilityError("Dashboard writer lease was lost.")
+                raise self.require_attention("Dashboard writer lease was lost.")
+        except DashboardDurabilityAttention:
+            raise
         except Exception:
             self.poisoned = True
             raise DashboardDurabilityError(
@@ -370,12 +495,16 @@ class MongoDashboardState:
     def publish(self, db):
         self.check()
         document = encode(db)
+        token = uuid.uuid4().hex
+        receipt = (self.revision + 1, document["sha256"], token)
+        self._receipts[token] = receipt
         try:
             result = self.collection.update_one(
                 {"_id": self.key, "owner": self.owner, "revision": self.revision},
                 {
                     "$set": {
                         **document,
+                        "write_token": token,
                         "saved_at": utcnow(),
                         "lease_until": utcnow() + timedelta(seconds=LEASE_SECONDS),
                     },
@@ -383,17 +512,134 @@ class MongoDashboardState:
                 },
             )
             if result.matched_count != 1:
-                raise DashboardDurabilityError(
-                    "Dashboard writer lease or revision was lost."
-                )
+                raise self.require_attention("Dashboard writer lease or revision was lost.")
             self.revision += 1
+            self._known_head = receipt
+            self._receipts = {token: receipt}
+        except DashboardDurabilityAttention:
+            raise
         except Exception:
             # Mongo may have accepted the write. Never retry using the stale
             # local copy, and never let a notification silently retry either.
             self.poisoned = True
             raise DashboardDurabilityError(
-                "Mongo could not confirm this save. Changes may have reached recovery storage. Restart and check the saved result before retrying."
+                "Mongo could not confirm this save. Changes may have reached recovery storage. Wait for storage recovery, then check the saved result before retrying."
             ) from None
+
+    @staticmethod
+    def _fingerprint(document):
+        return (
+            document.get("revision"),
+            document.get("sha256"),
+            document.get("write_token"),
+        )
+
+    def recovery_image(self):
+        """Fence every late uncertain CAS before returning authoritative SQLite.
+
+        This does not clear poison or mutate the local working copy. The caller
+        must FULL-commit that copy and then call finish_recovery(). A revision
+        fence is essential: reading the old image alone cannot rule out a timed
+        out write reaching Mongo after the read.
+        """
+        if getattr(self, "attention_reason", None):
+            raise self.require_attention(self.attention_reason)
+        if not self.poisoned or not self.acquired:
+            raise DashboardDurabilityError("No fenced dashboard recovery is pending.")
+        try:
+            head = self.collection.find_one({"_id": self.key})
+            fingerprint = self._fingerprint(head or {})
+            if (
+                not head
+                or head.get("owner") != self.owner
+                or (
+                    fingerprint != self._known_head
+                    and fingerprint not in self._receipts.values()
+                )
+            ):
+                raise self.require_attention("Recovery head is not a known writer receipt.")
+            try:
+                checked = decode(head)
+            except (DashboardDurabilityError, sqlite3.DatabaseError, ValueError, KeyError, TypeError, zlib.error):
+                raise self.require_attention("Authoritative recovery image is corrupt or unsupported.") from None
+            checked.close()
+            # Reuse one receipt per base/image across ambiguous recovery retries.
+            base, digest, prior_token = fingerprint
+            # A majority primary read confirms this revision. Older uncertain
+            # CASes can never win again; retain only this/newer race receipts.
+            # This stays bounded even if every recovery write loses its reply.
+            self.revision = base
+            self._known_head = fingerprint
+            self._receipts = {
+                key: value for key, value in self._receipts.items() if value[0] >= base
+            }
+            candidate = next(
+                (
+                    value
+                    for value in self._receipts.values()
+                    if value[0] == base + 1 and value[1] == digest
+                ),
+                None,
+            )
+            token = candidate[2] if candidate else uuid.uuid4().hex
+            receipt = (base + 1, digest, token)
+            self._receipts[token] = receipt
+            result = self.collection.update_one(
+                {
+                    "_id": self.key,
+                    "owner": self.owner,
+                    "revision": base,
+                    "sha256": digest,
+                    "write_token": prior_token,
+                },
+                {
+                    "$set": {
+                        "write_token": token,
+                        "lease_until": utcnow() + timedelta(seconds=LEASE_SECONDS),
+                    },
+                    "$inc": {"revision": 1},
+                },
+            )
+            if result.matched_count != 1:
+                raise DashboardDurabilityError(
+                    "Recovery raced another writer; remain fenced."
+                )
+            head.update(revision=base + 1, write_token=token)
+            self.revision = base + 1
+            self._known_head = receipt
+            self._receipts = {token: receipt}
+            return head
+        except Exception as error:
+            self.poisoned = True
+            if isinstance(error, DashboardDurabilityError):
+                raise
+            raise DashboardDurabilityError(
+                "Dashboard recovery is temporarily unavailable."
+            ) from None
+
+    def confirm_recovery(self, document):
+        """Renew only the exact fenced receipt before local FULL commit."""
+        fingerprint = self._fingerprint(document)
+        if fingerprint != self._known_head:
+            raise DashboardDurabilityError("Recovery receipt no longer matches.")
+        result = self.collection.update_one(
+            {
+                "_id": self.key,
+                "owner": self.owner,
+                "revision": fingerprint[0],
+                "sha256": fingerprint[1],
+                "write_token": fingerprint[2],
+            },
+            {"$set": {"lease_until": utcnow() + timedelta(seconds=LEASE_SECONDS)}},
+        )
+        if result.matched_count != 1:
+            raise self.require_attention("Recovery writer lease was lost.")
+
+    def finish_recovery(self, document):
+        """Called only after the caller has committed the reconciled local copy."""
+        if self._fingerprint(document) != self._known_head:
+            raise DashboardDurabilityError("Cannot complete an obsolete recovery.")
+        self.poisoned = False
 
     def close(self):
         try:

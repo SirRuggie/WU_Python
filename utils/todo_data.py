@@ -40,18 +40,6 @@ import coc
 from utils import coc_maintenance
 
 # ---------------------------------------------------------------------------
-# TEMPORARY DIAGNOSTICS for the raid view - remove once verified on a live
-# raid weekend. Every line is prefixed [todo-diag] so it greps and strips
-# cleanly. The war/CWL diagnostics were removed after those views were proven.
-# ---------------------------------------------------------------------------
-DIAG = True
-
-
-def _d(msg: str) -> None:
-    if DIAG:
-        print(f"[todo-diag] {msg}", flush=True)
-
-# ---------------------------------------------------------------------------
 # Cache
 #
 # In-process only. Nothing here needs to survive a restart: a cold cache costs
@@ -129,7 +117,6 @@ def bounded_clan_reads(seconds: float):
         yield
     finally:
         _clan_batch_budget.reset(token)
-
 
 
 @contextlib.contextmanager
@@ -266,10 +253,6 @@ DATA_PREFIXES: tuple[str, ...] = ("player:", "war:", "cwl:", "cwlwar:", "raid:")
 # Listed here only so the guard in cache_put knows they are accounted for.
 AUX_PREFIXES: tuple[str, ...] = ("links:", "clanlogos")
 
-# Wall-clock of the last drop_render_caches(). Sole purpose is the consistency
-# check in oldest_fill: after a drop, no live entry can predate it.
-_last_drop_at: float = 0.0
-
 
 def oldest_fill(prefixes: tuple[str, ...] = DATA_PREFIXES) -> float | None:
     """When the OLDEST still-live cache entry under these prefixes was fetched.
@@ -299,15 +282,6 @@ def oldest_fill(prefixes: tuple[str, ...] = DATA_PREFIXES) -> float | None:
         return None
 
     result = min(f for f, _k in live)
-    # 1s of slack: the drop and the refills inside one request are the same
-    # instant for this purpose, and float comparison should not manufacture a
-    # warning out of that.
-    if _last_drop_at and result < _last_drop_at - 1:
-        survivors = sorted(k for f, k in live if f < _last_drop_at - 1)
-        print(
-            f"[todo-diag] STALE STAMP: oldest_fill={result:.0f} predates last drop "
-            f"{_last_drop_at:.0f}. Read-but-not-dropped keys: {survivors[:8]}"
-        )
     return result
 
 
@@ -337,6 +311,7 @@ def _current_calls() -> dict[str, object]:
         calls = _new_call_stats()
         _calls_var.set(calls)
     return calls
+
 
 # Process start. The cache is a module-level dict, so it dies with the process -
 # and "warm=0/46 on a second run" has three possible causes that look identical
@@ -443,28 +418,8 @@ def cache_drop_prefix(prefix: str) -> int:
 
 
 def drop_render_caches(extra: tuple[str, ...] = ()) -> int:
-    """Everything behind one /todo render. THE Refresh entry point.
-
-    `extra` carries the per-invocation prefixes that cannot be constants - the
-    caller's own links key, the clan logo map.
-
-    THE PER-PREFIX BREAKDOWN IS THE ONLY WAY TO SEE cwlwar: WORKING.
-    cache_drop_prefix already returns a count per prefix; this used to sum them
-    into one aggregate and throw the detail away, so `dropped=106` could have
-    been all players and zero cwlwar: and nobody could tell. That is the whole
-    reason the 40c97ef fix sat unverifiable - the number needed to confirm it
-    was being computed and discarded on the same line.
-
-    total= is kept so the old aggregate stays greppable.
-    """
-    global _last_drop_at
-    _last_drop_at = time.time()
-    per_prefix: dict[str, int] = {}
-    for prefix in DATA_PREFIXES + tuple(extra):
-        per_prefix[prefix] = cache_drop_prefix(prefix)
-    dropped = sum(per_prefix.values())
-    _d(f"drop_render_caches dropped={per_prefix} total={dropped}")
-    return dropped
+    """Drop render-owned cached data and return the removed entry count."""
+    return sum(cache_drop_prefix(prefix) for prefix in DATA_PREFIXES + tuple(extra))
 
 
 def _http_detail(exc: Exception) -> str:
@@ -504,6 +459,7 @@ def _gap_note(unreadable: int, what: str) -> str:
 # ---------------------------------------------------------------------------
 # Shapes
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True, slots=True)
 class Row:
@@ -570,6 +526,7 @@ class Account:
 # ---------------------------------------------------------------------------
 # Fetching
 # ---------------------------------------------------------------------------
+
 
 async def _fetch_one_player(coc_client: coc.Client, tag: str, sem: asyncio.Semaphore, lookup_timeout: float | None = None):
     """One player lookup. NEVER RAISES - returns (tag, Account|None, error|None).
@@ -1490,7 +1447,11 @@ async def _get_raid(coc_client: coc.Client, clan_tag: str):
     return result
 
 
-async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: asyncio.Semaphore | None = None) -> ViewData:
+async def build_raid_view(
+    coc_client: coc.Client,
+    accounts: list[Account],
+    sem: asyncio.Semaphore | None = None,
+) -> ViewData:
     """Capital raid attacks still owed.
 
     ⚠️ THE ONE THING THAT MAKES THIS VIEW WORK, AND THE EASIEST TO GET WRONG:
@@ -1526,8 +1487,6 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: 
     fetched = await gather_clans(sem, order, lambda t: _get_raid(coc_client, t))
     for clan_tag, (kind, entry) in zip(order, fetched):
         members = by_clan[clan_tag]
-        _d(f"build_raid_view {clan_tag} -> kind={kind} "
-           f"state={getattr(entry, 'state', None)!r}")
 
         if kind == "error":
             unreadable += len(members)
@@ -1574,9 +1533,6 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: 
 
     if unreadable:
         notes.append(_gap_note(unreadable, "raid"))
-
-    _d(f"build_raid_view rows={len(rows)} any_started={any_started} "
-       f"any_not_started={any_not_started} unreadable={unreadable}")
 
     # No clan has started AND nothing failed: distinguish an open global
     # weekend from no weekend at all. Both differ from "you used all attacks".

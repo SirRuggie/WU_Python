@@ -130,6 +130,26 @@ class DeclarationPingHTTP(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(lane["history"][0]["state"], "done")
         self.assertEqual(len(lane["history"][0]["posted"]), 1)
 
+    async def test_slow_ten_chunk_send_keeps_every_confirmed_mongo_receipt(self):
+        # Ten local fake Discord accepts plus the real inter-chunk spacing exceed
+        # the former 15-second workflow CSOT. Only Mongo is real, never Discord.
+        async def slow_accept(*args, **kwargs):
+            await asyncio.sleep(1)
+            return "345678901234567890"
+
+        self.transport.send.side_effect = slow_accept
+        review = await self.review()
+        with patch("cwl_web.declaration_pings.messages", return_value=[{"content": "fixture"}] * 10):
+            response = await self.send(review)
+            self.assertEqual(response.status, 202, await response.text())
+        await self.settled()
+        receipt = await self.storage.receipt("lazy", review["token"])
+        self.assertEqual(receipt["state"], "done")
+        self.assertEqual(len(receipt["posted"]), 10)
+        self.assertEqual(receipt["next"], 10)
+        self.assertIsNone(receipt["attempting"])
+        self.assertEqual(self.transport.send.await_count, 10)
+
     async def test_arrival_changes_after_review_are_not_sent(self):
         review = await self.review()
         self.providers.players["#Q2Y"]["current_clan_tag"] = "#R2Y"
