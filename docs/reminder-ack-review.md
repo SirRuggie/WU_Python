@@ -75,7 +75,7 @@ next-send date, overflow or browser errors.
 
 The exact committed production-shaped artifact passes51routes/nativepool/real
 owner/copiedSQLite+ownedMongo/external-network block/config200/auth401, cleanup
-and per-file hashes (`.local/p142-boot-ready`). The existing preview33917 stays
+and per-file hashes (`.local/p142-boot-final`, exact5c0c479; subsequent changes are test/docs-only). The existing preview33917 stays
 running with entry `signup-reminders-preview-0cl7Vw5o.js`, SHA256
 `18c60e711cbf5db5e0589cc104e406df90e559c4f4c7da4016371fc3963bc767`.
 
