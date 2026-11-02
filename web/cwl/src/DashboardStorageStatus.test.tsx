@@ -54,6 +54,16 @@ it("shows one staff line until a successful authenticated read confirms recovery
     await act(async () => {
       await api("/auth/me");
     });
+    expect(host.querySelector('[role="alert"]')).not.toBeNull(); // An old/generic 200 cannot confirm storage health.
+    fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ authenticated: true }), {
+        status: 200,
+        headers: { "X-Dashboard-Storage-State": "healthy" },
+      }),
+    );
+    await act(async () => {
+      await api("/auth/me");
+    });
     expect(host.querySelector('[role="alert"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
@@ -108,6 +118,66 @@ it("keeps permanent attention visible when a later transient error arrives", asy
     expect(host.textContent).toContain("needs attention");
     expect(host.textContent).not.toContain("recovering");
     await act(async () => window.dispatchEvent(new Event(STORAGE_RECOVERED)));
+    expect(host.textContent).toContain("needs attention");
+    await act(async () =>
+      window.dispatchEvent(
+        new CustomEvent(STORAGE_RECOVERED, { detail: { confirmed: true } }),
+      ),
+    );
+    expect(host.textContent).toBe("");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("does not clear a newer permanent fence with an older in-flight healthy response", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  let resolveOld!: (response: Response) => void;
+  const fetch = vi.spyOn(globalThis, "fetch");
+  fetch.mockImplementationOnce(
+    () =>
+      new Promise<Response>((resolve) => {
+        resolveOld = resolve;
+      }),
+  );
+  try {
+    await act(async () => root.render(<DashboardStorageStatus />));
+    const oldRead = api("/auth/me");
+    fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "needs attention" }), {
+        status: 503,
+        headers: {
+          "X-Dashboard-Storage-Degraded": "1",
+          "X-Dashboard-Storage-Attention": "1",
+        },
+      }),
+    );
+    await act(async () => {
+      await expect(api("/fixture-save", "POST", {})).rejects.toBeInstanceOf(
+        ApiError,
+      );
+    });
+    resolveOld(
+      new Response(JSON.stringify({ authenticated: true }), {
+        status: 200,
+        headers: { "X-Dashboard-Storage-State": "healthy" },
+      }),
+    );
+    await act(async () => {
+      await oldRead;
+    });
+    expect(host.textContent).toContain("needs attention");
+    fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ authenticated: true }), {
+        status: 200,
+        headers: { "X-Dashboard-Storage-State": "healthy" },
+      }),
+    );
+    await act(async () => {
+      await api("/auth/me");
+    });
     expect(host.textContent).toBe("");
   } finally {
     await act(async () => root.unmount());
