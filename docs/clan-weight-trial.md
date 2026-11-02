@@ -319,7 +319,9 @@ creates a second weight or changes a saved value.
 `ClanWeightStore` remains the sole storage owner. The existing four-column
 `clan_weight_war_lineups` latest row is preserved unchanged during migration.
 An additive `clan_weight_war_lineup_previous` table holds at most one predecessor
-per clan. A newer usable war atomically rotates latest to previous and drops
+per clan. An existing single lineup stays intact; no older war is invented or
+backfilled, and the selector appears once a second distinct usable war is captured.
+A newer usable war atomically rotates latest to previous and drops
 the older predecessor. Older responses cannot displace either newer war, and
 same-war states cannot move backwards. Partial, malformed or inaccessible war
 responses retain both saved lineups. Optional names/Town Halls already known for
@@ -349,7 +351,9 @@ immediate write transaction, the owner rebuilds eligibility from those current
 members and **both saved lineups**, never from a client-supplied list. A player
 only in the older lineup can be saved. If a third war removes that player's
 last eligibility before Save, the stale page receives a conflict; earlier
-weights/history remain. Per-player CAS, all-or-none batches, actor/source
+weights/history remain. The bounded save accepts up to 150 distinct eligible people (50 current plus
+two 50-player lineups), so a disjoint current/war view can still save atomically.
+Per-player CAS, all-or-none batches, actor/source
 history, idempotent replay and shared draft-roster invalidation remain intact.
 The saved-player endpoint still edits any already saved row under its existing
 rule. Its only new creation exception is a player in a saved lineup from a
@@ -371,6 +375,11 @@ Reader surfaces are explicit:
   claims that they are currently in that clan.
 - Missing weights uses `Non-FWA accounts`, omits the repeated missing-weight
   reason, and says `Saving doesn't move players.` Loot/Full and row Save remain.
+
+A permission-denied read/save clears clan progress and any opened saved-player
+search; explicit retry can reload after access returns. It does not replay a save.
+A current-roster outage still blocks clan saves under the existing verification
+rule; both saved lineups and earlier weights remain intact.
 
 QA and remaining limits are recorded in the review handoff. All tests and
 screenshots use isolated fixtures; none establishes live Discord delivery or

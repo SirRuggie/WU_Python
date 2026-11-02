@@ -464,7 +464,9 @@ class ClanWeightStore:
         ):
             raise ValueError("Incomplete war lineup")
         for field in ("names", "town_halls"):
-            values = lineup.get(field) or {}
+            values = lineup.get(field)
+            if values is None:
+                values = {}
             if not isinstance(values, dict) or not set(values) <= set(order):
                 raise ValueError("Invalid saved war member details")
             if field == "names" and any(

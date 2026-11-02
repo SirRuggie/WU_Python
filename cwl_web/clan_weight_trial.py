@@ -273,8 +273,8 @@ async def saved_players(request):
 
 def validate_changes(changes):
     """Validate request shape; the storage owner validates changed numeric values."""
-    if not isinstance(changes, list) or not 1 <= len(changes) <= 50:
-        raise ValueError("Choose between 1 and 50 weights to save.")
+    if not isinstance(changes, list) or not 1 <= len(changes) <= 150:
+        raise ValueError("Choose between 1 and 150 weights to save.")
     seen = set()
     cleaned = []
     for item in changes:

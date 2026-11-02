@@ -746,3 +746,68 @@ it("keeps departed edits when switching wars is canceled and renders saved names
     vi.mocked(api).mock.calls.filter(([, method]) => method === "PUT"),
   ).toHaveLength(0);
 });
+
+it("clears clan summaries and an opened saved-player search when member access is revoked", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  await render();
+  await click("Needs work");
+  await input(
+    host.querySelector<HTMLInputElement>(
+      '.weight-saved-search input[type="search"]',
+    )!,
+    "Saved",
+  );
+  await click("Search saved players");
+  expect(host.textContent).toContain("Saved outside");
+  const { ApiError } = await import("../api");
+  const denied = new ApiError("Access revoked", 403);
+  denied.status = 403;
+  vi.mocked(api).mockImplementation(async (path, ...args) => {
+    if (path.includes("/clans/")) throw denied;
+    return original(path, ...args);
+  });
+  await click("Refresh members");
+  expect(host.textContent).toContain("Access revoked");
+  expect(host.textContent).not.toContain("Saved outside");
+  expect(host.textContent).not.toContain("2/4 weighed");
+  expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(0);
+  vi.mocked(api).mockImplementation(original);
+  await click("Retry clans");
+  expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(4);
+  expect(host.textContent).not.toContain("Saved outside");
+});
+
+it("does not restore protected clan counts from a stale success after access denial", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  let resolveDirectory!: (value: unknown) => void;
+  const pending = new Promise((resolve) => {
+    resolveDirectory = resolve;
+  });
+  let directoryCalls = 0;
+  let denied = false;
+  const { ApiError } = await import("../api");
+  const forbidden = new ApiError("Access revoked", 403);
+  forbidden.status = 403;
+  vi.mocked(api).mockImplementation(async (path, ...args) => {
+    if (path.startsWith("/weight-trial/clans") && !path.includes("/clans/")) {
+      directoryCalls++;
+      if (directoryCalls === 2) return pending;
+    }
+    if (denied && path.includes("/clans/")) throw forbidden;
+    return original(path, ...args);
+  });
+  await render();
+  await click("Needs work");
+  expect(directoryCalls).toBe(2);
+  denied = true;
+  await click("Refresh members");
+  expect(host.textContent).toContain("Access revoked");
+  const oldDirectory = await original("/weight-trial/clans?season_id=1");
+  await act(async () => {
+    resolveDirectory(oldDirectory);
+    await pending;
+  });
+  expect(host.textContent).not.toContain("2/4 weighed");
+  expect(host.querySelector(".weight-saved-search")).toBeNull();
+  expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(0);
+});

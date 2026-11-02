@@ -353,3 +353,97 @@ class LastWarWeightsTests(unittest.IsolatedAsyncioTestCase):
             await self.call("GET", "/weight-trial/clans/%23R2Y", self.owner)
         ).json()
         assert result["war_order"] is None and result["war_lineups"] == []
+
+    async def test_full_current_and_two_war_union_can_save_atomically_with_bounded_size(
+        self,
+    ):
+        def player_tag(n):
+            return "#P" + "".join("0289PYLQGR"[int(d)] for d in str(n).zfill(5)) + "Y"
+
+        current = [player_tag(n) for n in range(50)]
+        latest = tuple(player_tag(n) for n in range(50, 100))
+        previous = tuple(player_tag(n) for n in range(100, 150))
+        self.roster(
+            members=[{"tag": tag, "name": tag, "town_hall": 16} for tag in current]
+        )
+        weights = self.app["clan_weight_trial"]
+        weights.remember_lineup("#R2Y", lineup(1, previous))
+        weights.remember_lineup("#R2Y", lineup(2, latest))
+        changes = [
+            {"tag": tag, "weight": 150000, "storages": 5, "revision": 0}
+            for tag in [*current, *latest, *previous]
+        ]
+        response = await self.save(changes)
+        assert response.status == 200
+        data = await response.json()
+        assert len(data["members"]) == 50 and len(data["weight_members"]) == 150
+        assert len(weights.all()) == 150
+        assert (
+            len(self.app["store"].rows("SELECT * FROM clan_player_weight_history"))
+            == 150
+        )
+        assert (
+            await self.save(
+                [*changes, {"tag": "#V2Y", "weight": 150000, "revision": 0}]
+            )
+        ).status == 400
+        assert (
+            len(self.app["store"].rows("SELECT * FROM clan_player_weight_history"))
+            == 150
+        )
+
+
+@pytest.mark.parametrize("town_hall", [None, 15, True, 100, "15"])
+def test_public_war_parser_keeps_optional_th_without_fabricating_it(town_hall):
+    import asyncio
+    from unittest.mock import patch
+    from cwl_web.providers import LiveProviders
+    from test_cwl_web_league_provider import Response
+
+    member = {"tag": "#G2Y", "mapPosition": 1, "name": "Saved war name"}
+    if town_hall is not None:
+        member["townhallLevel"] = town_hall
+    body = {
+        "state": "inWar",
+        "endTime": "20261102T070000.000Z",
+        "teamSize": 1,
+        "clan": {"tag": "#R2Y", "members": [member]},
+    }
+
+    class HTTP:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        def get(self, url, **kwargs):
+            assert url.endswith("/currentwar")
+            return Response(body)
+
+    provider = LiveProviders(coc_token="fixture", mongo_uri="", routes={})
+    with patch(
+        "cwl_web.providers.aiohttp.ClientSession", side_effect=lambda **kw: HTTP()
+    ):
+        if town_hall is not None and (
+            type(town_hall) is not int or not 0 < town_hall < 100
+        ):
+            with pytest.raises(ProviderUnavailable):
+                asyncio.run(provider.weight_war_lineup("#R2Y"))
+        else:
+            parsed = asyncio.run(provider.weight_war_lineup("#R2Y"))
+            assert parsed["town_halls"] == ({"#G2Y": 15} if town_hall == 15 else {})
+            assert parsed["names"] == {"#G2Y": "Saved war name"}
+
+
+@pytest.mark.parametrize("field", ["names", "town_halls"])
+@pytest.mark.parametrize("value", [[], False, 0, ""])
+def test_optional_metadata_rejects_nonmapping_falsey_values_without_mutation(
+    ledger, field, value
+):
+    _, weights = ledger
+    weights.remember_lineup("#R2Y", lineup())
+    before = weights.saved_lineups("#R2Y")
+    with pytest.raises(ValueError):
+        weights.remember_lineup("#R2Y", {**lineup(3), field: value})
+    assert weights.saved_lineups("#R2Y") == before
