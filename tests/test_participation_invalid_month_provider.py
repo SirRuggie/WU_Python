@@ -79,7 +79,9 @@ def test_real_parser_unreadable_month_active_infers_but_ended_waits(
     kind = (
         "none"
         if season is ABSENT or season is None
-        else "empty" if season == "" else "invalid"
+        else (
+            "empty" if season == "" else "date" if season == "2026-11-01" else "invalid"
+        )
     )
     assert "season_kind=" + kind in text
     if kind == "invalid":

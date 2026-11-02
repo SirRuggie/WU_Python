@@ -358,6 +358,16 @@ class LiveProviders:
                 or not isinstance(clans, list) or not isinstance(rounds, list)):
             error = ProviderUnavailable("Invalid Clash league-group response")
             error.group_state = state if isinstance(state, str) and state in LEAGUE_GROUP_DIAGNOSTIC_STATES else "other"
+            # Preserve the public failure contract; only sync interprets this
+            # explicit no-group state as a per-clan normal wait.
+            if state == "NOT_IN_WAR" and (
+                not clans
+                or not rounds
+                or not isinstance(clans, list)
+                or not isinstance(rounds, list)
+            ):
+                error.group_absent = True
+                error.group_season = season
             raise error
         result_clans = []
         for clan in clans:
