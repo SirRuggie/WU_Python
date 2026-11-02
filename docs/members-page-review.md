@@ -23,11 +23,15 @@ unused styles are removed; its tests now exercise the unified page.
 | Editor/navigation | Existing conflict/draft reload, save retry identities, uncertain outcome and country-zone editor cases migrated intact; dirty person changes use the shared discard guard and stable Details history. |
 | Layout/keyboard | Four widths320/360/390/1440; usable bounded list, no page overflow, left alignment, hidden-label containment; exact hidden-inclusive bulk/Stop flow. Real Tab/Space/Enter/Escape at360/1440 and640×460, uncovered focus and preserved selection/filter/Back. |
 
-Current checks:1429 full frontend tests in255files;72 focused member/editor/run
-cases plus subsequent immediate-role/Undo and dirty-navigation checks;44 focused
-backend role/policy cases;4 owned-Mongo role cases. TypeScript and development
-builds pass. Additional full backend, required war-reminder, final integration,
-requested mutation gates and final screenshot review remain before READY.
+Final checks: 5,920 full guarded backend tests passed, 75 skipped and 253
+subtests; 1,470 frontend tests in 259 files; TypeScript and production build;
+82 focused backend and 82 focused frontend cases; six canonical-route tests with
+58 subtests; 20 owned Mongo role/profile cases; 15 fixture endpoint safety cases;
+ten genuine behavioral mutants; required war reminders (213 backend, one skip,
+35 frontend); four-width layouts and three keyboard/short-screen workflows.
+The configurable fixture URI rejects non-loopback hosts, credentials, database
+paths, query options and ports outside 27150–27169 before creating a client.
+The final owned server used 27161 and was stopped and removed.
 Evidence is in `.local/p93-*`. All browser and transport data is disconnected
 sample data; Mongo fixtures are owned loopback databases and are removed after
 checks. No real roles, nicknames, notifications, imports or DM clicks were tested.
@@ -51,6 +55,12 @@ rollback after role use must retain a compatible worker or safely freeze queued
 role work before an older worker is reintroduced; never erase accepted receipts
 or restore production data to make a code rollback appear clean.
 
-Current main includes participation follow-up PR151. Final full backend/frontend,
-mutation, keyboard and four-width sample-layout gates remain pending before
-READY. No production role or nickname action was performed.
+Current main includes participation follow-up PR151. Final regression, mutation,
+keyboard and layout gates passed. Members is now a direct navigation link rather
+than a one-item disclosure. Screenshots at 360 and 1440 were reviewed. The old
+fixture has 1,447 synthetic members; the new fixture has 1,448 including 37 bots,
+with 1,411 visible by default, so before/after fixture counts differ. The new
+fixture does not supply a guild icon. Full frontend tests passed despite one
+loopback proxy ECONNREFUSED diagnostic; no warning-free harness claim is made.
+Vite reports its existing large-chunk advisory. No production role, nickname,
+import, notification or DM action was performed.

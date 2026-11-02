@@ -54,6 +54,7 @@ it("shows direct overview and moderation links without a staff fold-out", async 
   expect(direct.map((button) => button.textContent)).toEqual([
     "Staff overview",
     "Moderation",
+    "Members",
   ]);
   await act(async () => direct[0].click());
   await act(async () => direct[1].click());
@@ -65,7 +66,7 @@ it("shows direct overview and moderation links without a staff fold-out", async 
 
 it("keeps every owner staff group flat", async () => {
   await render("home");
-  for (const id of ["cwl", "clans", "members", "tickets", "bot", "admin"]) {
+  for (const id of ["cwl", "clans", "tickets", "bot", "admin"]) {
     const group = children(id);
     expect(
       group.querySelector(".navigation-children, .strikes-subnav"),
@@ -110,7 +111,7 @@ it("remembers new groups and drops obsolete v3 keys safely", async () => {
   );
   await render("home");
   expect(children("clans").hasAttribute("hidden")).toBe(false);
-  expect(children("members").hasAttribute("hidden")).toBe(false);
+  expect(children("members")).toBeNull();
   expect(children("bot").hasAttribute("hidden")).toBe(true);
   const saved = JSON.parse(
     localStorage.getItem("wu-navigation-v3:staff-nav-test")!,
@@ -121,7 +122,6 @@ it("remembers new groups and drops obsolete v3 keys safely", async () => {
     "bot",
     "clans",
     "cwl",
-    "members",
     "my-dashboard",
   ]);
   await act(async () => root.render(<div />));
@@ -163,4 +163,15 @@ it("persists explicit toggles but never an automatic current-group opening", asy
   expect(children("cwl").hidden).toBe(true);
   expect(children("bot").hidden).toBe(true);
   expect(children("clans").hidden).toBe(false);
+});
+
+it("opens Members with one direct menu link and no extra group toggle", async () => {
+  await render("home");
+  const links = [...host.querySelectorAll<HTMLButtonElement>("button")].filter(
+    (button) => button.textContent === "Members",
+  );
+  expect(links).toHaveLength(1);
+  expect(links[0].hasAttribute("aria-expanded")).toBe(false);
+  await act(async () => links[0].click());
+  expect(navigate).toHaveBeenCalledWith("members-settings");
 });

@@ -6,10 +6,11 @@ import time
 from types import SimpleNamespace as S
 from uuid import uuid4
 import pytest
+from local_mongo_fixture import fixture_uri
 from pymongo import AsyncMongoClient
 from utils.member_profile_runs import ProfileRuns
 
-URI = os.environ.get("WU_ACTIVITY_TEST_MONGO_URI")
+URI = fixture_uri(os.environ.get("WU_ACTIVITY_TEST_MONGO_URI"))
 pytestmark = pytest.mark.skipif(
     not URI, reason="owned local role Mongo fixture required"
 )
@@ -34,7 +35,6 @@ def item(uid=USER, protected=False):
 @pytest.mark.parametrize("child_status", ["done", "uncertain", "running"])
 def test_role_restart_never_replays_child_and_stop_blocks_later_people(child_status):
     async def run():
-        assert URI == "mongodb://127.0.0.1:27154"
         client = AsyncMongoClient(URI)
         db = client["wu_members_role_restart_" + uuid4().hex]
         mongo = S(bot_config=db.bot_config, component_state=db.component_state)
@@ -87,7 +87,6 @@ def test_role_restart_never_replays_child_and_stop_blocks_later_people(child_sta
 
 def test_protected_role_confirmation_and_shared_lane_are_durable():
     async def run():
-        assert URI == "mongodb://127.0.0.1:27154"
         client = AsyncMongoClient(URI)
         db = client["wu_members_role_confirm_" + uuid4().hex]
         mongo = S(bot_config=db.bot_config, component_state=db.component_state)

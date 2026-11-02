@@ -373,7 +373,7 @@ it("tour opens only the target sidebar section and preserves the saved expansion
       );
       expect(target?.closest("[hidden]")).toBeNull();
       expect(target).not.toBeNull();
-      for (const id of ["cwl", "clans", "members", "bot", "admin"]) {
+      for (const id of ["cwl", "clans", "bot", "admin"]) {
         const group = host.querySelector(`#navigation-${id}`);
         if (isOwner) {
           expect(group).not.toBeNull();

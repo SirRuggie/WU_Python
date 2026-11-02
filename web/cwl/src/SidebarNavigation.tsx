@@ -252,6 +252,7 @@ const sections: Section[] = [
     id: "members",
     label: "Members",
     icon: "users",
+    direct: true,
     items: [
       {
         view: "members-settings",
@@ -384,7 +385,6 @@ const preferenceIds = new Set([
   "my-cwl",
   "cwl",
   "clans",
-  "members",
   "bot",
   "admin",
 ]);
