@@ -25,9 +25,11 @@ from .server_management import (
 )
 from .manage_roles import member, hierarchy
 from .members_overview_timing import start_timing, measure, bind, unbind
+from . import member_directory_cache as cache
+from .member_row_work import run as run_row_work
 
 
-async def directory(request, *, timing=None):
+async def directory(request, *, timing=None, with_bot=False):
     rows, after = [], None
     async with asyncio.timeout(45):
         while True:
@@ -62,106 +64,189 @@ async def directory(request, *, timing=None):
         raise web.HTTPServiceUnavailable(
             text="Discord returned an incomplete member directory."
         )
-    return rows
+    return (rows, me) if with_bot else rows
 
 
 async def inventory(request, *, with_role_context=False, timing=None):
     actor = await require_manage(request, "member_profiles")
+
+    cached_read = cache.eligible(request)
+    snapshot = None
+
+    async def fetch_snapshot():
+        rows, me = await directory(request, timing=timing, with_bot=True)
+        return dict(rows=rows, me=me)
+
     with measure(timing, "directory_ms"):
-        raw = (
-            await directory(request, timing=timing)
-            if timing is not None
-            else await directory(request)
-        )
+        if cached_read:
+            snapshot = await cache.state(request.app).read(
+                fetch_snapshot, force=request.query.get("refresh") == "1"
+            )
+            raw = snapshot.value["rows"]
+            request[cache.METADATA] = snapshot.metadata()
+        else:
+            raw = (
+                await directory(request, timing=timing)
+                if timing is not None
+                else await directory(request)
+            )
     with measure(timing, "hierarchy_ms"):
-        roles, guild, bot, acting = await hierarchy(request, actor)
+        if snapshot is not None:
+            from .manage_roles import hierarchy_context
+
+            me_data = snapshot.value["me"]
+            bot_data = next(
+                row for row in raw if str(row["user"]["id"]) == str(me_data["id"])
+            )
+            roles, guild, bot, acting = hierarchy_context(actor, me_data, bot_data)
+        else:
+            roles, guild, bot, acting = await hierarchy(request, actor)
+    with measure(timing, "profiles_ms"):
+        async with mongo(request) as db:
+            profiles = await MemberProfiles(db).for_members(
+                [row["user"]["id"] for row in raw], display_only=True
+            )
+    if snapshot is not None and snapshot.cached:
+        from datetime import datetime, timezone
+
+        changed = any(
+            isinstance(profile.get("updated_at"), datetime)
+            and profile["updated_at"].replace(
+                tzinfo=profile["updated_at"].tzinfo or timezone.utc
+            )
+            > snapshot.captured_at
+            for profile in profiles.values()
+        )
+        if changed:
+            previous_ids = {str(row["user"]["id"]) for row in raw}
+            cache.invalidate(request.app)
+            with measure(timing, "directory_ms"):
+                snapshot = await cache.state(request.app).read(
+                    fetch_snapshot, force=True
+                )
+                raw = snapshot.value["rows"]
+                request[cache.METADATA] = snapshot.metadata()
+            with measure(timing, "hierarchy_ms"):
+                me_data = snapshot.value["me"]
+                bot_data = next(
+                    row for row in raw if str(row["user"]["id"]) == str(me_data["id"])
+                )
+                roles, guild, bot, acting = hierarchy_context(actor, me_data, bot_data)
+            # Only a membership race during that refresh needs an extra bounded
+            # read for newly encountered IDs, never a repeat of the full query.
+            added = {str(row["user"]["id"]) for row in raw} - previous_ids
+            if added:
+                with measure(timing, "profiles_ms"):
+                    async with mongo(request) as db:
+                        profiles.update(
+                            await MemberProfiles(db).for_members(
+                                added, display_only=True
+                            )
+                        )
+    with measure(timing, "rows_ms"):
+        rows, acting = await run_row_work(
+            request, inventory_rows, raw, profiles, roles, guild, bot, acting
+        )
+    return (rows, roles, guild, bot, acting, actor) if with_role_context else rows
+
+
+def inventory_rows(raw, profiles, roles, guild, bot, acting):
+    """Pure adaptation of private request snapshots; no I/O or writes."""
     from extensions.warrior import core
     import hikari
 
     role_list = list(roles.values())
     me = guild.get_member(bot.get_me().id)
-    with measure(timing, "profiles_ms"):
-        async with mongo(request) as db:
-            profiles = await MemberProfiles(db).for_members(
-                [row["user"]["id"] for row in raw]
-            )
-    with measure(timing, "rows_ms"):
-        rows = []
-        for data in raw:
-            uid = str(data["user"]["id"])
-            from .manage_roles import member_option
+    from utils.role_hierarchy import RolePositions
+    from types import SimpleNamespace
+    from extensions.commands.recruit import perms
 
-            identity = member_option(data)
-            profile = profiles.get(uid)
-            parsed = profile_zone(data.get("nick"))
-            status = (
-                "Saved"
-                if profile and profile["source"] in ("staff", "warrior")
-                else (
-                    "From nickname"
-                    if profile or parsed and parsed["offsetMinutes"] is not None
-                    else "Unknown" if parsed else "Missing"
-                )
+    # One request's live context only. Writes never receive this snapshot.
+    positions = RolePositions(role_list)
+    positions.top(acting.role_ids)
+    positions.top(me.role_ids)
+    actor_permissions = core.permissions(acting, role_list, guild.owner_id)
+    bot_can_nickname = bool(
+        core.permissions(me, role_list, guild.owner_id)
+        & hikari.Permissions.MANAGE_NICKNAMES
+    )
+    acting = SimpleNamespace(
+        id=acting.id,
+        guild_id=getattr(acting, "guild_id", guild.id),
+        role_ids=acting.role_ids,
+        permissions=perms.guild_permissions(acting, guild),
+    )
+    rows = []
+    for data in raw:
+        uid = str(data["user"]["id"])
+        from .manage_roles import member_option
+
+        identity = member_option(data)
+        profile = profiles.get(uid)
+        parsed = profile_zone(data.get("nick"))
+        status = (
+            "Saved"
+            if profile and profile["source"] in ("staff", "warrior")
+            else (
+                "From nickname"
+                if profile or parsed and parsed["offsetMinutes"] is not None
+                else "Unknown" if parsed else "Missing"
             )
-            skip = None
-            try:
-                if data["user"].get("bot"):
-                    raise ValueError("Bot account")
-                core.manageable_target(
-                    dict(
-                        member=member(data),
-                        guild=guild,
-                        actor=acting,
-                        roles=role_list,
-                        me=me,
-                        actor_permissions=core.permissions(
-                            acting, role_list, guild.owner_id
-                        ),
-                    )
-                )
-                if (
-                    not core.permissions(me, role_list, guild.owner_id)
-                    & hikari.Permissions.MANAGE_NICKNAMES
-                ):
-                    raise ValueError("Bot needs Manage Nicknames")
-            except ValueError as error:
-                skip = str(error)
-            rows.append(
+        )
+        skip = None
+        try:
+            if data["user"].get("bot"):
+                raise ValueError("Bot account")
+            core.manageable_target(
                 dict(
-                    discord_id=uid,
-                    role_ids=sorted(map(str, data.get("roles", []))),
-                    discord_profile={
-                        key: identity.get(key)
-                        for key in ("id", "display_name", "username", "avatar_url")
-                    },
-                    name=data["user"].get("global_name")
-                    or data["user"].get("username")
-                    or uid,
-                    nickname=data.get("nick"),
-                    bot=bool(data["user"].get("bot")),
-                    status=status,
-                    profile=(
-                        {
-                            k: profile.get(k)
-                            for k in (
-                                "zone_id",
-                                "gmt_label",
-                                "utc_offset_minutes",
-                                "country",
-                                "flag",
-                                "name_source_tag",
-                                "source",
-                                "revision",
-                            )
-                        }
-                        if profile
-                        else None
-                    ),
-                    parsed=parsed,
-                    skip_reason=skip,
+                    member=member(data),
+                    guild=guild,
+                    actor=acting,
+                    roles=positions,
+                    me=me,
+                    actor_permissions=actor_permissions,
                 )
             )
-    return (rows, roles, guild, bot, acting, actor) if with_role_context else rows
+            if not bot_can_nickname:
+                raise ValueError("Bot needs Manage Nicknames")
+        except ValueError as error:
+            skip = str(error)
+        rows.append(
+            dict(
+                discord_id=uid,
+                role_ids=sorted(map(str, data.get("roles", []))),
+                discord_profile={
+                    key: identity.get(key)
+                    for key in ("id", "display_name", "username", "avatar_url")
+                },
+                name=data["user"].get("global_name")
+                or data["user"].get("username")
+                or uid,
+                nickname=data.get("nick"),
+                bot=bool(data["user"].get("bot")),
+                status=status,
+                profile=(
+                    {
+                        k: profile.get(k)
+                        for k in (
+                            "zone_id",
+                            "gmt_label",
+                            "utc_offset_minutes",
+                            "country",
+                            "flag",
+                            "name_source_tag",
+                            "source",
+                            "revision",
+                        )
+                    }
+                    if profile
+                    else None
+                ),
+                parsed=parsed,
+                skip_reason=skip,
+            )
+        )
+    return rows, acting
 
 
 def directory_response(rows, **extra):
@@ -206,45 +291,22 @@ async def members_overview(request):
         )
         timing.counts(len(rows), len(roles))
         from .manage_roles import dashboard_grant_roles
-        from extensions.commands.recruit.perms import actor_can_manage_role
-        from utils.role_permissions import role_is_manageable
 
         protected = await dashboard_grant_roles(request, actor)
         with measure(timing, "rows_ms"):
-            options = [
-                dict(id=str(role.id), name=role.name)
-                for role in roles.values()
-                if str(role.id) not in protected
-                and role_is_manageable(guild, bot, role)
-                and actor_can_manage_role(acting, guild, role)
-            ]
-            from extensions.commands.recruit.perms import actor_can_manage_member
-            from types import SimpleNamespace
-
-            for row in rows:
-                target = SimpleNamespace(
-                    id=int(row["discord_id"]), role_ids=tuple(map(int, row["role_ids"]))
-                )
-                row["role_editable"] = not row["bot"] and actor_can_manage_member(
-                    acting, target, guild
-                )
-                row["role_skip_reason"] = (
-                    None
-                    if row["role_editable"]
-                    else (
-                        "Bot account"
-                        if row["bot"]
-                        else "Server owner or above your role"
-                    )
-                )
-            all_roles = [
-                dict(id=str(role.id), name=role.name)
-                for role in roles.values()
-                if role.id != GUILD_ID
-            ]
+            options, all_roles = await run_row_work(
+                request, role_rows, rows, roles, guild, bot, acting, protected
+            )
         with measure(timing, "json_ms"):
             response = directory_response(
-                rows, roles=all_roles, manageable_roles=options
+                rows,
+                roles=all_roles,
+                manageable_roles=options,
+                **(
+                    {"directory_cache": request[cache.METADATA]}
+                    if hasattr(request, "get") and request.get(cache.METADATA)
+                    else {}
+                ),
             )
         return response
     finally:
@@ -253,6 +315,42 @@ async def members_overview(request):
         except Exception:
             pass
         unbind(request, binding)
+
+
+def role_rows(rows, roles, guild, bot, acting, protected):
+    """Pure role choices and flags, using this request's live actor context."""
+    from extensions.commands.recruit.perms import actor_can_manage_role
+    from utils.role_permissions import role_is_manageable
+
+    options = [
+        dict(id=str(role.id), name=role.name)
+        for role in roles.values()
+        if str(role.id) not in protected
+        and role_is_manageable(guild, bot, role)
+        and actor_can_manage_role(acting, guild, role)
+    ]
+    from extensions.commands.recruit.perms import actor_can_manage_member
+    from types import SimpleNamespace
+
+    for row in rows:
+        target = SimpleNamespace(
+            id=int(row["discord_id"]), role_ids=tuple(map(int, row["role_ids"]))
+        )
+        row["role_editable"] = not row["bot"] and actor_can_manage_member(
+            acting, target, guild
+        )
+        row["role_skip_reason"] = (
+            None
+            if row["role_editable"]
+            else ("Bot account" if row["bot"] else "Server owner or above your role")
+        )
+    all_roles = [
+        dict(id=str(role.id), name=role.name)
+        for role in roles.values()
+        if role.id != GUILD_ID
+    ]
+    return options, all_roles
+
 
 async def choices(request):
     await require_manage(request, "member_profiles")
@@ -334,6 +432,7 @@ async def standardize_preview(request):
         raise web.HTTPBadRequest(text="Choose a reviewed member selection.")
     if "member_ids" in body:
         from utils.member_profiles import member_id
+
         try:
             selected = body["member_ids"]
             if not isinstance(selected, list) or not 1 <= len(selected) <= 10000:
@@ -343,7 +442,9 @@ async def standardize_preview(request):
                 raise ValueError("Choose people once each.")
             known = {row["discord_id"]: row for row in rows}
             if any(uid not in known or known[uid].get("bot") for uid in selected):
-                raise ValueError("Selection changed. Refresh the people before trying again.")
+                raise ValueError(
+                    "Selection changed. Refresh the people before trying again."
+                )
         except (ValueError, TypeError) as error:
             raise web.HTTPBadRequest(text=str(error)) from error
         rows = [known[uid] for uid in selected]
@@ -386,6 +487,9 @@ async def standardize_confirm(request):
             )
         except (ValueError, TypeError) as error:
             raise web.HTTPConflict(text=str(error)) from error
+    from .member_directory_cache import invalidate
+
+    invalidate(getattr(request, "app", {}))
     return web.json_response(dict(run_id=run["_id"], state=run["state"]))
 
 
@@ -472,6 +576,9 @@ async def standardize_status(request):
             )
         except ValueError as error:
             raise web.HTTPNotFound(text=str(error)) from error
+    from .member_directory_cache import observe_run
+
+    observe_run(getattr(request, "app", {}), run, children)
     statuses = {row["_id"]: row for row in children}
     rows = []
     for index, item in enumerate(run["items"]):
