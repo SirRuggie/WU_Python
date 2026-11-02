@@ -141,7 +141,8 @@ class MongoDashboardState:
                 "MONGODB_URI is required for dashboard recovery."
             )
         client = MongoClient(
-            uri, serverSelectionTimeoutMS=5000, timeoutMS=10000, tz_aware=True
+            uri, serverSelectionTimeoutMS=5000, timeoutMS=10000, tz_aware=True,
+            appName="wu-dashboard-durability", maxPoolSize=10
         )
         collection = collection_for(
             client, "cwl_dashboard_state", routes=routes

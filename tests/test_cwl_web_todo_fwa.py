@@ -22,11 +22,11 @@ def test_web_outcomes_fail_without_breaking_attack_rows():
         mongo = SimpleNamespace(close=AsyncMock())
         app = {'providers': SimpleNamespace(mongo_uri='fixture')}
         rows = [SimpleNamespace(clan_tag='#ABC', ends_at=1800000000)]
-        with patch('cwl_web.todo.MongoClient', return_value=mongo), patch('utils.todo_fwa.load_fwa_records', new=AsyncMock(side_effect=RuntimeError('unavailable'))):
+        with patch('cwl_web.mongo_client.MongoClient', return_value=mongo), patch('utils.todo_fwa.load_fwa_records', new=AsyncMock(side_effect=RuntimeError('unavailable'))):
             values, note = await _fwa_outcomes(app, rows)
         assert values == [None]
         assert 'could not be checked' in note
-        mongo.close.assert_awaited_once()
+        mongo.close.assert_not_awaited()
     asyncio.run(check())
 
 
@@ -35,7 +35,7 @@ def test_web_outcomes_are_current_and_in_row_order():
         mongo = SimpleNamespace(close=AsyncMock())
         rows = [SimpleNamespace(clan_tag='#ABC', ends_at=1800000000), SimpleNamespace(clan_tag='#OTHER', ends_at=1800000000)]
         records = {'#ABC': {'coc_war_end_time': datetime.fromtimestamp(1800000000, timezone.utc).isoformat(), 'our_outcome': 'lose'}}
-        with patch('cwl_web.todo.MongoClient', return_value=mongo), patch('utils.todo_fwa.load_fwa_records', new=AsyncMock(return_value=records)) as load:
+        with patch('cwl_web.mongo_client.MongoClient', return_value=mongo), patch('utils.todo_fwa.load_fwa_records', new=AsyncMock(return_value=records)) as load:
             values, note = await _fwa_outcomes({'providers': SimpleNamespace(mongo_uri='fixture')}, rows)
         assert values == [{'status': 'lose', 'opponent': ''}, None]
         assert not note

@@ -1,7 +1,6 @@
 """Staff web facade over the native Manage CWL campaign and bot-owned queue."""
 from utils.cwl_roster_messages import roster_button
 import copy
-import os
 import re
 import sqlite3
 from contextlib import asynccontextmanager
@@ -10,7 +9,8 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 from aiohttp import web
-from pymongo import AsyncMongoClient
+from pymongo import timeout
+from .mongo_client import get_client
 from pymongo.errors import PyMongoError
 from utils import cwl_campaign
 from utils.mongo_routes import collection_for, load_routes
@@ -25,19 +25,17 @@ async def _mongo(request):
     if injected is not None:
         yield injected
         return
-    uri = os.getenv('MONGODB_URI', '').strip()
-    if not uri:
+    client = get_client(request.app)
+    if client is None:
         raise web.HTTPServiceUnavailable(text='Bot campaign database is not configured')
-    client = AsyncMongoClient(uri, serverSelectionTimeoutMS=5000, timeoutMS=10000)
     routes = load_routes()
     facade = SimpleNamespace(**{name: collection_for(client, name, routes=routes)
                                for name in ('bot_config', 'cwl_reminder', 'cwl_pending_reminders')})
     try:
-        yield facade
+        with timeout(10):
+            yield facade
     except PyMongoError as exc:
         raise web.HTTPServiceUnavailable(text='Bot campaign database is unavailable; refresh before retrying') from exc
-    finally:
-        await client.close()
 
 
 def _binding(request, sid):

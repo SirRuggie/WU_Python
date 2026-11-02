@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from aiohttp import web
 
 from utils import clan_history, todo_data
-from utils.mongo import MongoClient
+from pymongo import timeout
+from .mongo_client import get_client
 from utils.startup import create_authenticated_clash_client
 from .providers import ProviderUnavailable
 
@@ -80,37 +81,33 @@ async def get_clash_client(app):
 
 
 async def load_recent_clans(app, tags):
-    uri = getattr(app["providers"], "mongo_uri", "")
-    if not uri:
+    mongo = get_client(app)
+    if mongo is None:
         return {}, "Recent clan history is unavailable"
-    mongo = MongoClient(uri, serverSelectionTimeoutMS=3000, timeoutMS=5000)
     try:
-        candidates = await asyncio.wait_for(
-            clan_history.load_candidates(mongo, tags, create_indexes=False, raise_errors=True), 7)
+        with timeout(5):
+            candidates = await asyncio.wait_for(
+                clan_history.load_candidates(mongo, tags, create_indexes=False, raise_errors=True), 7)
         return candidates, ""
     except Exception as exc:
         logger.warning("Todo clan history unavailable: %s", type(exc).__name__)
         return {}, "Recent clan history is unavailable"
-    finally:
-        await mongo.close()
 
 
 async def _fwa_outcomes(app, rows):
     from utils.todo_fwa import load_fwa_records, matching_outcome
     if not rows:
         return [], ''
-    uri = getattr(app['providers'], 'mongo_uri', '')
-    if not uri:
+    mongo = get_client(app)
+    if mongo is None:
         return [None for _ in rows], 'FWA war outcomes could not be checked'
-    mongo = MongoClient(uri, serverSelectionTimeoutMS=3000, timeoutMS=5000)
     try:
-        records = await asyncio.wait_for(load_fwa_records(mongo, rows, strict=True), 7)
+        with timeout(5):
+            records = await asyncio.wait_for(load_fwa_records(mongo, rows, strict=True), 7)
         return [matching_outcome(row, records) for row in rows], ''
     except Exception as exc:
         logger.warning('Todo FWA outcomes unavailable: %s', type(exc).__name__)
         return [None for _ in rows], 'FWA war outcomes could not be checked'
-    finally:
-        await mongo.close()
 
 
 async def _section(fn, *args, **kwargs):
