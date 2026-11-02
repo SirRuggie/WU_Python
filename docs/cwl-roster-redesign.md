@@ -1078,3 +1078,40 @@ owned pending copies only after the recovered SQL state and consumed receipt are
 committed, retaining the base investigation proof. Tests cover pause persistence,
 both-off reset, owned leases, older/uncovered proof, pool scope, season round-trip,
 CAS race and head revision. All eleven new behavioral mutants were killed.
+
+## Member trust — audit batch 118 (review)
+
+The first season read runs even when the dashboard opens in a hidden/background
+tab. Later automatic reads remain visibility-gated; becoming visible refreshes
+the season. Home waits for a successful season read before showing season
+absence or signup status. The earlier redirect/login explanation was superseded
+by Claude's correction 406: the shared cause was the initial hidden guard. The
+auth initial read, assignment initial read and saved-publication initial read
+already run independently of visibility; their repeat policies are preserved.
+
+Assignments and Home retain successful data after ordinary refresh errors and
+show `Couldn't refresh. Showing last update.` with Retry. First-load failures
+remain distinct; 401/403 clear protected rows/details. Recovery is read-only.
+Assignments name accounts under `Waiting for a clan`, label known missing
+arrivals `Not in clan yet`, and explain `✅ = in the right clan`; unknown arrival
+stays unlabelled. `May change` uses the same `memberPlacementStatus` as Home.
+
+My signups shows publication loading until its own request finishes, including
+when the season or saved signup set changes. A published response always links
+to My clan assignments, including partial placement. Closed, unsigned members
+see `Ask staff for help.` Account-link help precedes the pool choice after a
+completed empty linked-account read and is available in empty assignments.
+`memberSignupsOpen` is shared by App, Home and member status components: only
+a draft season with signup_open is open. Main/Lazy rule text, the FWA line and
+the member tour wording are unchanged.
+
+Validation: full frontend, TypeScript/build, focused failure/recovery and hidden
+first-load regressions, and the failed-refresh-hides-list mutant. Isolated
+before/after screenshots cover 320/360/390/1440; narrow/wide review checks
+retained errors, waiting names, missing arrival, 44px actions, keyboard-readable
+recovery, no horizontal overflow and unchanged signup/assignment/lock counts.
+The HTML review embeds screenshots and records exact final counts. No backend,
+API contract, stored signup, assignment, publication or notification policy
+changed. No production calls, live Discord delivery or real-phone assistive
+technology testing was performed. Release is subject to Claude ACCEPT and
+root-coordinated fresh gates under approval 395.

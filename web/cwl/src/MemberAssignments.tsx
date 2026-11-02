@@ -1,3 +1,5 @@
+import { memberSignupsOpen } from "./memberSeason";
+import AccountLinkHelp from "./AccountLinkHelp";
 import {
   mergeAssignmentLocations,
   assignmentArrivalLabel,
@@ -5,9 +7,13 @@ import {
 import type { LocationRecords } from "./comparisonLocation";
 import JoiningInstructionsCard from "./JoiningInstructionsCard";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Season } from "./api";
+import { api, ApiError, type Season } from "./api";
 import { groupAssignments } from "./assignmentGroups";
-import { clanDeepLink, type MyAssignments } from "./publication";
+import {
+  clanDeepLink,
+  memberPlacementStatus,
+  type MyAssignments,
+} from "./publication";
 import "./MemberAssignments.css";
 import { memberDateLines } from "./MemberSignupStatus";
 
@@ -54,8 +60,13 @@ export default function MemberAssignments({
           setData(next.data);
         }
       } catch (cause) {
-        if (id === requestId.current && activeSeason.current === sid)
+        if (id === requestId.current && activeSeason.current === sid) {
+          if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
+            setData(null);
+            locations.current = {};
+          }
           setError(errorText(cause));
+        }
       } finally {
         if (id === requestId.current) inFlight.current = false;
         if (id === requestId.current && activeSeason.current === sid)
@@ -109,13 +120,16 @@ export default function MemberAssignments({
         </div>
       )}
       {error && (
-        <div className="notice error" role="alert">
-          {error}
+        <div
+          className={data ? "member-refresh-note" : "notice error"}
+          role={data ? "status" : "alert"}
+        >
+          {data ? "Couldn't refresh. Showing last update." : error}
           <button onClick={() => void load()}>Retry</button>
         </div>
       )}
       {loading && <p role="status">Loading current assignments…</p>}
-      {data && !loading && !error && (
+      {data && (
         <>
           {data.published?.joining_instructions && (
             <JoiningInstructionsCard
@@ -126,7 +140,14 @@ export default function MemberAssignments({
             <div className="member-signup-summary">
               <section className="member-signup-empty">
                 <h2>You haven't signed up any accounts yet.</h2>
-                {season?.signup_open && season.status === "draft" ? (
+                <details>
+                  <summary>Link an account</summary>
+                  <AccountLinkHelp
+                    busy={loading}
+                    onRefresh={() => void load()}
+                  />
+                </details>
+                {memberSignupsOpen(season) ? (
                   <button
                     onClick={
                       onSignup ||
@@ -138,7 +159,7 @@ export default function MemberAssignments({
                     Sign up for CWL ›
                   </button>
                 ) : (
-                  <p>Signups are closed.</p>
+                  <p>Signups are closed. Ask staff for help.</p>
                 )}
                 <button
                   className="member-signup-refresh"
@@ -183,7 +204,12 @@ export default function MemberAssignments({
             <div className="card member-compact-status">
               <div className="member-status-line">
                 <div>
-                  <strong>Published clan assignments</strong>
+                  <strong>
+                    Published clan assignments
+                    {memberPlacementStatus(data) === "provisional"
+                      ? " · May change"
+                      : ""}
+                  </strong>
                   {data.published && (
                     <p>
                       Version {data.published.version} · Published{" "}
@@ -195,6 +221,22 @@ export default function MemberAssignments({
               </div>
             </div>
           )}
+          {awaiting > 0 && (
+            <section className="card">
+              <h2>Waiting for a clan</h2>
+              <ul>
+                {groups
+                  .filter((group) => !group.clanTag)
+                  .flatMap((group) => group.accounts)
+                  .map((account) => (
+                    <li key={account.tag}>
+                      {account.player_name} ·{" "}
+                      {account.pool === "main" ? "Main" : "Lazy"}
+                    </li>
+                  ))}
+              </ul>
+            </section>
+          )}
           {assignedGroups > 0 ? (
             <>
               <p className="member-assignment-count">
@@ -203,6 +245,7 @@ export default function MemberAssignments({
                 hosting clan{assignedGroups === 1 ? "" : "s"}
                 {awaiting ? ` · ${awaiting} awaiting placement` : ""}
               </p>
+              <p>✅ = in the right clan</p>
               <div className="member-clan-list">
                 {groups
                   .filter((group) => group.clanTag)
@@ -214,7 +257,13 @@ export default function MemberAssignments({
                     >
                       <div className="member-clan-head">
                         <div>
-                          <h2>{group.clanName}</h2>
+                          <h2>
+                            {group.clanName}
+                            {group.clanTag &&
+                            memberPlacementStatus(data) === "provisional"
+                              ? " · May change"
+                              : ""}
+                          </h2>
                           <small>
                             {group.clanTag
                               ? `${group.clanTag} · ${assignmentArrivalLabel(group.accounts)}`
@@ -267,6 +316,9 @@ export default function MemberAssignments({
                                 )}
                               </strong>
                               <small>{account.tag}</small>
+                              {account.arrival_status === "missing" && (
+                                <small>Not in clan yet</small>
+                              )}
                             </div>
                             <span>
                               TH {account.town_hall ?? "—"} ·{" "}

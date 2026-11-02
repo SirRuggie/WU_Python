@@ -1,3 +1,4 @@
+import { memberSignupsOpen } from "./memberSeason";
 import { useEffect, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import type { Season } from "./api";
@@ -44,7 +45,7 @@ export function memberDateLines(
   if (!Number.isFinite(deadline) || !Number.isFinite(placement)) return [];
   if (placement < now)
     return ["Taking a little longer than usual · check back soon"];
-  if (season.signup_open && season.status === "draft")
+  if (memberSignupsOpen(season))
     return [
       signupCloseLine(season, now)!,
       `You'll see your clan by ${formatMemberDate(placement)}.`,
@@ -93,7 +94,7 @@ export default function MemberSignupStatus({
   const total = accounts
     ? new Set([...accounts, ...signups].map((a) => a.tag)).size
     : null;
-  const open = season?.signup_open && season.status === "draft";
+  const open = memberSignupsOpen(season);
   const waiting = signups.filter((s) => !s.assigned_clan_tag);
   const partial =
     published &&
@@ -133,20 +134,21 @@ export default function MemberSignupStatus({
                   My clan ›
                 </a>
               </>
-            ) : published && !waiting.length ? (
-              onAssignments ? (
+            ) : published ? (
+              <>
                 <a
                   href="/assignments"
                   onClick={(event) => {
-                    event.preventDefault();
-                    onAssignments();
+                    if (onAssignments) {
+                      event.preventDefault();
+                      onAssignments();
+                    }
                   }}
                 >
-                  Your published clan assignments are ready to view.
+                  My clan assignments ›
                 </a>
-              ) : (
-                "Your published clan assignments are ready to view."
-              )
+                {waiting.length > 0 && " Some accounts are waiting for a clan."}
+              </>
             ) : (
               "We've got your signup. Your clan will show here once staff finish the roster."
             )}
@@ -174,7 +176,7 @@ export default function MemberSignupStatus({
           (open ? (
             <button onClick={onRemaining}>Sign up for CWL ›</button>
           ) : (
-            <p>Signups are closed.</p>
+            <p>Signups are closed. Ask staff for help.</p>
           ))}
         {onRefresh && (
           <button className="member-signup-refresh" onClick={onRefresh}>
