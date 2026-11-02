@@ -7,6 +7,7 @@ transactions publish synchronously. Neither pool is created per request.
 import os
 
 from utils.mongo import MongoClient
+from utils.mongo_routes import Namespace
 
 APP_NAME = "wu-dashboard-http"
 MAX_POOL_SIZE = 20
@@ -23,9 +24,24 @@ def get_client(app):
         uri = os.getenv("MONGODB_URI", "").strip()
     if not uri:
         return None
+    routes = getattr(provider, "routes", None)
+    # LiveProviders owns normalized Namespace values, while MongoClient's public
+    # constructor validates raw settings. Preserve every explicit destination.
+    overrides = (
+        None
+        if routes is None
+        else {
+            alias: (
+                {"database": route.database, "collection": route.collection}
+                if isinstance(route, Namespace)
+                else route
+            )
+            for alias, route in routes.items()
+        }
+    )
     client = MongoClient(
         uri,
-        route_overrides=getattr(provider, "routes", None),
+        route_overrides=overrides,
         appName=APP_NAME,
         maxPoolSize=MAX_POOL_SIZE,
         serverSelectionTimeoutMS=5000,
