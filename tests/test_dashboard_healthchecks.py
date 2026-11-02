@@ -146,7 +146,7 @@ def test_dashboard_worker_uses_real_self_check_result_not_timer(monkeypatch):
         ):
             with pytest.raises(asyncio.CancelledError):
                 await health._dashboard_worker({}, sender)
-        assert calls == [True, False]
+        assert calls == [True]
 
     asyncio.run(run())
 
@@ -154,3 +154,102 @@ def test_dashboard_worker_uses_real_self_check_result_not_timer(monkeypatch):
 def test_real_app_wires_optional_dashboard_lifecycle(tmp_path):
     app = routes.create_app(db_path=str(tmp_path / "app.sqlite"), dev_fixture=True)
     assert health.lifecycle in app.cleanup_ctx
+
+
+def test_real_listener_shutdown_after_success_never_sends_failure(
+    tmp_path, monkeypatch
+):
+    async def run():
+        app, server = await served_app(tmp_path)
+        url = str(server.make_url("/api/cwl/config"))
+        monkeypatch.setattr(health, "_self_url", lambda: url)
+        monkeypatch.setattr(health, "PERIOD_SECONDS", 0.01)
+        calls = []
+        task = asyncio.create_task(
+            health._dashboard_worker(app, S(submit=calls.append))
+        )
+        try:
+            async with asyncio.timeout(2):
+                while len(calls) < 4:
+                    await asyncio.sleep(0.005)
+            await server.close()  # The listener stops before worker cleanup.
+            await asyncio.sleep(0.08)
+            assert len(calls) >= 4 and all(value is True for value in calls)
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await server.close()
+
+    asyncio.run(run())
+
+
+def test_self_check_warning_is_rate_limited_numeric_free_and_private(
+    monkeypatch, caplog
+):
+    async def run():
+        steps, calls = [0], []
+
+        async def sleep(seconds):
+            steps[0] += 1
+            if steps[0] == 4:
+                raise asyncio.CancelledError()
+
+        async def failed(app):
+            return False
+
+        monkeypatch.setattr(health, "time", S(monotonic=lambda: steps[0]))
+        monkeypatch.setattr(health, "asyncio", S(sleep=sleep))
+        monkeypatch.setattr(health, "self_check", failed)
+        with pytest.raises(asyncio.CancelledError):
+            await health._dashboard_worker({}, S(submit=calls.append))
+        assert calls == []
+
+    asyncio.run(run())
+    lines = [r.getMessage() for r in caplog.records]
+    assert lines == ["Dashboard self-check unavailable"]
+    assert not any(char.isdigit() for char in lines[0]) and "http" not in lines[0]
+
+
+def test_real_sqlite_writer_lock_past_timeout_never_sends_failure(
+    tmp_path, monkeypatch
+):
+    import sqlite3
+
+    async def run():
+        app, server = await served_app(tmp_path)
+        monkeypatch.setattr(
+            health, "_self_url", lambda: str(server.make_url("/api/cwl/config"))
+        )
+        lock = sqlite3.connect(app["store"].path, isolation_level=None)
+        lock.execute("PRAGMA journal_mode=DELETE")
+        calls = []
+        steps = 0
+
+        async def sleep(seconds):
+            nonlocal steps
+            steps += 1
+            if steps == 2:
+                lock.execute("BEGIN EXCLUSIVE")
+            if steps == 3:
+                raise asyncio.CancelledError()
+
+        monkeypatch.setattr(
+            health,
+            "asyncio",
+            S(
+                sleep=sleep,
+                to_thread=asyncio.to_thread,
+                CancelledError=asyncio.CancelledError,
+            ),
+        )
+        try:
+            with pytest.raises(asyncio.CancelledError):
+                await health._dashboard_worker(app, S(submit=calls.append))
+            assert calls == [True]
+        finally:
+            lock.rollback()
+            lock.close()
+            await server.close()
+
+    asyncio.run(run())

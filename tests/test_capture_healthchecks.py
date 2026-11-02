@@ -214,3 +214,67 @@ class CaptureEntryTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(sync, "datetime", waiting.November):
             result = await sync.sync_season(self.app, self.sid, observe=broken)
         assert result["updated_accounts"] > 0
+
+    async def captured_finished_month(self):
+        await self.enabled()
+        self.set_group([["#Y2Y"]], state="ENDED", season="2026-11")
+        self.set_war("#Y2Y", state="ENDED")
+        observed = []
+        await self.capture(observed)
+        assert observed == [True]
+        self.league.war_calls.clear()
+        return observed
+
+    async def test_finished_month_not_in_war_on_november_twenty_fifth_is_success(self):
+        observed = await self.captured_finished_month()
+        self.set_group([], state="NOT_IN_WAR", season="2026-11")
+
+        class LateNovember(waiting.November):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 11, 25, 12, tzinfo=waiting.timezone.utc)
+
+        with patch.object(sync, "datetime", LateNovember):
+            result = await sync.sync_season(self.app, self.sid, observe=observed.append)
+        assert result["sync"]["status"] == "stale"
+        assert observed == [True, True] and self.league.war_calls == []
+
+    async def test_finished_month_later_group_on_december_third_is_success(self):
+        observed = await self.captured_finished_month()
+        self.set_group([["#J2Y"]], state="PREPARATION", season="2026-12")
+
+        class December(waiting.November):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 12, 3, 12, tzinfo=waiting.timezone.utc)
+
+        with patch.object(sync, "datetime", December):
+            result = await sync.sync_season(self.app, self.sid, observe=observed.append)
+        assert result["sync"]["status"] == "season_mismatch"
+        assert observed == [True, True] and self.league.war_calls == []
+
+    async def test_valid_old_group_and_no_group_with_no_work_are_finished(self):
+        observed = await self.captured_finished_month()
+        self.set_group([["#Y2Y"]], season="2026-08")
+        await self.capture(observed)
+        from cwl_web.providers import ProviderUnavailable
+
+        async def no_group(tag):
+            error = ProviderUnavailable("No group")
+            error.status_code = 404
+            raise error
+
+        self.providers.league_group = no_group
+        await self.capture(observed)
+        assert observed == [True, True, True] and self.league.war_calls == []
+
+    async def test_valid_no_group_does_not_hide_pending_failed_war(self):
+        await self.enabled()
+        self.set_group([["#Y2Y"]], state="WAR", season="2026-11")
+        self.set_war("#Y2Y", state="WAR")
+        observed = []
+        await self.capture(observed)
+        self.set_group([], state="NOT_IN_WAR", season="2026-11")
+        self.league.fail_wars.add("#Y2Y")
+        await self.capture(observed)
+        assert observed == [True, False]

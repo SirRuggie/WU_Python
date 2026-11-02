@@ -1366,19 +1366,23 @@ These are placeholders, not working URLs. Keep the files private (0600); never
 paste actual values into source, handoffs, command output or logs. An unset or
 empty value silently disables that check. Invalid configured values disable it
 with a generic warning. Only HTTPS `hc-ping.com` UUID URLs are accepted; redirects
-are refused. Requests have 5-second connect / 10-second read timeouts, carry no
-logs or application data, and failures are logged without exception text or the
-URL. A request-scoped logging filter also redacts its UUID from Requests/urllib3
-connection-pool DEBUG messages and is removed after the attempt. Each service queues at most one off-loop request at a time, at least 60
-seconds apart; there is no automatic retry loop. Ping failures never change a
-capture result or service readiness. A request already executing in its thread
-may finish after shutdown begins, but no further attempts are scheduled.
+are refused. The synchronous backup helper retains its existing 5-second connect /
+10-second read rules and request-scoped Requests/urllib3 UUID redaction. Service
+pings use async HTTP with a 15-second total deadline (also 5-second connect /
+10-second idle-read bounds) and do not read a response body. HTTP needs no
+executor thread. DNS uses one shared daemon lookup per unresolved host/port/
+family; the underlying OS call may outlive cancellation, but cannot hold process
+exit or multiply into retry threads. No logs/data are sent and delivery errors
+omit exception text and the private URL. Each service keeps one active attempt,
+at least 60 seconds apart, without an automatic retry loop. Ping failure never
+changes service readiness or a capture result. Stopping cancels the async request;
+actual bot/backend child-process tests cover blocked HTTP and blocked DNS.
 
 | Check | Period | Suggested grace | Proof before success |
 | --- | --- | --- | --- |
 | Bot | 5 minutes | 15 minutes | Public Hikari gateway connected/alive, APScheduler running, existing management job and independent Mongo heartbeat both no older than 90 seconds |
 | Dashboard | 5 minutes | 10 minutes | Actual loopback `/api/cwl/config` returns the expected JSON and a read-only SQLite query succeeds; existing durability fence is healthy |
-| Capture | Existing 15-minute ordinary interval, plus pass runtime | 30 minutes | Ordinary enabled-season pass completes with useful fresh progress or a validated waiting state; no enabled draft seasons is healthy |
+| Capture | Existing 15-minute ordinary interval, plus pass runtime | 30 minutes | Ordinary pass has fresh progress, validated waiting, or a valid finished/no-work answer; no enabled season is healthy |
 
 Grace is additional time after the period: these suggestions alert after about
 20, 15 and 45 minutes without a success. Capture waits 15 minutes before its
@@ -1403,36 +1407,51 @@ reads or writes and no additional Clash/Discord calls for monitoring.
 
 The dashboard check uses the existing configured loopback host/port, rejects
 redirects, sends no cookies and queries SQLite in read-only mode off the event
-loop. Its public config handler bypasses upstream authorization reads. Before the first successful self-check, startup/recovery produces no ping rather
-than an immediate `/fail`; the outside grace covers the bind and recovery window.
-The check is cancelled before backend resources close. An unset dashboard URL
-starts no self-check task or periodic local I/O. Capture adds no
-queries: it observes the existing ordinary worker's already-selected seasons and
-already-computed fresh-group, fresh-war and validated-wait counts. Manual forced
-refreshes never emit a monitoring ping.
+loop. Its public config handler bypasses upstream authorization reads. Dashboard
+self-checks only send success: any failure, including listener shutdown or a
+writer lock past the read timeout, sends nothing. The dead-man expires after its
+normal grace instead of immediate `/fail`. A numeric-free local line,
+`Dashboard self-check unavailable`, is limited to once per five minutes; no URL,
+status number or duration is logged. An unset URL starts no self-check task/I/O.
+Capture adds no queries: it observes the ordinary worker's existing results and
+pending-war tags. Manual forced refreshes never emit a monitoring ping.
 
 Capture sends one result after an ordinary pass across enabled draft seasons.
 Any unexpected exception makes the pass `/fail`, while later seasons still run.
-When every clan lacks fresh groups, fresh wars and a validated waiting state,
-it also sends `/fail`; old cached rows alone cannot keep an all-provider-outage
-green. Partial or stale output with some fresh progress, legitimate waiting,
-empty clan sets and ordinary concurrent edit/archive/removal cancellation count
-as completed work. With no enabled season it sends success on the ordinary
-schedule, so offseason silence is not mistaken for a dead worker. A crashed
-worker that cannot even run the failure attempt is detected when pings stop.
+A valid Clash answer (`no_group`, `not_in_war`, older or later month) with no
+remaining uncaptured wars for that clan counts as finished work and sends success,
+even while an enabled historical season's existing UI correctly remains stale or
+month-mismatched. It is not treated as an outage merely because no fresh war
+request was needed. Invalid/unavailable answers count against the pass; `/fail`
+requires every clan to lack fresh progress, a valid waiting state and a valid
+finished/no-work outcome. Cached rows alone cannot hide an all-provider outage,
+and an unfinished war that fails still prevents a no-group result from being
+called finished. Partial/stale output with some valid progress, empty clan sets
+and ordinary concurrent edit/archive/removal cancellation are completed work.
+With no enabled season, success continues on the ordinary schedule. A worker
+that dies before a failure attempt is detected when pings stop. Monitoring success
+means the ordinary capture completed sensibly, not that all selected-month data
+is newly available; stored statuses and captured data are unchanged.
 
 Validation includes real scheduled-entrypoint/independent-heartbeat execution at
 normal maximum job durations, disconnected/stale/dead scheduler cases, actual
 loopback HTTP plus SQLite checks, ordinary capture success/partial/cache-only
 outage/crash/offseason/manual-force behavior, and harmless bounded ping outages.
-External delivery is tested with injected transports only: no actual Healthchecks
+Delivery is tested with injected transports and isolated loopback servers only: no actual Healthchecks
 request, production API timing, Discord delivery or live role change is claimed.
 There is no UI change or new preview for this monitoring-only feature.
 
-Source validation for this batch: 6,321 guarded backend tests passed, 99 skipped
+Original prompt133 validation before this rework: 6,321 guarded backend tests passed, 99 skipped
 and 267 subtests passed; 130 focused checks; five genuine adversarial mutants
 killed. The required war gate passed 213 backend checks (one skip), 35 frontend
 checks, TypeScript and an isolated build. Exact committed runtime boot passed
 all 51 production routes with the native pool and real owner on owned Mongo /
 copied SQLite, external networking blocked, config 200 and unauthenticated auth
 401. Owned fixtures were stopped and removed; source hashes and logs retained.
+
+Prompt138 corrects finished-month and dashboard shutdown false alarms. Regressions
+include real Nov25/Dec3 syncs with captured ended wars and no new war calls,
+pending-war failure, actual stopped listener, SQLite writer lock past two seconds,
+rate-limited private diagnostics, trickling response headers and actual bot/backend
+process exits during HTTP/DNS stalls. Final rework gates are recorded with its
+review handoff; release remains held and no real check was created or contacted.

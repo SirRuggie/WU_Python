@@ -658,7 +658,9 @@ def _aggregate_for_account(
     return attacks, stars, status, complete, checked, warning
 
 
-async def sync_season(app, season_id: int, *, force: bool = False, observe=None) -> dict:
+async def sync_season(
+    app, season_id: int, *, force: bool = False, observe=None
+) -> dict:
     """Fetch outside SQLite transactions; commit only to the same draft snapshot."""
     from .app import _fail
 
@@ -736,6 +738,7 @@ async def sync_season(app, season_id: int, *, force: bool = False, observe=None)
                 ).fetchall()
             }
         all_tags = set()
+        clan_war_tags = {}
         for clan_tag in clans:
             fresh = next((row for row in groups_to_write if row[0] == clan_tag), None)
             if fresh:
@@ -744,6 +747,9 @@ async def sync_season(app, season_id: int, *, force: bool = False, observe=None)
                 rounds = json.loads(cached_groups[clan_tag]["war_tags_json"])
             else:
                 rounds = []
+            clan_war_tags[clan_tag] = {
+                tag for round_tags in rounds for tag in round_tags
+            }
             for round_tags in rounds:
                 all_tags.update(round_tags)
         if len(all_tags) > MAX_WARS:
@@ -760,6 +766,15 @@ async def sync_season(app, season_id: int, *, force: bool = False, observe=None)
             ):
                 continue
             to_fetch.append(war_tag)
+        # A valid ordinary answer with no remaining work is successful capture
+        # monitoring, even while the selected old season's UI correctly stays stale.
+        pending_tags = set(to_fetch)
+        finished_clans = {
+            clan
+            for clan, _, error in group_fetches
+            if error in {"no_group", "season_older", "season_later", "season_mismatch"}
+            and not (clan_war_tags.get(clan, set()) & pending_tags)
+        }
         war_fetches = await _fetch_wars(app["providers"], to_fetch)
         _log_war_months(war_fetches, cycle)
         mismatching_tags = {
@@ -1114,8 +1129,13 @@ async def sync_season(app, season_id: int, *, force: bool = False, observe=None)
         from .healthchecks import record_capture
 
         record_capture(
-            observe, force=force, clans=clans, groups=fresh_groups,
-            wars=fresh_wars, waiting=waiting_clans,
+            observe,
+            force=force,
+            clans=clans,
+            groups=fresh_groups,
+            wars=fresh_wars,
+            waiting=waiting_clans,
+            finished=finished_clans,
         )
         return {"sync": result, "updated_accounts": updated}
 

@@ -3,6 +3,8 @@
 import asyncio
 from contextlib import suppress
 import ipaddress
+import logging
+import time
 import os
 from pathlib import Path
 import sqlite3
@@ -80,15 +82,16 @@ async def self_check(app, *, url=None):
 
 
 async def _dashboard_worker(app, sender):
-    ready_once = False
+    last_warning = float("-inf")
     while True:
         await asyncio.sleep(PERIOD_SECONDS)
         healthy = await self_check(app)
         if healthy:
-            ready_once = True
-        # Initial bind/recovery uses the outside grace, not immediate /fail.
-        if ready_once:
-            sender.submit(healthy)
+            sender.submit(True)
+        elif time.monotonic() - last_warning >= PERIOD_SECONDS:
+            # Listener shutdown and transient writer locks must never /fail.
+            last_warning = time.monotonic()
+            logging.getLogger(__name__).warning("Dashboard self-check unavailable")
 
 
 async def lifecycle(app):
@@ -122,9 +125,9 @@ class CapturePass:
         return not self.crashed and (no_seasons or self.progress)
 
 
-def record_capture(observer, *, force, clans, groups, wars, waiting):
+def record_capture(observer, *, force, clans, groups, wars, waiting, finished=()):
     if observer is not None and not force:
         try:
-            observer(bool(not clans or groups or wars or waiting))
+            observer(bool(not clans or groups or wars or waiting or finished))
         except Exception:
             pass

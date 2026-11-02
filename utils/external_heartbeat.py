@@ -2,12 +2,16 @@
 
 import asyncio
 from contextlib import suppress
+from concurrent.futures import Future
 import logging
+import socket
+import threading
 import time
 from urllib.parse import urlsplit
 from uuid import UUID
 
 import requests
+import aiohttp
 
 LOG = logging.getLogger(__name__)
 
@@ -74,13 +78,95 @@ def ping_external(url, healthy, get=requests.get):
     return True
 
 
+TOTAL_DEADLINE_SECONDS = 15
+
+
+_DNS_PENDING = {}
+_DNS_LOCK = threading.Lock()
+
+
+class _ServiceResolver(aiohttp.abc.AbstractResolver):
+    """A stuck OS DNS call cannot hold service exit or multiply on retries."""
+
+    async def resolve(self, host, port=0, family=socket.AF_INET):
+        key = (host, port, family)
+        with _DNS_LOCK:
+            result = _DNS_PENDING.get(key)
+            fresh = result is None or result.done()
+            if fresh:
+                result = Future()
+                _DNS_PENDING[key] = result
+        if fresh:
+
+            def lookup():
+                try:
+                    addresses = socket.getaddrinfo(
+                        host, port, family=family, type=socket.SOCK_STREAM
+                    )
+                    result.set_result(
+                        [
+                            dict(
+                                hostname=host,
+                                host=address[0],
+                                port=address[1],
+                                family=af,
+                                proto=proto,
+                                flags=socket.AI_NUMERICHOST,
+                            )
+                            for af, _, proto, _, address in addresses
+                        ]
+                    )
+                except Exception as error:
+                    result.set_exception(error)
+                finally:
+                    with _DNS_LOCK:
+                        if _DNS_PENDING.get(key) is result:
+                            _DNS_PENDING.pop(key, None)
+
+            try:
+                threading.Thread(
+                    target=lookup, name="external-heartbeat-dns", daemon=True
+                ).start()
+            except Exception:
+                with _DNS_LOCK:
+                    if _DNS_PENDING.get(key) is result:
+                        _DNS_PENDING.pop(key, None)
+                raise
+        # Shield the shared concurrent future from one attempt's cancellation.
+        return await asyncio.shield(asyncio.wrap_future(result))
+
+    async def close(self):
+        pass  # No executor/resource to join; in-flight DNS remains single-flight.
+
+
+async def ping_external_async(url, healthy):
+    """Service transport: total deadline, no response body, no executor thread."""
+    endpoint = _endpoint(url, healthy)
+    try:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(
+                total=TOTAL_DEADLINE_SECONDS, connect=5, sock_read=10
+            ),
+            trust_env=False,
+            connector=aiohttp.TCPConnector(resolver=_ServiceResolver()),
+        ) as client:
+            async with client.get(endpoint, allow_redirects=False) as response:
+                if response.status != 200:
+                    raise RuntimeError("External heartbeat rejected")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        raise RuntimeError("External heartbeat delivery failed") from None
+    return True
+
+
 class ExternalHeartbeat:
     """At most one off-loop delivery, bounded cadence, no automatic retries."""
 
     def __init__(self, url, check, *, send=None, clock=time.monotonic, min_interval=60):
         self._url = str(url or "").strip()
         self.check = check if check in {"bot", "dashboard", "capture"} else "service"
-        self._send = send or ping_external
+        self._send = send or ping_external_async
         self._clock = clock
         self._min_interval = min_interval
         self._last_attempt = float("-inf")
@@ -120,7 +206,8 @@ class ExternalHeartbeat:
 
     async def _deliver(self, healthy):
         try:
-            await asyncio.to_thread(self._send, self._url, healthy)
+            async with asyncio.timeout(TOTAL_DEADLINE_SECONDS):
+                await self._send(self._url, healthy)
         except asyncio.CancelledError:
             raise
         except Exception:
