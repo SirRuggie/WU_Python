@@ -51,6 +51,15 @@ class BudgetedCursor:
     def __aiter__(self):
         return self
 
+    async def __aenter__(self):
+        with timeout(self.seconds):
+            await self.cursor.__aenter__()
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        with timeout(self.seconds):
+            return await self.cursor.__aexit__(exc_type, exc, traceback)
+
     async def __anext__(self):
         with timeout(self.seconds):
             return await self.cursor.__anext__()

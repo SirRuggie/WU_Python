@@ -1384,7 +1384,8 @@ correlated with the one that would have lengthened the text. **It has still
 never been measured**, and the way it would surface is another 400 naming
 `content` or a length rather than `components`.
 
-`[todo-diag]` instrumentation is still present on the raid path, by request,
-until a live weekend proves it. Remove it then — and note that stripping it
-carelessly once left `if` blocks whose only body was a `_d()` call, i.e. a
-`SyntaxError` that would have taken the whole bot down on boot.
+The old `[todo-diag]` raid instrumentation was removed by the Mongo lifecycle
+cleanup. Ordinary slow worker stages still log bounded timing records; fast
+stages use DEBUG. No live weekend delivery or billed Mongo quota result is
+claimed by that cleanup. Regression/import checks guard against empty blocks
+left behind when diagnostic-only calls are removed.

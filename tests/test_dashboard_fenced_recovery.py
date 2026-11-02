@@ -542,3 +542,67 @@ def test_permanent_storage_response_carries_attention_header():
     assert response.status == 503
     assert response.headers["X-Dashboard-Storage-Degraded"] == "1"
     assert response.headers["X-Dashboard-Storage-Attention"] == "1"
+
+
+def test_store_schema_mismatch_logs_critical_once_and_preserves_local_table(
+    durable_setup, caplog
+):
+    from utils.cwl_dashboard_state import DashboardDurabilityAttention
+
+    path, store, state, collection = durable_setup
+    collection.find_one = lambda query: (
+        deepcopy(collection.doc) if collection.matches(query) else None
+    )
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE local_schema_mismatch(value TEXT)")
+        db.execute("INSERT INTO local_schema_mismatch VALUES('preserve')")
+    state.poisoned = True
+    for _ in range(2):
+        with pytest.raises(DashboardDurabilityAttention):
+            store.recover_durability()
+    assert state.poisoned
+    assert sum(r.levelname == "CRITICAL" for r in caplog.records) == 1
+    with sqlite3.connect(path) as db:
+        assert (
+            db.execute("SELECT value FROM local_schema_mismatch").fetchone()[0]
+            == "preserve"
+        )
+
+
+def test_actual_renew_loop_keeps_permanent_attention_alive_without_downgrade(
+    durable_setup, monkeypatch, caplog
+):
+    import asyncio
+    from cwl_web import durability
+
+    path, store, state, collection = durable_setup
+    collection.find_one = lambda query: (
+        deepcopy(collection.doc) if collection.matches(query) else None
+    )
+    collection.doc["owner"] = "foreign-owner"
+    original_sleep = asyncio.sleep
+
+    async def run():
+        completed = asyncio.Event()
+        calls = 0
+
+        async def tick(delay):
+            nonlocal calls
+            calls += 1
+            if calls > 3:
+                completed.set()
+                await asyncio.Future()
+            await original_sleep(0)
+
+        monkeypatch.setattr(durability.asyncio, "sleep", tick)
+        lifecycle = durability.lifecycle({"store": store})
+        await lifecycle.__anext__()
+        try:
+            await asyncio.wait_for(completed.wait(), timeout=3)
+            assert state.poisoned
+            assert sum(r.levelname == "CRITICAL" for r in caplog.records) == 1
+            assert not any("storage is recovering" in r.message for r in caplog.records)
+        finally:
+            await lifecycle.aclose()
+
+    asyncio.run(run())
