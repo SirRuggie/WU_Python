@@ -1,23 +1,24 @@
 /* Disposable fixture; no fixed preview port or production configuration. */
 const { spawn } = require("node:child_process");
-const { mkdtempSync, rmSync } = require("node:fs");
+const { mkdtempSync, mkdirSync, rmSync } = require("node:fs");
 const path = require("node:path");
 const root = path.resolve(__dirname, "../../..");
-const temp = mkdtempSync(
-  path.join(require("node:os").tmpdir(), "wu-weight-layout-"),
-);
+const tempRoot =
+  process.env.WU_LAYOUT_TMPDIR || path.join(root, ".local", "layout-tmp");
+mkdirSync(tempRoot, { recursive: true });
+const temp = mkdtempSync(path.join(tempRoot, "wu-weight-layout-"));
 const server = spawn(
   process.env.WU_TEST_PYTHON || path.join(root, ".venv/bin/python"),
   [
     "-I",
     path.join(__dirname, "fixtures/clan_weights.py"),
-    path.join(root, "web/cwl/dist"),
+    process.env.WU_LAYOUT_DIST || path.join(root, "web/cwl/dist"),
     "0",
   ],
   {
     env: {
       PATH: process.env.PATH,
-      HOME: temp,
+      TMPDIR: temp,
       WU_FIXTURE_BACKEND: root,
       PYTHONDONTWRITEBYTECODE: "1",
     },

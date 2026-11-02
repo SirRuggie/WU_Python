@@ -1,4 +1,5 @@
-/* Return reminder overview: routine list and status first, maintenance secondary. */ .return-overview .return-context {
+/* Return reminder overview: routine list and status first, maintenance secondary. */
+.return-about-panel .return-context {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
@@ -28,15 +29,7 @@
   text-decoration: underline;
   min-height: 44px;
 }
-.return-overview .return-filters {
-  gap: 9px;
-  margin: 13px 0;
-}
-.return-overview .return-bulk-bar {
-  margin-bottom: 8px;
-  padding: 10px;
-  border-radius: 9px;
-}
+
 .return-overview .return-clan-list {
   border: 0;
   border-top: 1px solid #ffffff26;
@@ -84,25 +77,26 @@
   color: #bdd4f3;
 }
 .return-overview .return-maintenance summary::before {
-  content: '▸';
+  content: "▸";
   margin-right: 7px;
 }
 .return-overview .return-maintenance[open] summary::before {
-  content: '▾';
+  content: "▾";
 }
 .return-overview summary:focus-visible {
   outline: 3px solid #e0b43c;
   outline-offset: 2px;
 }
 @media (max-width: 700px) {
-  .return-overview .return-context {
+  .return-about-panel .return-context {
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
   }
   .return-overview .return-clan-row {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .return-overview .return-clan-row > div:nth-child(2), .return-overview .return-window {
+  .return-overview .return-clan-row > div:nth-child(2),
+  .return-overview .return-window {
     grid-column: 1;
   }
   .return-overview .return-row-actions {
@@ -115,8 +109,40 @@
   }
 }
 
-.return-overview .return-selection-note {
-  margin: -5px 0 9px;
-  color: #b7c1cb;
-  font-size: 11px;
+@media (max-width: 700px) {
+  .return-overview .return-row-actions {
+    flex-direction: column;
+    max-width: 105px;
+  }
+}
+
+.return-overview .return-cycle {
+  margin: 0 0 8px;
+  color: #bcc3cc;
+  font-size: 13px;
+}
+.return-overview .return-search-line {
+  margin: 8px 0;
+}
+.return-search-line .members-more-filters summary {
+  display: flex;
+  align-items: center;
+}
+@media (max-width: 767px) {
+  /* Same visually-hidden phone heading pattern as Members. Details keep theirs. */
+  .server-management:has(> div:not([hidden]) > .return-overview)
+    > .manage-heading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+.return-overview .return-clan-name {
+  min-height: 44px;
 }

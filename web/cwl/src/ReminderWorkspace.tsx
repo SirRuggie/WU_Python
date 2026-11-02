@@ -210,6 +210,7 @@ export default function ReminderWorkspace({
   const [notice, setNotice] = useState("");
   const [confirmation, setConfirmation] = useState<{
     text: string;
+    confirmLabel?: string;
     action: () => void;
   } | null>(null);
   const load = useCallback(async () => {
@@ -973,6 +974,7 @@ export default function ReminderWorkspace({
                       const checked = await api<CampaignState>(base + "/preview", "POST", body);
                       setPreview(checked);
                       setConfirmation({
+                        confirmLabel: "Save",
                         text: "Save these reminder settings? They repeat monthly, and the bot will use the new times for enabled messages. Already-sent messages will not be sent again.",
                         action: () =>
                           void act(async () => {
@@ -1049,6 +1051,7 @@ export default function ReminderWorkspace({
       )}
       {confirmation && (
         <ConfirmDialog
+          confirmLabel={confirmation.confirmLabel}
           text={confirmation.text}
           onCancel={() => setConfirmation(null)}
           onConfirm={() => {

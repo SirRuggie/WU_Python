@@ -16,14 +16,16 @@ export default function ClanWeightSource({
     clan_weight_clan_tag?: string | null;
     clan_weight_saved_at?: string | null;
     current_fwa_clan_tag?: string | null;
+    weight_lineup_clan_tag?: string | null;
     current_fwa_status?: string;
   };
 }) {
   const allowed = useDashboardPermission("clan_weights");
   const params = new URLSearchParams();
   if (account) params.set("player", account.tag);
-  if (account?.current_fwa_clan_tag)
-    params.set("clan", account.current_fwa_clan_tag);
+  const clanTag =
+    account?.current_fwa_clan_tag || account?.weight_lineup_clan_tag;
+  if (clanTag) params.set("clan", clanTag);
   return (
     <div
       className={`clan-weight-source${compact ? " clan-weight-source-compact" : ""}`}
@@ -37,8 +39,11 @@ export default function ClanWeightSource({
             <span>
               {account?.clan_weight_saved_at
                 ? `Saved in ${account.clan_weight_clan_name || account.clan_weight_clan_tag} · ${new Date(account.clan_weight_saved_at).toLocaleDateString()}`
-                : account?.current_fwa_clan_tag && !account.clan_weight_managed
-                  ? "Set this FWA player's weight in Clan weights"
+                : clanTag && !account?.clan_weight_managed
+                  ? account?.weight_lineup_clan_tag &&
+                    !account.current_fwa_clan_tag
+                    ? "Saved war lineup · set weight in Clan weights"
+                    : "Set this FWA player's weight in Clan weights"
                   : "Weight comes from Clan weights"}
             </span>
           )}{" "}
@@ -55,23 +60,20 @@ export default function ClanWeightSource({
                 return;
               if (onNavigate) {
                 event.preventDefault();
-                onNavigate(
-                  account?.tag,
-                  account?.current_fwa_clan_tag || undefined,
-                );
+                onNavigate(account?.tag, clanTag || undefined);
               }
             }}
           >
             {compact
               ? "Also on Clan weights ›"
-              : account?.current_fwa_clan_tag && !account.clan_weight_managed
+              : clanTag && !account?.clan_weight_managed
                 ? "Set in Clan weights ›"
                 : "Open Clan weights →"}
           </a>
         </>
       ) : compact ? (
         "Also on Clan weights ›"
-      ) : account?.current_fwa_clan_tag && !account.clan_weight_managed ? (
+      ) : clanTag && !account?.clan_weight_managed ? (
         "Set this FWA player’s weight in Clan weights. Ask a staff member with Clan weights access."
       ) : (
         "Weight comes from Clan weights. Ask a staff member with Clan weights access."

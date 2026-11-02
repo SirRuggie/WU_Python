@@ -44,7 +44,8 @@
 .export-ready > div {
   min-width: 0;
 }
-.export-ready strong, .export-ready span {
+.export-ready strong,
+.export-ready span {
   display: block;
   overflow-wrap: anywhere;
 }
@@ -59,11 +60,7 @@
 .export-ready button {
   flex: 0 0 auto;
 }
-.export-basis-note {
-  margin: 8px 0;
-  color: #b6bdc7;
-  font-size: 12px;
-}
+
 .export-about {
   margin: 12px 0 0;
   border-bottom: 1px solid #ffffff20;
@@ -76,11 +73,13 @@
   cursor: pointer;
   font-size: 12px;
 }
-.export-about summary::before, .export-record-details summary::before {
+.export-about summary::before,
+.export-record-details summary::before {
   content: "▸";
   margin-right: 7px;
 }
-.export-about[open] summary::before, .export-record-details[open] summary::before {
+.export-about[open] summary::before,
+.export-record-details[open] summary::before {
   content: "▾";
 }
 .export-about p {
@@ -116,11 +115,15 @@
   padding: 9px 2px;
   border-bottom: 1px solid #ffffff1b;
 }
-.export-record-name, .export-record-field {
+.export-record-name,
+.export-record-field {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.export-record-name strong, .export-record-name small, .export-record-field small, .export-record-field span {
+.export-record-name strong,
+.export-record-name small,
+.export-record-field small,
+.export-record-field span {
   display: block;
 }
 .export-record-name strong {
@@ -204,7 +207,13 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.export-about summary:focus-visible, .export-record-details summary:focus-visible {
+.export-about summary:focus-visible,
+.export-record-details summary:focus-visible {
   outline: 3px solid #e0b43c;
   outline-offset: 2px;
+}
+
+.export-workspace .notice button {
+  min-width: 44px;
+  min-height: 44px;
 }

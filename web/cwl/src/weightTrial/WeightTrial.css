@@ -318,3 +318,15 @@
 .weight-trial-row select {
   margin: 0;
 }
+
+.weight-trial-war-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0.75rem 0;
+}
+.weight-trial-war-picker select {
+  min-height: 44px;
+  max-width: 100%;
+}

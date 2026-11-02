@@ -10,9 +10,9 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
     args: ["--no-sandbox"],
   });
   try {
-    for (const width of [360, 1440]) {
+    for (const width of [320, 360, 390, 1440]) {
       const page = await browser.newPage({
-        viewport: { width, height: width === 360 ? 800 : 1000 },
+        viewport: { width, height: width < 700 ? 800 : 1000 },
       });
       await page.route("**/*", (r) =>
         new URL(r.request().url()).origin === origin ? r.continue() : r.abort(),
@@ -23,7 +23,7 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
         .click();
       await page.locator(".weight-trial-clan-list button").first().click();
       await page.waitForFunction(
-        () => document.querySelectorAll(".weight-trial-row").length === 50,
+        () => document.querySelectorAll(".weight-trial-row").length === 52,
       );
       const geometry = await page.evaluate(() => {
         const root = document.querySelector(".weight-trial");
@@ -63,19 +63,16 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
         };
       });
       assert.equal(geometry.width, width, "horizontal overflow");
-      assert.equal(geometry.rows.length, 50);
+      assert.equal(geometry.rows.length, 52);
       assert.deepEqual(geometry.small, []);
       assert.deepEqual(geometry.short, []);
+      assert(geometry.rows[0] <= (width < 800 ? 110 : 80), "normal row height");
       assert(
-        geometry.rows[0] <= (width === 360 ? 110 : 80),
-        "normal row height",
-      );
-      assert(
-        geometry.rows[1] <= (width === 360 ? 110 : 80),
+        geometry.rows[1] <= (width < 800 ? 110 : 80),
         "ordinary row height",
       );
       const full = page.locator(".weight-trial-phone-full").first();
-      if (width === 360) {
+      if (width < 800) {
         assert(await full.isVisible(), "phone Full must be visible");
         assert.equal(
           await full.evaluate((n) => getComputedStyle(n).visibility),
@@ -88,6 +85,30 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
           ),
         );
       }
+      const warSelector = page.locator(".weight-trial-war-picker select");
+      assert.equal(await warSelector.inputValue(), "20261102T070000.000Z");
+      assert(
+        await page
+          .locator('[data-player="#V2Y"] .weight-trial-loot input')
+          .isEnabled(),
+      );
+      assert(
+        (await page.locator('[data-player="#V2Y"]').textContent()).includes(
+          "Left clan",
+        ),
+      );
+      assert.equal(
+        await page.locator('[data-player="#U2Y"] select').inputValue(),
+        "",
+      );
+      await warSelector.selectOption("20261031T070000.000Z");
+      assert(
+        await page
+          .locator('[data-player="#Y2Y"] .weight-trial-loot input')
+          .isEnabled(),
+      );
+      assert.equal(await page.locator('[data-player="#U2Y"]').count(), 0);
+      await warSelector.selectOption("20261102T070000.000Z");
       const cdp = await page.context().newCDPSession(page);
       for (const pointer of ["fine", "coarse"]) {
         if (pointer === "coarse")
@@ -112,7 +133,7 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
         );
       }
       await page
-        .getByRole("button", { name: "Missing (2)", exact: true })
+        .getByRole("button", { name: "Missing (3)", exact: true })
         .click();
       await page
         .getByRole("button", { name: "Next missing ›", exact: true })
@@ -132,7 +153,16 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
         );
       }
       assert.equal(await input.inputValue(), "32.2k");
-      assert.equal(await page.locator(".weight-trial-row-error").count(), 0);
+      assert.equal(
+        await input.evaluate(
+          (node) =>
+            !!node
+              .closest(".weight-trial-row")
+              .querySelector(".weight-trial-row-error"),
+        ),
+        false,
+        "edited row remains valid",
+      );
       if (process.env.WU_LAYOUT_ARTIFACT_DIR) {
         fs.mkdirSync(process.env.WU_LAYOUT_ARTIFACT_DIR, { recursive: true });
         await page.screenshot({
