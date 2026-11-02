@@ -71,7 +71,7 @@ def test_real_parser_unreadable_month_active_infers_but_ended_waits(
 ):
     with caplog.at_level(logging.INFO):
         row = asyncio.run(capture(body(state, season)))
-    if state in {"warEnded", "ended"}:
+    if state in {"warEnded", "ended"} and season != "2026-11-01":
         assert row[1] is None and row[2] == "no_group"
     else:
         assert row[1] is not None and row[2] is None
@@ -79,7 +79,9 @@ def test_real_parser_unreadable_month_active_infers_but_ended_waits(
     kind = (
         "none"
         if season is ABSENT or season is None
-        else "empty" if season == "" else "invalid"
+        else (
+            "empty" if season == "" else "date" if season == "2026-11-01" else "invalid"
+        )
     )
     assert "season_kind=" + kind in text
     if kind == "invalid":
@@ -90,7 +92,7 @@ def test_real_parser_unreadable_month_active_infers_but_ended_waits(
         assert "season_shape=" + season not in text
 
 
-@pytest.mark.parametrize("season", VALUES)
+@pytest.mark.parametrize("season", [value for value in VALUES if value != "2026-11-01"])
 def test_real_parser_unreadable_ended_requires_own_tag_containment(season):
     raw = body("warEnded", season)
     known = {"#C2Y": {"rounds": [{"war_tags": ["#Y2Y"]}]}}

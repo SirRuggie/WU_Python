@@ -105,3 +105,13 @@ to the exact live invocation; the invocation filter itself was correct.
 
 The Members speed optimization is a separate unreleased branch and is not
 included in this release.
+
+## Follow-up 116 interpretation
+
+The observed month has a date shape. The exact raw value and separators were
+not fetched. Follow-up 116 recognizes only a fully matching dash-separated
+YYYY-MM-DD-shaped string as explicit YYYY-MM month evidence, while masking the
+day in diagnostics; other invalid strings retain the no-month rule. It also
+classifies empty NOT_IN_WAR responses per clan. This describes the follow-up
+source change, not a claim that 516 already has that behavior or that its
+partial capture was complete.

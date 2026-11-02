@@ -23,23 +23,33 @@ INTERVAL_SECONDS = 15 * 60
 MAX_CLANS = 100
 MAX_WARS = MAX_CLANS * 28
 _CYCLE = re.compile(r"20\d\d-(?:0[1-9]|1[0-2])\Z")
+_DATE_MONTH = re.compile(r"(20\d\d-(?:0[1-9]|1[0-2]))-\d\d\Z")
 
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _explicit_month(value):
+    if not isinstance(value, str):
+        return None
+    if _CYCLE.fullmatch(value):
+        return value
+    match = _DATE_MONTH.fullmatch(value)
+    return match[1] if match else None
+
+
 def _missing_month(value):
     """Unreadable string months carry no cycle evidence; other types stay invalid."""
-    return value is None or (isinstance(value, str) and not _CYCLE.fullmatch(value))
+    return value is None or (isinstance(value, str) and _explicit_month(value) is None)
 
 
 def _month_matches(value, cycle):
-    return _missing_month(value) or value == cycle
+    return _missing_month(value) or _explicit_month(value) == cycle
 
 
 def _log_war_months(war_fetches, cycle):
-    counts = {kind: 0 for kind in ("none", "empty", "invalid", "valid")}
+    counts = {kind: 0 for kind in ("none", "empty", "invalid", "valid", "date")}
     shapes = set()
     mismatches = 0
     for _, war, _ in war_fetches:
@@ -48,7 +58,7 @@ def _log_war_months(war_fetches, cycle):
         value = war.get("season")
         kind, shape = _group_season_diagnostic(value)
         counts[kind] += 1
-        if kind == "invalid":
+        if kind in {"invalid", "date"}:
             shapes.add(shape)
         mismatches += not _month_matches(value, cycle)
     logging.getLogger(__name__).info(
@@ -66,6 +76,9 @@ def _group_season_diagnostic(value):
         return "empty", "-"
     if isinstance(value, str) and _CYCLE.fullmatch(value):
         return "valid", "-"
+    explicit = _explicit_month(value)
+    if explicit is not None:
+        return "date", explicit + "-dd"
     shape = (
         "".join(
             "d" if char.isdigit() else "a" if char.isalpha() else "x"
@@ -135,9 +148,9 @@ def _clan_month_evidence(db, season_id, cycle, clan_tag):
         "SELECT * FROM participation_group_observations WHERE season_id=? AND cycle=? AND clan_tag=?",
         (season_id, cycle, clan_tag),
     ).fetchone()
-    # Fetches/observations are attributable only through this clan's own
-    # cycle-keyed group tags, never another clan's scanned response.
-    return bool(_real_group_tags(group))
+    # A stored group is this clan's own cycle-bound evidence, including
+    # PREPARATION before real war tags exist. Unattributed fetches are not proof.
+    return group is not None
 
 
 def _waiting_message(cycle: str) -> str:
@@ -319,13 +332,24 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                 group = await asyncio.wait_for(
                     providers.league_group(clan_tag), timeout=10
                 )
-                observed = group.get("season") if isinstance(group, dict) else None
+                reported = group.get("season") if isinstance(group, dict) else None
+                observed = _explicit_month(reported) or reported
                 state = (
                     str(group.get("state") or "").upper()
                     if isinstance(group, dict)
                     else ""
                 )
-                missing = isinstance(group, dict) and _missing_month(observed)
+                if state == "NOT_IN_WAR" and (
+                    not group.get("clans") or not group.get("rounds")
+                ):
+                    _log_group_month(clan_tag, state, reported, False, False)
+                    mismatch = (
+                        _group_month_status(observed, cycle)
+                        if _explicit_month(reported)
+                        else None
+                    )
+                    return clan_tag, None, mismatch or "no_group"
+                missing = isinstance(group, dict) and _missing_month(reported)
                 if missing and state not in {"PREPARATION", "INWAR", "WAR", "ENDED"}:
                     raise ProviderUnavailable("CWL group state is unavailable")
                 matching_final = False
@@ -342,7 +366,7 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                         or cycle != datetime.now(timezone.utc).strftime("%Y-%m")
                     ):
                         if _upcoming_cycle(cycle):
-                            _log_group_month(clan_tag, state, observed, False, False)
+                            _log_group_month(clan_tag, state, reported, False, False)
                             return clan_tag, None, "no_group"
                 inferred = missing and (
                     matching_final
@@ -357,14 +381,14 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     raise ProviderUnavailable("Clash CWL month is unavailable")
                 # A local effective copy leaves the provider's observed month
                 # untouched. Explicit dates always win, including mismatches.
-                effective = dict(group, season=cycle) if inferred else group
+                effective = dict(group, season=cycle if inferred else observed)
                 validated = _valid_group(
                     effective, cycle if inferred else observed, clan_tag
                 )
                 _log_group_month(
                     clan_tag,
                     state,
-                    observed,
+                    reported,
                     inferred and not matching_final,
                     matching_final,
                 )
@@ -407,6 +431,17 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     if isinstance(exc, ProviderUnavailable) and status == 404
                     else "unavailable"
                 )
+                if (
+                    isinstance(exc, ProviderUnavailable)
+                    and getattr(exc, "group_absent", False)
+                    and getattr(exc, "group_state", None) == "NOT_IN_WAR"
+                ):
+                    reported = getattr(exc, "group_season", None)
+                    month = _explicit_month(reported)
+                    category = (
+                        _group_month_status(month, cycle) if month else None
+                    ) or "no_group"
+                    _log_group_month(clan_tag, "NOT_IN_WAR", reported, False, False)
                 # Record categories on the ordinary capture; never probe again to
                 # discover why a previous generic unavailable result was stored.
                 reasons = {
@@ -427,7 +462,11 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     "CWL group clan roster is unavailable": "invalid_clan_roster",
                     "CWL hosting clan is missing from its league group": "missing_hosting_clan",
                 }
-                reason = reasons.get(str(exc), "other")
+                reason = (
+                    "not_in_war"
+                    if getattr(exc, "group_absent", False) and category == "no_group"
+                    else reasons.get(str(exc), "other")
+                )
                 observed_state = (
                     group.get("state")
                     if isinstance(group, dict)

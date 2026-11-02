@@ -130,3 +130,43 @@ counts. Absent/null/empty/date/word/same-month values are covered; an older vali
 month leaves no group row or allowance capture. These are isolated fixtures,
 not proof that production capture works. After an approved release, the next
 ordinary capture must establish the production result without a forced probe.
+
+## Explicit date months and NOT_IN_WAR (prompt 116)
+
+The first ordinary 516 capture logged `season_kind=invalid` with shape
+`ddddxddxdd`. This is date-shaped evidence, not an observation of the exact
+value or separators. The prior audit correctly records partial improvement,
+not a full capture pass.
+
+The shared group/war month helper now accepts a full `YYYY-MM` or a string fully
+matching `(20\d\d-(0[1-9]|1[0-2]))-\d\d`. The latter's first seven characters
+are explicit month evidence. It follows the existing same/older/later rules;
+it is never inferred as the current month. The day is deliberately only a
+two-digit shape under this rule, not a calendar validation. Other strings keep
+the existing no-month rules. Diagnostics use kind `date` and `YYYY-MM-dd`; the
+actual day and all other raw strings remain unlogged. War summaries also count
+`date` and include its masked shape within the existing five-shape cap.
+
+`NOT_IN_WAR` with no usable clan/round body becomes the same per-clan `no_group`
+category as 404. With no own cycle evidence it waits; a stored cycle-keyed group
+row, including PREPARATION before real war tags exist, keeps a warning. Another
+clan's observations and unattributed fetches do not block its wait. Explicit
+older/later month evidence still takes precedence over the no-group state.
+Other malformed states continue to warn.
+
+The public provider's failure boundary remains `ProviderUnavailable`; its
+minimal NOT_IN_WAR shape failure only gains explicit metadata for sync to read.
+Empty-array normalized responses remain provider responses, classified only
+by sync. Source audit found sync is the sole production consumer of
+`LiveProviders.league_group`; FixtureProviders is unchanged. TODO and Discord
+Strikes call coc.py's separate `get_league_group`, so neither transport nor
+behavior changes there. GROUP_NOT_FOUND, IN_MATCHMAKING, CLAN_NOT_FOUND,
+ACCESS_DENIED, ENTER_WAR, MATCHED and unknown states are not reclassified.
+
+The three current no_data accounts from the ordinary capture are assigned
+signups absent from the group and observed war rosters. Their scores remain
+unknown, not zero; this is not evidence of a code bug. No fix is made for them.
+
+116 release requires a separate ACCEPT under approval 376, fresh gates and the
+next ordinary capture before any production-success claim. No probe or forced
+capture is authorized. PR162 and the paused Strikes optimization are separate.
