@@ -66,8 +66,8 @@ def _content(season_label, publication, pool, counts, site_url):
     return (
         f"{heading} CWL roster published for {label} (version {publication['version']}).\n"
         f"{counts['assigned_count']} assigned account(s); "
-        f"{counts['unassigned_count']} awaiting placement.\n"
-        f"View your own assignment in My assignments: {site_url}assignments"
+        f"{counts['unassigned_count']} waiting for a clan.\n"
+        f"View your own assignment in My clan assignments: {site_url}assignments"
     )
 
 

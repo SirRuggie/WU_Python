@@ -18,6 +18,7 @@ from hikari.impl import (
     InteractiveButtonBuilder as Button,
 )
 
+from utils.dashboard_urls import TASKS_URL, WARS_URL
 from utils.constants import GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT
 from extensions.components import register_action
 
@@ -78,6 +79,7 @@ class WarMessageTemplates:
             )
         ]
 
+        components[0].add_component(ActionRow().add_link_button(TASKS_URL, label="My tasks").add_link_button(WARS_URL, label="Wars"))
         return components
 
     @staticmethod
@@ -110,6 +112,7 @@ class WarMessageTemplates:
             )
         ]
 
+        components[0].add_component(ActionRow().add_link_button(TASKS_URL, label="My tasks").add_link_button(WARS_URL, label="Wars"))
         return components
 
     @staticmethod
@@ -209,6 +212,7 @@ class WarMessageTemplates:
             )
         ]
 
+        components[0].add_component(ActionRow().add_link_button(TASKS_URL, label="My tasks").add_link_button(WARS_URL, label="Wars"))
         return components
 
     @staticmethod
@@ -237,6 +241,7 @@ class WarMessageTemplates:
             )
         ]
 
+        components[0].add_component(ActionRow().add_link_button(TASKS_URL, label="My tasks").add_link_button(WARS_URL, label="Wars"))
         return components
 
 

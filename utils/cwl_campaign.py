@@ -15,7 +15,10 @@ from urllib.parse import urlparse
 
 import hikari
 import pendulum
-from utils.dashboard_urls import SIGNUP_URL, ASSIGNMENTS_URL, DASHBOARD_ORIGIN
+from utils.dashboard_urls import (
+    SIGNUP_URL, ASSIGNMENTS_URL, DASHBOARD_ORIGIN, TASKS_URL, WARS_URL,
+    LEGACY_DASHBOARD_ORIGIN,
+)
 from pymongo.errors import DuplicateKeyError
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -32,6 +35,9 @@ from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
 
 
 SCHEMA_VERSION = 1
+DEFAULT_COPY_VERSION = 127
+DEFAULT_COPY_FIELD = "default_copy_version"
+SHORT_SIGNUP_CHECK_LINE = "Tap **Check my signups** to see your accounts."
 DEFAULT_TIMEZONE = "America/New_York"
 DEFAULT_GUILD_ID = 0
 LEGACY_WU_GUILD_ID = WARRIORS_UNITED_GUILD_ID
@@ -47,6 +53,11 @@ _SKIP_OCCURRENCE = object()
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _uses_new_default_copy(value: dict | None) -> bool:
+    version = value.get(DEFAULT_COPY_FIELD) if isinstance(value, dict) else None
+    return type(version) is int and version == DEFAULT_COPY_VERSION
 
 
 def cycle_key(now=None, timezone_name: str = DEFAULT_TIMEZONE) -> str:
@@ -113,14 +124,14 @@ LEGACY_ROSTER_URLS = (
 def normalize_signup_entry(campaign: dict) -> dict:
     """Upgrade signup destinations without changing delivery state or custom copy."""
     result = copy.deepcopy(campaign)
-    defaults = default_campaign()
+    new_default_copy = _uses_new_default_copy(result)
     for message_id, message in result.get("messages", {}).items():
         for item in message.get("variants", {}).values():
-            item["body"] = item.get("body", "").replace("https://cwl.ruggie.zone", DASHBOARD_ORIGIN)
+            item["body"] = item.get("body", "").replace(LEGACY_DASHBOARD_ORIGIN, DASHBOARD_ORIGIN)
             for button in item.get("buttons", []):
                 url = button.get("url", "")
-                if url.startswith("https://cwl.ruggie.zone/") or url == "https://cwl.ruggie.zone":
-                    button["url"] = DASHBOARD_ORIGIN + url[len("https://cwl.ruggie.zone"):]
+                if url.startswith(LEGACY_DASHBOARD_ORIGIN + "/") or url == LEGACY_DASHBOARD_ORIGIN:
+                    button["url"] = DASHBOARD_ORIGIN + url[len(LEGACY_DASHBOARD_ORIGIN):]
                 if message_id == "roster" and url in LEGACY_ROSTER_URLS:
                     button["url"] = ASSIGNMENTS_URL
                     button["label"] = "My assignments"
@@ -133,10 +144,13 @@ def normalize_signup_entry(campaign: dict) -> dict:
         for pool, item in message.get("variants", {}).items():
             item["buttons"] = signup_buttons()
             legacy = LEGACY_SIGNUP_MAIN if pool == "main" else LEGACY_SIGNUP_LAZY
-            replacement = defaults["messages"]["signup"]["variants"].get(pool, {}).get("body")
+            replacement = _legacy_dashboard_signup_body(pool)
             if replacement and legacy in item.get("body", ""):
                 item["body"] = item["body"].replace(legacy, replacement)
-            if SIGNUP_CHECK_LINE not in item.get("body", ""):
+            if (
+                SIGNUP_CHECK_LINE not in item.get("body", "")
+                and not (new_default_copy and SHORT_SIGNUP_CHECK_LINE in item.get("body", ""))
+            ):
                 proposed = item.get("body", "").rstrip() + "\n\n" + SIGNUP_CHECK_LINE
                 overhead = len(" ".join(f"<@&{role}>" for role in item.get("role_ids", []))) + len(item.get("title", "")) + 3 + len(SIGNUP_HELP_LINE)
                 if "{signup_deadline}" in proposed:
@@ -146,13 +160,9 @@ def normalize_signup_entry(campaign: dict) -> dict:
     return result
 
 
-def default_campaign() -> dict:
-    """Return the native copy formerly hard-coded in both CWL extensions."""
-    role = 1080521665584308286
-    main_channel = 1072714594625257502
-    lazy_channel = 865726525990633472
-    main_buttons = signup_buttons()
-    lazy_buttons = signup_buttons()
+
+def _legacy_dashboard_signup_body(pool: str) -> str:
+    """Keep the established read-only legacy migration independent of new defaults."""
     signup_main = (
         "Sign up for CWL on our website.\n\n"
         "1. Select **Sign up for CWL** below.\n"
@@ -171,6 +181,37 @@ def default_campaign() -> dict:
         "FWA clan members must choose Lazy CWL.\n"
         "Need help? Ask in <#872692009066958879>."
     )
+    return signup_main if pool == "main" else signup_lazy
+
+def default_campaign(*, new_copy: bool = True) -> dict:
+    """Provision current copy, or the exact compatibility fallback for saved data."""
+    role = 1080521665584308286
+    main_channel = 1072714594625257502
+    lazy_channel = 865726525990633472
+    main_buttons = signup_buttons()
+    lazy_buttons = signup_buttons()
+    signup_main = (
+        "Sign up for CWL on our dashboard.\n\n"
+        "FWA clan members must choose Lazy CWL.\n\n"
+        "1. Select **Sign up for CWL** below.\n"
+        "2. Sign in with Discord.\n"
+        "3. Choose Main or Lazy CWL, then select your accounts.\n"
+        "4. Check your choices and select **Sign up**.\n\n"
+        "Need help? Ask in <#801950200133976124>."
+    )
+    signup_lazy = (
+        "Sign up for Lazy CWL on our dashboard.\n\n"
+        "FWA clan members must choose Lazy CWL.\n\n"
+        "1. Select **Sign up for CWL** below.\n"
+        "2. Sign in with Discord.\n"
+        "3. Choose **Lazy CWL**, then select your accounts.\n"
+        "4. Check your choices and select **Sign up**.\n\n"
+        "Need help? Ask in <#872692009066958879>."
+    )
+    if not new_copy:
+        # Existing records retain their previous missing-field fallback copy.
+        signup_main = _legacy_dashboard_signup_body("main")
+        signup_lazy = _legacy_dashboard_signup_body("lazy")
     reminder_media = {
         1: "https://c.tenor.com/6b2bCHLqrUkAAAAd/tenor.gif",
         2: "https://media.tenor.com/0XVm8XNzxFUAAAAj/its-not-too-late-to-get-involved-engage.gif",
@@ -195,21 +236,23 @@ def default_campaign() -> dict:
             "variants": {
                 "main": _variant(
                     title="<:league_medal:949137422933962753> CWL Time <:league_medal:949137422933962753>",
-                    body="Below are the CWL Rosters. Once your attacks are complete, make your way to your assigned Clan.\n\nOpen My assignments below to see your published clan and its join link. You can also find them in <#1114047624216068136>\n\nDirect all questions and concerns to <#801950200133976124> <:warriorcat:947992348971905035>",
+                    body="Rosters are out! Tap **My clan assignments** to find your clan.\n\nFinish both attacks in your current war, then move to your clan. __The sooner the better.__\n\nQuestions? Ask in <#801950200133976124> <:warriorcat:947992348971905035>",
                     media_url="https://c.tenor.com/aXIInybKvOwAAAAd/tenor.gif", channel_id=main_channel, role_ids=[role],
-                    buttons=_buttons(("My assignments", ASSIGNMENTS_URL, "📋")),
+                    buttons=_buttons(("My clan assignments", ASSIGNMENTS_URL, "📋"), ("My tasks", TASKS_URL, "✅"), ("Wars", WARS_URL, "⚔️")),
                 ),
                 "lazy": _variant(
                     title="<:league_medal:949137422933962753> Lazy CWL Time <:league_medal:949137422933962753>",
-                    body="Below are the Lazy CWL Rosters. If you cannot view the Roster or do not understand it, please ping <@&769130325460254740> in <#872692009066958879> and we'll get it sorted.\n\nAs soon as both your attacks are complete in the current war make your way to your assigned Clan. __The sooner the better.__\n\nThere are several Bots in the server that can provide war information. To many to list here. Feel free to play around in <#1128848663872028743>. War and CWL are good keywords for looking.",
+                    body="Lazy rosters are out! Tap **My clan assignments** to find your clan.\n\nFinish both attacks in your current war, then move to your clan. __The sooner the better.__\n\nNeed help? Ping <@&769130325460254740> in <#872692009066958879>.",
                     media_url="https://c.tenor.com/aXIInybKvOwAAAAd/tenor.gif", channel_id=lazy_channel, role_ids=[role],
-                    buttons=_buttons(("My assignments", ASSIGNMENTS_URL, "😴"), ("LazyCWL Guide", "https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit", "📖")),
+                    buttons=_buttons(("My clan assignments", ASSIGNMENTS_URL, "😴"), ("My tasks", TASKS_URL, "✅"), ("Wars", WARS_URL, "⚔️"), ("LazyCWL Guide", "https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit", "📖")),
                 ),
             },
         },
     }
     for number in range(1, 6):
-        prefix = "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\n"
+        prefix = "**Already signed up? You're set!** Not yet? Sign up below.\nTap **Check my signups** to see your accounts.\n\n"
+        if not new_copy:
+            prefix = "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\n"
         messages[f"reminder:{number}"] = {
             "enabled": True,
             "label": f"Sign-up reminder {number}",
@@ -219,8 +262,14 @@ def default_campaign() -> dict:
                 "lazy": _variant(title=f"<:CWL:1399013745598009375> Sign-up Reminder #{number} <:CWL:1399013745598009375>", body=prefix + signup_lazy + "\n\n# **Signups close {signup_deadline}**", media_url=reminder_media[number], channel_id=lazy_channel, role_ids=[role], buttons=lazy_buttons),
             },
         }
+    if not new_copy:
+        messages["roster"]["variants"]['main']['body'] = 'Below are the CWL Rosters. Once your attacks are complete, make your way to your assigned Clan.\n\nOpen My assignments below to see your published clan and its join link. You can also find them in <#1114047624216068136>\n\nDirect all questions and concerns to <#801950200133976124> <:warriorcat:947992348971905035>'
+        messages["roster"]["variants"]['main']['buttons'] = [{'label': 'My assignments', 'url': ASSIGNMENTS_URL, 'emoji': '📋'}]
+        messages["roster"]["variants"]['lazy']['body'] = "Below are the Lazy CWL Rosters. If you cannot view the Roster or do not understand it, please ping <@&769130325460254740> in <#872692009066958879> and we'll get it sorted.\n\nAs soon as both your attacks are complete in the current war make your way to your assigned Clan. __The sooner the better.__\n\nThere are several Bots in the server that can provide war information. To many to list here. Feel free to play around in <#1128848663872028743>. War and CWL are good keywords for looking."
+        messages["roster"]["variants"]['lazy']['buttons'] = [{'label': 'My assignments', 'url': ASSIGNMENTS_URL, 'emoji': '😴'}, {'label': 'LazyCWL Guide', 'url': 'https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit', 'emoji': '📖'}]
     return {
         "schema_version": SCHEMA_VERSION,
+        **({DEFAULT_COPY_FIELD: DEFAULT_COPY_VERSION} if new_copy else {}),
         "timezone": DEFAULT_TIMEZONE,
         "paused": False,
         "reminder_sequence": {"enabled": False},
@@ -271,7 +320,7 @@ def _legacy_override(schedule: dict | None) -> dict:
 
 def campaign_from_legacy(schedule: dict | None) -> dict:
     """Snapshot global legacy timing into guild-scoped monthly defaults."""
-    return _deep_merge(default_campaign(), _legacy_override(schedule))
+    return _deep_merge(default_campaign(new_copy=not bool(schedule)), _legacy_override(schedule))
 
 
 def _month(cycle: str, timezone_name: str):
@@ -609,14 +658,36 @@ async def _legacy(mongo):
     return await collection.find_one({"_id": "schedule"}) if collection is not None else None
 
 
+def _saved_copy_baseline(campaign: dict | None) -> dict:
+    return default_campaign(new_copy=_uses_new_default_copy(campaign))
+
+
+async def load_defaults_campaign(mongo, guild_id: int) -> dict:
+    """Defaults editor baseline, without importing a cycle's custom message copy.
+
+    Only a genuinely new setup gets newly provisioned copy. Existing unmarked
+    metadata, partial records, cycles and legacy settings retain their fallback.
+    Reads do not backfill or rewrite any record.
+    """
+    saved = await mongo.bot_config.find_one({"_id": defaults_id(guild_id)})
+    if saved and isinstance(saved.get("campaign"), dict):
+        return _deep_merge(_saved_copy_baseline(saved["campaign"]), saved["campaign"])
+    legacy = await _legacy(mongo) if int(guild_id) == LEGACY_WU_GUILD_ID else None
+    if legacy:
+        return campaign_from_legacy(legacy)
+    existing_cycle = await mongo.bot_config.find_one({"kind": "cwl_campaign_cycle", "guild_id": int(guild_id)})
+    return default_campaign(new_copy=not bool(saved or existing_cycle))
+
+
 async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None) -> dict:
     guild_id = int(guild_id)
-    base = default_campaign()
     saved = await mongo.bot_config.find_one({"_id": defaults_id(guild_id)})
+    base = _saved_copy_baseline(saved.get("campaign")) if saved else default_campaign()
+    legacy = None
     if saved and isinstance(saved.get("campaign"), dict):
         base = _deep_merge(base, saved["campaign"])
     elif guild_id == LEGACY_WU_GUILD_ID and (legacy := await _legacy(mongo)):
-        base = _deep_merge(base, _legacy_override(legacy))
+        base = _deep_merge(default_campaign(new_copy=False), _legacy_override(legacy))
     selected_cycle = cycle or cycle_key(now, base.get("timezone", DEFAULT_TIMEZONE))
     row = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, selected_cycle)})
     override = copy.deepcopy(row.get("campaign")) if row else None
@@ -633,13 +704,21 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
         # Older saved cycle snapshots predate the sequence feature. They keep
         # their individual schedules when future defaults adopt a sequence.
         override.setdefault("reminder_sequence", {"enabled": False})
+    previous = []
+    has_saved_cycles = False
+    if row is None:
+        previous = await mongo.bot_config.find({"kind": "cwl_campaign_cycle", "guild_id": guild_id}).to_list(length=None)
+        has_saved_cycles = bool(previous)
+        previous = [item for item in previous if item.get("cycle", "") < selected_cycle and isinstance(item.get("campaign"), dict)]
+    if not saved and not legacy and (row or recurring_rows or has_saved_cycles):
+        base = default_campaign(new_copy=False)
     # Full cycle snapshots are independent of future monthly defaults,
     # including newly provisioned sequence templates and sequence settings.
-    campaign = _deep_merge(default_campaign() if isinstance(override, dict) and "schema_version" in override else base, override)
+    campaign = _deep_merge(_saved_copy_baseline(override) if isinstance(override, dict) and "schema_version" in override else base, override)
+    if isinstance(override, dict) and not _uses_new_default_copy(override):
+        campaign.pop(DEFAULT_COPY_FIELD, None)
     if row is None:
         # Carry only destinations forward, not old messages, dates or delivery state.
-        previous = await mongo.bot_config.find({"kind": "cwl_campaign_cycle", "guild_id": guild_id}).to_list(length=None)
-        previous = [item for item in previous if item.get("cycle", "") < selected_cycle and isinstance(item.get("campaign"), dict)]
         candidates = previous + ([saved] if saved and isinstance(saved.get("campaign"), dict) else [])
         for pool in ("main", "lazy"):
             for source in sorted(candidates, key=lambda item: str(item.get("updated_at", "")), reverse=True):
@@ -676,13 +755,7 @@ async def new_draft(mongo, guild_id: int, user_id: int, cycle: str | None = None
     loaded = await load_campaign(mongo, guild_id, cycle)
     campaign = loaded["campaign"]
     if scope == "defaults":
-        saved = await mongo.bot_config.find_one({"_id": defaults_id(guild_id)})
-        if saved and isinstance(saved.get("campaign"), dict):
-            campaign = _deep_merge(default_campaign(), saved["campaign"])
-        elif int(guild_id) == LEGACY_WU_GUILD_ID:
-            campaign = campaign_from_legacy(await _legacy(mongo))
-        else:
-            campaign = default_campaign()
+        campaign = await load_defaults_campaign(mongo, guild_id)
     now = _utcnow()
     token = uuid.uuid4().hex
     draft = {

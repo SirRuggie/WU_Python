@@ -47,7 +47,8 @@ def test_only_pending_players_pinged_in_content_and_no_cv2():
     assert '<@123456789012345671>' in msg['content']
     assert '123456789012345672' not in str(msg)
     assert msg['allowed_mentions']['parse'] == []
-    assert not {'flags', 'components'} & msg.keys()
+    assert 'flags' not in msg
+    assert [button['label'] for button in msg['components'][0]['components']] == ['My tasks', 'Wars']
     assert '1/2' in msg['content']
     assert len(r.messages(w, config(audience='zero'), '60', owners)[0]['allowed_mentions']['users']) == 1
 

@@ -32,11 +32,11 @@ def test_panel_serializes_one_goldenrod_container_and_short_rows():
     assert built["type"] == hikari.ComponentType.CONTAINER
     assert int(built["accent_color"]) == int(GOLDENROD_ACCENT)
     assert built["components"][0]["content"].startswith("## CWL · October CWL")
-    assert [len(row["components"]) for row in built["components"][1:]] == [2, 1]
+    assert [len(row["components"]) for row in built["components"][1:]] == [2, 1, 3]
 
     pools = session("signup_pool")
     assert "no heroes upgrading" in member._main_text(pools)
-    assert "upgrades are fine" in member._main_text(pools)
+    assert "You can upgrade during the event." in member._main_text(pools)
     assert [len(row.components) for row in member._components("panel", pools)] == [2, 2]
 
 
@@ -223,7 +223,7 @@ def test_public_cwl_group_contains_only_signup_and_retired_staff_group_stays_unr
     assert not any(getattr(x, "_command", None) for x in cwl_dashboard.loader._loadables)
 
 
-def test_signup_command_opens_private_home_without_dashboard_link_or_extra_click():
+def test_signup_command_keeps_private_home_and_adds_dashboard_destinations():
     from test_cwl_discord_member import Context
     from unittest.mock import patch
     ctx = Context()
@@ -249,9 +249,9 @@ def test_signup_command_opens_private_home_without_dashboard_link_or_extra_click
         assert len(initial["components"][0].components) == 1  # Loading text only.
         rendered = ctx.interaction.edits[-1]["components"][0]
         controls = [b for row in rendered.components[1:] for b in row.components]
-        assert {b.custom_id.split(":")[0] for b in controls} == {
+        assert {b.custom_id.split(":")[0] for b in controls if hasattr(b, "custom_id")} == {
             "cwl_member_signup", "cwl_member_my_signups", "cwl_member_assignments"}
-        assert all(b.style != hikari.ButtonStyle.LINK for b in controls)
+        assert [b.label for b in controls if b.style == hikari.ButtonStyle.LINK] == ["My clan assignments", "My tasks", "Wars"]
         assert "dashboard" not in rendered.components[0].content.lower()
     finally:
         for token in set(member._sessions) - old_tokens:

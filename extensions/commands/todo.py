@@ -87,6 +87,8 @@ from hikari.impl import (
 
 from extensions.components import register_action
 from utils import clan_history, coc_maintenance, todo_data, todo_sessions
+from utils.dashboard_urls import TASKS_URL, WARS_URL
+
 from utils.clash_links import resolve_tags
 from utils.media_urls import THUMBNAIL, optimized
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
@@ -300,10 +302,10 @@ COMPONENT_HEADROOM = 2
 COMPONENT_BUDGET = COMPONENT_LIMIT - COMPONENT_HEADROOM   # 38
 
 # Panel furniture that is on every page regardless of content:
-#   Container 1 + title Text 1 + Separator 1 + _nav_block 7
+#   Container 1 + title Text 1 + Separator 1 + _nav_block 9
 # _nav_block is Separator + (ActionRow + select) + Media + Text + (ActionRow +
-# button) = 7, counting nested children.
-PANEL_FIXED = 10
+# button + two dashboard links) = 9, counting nested children.
+PANEL_FIXED = 12
 
 # RESERVED, NEVER CONDITIONAL. Notes render on every page when the view has
 # any, and the pagination row appears only when pages > 1 - so budgeting for it
@@ -507,6 +509,8 @@ def _retired_panel() -> list:
                 emoji=_partial("refresh") or U_REFRESH,
                 label="Check now",
             ),
+            hikari.impl.LinkButtonBuilder(url=TASKS_URL, label="My tasks"),
+            hikari.impl.LinkButtonBuilder(url=WARS_URL, label="Wars"),
         ]),
     ], BLUE_ACCENT)
 
@@ -644,6 +648,8 @@ def _nav_block(view: str, counts: dict, pager=None, *,
                 emoji=_partial("refresh") or U_REFRESH,
                 label="Check now",
             ),
+            hikari.impl.LinkButtonBuilder(url=TASKS_URL, label="My tasks"),
+            hikari.impl.LinkButtonBuilder(url=WARS_URL, label="Wars"),
         ]),
     ]
 

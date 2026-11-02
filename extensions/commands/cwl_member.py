@@ -17,7 +17,7 @@ from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
 from utils.cwl_signup_policy import main_signup_error
 from utils.cwl_member_summary import timing_lines
-from utils.dashboard_urls import SIGNUP_URL
+from utils.dashboard_urls import SIGNUP_URL, ASSIGNMENTS_URL, TASKS_URL, WARS_URL
 
 
 PAGE_SIZE = 15
@@ -219,17 +219,17 @@ def _main_text(session: MemberSession) -> str:
         label = _safe(season.get("label") or "CWL season", 60)
         is_open = _signup_is_open(session)
         status = "Signups open" if is_open else "Signups closed"
-        signup_help = "Choose accounts for Main or Lazy CWL." if is_open else "Closed for this season."
+        signup_help = "Choose accounts for Main or Lazy CWL." if is_open else "Closed for this season. Check back next month."
         saved_help = "View, change, or cancel your signups." if is_open else "View your saved signups."
         return (f"## CWL · {label}\n{status}.\n\n"
                 f"**Sign up** — {signup_help}\n"
                 f"**My signups** — {saved_help}\n"
-                "**Clan assignments** — See your clans when staff publish the roster.")
+                "**My clan assignments** — See your clans when staff publish the roster.")
     if session.screen == "signup_pool":
         season = _safe((session.view.get("season") or {}).get("label") or "CWL season", 45)
         return (f"## Choose your CWL · {season}\n"
                 "**Main:** Play at full strength and try to win; no heroes upgrading.\n"
-                "**Lazy:** Lower pressure CWL; upgrades are fine. FWA accounts use Lazy.\n"
+                "**Lazy:** Relaxed CWL. You can upgrade during the event. FWA accounts use Lazy.\n"
                 "You can choose a different pool for each account.")
     if session.screen == "select_accounts":
         accounts = _eligible_accounts(session)
@@ -310,7 +310,7 @@ def _main_text(session: MemberSession) -> str:
         page_label = f" · Page {session.page + 1} of {pages}" if pages > 1 else ""
         lines = [f"## My clan assignments{page_label}"]
         for row in rows[session.page * ASSIGNMENT_PAGE_SIZE:(session.page + 1) * ASSIGNMENT_PAGE_SIZE]:
-            clan = row.get("assigned_clan_name") or "Awaiting placement"
+            clan = row.get("assigned_clan_name") or "Waiting for a clan"
             tag = row.get("assigned_clan_tag")
             clan_tag = str(tag or "").upper().lstrip("#")
             link = (f"https://link.clashofclans.com/en?action=OpenClanProfile&tag={clan_tag}"
@@ -340,7 +340,8 @@ def _components(token: str, session: MemberSession) -> list:
                 (hikari.ButtonStyle.PRIMARY, _id("signup", token, version), "Sign up", not _signup_is_open(session)),
                 (hikari.ButtonStyle.SECONDARY, _id("my_signups", token, version), "My signups", False),
             ),
-            _row((hikari.ButtonStyle.SECONDARY, _id("assignments", token, version), "Clan assignments", False)),
+            _row((hikari.ButtonStyle.SECONDARY, _id("assignments", token, version), "My clan assignments", False)),
+            c.MessageActionRowBuilder().add_link_button(ASSIGNMENTS_URL, label="My clan assignments").add_link_button(TASKS_URL, label="My tasks").add_link_button(WARS_URL, label="Wars"),
         ]
     if session.screen == "signup_pool":
         return [

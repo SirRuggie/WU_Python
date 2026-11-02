@@ -27,7 +27,7 @@ def test_group_dedupe_unlinked_unknown_and_awaiting():
     assert groups[0]["users"] == ["123456789012345678"]
     payload = messages(groups)[0]
     assert content(payload).count("<@123456789012345678>") == 1
-    assert "Fixture player" in content(payload) and "Total missing: 3" in content(
+    assert "Fixture player" in content(payload) and "Players not yet in their clan: 3" in content(
         payload
     )
     assert payload["allowed_mentions"] == dict(
