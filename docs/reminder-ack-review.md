@@ -75,7 +75,7 @@ next-send date, overflow or browser errors.
 
 The exact committed production-shaped artifact passes51routes/nativepool/real
 owner/copiedSQLite+ownedMongo/external-network block/config200/auth401, cleanup
-and per-file hashes (`.local/p142-boot-final`, exact5c0c479; subsequent changes are test/docs-only). The existing preview33917 stays
+and per-file hashes (`.local/p142-boot-ready`, exact final committed artifact). The existing preview33917 stays
 running with entry `signup-reminders-preview-0cl7Vw5o.js`, SHA256
 `18c60e711cbf5db5e0589cc104e406df90e559c4f4c7da4016371fc3963bc767`.
 
@@ -89,10 +89,11 @@ gates. A browser-only aggregate locator was corrected after initially matching
 six rows with a single-element API. No production call or delivery was tested.
 
 
-READY remains held for acknowledgement-scope clarification: the separate known
-issue concerns a campaign-owned overdue job of the acknowledged generation, not
-a legacy job. Native sync installs every expected future job but removes the
-restored overdue plain job before acknowledging the generation. See the exact
-local IDs/counts and open contract question in
-`docs/reminder-restored-plain-job-known-issue.md`. Passing tests alone do not
-resolve that product/safety contract; no policy fix was added without approval.
+Shaka433 clarifies that `schedule_synced` means the exact current-policy FUTURE
+schedule has loaded; overdue catch-up is excluded. The separate known issue is
+campaign-owned and same-generation, not a legacy job: native sync removes that
+restored overdue plain job while installing every expected future job. The local
+proof lists eight expected/installed November jobs, twelve future December jobs,
+and no missing future November IDs. The overdue delivery policy remains a
+separate owner question; no delivery-policy change or live delivery claim is
+included. Source is ready for review; release still requires owner preview approval.

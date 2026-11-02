@@ -26,7 +26,7 @@ behaviour without changing it. Scope and a safe delivery policy need a separate
 owner decision, especially because an uncertain send must not be retried blindly.
 
 
-## Acknowledgement scope clarification pending
+## Acknowledgement scope clarified by Shaka433
 
 The removed job is campaign-owned, not a legacy reminder:
 `cwl_campaign:644963518025826315:2026-11:signup:main`, generation `1:0`.
@@ -37,9 +37,10 @@ exactly; twelve future December jobs and the rollover job are also installed.
 There are no missing future November IDs. Exact local IDs/counts are retained in
 `.local/p142-missed-scope.json`, with the actual template run time.
 
-READY is held pending reviewer clarification of whether the acknowledgement
-contract includes this restored overdue job, rather than only the native sync's
-future desired schedule. The existing native sync deliberately excludes past
+Shaka433 clarifies that `schedule_synced` acknowledges the exact current-policy
+future desired schedule, not overdue catch-up. The missing restored overdue
+occurrence is excluded from that acknowledgement contract and remains a separate
+delivery-policy question for the owner. The existing native sync deliberately excludes past
 ordinary scheduled occurrences; this acknowledgement patch does not change that
 policy. No repair policy or send is introduced here. Zero mock sender calls are
 only evidence that this fixture did not invoke the mock, not delivery evidence.
