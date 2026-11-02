@@ -98,11 +98,7 @@ createRoot(document.getElementById("root")!).render(
       <header className="topbar">Signup reminders</header>
       <main>
         <h1>Signup reminders</h1>
-        <ReminderWorkspace
-          seasonId="fixture"
-          archived={false}
-          onDirty={() => {}}
-        />
+        <ReminderWorkspace seasonId="42" archived={false} onDirty={() => {}} />
       </main>
     </div>
   </div>,

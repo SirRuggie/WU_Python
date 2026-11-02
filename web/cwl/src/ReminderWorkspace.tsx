@@ -1,3 +1,4 @@
+import { dashboardPath } from "./dashboardHistory";
 import SignupReminderOverview, {
   shortReminderTime,
   targetCwlMonth,
@@ -519,6 +520,18 @@ export default function ReminderWorkspace({
                       retry the lookup.
                     </p>
                   )}
+                  <p className="reminder-overview-note">
+                    Roster posts are on{" "}
+                    <a
+                      href={dashboardPath({
+                        view: "publication",
+                        step: "announce",
+                        season: seasonId,
+                      })}
+                    >
+                      Announcements ›
+                    </a>
+                  </p>
                   <p className="reminder-overview-note">
                     Delivery is confirmed in Delivery history. Website signups
                     are {state.signup_open ? "open" : "closed"} separately.
@@ -1097,7 +1110,7 @@ export default function ReminderWorkspace({
                         })
                       }
                     >
-                      Save changes
+                      Save
                     </button>
                   </div>
                 </div>

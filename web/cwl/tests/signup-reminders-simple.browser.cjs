@@ -35,6 +35,19 @@ const path = require("node:path");
         await page
           .getByRole("heading", { name: "Messages for December 2026 CWL" })
           .waitFor();
+        const announcement = page.getByRole("link", {
+          name: "Announcements ›",
+          exact: true,
+        });
+        const announcementUrl = new URL(
+          await announcement.getAttribute("href"),
+          origin,
+        );
+        if (
+          announcementUrl.searchParams.get("step") !== "announce" ||
+          announcementUrl.searchParams.get("season") !== "42"
+        )
+          throw Error("Wrong roster announcement route");
         const rows = page.locator(".signup-reminder-row");
         if ((await rows.count()) !== 6) throw Error("Missing reminder row");
         if (mode === "different") {

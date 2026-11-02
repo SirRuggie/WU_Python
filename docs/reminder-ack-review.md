@@ -18,7 +18,7 @@ One row per editable reminder pairs Main and Lazy. Shared destinations/Notify ap
 
 The campaign cycle is the SEND month. November 2026 send dates target December 2026 CWL, including December-to-January rollover; the label does not retime any rule. Pause confirms its scope with Pause reminders. Save confirms with Save. There is one Advanced schedule disclosure; raw role IDs remain under the existing notification editor, not a second Advanced section.
 
-Boundary: the default schema has signup, five reminders and roster. Roster editing remains in Publish roster and the API explicitly rejects editing it here. No seventh editable path was invented. Owner clarification on the requested seven-type overview is pending; configurable sequence rows are supported by the same rendering.
+Clarified by Shaka420: six rows, one per editable reminder type (signup plus five reminders); no seventh roster row or editor. The exact short line “Roster posts are on Announcements ›” links through the existing dashboard route helper to Announcements for this season. The API still rejects roster editing here; no permission or route change. Configurable extra sequence rows use the same rendering.
 
 ## Evidence and current limits
 
