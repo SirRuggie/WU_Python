@@ -268,10 +268,9 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     # Shape/ownership validation applies even to a normal wait.
                     _valid_group(dict(group, season=cycle), cycle, clan_tag)
                     tags = _real_group_tags(group)
+                    stored_tags = _real_group_tags((known_groups or {}).get(clan_tag))
                     matching_final = (
-                        state == "ENDED"
-                        and bool(tags)
-                        and tags == _real_group_tags((known_groups or {}).get(clan_tag))
+                        state == "ENDED" and bool(stored_tags) and stored_tags <= tags
                     )
                     if not matching_final and (
                         state == "ENDED"
@@ -674,7 +673,11 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             (
                 (tag, None, "season_mismatch")
                 if war and war.get("season") not in (None, cycle)
-                else (tag, war, error)
+                else (
+                    (tag, None, "invalid_war_state")
+                    if war and _war_state(war.get("state")) is None
+                    else (tag, war, error)
+                )
             )
             for tag, war, error in war_fetches
         ]

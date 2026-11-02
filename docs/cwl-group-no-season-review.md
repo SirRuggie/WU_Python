@@ -1,6 +1,6 @@
 # CWL groups without a season
 
-Prompts 107/108 follow ordinary capture diagnostics in handoff 671. At
+Prompts 107/108/110 follow ordinary capture diagnostics in handoff 671. At
 06:23:52 UTC on November 2, seven normalized groups had no season value:
 four `ENDED`, three `PREPARATION`. Three other clans returned leaguegroup 404.
 No agent provider probe or Check Clash request was made.
@@ -14,10 +14,11 @@ always win. The state restriction applies only to the missing-month path;
 explicit-season responses keep their existing validation behavior.
 
 Missing-season `ENDED` is captured only if its nonempty set of real war tags
-exactly equals that clan's stored group tags for this season and cycle. Exact
-matching is proof, so it also permits finishing a past, nonarchived selected
-month after UTC rollover. Mere overlap, empty tags or another season's records
-do not qualify. Archived seasons remain read-only. Explicitly mismatching war
+contains all of that clan's nonempty stored real tags for this season and
+cycle. Prompt 110 changes the earlier equality rule: final groups may add
+previously unobserved later rounds. Containment is proof, so it also permits
+finishing a past, nonarchived selected month after UTC rollover. Mere overlap,
+empty stored tags or another season's records do not qualify. Archived seasons remain read-only. Explicitly mismatching war
 months still fail closed, and an inferred group referencing such a war is not
 stored or exposed to Results/Bonus allowance readers.
 
@@ -55,7 +56,7 @@ rather than unrelated global fetch evidence.
 ## Boundaries and evidence
 
 Group diagnostics log a validated clan tag, whitelisted state and boolean season
-presence/inference/tag-match values, never response bodies. Results and Bonus
+presence/inference/tag-proof values, never response bodies. Results and Bonus
 consume cycle-keyed observations rather than independently guessing raw group
 months. The strict group validator receives a local effective copy; normalized
 provider evidence remains unchanged. No schema migration or polling was added.
@@ -68,7 +69,12 @@ API omission rule. Isolated tests are not evidence of live November delivery.
 
 Checks include consecutive mixed captures with real war tags for missing-season
 ENDED, 404 and explicit older groups; own evidence, per-season scope, next-month
-waiting, seven-war completion and Bonus eligibility, exact versus overlapping
+waiting, seven-war completion and Bonus eligibility, contained versus overlapping
 tags, rollover, archives, mismatching-war rejection and unchanged outage/cache
 freshness. Mutation evidence and final suite counts accompany the READY entry.
 Release remains held pending Ruggie's approval and Claude's review.
+
+Prompt 110 checks also cover every unreadable state on first and later captures,
+neutral mixed captures with cached ended wars, a lagging sixth-round group
+finishing with seven rounds, and separate guards on fresh-group success stamps,
+failure-free stamps and rejected-clan freshness.
