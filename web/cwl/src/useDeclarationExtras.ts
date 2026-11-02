@@ -1,4 +1,7 @@
-import { patchDeclarationMark } from "./declarationMarks";
+import {
+  patchDeclarationMark,
+  patchDeclarationMarks,
+} from "./declarationMarks";
 import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
@@ -67,6 +70,10 @@ export default function useDeclarationExtras(
     applyMark: (saved: FillerSaveResult) =>
       setData((current) =>
         current ? patchDeclarationMark(current, saved) : current,
+      ),
+    applyMarks: (saves: FillerSaveResult[]) =>
+      setData((current) =>
+        current ? patchDeclarationMarks(current, saves) : current,
       ),
     refresh: () => setRefreshNonce((n) => n + 1),
   };

@@ -15,6 +15,9 @@ export default function useStaffDetailsPage(page: StaffDetailsPage) {
     if (page.enabled === false) return;
     const registration: StaffDetailsPage = {
       seasonId: page.seasonId,
+      get fillerQueue() {
+        return current.current.fillerQueue;
+      },
       get publishedSnapshot() {
         return current.current.publishedSnapshot;
       },

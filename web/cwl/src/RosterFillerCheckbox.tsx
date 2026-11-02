@@ -1,3 +1,5 @@
+import type { FillerMarkQueue } from "./fillerMarkQueue";
+import { useFillerQueueVersion } from "./useFillerMarkQueue";
 import type { RosterUndo } from "./roster";
 export type FillerSaveResult = {
   tag?: string;
@@ -19,7 +21,9 @@ export default function RosterFillerCheckbox({
   revision,
   disabled = false,
   onChanged,
+  queue,
 }: {
+  queue?: FillerMarkQueue;
   seasonId: string;
   tag: string;
   name: string;
@@ -29,11 +33,17 @@ export default function RosterFillerCheckbox({
   disabled?: boolean;
   onChanged: (result?: FillerSaveResult) => void | Promise<void>;
 }) {
+  useFillerQueueVersion(queue);
+  const queued = queue?.row(tag);
   const pending = useRef(false);
   const [accessLost, setAccessLost] = useState(false);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   async function change(next: boolean) {
+    if (queue) {
+      if (!disabled) queue.enqueue({ tag, name, value, markRevision }, next);
+      return;
+    }
     if (disabled || accessLost || pending.current) return;
     pending.current = true;
     setBusy(true);
@@ -77,11 +87,16 @@ export default function RosterFillerCheckbox({
         <input
           type="checkbox"
           aria-label={`Filler: ${name}`}
-          checked={value}
-          disabled={disabled || accessLost || busy}
+          checked={queued?.value ?? value}
+          disabled={disabled || (queue ? queue.disabled : accessLost || busy)}
           onChange={(e) => void change(e.target.checked)}
         />
-        Filler{busy ? " · Saving…" : ""}
+        Filler
+        {queue?.notSaved.some((row) => row.tag === tag)
+          ? " · Not saved"
+          : (queue ? queued?.pending : busy)
+            ? " · Saving…"
+            : ""}
       </label>
       {error && <p role="alert">{error}</p>}
     </div>

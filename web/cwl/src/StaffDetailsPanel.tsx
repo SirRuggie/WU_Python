@@ -1,3 +1,5 @@
+import type { FillerSaveResult } from "./RosterFillerCheckbox";
+import { useFillerQueueVersion } from "./useFillerMarkQueue";
 import { mergeRosterMarks } from "./roster";
 import {
   useEffect,
@@ -22,6 +24,7 @@ export default function StaffDetailsPanel({
   request: StaffDetailsRequest;
   setRequest: Dispatch<SetStateAction<StaffDetailsRequest | null>>;
 }) {
+  useFillerQueueVersion(request?.fillerQueue);
   const [snapshot, setSnapshot] = useState<RosterSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -73,7 +76,14 @@ export default function StaffDetailsPanel({
     body: Record<string, unknown> = {},
     pool?: Pool,
   ) {
-    if (!request || request.viewOnly || !snapshot || busy || pending.current)
+    if (
+      !request ||
+      request.viewOnly ||
+      !snapshot ||
+      busy ||
+      request.fillerQueue?.working ||
+      pending.current
+    )
       return false;
     const id = generation.current;
     pending.current = true;
@@ -152,23 +162,37 @@ export default function StaffDetailsPanel({
     }
   }
   async function undoPlacement() {
-    if (!request || !snapshot || !receipt.current || pending.current || busy)
+    const available = request.fillerQueue
+      ? request.fillerQueue.lastSaved?.undo
+      : receipt.current;
+    if (
+      !request ||
+      !snapshot ||
+      !available ||
+      pending.current ||
+      busy ||
+      request.fillerQueue?.working
+    )
       return;
     const id = generation.current,
-      saved = receipt.current;
+      saved = available;
+    request.fillerQueue?.setWriteBusy(true);
+    request.fillerQueue?.clearUndo();
     pending.current = true;
     setBusy(true);
     setUndo({ status: "pending", label: saved.label });
+    let confirmedMarkUndo = false;
     try {
       const path = `/seasons/${encodeURIComponent(request.seasonId)}/roster`;
-      const restored = await api<{
-        tag?: string;
-        roster_filler?: boolean;
-        mark_revision?: number;
-      }>(`${path}/undo`, "POST", {
-        revision: snapshot.revision,
+      const restored = await api<FillerSaveResult>(`${path}/undo`, "POST", {
+        revision: request.fillerQueue?.latestRevision ?? snapshot.revision,
         undo_id: saved.id,
       });
+      if (request.fillerQueue && restored.tag) {
+        confirmedMarkUndo = true;
+        request.fillerQueue.acceptExternal(restored);
+        request.onFillerChanged?.(restored);
+      }
       const latest = await api<RosterSnapshot>(path);
       if (id === generation.current) {
         setSnapshot((previous) =>
@@ -182,20 +206,22 @@ export default function StaffDetailsPanel({
         );
         setUndo(null);
         receipt.current = null;
-        if (request.onFillerChanged && restored.tag)
+        if (!request.fillerQueue && request.onFillerChanged && restored.tag)
           request.onFillerChanged({ ...restored, revision: latest.revision });
-        else await request.onChanged?.();
+        else if (!request.fillerQueue) await request.onChanged?.();
       }
     } catch {
       if (id === generation.current) {
         receipt.current = null;
         setUndo({
           status: "unavailable",
-          message:
-            "Undo no longer available. Refresh before making another change.",
+          message: confirmedMarkUndo
+            ? "Undone. Refresh to see the latest."
+            : "Undo no longer available. Refresh before making another change.",
         });
       }
     } finally {
+      request.fillerQueue?.setWriteBusy(false);
       pending.current = false;
       if (id === generation.current) setBusy(false);
     }
@@ -220,6 +246,7 @@ export default function StaffDetailsPanel({
       )}
       {request && snapshot && account && (
         <RosterPlayerDialog
+          fillerQueue={request.fillerQueue}
           seasonId={request.seasonId}
           onFillerChanged={async (saved) => {
             if (!saved) {
@@ -273,9 +300,17 @@ export default function StaffDetailsPanel({
           clans={snapshot.clans}
           roster={snapshot}
           undo={
-            undo && (
+            (request.fillerQueue?.lastSaved?.undo || undo) && (
               <RosterUndoToast
-                state={undo}
+                disabled={request.fillerQueue?.working}
+                state={
+                  request.fillerQueue?.lastSaved?.undo
+                    ? {
+                        status: "available",
+                        label: request.fillerQueue.lastSaved.undo.label,
+                      }
+                    : undo!
+                }
                 onUndo={() => void undoPlacement()}
                 onDismiss={() => setUndo(null)}
               />
