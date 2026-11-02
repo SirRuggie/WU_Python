@@ -333,7 +333,7 @@
   }
   .members-bulk-bar {
     flex-wrap: nowrap;
-    overflow-x: auto;
+    overflow: visible;
     gap: 6px;
     padding: 6px;
   }
@@ -341,5 +341,39 @@
   .members-bulk-bar > label {
     flex: 0 0 auto;
     white-space: nowrap;
+  }
+}
+
+.members-bulk-phone {
+  display: none;
+}
+.members-bulk-desktop {
+  display: contents;
+}
+@media (max-width: 767px) {
+  .members-bulk-phone {
+    display: block;
+    margin-left: auto;
+  }
+  .members-bulk-phone .roster-action-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+  }
+  .members-bulk-desktop {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .members-bulk-bar > button {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .members-bulk-phone {
+    flex: 0 0 auto;
   }
 }

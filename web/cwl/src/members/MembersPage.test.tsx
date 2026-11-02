@@ -489,3 +489,36 @@ it("Clear selection remains available after a refreshed directory loses a select
   );
   expect(host.textContent).toContain("1 selected");
 });
+
+it("a person above the actor keeps every role switch disabled", async () => {
+  vi.mocked(api).mockImplementation(async (path) =>
+    path.includes("active=1")
+      ? { runs: [] }
+      : {
+          members: [
+            {
+              ...member(0),
+              role_editable: false,
+              role_skip_reason: "Above your role",
+            },
+          ],
+          roles: [{ id: ROLE, name: "Officer" }],
+          manageable_roles: [{ id: ROLE, name: "Officer" }],
+          countries: [],
+          zones: [],
+          permission: "member_roles",
+        },
+  );
+  await render();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".members-person-open")!.click(),
+  );
+  const control = document.querySelector<HTMLInputElement>('[role="switch"]')!;
+  expect(control).toBeTruthy();
+  expect(control.disabled).toBe(true);
+  expect(document.body.textContent).toContain("Above your role");
+  await act(async () => control.click());
+  expect(
+    vi.mocked(api).mock.calls.some((c) => c[0].includes("role-preview")),
+  ).toBe(false);
+});

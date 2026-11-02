@@ -112,3 +112,54 @@ existing time-zone flow tests. Those were updated to exercise the new public
 route and menu, and the final full suite passed. The exact staged boot check
 is recorded separately before READY. First real role change remains Ruggie's,
 on one person; no agent live role, rename, import, send or DM action was run.
+
+## Prompt 109 follow-up
+
+A new role or nickname run now inherits the largest unexpired known
+`retry_not_before` from the same guild's shared member-change lane, including
+cross-kind runs. Its manifest stays queued until that deadline; Stop still
+settles a waiting run without starting a child. No uncertain effect is replayed.
+The storage owner creates the additive partial `member_change_lane_backoff`
+index and uses a projected, hinted lookup. Existing receipts remain unchanged;
+active parent/standalone deadlines survive history pruning until they expire.
+There is no new collection or SQL migration.
+
+On phones the single-line bar contains the selected count and a visible Actions
+button. The existing ActionMenu lists Add role, Remove role, Fix nicknames,
+Select page, Select all matching and Select none. Write actions retain their
+existing disabled rules; the menu and Select none remain usable while writes
+are blocked. The bar does not scroll sideways. Desktop controls are unchanged.
+Removed the now-unused member/role branch in `actionConfirmation`; the original
+member picker remains intact for its other callers.
+
+The earlier prompt-106 READY used the separate `.local/p106-layout-final.cjs`
+and keyboard harness. It did **not** run the checked-in
+`web/cwl/tests/members-page.browser.cjs`, which still asserted a bounded nested
+scroller. That was a missed check. The file now checks the document scroll
+surface and the 300px first-row target at 360×800. All three checked-in Members
+browser files now run at 320, 360, 390 and 1440; keyboard also covers 640×460.
+All 13 cases pass. Narrow bulk-bar and wide overview screenshots were reviewed.
+The fixture network block can leave its remote guild icon unavailable; this is
+not a production rendering check.
+
+Final frontend: 1,483 tests in 261 files, TypeScript/build pass. The first full
+attempt had one obsolete MemberPicker confirmation-text expectation after the
+dead branch was removed; it was updated deliberately and the final suite passes.
+Guarded backend: 5,991 passed / 96 skipped / 266 subtests; 95 final focused
+backend cases include two added queued-deadline regressions after full collection.
+Twelve owned-Mongo tests pass in 92.09 seconds. They include real Hikari's local
+130-second rate-limit refusal for role/profile and both cross-kind sequences,
+subsequent queued runs, Stop, expiry/guild scope, restart persistence and active
+receipt retention. The separate 70-second SDK wait cases remain covered. This
+is loopback transport evidence, never live Discord delivery.
+
+The first cross-run test incorrectly awaited the whole queued delay and then
+counted a request made after the 130-second deadline. It was interrupted and
+its owned fixture cleaned up; the corrected tests observe the wait asynchronously
+and Stop before expiry. Five backoff cases pass in about 10.5 seconds. All six
+new guard mutants die: overview hierarchy, preview target refusal, disabled
+person switch, genuine preview 403, unmatched receipt and reset backoff. No
+collection/import failure is counted as a killed mutant. Owned exports and
+Mongo instances were removed. War-reminder checks pass: 213 backend / 1 skip,
+35 frontend, TypeScript/build. Exact staged startup evidence precedes READY.
+No production role, nickname, import, notification or DM was exercised.

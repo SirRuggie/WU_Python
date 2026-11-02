@@ -86,6 +86,7 @@ export const membersText = {
   noRole: "No role",
   roles: "Roles",
   clearAll: "Clear all",
+  actions: "Actions",
   selectPage: "Select page",
   selectMatching: (count: number) => `Select all ${count} matching`,
   selectNone: "Select none",

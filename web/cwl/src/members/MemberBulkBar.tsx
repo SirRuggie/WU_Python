@@ -1,5 +1,6 @@
 import { membersText as t } from "./strings";
 import "./Members.css";
+import ActionMenu from "../rosterUi/ActionMenu";
 export default function MemberBulkBar({
   pageSelected,
   pagePartial,
@@ -41,37 +42,80 @@ export default function MemberBulkBar({
       aria-label={t.selectionLabel}
     >
       <button onClick={onShow}>{t.selected(count, hidden)}</button>
-      <button onClick={onClear}>{t.selectNone}</button>
-      <label className="members-checkbox">
-        <input
-          type="checkbox"
-          aria-label={t.selectPage}
-          checked={pageSelected}
-          ref={(node) => {
-            if (node) node.indeterminate = pagePartial;
-          }}
-          onChange={onSelectPage}
+      <div className="members-bulk-phone">
+        <ActionMenu
+          name={t.selectionLabel}
+          label={t.actions}
+          items={[
+            ...(canRoles
+              ? [
+                  {
+                    id: "add",
+                    label: t.addRole,
+                    onAction: onAdd,
+                    disabled: busy,
+                  },
+                  {
+                    id: "remove",
+                    label: t.removeRole,
+                    onAction: onRemove,
+                    disabled: busy,
+                  },
+                ]
+              : []),
+            ...(canProfiles
+              ? [
+                  {
+                    id: "fix",
+                    label: t.fixNames,
+                    onAction: onFix,
+                    disabled: busy,
+                  },
+                ]
+              : []),
+            { id: "page", label: t.selectPage, onAction: onSelectPage },
+            {
+              id: "matching",
+              label: t.selectMatching(matchingCount),
+              onAction: onSelectMatching,
+            },
+            { id: "clear", label: t.selectNone, onAction: onClear },
+          ]}
         />
-        {t.selectPage}
-      </label>
-      <button onClick={onSelectMatching}>
-        {t.selectMatching(matchingCount)}
-      </button>
-      {canRoles && (
-        <>
-          <button disabled={busy} onClick={onAdd}>
-            {t.addRole}
-          </button>
-          <button disabled={busy} onClick={onRemove}>
-            {t.removeRole}
-          </button>
-        </>
-      )}
-      {canProfiles && (
-        <button disabled={busy} onClick={onFix}>
-          {t.fixNames}
+      </div>
+      <div className="members-bulk-desktop">
+        <button onClick={onClear}>{t.selectNone}</button>
+        <label className="members-checkbox">
+          <input
+            type="checkbox"
+            aria-label={t.selectPage}
+            checked={pageSelected}
+            ref={(node) => {
+              if (node) node.indeterminate = pagePartial;
+            }}
+            onChange={onSelectPage}
+          />
+          {t.selectPage}
+        </label>
+        <button onClick={onSelectMatching}>
+          {t.selectMatching(matchingCount)}
         </button>
-      )}
+        {canRoles && (
+          <>
+            <button disabled={busy} onClick={onAdd}>
+              {t.addRole}
+            </button>
+            <button disabled={busy} onClick={onRemove}>
+              {t.removeRole}
+            </button>
+          </>
+        )}
+        {canProfiles && (
+          <button disabled={busy} onClick={onFix}>
+            {t.fixNames}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

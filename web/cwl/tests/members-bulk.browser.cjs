@@ -4,13 +4,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const origin =
   "http://127.0.0.1:" +
-  fs
-    .readFileSync(
-      path.resolve(__dirname, "../../../.local/p93-preview-port"),
-      "utf8",
-    )
-    .trim();
-const out = path.resolve(__dirname, "../../../.local/p93-bulk-layout");
+  (process.env.WU_MEMBERS_PREVIEW_PORT ||
+    fs
+      .readFileSync(
+        path.resolve(__dirname, "../../../.local/p93-preview-port"),
+        "utf8",
+      )
+      .trim());
+const out = process.env.WU_MEMBERS_EVIDENCE_DIR || path.resolve(__dirname, "../../../.local/p93-bulk-layout");
 fs.mkdirSync(out, { recursive: true });
 (async () => {
   const browser = await chromium.launch({
@@ -21,7 +22,7 @@ fs.mkdirSync(out, { recursive: true });
   const results = [];
   try {
     for (const width of [320, 360, 390, 1440]) {
-      const page = await browser.newPage({ viewport: { width, height: 1000 } });
+      const page = await browser.newPage({ viewport: { width, height: 800 } });
       const posts = [],
         errors = [];
       page.on("request", (r) => {
@@ -66,7 +67,20 @@ fs.mkdirSync(out, { recursive: true });
         .getByRole("button", { name: "2 selected · 2 hidden", exact: true })
         .click();
       assert.equal(await page.locator(".members-person").count(), 2);
-      await bar.getByRole("button", { name: "Add role", exact: true }).click();
+      if (width < 768) {
+        assert.equal(
+          await bar.evaluate((e) => e.scrollWidth > e.clientWidth),
+          false,
+          "Phone bulk bar must not scroll sideways",
+        );
+        await bar.getByRole("button", { name: "Actions", exact: true }).click();
+        await page
+          .getByRole("menuitem", { name: "Add role", exact: true })
+          .click();
+      } else
+        await bar
+          .getByRole("button", { name: "Add role", exact: true })
+          .click();
       let dialog = page.locator("dialog.confirm-dialog[open]").last();
       await dialog
         .getByRole("combobox", { name: "Roles", exact: true })

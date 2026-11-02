@@ -328,3 +328,18 @@ def test_stop_arriving_between_preparation_and_final_guard_blocks_the_write():
         assert state[int(USER)] == []
 
     asyncio.run(run())
+
+
+def test_unmatched_receipt_is_uncertain_after_the_single_accepted_write():
+    from utils.member_profiles import ProfileOutcomeUncertain
+
+    async def run():
+        bot, mongo, state, roles, row, parent, policy = fixture()
+        mongo.bot_config.update_one.return_value = S(matched_count=0)
+        ctx = await transport.request_context(bot, mongo, row)
+        with pytest.raises(ProfileOutcomeUncertain, match="receipt"):
+            await transport.apply(bot, mongo, row, ctx)
+        assert state[int(USER)] == [int(ROLE)]
+        bot.rest.add_role_to_member.assert_awaited_once()
+
+    asyncio.run(run())

@@ -4,13 +4,16 @@ const fs = require("node:fs");
 const path = require("node:path");
 const origin =
   "http://127.0.0.1:" +
-  fs
-    .readFileSync(
-      path.resolve(__dirname, "../../../.local/p93-preview-port"),
-      "utf8",
-    )
-    .trim();
-const out = path.resolve(__dirname, "../../../.local/p93-keyboard");
+  (process.env.WU_MEMBERS_PREVIEW_PORT ||
+    fs
+      .readFileSync(
+        path.resolve(__dirname, "../../../.local/p93-preview-port"),
+        "utf8",
+      )
+      .trim());
+const out =
+  process.env.WU_MEMBERS_EVIDENCE_DIR ||
+  path.resolve(__dirname, "../../../.local/p93-keyboard");
 fs.mkdirSync(out, { recursive: true });
 (async () => {
   const browser = await chromium.launch({
@@ -21,8 +24,10 @@ fs.mkdirSync(out, { recursive: true });
   const results = [];
   try {
     for (const [width, height] of [
-      [360, 1000],
-      [1440, 1000],
+      [320, 800],
+      [360, 800],
+      [390, 800],
+      [1440, 800],
       [640, 460],
     ]) {
       const page = await browser.newPage({ viewport: { width, height } });
@@ -66,11 +71,30 @@ fs.mkdirSync(out, { recursive: true });
         ),
         "Checkbox and open action must be separate keyboard targets",
       );
-      console.log(JSON.stringify(await page.evaluate(() => {
-        const e=document.activeElement,r=e.getBoundingClientRect(),bar=document.querySelector('.members-bulk-bar').getBoundingClientRect();
-        return {width:innerWidth,row:{top:r.top,bottom:r.bottom},bar:{top:bar.top,bottom:bar.bottom},hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.className};
-      })));
-      await page.screenshot({path:path.join(out,`focus-before-${width}.png`),fullPage:false});
+      console.log(
+        JSON.stringify(
+          await page.evaluate(() => {
+            const e = document.activeElement,
+              r = e.getBoundingClientRect(),
+              bar = document
+                .querySelector(".members-bulk-bar")
+                .getBoundingClientRect();
+            return {
+              width: innerWidth,
+              row: { top: r.top, bottom: r.bottom },
+              bar: { top: bar.top, bottom: bar.bottom },
+              hit: document.elementFromPoint(
+                r.x + r.width / 2,
+                r.y + r.height / 2,
+              )?.className,
+            };
+          }),
+        ),
+      );
+      await page.screenshot({
+        path: path.join(out, `focus-before-${width}.png`),
+        fullPage: false,
+      });
       assert(
         await page.evaluate(() => {
           const e = document.activeElement,
@@ -151,7 +175,7 @@ fs.mkdirSync(out, { recursive: true });
       JSON.stringify(results, null, 2),
     );
     console.log(
-      "Three keyboard/short-screen/focus/selection/no-write cases pass",
+      "Five keyboard/short-screen/focus/selection/no-write cases pass",
     );
   } finally {
     await browser.close();

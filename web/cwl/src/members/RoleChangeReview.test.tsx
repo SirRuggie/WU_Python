@@ -169,3 +169,12 @@ it("a refused target keeps the review available and names the blocked person wit
   expect(api).toHaveBeenCalledTimes(1);
   expect(document.querySelector("select")).not.toBeNull();
 });
+
+it("a true preview permission loss invokes denied without confirming", async () => {
+  vi.mocked(api).mockRejectedValue(new ApiError("Permission changed", 403));
+  const denied = vi.fn();
+  const confirm = await render(undefined, denied);
+  await act(async () => button("Review changes").click());
+  expect(denied).toHaveBeenCalledTimes(1);
+  expect(confirm).not.toHaveBeenCalled();
+});

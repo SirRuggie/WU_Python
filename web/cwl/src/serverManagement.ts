@@ -22,8 +22,6 @@ export type ManagementResult = {message?:string;url?:string;details?:string;acco
 export function safeDiscordUrl(value?:string):string|null {if(!value)return null;try{const url=new URL(value);return url.protocol==='https:'&&url.hostname==='discord.com'&&/^\/channels\/\d+\/\d+(?:\/\d+)?\/?$/.test(url.pathname)&&!url.username&&!url.password?url.href:null}catch{return null}}
 
 export function actionConfirmation(prompt:string,fields:ManagementField[],draft:Record<string,ManagementValue>):string {
- const member=fields.find(field=>field.key==='member_id')
- if(member&&draft.member_id){const name=member.options?.find(option=>option.value===draft.member_id)?.label||String(draft.member_id);const roleField=fields.find(field=>field.key==='role_ids');const roles=Array.isArray(draft.role_ids)?draft.role_ids.map(id=>roleField?.options?.find(option=>option.value===id)?.label||id):[];return `${prompt}\n\nMember: ${name}\nRoles: ${roles.join(', ')}`}
  const clans=fields.find(field=>field.key==='clans')
  const selected=draft.clans
  if(!clans||!Array.isArray(selected))return prompt

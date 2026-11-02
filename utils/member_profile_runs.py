@@ -300,6 +300,14 @@ class ProfileRuns:
             unique=True,
             partialFilterExpression={"kind": KIND, "state": "queued"},
         )
+        await self.collection.create_index(
+            [("guild_id", 1), ("retry_not_before", -1)],
+            name="member_change_lane_backoff",
+            partialFilterExpression={
+                "kind": "manage_web_request",
+                "retry_not_before": {"$exists": True},
+            },
+        )
         await self.prune()
         existing = await self.collection.find_one({"_id": key})
         if existing:
@@ -313,6 +321,17 @@ class ProfileRuns:
             raise ValueError(
                 "Another member change run is still working. Review its progress first."
             )
+        backoff = await self.collection.find_one(
+            {
+                "kind": "manage_web_request",
+                "guild_id": int(guild_id),
+                "section": {"$in": ["member_profiles", "roles"]},
+                "retry_not_before": {"$gt": time.time()},
+            },
+            {"retry_not_before": 1},
+            sort=[("retry_not_before", -1)],
+            hint="member_change_lane_backoff",
+        )
         row = dict(
             _id=key,
             kind=KIND,
@@ -321,7 +340,7 @@ class ProfileRuns:
             state="queued",
             cursor=0,
             created_at=time.time(),
-            next_at=0,
+            next_at=backoff["retry_not_before"] if backoff else 0,
             **payload,
         )
         try:
@@ -640,6 +659,10 @@ class ProfileRuns:
             key = (row.get("guild_id"), kind)
             rank = ranks.get(key, 0)
             ranks[key] = rank + 1
+            if row.get("next_at", 0) > now:
+                if kind == "roles":
+                    retained_roles.append(row["_id"])
+                continue
             uncertain = await self.collection.find_one(
                 {
                     "parent_id": row["_id"],
@@ -710,6 +733,8 @@ class ProfileRuns:
             .to_list(length=10001)
         )
         for index, row in enumerate(standalone):
+            if row.get("retry_not_before", 0) > now:
+                continue
             if (index < 20 or row.get("status") == "uncertain") and row.get(
                 "finished_at", 0
             ) >= cutoff:

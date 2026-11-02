@@ -25,10 +25,12 @@ export type ActionMenuItem = {
 };
 export default function ActionMenu({
   name,
+  label,
   items,
   disabled = false,
 }: {
   name: string;
+  label?: string;
   items: ActionMenuItem[];
   disabled?: boolean;
 }) {
@@ -83,10 +85,11 @@ export default function ActionMenu({
         <AriaButton
           ref={trigger}
           className="roster-action-trigger"
-          aria-label={`Actions for ${name}`}
+          aria-label={label || `Actions for ${name}`}
           isDisabled={disabled}
         >
           <MoreHorizontal size={22} aria-hidden="true" />
+          {label && <span>{label}</span>}
         </AriaButton>
         <Popover
           ref={sheet}
@@ -96,7 +99,7 @@ export default function ActionMenu({
         >
           <h3 className="roster-action-heading">{name}</h3>
           <Menu
-            aria-label={`Actions for ${name}`}
+            aria-label={label || `Actions for ${name}`}
             className="roster-action-list"
           >
             {items.map((item) => (

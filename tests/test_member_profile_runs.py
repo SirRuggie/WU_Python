@@ -126,3 +126,48 @@ def test_stop_barrier_prevents_materializing_another_child(running):
             assert coll.update_one.call_args.args[1]["$set"]["state"] == "stopped"
 
     asyncio.run(check())
+
+
+@pytest.mark.parametrize("run_type", ["profiles", "roles"])
+def test_new_run_inherits_shared_lane_backoff(monkeypatch, run_type):
+    from uuid import uuid4
+
+    async def run():
+        until = 12345678900.0
+        coll = S(
+            create_index=AsyncMock(),
+            find_one=AsyncMock(side_effect=[None, None, {"retry_not_before": until}]),
+            insert_one=AsyncMock(),
+        )
+        owner = ProfileRuns(S(bot_config=coll))
+        monkeypatch.setattr(owner, "prune", AsyncMock())
+        item = (
+            ITEM
+            if run_type == "profiles"
+            else dict(
+                discord_id=UID,
+                role_id="345678901234567890",
+                operation="add",
+                expected_role_ids=[],
+                bot=False,
+                protected=False,
+                revision=0,
+            )
+        )
+        parent = await owner.create(
+            actor_id=ACTOR,
+            guild_id=1,
+            request_id=str(uuid4()),
+            preview=[item],
+            selected=[UID],
+            run_type=run_type,
+        )
+        assert parent["next_at"] == until
+        assert coll.insert_one.await_args.args[0]["next_at"] == until
+        query = coll.find_one.await_args.args[0]
+        assert query["guild_id"] == 1 and query["section"] == {
+            "$in": ["member_profiles", "roles"]
+        }
+        assert coll.find_one.await_args.kwargs["hint"] == "member_change_lane_backoff"
+
+    asyncio.run(run())

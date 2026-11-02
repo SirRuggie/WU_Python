@@ -2,14 +2,16 @@ const { chromium } = require("playwright");
 const fs = require("node:fs");
 const path = require("node:path");
 const assert = require("node:assert/strict");
-const out = path.resolve(__dirname, "../../../.local/p93-layout");
+const out = process.env.WU_MEMBERS_EVIDENCE_DIR || path.resolve(__dirname, "../../../.local/p93-layout");
 fs.mkdirSync(out, { recursive: true });
-const port = fs
-  .readFileSync(
-    path.resolve(__dirname, "../../../.local/p93-preview-port"),
-    "utf8",
-  )
-  .trim();
+const port =
+  process.env.WU_MEMBERS_PREVIEW_PORT ||
+  fs
+    .readFileSync(
+      path.resolve(__dirname, "../../../.local/p93-preview-port"),
+      "utf8",
+    )
+    .trim();
 const origin = "http://127.0.0.1:" + port;
 (async () => {
   const browser = await chromium.launch({
@@ -20,7 +22,7 @@ const origin = "http://127.0.0.1:" + port;
   const evidence = [];
   try {
     for (const width of [320, 360, 390, 1440]) {
-      const page = await browser.newPage({ viewport: { width, height: 1000 } });
+      const page = await browser.newPage({ viewport: { width, height: 800 } });
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.route("**/*", (route) =>
@@ -41,13 +43,19 @@ const origin = "http://127.0.0.1:" + port;
         await page.locator(".members-person input:disabled").count(),
         0,
       );
-      const list = await page
+      const first = await page.locator(".members-person").first().boundingBox();
+      if (width === 360)
+        assert(
+          first.y <= 300,
+          "First person must start within 300px at 360×800",
+        );
+      const overflowY = await page
         .locator(".members-directory-scroll")
-        .evaluate((e) => ({ height: e.clientHeight, scroll: e.scrollHeight }));
-      assert(list.height >= 320, "Directory needs a usable scrolling region");
-      assert(
-        list.scroll > list.height,
-        "Sample directory must be bounded and scrollable",
+        .evaluate((e) => getComputedStyle(e).overflowY);
+      assert.equal(
+        overflowY,
+        "visible",
+        "The document must be the only vertical scroll surface",
       );
       const alignment = await page
         .locator(".members-person-open")

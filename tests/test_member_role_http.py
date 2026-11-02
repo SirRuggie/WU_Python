@@ -286,3 +286,106 @@ def test_undo_preview_rejects_changed_live_roles_without_creating_review(monkeyp
         preview.assert_not_awaited()
 
     asyncio.run(run())
+
+
+def test_overview_disables_owner_but_retains_lower_person(monkeypatch):
+    import json
+    import hikari
+    from cwl_web import member_timezones, manage_roles
+
+    async def run():
+        lower = "234567890123456789"
+        roles = {
+            10: S(id=10, position=10, permissions=hikari.Permissions.MANAGE_ROLES),
+            11: S(id=11, position=1, permissions=hikari.Permissions.NONE),
+        }
+        guild = S(id=1, owner_id=int(USER), get_role=lambda rid: roles.get(rid))
+        acting = S(id=345678901234567890, role_ids=[10])
+        rows = [
+            dict(discord_id=USER, bot=False, role_ids=["11"]),
+            dict(discord_id=lower, bot=False, role_ids=["11"]),
+        ]
+        monkeypatch.setattr(
+            member_timezones,
+            "inventory",
+            AsyncMock(return_value=(rows, {}, guild, S(), acting, {})),
+        )
+        monkeypatch.setattr(
+            manage_roles, "dashboard_grant_roles", AsyncMock(return_value=set())
+        )
+        response = await member_timezones.members_overview(S())
+        result = json.loads(response.body)["members"]
+        assert result[0]["role_editable"] is False and result[0]["role_skip_reason"]
+        assert (
+            result[1]["role_editable"] is True and result[1]["role_skip_reason"] is None
+        )
+
+    asyncio.run(run())
+
+
+def test_bulk_preview_lists_refused_target_and_never_queues_subset(monkeypatch):
+    import json, hikari
+    from contextlib import asynccontextmanager
+
+    async def run():
+        role = S(id=int(ROLE), name="Fixture role", permissions=hikari.Permissions.NONE)
+        monkeypatch.setattr(
+            routes, "require_manage", AsyncMock(return_value={"user_id": USER})
+        )
+        monkeypatch.setattr(
+            routes,
+            "hierarchy",
+            AsyncMock(return_value=({int(ROLE): role}, S(), S(), S())),
+        )
+        monkeypatch.setattr(routes, "role_is_manageable", lambda *a: True)
+        monkeypatch.setattr(routes.perms, "actor_can_manage_role", lambda *a: True)
+        monkeypatch.setattr(routes.perms, "actor_can_manage_member", lambda *a: False)
+        monkeypatch.setattr(
+            routes, "dashboard_grant_roles", AsyncMock(return_value=set())
+        )
+        db = S(bot_config=S(find_one=AsyncMock(return_value=None)))
+
+        @asynccontextmanager
+        async def mongo(request):
+            yield db
+
+        monkeypatch.setattr(routes, "mongo", mongo)
+        monkeypatch.setattr(
+            routes,
+            "directory",
+            AsyncMock(
+                return_value=[
+                    {
+                        "user": {
+                            "id": USER,
+                            "username": "Blocked fixture",
+                            "global_name": None,
+                            "avatar": None,
+                            "bot": False,
+                        },
+                        "roles": [],
+                        "nick": None,
+                    }
+                ]
+            ),
+        )
+        queued = AsyncMock(return_value="unused-review")
+        monkeypatch.setattr(routes.ProfileRuns, "preview", queued)
+        response = await routes.preview(
+            S(
+                json=AsyncMock(
+                    return_value=dict(member_ids=[USER], role_id=ROLE, operation="add")
+                )
+            )
+        )
+        assert response.status == 422
+        data = json.loads(response.body)
+        assert data["code"] == "member_targets_refused"
+        assert (
+            data["blocked"][0]["discord_id"] == USER
+            and data["blocked"][0]["discord_profile"]["display_name"]
+            == "Blocked fixture"
+        )
+        queued.assert_not_awaited()
+
+    asyncio.run(run())
