@@ -93,9 +93,9 @@ it.each(["send", "resend"])(
       const visibleButtons = [...main.querySelectorAll("button")]
         .filter((b) => !b.closest("details:not([open])"))
         .map((b) => b.textContent?.trim());
-      expect(visibleButtons).toEqual([
-        mode === "send" ? "Review and send" : "Send again",
-      ]);
+      expect(visibleButtons).toEqual(
+        mode === "send" ? ["Review and send"] : ["Edit post", "Send again"],
+      );
       expect(main.querySelector("details")?.open).toBe(false);
       await click(mode === "send" ? "Review and send" : "Send again");
       await click(

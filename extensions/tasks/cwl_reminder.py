@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 import logging
 import re
 import lightbulb
@@ -355,12 +356,7 @@ def _campaign_job_id(
 
 
 def _campaign_generation(loaded: dict) -> str:
-    version = f"{int(loaded.get('defaults_revision', 0))}:{int(loaded.get('revision', 0))}"
-    return (
-        f"{version}:{loaded['recurring_version']}"
-        if loaded.get("recurring_version")
-        else version
-    )
+    return cwl_web_bridge.campaign_generation(loaded)
 
 
 def _add_campaign_job(
@@ -2030,9 +2026,7 @@ async def _poll_web_roster_bridge() -> None:
         except Exception as exc:
             # A bad schedule must not block the independent reviewed roster queue.
             # No acknowledgement is written; the next poll retries reconciliation.
-            print(
-                f"[CWL Web Bridge] Schedule sync failed: {type(exc).__name__}"
-            )
+            print(f"[CWL Web Bridge] Schedule sync failed: {type(exc).__name__}")
 
         async def can_send_roster(row):
             from utils.dashboard_access import (
@@ -2059,17 +2053,59 @@ async def _poll_web_roster_bridge() -> None:
             )
             return "cwl_send" in expand_legacy(grant.get("permissions", []))
 
+        post_worker = None
+        post_ready = False
+        try:
+            post_worker = _post_update_worker_for_runtime()
+            post_ready = await post_worker.ensure_ready(cwl_campaign.LEGACY_WU_GUILD_ID)
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "Roster post editor is unavailable (%s)", type(exc).__name__
+            )
+
         with timed_step(logging.getLogger(__name__), "process_pending_roster_requests"):
             await cwl_web_bridge.process_pending_roster_requests(
                 mongo_client,
                 send_campaign_message,
                 authorize=can_send_roster,
                 guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
+                post_update_ready=post_ready,
             )
+        if post_ready:
+
+            async def can_update_post(row):
+                if not await can_send_roster(row):
+                    return False
+                from extensions.tasks.cwl_post_update_bridge import validate_scope
+
+                return await validate_scope(row)
+
+            with timed_step(logging.getLogger(__name__), "process_post_updates"):
+                await post_worker.poll(
+                    guild_id=cwl_campaign.LEGACY_WU_GUILD_ID, authorize=can_update_post
+                )
     except Exception as exc:
         # Leave pending or sending rows in place for inspection. In particular,
         # never auto-reset a possibly posted sending row after an outage.
         print(f"[CWL Web Bridge] Poll failed: {type(exc).__name__}")
+
+
+_post_update_worker = None
+
+
+def _post_update_worker_for_runtime():
+    global _post_update_worker
+    from utils.cwl_post_updates import PostUpdateWorker
+
+    if (
+        _post_update_worker is None
+        or _post_update_worker.mongo is not mongo_client
+        or _post_update_worker.bot is not bot_instance
+    ):
+        _post_update_worker = PostUpdateWorker(
+            mongo_client, bot_instance, runtime_id=uuid.uuid4().hex
+        )
+    return _post_update_worker
 
 
 _roster_driver = None
@@ -2338,7 +2374,7 @@ async def on_bot_started(
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Shutdown scheduler when bot stops"""
-    global startup_reconciler, _management_driver, _management_stopping, _roster_driver
+    global startup_reconciler, _management_driver, _management_stopping, _roster_driver, _post_update_worker
     _management_stopping = True
     import contextlib
 
@@ -2348,6 +2384,7 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
             with contextlib.suppress(asyncio.CancelledError):
                 await driver
     _management_driver = _roster_driver = None
+    _post_update_worker = None
     if startup_reconciler is not None:
         await startup_reconciler.stop()
         startup_reconciler = None

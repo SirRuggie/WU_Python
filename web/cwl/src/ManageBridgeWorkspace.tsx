@@ -1,3 +1,4 @@
+import AnnouncementPostUpdate from "./AnnouncementPostUpdate";
 import AnnouncementDeletedRecovery from "./AnnouncementDeletedRecovery";
 import AnnouncementFullTest from "./AnnouncementFullTest";
 import AnnouncementSequenceStatus from "./AnnouncementSequenceStatus";
@@ -252,9 +253,19 @@ export default function ManageBridgeWorkspace({
       saved.roster_url !== current.roster_url
     );
   };
+  const [postDirty, setPostDirty] = useState<Record<Pool, boolean>>({
+    main: false,
+    lazy: false,
+  });
+  const handlePostDirty = useCallback((pool: Pool, value: boolean) => {
+    setPostDirty((previous) =>
+      previous[pool] === value ? previous : { ...previous, [pool]: value },
+    );
+  }, []);
   const dirty =
     !!bridge &&
     (pools.some(unsaved) ||
+      pools.some((pool) => postDirty[pool]) ||
       cycleInput !== (bridge.cycle || announcementMonth(seasonLabel)));
   useEffect(() => {
     onBusy?.(busy || !!sendReview || !!confirmation || confirmMonth);
@@ -686,6 +697,31 @@ export default function ManageBridgeWorkspace({
                             canSend={canManage && !busy}
                             onRefresh={() => load(false)}
                           />
+                          {delivery?.status === "sent" && (
+                            <AnnouncementPostUpdate
+                              key={`post-update:${seasonId}:${pool}`}
+                              seasonId={seasonId}
+                              pool={pool}
+                              cycle={bridge.cycle || ""}
+                              generation={bridge.generation || ""}
+                              copy={{
+                                title: entry.title,
+                                body: entry.body,
+                                buttons: entry.buttons,
+                              }}
+                              allowed={
+                                canManage &&
+                                !busy &&
+                                !loading &&
+                                !bridgeError &&
+                                !unsaved(pool) &&
+                                !!bridge.generation &&
+                                draftGeneration === bridge.generation
+                              }
+                              onUpdated={() => void load(false)}
+                              onDirty={handlePostDirty}
+                            />
+                          )}
                           {delivery?.status === "sent" && (
                             <AnnouncementDeletedRecovery
                               key={`recovery:${seasonId}:${pool}`}

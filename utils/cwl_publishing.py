@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import uuid
 from datetime import timedelta
 
@@ -49,6 +50,97 @@ def _fingerprint(message):
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 
+def post_preview_parts(components, *, content=None, attachments=()):
+    """Plain, non-interactive preview DTO from the observed Discord snapshot.
+
+    It does not fetch media or change the fingerprint/edit path. Both native
+    builders and REST components are supported; unknown components are explicit.
+    """
+    from urllib.parse import urlsplit
+
+    attachment_urls = {
+        "attachment://" + str(item.filename): str(item.url) for item in attachments
+    }
+
+    def url(value):
+        value = attachment_urls.get(str(value), str(value or ""))
+        try:
+            parts = urlsplit(value)
+            return (
+                value
+                if parts.scheme == "https"
+                and parts.hostname
+                and not parts.username
+                and not parts.password
+                else None
+            )
+        except ValueError:
+            return None
+
+    def payload(component):
+        if isinstance(component, dict):
+            return component
+        if callable(getattr(component, "build", None)):
+            return component.build()[0]
+        result = {"type": int(component.type)}
+        for key in ("content", "label", "url", "style", "accent_color", "divider"):
+            value = getattr(component, key, None)
+            if value is not None and value is not hikari.UNDEFINED:
+                result[key] = value
+        if getattr(component, "emoji", None) is not None:
+            result["emoji"] = str(component.emoji)
+        if hasattr(component, "components"):
+            result["components"] = [payload(child) for child in component.components]
+        if hasattr(component, "items"):
+            result["items"] = [
+                {
+                    "media": {"url": str(getattr(item.media, "url", item.media))},
+                    "description": str(getattr(item, "description", "") or ""),
+                }
+                for item in component.items
+            ]
+        return result
+
+    def convert(node):
+        kind = int(node.get("type", 0))
+        children = [convert(child) for child in node.get("components", ())]
+        if kind == 17:
+            result = {"type": "container", "children": children}
+            accent = node.get("accent_color")
+            if isinstance(accent, int) and 0 <= accent <= 0xFFFFFF:
+                result["accent"] = f"#{accent:06x}"
+            return result
+        if kind == 10:
+            return {"type": "text", "text": str(node.get("content", ""))}
+        if kind == 14:
+            return {"type": "separator", "divider": bool(node.get("divider", True))}
+        if kind == 1:
+            return {"type": "row", "children": children}
+        if kind == 2:
+            return {
+                "type": "button",
+                "label": str(node.get("label", "")),
+                "url": url(node.get("url")),
+                "style": int(node.get("style", 5)),
+            }
+        if kind == 12:
+            return {
+                "type": "media",
+                "items": [
+                    {
+                        "url": url(item.get("media", {}).get("url")),
+                        "description": str(item.get("description") or "Post image"),
+                    }
+                    for item in node.get("items", ())
+                ],
+            }
+        return {"type": "text", "text": "[Component not shown in this preview]"}
+
+    result = [{"type": "text", "text": str(content)}] if content else []
+    result.extend(convert(payload(component)) for component in components)
+    return result
+
+
 async def _owned_draft(mongo, *, draft_id, guild_id, user_id, cycle, occurrence_id):
     draft = await cwl_campaign.load_draft(mongo, draft_id)
     if not draft or int(draft["guild_id"]) != int(guild_id) or int(draft["user_id"]) != int(user_id):
@@ -67,16 +159,147 @@ async def _bot_id(bot):
     return int((me or await bot.rest.fetch_my_user()).id)
 
 
-async def prepare_post_update(mongo, bot, *, guild_id, cycle, occurrence_id, user_id, draft_id):
+async def _render_post_update(
+    draft, cycle, key, audience, message, *, preserve_media=False
+):
+    rendered = await cwl_campaign.render_message(
+        {
+            "campaign": draft["campaign"],
+            "cycle": cycle,
+            "deadline": cwl_campaign.signup_deadline(
+                draft["campaign"], cycle
+            ).isoformat(),
+        },
+        key,
+        audience,
+        preview=False,
+    )
+    if not preserve_media:
+        return rendered
+    if (
+        key != "roster"
+        or len(rendered) != 1
+        or len(message.components) != 1
+        or int(message.components[0].type) != 17
+    ):
+        raise ValueError("This post layout is not supported by the roster text editor")
+    from extensions.commands.content import media_galleries, media_url
+
+    galleries = []
+    for gallery in media_galleries(message.components):
+        items = []
+        for item in gallery.items:
+            description = getattr(item, "description", None)
+            items.append(
+                hikari.impl.MediaGalleryItemBuilder(
+                    media=media_url(item),
+                    description=(
+                        description if description is not None else hikari.UNDEFINED
+                    ),
+                    spoiler=bool(getattr(item, "is_spoiler", False)),
+                )
+            )
+        galleries.append(hikari.impl.MediaGalleryComponentBuilder(items=items))
+    children = [node for node in rendered[0].components if int(node.type) != 12]
+    # This editor changes text/buttons, not the post's visible notification
+    # header. Saved roles may have changed since this older post was sent.
+    configured_roles = (
+        draft["campaign"]["messages"][key]["variants"][audience].get("role_ids") or []
+    )
+    if configured_roles:
+        expected_header = " ".join(f"<@&{role}>" for role in configured_roles)
+        if (
+            len(children) < 2
+            or getattr(children[0], "content", None) != expected_header
+            or int(children[1].type) != 14
+        ):
+            raise ValueError("This post notification layout cannot be preserved")
+        children = children[2:]
+    observed_children = message.components[0].components
+    header = (
+        str(getattr(observed_children[0], "content", "")) if observed_children else ""
+    )
+    if re.fullmatch(r"<@&[0-9]+>(?:\s+<@&[0-9]+>)*", header):
+        if len(observed_children) < 2 or int(observed_children[1].type) != 14:
+            raise ValueError("This post notification layout cannot be preserved")
+        children[:0] = [
+            hikari.impl.TextDisplayComponentBuilder(content=header),
+            hikari.impl.SeparatorComponentBuilder(
+                divider=bool(getattr(observed_children[1], "divider", True))
+            ),
+        ]
+    position = next(
+        (index for index, node in enumerate(children) if int(node.type) == 1),
+        len(children),
+    )
+    children[position:position] = galleries
+    observed = message.components[0]
+    accent = getattr(observed, "accent_color", None)
+    result = [
+        hikari.impl.ContainerComponentBuilder(
+            accent_color=accent if accent is not None else hikari.UNDEFINED,
+            spoiler=bool(getattr(observed, "is_spoiler", False)),
+            components=children,
+        )
+    ]
+
+    def units(nodes):
+        return sum(
+            1 + units(getattr(node, "components", ())) + len(getattr(node, "items", ()))
+            for node in nodes
+        )
+
+    if units(result) > 40:
+        raise ValueError("This post has too many components for the reviewed edit")
+
+    def text_length(nodes):
+        return sum(
+            len(str(getattr(node, "content", "")))
+            + text_length(getattr(node, "components", ()))
+            for node in nodes
+        )
+
+    if text_length(result) > 4000:
+        raise ValueError("This roster post text is too long after Discord formatting")
+    return result
+
+
+async def prepare_post_update(
+    mongo,
+    bot,
+    *,
+    guild_id,
+    cycle,
+    occurrence_id,
+    user_id,
+    draft_id,
+    include_preview=False,
+    preserve_media=False,
+):
     draft, key, audience = await _owned_draft(
-        mongo, draft_id=draft_id, guild_id=guild_id, user_id=user_id, cycle=cycle, occurrence_id=occurrence_id
+        mongo,
+        draft_id=draft_id,
+        guild_id=guild_id,
+        user_id=user_id,
+        cycle=cycle,
+        occurrence_id=occurrence_id,
     )
     loaded = await cwl_campaign.load_campaign(mongo, guild_id, cycle)
-    delivery = next((item for item in reversed(loaded["deliveries"])
-                     if item.get("occurrence_id") == occurrence_id and item.get("status") == "sent"
-                     and item.get("channel_id") and item.get("message_id")), None)
+    delivery = next(
+        (
+            item
+            for item in reversed(loaded["deliveries"])
+            if item.get("occurrence_id") == occurrence_id
+            and item.get("status") == "sent"
+            and item.get("channel_id")
+            and item.get("message_id")
+        ),
+        None,
+    )
     if not delivery:
-        raise ValueError("There is no recorded published post for this message version.")
+        raise ValueError(
+            "There is no recorded published post for this message version."
+        )
     channel_id, message_id = int(delivery["channel_id"]), int(delivery["message_id"])
     channel = await bot.rest.fetch_channel(channel_id)
     if int(getattr(channel, "guild_id", 0)) != int(guild_id):
@@ -84,57 +307,177 @@ async def prepare_post_update(mongo, bot, *, guild_id, cycle, occurrence_id, use
     message = await bot.rest.fetch_message(channel_id, message_id)
     if int(message.author.id) != await _bot_id(bot):
         raise ValueError("Only this bot's CWL posts can be updated.")
-    return {"channel_id": channel_id, "message_id": message_id, "fingerprint": _fingerprint(message),
-            "draft_updated_at": draft["updated_at"], "occurrence_id": occurrence_id,
-            "guild_id": int(guild_id), "user_id": int(user_id), "draft_id": draft_id}
+    target = {
+        "channel_id": channel_id,
+        "message_id": message_id,
+        "fingerprint": _fingerprint(message),
+        "draft_updated_at": draft["updated_at"],
+        "occurrence_id": occurrence_id,
+        "guild_id": int(guild_id),
+        "user_id": int(user_id),
+        "draft_id": draft_id,
+    }
+    if preserve_media:
+        target["preserve_media"] = True
+    if include_preview:
+        rendered = await _render_post_update(
+            draft, cycle, key, audience, message, preserve_media=preserve_media
+        )
+        channel_name = str(getattr(channel, "name", "") or "").strip()
+        if not channel_name:
+            raise ValueError(
+                "The post channel name is unavailable. Preview again later."
+            )
+        target["draft_preview"] = post_preview_parts(
+            rendered,
+            content=getattr(message, "content", None) if preserve_media else None,
+            attachments=getattr(message, "attachments", ()),
+        )
+        target.update(
+            channel_name=channel_name,
+            message_url=f"https://discord.com/channels/{int(guild_id)}/{channel_id}/{message_id}",
+            observed_preview=post_preview_parts(
+                message.components,
+                content=getattr(message, "content", None),
+                attachments=getattr(message, "attachments", ()),
+            ),
+        )
+    return target
 
 
-async def update_published_post(mongo, bot, *, guild_id, cycle, occurrence_id, user_id, draft_id, target):
+async def update_published_post(
+    mongo,
+    bot,
+    *,
+    guild_id,
+    cycle,
+    occurrence_id,
+    user_id,
+    draft_id,
+    target,
+    before_edit=None,
+):
     draft, key, audience = await _owned_draft(
-        mongo, draft_id=draft_id, guild_id=guild_id, user_id=user_id, cycle=cycle, occurrence_id=occurrence_id
+        mongo,
+        draft_id=draft_id,
+        guild_id=guild_id,
+        user_id=user_id,
+        cycle=cycle,
+        occurrence_id=occurrence_id,
     )
-    if any(target.get(field) != value for field, value in {
-        "guild_id": int(guild_id), "user_id": int(user_id), "draft_id": draft_id,
-        "occurrence_id": occurrence_id, "draft_updated_at": draft["updated_at"],
-    }.items()):
+    if any(
+        target.get(field) != value
+        for field, value in {
+            "guild_id": int(guild_id),
+            "user_id": int(user_id),
+            "draft_id": draft_id,
+            "occurrence_id": occurrence_id,
+            "draft_updated_at": draft["updated_at"],
+        }.items()
+    ):
         raise ValueError("The draft changed. Preview and review the post update again.")
     token = uuid.uuid4().hex
     lease_id = f"cwl:post-edit:{target['channel_id']}:{target['message_id']}"
     try:
         await mongo.bot_config.update_one(
             {"_id": lease_id, "until": {"$lte": utcnow()}},
-            {"$set": {"until": utcnow() + timedelta(minutes=2), "token": token}}, upsert=True,
+            {"$set": {"until": utcnow() + timedelta(minutes=2), "token": token}},
+            upsert=True,
         )
     except DuplicateKeyError as exc:
-        raise ValueError("Another editor is updating that post. Try again shortly.") from exc
+        raise ValueError(
+            "Another editor is updating that post. Try again shortly."
+        ) from exc
     try:
         current = await prepare_post_update(
-            mongo, bot, guild_id=guild_id, cycle=cycle, occurrence_id=occurrence_id,
-            user_id=user_id, draft_id=draft_id,
+            mongo,
+            bot,
+            guild_id=guild_id,
+            cycle=cycle,
+            occurrence_id=occurrence_id,
+            user_id=user_id,
+            draft_id=draft_id,
         )
-        if any(current[field] != target[field] for field in ("channel_id", "message_id", "fingerprint", "draft_updated_at")):
-            raise ValueError("That post changed since you reviewed it. Preview the update again.")
-        rendered = await cwl_campaign.render_message({
-            "campaign": draft["campaign"], "cycle": cycle,
-            "deadline": cwl_campaign.signup_deadline(draft["campaign"], cycle).isoformat(),
-        }, key, audience, preview=False)
-        message = await bot.rest.fetch_message(target["channel_id"], target["message_id"])
+        if any(
+            current[field] != target[field]
+            for field in ("channel_id", "message_id", "fingerprint", "draft_updated_at")
+        ):
+            raise ValueError(
+                "That post changed since you reviewed it. Preview the update again."
+            )
+        message = await bot.rest.fetch_message(
+            target["channel_id"], target["message_id"]
+        )
         if _fingerprint(message) != target["fingerprint"]:
-            raise ValueError("That post changed since you reviewed it. Preview the update again.")
-        from extensions.commands.content import discord_attachment_id, media_galleries, media_url
-        referenced = {discord_attachment_id(media_url(item)) for gallery in media_galleries(rendered) for item in gallery.items}
-        retained = [item for item in message.attachments if str(item.id) in referenced]
-        await bot.rest.edit_message(target["channel_id"], target["message_id"], components=rendered, attachments=retained, **NO_MENTIONS)
+            raise ValueError(
+                "That post changed since you reviewed it. Preview the update again."
+            )
+        preserve_media = target.get("preserve_media", False)
+        if type(preserve_media) is not bool:
+            raise ValueError("Invalid post image preservation scope")
+        rendered = await _render_post_update(
+            draft, cycle, key, audience, message, preserve_media=preserve_media
+        )
+        from extensions.commands.content import (
+            discord_attachment_id,
+            media_galleries,
+            media_url,
+        )
+
+        referenced = {
+            discord_attachment_id(media_url(item))
+            for gallery in media_galleries(rendered)
+            for item in gallery.items
+        }
+        retained = (
+            list(message.attachments)
+            if preserve_media
+            else [item for item in message.attachments if str(item.id) in referenced]
+        )
+        if before_edit is not None:
+            if await before_edit() is not True:
+                raise PermissionError(
+                    "Announcement access or scope changed before the edit"
+                )
+            # Scope validation may await the backend. Re-read the fingerprint
+            # afterward rather than opening a new stale-post window.
+            checked = await bot.rest.fetch_message(
+                target["channel_id"], target["message_id"]
+            )
+            if _fingerprint(checked) != target["fingerprint"]:
+                raise ValueError(
+                    "That post changed since you reviewed it. Preview the update again."
+                )
+        await bot.rest.edit_message(
+            target["channel_id"],
+            target["message_id"],
+            components=rendered,
+            attachments=retained,
+            **NO_MENTIONS,
+        )
         try:
-            await cwl_campaign.record_delivery(mongo, guild_id, cycle, {
-                "occurrence_id": occurrence_id, "status": "post_updated", "by": int(user_id),
-                "channel_id": target["channel_id"], "message_id": target["message_id"],
-                "message_url": f"https://discord.com/channels/{int(guild_id)}/{target['channel_id']}/{target['message_id']}",
-            })
+            await cwl_campaign.record_delivery(
+                mongo,
+                guild_id,
+                cycle,
+                {
+                    "occurrence_id": occurrence_id,
+                    "status": "post_updated",
+                    "by": int(user_id),
+                    "channel_id": target["channel_id"],
+                    "message_id": target["message_id"],
+                    "message_url": f"https://discord.com/channels/{int(guild_id)}/{target['channel_id']}/{target['message_id']}",
+                },
+            )
         except Exception:
             # The external edit already succeeded. Do not tell the editor it
             # failed and invite a repeat write because its audit append failed.
-            _log.exception("CWL post %s updated; audit append failed (guild %s, editor %s)", target["message_id"], guild_id, user_id)
+            _log.exception(
+                "CWL post %s updated; audit append failed (guild %s, editor %s)",
+                target["message_id"],
+                guild_id,
+                user_id,
+            )
         return f"https://discord.com/channels/{int(guild_id)}/{target['channel_id']}/{target['message_id']}"
     finally:
         try:

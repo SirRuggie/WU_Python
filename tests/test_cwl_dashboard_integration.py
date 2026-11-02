@@ -81,6 +81,10 @@ class MemoryCollection:
             return False
         missing = object()
         for key, expected in query.items():
+            if key == "$or":
+                if not any(cls._matches(document, clause) for clause in expected):
+                    return False
+                continue
             actual = cls._path(document, key, missing)
             if isinstance(expected, dict) and "$exists" in expected:
                 if (actual is not missing) != bool(expected["$exists"]):

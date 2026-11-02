@@ -40,7 +40,9 @@ def campaign_generation(loaded: dict) -> str:
     """Match the generation passed to the existing campaign sender."""
     version = f"{int(loaded.get('defaults_revision', 0))}:{int(loaded.get('revision', 0))}"
     recurring = loaded.get("recurring_version")
-    return f"{version}:{recurring}" if recurring else version
+    version = f"{version}:{recurring}" if recurring else version
+    roster_copy = loaded.get("recurring_roster_version")
+    return f"{version}:roster:{roster_copy}" if roster_copy else version
 
 
 def _variant(loaded: dict, pool: str) -> dict:
@@ -205,10 +207,19 @@ async def get_roster_send_status(mongo, guild_id: int, cycle: str, pool: str) ->
     return row
 
 
-async def mark_worker_alive(mongo, guild_id: int) -> None:
+async def mark_worker_alive(mongo, guild_id: int, *, post_update_ready=None) -> None:
+    fields = {"kind": WORKER_KIND, "guild_id": int(guild_id), "updated_at": _now()}
+    if post_update_ready is not None:
+        if type(post_update_ready) is not bool:
+            raise ValueError("Post-update readiness must be explicit")
+        fields.update(
+            post_update_protocol=1,
+            post_update_ready=post_update_ready,
+            post_update_ready_at=fields["updated_at"],
+        )
     await mongo.bot_config.update_one(
         {"_id": worker_id(guild_id)},
-        {"$set": {"kind": WORKER_KIND, "guild_id": int(guild_id), "updated_at": _now()}},
+        {"$set": fields},
         upsert=True,
     )
 
@@ -300,11 +311,23 @@ async def process_roster_request(
     return await mongo.bot_config.find_one({"_id": key})
 
 
-async def process_pending_roster_requests(mongo, sender, *, guild_id: int, limit: int = 10, authorize=None) -> int:
-    await mark_worker_alive(mongo, guild_id)
-    rows = await mongo.bot_config.find({
-        "kind": REQUEST_KIND, "guild_id": int(guild_id), "status": "pending",
-    }).to_list(length=limit)
+async def process_pending_roster_requests(
+    mongo,
+    sender,
+    *,
+    guild_id: int,
+    limit: int = 10,
+    authorize=None,
+    post_update_ready=None
+) -> int:
+    await mark_worker_alive(mongo, guild_id, post_update_ready=post_update_ready)
+    rows = await mongo.bot_config.find(
+        {
+            "kind": REQUEST_KIND,
+            "guild_id": int(guild_id),
+            "status": "pending",
+        }
+    ).to_list(length=limit)
     for row in rows[:limit]:
         await process_roster_request(mongo, row, sender, authorize=authorize)
     return len(rows[:limit])
