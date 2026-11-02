@@ -1,4 +1,5 @@
 """Shared management snapshots used by the bot and dashboard adapters."""
+
 import hashlib
 import json
 import re
@@ -12,16 +13,16 @@ def revision(row):
 
 def public_band_error(value):
     """Expose known diagnostic codes, never arbitrary upstream exception text."""
-    value = str(value or '')
+    value = str(value or "")
     if not value:
-        return ''
+        return ""
     known_code = (
-        r'(?:band_request_failed|unexpected_band_response|'
-        r'band_api_result_-?[0-9]{1,12}|monitor_exception_[A-Za-z]{1,60})'
+        r"(?:band_request_failed|unexpected_band_response|"
+        r"band_api_result_-?[0-9]{1,12}|monitor_exception_[A-Za-z]{1,60})"
     )
     if re.fullmatch(known_code, value):
         return value
-    return 'Monitor check failed. Review the bot logs for details.'
+    return "Monitor check failed. Review the bot logs for details."
 
 
 def runtime_snapshot(monitor):
@@ -30,29 +31,51 @@ def runtime_snapshot(monitor):
     running = monitor.band_check_task and not monitor.band_check_task.done()
     startup = monitor.startup_reconciler
     return {
-        'checked_at': time.time(),
-        'task': 'Running' if running else 'Stopped',
-        'startup': startup.status_text() if startup else 'Stopped',
-        'key_ready': bool(monitor.BAND_KEY),
-        'health': str(getattr(health, 'state', 'unknown')),
-        'last_success': str(getattr(health, 'last_success_at', None) or ''),
-        'last_error': public_band_error(getattr(health, 'last_error', None)),
-        'debug': bool(monitor.DEBUG_MODE),
+        "checked_at": time.time(),
+        "task": "Running" if running else "Stopped",
+        "startup": startup.status_text() if startup else "Stopped",
+        "key_ready": bool(monitor.BAND_KEY),
+        "health": str(getattr(health, "state", "unknown")),
+        "last_success": str(getattr(health, "last_success_at", None) or ""),
+        "last_error": public_band_error(getattr(health, "last_error", None)),
+        "debug": bool(monitor.DEBUG_MODE),
     }
 
 
-async def refresh_base_image_cache(mongo):
+async def refresh_base_image_cache(mongo, *, force=False):
     """Bot-worker hook after a web base save, using the same native cache format."""
     from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
     from utils.media_urls import optimized, DETAIL
 
-    row = await mongo.fwa_data.find_one({'_id': 'fwa_config'}) or {}
-    for key, target in (
-        ('war_base_images', FWA_WAR_BASE),
-        ('active_base_images', FWA_ACTIVE_WAR_BASE),
-    ):
-        for th, url in row.get(key, {}).items():
+    from utils.manage_poll_cache import state_for
+
+    state = state_for(mongo)
+    async with state.images_lock:
+        if not force and time.monotonic() - state.images_at < 60:
+            return False
+        row = (
+            await mongo.fwa_data.find_one(
+                {"_id": "fwa_config"},
+                {"_id": 0, "war_base_images": 1, "active_base_images": 1},
+            )
+            or {}
+        )
+        changes = []
+        for key, target in (
+            ("war_base_images", FWA_WAR_BASE),
+            ("active_base_images", FWA_ACTIVE_WAR_BASE),
+        ):
+            values = row.get(key, {})
+            if not isinstance(values, dict):
+                raise ValueError("Base image configuration is unavailable")
+            for th, url in values.items():
+                changes.append(
+                    (target, th, optimized(url, width=DETAIL) if url else None)
+                )
+        for target, th, url in changes:
             if url:
-                target[th] = optimized(url, width=DETAIL)
+                target[th] = url
             else:
                 target.pop(th, None)
+        state.images_at = time.monotonic()
+        return True

@@ -1931,6 +1931,10 @@ async def errors(request, handler):
         response = await handler(request)
     except DashboardDurabilityError as exc:
         response = web.json_response({"error": str(exc)}, status=503)
+        response.headers["X-Dashboard-Storage-Degraded"] = "1"
+        from utils.cwl_dashboard_state import DashboardDurabilityAttention
+        if isinstance(exc, DashboardDurabilityAttention):
+            response.headers["X-Dashboard-Storage-Attention"] = "1"
     except ProviderUnavailable as exc:
         response = web.json_response({"error": str(exc)}, status=503)
         if getattr(exc, "read_retries_exhausted", False) or getattr(exc, "read_retry_blocked", False):
@@ -1968,7 +1972,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     if dev_fixture and dev_identity is None:
         dev_identity = {"id": PERMANENT_OWNER_ID, "username": "Development owner", "guild_owner": False}
     app = web.Application(middlewares=[diagnostics, errors, canonical_host, access_context, auth_diagnostics], client_max_size=32 * 1024)
-    from .server_management import mongo_lifecycle
+    from .mongo_client import lifecycle as mongo_lifecycle
     app.cleanup_ctx.append(mongo_lifecycle)
     from .declaration_delivery import lifecycle as declaration_lifecycle
     app.cleanup_ctx.append(declaration_lifecycle)

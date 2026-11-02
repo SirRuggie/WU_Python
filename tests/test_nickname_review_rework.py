@@ -10,9 +10,7 @@ from utils.member_profile_runs import ProfileRuns
 
 def test_idle_fast_check_is_one_projected_indexed_query(monkeypatch):
     async def run():
-        coll = S(
-            find_one=AsyncMock(return_value=None), create_index=AsyncMock()
-        )
+        coll = S(find_one=AsyncMock(return_value=None), create_index=AsyncMock())
         mongo = S(bot_config=coll)
         for _ in range(3):
             await worker.fast_poll(None, mongo)
@@ -59,8 +57,7 @@ def test_other_sections_keep_five_per_ten_seconds_and_dispatch_budget(
         async def claim(query, *args, **kwargs):
             for row in rows:
                 if row["status"] == "pending" and (
-                    "section" not in query
-                    or row["section"] == query["section"]
+                    "section" not in query or row["section"] == query["section"]
                 ):
                     row["status"] = "running"
                     return row
@@ -92,7 +89,7 @@ def test_other_sections_keep_five_per_ten_seconds_and_dispatch_budget(
     asyncio.run(run())
 
 
-def test_only_fast_job_execution_logs_are_filtered():
+def test_both_frequent_job_execution_logs_are_filtered():
     from extensions.tasks import cwl_reminder as bridge
 
     bridge._silence_fast_job_logs()
@@ -116,7 +113,10 @@ def test_only_fast_job_execution_logs_are_filtered():
         None,
     )
     assert not logger.filter(fast)
-    assert logger.filter(other)
+    assert not logger.filter(other)
+    for record in (fast, other):
+        record.levelno = logging.WARNING
+        assert logger.filter(record)
 
 
 def test_bridge_and_management_share_the_same_lane(monkeypatch):
@@ -144,6 +144,8 @@ def test_bridge_and_management_share_the_same_lane(monkeypatch):
         process.assert_not_awaited()
         release.set()
         await task
+        await bridge._roster_driver
+        bridge._roster_driver = None
 
     asyncio.run(run())
 
@@ -172,9 +174,7 @@ def test_rate_limit_receipt_defers_next_member(monkeypatch):
 
 
 @pytest.mark.parametrize("section", ["member_profiles", "fwa_points"])
-def test_long_rate_limit_receipt_retains_delay_and_never_retries(
-    monkeypatch, section
-):
+def test_long_rate_limit_receipt_retains_delay_and_never_retries(monkeypatch, section):
     import hikari
 
     async def run():
@@ -290,9 +290,7 @@ def test_nonprofile_window_resets_and_profiles_are_uncapped_uncounted(
                     kind="manage_web_request",
                     status="pending",
                     section=section,
-                    action=(
-                        "save" if section == "member_profiles" else "enable"
-                    ),
+                    action=("save" if section == "member_profiles" else "enable"),
                     guild_id=worker.GUILD_ID,
                     user_id="123",
                     values={},
@@ -378,10 +376,7 @@ def test_missing_created_at_is_contained_and_next_request_is_processed(
         dispatch = AsyncMock(return_value={"message": "ok"})
         monkeypatch.setattr(worker, "dispatch", dispatch)
         await worker._process_requests(None, S(bot_config=coll))
-        updates = [
-            c.args[1]["$set"]["status"]
-            for c in coll.update_one.await_args_list
-        ]
+        updates = [c.args[1]["$set"]["status"] for c in coll.update_one.await_args_list]
         assert updates == ["uncertain", "done"]
         dispatch.assert_awaited_once()
 

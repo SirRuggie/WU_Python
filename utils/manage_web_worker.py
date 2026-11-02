@@ -7,7 +7,8 @@ import weakref
 from types import SimpleNamespace as NS
 from datetime import datetime, timezone, timedelta
 import hikari
-from pymongo import ReturnDocument
+from pymongo import ReturnDocument, timeout
+from utils.manage_poll_cache import state_for
 from utils.member_profiles import ProfileOutcomeUncertain
 
 WORKER_ID = "manage-web-worker:644963518025826315"
@@ -461,14 +462,36 @@ async def dispatch(bot, mongo, row, ctx):
     raise ValueError("Unknown management action.")
 
 
-async def _heartbeat(mongo):
+async def _write_heartbeat(mongo):
+    state = state_for(mongo)
+    async with state.heartbeat_lock:
+        if time.monotonic() - state.heartbeat_at < 30:
+            return False
+        # Bound command time as well as cadence, leaving margin inside the
+        # existing 60-second readiness rule. Failed writes never advance it.
+        with timeout(5):
+            await mongo.bot_config.update_one(
+                {"_id": WORKER_ID}, {"$set": {"checked_at": time.time()}}, upsert=True
+            )
+        state.heartbeat_at = time.monotonic()
+        return True
+
+
+async def maintain_worker_heartbeat(mongo):
+    last_warning = float("-inf")
     while True:
-        await mongo.bot_config.update_one(
-            {"_id": WORKER_ID},
-            {"$set": {"checked_at": time.time()}},
-            upsert=True,
-        )
-        await asyncio.sleep(20)
+        try:
+            await _write_heartbeat(mongo)
+        except Exception as error:
+            # A temporary Mongo failure must not kill the independent heartbeat
+            # for the rest of a slow Discord delivery. Cancellation still escapes.
+            now = time.monotonic()
+            if now - last_warning >= 60:
+                logging.getLogger(__name__).warning(
+                    "Management heartbeat unavailable: %s", type(error).__name__
+                )
+                last_warning = now
+        await asyncio.sleep(10)
 
 
 _QUEUE_LOCKS = weakref.WeakKeyDictionary()
@@ -485,7 +508,7 @@ async def poll(bot, mongo, *, fast=False, known_work=False):
     async with lock:
         if fast and not known_work and not await ready_work(mongo):
             return 0
-        task = asyncio.create_task(_heartbeat(mongo))
+        task = asyncio.create_task(maintain_worker_heartbeat(mongo))
         try:
             if fast:
                 return await _process_requests(bot, mongo)
@@ -511,6 +534,8 @@ async def ready_work(mongo):
         _WORK_INDEXES[loop] = mongo
     started = time.perf_counter()
     work = await ProfileRuns(mongo).ready_work()
+    state = state_for(mongo)
+    state.ready, state.ready_at = work, time.monotonic()
     if work:
         logging.getLogger(__name__).info(
             "Management timing stage=ready_lookup run=%s elapsed_ms=%.2f next_in_ms=%.2f",
@@ -519,6 +544,12 @@ async def ready_work(mongo):
             1000 * max(0, work.get("next_at", 0) - time.time()),
         )
     return work
+
+
+def idle_poll_due(mongo):
+    """Idle detection may wait two seconds; active pacing is never slowed."""
+    state = state_for(mongo)
+    return state.ready is not None or time.monotonic() - state.ready_at >= 2
 
 
 async def fast_poll(bot, mongo):
@@ -549,38 +580,42 @@ async def _poll(bot, mongo):
     )
     from extensions.tasks import band_monitor
 
+    state = state_for(mongo)
     try:
         await refresh_base_image_cache(mongo)
-        await mongo.bot_config.update_one(
-            {"_id": "manage-web-band-status"},
-            {"$set": runtime_snapshot(band_monitor)},
-            upsert=True,
-        )
+        snapshot = runtime_snapshot(band_monitor)
+        values = {key: value for key, value in snapshot.items() if key != "checked_at"}
+        if values != state.band_values or time.monotonic() - state.band_at >= 60:
+            await mongo.bot_config.update_one(
+                {"_id": "manage-web-band-status"}, {"$set": snapshot}, upsert=True
+            )
+            state.band_values, state.band_at = values, time.monotonic()
     except Exception:
         logging.getLogger(__name__).warning(
             "Management runtime snapshot unavailable", exc_info=True
         )
-    await mongo.bot_config.update_one(
-        {"_id": WORKER_ID}, {"$set": {"checked_at": time.time()}}, upsert=True
-    )
-    from utils.return_bulk import activate
+    await _write_heartbeat(mongo)
+    if time.monotonic() - state.activation_at >= 60:
+        from utils.return_bulk import activate
 
-    await activate(mongo)
+        await activate(mongo)
+        state.activation_at = time.monotonic()
+    # Cache sweeps only after a fresh confirmed-empty work observation. Pending
+    # or unknown work must retain the original immediate stale-claim cleanup.
+    idle = time.monotonic() - state.ready_at <= 2 and state.ready is None
+    if idle:
+        await _expire_requests(mongo, idle=True)
+        from utils.member_profile_runs import ProfileRuns
+
+        await ProfileRuns(mongo).prune_throttled(time.time())
+        return 0
     return await _process_requests(bot, mongo)
 
 
-async def _process_requests(bot, mongo):
-    from utils.member_profile_runs import ProfileRuns, ProfileRunStopped
-
-    dispatch_started = time.perf_counter()
-    try:
-        await ProfileRuns(mongo).advance()
-    except Exception:
-        logging.getLogger(__name__).warning(
-            "Member profile run scheduling unavailable", exc_info=True
-        )
-    advance_ms = 1000 * (time.perf_counter() - dispatch_started)
-    sweep_started = time.perf_counter()
+async def _expire_requests(mongo, *, idle=False):
+    state = state_for(mongo)
+    if idle and time.monotonic() - state.sweep_at < 60:
+        return
     # A crashed sending claim is never replayed: the Discord effect may exist.
     await mongo.bot_config.update_many(
         {
@@ -596,6 +631,22 @@ async def _process_requests(bot, mongo):
             }
         },
     )
+    state.sweep_at = time.monotonic()
+
+
+async def _process_requests(bot, mongo):
+    from utils.member_profile_runs import ProfileRuns, ProfileRunStopped
+
+    dispatch_started = time.perf_counter()
+    try:
+        await ProfileRuns(mongo).advance()
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Member profile run scheduling unavailable", exc_info=True
+        )
+    advance_ms = 1000 * (time.perf_counter() - dispatch_started)
+    sweep_started = time.perf_counter()
+    await _expire_requests(mongo)
     sweep_ms = 1000 * (time.perf_counter() - sweep_started)
     handled = 0
     for _ in range(5):
