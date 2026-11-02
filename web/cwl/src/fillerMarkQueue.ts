@@ -51,7 +51,10 @@ export class FillerMarkQueue {
     this.accessLost = accessLost;
   }
   get working() {
-    return this.running || this.waiting.length > 0 || this.writeBusy;
+    return (
+      !this.disposed &&
+      (this.running || this.waiting.length > 0 || this.writeBusy)
+    );
   }
   get disabled() {
     return (

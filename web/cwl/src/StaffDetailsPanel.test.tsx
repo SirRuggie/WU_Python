@@ -318,7 +318,7 @@ it("retains confirmed filler Undo in the page queue when its follow-up read fail
     revision: 10,
     roster_filler: true,
     mark_revision: 1,
-    undo: { id: 89, label: "Change filler mark" },
+    undo: { id: 89, label: "Change filler mark", revision: 10 },
   };
   const changed = vi.fn();
   await act(async () =>

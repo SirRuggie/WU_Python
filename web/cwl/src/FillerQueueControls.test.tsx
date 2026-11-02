@@ -1,5 +1,6 @@
+import DeclarationPingPanel from "./DeclarationPingPanel";
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import RosterFillerCheckbox from "./RosterFillerCheckbox";
@@ -151,4 +152,74 @@ it("page hook disposal stops queued work after unmount without waiting for an ac
       finish({ revision: 11, roster_filler: true, mark_revision: 1 }),
     );
   expect(callsAfterUnmount).toBe(1);
+});
+it("clears the page guard after unmount even when Ping cleanup runs before an active save settles", async () => {
+  let finish!: (value: any) => void;
+  const working = vi.fn();
+  const wire = vi
+    .spyOn(await import("./api"), "api")
+    .mockImplementation((path: string) =>
+      path.includes("/roster-filler/")
+        ? (new Promise((resolve) => {
+            finish = resolve;
+          }) as ReturnType<typeof api>)
+        : (Promise.resolve({
+            revision: 0,
+            channel: null,
+            can_send: false,
+            channels: [],
+            active: null,
+            test_running: false,
+            history: [],
+            cooldown_until: 0,
+            test_channel: { id: "", name: "", revision: 0 },
+          }) as ReturnType<typeof api>),
+    );
+  function Page() {
+    const queue = useFillerMarkQueue("1");
+    queue.syncRevision(9);
+    useEffect(() => {
+      working(queue.working);
+    }, [queue.working]);
+    useEffect(() => () => working(false), []);
+    return (
+      <>
+        <RosterFillerCheckbox
+          queue={queue}
+          seasonId="1"
+          tag="#A"
+          name="A"
+          value={false}
+          markRevision={0}
+          revision={9}
+          onChanged={() => {}}
+        />
+        <DeclarationPingPanel
+          seasonId="1"
+          pool="lazy"
+          missing={0}
+          onWorking={(value) => working(value || queue.working)}
+        />
+      </>
+    );
+  }
+  await mount(<Page />);
+  await act(async () =>
+    host
+      .querySelector<HTMLInputElement>(".roster-filler-control input")!
+      .click(),
+  );
+  expect(working).toHaveBeenLastCalledWith(true);
+  await act(async () => root!.unmount());
+  root = undefined;
+  expect(working).toHaveBeenLastCalledWith(false);
+  await act(async () =>
+    finish({ revision: 10, roster_filler: true, mark_revision: 1 }),
+  );
+  expect(
+    wire.mock.calls.filter((call) =>
+      String(call[0]).includes("/roster-filler/"),
+    ),
+  ).toHaveLength(1);
+  expect(working).toHaveBeenLastCalledWith(false);
 });

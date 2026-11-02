@@ -70,12 +70,37 @@ cause a 409; the client keeps the server's concurrency check intact.
 This is a scoped source inspection, not a claim that every dashboard control or
 cross-tab interaction has been tested.
 
+## Browser transport limitation
+
+A post-commit socket close was tested without Playwright routing. JavaScript made
+two fetch calls, but Chromium made three HTTP attempts: 200, 200, 409. The browser
+resent the second request with the identical CAS revision; the backend refused
+that duplicate and no extra state change occurred. There is no application retry,
+including after 409. A frontend-only queue cannot promise one physical HTTP attempt
+under transport retransmission. Refresh is authoritative after an unknown outcome;
+the socket-close case can surface as a conflict after the first attempt committed.
+The healthy ten-row case has exactly ten HTTP attempts and maximum one outstanding.
+No backend check, endpoint or retry mechanism was changed for this limitation.
+
+## Navigation cleanup regression
+
+The actual browser unmount test found a stale guard: PingPanel cleanup observed
+the disposed queue's still-settling promise as working. An actual PingPanel/page-
+hook regression fails before the fix and passes after it. A disposed queue now
+reports no active page work immediately, while its already-started request may
+still settle. No queued request starts after disposal.
+
 ## Checkpoint validation
 
-The full frontend suite passes 1574 checks across 270 files. Focused queue and
-integration tests cover ten serial writes, latest revisions, same-row changes,
-mixed list/Details controls, failure halting, unknown outcomes, explicit refresh,
-Unmount disposal and Undo. TypeScript/main build pass after correcting an unused
-test parameter. Final browser/SQLite counts, five mutations, keyboard/layouts and
-final preview manifest remain pending at this source checkpoint. No mocked test
-is evidence of live Discord or production delivery.
+The full frontend at the preceding source passes 1575 checks across 270 files.
+Focused queue and integration tests cover ten serial writes, latest revisions,
+same-row changes, mixed list/Details controls, failure halting, unknown outcomes,
+explicit refresh, disposal and Undo. Actual owned SQLite/browser checks prove the
+healthy ten-row wire trace, Details/list reversals, Undo, keyboard focus and four
+known refusals (409/401/403/504), with every unrelated table hash unchanged.
+Five meaningful mutants are killed. An initial unbounded-retry mutant timed out
+and is not counted; the one-retry mutant fails actual assertions. The corrected
+disposal source still needs its final full suite/build and repeated unmount gate.
+The 45-second held-ack case has exercised a committed unknown outcome and learned
+it through Refresh; final structured evidence is being completed. Release remains
+held. No mock or fixture is evidence of production behavior or Discord delivery.
