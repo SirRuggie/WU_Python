@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import WeightTrial from "./WeightTrial";
+import type { Roster } from "./model";
 import { api } from "../api";
 import { readFileSync } from "node:fs";
 vi.mock("../api", () => ({
@@ -136,7 +137,9 @@ it("filters real missing rows, keeps gaps out of counts, and moves Next focus", 
   await render();
   await click("Needs work");
   expect(host.textContent).toContain("2 missing · 1 to check");
-  expect(host.textContent).toContain("3 · Departed · left the clan");
+  expect(host.textContent).toContain(
+    "3 · Departed · War player details unavailable",
+  );
   expect(host.querySelector(".weight-trial-gap input")).toBeNull();
   await click("Missing (2)");
   expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(2);
@@ -246,7 +249,7 @@ it("Next missing focuses an empty visible Loot box and nameless gaps stay exclud
   );
   await render();
   await click("Needs work");
-  expect(host.textContent).toContain("3 · Not in clan anymore");
+  expect(host.textContent).toContain("3 · War player details unavailable");
   await click("Next missing");
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
@@ -530,4 +533,325 @@ it("stops progress retries on access denial and removes protected counts", async
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("edits departed war players, defaults newest, switches wars and copies selected war only", async () => {
+  const newest = {
+    state: "warEnded",
+    end_time: "20261102T070000.000Z",
+    order: { "#G2Y": 1, "#P2Y": 2 },
+    names: { "#G2Y": "Left newest" },
+    town_halls: { "#G2Y": 15 },
+  };
+  const previous = {
+    state: "warEnded",
+    end_time: "20261031T070000.000Z",
+    order: { "#J2Y": 1 },
+    names: { "#J2Y": "Left previous" },
+  };
+  const all = [
+    { ...rows[0], storages: 5, current_member: true },
+    {
+      tag: "#G2Y",
+      name: "Left newest",
+      town_hall: 15,
+      weight: 150000,
+      storages: 5,
+      revision: 1,
+      current_member: false,
+    },
+    {
+      tag: "#J2Y",
+      name: "Left previous",
+      town_hall: null,
+      weight: null,
+      storages: null,
+      revision: 0,
+      current_member: false,
+    },
+  ];
+  let current: Roster = {
+    ...roster,
+    members: all.filter((row) => row.current_member),
+    weight_members: all,
+    war_lineups: [newest, previous],
+    war_order: newest.order,
+    war_source: newest,
+    current_members_count: 1,
+  };
+  const write = vi.fn();
+  vi.mocked(api).mockImplementation(async (path, method, body) => {
+    if (path.startsWith("/weight-trial/saved-players"))
+      return { players: [], total: 0 };
+    if (path.includes("/clans/")) {
+      if (method === "PUT") {
+        write(body);
+        current = {
+          ...current,
+          weight_members: current.weight_members!.map((row) =>
+            row.tag === "#J2Y"
+              ? { ...row, weight: 140000, storages: 4, revision: 1 }
+              : row,
+          ),
+        };
+      }
+      return current;
+    }
+    return {
+      clans: [
+        {
+          tag: "#R2Y",
+          name: "Needs work",
+          weighed_count: 2,
+          members_count: 2,
+          missing_count: 0,
+          last_saved_at: null,
+          status: "current",
+        },
+      ],
+      outside_fwa_missing_count: 0,
+    };
+  });
+  const copied = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: copied },
+  });
+  await render();
+  await click("Needs work");
+  expect(host.querySelector('[data-player="#G2Y"] input')).not.toBeNull();
+  expect(
+    host.querySelector<HTMLInputElement>('[data-player="#G2Y"] input')!
+      .disabled,
+  ).toBe(false);
+  expect(host.querySelector('[data-player="#G2Y"]')!.textContent).toContain(
+    "Left clan",
+  );
+  expect(host.querySelector('[data-player="#J2Y"]')).toBeNull();
+  const war = host.querySelector<HTMLSelectElement>(
+    ".weight-trial-war-picker select",
+  )!;
+  expect(war.value).toBe(newest.end_time);
+  await act(async () => {
+    war.value = previous.end_time;
+    war.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const departed = host.querySelector('[data-player="#J2Y"]')!;
+  expect(departed.textContent).toContain(
+    "Town Hall unavailable · choose storages",
+  );
+  const storages = departed.querySelector<HTMLSelectElement>("select")!;
+  expect(storages.value).toBe("");
+  expect(storages.disabled).toBe(false);
+  await act(async () => {
+    storages.value = "4";
+    storages.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await input(
+    departed.querySelector<HTMLInputElement>(".weight-trial-loot input")!,
+    "35000",
+  );
+  await click("Save weights");
+  expect(write).toHaveBeenCalledExactlyOnceWith({
+    changes: [{ tag: "#J2Y", revision: 0, weight: 140000, storages: 4 }],
+  });
+  expect(war.value).toBe(previous.end_time);
+  await click("Copy loot for FWA column F");
+  expect(copied).toHaveBeenCalledExactlyOnceWith("35000");
+});
+
+it("keeps departed edits when switching wars is canceled and renders saved names as text", async () => {
+  const newest = {
+    state: "inWar",
+    end_time: "20261102T070000.000Z",
+    order: { "#G2Y": 1 },
+    names: { "#G2Y": '<img src=x onerror="alert(1)">' },
+    town_halls: { "#G2Y": 15 },
+  };
+  const previous = {
+    state: "warEnded",
+    end_time: "20261031T070000.000Z",
+    order: { "#J2Y": 1 },
+  };
+  vi.mocked(api).mockImplementation(async (path) => {
+    if (path.startsWith("/weight-trial/saved-players"))
+      return { players: [], total: 0 };
+    if (path.includes("/clans/"))
+      return {
+        ...roster,
+        members: [
+          {
+            tag: "#G2Y",
+            name: '<img src=x onerror="alert(1)">',
+            town_hall: 15,
+            weight: null,
+            storages: 5,
+            revision: 0,
+            current_member: false,
+          },
+          {
+            tag: "#J2Y",
+            name: "Previous",
+            town_hall: 14,
+            weight: null,
+            storages: 5,
+            revision: 0,
+            current_member: false,
+          },
+        ],
+        war_lineups: [newest, previous],
+        war_order: newest.order,
+        war_source: newest,
+      };
+    return {
+      clans: [
+        {
+          tag: "#R2Y",
+          name: "Needs work",
+          weighed_count: 0,
+          members_count: 1,
+          missing_count: 1,
+          last_saved_at: null,
+          status: "current",
+        },
+      ],
+      outside_fwa_missing_count: 0,
+    };
+  });
+  await render();
+  await click("Needs work");
+  const row = host.querySelector('[data-player="#G2Y"]')!;
+  expect(row.textContent).toContain('<img src=x onerror="alert(1)">');
+  expect(row.querySelector('img[src="x"]')).toBeNull();
+  await input(
+    row.querySelector<HTMLInputElement>(".weight-trial-loot input")!,
+    "30000",
+  );
+  const war = host.querySelector<HTMLSelectElement>(
+    ".weight-trial-war-picker select",
+  )!;
+  await act(async () => {
+    war.value = previous.end_time;
+    war.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(document.body.textContent).toContain("Unsaved changes");
+  await click("Keep editing");
+  expect(war.value).toBe(newest.end_time);
+  expect(
+    row
+      .querySelector<HTMLInputElement>(".weight-trial-loot input")!
+      .value.replace(/,/g, ""),
+  ).toBe("30000");
+  expect(
+    vi.mocked(api).mock.calls.filter(([, method]) => method === "PUT"),
+  ).toHaveLength(0);
+});
+
+it("clears clan summaries and an opened saved-player search when member access is revoked", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  await render();
+  await click("Needs work");
+  await input(
+    host.querySelector<HTMLInputElement>(
+      '.weight-saved-search input[type="search"]',
+    )!,
+    "Saved",
+  );
+  await click("Search saved players");
+  expect(host.textContent).toContain("Saved outside");
+  const { ApiError } = await import("../api");
+  const denied = new ApiError("Access revoked", 403);
+  denied.status = 403;
+  vi.mocked(api).mockImplementation(async (path, ...args) => {
+    if (path.includes("/clans/")) throw denied;
+    return original(path, ...args);
+  });
+  await click("Refresh members");
+  expect(host.textContent).toContain("Access revoked");
+  expect(host.textContent).not.toContain("Saved outside");
+  expect(host.textContent).not.toContain("2/4 weighed");
+  expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(0);
+  vi.mocked(api).mockImplementation(original);
+  await click("Retry clans");
+  expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(4);
+  expect(host.textContent).not.toContain("Saved outside");
+});
+
+it("does not restore protected clan counts from a stale success after access denial", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  let resolveDirectory!: (value: unknown) => void;
+  const pending = new Promise((resolve) => {
+    resolveDirectory = resolve;
+  });
+  let directoryCalls = 0;
+  let denied = false;
+  const { ApiError } = await import("../api");
+  const forbidden = new ApiError("Access revoked", 403);
+  forbidden.status = 403;
+  vi.mocked(api).mockImplementation(async (path, ...args) => {
+    if (path.startsWith("/weight-trial/clans") && !path.includes("/clans/")) {
+      directoryCalls++;
+      if (directoryCalls === 2) return pending;
+    }
+    if (denied && path.includes("/clans/")) throw forbidden;
+    return original(path, ...args);
+  });
+  await render();
+  await click("Needs work");
+  expect(directoryCalls).toBe(2);
+  denied = true;
+  await click("Refresh members");
+  expect(host.textContent).toContain("Access revoked");
+  const oldDirectory = await original("/weight-trial/clans?season_id=1");
+  await act(async () => {
+    resolveDirectory(oldDirectory);
+    await pending;
+  });
+  expect(host.textContent).not.toContain("2/4 weighed");
+  expect(host.querySelector(".weight-saved-search")).toBeNull();
+  expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(0);
+});
+
+it("does not relabel an unchanged verified war after saving a weight", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  const war = {
+    state: "inWar",
+    end_time: "20261102T070000.000Z",
+    captured_at: "2026-11-02T12:00:00Z",
+    cached: false,
+    order: roster.war_order,
+  };
+  const fresh = { ...roster, war_lineups: [war], war_source: war };
+  vi.mocked(api).mockImplementation(async (path, method, ...rest) => {
+    if (path.includes("/clans/"))
+      return method === "PUT"
+        ? {
+            ...fresh,
+            members: fresh.members.map((row) =>
+              row.tag === "#P2Y"
+                ? { ...row, weight: 155000, revision: 2 }
+                : row,
+            ),
+            war_lineups: [{ ...war, cached: true }],
+            war_source: { ...war, cached: true },
+          }
+        : fresh;
+    return original(path, method, ...rest);
+  });
+  await render();
+  await click("Needs work");
+  expect(host.querySelector(".weight-trial-order")?.textContent).toContain(
+    "Current war · Battle day order",
+  );
+  await input(
+    host.querySelector<HTMLInputElement>(
+      '[data-player="#P2Y"] .weight-trial-loot input',
+    )!,
+    "31000",
+  );
+  await click("Save weights");
+  expect(host.textContent).toContain("1 weight saved.");
+  expect(host.querySelector(".weight-trial-order")?.textContent).toContain(
+    "Current war · Battle day order",
+  );
 });

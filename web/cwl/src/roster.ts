@@ -29,6 +29,7 @@ export type RosterAccount = {
   clan_weight_clan_name?: string | null;
   clan_weight_saved_at?: string | null;
   current_fwa_clan_tag?: string | null;
+  weight_lineup_clan_tag?: string | null;
   current_fwa_status?: string;
   initial_manual_weight?: number | null;
   manual_weight: number | null;

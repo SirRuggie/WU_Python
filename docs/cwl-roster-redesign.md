@@ -1078,3 +1078,23 @@ owned pending copies only after the recovered SQL state and consumed receipt are
 committed, retaining the base investigation proof. Tests cover pause persistence,
 both-off reset, owned leases, older/uncovered proof, pool scope, season round-trip,
 CAS race and head revision. All eleven new behavioral mutants were killed.
+
+### Saved-war weight eligibility — prompt 131
+
+Clan weights keeps the two latest usable war lineups, defaulting to the most
+recent. Staff can save a departed player who is in either retained lineup.
+Weights remain the shared per-player ledger: working Roster, Compare and exports
+read the saved result, while publication snapshots remain unchanged. An unsaved
+lineup participant has a separate saved-war clan link, never a false current
+membership label. The server rechecks family ownership, fresh members and saved
+lineup eligibility; a third war can invalidate a stale creation attempt without
+removing an older saved weight.
+
+Missing weights labels the manual group `Non-FWA accounts`, uses compact
+TH/tag/pool metadata and shows a differing source failure only when present.
+`Saving doesn't move players.` replaces the repeated refresh explanation;
+refresh still preserves manual weights through the existing ledger resolver.
+Column F in Clan weights now includes departed slots in the selected saved war.
+The selected-war view and unknown Town Hall/storage handling are documented in
+`docs/clan-weight-trial.md`. No assignment, lock, publication or delivery rule
+changes.
