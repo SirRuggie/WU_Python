@@ -1078,3 +1078,7 @@ owned pending copies only after the recovered SQL state and consumed receipt are
 committed, retaining the base investigation proof. Tests cover pause persistence,
 both-off reset, owned leases, older/uncovered proof, pool scope, season round-trip,
 CAS race and head revision. All eleven new behavioral mutants were killed.
+
+## Discord member links and new default copy (127)
+
+Discord member messages share **My clan assignments**, **My tasks** and **Wars** destinations. New CWL default copy is explicitly versioned; saved, partial, legacy and custom campaigns retain their prior normalization without a production rewrite. The native Discord editor supports text and buttons; web signup buttons remain locked. The read-only comparison from November 2 at 16:14 UTC is historical evidence, not a current production claim. See [Discord dashboard links review](discord-dashboard-links-review.md) for the message inventory, new-default provenance, local checks and limits.

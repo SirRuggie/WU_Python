@@ -43,6 +43,10 @@ The existing Discord `/manage` editor supports Edit text and Edit buttons (label
 
 Fixed public destinations and existing OAuth return sanitization reject foreign-origin return links. Mention recipients/flags, event timing and uncertain-delivery behavior are unchanged. Button/text/nested limits and native transport forwarding are tested. Existing owner/draft/editor validation remains authoritative. Fake OAuth/transport/component tests are not live Discord rendering or delivery proof. A future approved release needs a bot restart but sends/edits nothing on activation.
 
-The shared roster-redesign summary has been supplied to its owner. Root owns appending it at the 118/137 integration checkpoint, avoiding a concurrent edit while PR172 is not yet merged. This review document is the source reference until that coordinated append.
+The required shared roster-redesign paragraph is included in this branch after its frozen owner explicitly released append ownership; no concurrent shared-document edit was made.
 
 The first full backend run completed with 6340 passes and two obsolete copy expectations: the closing link still expected “My assignments”, and the help-footer test required the old long line in new marked reminders. The corrected footer regression now checks both old/unmarked and new marked defaults, preserving exact footer/button structure and one intended body check line. Runtime source was unchanged by these test corrections; the final full rerun passed as recorded above.
+
+## Local owner preview
+
+`http://127.0.0.1:34217/` (static PID2566239) is a disconnected read-only catalog generated from all 14 actual native payloads (seven message types × Main/Lazy). It displays exact text and button destinations; Markdown is verbatim and artwork is not fetched. It does not send/edit Discord messages, change saved campaigns or claim live Discord rendering. Local payload evidence is retained under `.local/p127-preview`; production frontend source remains untouched.
