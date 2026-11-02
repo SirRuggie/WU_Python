@@ -657,6 +657,13 @@ async def _process_requests(bot, mongo):
         query = {"kind": "manage_web_request", "status": "pending"}
         if used >= 5:
             query["section"] = {"$in": ["member_profiles", "roles"]}
+        # Do not claim a standalone or already-materialized child while another
+        # member write's known Discord backoff is active. Other sections flow.
+        backoff = await ProfileRuns(mongo).lane_backoff(GUILD_ID)
+        if backoff:
+            if used >= 5:
+                break
+            query["section"] = {"$nin": ["member_profiles", "roles"]}
         claim_started = time.perf_counter()
         row = await mongo.bot_config.find_one_and_update(
             query,

@@ -14,19 +14,19 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-async function render(busy = false) {
+async function render(busy = false, selected = false) {
   const clear = vi.fn(),
     add = vi.fn();
   await act(async () =>
     root.render(
       <MemberBulkBar
-        pageSelected={false}
+        pageSelected={selected}
         pagePartial={true}
         onSelectPage={() => {}}
         matchingCount={25}
         onSelectMatching={() => {}}
-        count={1}
-        hidden={0}
+        count={1411}
+        hidden={1410}
         canRoles={true}
         canProfiles={true}
         busy={busy}
@@ -71,4 +71,17 @@ it("phone Actions exposes Add role without scrolling past selection tools", asyn
   ].find((e) => e.textContent === "Add role")!;
   await act(async () => item.click());
   expect(add).toHaveBeenCalledTimes(1);
+});
+
+it("selected page exposes Unselect page and preserves the hidden count", async () => {
+  await render(false, true);
+  expect(document.querySelector('[role="menu"]')?.textContent).toContain(
+    "Unselect page",
+  );
+  expect(host.querySelector(".members-selection-short")?.textContent).toBe(
+    "1411 · 1410 hidden",
+  );
+  expect(host.querySelector("button")?.getAttribute("aria-label")).toBe(
+    "1411 selected · 1410 hidden",
+  );
 });

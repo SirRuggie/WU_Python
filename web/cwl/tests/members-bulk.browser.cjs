@@ -11,7 +11,9 @@ const origin =
         "utf8",
       )
       .trim());
-const out = process.env.WU_MEMBERS_EVIDENCE_DIR || path.resolve(__dirname, "../../../.local/p93-bulk-layout");
+const out =
+  process.env.WU_MEMBERS_EVIDENCE_DIR ||
+  path.resolve(__dirname, "../../../.local/p93-bulk-layout");
 fs.mkdirSync(out, { recursive: true });
 (async () => {
   const browser = await chromium.launch({
@@ -135,6 +137,58 @@ fs.mkdirSync(out, { recursive: true });
         stop: true,
         errors,
       });
+      if (width < 768) {
+        await page.reload();
+        await page.locator(".members-person").first().waitFor();
+        await page.locator(".members-person input").first().check();
+        const actions = bar.getByRole("button", {
+          name: "Actions",
+          exact: true,
+        });
+        await actions.click();
+        await page
+          .getByRole("menuitem", { name: "Select page", exact: true })
+          .click();
+        await actions.click();
+        await page
+          .getByRole("menuitem", { name: "Unselect page", exact: true })
+          .waitFor();
+        await page.keyboard.press("Escape");
+        await actions.click();
+        await page
+          .getByRole("menuitem", { name: /^Select all .* matching$/ })
+          .click();
+        await page
+          .getByPlaceholder("Name, nickname, username or Discord ID")
+          .fill("Last fixture person");
+        const count = bar.locator(".members-selection-short");
+        await page.waitForFunction(() =>
+          document
+            .querySelector(".members-selection-short")
+            ?.textContent?.includes("hidden"),
+        );
+        assert.match(await count.textContent(), /\d{4} · \d{4} hidden/);
+        assert(
+          await count.evaluate((e) => {
+            const r = e.getBoundingClientRect(),
+              p = e.parentElement.getBoundingClientRect();
+            return r.width <= p.width && r.left >= p.left && r.right <= p.right;
+          }),
+          "Entire short count must fit in its button",
+        );
+        assert.equal(
+          await bar.evaluate((e) => e.scrollWidth > e.clientWidth),
+          false,
+        );
+        assert.match(
+          await count.locator("..").getAttribute("aria-label"),
+          /selected · \d+ hidden/,
+        );
+        await page.screenshot({
+          path: path.join(out, "hidden-count-" + width + ".png"),
+          fullPage: true,
+        });
+      }
       await page.close();
     }
     fs.writeFileSync(

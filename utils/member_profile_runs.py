@@ -321,17 +321,7 @@ class ProfileRuns:
             raise ValueError(
                 "Another member change run is still working. Review its progress first."
             )
-        backoff = await self.collection.find_one(
-            {
-                "kind": "manage_web_request",
-                "guild_id": int(guild_id),
-                "section": {"$in": ["member_profiles", "roles"]},
-                "retry_not_before": {"$gt": time.time()},
-            },
-            {"retry_not_before": 1},
-            sort=[("retry_not_before", -1)],
-            hint="member_change_lane_backoff",
-        )
+        backoff = await self.lane_backoff(guild_id)
         row = dict(
             _id=key,
             kind=KIND,
@@ -340,7 +330,7 @@ class ProfileRuns:
             state="queued",
             cursor=0,
             created_at=time.time(),
-            next_at=backoff["retry_not_before"] if backoff else 0,
+            next_at=backoff,
             **payload,
         )
         try:
@@ -357,7 +347,31 @@ class ProfileRuns:
             return old
         return row
 
+    async def lane_backoff(self, guild_id, *, now=None):
+        """Greatest known Discord delay shared by nickname and role writes."""
+        at = time.time() if now is None else now
+        row = await self.collection.find_one(
+            {
+                "kind": "manage_web_request",
+                "guild_id": int(guild_id),
+                "section": {"$in": ["member_profiles", "roles"]},
+                "retry_not_before": {"$gt": at},
+            },
+            {"retry_not_before": 1},
+            sort=[("retry_not_before", -1)],
+            hint="member_change_lane_backoff",
+        )
+        return row["retry_not_before"] if row else 0
+
     async def ensure_work_index(self):
+        await self.collection.create_index(
+            [("guild_id", 1), ("retry_not_before", -1)],
+            name="member_change_lane_backoff",
+            partialFilterExpression={
+                "kind": "manage_web_request",
+                "retry_not_before": {"$exists": True},
+            },
+        )
         await self.collection.create_index(
             [("kind", 1), ("status", 1), ("state", 1)],
             name="management_ready_work",
@@ -450,6 +464,13 @@ class ProfileRuns:
                 if done:
                     await self.prune()
             # Pending/running/uncertain children are never re-created or reset.
+            return
+        backoff = await self.lane_backoff(parent["guild_id"], now=at)
+        if backoff:
+            await self.collection.update_one(
+                {"_id": parent["_id"], "state": "queued", "cursor": index},
+                {"$max": {"next_at": backoff}},
+            )
             return
         child = dict(
             _id=child_id,

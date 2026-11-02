@@ -67,7 +67,9 @@ def test_role_child_materialization_reuses_one_fresh_durable_request():
             guild_id=1,
             created_at=10,
         )
-        coll = S(find_one=AsyncMock(side_effect=[parent, None]), insert_one=AsyncMock())
+        coll = S(
+            find_one=AsyncMock(side_effect=[parent, None, None]), insert_one=AsyncMock()
+        )
         await ProfileRuns(S(bot_config=coll)).advance(now=10000)
         child = coll.insert_one.await_args.args[0]
         assert (child["section"], child["action"], child["values"]) == (

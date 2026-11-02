@@ -41,7 +41,14 @@ export default function MemberBulkBar({
       role="region"
       aria-label={t.selectionLabel}
     >
-      <button onClick={onShow}>{t.selected(count, hidden)}</button>
+      <button onClick={onShow} aria-label={t.selected(count, hidden)}>
+        <span className="members-selection-full">
+          {t.selected(count, hidden)}
+        </span>
+        <span className="members-selection-short" aria-hidden="true">
+          {t.selectedShort(count, hidden)}
+        </span>
+      </button>
       <div className="members-bulk-phone">
         <ActionMenu
           name={t.selectionLabel}
@@ -73,7 +80,11 @@ export default function MemberBulkBar({
                   },
                 ]
               : []),
-            { id: "page", label: t.selectPage, onAction: onSelectPage },
+            {
+              id: "page",
+              label: pageSelected ? t.unselectPage : t.selectPage,
+              onAction: onSelectPage,
+            },
             {
               id: "matching",
               label: t.selectMatching(matchingCount),

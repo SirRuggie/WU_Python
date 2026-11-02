@@ -377,3 +377,19 @@
     flex: 0 0 auto;
   }
 }
+
+.members-selection-short {
+  display: none;
+}
+@media (max-width: 767px) {
+  .members-selection-full {
+    display: none;
+  }
+  .members-selection-short {
+    display: inline;
+  }
+  .members-bulk-bar > button {
+    overflow: visible;
+    text-overflow: clip;
+  }
+}

@@ -88,6 +88,9 @@ export const membersText = {
   clearAll: "Clear all",
   actions: "Actions",
   selectPage: "Select page",
+  unselectPage: "Unselect page",
+  selectedShort: (count: number, hidden: number) =>
+    hidden ? `${count} · ${hidden} hidden` : `${count} selected`,
   selectMatching: (count: number) => `Select all ${count} matching`,
   selectNone: "Select none",
   selected: (count: number, hidden: number) =>

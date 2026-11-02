@@ -116,6 +116,13 @@ def test_known_backoff_carries_across_new_runs_and_stop(
         monkeypatch.setattr(
             dashboard_access, "dashboard_allowed", AsyncMock(return_value=True)
         )
+        # The role transport imports its authorization function by name. Patch
+        # that binding too, irrespective of which transport another test imported.
+        from extensions import member_role_dashboard
+
+        monkeypatch.setattr(
+            member_role_dashboard, "dashboard_allowed", AsyncMock(return_value=True)
+        )
         owner = ProfileRuns(mongo)
 
         async def create(kind):
@@ -139,7 +146,7 @@ def test_known_backoff_carries_across_new_runs_and_stop(
                 assert (
                     child["status"] == "uncertain"
                     and child["retry_not_before"] > time.time() + 125
-                )
+                ), child.get("message")
                 assert len(calls) == 1
                 for _ in range(2):
                     parent = await create(next_kind)
@@ -306,6 +313,144 @@ def test_lane_backoff_ignores_expired_and_other_guild_receipts():
                 "kind": "manage_web_request",
                 "retry_not_before": {"$exists": True},
             }
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("kind", ["roles", "profiles"])
+def test_backoff_arriving_after_parent_creation_blocks_child(kind):
+    from tests.fixtures.nickname_speed import Mongo
+
+    async def run():
+        client = AsyncMongoClient(URI)
+        db = client["wu_late_backoff_" + uuid4().hex]
+        owner = ProfileRuns(Mongo(db))
+        uid = "123456789012345678"
+        actor = "234567890123456789"
+        item = dict(discord_id=uid, old_nickname="Old", new_nickname="New", revision=1)
+        if kind == "roles":
+            item = dict(
+                discord_id=uid,
+                role_id="345678901234567890",
+                operation="add",
+                expected_role_ids=[],
+                bot=False,
+                protected=False,
+                revision=0,
+            )
+        try:
+            parent = await owner.create(
+                actor_id=actor,
+                guild_id=1,
+                request_id=str(uuid4()),
+                preview=[item],
+                selected=[uid],
+                run_type=kind,
+            )
+            assert parent["next_at"] == 0
+            deadline = time.time() + 130
+            await db.bot_config.insert_one(
+                dict(
+                    _id="later429",
+                    kind="manage_web_request",
+                    guild_id=1,
+                    section="member_profiles",
+                    status="uncertain",
+                    retry_not_before=deadline,
+                    finished_at=time.time(),
+                )
+            )
+            await owner.advance()
+            assert (
+                await db.bot_config.count_documents({"parent_id": parent["_id"]}) == 0
+            )
+            assert (await db.bot_config.find_one({"_id": parent["_id"]}))[
+                "next_at"
+            ] == deadline
+            await owner.advance(now=deadline + 1)
+            assert (
+                await db.bot_config.count_documents({"parent_id": parent["_id"]}) == 1
+            )
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_standalone_backoff_keeps_pending_other_sections_flow(monkeypatch):
+    from tests.fixtures.nickname_speed import Mongo
+    from utils import manage_web_worker as worker
+
+    async def run():
+        client = AsyncMongoClient(URI)
+        db = client["wu_standalone_backoff_" + uuid4().hex]
+        mongo = Mongo(db)
+        calls = []
+
+        async def dispatch(bot, mongo, row, ctx):
+            calls.append(row["_id"])
+            return {"message": "fixture confirmed"}
+
+        monkeypatch.setattr(worker, "context", AsyncMock(return_value=S()))
+        monkeypatch.setattr(worker, "dispatch", dispatch)
+        try:
+            await ProfileRuns(mongo).ensure_work_index()
+            now = time.time()
+            await db.bot_config.insert_many(
+                [
+                    dict(
+                        _id="429",
+                        kind="manage_web_request",
+                        guild_id=worker.GUILD_ID,
+                        section="roles",
+                        status="uncertain",
+                        retry_not_before=now + 130,
+                        finished_at=now,
+                    ),
+                    dict(
+                        _id="save",
+                        kind="manage_web_request",
+                        guild_id=worker.GUILD_ID,
+                        section="member_profiles",
+                        action="save",
+                        values={"rename": True},
+                        status="pending",
+                        created_at=now,
+                        expires_at=now + 900,
+                    ),
+                    dict(
+                        _id="other",
+                        kind="manage_web_request",
+                        guild_id=worker.GUILD_ID,
+                        section="applications",
+                        action="save",
+                        status="pending",
+                        created_at=now,
+                        expires_at=now + 900,
+                    ),
+                ]
+            )
+            # This regression exercises claiming, not unrelated operation validation.
+            monkeypatch.setattr(
+                worker, "ACTIONS", set(worker.ACTIONS) | {("applications", "save")}
+            )
+            await worker._process_requests(S(), mongo)
+            assert calls == ["other"]
+            assert (await db.bot_config.find_one({"_id": "save"}))[
+                "status"
+            ] == "pending"
+            await worker._process_requests(S(), mongo)
+            assert calls == ["other"]  # repeated polls never claim/requeue/spin it
+            await db.bot_config.update_one(
+                {"_id": "429"}, {"$set": {"retry_not_before": time.time() - 1}}
+            )
+            await worker._process_requests(S(), mongo)
+            assert calls == ["other", "save"]
+            assert (await db.bot_config.find_one({"_id": "save"}))["status"] == "done"
         finally:
             await client.drop_database(db.name)
             await client.close()

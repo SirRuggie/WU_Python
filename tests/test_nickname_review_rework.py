@@ -15,7 +15,7 @@ def test_idle_fast_check_is_one_projected_indexed_query(monkeypatch):
         for _ in range(3):
             await worker.fast_poll(None, mongo)
         assert coll.find_one.await_count == 3
-        assert coll.create_index.await_count == 1
+        assert coll.create_index.await_count == 2
         call = coll.find_one.await_args
         assert call.kwargs["hint"] == "management_ready_work"
         assert call.args[1] == {"_id": 1, "kind": 1, "next_at": 1}
@@ -69,6 +69,7 @@ def test_other_sections_keep_five_per_ten_seconds_and_dispatch_budget(
         )
         mongo = S(bot_config=coll)
         monkeypatch.setattr(ProfileRuns, "advance", AsyncMock())
+        monkeypatch.setattr(ProfileRuns, "lane_backoff", AsyncMock(return_value=0))
         monkeypatch.setattr(worker, "context", AsyncMock())
         dispatch = AsyncMock(return_value={"message": "ok"})
         monkeypatch.setattr(worker, "dispatch", dispatch)
@@ -199,6 +200,7 @@ def test_long_rate_limit_receipt_retains_delay_and_never_retries(monkeypatch, se
             update_one=AsyncMock(),
         )
         monkeypatch.setattr(ProfileRuns, "advance", AsyncMock())
+        monkeypatch.setattr(ProfileRuns, "lane_backoff", AsyncMock(return_value=0))
         monkeypatch.setattr(worker, "context", AsyncMock())
         error = hikari.RateLimitTooLongError(
             route=S(),
@@ -318,6 +320,7 @@ def test_nonprofile_window_resets_and_profiles_are_uncapped_uncounted(
         )
         mongo = S(bot_config=coll)
         monkeypatch.setattr(ProfileRuns, "advance", AsyncMock())
+        monkeypatch.setattr(ProfileRuns, "lane_backoff", AsyncMock(return_value=0))
         monkeypatch.setattr(worker, "context", AsyncMock())
         dispatch = AsyncMock(return_value={"message": "ok"})
         monkeypatch.setattr(worker, "dispatch", dispatch)
@@ -376,6 +379,7 @@ def test_missing_created_at_is_contained_and_next_request_is_processed(
             update_one=AsyncMock(),
         )
         monkeypatch.setattr(ProfileRuns, "advance", AsyncMock())
+        monkeypatch.setattr(ProfileRuns, "lane_backoff", AsyncMock(return_value=0))
         monkeypatch.setattr(worker, "context", AsyncMock())
         dispatch = AsyncMock(return_value={"message": "ok"})
         monkeypatch.setattr(worker, "dispatch", dispatch)

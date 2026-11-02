@@ -163,3 +163,41 @@ collection/import failure is counted as a killed mutant. Owned exports and
 Mongo instances were removed. War-reminder checks pass: 213 backend / 1 skip,
 35 frontend, TypeScript/build. Exact staged startup evidence precedes READY.
 No production role, nickname, import, notification or DM was exercised.
+
+### Prompt 111: late backoff and phone selection delta
+
+The durable owner now exposes one projected, indexed lane-backoff lookup. Run
+creation uses it as before; `advance()` also checks immediately before creating a
+child, so a delay recorded after creation is respected. A waiting parent records
+the deadline and returns before child insertion. The worker excludes nickname and
+role requests from claiming while the shared delay is active, leaves standalone
+saves pending, and continues unrelated sections. The fast worker still sleeps on
+an unhandled poll; it does not claim and requeue the same blocked request.
+
+Phone Actions now says Unselect page when that page is selected. The phone count
+uses a short visible form such as `1411 · 1410 hidden`, retaining the full selection
+text as its accessible name. Desktop selection controls retain their existing form.
+Checked-in browser tests exercise both toggle labels and measure the whole hidden
+count inside its button at 320, 360 and 390px, as well as the existing desktop,
+confirmation, Stop, keyboard and short-screen cases. The 320px hidden-count and
+1440px overview screenshots were visually reviewed. An unavailable remote guild
+icon in the network-blocked fixture is still a fixture limitation.
+
+The test-order leak was a fixture authorization binding: role transport imports
+`dashboard_allowed` by name, so patching only the source module depended on import
+order. The lane fixture now patches both bindings, with automatic restoration.
+Role transport followed by lane tests passes, and the full owned-Mongo role suite
+followed by lane tests passes. This changes test isolation, not authorization.
+
+Owned Mongo regressions cover a backoff arriving after parent creation, standalone
+saves staying pending, unrelated sections proceeding, and dispatch after expiry.
+Dropping either new recheck makes its real-Mongo regression fail; both requested
+mutants were killed in disposable source exports. Real Hikari tests use a local
+fake HTTP endpoint, never Discord. No live role change, nickname change or send
+was performed. The first real role change remains Ruggie's, on one person.
+
+Initial full-suite attempts hit temporary-storage quota errors (EDQUOT), rather
+than a source regression. Their logs are retained. Temporary files were moved to
+owned workspace storage; Chrome additionally needed a short temporary-path alias
+for its Unix socket. Final check counts are recorded in the READY handoff.
+PR158 remains separate and explicitly held; it is not included in this branch.
