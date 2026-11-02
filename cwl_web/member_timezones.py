@@ -24,12 +24,15 @@ from .server_management import (
     queue_action,
 )
 from .manage_roles import member, hierarchy
+from .members_overview_timing import start_timing, measure, bind, unbind
 
 
-async def directory(request):
+async def directory(request, *, timing=None):
     rows, after = [], None
     async with asyncio.timeout(45):
         while True:
+            if timing is not None:
+                timing.page()
             page = await discord(
                 request,
                 "GET",
@@ -62,94 +65,102 @@ async def directory(request):
     return rows
 
 
-async def inventory(request, *, with_role_context=False):
+async def inventory(request, *, with_role_context=False, timing=None):
     actor = await require_manage(request, "member_profiles")
-    raw = await directory(request)
-    roles, guild, bot, acting = await hierarchy(request, actor)
+    with measure(timing, "directory_ms"):
+        raw = (
+            await directory(request, timing=timing)
+            if timing is not None
+            else await directory(request)
+        )
+    with measure(timing, "hierarchy_ms"):
+        roles, guild, bot, acting = await hierarchy(request, actor)
     from extensions.warrior import core
     import hikari
 
     role_list = list(roles.values())
     me = guild.get_member(bot.get_me().id)
-    async with mongo(request) as db:
-        profiles = await MemberProfiles(db).for_members(
-            [row["user"]["id"] for row in raw]
-        )
-    rows = []
-    for data in raw:
-        uid = str(data["user"]["id"])
-        from .manage_roles import member_option
-
-        identity = member_option(data)
-        profile = profiles.get(uid)
-        parsed = profile_zone(data.get("nick"))
-        status = (
-            "Saved"
-            if profile and profile["source"] in ("staff", "warrior")
-            else (
-                "From nickname"
-                if profile or parsed and parsed["offsetMinutes"] is not None
-                else "Unknown" if parsed else "Missing"
+    with measure(timing, "profiles_ms"):
+        async with mongo(request) as db:
+            profiles = await MemberProfiles(db).for_members(
+                [row["user"]["id"] for row in raw]
             )
-        )
-        skip = None
-        try:
-            if data["user"].get("bot"):
-                raise ValueError("Bot account")
-            core.manageable_target(
-                dict(
-                    member=member(data),
-                    guild=guild,
-                    actor=acting,
-                    roles=role_list,
-                    me=me,
-                    actor_permissions=core.permissions(
-                        acting, role_list, guild.owner_id
-                    ),
+    with measure(timing, "rows_ms"):
+        rows = []
+        for data in raw:
+            uid = str(data["user"]["id"])
+            from .manage_roles import member_option
+
+            identity = member_option(data)
+            profile = profiles.get(uid)
+            parsed = profile_zone(data.get("nick"))
+            status = (
+                "Saved"
+                if profile and profile["source"] in ("staff", "warrior")
+                else (
+                    "From nickname"
+                    if profile or parsed and parsed["offsetMinutes"] is not None
+                    else "Unknown" if parsed else "Missing"
                 )
             )
-            if (
-                not core.permissions(me, role_list, guild.owner_id)
-                & hikari.Permissions.MANAGE_NICKNAMES
-            ):
-                raise ValueError("Bot needs Manage Nicknames")
-        except ValueError as error:
-            skip = str(error)
-        rows.append(
-            dict(
-                discord_id=uid,
-                role_ids=sorted(map(str, data.get("roles", []))),
-                discord_profile={
-                    key: identity.get(key)
-                    for key in ("id", "display_name", "username", "avatar_url")
-                },
-                name=data["user"].get("global_name")
-                or data["user"].get("username")
-                or uid,
-                nickname=data.get("nick"),
-                bot=bool(data["user"].get("bot")),
-                status=status,
-                profile=(
-                    {
-                        k: profile.get(k)
-                        for k in (
-                            "zone_id",
-                            "gmt_label",
-                            "utc_offset_minutes",
-                            "country",
-                            "flag",
-                            "name_source_tag",
-                            "source",
-                            "revision",
-                        )
-                    }
-                    if profile
-                    else None
-                ),
-                parsed=parsed,
-                skip_reason=skip,
+            skip = None
+            try:
+                if data["user"].get("bot"):
+                    raise ValueError("Bot account")
+                core.manageable_target(
+                    dict(
+                        member=member(data),
+                        guild=guild,
+                        actor=acting,
+                        roles=role_list,
+                        me=me,
+                        actor_permissions=core.permissions(
+                            acting, role_list, guild.owner_id
+                        ),
+                    )
+                )
+                if (
+                    not core.permissions(me, role_list, guild.owner_id)
+                    & hikari.Permissions.MANAGE_NICKNAMES
+                ):
+                    raise ValueError("Bot needs Manage Nicknames")
+            except ValueError as error:
+                skip = str(error)
+            rows.append(
+                dict(
+                    discord_id=uid,
+                    role_ids=sorted(map(str, data.get("roles", []))),
+                    discord_profile={
+                        key: identity.get(key)
+                        for key in ("id", "display_name", "username", "avatar_url")
+                    },
+                    name=data["user"].get("global_name")
+                    or data["user"].get("username")
+                    or uid,
+                    nickname=data.get("nick"),
+                    bot=bool(data["user"].get("bot")),
+                    status=status,
+                    profile=(
+                        {
+                            k: profile.get(k)
+                            for k in (
+                                "zone_id",
+                                "gmt_label",
+                                "utc_offset_minutes",
+                                "country",
+                                "flag",
+                                "name_source_tag",
+                                "source",
+                                "revision",
+                            )
+                        }
+                        if profile
+                        else None
+                    ),
+                    parsed=parsed,
+                    skip_reason=skip,
+                )
             )
-        )
     return (rows, roles, guild, bot, acting, actor) if with_role_context else rows
 
 
@@ -185,44 +196,63 @@ async def overview(request):
 
 
 async def members_overview(request):
-    # Same authorization, directory, profiles and identity renderer inputs.
-    rows, roles, guild, bot, acting, actor = await inventory(
-        request, with_role_context=True
-    )
-    from .manage_roles import dashboard_grant_roles
-    from extensions.commands.recruit.perms import actor_can_manage_role
-    from utils.role_permissions import role_is_manageable
-
-    protected = await dashboard_grant_roles(request, actor)
-    options = [
-        dict(id=str(role.id), name=role.name)
-        for role in roles.values()
-        if str(role.id) not in protected
-        and role_is_manageable(guild, bot, role)
-        and actor_can_manage_role(acting, guild, role)
-    ]
-    from extensions.commands.recruit.perms import actor_can_manage_member
-    from types import SimpleNamespace
-
-    for row in rows:
-        target = SimpleNamespace(
-            id=int(row["discord_id"]), role_ids=tuple(map(int, row["role_ids"]))
+    timing = start_timing()
+    binding = bind(request, timing)
+    response = None
+    try:
+        # Same authorization, directory, profiles and identity renderer inputs.
+        rows, roles, guild, bot, acting, actor = await inventory(
+            request, with_role_context=True, timing=timing
         )
-        row["role_editable"] = not row["bot"] and actor_can_manage_member(
-            acting, target, guild
-        )
-        row["role_skip_reason"] = (
-            None
-            if row["role_editable"]
-            else ("Bot account" if row["bot"] else "Server owner or above your role")
-        )
-    all_roles = [
-        dict(id=str(role.id), name=role.name)
-        for role in roles.values()
-        if role.id != GUILD_ID
-    ]
-    return directory_response(rows, roles=all_roles, manageable_roles=options)
+        timing.counts(len(rows), len(roles))
+        from .manage_roles import dashboard_grant_roles
+        from extensions.commands.recruit.perms import actor_can_manage_role
+        from utils.role_permissions import role_is_manageable
 
+        protected = await dashboard_grant_roles(request, actor)
+        with measure(timing, "rows_ms"):
+            options = [
+                dict(id=str(role.id), name=role.name)
+                for role in roles.values()
+                if str(role.id) not in protected
+                and role_is_manageable(guild, bot, role)
+                and actor_can_manage_role(acting, guild, role)
+            ]
+            from extensions.commands.recruit.perms import actor_can_manage_member
+            from types import SimpleNamespace
+
+            for row in rows:
+                target = SimpleNamespace(
+                    id=int(row["discord_id"]), role_ids=tuple(map(int, row["role_ids"]))
+                )
+                row["role_editable"] = not row["bot"] and actor_can_manage_member(
+                    acting, target, guild
+                )
+                row["role_skip_reason"] = (
+                    None
+                    if row["role_editable"]
+                    else (
+                        "Bot account"
+                        if row["bot"]
+                        else "Server owner or above your role"
+                    )
+                )
+            all_roles = [
+                dict(id=str(role.id), name=role.name)
+                for role in roles.values()
+                if role.id != GUILD_ID
+            ]
+        with measure(timing, "json_ms"):
+            response = directory_response(
+                rows, roles=all_roles, manageable_roles=options
+            )
+        return response
+    finally:
+        try:
+            timing.emit(response)
+        except Exception:
+            pass
+        unbind(request, binding)
 
 async def choices(request):
     await require_manage(request, "member_profiles")

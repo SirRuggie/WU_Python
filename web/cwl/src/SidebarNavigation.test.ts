@@ -95,7 +95,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
     "Return reminders",
     "Results & participation",
     "Bonus medals",
-    "Exports & history",
+    "Exports",
   ]);
   expect(
     sections
