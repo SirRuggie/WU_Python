@@ -15,6 +15,7 @@ export function patchDeclarationMark(
           ...(clan.extras || []),
           ...(clan.low_th || []),
           ...(clan.fillers || []),
+          ...(clan.unpublished || []),
         ].map((m) => [m.tag, m]),
       );
       const old = members.get(saved.tag!);
@@ -30,12 +31,19 @@ export function patchDeclarationMark(
       const low = (th: number | null) =>
         typeof th === "number" && th > 0 && th <= 9;
       const extras = rows.filter(
-        (m) => !m.assigned_here && !m.roster_filler && !low(m.town_hall),
+        (m) =>
+          !m.assigned_here &&
+          !m.not_published_yet &&
+          !m.roster_filler &&
+          !low(m.town_hall),
       );
       return {
         ...clan,
         extras,
         count: extras.length,
+        unpublished: rows.filter((m) => m.not_published_yet === true),
+        unpublished_count: rows.filter((m) => m.not_published_yet === true)
+          .length,
         low_th: rows.filter((m) => low(m.town_hall)),
         fillers: rows.filter((m) => m.roster_filler),
       };

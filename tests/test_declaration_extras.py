@@ -163,9 +163,14 @@ class DeclarationExtrasHTTP(unittest.IsolatedAsyncioTestCase):
             )
         published = await self.read("?source=published&basis=1")
         draft = await self.read("?source=draft")
-        self.assertEqual(
-            next(c for c in published["clans"] if c["tag"] == "#C2Y")["count"], 3
-        )
+        target = next(c for c in published["clans"] if c["tag"] == "#C2Y")
+        self.assertEqual(target["count"], 2)
+        self.assertEqual(target["unpublished_count"], 1)
+        self.assertEqual(target["unpublished"][0]["tag"], "#Q2Y")
+        self.assertEqual(target["unpublished"][0]["context"], "Assigned to Lazy target")
+        self.assertFalse(target["unpublished"][0]["assigned_here"])
+        self.assertTrue(target["unpublished"][0]["not_published_yet"])
+        self.assertEqual({row["tag"] for row in target["extras"]}, {"#G2Y", "#V2Y"})
         self.assertEqual(
             next(c for c in draft["clans"] if c["tag"] == "#C2Y")["count"], 2
         )
@@ -245,3 +250,21 @@ class DeclarationExtrasHTTP(unittest.IsolatedAsyncioTestCase):
                 for r in rows
             )
         )
+
+
+def test_draft_move_classification_never_changes_published_membership():
+    member = [{"tag": "#P2Y", "name": "Player", "town_hall": 16}]
+    elsewhere = [{"tag": "#P2Y", "assigned_clan_tag": "#R2Y"}]
+    here = [{"tag": "#P2Y", "assigned_clan_tag": "#C2Y"}]
+    moved = extras_for(
+        "#C2Y", member, elsewhere, {"#C2Y": "Target"}, current_accounts=here
+    )
+    assert moved[0]["not_published_yet"] is True
+    assert moved[0]["assigned_here"] is False
+    assert moved[0]["context"] == "Assigned to Target"
+    # Published here stays part of readiness even after a draft move out.
+    assert extras_for("#C2Y", member, here, {}, current_accounts=elsewhere) == []
+    intruder = extras_for("#C2Y", member, elsewhere, {}, current_accounts=elsewhere)
+    assert not intruder[0].get("not_published_yet")
+    assert intruder[0]["assigned_here"] is False
+    assert not extras_for("#C2Y", member, [], {})[0].get("not_published_yet")

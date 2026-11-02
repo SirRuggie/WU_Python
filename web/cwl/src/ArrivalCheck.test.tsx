@@ -179,7 +179,9 @@ it("starts collapsed, counts overfilled ready clans, opens one phone clan and pr
   expect(host.querySelector(".declaration-player")?.className).toContain(
     "missing",
   );
-  expect(host.querySelector(".declaration-copy")).toBeNull();
+  expect(
+    host.querySelector<HTMLButtonElement>(".declaration-copy button")?.disabled,
+  ).toBe(true);
   await act(async () => toggles()[1].click());
   expect(toggles()[0].getAttribute("aria-expanded")).toBe("false");
   expect(host.querySelectorAll(".declaration-player")).toHaveLength(17);
@@ -728,4 +730,25 @@ it("does not offer filler controls without roster permission", async () => {
   expect(extrasView).toHaveBeenCalled();
   expect(extrasView.mock.calls.at(-1)?.[0].markControl).toBeUndefined();
   extrasView.mockRestore();
+});
+it("allows a linked late mention when the war is ready or another location is unavailable", async () => {
+  state.value.data.arrival.accounts[0].user_id = "505227988229554179";
+  await render();
+  await act(async () => toggles()[0].click());
+  expect(
+    host.querySelector<HTMLButtonElement>(".declaration-copy button")?.disabled,
+  ).toBe(false);
+  // A partial check must not prevent copying the known late player's mention.
+  state.value.records = {
+    ...state.value.records,
+    "#P0001": {
+      ...state.value.records["#P0001"],
+      current_clan_checked_at: undefined,
+    },
+  };
+  await render();
+  expect(host.textContent).toContain("Locations unavailable");
+  expect(
+    host.querySelector<HTMLButtonElement>(".declaration-copy button")?.disabled,
+  ).toBe(false);
 });

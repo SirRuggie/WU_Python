@@ -116,9 +116,28 @@ async def check(request):
                 else None
             )
 
+        low_th, fillers = classified("low_th"), classified("fillers")
+        unpublished = (
+            list(
+                {
+                    row["tag"]: row
+                    for row in [*(extras or []), *(low_th or []), *(fillers or [])]
+                    if row.get("not_published_yet")
+                }.values()
+            )
+            if current
+            else None
+        )
+        extras = (
+            [row for row in extras if not row.get("not_published_yet")]
+            if extras is not None
+            else None
+        )
         return {
-            "low_th": classified("low_th"),
-            "fillers": classified("fillers"),
+            "low_th": low_th,
+            "fillers": fillers,
+            "unpublished": unpublished,
+            "unpublished_count": len(unpublished) if unpublished is not None else None,
             "tag": clan["tag"],
             "name": clan["name"],
             "status": "current" if current else "unavailable",
@@ -130,6 +149,7 @@ async def check(request):
 
     rows = await asyncio.gather(*(one(clan, index) for index, clan in enumerate(lazy)))
     from .declaration_identities import decorate
+
     await decorate(request, rows)
     if (
         snapshot(request, source)[2] != basis

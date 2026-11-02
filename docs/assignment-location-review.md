@@ -1,8 +1,10 @@
 # Hosting locations and member assignment checks
 
-Prompts100/101 are development scope. Merge/release is held until Ruggie's
-explicit approval; PR140's approval does not authorize this separate release.
-There is no bot change or migration.
+Prompts 100, 101 and 102 are bundled for one backend/frontend release after
+Claude's ACCEPT. Incoming handoff 329 quotes Ruggie's explicit approval for all
+three and replaces the earlier holds. No bot restart or migration is expected;
+a fresh no-queued-run gate and the usual backup, test restore, protected-state,
+readiness, rollback and public-hash checks are still required.
 
 The shared pure rules live in utils/cwl_location_rules.py. Outside family requires
 current known location, an available family directory, and a clan outside both
@@ -49,3 +51,44 @@ live provider freshness or healthy production integrations. Its original suppose
 outside sample was itself configured as a host; a genuinely external tag was
 seeded for the positive badge check. No real role, nickname, signup, message,
 DM link or external clan link was changed or opened. No activation occurred.
+
+## Declaration rows
+
+The published roster still determines readiness, in-clan counts and ping targets.
+A member present in a clan that the draft assigns them to, but the publication
+does not, is listed as “Moved here · not published yet.” These neutral rows have
+a separate unpublished count; the existing intruder count remains equal to its
+extras array length. Moving an account out in the draft does not invalidate its
+published placement. No notification path or published basis changed.
+
+One existing DeclarationMemberMarks renderer groups resolved linked members
+across low-TH, filler, intruder and unpublished lists within a clan. Each person
+has one shared DiscordIdentity and one DM link; each account retains its context
+and independent Filler control. Unlinked accounts stay individual. The existing
+optional, bounded identity batch now includes unpublished rows; unavailable or
+nonmember directory entries retain the existing no-guessed-identity behavior.
+No additional per-account provider requests were added. Obsolete category-only
+disclosures and styles were removed.
+
+Copy mentions had been hidden when a clan met its war-size threshold and disabled
+when another location was unavailable, even with known linked late members. It
+now remains available whenever the published clan has linked late mentions. A
+confirmed-empty or entirely unlinked late list disables it. This changes copying,
+not sending, and does not infer a mention for an unknown location. The offline
+bridge message now says: “The bot is restarting or offline. Refresh status in a
+minute.”
+
+Prompt 102 checks: 46 focused UI cases and 19 focused backend cases pass. Full
+frontend: 1,416 passed across 251 files; TypeScript and isolated production build
+pass. The draft-moved-as-intruder mutant fails the HTTP assertion (3 versus 2),
+with no collection or fixture error counted as a kill. Required war reminders:
+213 backend passed, one skipped; 35 frontend passed and build. Full combined
+backend completion is recorded with the READY handoff.
+
+Disconnected row fixtures at 320/360/390/1440 assert one identity/DM for three
+accounts, individual unlinked rows, escaped text, neutral moved styling, separate
+counts, same-line DM/Filler controls, 44px targets and no overflow or JS errors.
+Each fake PATCH targets only its selected account and updates on its receipt;
+this is not evidence of a production write. Phone and desktop screenshots were
+visually reviewed. The inherited global DM margin was overridden locally after
+the initial alignment measurement exposed it. No real DM link was opened.

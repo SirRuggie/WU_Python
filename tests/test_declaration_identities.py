@@ -12,13 +12,14 @@ def rows():
             "extras": [{"tag": "#P" + str(i)} for i in range(25)],
             "low_th": [{"tag": "#LOW"}],
             "fillers": [{"tag": "#FILLER"}],
+            "unpublished": [{"tag": "#MOVED", "not_published_yet": True}],
         }
     ]
 
 
 def test_one_shared_batch_for_25_rows_and_low_th_without_per_row_directory(monkeypatch):
     clans = rows()
-    lookup = AsyncMock(return_value={"#P0": UID, "#LOW": UID})
+    lookup = AsyncMock(return_value={"#P0": UID, "#LOW": UID, "#MOVED": UID})
     directory = AsyncMock(
         return_value=[
             {
@@ -36,7 +37,8 @@ def test_one_shared_batch_for_25_rows_and_low_th_without_per_row_directory(monke
     asyncio.run(identities.decorate(S(), clans))
     lookup.assert_awaited_once()
     directory.assert_awaited_once()
-    assert len(lookup.await_args.args[0]) == 27
+    assert len(lookup.await_args.args[0]) == 28
+    assert clans[0]["unpublished"][0]["discord_id"] == UID
     assert clans[0]["extras"][0]["discord_profile"]["display_name"] == "Family nick"
     assert clans[0]["low_th"][0]["discord_id"] == UID
     assert "discord_id" not in clans[0]["extras"][1]

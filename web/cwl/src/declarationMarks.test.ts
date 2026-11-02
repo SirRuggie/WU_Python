@@ -59,3 +59,48 @@ it("patches only membership classifications and revision, preserving observation
   expect(data.clans[0].extras?.[0].roster_filler_revision).toBe(2);
   expect(data.basis).toBe(3);
 });
+it("keeps draft-moved accounts neutral through a filler tick and Undo", () => {
+  const member = {
+    tag: "#P",
+    name: "Moved",
+    town_hall: 16,
+    context: "Assigned to A",
+    assigned_clan_tag: "#A",
+    assigned_here: false,
+    not_published_yet: true,
+    roster_filler: false,
+  };
+  let data = {
+    source: "published",
+    basis: 1,
+    revision: 2,
+    clans: [
+      {
+        tag: "#A",
+        name: "A",
+        capacity: 15,
+        status: "current",
+        checked_at: "2026-11-01",
+        count: 0,
+        extras: [],
+        unpublished: [member],
+        unpublished_count: 1,
+        low_th: [],
+        fillers: [],
+      },
+    ],
+  } as DeclarationExtraResponse;
+  for (const value of [true, false]) {
+    data = patchDeclarationMark(data, {
+      tag: "#P",
+      roster_filler: value,
+      mark_revision: 1,
+      revision: 3,
+    });
+    expect(data.clans[0].count).toBe(0);
+    expect(data.clans[0].extras).toHaveLength(0);
+    expect(data.clans[0].unpublished_count).toBe(1);
+    expect(data.clans[0].unpublished?.[0].roster_filler).toBe(value);
+    expect(data.basis).toBe(1);
+  }
+});
