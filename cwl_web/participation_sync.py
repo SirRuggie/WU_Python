@@ -13,8 +13,11 @@ from aiohttp import web
 
 from utils.cwl_working_roster import working_accounts, account_token
 from utils.cwl_bonus_allowance import AllowanceStore
-from .providers import (ProviderUnavailable,
-                        LEAGUE_GROUP_DIAGNOSTIC_STATES, tag as normalize_tag)
+from .providers import (
+    ProviderUnavailable,
+    LEAGUE_GROUP_DIAGNOSTIC_STATES,
+    tag as normalize_tag,
+)
 
 INTERVAL_SECONDS = 15 * 60
 MAX_CLANS = 100
@@ -24,6 +27,36 @@ _CYCLE = re.compile(r"20\d\d-(?:0[1-9]|1[0-2])\Z")
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _missing_month(value):
+    """Unreadable string months carry no cycle evidence; other types stay invalid."""
+    return value is None or (isinstance(value, str) and not _CYCLE.fullmatch(value))
+
+
+def _month_matches(value, cycle):
+    return _missing_month(value) or value == cycle
+
+
+def _log_war_months(war_fetches, cycle):
+    counts = {kind: 0 for kind in ("none", "empty", "invalid", "valid")}
+    shapes = set()
+    mismatches = 0
+    for _, war, _ in war_fetches:
+        if war is None:
+            continue
+        value = war.get("season")
+        kind, shape = _group_season_diagnostic(value)
+        counts[kind] += 1
+        if kind == "invalid":
+            shapes.add(shape)
+        mismatches += not _month_matches(value, cycle)
+    logging.getLogger(__name__).info(
+        "CWL war months season_kind_counts=%s season_shapes=%s month_mismatches=%s",
+        counts,
+        sorted(shapes)[:5],
+        mismatches,
+    )
 
 
 def _group_season_diagnostic(value):
@@ -292,10 +325,7 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     if isinstance(group, dict)
                     else ""
                 )
-                missing = isinstance(group, dict) and (
-                    observed is None
-                    or (isinstance(observed, str) and not _CYCLE.fullmatch(observed))
-                )
+                missing = isinstance(group, dict) and _missing_month(observed)
                 if missing and state not in {"PREPARATION", "INWAR", "WAR", "ENDED"}:
                     raise ProviderUnavailable("CWL group state is unavailable")
                 matching_final = False
@@ -398,12 +428,24 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     "CWL hosting clan is missing from its league group": "missing_hosting_clan",
                 }
                 reason = reasons.get(str(exc), "other")
-                observed_state = group.get("state") if isinstance(group, dict) else getattr(exc, "group_state", None)
-                if not isinstance(observed_state, str) or observed_state not in LEAGUE_GROUP_DIAGNOSTIC_STATES:
+                observed_state = (
+                    group.get("state")
+                    if isinstance(group, dict)
+                    else getattr(exc, "group_state", None)
+                )
+                if (
+                    not isinstance(observed_state, str)
+                    or observed_state not in LEAGUE_GROUP_DIAGNOSTIC_STATES
+                ):
                     observed_state = "other"
                 logging.getLogger(__name__).info(
                     "CWL group refresh clan=%s category=%s http_status=%s error_type=%s reason=%s group_state=%s",
-                    clan_tag, category, status, type(exc).__name__, reason, observed_state,
+                    clan_tag,
+                    category,
+                    status,
+                    type(exc).__name__,
+                    reason,
+                    observed_state,
                 )
                 return clan_tag, None, category
 
@@ -684,10 +726,11 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 continue
             to_fetch.append(war_tag)
         war_fetches = await _fetch_wars(app["providers"], to_fetch)
+        _log_war_months(war_fetches, cycle)
         mismatching_tags = {
             tag
             for tag, war, _ in war_fetches
-            if war and war.get("season") not in (None, cycle)
+            if war and not _month_matches(war.get("season"), cycle)
         }
         rejected_clans = {
             clan
@@ -702,7 +745,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
         war_fetches = [
             (
                 (tag, None, "season_mismatch")
-                if war and war.get("season") not in (None, cycle)
+                if war and not _month_matches(war.get("season"), cycle)
                 else (
                     (tag, None, "invalid_war_state")
                     if war is not None and _war_state(war.get("state")) is None
@@ -795,7 +838,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             for war_tag, war, error in war_fetches:
                 if war is None:
                     continue
-                if war.get("season") in (None, cycle):
+                if _month_matches(war.get("season"), cycle):
                     allowances.capture_war(war_tag, war)
                 db.execute(
                     "INSERT INTO participation_war_fetches("
@@ -887,9 +930,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     prior,
                     cycle,
                 )
-                if (
-                    identity["assigned_clan_tag"] in waiting_clans
-                ):
+                if identity["assigned_clan_tag"] in waiting_clans:
                     values = (
                         None,
                         None,

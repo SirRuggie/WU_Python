@@ -111,3 +111,22 @@ check. Stored group/war readers use the season/cycle keys, not an independent
 raw-season inference. The separate Todo coc.py group reader uses state and rounds,
 not the group season. War-season validation and explicit-war mismatch rejection
 remain unchanged. No provider method was called live for this audit.
+
+## War month correction (prompt 115)
+
+Groups and wars now share one no-month predicate: null or a string failing the
+strict cycle pattern carries no month evidence. A valid different war month
+still rejects an inferred group, prevents group storage and never captures an
+allowance. This applies at rejection, war filtering and allowance capture.
+Non-string malformed values remain rejected by the public provider parser.
+
+Each capture logs one war summary: counts of none/empty/invalid/valid month kinds,
+at most five distinct masked shapes (each at most twelve d/a/x characters), and
+the month mismatch count. No raw month value or response body is logged.
+
+Regressions use the real league_war parser over stubbed HTTP bodies. An active
+inferred group captures seven wars, then a matching ENDED group proves complete
+counts. Absent/null/empty/date/word/same-month values are covered; an older valid
+month leaves no group row or allowance capture. These are isolated fixtures,
+not proof that production capture works. After an approved release, the next
+ordinary capture must establish the production result without a forced probe.
