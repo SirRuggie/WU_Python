@@ -51,7 +51,7 @@ const path = require("node:path");
         const rows = page.locator(".signup-reminder-row");
         if ((await rows.count()) !== 6) throw Error("Missing reminder row");
         if (mode === "off") {
-          const text = await rows.innerText();
+          const text = (await rows.allTextContents()).join("\n");
           if (/\bOn\b|No upcoming send|Nov 22/.test(text))
             throw Error("Inactive rows imply a send");
           if ((await rows.getByText("Not scheduled", { exact: false }).count()) < 6)

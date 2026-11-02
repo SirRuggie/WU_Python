@@ -229,7 +229,10 @@ def test_unrelated_parent_receipt_and_large_body_changes_do_not_reschedule():
     asyncio.run(scenario())
 
 
-def test_failed_sync_does_not_acknowledge_and_concurrent_edit_is_seen_next_tick():
+def test_failed_sync_does_not_acknowledge_and_concurrent_edit_is_seen_next_tick(monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(bridge, "_schedule_repair_attempts", {})
     async def scenario():
         mongo = seed()
         sync = AsyncMock(side_effect=RuntimeError("fixture sync failed"))
@@ -237,6 +240,11 @@ def test_failed_sync_does_not_acknowledge_and_concurrent_edit_is_seen_next_tick(
             await reconcile_installed(mongo, sync, guild_id=GUILD)
         assert bridge.worker_id(GUILD) not in mongo.bot_config.documents
         before = original_signature(mongo)
+        # Unchanged failed loads now back off; preserve this test's concurrent
+        # edit during the next permitted installation, rather than busy retry.
+        assert not await reconcile_installed(mongo, sync, guild_id=GUILD)
+        assert sync.await_count == 1
+        clock[0] += bridge.SCHEDULE_REPAIR_RETRY_SECONDS
 
         async def edit():
             mongo.bot_config.documents[cwl_campaign.cycle_id(GUILD, "2026-11")][
