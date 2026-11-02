@@ -53,6 +53,7 @@ async def second_clan(case):
         "ENTER_WAR",
         "MATCHED",
         "UNKNOWN",
+        "EMPTY_BODY",
         None,
         "",
     ],
@@ -71,6 +72,8 @@ def test_waiting_clan_never_masks_unreadable_war(state, later):
                 ):
                     await c.result()
             c.set_war("#Y2Q", state=state)
+            if state == "EMPTY_BODY":
+                c.league.wars["#Y2Q"] = {}
             with patch.object(sync, "now", return_value="2026-11-01T12:00:00+00:00"):
                 row, data = await c.result()
             assert data["sync"]["status"] == "stale" and data["sync"]["warning"]

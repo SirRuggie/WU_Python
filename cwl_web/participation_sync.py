@@ -675,7 +675,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 if war and war.get("season") not in (None, cycle)
                 else (
                     (tag, None, "invalid_war_state")
-                    if war and _war_state(war.get("state")) is None
+                    if war is not None and _war_state(war.get("state")) is None
                     else (tag, war, error)
                 )
             )
