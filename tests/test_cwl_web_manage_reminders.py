@@ -226,6 +226,12 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_failed_reconcile_retries_and_archived_writes_blocked(self):
+        timer = patch.object(cwl_web_bridge.time, "monotonic", return_value=100.0)
+        clock = timer.start()
+        self.addCleanup(timer.stop)
+        repair_state = patch.object(cwl_web_bridge, "_schedule_repair_attempts", {})
+        repair_state.start()
+        self.addCleanup(repair_state.stop)
         state = await self.state()
         result = await self.call(
             "PATCH",
@@ -238,7 +244,13 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             await reconcile_installed(self.mongo, sync, guild_id=GUILD_ID)
         self.assertFalse((await self.state())["schedule_synced"])
-        await reconcile_installed(self.mongo, AsyncMock(), guild_id=GUILD_ID)
+        retry = AsyncMock()
+        self.assertFalse(await reconcile_installed(self.mongo, retry, guild_id=GUILD_ID))
+        retry.assert_not_awaited()
+        self.assertFalse((await self.state())["schedule_synced"])
+        clock.return_value += cwl_web_bridge.SCHEDULE_REPAIR_RETRY_SECONDS
+        await reconcile_installed(self.mongo, retry, guild_id=GUILD_ID)
+        retry.assert_awaited_once()
         self.assertTrue((await self.state())["schedule_synced"])
         with self.app["store"].tx() as db:
             db.execute("UPDATE seasons SET status='archived' WHERE id=?", (self.sid,))
