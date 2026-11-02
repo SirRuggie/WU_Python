@@ -117,11 +117,15 @@ def post_preview_parts(components, *, content=None, attachments=()):
         if kind == 1:
             return {"type": "row", "children": children}
         if kind == 2:
+            emoji = node.get("emoji")
+            if isinstance(emoji, dict):
+                emoji = (f"<{'a' if emoji.get('animated') else ''}:{emoji.get('name') or 'emoji'}:{emoji['id']}>" if emoji.get("id") else str(emoji.get("name") or ""))
             return {
                 "type": "button",
                 "label": str(node.get("label", "")),
                 "url": url(node.get("url")),
                 "style": int(node.get("style", 5)),
+                **({"emoji": emoji} if isinstance(emoji, str) and emoji else {}),
             }
         if kind == 12:
             return {

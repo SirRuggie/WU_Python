@@ -58,9 +58,37 @@ owner unless separately authorized. This batch supports roster posts only; the
 existing publishing service could support other campaign messages, but this UI,
 queue and routes do not expose them.
 
-Current checkpoint evidence: real publishing service through the worker with
-fake Discord; scoped HTTP permission/ownership/CSRF/readiness/archive tests;
-current/future-pool inheritance, ordinary draft/sequence and storage regressions;
-focused announcement UI flow and TypeScript. Final full backend/frontend, owned
-Mongo query-plan/TTL proof, mutation set, layouts, production-shaped boot and
-persistent preview are still pending. Mock results are not live delivery proof.
+Current checkpoint evidence: 134 affected backend regressions pass, covering
+publishing/worker, HTTP authorization, scopes, receipts, sequence preservation,
+and current/future copy inheritance. The complete frontend suite passes 1497
+checks across 263 files; TypeScript and the main frontend build pass. Required
+war-reminder validation passes 213 backend checks (one skipped), 35 frontend
+checks and its build. Four meaningful mutants are killed: constant fingerprints,
+removing the final post-scope fingerprint check, enabling role mentions, and
+skipping final effect authorization. Removing only the earlier redundant
+fingerprint check survives because the final check still rejects the stale post;
+it is not counted as a kill.
+
+Actual owned Mongo checks prove three partial/TTL indexes, duplicate preview
+identity, one concurrent update claim, interrupted-edit uncertainty, and stale
+completion fencing. With 2000 terminal workflows, the hinted idle query examines
+zero documents and keys. Natural TTL removed private workflow/scratch records
+in nine seconds while preserving an ordinary draft. Temporary QA databases were
+removed; the persistent review fixture remains alive.
+
+A browser exercised a complete owned-fixture edit and current/future saved-copy
+write through real HTTP, Mongo and the existing publishing service, with fake
+Discord persisted locally. At 320/360/390/1440, review panels have no horizontal
+overflow, controls meet the 44px target, Escape closes, and no external requests
+or page errors occur. Narrow and wide screenshots were inspected. A wider panel
+uses the existing ActionPanel width variable for readable desktop comparisons.
+Previewed media are local samples; this proves no live Discord delivery.
+
+A cross-cycle equal-clock regression records the reviewed whole-template source
+identity for a per-pool future copy. A field save after the whole save inherits
+at the same timestamp; a later ordinary whole save's revision invalidates that
+exception even when its content and timestamp are identical. No clock is moved.
+
+Full backend, exact committed production-shaped boot, additional browser failure
+cases and final preview manifest remain pending at this checkpoint. Release is
+held for owner review. No production state or Discord post was changed.

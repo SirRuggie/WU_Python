@@ -17,7 +17,7 @@ GUILD, USER, CYCLE = 100, 200, "2026-11"
 COPY = {
     "title": "New roster title",
     "body": "New body @everyone <@&999>",
-    "buttons": [{"label": "My tasks", "url": "https://dash.warriorsunited.cc/tasks"}],
+    "buttons": [{"label": "My tasks", "url": "https://dash.warriorsunited.cc/tasks", "emoji": "✅"}],
 }
 
 
@@ -114,6 +114,7 @@ def test_real_service_edit_preserves_observed_images_buttons_and_no_mentions():
         assert ready["status"] == "ready"
         assert mongo.bot_config.documents[campaign.cycle_id(GUILD, CYCLE)] == raw
         assert ready["target"]["channel_name"] == "roster-announcements"
+        assert ready["draft_preview"][-1]["children"][-1]["children"][0]["emoji"] == "✅"
         assert ready["live_preview"][0]["text"] == "Existing outer text"
         assert ready["draft_preview"][0]["text"] == "Existing outer text"
         queued = await worker.store.request_update(ready, future_months=False)

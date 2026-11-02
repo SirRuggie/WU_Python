@@ -135,7 +135,7 @@ it("confirm sends only reviewed boolean scope once; repeated clicks cannot queue
     }),
   );
   expect(document.body.textContent).toContain(
-    "Post updated. Saved for this month.",
+    "Post updated. Saved for this campaign.",
   );
   expect(updated).toHaveBeenCalledTimes(1);
   expect(document.querySelector("a")?.href).toBe(
@@ -229,4 +229,53 @@ it("a deleted post offers no update, replacement or fresh edit action", async ()
   expect(button("Preview again")).toBeUndefined();
   expect(document.querySelector("a")).toBeNull();
   expect(document.body.textContent).toContain("deleted");
+});
+
+it("reopening first recovers the existing identity before allowing a fresh preview", async () => {
+  sessionStorage.setItem("wu-post-review:1:main:2026-11", "a".repeat(32));
+  let resolve!: (value: PostReview) => void;
+  api.mockImplementationOnce(
+    () => new Promise<PostReview>((done) => (resolve = done)),
+  );
+  await mount();
+  await click("Edit post");
+  expect(button("Preview")).toBeUndefined();
+  expect(document.querySelector("textarea")).toBeNull();
+  await act(async () => resolve(structuredClone(ready)));
+  expect(button("Update post")).toBeTruthy();
+  expect(api.mock.calls[0][1]).toBeUndefined();
+  expect(api).toHaveBeenCalledTimes(1);
+});
+
+it("a status read that finishes after Edit again cannot replace the active editor", async () => {
+  api.mockResolvedValueOnce({ ...ready, worker_ready: false });
+  await mount();
+  await preview();
+  let resolve!: (value: PostReview) => void;
+  api.mockImplementationOnce(
+    () => new Promise<PostReview>((done) => (resolve = done)),
+  );
+  await click("Refresh status");
+  await click("Preview again");
+  expect(document.querySelector("textarea")).toBeTruthy();
+  await act(async () => resolve(structuredClone(ready)));
+  expect(document.querySelector("textarea")).toBeTruthy();
+  expect(button("Preview")).toBeTruthy();
+  expect(button("Update post")).toBeUndefined();
+});
+
+it("only an explicit fresh-preview action uses a changed campaign generation", async () => {
+  await mount();
+  await click("Edit post");
+  await mount({ generation: "g2" });
+  expect(button("Preview").disabled).toBe(true);
+  expect(api).not.toHaveBeenCalled();
+  api.mockResolvedValue({ ...ready, generation: "g2" });
+  await click("Preview against latest settings");
+  expect(api.mock.calls[0][2]).toMatchObject({
+    generation: "g2",
+    candidate: copy,
+  });
+  expect(document.body.textContent).toContain("Proposed post");
+  expect(button("Update post")).toBeTruthy();
 });

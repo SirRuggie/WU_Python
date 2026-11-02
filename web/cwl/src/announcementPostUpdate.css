@@ -43,3 +43,24 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.announcement-post-footer {
+  display: grid;
+  gap: 0.4rem;
+  width: 100%;
+}
+.announcement-post-footer button {
+  min-height: 44px;
+  width: 100%;
+}
+
+.announcement-post-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-inline-end: 0.75rem;
+}
+
+.announcement-post-panel {
+  --action-panel-width: 60rem;
+}

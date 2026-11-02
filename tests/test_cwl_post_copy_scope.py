@@ -386,3 +386,48 @@ def test_ordinary_draft_cannot_overwrite_a_new_cross_cycle_recurring_pool_copy(
         assert mongo.bot_config.documents == before
 
     asyncio.run(run())
+
+
+def test_cross_cycle_field_after_whole_clock_tie_inherits_until_later_whole_save(
+    monkeypatch,
+):
+    mongo = fixture(monkeypatch)
+    source = {
+        "_id": "source",
+        "kind": "cwl_campaign_cycle",
+        "guild_id": GUILD,
+        "cycle": "2026-10",
+        "revision": 3,
+        "recurring_campaign": campaign.default_campaign(),
+        "recurring_updated_at": "2026-11-02T19:00:00+00:00",
+    }
+    mongo.bot_config.documents["source"] = source
+
+    async def run():
+        before = await campaign.load_campaign(mongo, GUILD, CURRENT)
+        result = await campaign.save_updated_roster_variant(
+            mongo,
+            guild_id=GUILD,
+            cycle=CURRENT,
+            pool="main",
+            user_id=200,
+            candidate=CANDIDATE,
+            expected_generation=bridge.campaign_generation(before),
+            future_months=True,
+        )
+        assert result["recurring_saved"] is True
+        future = await campaign.load_campaign(mongo, GUILD, "2027-01")
+        assert (
+            future["campaign"]["messages"]["roster"]["variants"]["main"]["body"]
+            == CANDIDATE["body"]
+        )
+        # A later ordinary whole-template save at the same timestamp wins,
+        # even if its body is identical; its durable revision proves ordering.
+        source["revision"] += 1
+        future = await campaign.load_campaign(mongo, GUILD, "2027-01")
+        assert (
+            future["campaign"]["messages"]["roster"]["variants"]["main"]["body"]
+            != CANDIDATE["body"]
+        )
+
+    asyncio.run(run())

@@ -699,7 +699,7 @@ export default function ManageBridgeWorkspace({
                           />
                           {delivery?.status === "sent" && (
                             <AnnouncementPostUpdate
-                              key={`post-update:${seasonId}:${pool}`}
+                              key={`post-update:${seasonId}:${pool}:${bridge.cycle}`}
                               seasonId={seasonId}
                               pool={pool}
                               cycle={bridge.cycle || ""}

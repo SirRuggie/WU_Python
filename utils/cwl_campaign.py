@@ -641,6 +641,22 @@ def _whole_template_updated_at(row: dict | None) -> str:
     return str(row.get(field) or "")
 
 
+def _recurring_template_identity(row: dict | None) -> str | None:
+    """Distinguish field-after-whole clock ties from later whole-template saves."""
+    if not row:
+        return None
+    revision = row.get("revision", 0)
+    if _roster_copy_edit_stamps(row):
+        revision = row.get("roster_copy_base_revision", revision)
+    value = [
+        row.get("_id"),
+        row.get("recurring_updated_at"),
+        revision,
+        row.get("recurring_campaign"),
+    ]
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
 def _apply_recurring_roster_copy(
     campaign: dict, rows: list[dict], current: dict | None, recurring: dict | None
 ) -> str | None:
@@ -691,8 +707,18 @@ def _apply_recurring_roster_copy(
                 stamp = parsed.astimezone(timezone.utc).isoformat()
             except ValueError as exc:
                 raise ValueError("Saved recurring roster version is invalid") from exc
-            # An explicit whole-template save wins an equal timestamp.
-            if stamp > cutoff:
+            # A field save may follow a whole save in the same clock tick.
+            # Its recorded source identity proves that order; a later whole
+            # save changes revision and invalidates this tie exception.
+            tied_after_whole = (
+                stamp
+                == cutoff
+                == str((recurring or {}).get("recurring_updated_at") or "")
+                and stamp > max(global_stamp, str(edits.get(pool) or ""))
+                and (row.get("recurring_roster_copy_base") or {}).get(pool)
+                == _recurring_template_identity(recurring)
+            )
+            if stamp > cutoff or tied_after_whole:
                 candidates.append((stamp, str(row["_id"]), value))
         if candidates:
             stamp, source, value = max(candidates, key=lambda item: item[:2])
@@ -760,6 +786,7 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
         "defaults_revision": int((saved or {}).get("revision", 0)),
         "activated": bool((row or {}).get("activated") or (saved or {}).get("activated") or recurring),
         "recurring_version": (recurring or {}).get("recurring_updated_at"),
+        "recurring_template_identity": _recurring_template_identity(recurring),
         **({"recurring_roster_version": roster_copy_version} if roster_copy_version else {}),
         "campaign": campaign,
         "deliveries": deliveries,
@@ -1170,7 +1197,7 @@ def validate_roster_copy(candidate: dict) -> dict:
         if not valid:
             raise ValueError("Link buttons must use HTTPS")
         emoji = button.get("emoji")
-        if emoji is not None and not isinstance(emoji, str):
+        if emoji is not None and (not isinstance(emoji, str) or len(emoji) > 64):
             raise ValueError("Check the button emoji")
         cleaned.append(
             {"label": label, "url": url, **({"emoji": emoji} if emoji else {})}
@@ -1225,6 +1252,11 @@ async def save_updated_roster_variant(
         revision=loaded["revision"] + 1,
         updated_at=stamp,
         roster_copy_base_updated_at=_whole_template_updated_at(current),
+        roster_copy_base_revision=(
+            (current or {}).get("roster_copy_base_revision", loaded["revision"])
+            if _roster_copy_edit_stamps(current)
+            else loaded["revision"]
+        ),
         roster_copy_edit_updated_at=edits,
         roster_copy_edit_revision=loaded["revision"] + 1,
         roster_copy_base_campaign_missing=base_campaign_missing,
@@ -1232,6 +1264,9 @@ async def save_updated_roster_variant(
     if future_months:
         fields[f"recurring_roster_copy.{pool}"] = copy.deepcopy(candidate)
         fields[f"recurring_roster_copy_updated_at.{pool}"] = stamp
+        fields[f"recurring_roster_copy_base.{pool}"] = loaded.get(
+            "recurring_template_identity"
+        )
     write = await mongo.bot_config.update_one(
         {
             "_id": cycle_id(guild_id, cycle),
