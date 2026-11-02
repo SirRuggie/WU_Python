@@ -5,6 +5,7 @@ import AnnouncementPostUpdate from "./src/AnnouncementPostUpdate";
 import DiscordPreview, { type PreviewPart } from "./src/DiscordMessagePreview";
 import type { PostCopy } from "./src/announcementPostUpdate";
 import "./src/style.css";
+import "./src/announcementWorkspace.css";
 import "./src/contrast.css";
 import "./src/workflowControls.css";
 import "./src/accessibility.css";
