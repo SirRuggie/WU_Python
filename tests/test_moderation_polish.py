@@ -114,7 +114,7 @@ class AvatarPolish(unittest.IsolatedAsyncioTestCase):
         from pymongo.errors import ServerSelectionTimeoutError
         client = NS(member_events=object(), close=AsyncMock())
         self.store.avatar.side_effect = ServerSelectionTimeoutError('fixture database unavailable')
-        with patch.dict('os.environ', {'MONGODB_URI': 'mongodb://fixture.invalid'}), patch.object(server_management, 'MongoClient', return_value=client), patch.object(api, 'require_manage', new=AsyncMock()), patch.object(api, 'MemberEventStore', return_value=self.store):
+        with patch.dict('os.environ', {'MONGODB_URI': 'mongodb://fixture.invalid'}), patch('cwl_web.mongo_client.MongoClient', return_value=client), patch.object(api, 'require_manage', new=AsyncMock()), patch.object(api, 'MemberEventStore', return_value=self.store):
             with self.assertRaises(web.HTTPServiceUnavailable) as caught:
                 await api.avatar(self.request)
             self.assertIn('Server settings are unavailable', caught.exception.text)

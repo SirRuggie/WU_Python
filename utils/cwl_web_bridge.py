@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import logging
+from utils.manage_poll_cache import timed_step
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
@@ -219,12 +221,16 @@ async def process_roster_request(
 ) -> dict:
     """Claim and attempt a pending request once. A crash stays sending."""
     key = request_id(row["guild_id"], row["cycle"], row["pool"])
-    if authorize is not None and not await authorize(row):
+    allowed = True
+    if authorize is not None:
+        with timed_step(logging.getLogger(__name__), "roster_authorization"):
+            allowed = await authorize(row)
+    if not allowed:
         await mongo.bot_config.update_one(
             {'_id': key, 'status': 'pending'},
             {'$set': {'status': 'failed', 'error': 'Dashboard announcement access was removed. Nothing was sent.', 'updated_at': _now()}},
         )
-        return await mongo.bot_config.find_one({'_id': key})
+        return await mongo.bot_config.find_one({"_id": key})
     started = _now()
     claimed = await mongo.bot_config.update_one(
         {"_id": key, "status": "pending"},
@@ -240,7 +246,9 @@ async def process_roster_request(
     )
     if receipt:
         status, detail = "sent", {"receipt": receipt}
-    elif cwl_campaign.occurrence_id(row["cycle"], "roster", row["pool"]) in loaded.get("uncertain_occurrences", ()):
+    elif cwl_campaign.occurrence_id(row["cycle"], "roster", row["pool"]) in loaded.get(
+        "uncertain_occurrences", ()
+    ):
         status, detail = "uncertain", {"error": "Native delivery is uncertain; reconcile before retrying"}
     elif campaign_generation(loaded) != row["generation"]:
         status, detail = "stale", {"error": "Native campaign settings changed"}
@@ -253,10 +261,15 @@ async def process_roster_request(
             status, detail = "stale", {"error": str(exc)}
         else:
             try:
-                await sender(
-                    int(row["guild_id"]), row["cycle"], "roster", [row["pool"]],
-                    generation=row["generation"], manual=True,
-                )
+                with timed_step(logging.getLogger(__name__), "roster_delivery"):
+                    await sender(
+                        int(row["guild_id"]),
+                        row["cycle"],
+                        "roster",
+                        [row["pool"]],
+                        generation=row["generation"],
+                        manual=True,
+                    )
             except Exception as exc:
                 status, detail = "uncertain", {"error": f"Sender outcome unknown: {type(exc).__name__}"}
             else:

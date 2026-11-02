@@ -1,3 +1,4 @@
+import DashboardStorageStatus from './DashboardStorageStatus'
 import type { ClanRoute } from "./clanManagement/routes";
 import SignupReviewHeading from "./SignupReviewHeading"
 import AccountMenu from "./AccountMenu"
@@ -896,6 +897,7 @@ function App() {
     <div className="workspace" inert={mobile && menuOpen}>
       <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'member-timezones' ? 'Member time zones' : view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image gallery' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : (view === 'strikes' || view === 'replacements') ? 'Strikes & replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'bases' ? 'Base bank' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? signupPanel === 'saved' ? 'My signups' : 'Sign up' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div>{mobile ? <AccountMenu user={session.user} onSignOut={signOut} variant="avatar" disabled={pending} replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} /> : <AccountIdentity user={session.user} />}</header>
       <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view, publicationStep)}>
+        {(session.is_owner || session.can_edit || !!session.dashboard_permissions?.length) && <DashboardStorageStatus />}
         {["roster", "publication", "declaration"].includes(view) && (
           <StaffDetailsHost
             key={`${view}:${seasonId}`}

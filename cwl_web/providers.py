@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from urllib.parse import quote, urlsplit
 
 import aiohttp
-from pymongo import AsyncMongoClient
+from pymongo import AsyncMongoClient, timeout
 from pymongo.errors import PyMongoError
 
 from utils.mongo_routes import collection_for, load_routes
@@ -79,16 +79,37 @@ class LiveProviders:
         self.coc_token = os.getenv("COC_API_TOKEN", "").strip() if coc_token is None else coc_token.strip()
         self.mongo_uri = os.getenv("MONGODB_URI", "").strip() if mongo_uri is None else mongo_uri.strip()
         self.routes = routes if routes is not None else load_routes()
+        self._mongo_client = None
+        self._owned_mongo = None
         self._weights_cache = None
         self._weights_cache_until = 0.0
         self.weights_checked_at = None
         self._weights_lock = asyncio.Lock()
 
+    def bind_mongo(self, client):
+        """Bind the application-owned pool before serving HTTP requests."""
+        if client is not None and self._owned_mongo is not None:
+            raise RuntimeError("Close the standalone provider pool before binding")
+        self._mongo_client = client
+
+    async def close(self):
+        """Close only a standalone provider's own pool, never the app's pool."""
+        if self._owned_mongo is not None:
+            await self._owned_mongo.close()
+            self._owned_mongo = None
+
     async def family_clans(self):
-        """Read existing bot clan directory; never initialize its write-capable wrapper."""
+        """Read the existing directory through the shared pool, without index writes."""
         if not self.mongo_uri:
             raise ProviderUnavailable("Family-clan directory is not configured")
-        client = AsyncMongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
+        client = self._mongo_client
+        if client is None:
+            if self._owned_mongo is None:
+                self._owned_mongo = AsyncMongoClient(
+                    self.mongo_uri, serverSelectionTimeoutMS=5000, timeoutMS=5000,
+                    maxPoolSize=20, appName="wu-dashboard-provider-standalone",
+                )
+            client = self._owned_mongo
         try:
             collection = collection_for(client, "clans", routes=self.routes)
             cursor = collection.find(
@@ -96,13 +117,12 @@ class LiveProviders:
                 {"_id": 0, "tag": 1, "name": 1, "type": 1, "archived": 1, "removed": 1},
                 max_time_ms=5000,
             )
-            docs = await cursor.to_list(length=201)
+            with timeout(5):
+                docs = await cursor.to_list(length=201)
             if len(docs) >= 201:
                 raise ProviderUnavailable("Family-clan directory exceeds supported size")
         except (PyMongoError, TimeoutError) as exc:
             raise ProviderUnavailable("Family-clan directory unavailable") from exc
-        finally:
-            await client.close()
         result = {}
         for doc in docs:
             if not isinstance(doc, dict) or doc.get("archived") or doc.get("removed"):
