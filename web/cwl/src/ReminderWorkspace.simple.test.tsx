@@ -64,7 +64,12 @@ it("keeps six editable rows and directs roster posts to season Announcements wit
     );
     expect(
       [...host.querySelectorAll("button")].some(
-        (button) => button.textContent === "Save",
+        (button) => button.textContent === "Save changes",
+      ),
+    ).toBe(true);
+    expect(
+      [...host.querySelectorAll("button")].some(
+        (button) => button.textContent === "Preview schedule",
       ),
     ).toBe(true);
   } finally {
