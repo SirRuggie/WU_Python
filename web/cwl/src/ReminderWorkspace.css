@@ -409,3 +409,7 @@ only editing opens the long forms. */
   margin: 0;
   font-size: 12px;
 }
+.reminder-overview-note a {
+  color: #bdd4f3;
+  text-underline-offset: 3px;
+}

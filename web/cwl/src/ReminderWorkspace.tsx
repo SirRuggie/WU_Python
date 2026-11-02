@@ -300,7 +300,8 @@ export default function ReminderWorkspace({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
   useEffect(() => {
-    if (!state?.cycle || state.schedule_synced || busy) return;
+    if (!state?.cycle || !state.activated || state.schedule_synced || busy)
+      return;
     let active = true;
     const timer = window.setTimeout(() => {
       api<CampaignState>(base)
@@ -420,7 +421,7 @@ export default function ReminderWorkspace({
                   <span className="notice error" role="status">
                     Bot offline
                   </span>
-                ) : !state.schedule_synced ? (
+                ) : state.activated && !state.schedule_synced ? (
                   <span className="notice" role="status">
                     Waiting for the bot to load changes
                   </span>

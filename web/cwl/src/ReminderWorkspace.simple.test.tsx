@@ -114,3 +114,31 @@ it.each([500, 403])(
     }
   },
 );
+
+it("does not call intentionally inactive schedules pending", async () => {
+  const value = { ...state(), activated: false, schedule_synced: false };
+  vi.mocked(api).mockImplementation(async (path) =>
+    path.includes("manage-reminders")
+      ? (value as never)
+      : path.includes("roles")
+        ? ({ roles: [] } as never)
+        : ({ channels: [] } as never),
+  );
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <ReminderWorkspace seasonId="42" archived={false} onDirty={() => {}} />,
+      ),
+    );
+    expect(host.textContent).not.toContain("Waiting for the bot");
+    expect(host.querySelector(".reminder-status .badge")?.textContent).toBe(
+      "Off",
+    );
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

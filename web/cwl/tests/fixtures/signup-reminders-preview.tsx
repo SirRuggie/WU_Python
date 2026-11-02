@@ -31,7 +31,7 @@ function state() {
     cycle: "2026-11",
     generation: String(revision),
     worker_ready: !query.has("offline"),
-    schedule_synced: !query.has("pending"),
+    schedule_synced: !query.has("pending") && !query.has("off"),
     activated: !query.has("off"),
     campaign,
     signup_open: true,

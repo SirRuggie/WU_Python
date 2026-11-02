@@ -1,6 +1,6 @@
 # Signup reminder acknowledgement and overview (129 / 134)
 
-Source review in progress; release remains held for owner preview. No production API, metadata read, send, role change or scheduler mutation was performed.
+Source only; release remains held for owner preview. No production API, metadata read, send, role change or scheduler mutation was performed.
 
 ## Acknowledgement
 
@@ -10,7 +10,7 @@ The native scheduler now records the exact generation only after completing that
 
 The existing worker heartbeat carries process identity/readiness; the API requires current-process identity plus the exact generation. Online heartbeat is separate from loaded proof: an offline bot can have an old correctly loaded schedule and still shows the offline warning. Old process acknowledgement cannot claim that a restarted process restored jobs. No production metadata is needed for these local proofs.
 
-A future approved deployment needs a bot restart to load the native changes. Existing sent-occurrence guards, future scheduling rules, job identities, recipients and message text are unchanged. The actual native restart fixture confirms an already-sent signup occurrence stays unscheduled and no sender callback runs. This is not proof of live delivery.
+Inactive settings show Off without a pending-load warning or acknowledgement polling; no backend proof is fabricated for an activation that was never requested. A future approved deployment needs a bot restart to load the native changes. Existing sent-occurrence guards, future scheduling rules, job identities, recipients and message text are unchanged. The actual native restart fixture confirms an already-sent signup occurrence stays unscheduled and no sender callback runs. This is not proof of live delivery.
 
 ## Overview
 
@@ -25,11 +25,11 @@ Clarified by Shaka420: six rows, one per editable reminder type (signup plus fiv
 - Same real native fixture before/after: 25 installed jobs both; old acknowledgement remains empty after another unchanged poll; fixed acknowledgement records November/December `1:0`; zero sender calls in either case (`.local/p134-baseline-reproducer.json`).
 - Eight actual native tests cover defaults-only, idle no reload/write, unchanged repair, absent/failed load refusal, racing revision, restart/sent ledger, repeated Started and concurrent same-cycle installs. Existing adapter/HTTP footprint tests use an explicit simulated installer contract; they do not substitute for native proof.
 - API cases cover generation mismatch, changed process, pending restore, loaded online and offline status.
-- Final full frontend: 1487 passed / 262 files; TypeScript, main and isolated preview builds pass.
+- Final full frontend: 1491 passed / 263 files; TypeScript, main and isolated preview builds pass.
 - Required war-reminder validation passed: 213 backend / 1 skip, 35 frontend, TypeScript/build. No delivery was attempted.
 - Two required backend mutants killed by actual native assertions: acknowledge without load and skip unchanged-fingerprint repair. Differing-destination mutant fails the real rendered-content assertion. Originals restored; initial mutant runner incorrectly looked for assertion text only in stdout, corrected to include stderr.
 - Browser preview covers matching/differing, paused/off/pending/offline at 360/1440, every editable message/pool and a fictional pause only. No overflow or browser errors. Initial wrapped-label selector was corrected. Initial wide preview used the sidebar grid column accidentally; fixture shell was corrected before final visual inspection. Source UI never used that malformed shell.
-- Exact committed source `9e7d308d961d05fe87504a50aaa0c64b3b964c5c` passed staged production-shaped boot: 51 configured routes, native pool, real owner on copied SQLite and owned Mongo 27169, external network blocked, config 200 / unauthenticated auth 401, cleanup and artifact hashes retained in `.local/p134-boot`. Owned Mongo and artifact were stopped/removed. Full backend remains pending its coordinated slot; no READY claim yet.
+- Exact frozen-source boot uses 51 configured production routes, native pool, real owner on copied SQLite and owned Mongo 27169, external network blocked, config 200 / unauthenticated auth 401, cleanup and artifact hashes retained. Final boot evidence is `.local/p134-boot-final`; earlier exact checkpoints remain in `p134-boot` / `p134-boot-ready`. Full guarded backend: 6326 passed / 99 skipped / 267 subtests in 591.52 seconds. The final UI-only inactive-state correction does not change backend source; Python source hashes are compared to that full-suite revision.
 
 ## Adversarial review
 
