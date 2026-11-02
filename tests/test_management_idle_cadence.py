@@ -104,6 +104,9 @@ def test_idle_observation_skips_only_recent_confirmed_empty_work_and_band_update
             values["health"] = "unhealthy"
             await worker._poll(None, mongo)
             assert len(band_writes()) == 2
+            assert [
+                call.args[1]["$set"].get("checked_at") for call in band_writes()
+            ] == [1, 2]
             state.ready = {"_id": "new request"}
             assert await worker._poll(None, mongo) == 7
             state.ready = None
@@ -232,3 +235,31 @@ def test_unusable_base_image_result_never_caches_failure_or_partially_changes_im
             FWA_ACTIVE_WAR_BASE.update(original_active)
 
     asyncio.run(run())
+
+
+def test_independent_heartbeat_survives_a_temporary_mongo_failure(caplog):
+    async def run():
+        write = AsyncMock(side_effect=[RuntimeError("owned outage"), True])
+        ticks = 0
+
+        async def sleep(seconds):
+            nonlocal ticks
+            ticks += 1
+            if ticks == 2:
+                raise asyncio.CancelledError()
+
+        with patch.object(worker, "_write_heartbeat", write), patch.object(
+            worker, "asyncio", NS(sleep=sleep)
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await worker.maintain_worker_heartbeat(object())
+        assert write.await_count == 2
+
+    asyncio.run(run())
+    assert (
+        sum(
+            "Management heartbeat unavailable" in record.message
+            for record in caplog.records
+        )
+        == 1
+    )

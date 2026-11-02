@@ -543,6 +543,14 @@ class MongoDashboardState:
             checked.close()
             # Reuse one receipt per base/image across ambiguous recovery retries.
             base, digest, prior_token = fingerprint
+            # A majority primary read confirms this revision. Older uncertain
+            # CASes can never win again; retain only this/newer race receipts.
+            # This stays bounded even if every recovery write loses its reply.
+            self.revision = base
+            self._known_head = fingerprint
+            self._receipts = {
+                key: value for key, value in self._receipts.items() if value[0] >= base
+            }
             candidate = next(
                 (
                     value

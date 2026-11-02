@@ -1,3 +1,4 @@
+import { STORAGE_RECOVERED, STORAGE_UNAVAILABLE } from "./storageStatus";
 import { assertTourRead, isTourReadOnly } from "./memberTour/session";
 import { fetchReadWithRetry } from "./readRetry";
 import { clearSnapshots } from "./snapshotCache";
@@ -117,6 +118,8 @@ export async function api<T>(
   }
   const data = await response.json().catch(() => null);
   if (!response.ok) {
+    if (response.headers.get("X-Dashboard-Storage-Degraded") === "1")
+      window.dispatchEvent(new Event(STORAGE_UNAVAILABLE));
     handleAuthorizationFailure(response.status, path);
     const message =
       typeof data?.error === "string"
@@ -147,6 +150,7 @@ export async function api<T>(
       data,
     );
   }
+  if (path === "/auth/me") window.dispatchEvent(new Event(STORAGE_RECOVERED));
   if (method !== "GET") clearSnapshots();
   return data as T;
 }

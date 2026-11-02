@@ -469,8 +469,19 @@ async def _write_heartbeat(mongo):
 
 
 async def maintain_worker_heartbeat(mongo):
+    last_warning = float("-inf")
     while True:
-        await _write_heartbeat(mongo)
+        try:
+            await _write_heartbeat(mongo)
+        except Exception as error:
+            # A temporary Mongo failure must not kill the independent heartbeat
+            # for the rest of a slow Discord delivery. Cancellation still escapes.
+            now = time.monotonic()
+            if now - last_warning >= 60:
+                logging.getLogger(__name__).warning(
+                    "Management heartbeat unavailable: %s", type(error).__name__
+                )
+                last_warning = now
         await asyncio.sleep(10)
 
 

@@ -449,13 +449,14 @@ class Store:
             ).fetchone()
             owner.confirm_recovery(image)
             db.commit()
-            owner.finish_recovery(image)
             self.role_dirty = clock[0] > clock[1]
             self.role_recovery_error = (
                 "Role work is paused after recovery. Check roles, turn both settings off, then save them again. Signups are unchanged."
                 if paused
                 else None
             )
+            # Publish local derived flags before allowing another role transaction.
+            owner.finish_recovery(image)
             return True
         except Exception as error:
             owner.poisoned = True

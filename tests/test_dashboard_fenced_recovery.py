@@ -372,3 +372,51 @@ def test_lifecycle_retries_recovery_and_keeps_heartbeat_alive(monkeypatch, caplo
         )
 
     asyncio.run(scenario())
+
+
+def test_repeated_lost_recovery_acknowledgements_keep_bounded_receipts(owner):
+    state, collection, path = owner
+    state.poisoned = True
+    collection.fail = "after"
+    for _ in range(80):
+        with pytest.raises(DashboardDurabilityError):
+            state.recovery_image()
+        assert len(state._receipts) <= 3
+    collection.fail = None
+    image = state.recovery_image()
+    state.confirm_recovery(image)
+    state.finish_recovery(image)
+    assert not state.poisoned
+
+
+def test_majority_observed_newer_revision_cannot_regress_to_an_old_known_head(owner):
+    state, collection, path = owner
+    original = deepcopy(collection.doc)
+    state.poisoned = True
+    collection.fail = "after"
+    for _ in range(2):
+        with pytest.raises(DashboardDurabilityError):
+            state.recovery_image()
+    collection.fail = None
+    collection.doc = original
+    with pytest.raises(DashboardDurabilityError):
+        state.recovery_image()
+    assert collection.doc == original
+
+
+def test_role_work_after_recovery_unfences_cannot_lose_its_dirty_flag(durable_setup):
+    path, store, state, collection = durable_setup
+    collection.find_one = lambda query: (
+        deepcopy(collection.doc) if collection.matches(query) else None
+    )
+    state.poisoned = True
+    finished = state.finish_recovery
+
+    def writer_immediately_after_unfencing(image):
+        finished(image)
+        with store.role_tx() as db:
+            db.execute("UPDATE cwl_pool_role_clock SET next_at=next_at+1 WHERE id=1")
+
+    state.finish_recovery = writer_immediately_after_unfencing
+    assert store.recover_durability()
+    assert store.role_dirty
