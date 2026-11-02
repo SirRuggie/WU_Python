@@ -380,3 +380,13 @@
     margin: 0;
   }
 }
+
+/* Read recovery must remain a usable touch target beside retained data. */
+.member-assignments button,
+.member-assignments summary {
+  min-height: 44px;
+}
+.member-assignments summary {
+  display: list-item;
+  align-content: center;
+}

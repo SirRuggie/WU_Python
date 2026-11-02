@@ -148,7 +148,7 @@ it("published ready line navigates to My clan without a write", async () => {
   );
   const link = host.querySelector<HTMLAnchorElement>('a[href="/assignments"]')!;
   expect(link.textContent).toBe(
-    "Your published clan assignments are ready to view.",
+    "My clan assignments ›",
   );
   await act(async () => link.click());
   expect(navigate).toHaveBeenCalledOnce();
