@@ -1,6 +1,6 @@
 # Discord dashboard links and default copy (127 / 412)
 
-Source review in progress; release held for owner preview. No production campaign, message or database write occurred. Frontend/tour source is untouched.
+Source only; release held for owner preview. No production campaign, message or database write occurred. Frontend/tour source is untouched.
 
 ## Message inventory
 
@@ -37,12 +37,12 @@ The existing Discord `/manage` editor supports Edit text and Edit buttons (label
 - Fully mocked OAuth roundtrip validates signup/assignments/tasks/wars return routes without linked accounts. Signed-in unlinked members keep existing linking/empty guidance, not invented forced login.
 - Five genuine mutants killed: wrong task route, missing declaration link, overwritten legacy copy, unmarked custom short-help mistaken for new copy, and omitted new-default marker. Originals restored.
 - Hostname grep finds only central URL constants and the existing canonical-host error instruction in bot/HTTP Python source. Legacy host compatibility is centralized.
-- Required war-reminder gate passed: 213 backend / 1 skipped, 35 frontend, TypeScript and isolated build. Final marker/copy freeze: 24 focused passed. Full backend remains pending its coordinated slot before READY. No frontend source changed, so no full frontend/browser rendering claim is made.
+- Required war-reminder gate passed: 213 backend / 1 skipped, 35 frontend, TypeScript and isolated build. Final marker/copy freeze: 24 focused passed. Final guarded full backend passed: 6343 tests / 99 skipped / 267 subtests in 581.75 seconds; external/default service ports were blocked. No frontend source changed, so no full frontend/browser rendering claim is made.
 
 ## Adversarial review / limits
 
 Fixed public destinations and existing OAuth return sanitization reject foreign-origin return links. Mention recipients/flags, event timing and uncertain-delivery behavior are unchanged. Button/text/nested limits and native transport forwarding are tested. Existing owner/draft/editor validation remains authoritative. Fake OAuth/transport/component tests are not live Discord rendering or delivery proof. A future approved release needs a bot restart but sends/edits nothing on activation.
 
-Shared roster-redesign documentation summary will be supplied to its concurrent owner for append at that owner's checkpoint.
+The shared roster-redesign summary has been supplied to its owner. Root owns appending it at the 118/137 integration checkpoint, avoiding a concurrent edit while PR172 is not yet merged. This review document is the source reference until that coordinated append.
 
-The first full backend run completed with 6340 passes and two obsolete copy expectations: the closing link still expected “My assignments”, and the help-footer test required the old long line in new marked reminders. The corrected footer regression now checks both old/unmarked and new marked defaults, preserving exact footer/button structure and one intended body check line. Runtime source was unchanged by these test corrections; the final full rerun is pending.
+The first full backend run completed with 6340 passes and two obsolete copy expectations: the closing link still expected “My assignments”, and the help-footer test required the old long line in new marked reminders. The corrected footer regression now checks both old/unmarked and new marked defaults, preserving exact footer/button structure and one intended body check line. Runtime source was unchanged by these test corrections; the final full rerun passed as recorded above.
