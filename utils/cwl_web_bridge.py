@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import logging
+from utils.manage_poll_cache import timed_step
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
@@ -36,7 +38,9 @@ def worker_id(guild_id: int) -> str:
 
 def campaign_generation(loaded: dict) -> str:
     """Match the generation passed to the existing campaign sender."""
-    version = f"{int(loaded.get('defaults_revision', 0))}:{int(loaded.get('revision', 0))}"
+    version = (
+        f"{int(loaded.get('defaults_revision', 0))}:{int(loaded.get('revision', 0))}"
+    )
     recurring = loaded.get("recurring_version")
     return f"{version}:{recurring}" if recurring else version
 
@@ -54,7 +58,8 @@ def _variant(loaded: dict, pool: str) -> dict:
 def native_receipt(loaded: dict, pool: str) -> dict | None:
     occurrence = cwl_campaign.occurrence_id(loaded["cycle"], "roster", pool)
     receipts = [
-        item for item in loaded.get("deliveries", ())
+        item
+        for item in loaded.get("deliveries", ())
         if item.get("occurrence_id") == occurrence and item.get("status") == "sent"
     ]
     if receipts:
@@ -80,7 +85,8 @@ async def queue_roster_send(
     """Queue one reviewed native occurrence; never queue a second sent post."""
     key = request_id(guild_id, cycle, pool)
     if sequence_id is not None and (
-        not isinstance(sequence_id, str) or not re.fullmatch(r'[a-f0-9]{24}', sequence_id)
+        not isinstance(sequence_id, str)
+        or not re.fullmatch(r"[a-f0-9]{24}", sequence_id)
     ):
         raise ValueError("Invalid image sequence ID")
     if publication_version < 1 or requested_by < 1 or expected_channel_id < 1:
@@ -92,26 +98,39 @@ async def queue_roster_send(
     if channel != expected_channel_id:
         raise BridgeConflict("Native campaign channel changed; review again")
     if native_receipt(loaded, pool) or await _pending_ledger_receipt(
-        mongo, guild_id, cycle, pool,
+        mongo,
+        guild_id,
+        cycle,
+        pool,
     ):
         raise BridgeConflict("This pool's native roster announcement was already sent")
     occurrence = cwl_campaign.occurrence_id(cycle, "roster", pool)
     if occurrence in loaded.get("uncertain_occurrences", ()):
-        raise BridgeConflict("This pool's native delivery is uncertain; reconcile before retrying")
+        raise BridgeConflict(
+            "This pool's native delivery is uncertain; reconcile before retrying"
+        )
 
     stamp = _now()
     existing = await mongo.bot_config.find_one({"_id": key})
     if existing:
         if not retry_failed or existing.get("status") not in {"failed", "stale"}:
-            raise BridgeConflict("A request for this pool and campaign month already exists")
+            raise BridgeConflict(
+                "A request for this pool and campaign month already exists"
+            )
         result = await mongo.bot_config.update_one(
             {"_id": key, "status": existing["status"]},
-            {"$set": {
-                "status": "pending", "publication_version": publication_version,
-                "generation": expected_generation, "channel_id": channel,
-                "requested_by": requested_by, "updated_at": stamp,
-                "sequence_id": sequence_id,
-            }, "$unset": {"error": "", "receipt": "", "started_at": ""}},
+            {
+                "$set": {
+                    "status": "pending",
+                    "publication_version": publication_version,
+                    "generation": expected_generation,
+                    "channel_id": channel,
+                    "requested_by": requested_by,
+                    "updated_at": stamp,
+                    "sequence_id": sequence_id,
+                },
+                "$unset": {"error": "", "receipt": "", "started_at": ""},
+            },
         )
         if not result.matched_count:
             raise BridgeConflict("Request status changed; refresh before retrying")
@@ -119,21 +138,32 @@ async def queue_roster_send(
         try:
             result = await mongo.bot_config.update_one(
                 {"_id": key},
-                {"$setOnInsert": {
-                    "kind": REQUEST_KIND, "guild_id": int(guild_id), "cycle": cycle,
-                    "pool": pool, "status": "pending",
-                    "publication_version": publication_version,
-                    "generation": expected_generation, "channel_id": channel,
-                    "requested_by": requested_by, "created_at": stamp,
-                    "sequence_id": sequence_id,
-                    "updated_at": stamp,
-                }},
+                {
+                    "$setOnInsert": {
+                        "kind": REQUEST_KIND,
+                        "guild_id": int(guild_id),
+                        "cycle": cycle,
+                        "pool": pool,
+                        "status": "pending",
+                        "publication_version": publication_version,
+                        "generation": expected_generation,
+                        "channel_id": channel,
+                        "requested_by": requested_by,
+                        "created_at": stamp,
+                        "sequence_id": sequence_id,
+                        "updated_at": stamp,
+                    }
+                },
                 upsert=True,
             )
         except DuplicateKeyError as exc:
-            raise BridgeConflict("A request for this pool and campaign month already exists") from exc
+            raise BridgeConflict(
+                "A request for this pool and campaign month already exists"
+            ) from exc
         if not result.upserted_id:
-            raise BridgeConflict("A request for this pool and campaign month already exists")
+            raise BridgeConflict(
+                "A request for this pool and campaign month already exists"
+            )
     return await mongo.bot_config.find_one({"_id": key})
 
 
@@ -144,27 +174,46 @@ async def reopen_deleted_request(mongo, *, guild_id, cycle, pool, receipt, actor
     if row and row.get("status") in {"pending", "sending", "uncertain"}:
         raise BridgeConflict("Resolve the in-progress announcement before resending")
     if await _pending_ledger_receipt(mongo, guild_id, cycle, pool):
-        raise BridgeConflict("The announcement receipt is still being saved; retry later")
+        raise BridgeConflict(
+            "The announcement receipt is still being saved; retry later"
+        )
     archived = await cwl_campaign.reopen_deleted_roster_delivery(
-        mongo, guild_id, cycle, pool, channel_id=int(receipt['channel_id']),
-        message_id=int(receipt['message_id']), actor_id=int(actor_id),
+        mongo,
+        guild_id,
+        cycle,
+        pool,
+        channel_id=int(receipt["channel_id"]),
+        message_id=int(receipt["message_id"]),
+        actor_id=int(actor_id),
     )
     if row:
-        if row.get('deleted_message_id') == str(receipt['message_id']) and row.get('status') == 'failed':
+        if (
+            row.get("deleted_message_id") == str(receipt["message_id"])
+            and row.get("status") == "failed"
+        ):
             return archived
         result = await mongo.bot_config.update_one(
-            {'_id': key, 'status': row.get('status')},
-            {'$set': {'status': 'failed', 'deleted_message_id': str(receipt['message_id']),
-                      'error': 'Previous announcement was deleted; explicit resend confirmed',
-                      'updated_at': _now()},
-             '$push': {'previous_receipts': {'$each': [archived]}}},
+            {"_id": key, "status": row.get("status")},
+            {
+                "$set": {
+                    "status": "failed",
+                    "deleted_message_id": str(receipt["message_id"]),
+                    "error": "Previous announcement was deleted; explicit resend confirmed",
+                    "updated_at": _now(),
+                },
+                "$push": {"previous_receipts": {"$each": [archived]}},
+            },
         )
         if not result.matched_count:
-            raise BridgeConflict('Announcement request changed; refresh before resending')
+            raise BridgeConflict(
+                "Announcement request changed; refresh before resending"
+            )
     return archived
 
 
-async def _pending_ledger_receipt(mongo, guild_id: int, cycle: str, pool: str) -> dict | None:
+async def _pending_ledger_receipt(
+    mongo, guild_id: int, cycle: str, pool: str
+) -> dict | None:
     collection = getattr(mongo, "cwl_pending_reminders", None)
     if collection is None:
         return None
@@ -179,16 +228,25 @@ async def _pending_ledger_receipt(mongo, guild_id: int, cycle: str, pool: str) -
 
 def _latest_native_result(loaded: dict, pool: str) -> dict | None:
     occurrence = cwl_campaign.occurrence_id(loaded["cycle"], "roster", pool)
-    rows = [row for row in loaded.get("deliveries", ()) if row.get("occurrence_id") == occurrence]
+    rows = [
+        row
+        for row in loaded.get("deliveries", ())
+        if row.get("occurrence_id") == occurrence
+    ]
     return rows[-1] if rows else None
 
 
-async def get_roster_send_status(mongo, guild_id: int, cycle: str, pool: str) -> dict | None:
+async def get_roster_send_status(
+    mongo, guild_id: int, cycle: str, pool: str
+) -> dict | None:
     key = request_id(guild_id, cycle, pool)
     row = await mongo.bot_config.find_one({"_id": key})
     loaded = await cwl_campaign.load_campaign(mongo, guild_id, cycle)
     receipt = native_receipt(loaded, pool) or await _pending_ledger_receipt(
-        mongo, guild_id, cycle, pool,
+        mongo,
+        guild_id,
+        cycle,
+        pool,
     )
     if receipt:
         return {**(row or {}), "status": "sent", "receipt": receipt}
@@ -206,7 +264,13 @@ async def get_roster_send_status(mongo, guild_id: int, cycle: str, pool: str) ->
 async def mark_worker_alive(mongo, guild_id: int) -> None:
     await mongo.bot_config.update_one(
         {"_id": worker_id(guild_id)},
-        {"$set": {"kind": WORKER_KIND, "guild_id": int(guild_id), "updated_at": _now()}},
+        {
+            "$set": {
+                "kind": WORKER_KIND,
+                "guild_id": int(guild_id),
+                "updated_at": _now(),
+            }
+        },
         upsert=True,
     )
 
@@ -219,12 +283,22 @@ async def process_roster_request(
 ) -> dict:
     """Claim and attempt a pending request once. A crash stays sending."""
     key = request_id(row["guild_id"], row["cycle"], row["pool"])
-    if authorize is not None and not await authorize(row):
+    allowed = True
+    if authorize is not None:
+        with timed_step(logging.getLogger(__name__), "roster_authorization"):
+            allowed = await authorize(row)
+    if not allowed:
         await mongo.bot_config.update_one(
-            {'_id': key, 'status': 'pending'},
-            {'$set': {'status': 'failed', 'error': 'Dashboard announcement access was removed. Nothing was sent.', 'updated_at': _now()}},
+            {"_id": key, "status": "pending"},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error": "Dashboard announcement access was removed. Nothing was sent.",
+                    "updated_at": _now(),
+                }
+            },
         )
-        return await mongo.bot_config.find_one({'_id': key})
+        return await mongo.bot_config.find_one({"_id": key})
     started = _now()
     claimed = await mongo.bot_config.update_one(
         {"_id": key, "status": "pending"},
@@ -236,12 +310,19 @@ async def process_roster_request(
     row = await mongo.bot_config.find_one({"_id": key})
     loaded = await cwl_campaign.load_campaign(mongo, row["guild_id"], row["cycle"])
     receipt = native_receipt(loaded, row["pool"]) or await _pending_ledger_receipt(
-        mongo, row["guild_id"], row["cycle"], row["pool"],
+        mongo,
+        row["guild_id"],
+        row["cycle"],
+        row["pool"],
     )
     if receipt:
         status, detail = "sent", {"receipt": receipt}
-    elif cwl_campaign.occurrence_id(row["cycle"], "roster", row["pool"]) in loaded.get("uncertain_occurrences", ()):
-        status, detail = "uncertain", {"error": "Native delivery is uncertain; reconcile before retrying"}
+    elif cwl_campaign.occurrence_id(row["cycle"], "roster", row["pool"]) in loaded.get(
+        "uncertain_occurrences", ()
+    ):
+        status, detail = "uncertain", {
+            "error": "Native delivery is uncertain; reconcile before retrying"
+        }
     elif campaign_generation(loaded) != row["generation"]:
         status, detail = "stale", {"error": "Native campaign settings changed"}
     else:
@@ -253,33 +334,55 @@ async def process_roster_request(
             status, detail = "stale", {"error": str(exc)}
         else:
             try:
-                await sender(
-                    int(row["guild_id"]), row["cycle"], "roster", [row["pool"]],
-                    generation=row["generation"], manual=True,
-                )
+                with timed_step(logging.getLogger(__name__), "roster_delivery"):
+                    await sender(
+                        int(row["guild_id"]),
+                        row["cycle"],
+                        "roster",
+                        [row["pool"]],
+                        generation=row["generation"],
+                        manual=True,
+                    )
             except Exception as exc:
-                status, detail = "uncertain", {"error": f"Sender outcome unknown: {type(exc).__name__}"}
+                status, detail = "uncertain", {
+                    "error": f"Sender outcome unknown: {type(exc).__name__}"
+                }
             else:
-                refreshed = await cwl_campaign.load_campaign(mongo, row["guild_id"], row["cycle"])
-                receipt = native_receipt(refreshed, row["pool"]) or await _pending_ledger_receipt(
-                    mongo, row["guild_id"], row["cycle"], row["pool"],
+                refreshed = await cwl_campaign.load_campaign(
+                    mongo, row["guild_id"], row["cycle"]
+                )
+                receipt = native_receipt(
+                    refreshed, row["pool"]
+                ) or await _pending_ledger_receipt(
+                    mongo,
+                    row["guild_id"],
+                    row["cycle"],
+                    row["pool"],
                 )
                 if receipt:
                     status, detail = "sent", {"receipt": receipt}
                 else:
                     latest = _latest_native_result(refreshed, row["pool"])
                     definite_types = {
-                        "ValueError", "BadRequestError", "UnauthorizedError",
-                        "ForbiddenError", "NotFoundError",
+                        "ValueError",
+                        "BadRequestError",
+                        "UnauthorizedError",
+                        "ForbiddenError",
+                        "NotFoundError",
                     }
                     if (
-                        latest and latest.get("status") == "failed"
+                        latest
+                        and latest.get("status") == "failed"
                         and latest.get("error_type") in definite_types
                         and str(latest.get("at", "")) >= started
                     ):
-                        status, detail = "failed", {"error": latest.get("error", "Native send was rejected")}
+                        status, detail = "failed", {
+                            "error": latest.get("error", "Native send was rejected")
+                        }
                     else:
-                        status, detail = "uncertain", {"error": "No confirmed native receipt; reconcile before retrying"}
+                        status, detail = "uncertain", {
+                            "error": "No confirmed native receipt; reconcile before retrying"
+                        }
     await mongo.bot_config.update_one(
         {"_id": key, "status": "sending", "started_at": started},
         {"$set": {"status": status, "updated_at": _now(), **detail}},
@@ -287,11 +390,17 @@ async def process_roster_request(
     return await mongo.bot_config.find_one({"_id": key})
 
 
-async def process_pending_roster_requests(mongo, sender, *, guild_id: int, limit: int = 10, authorize=None) -> int:
+async def process_pending_roster_requests(
+    mongo, sender, *, guild_id: int, limit: int = 10, authorize=None
+) -> int:
     await mark_worker_alive(mongo, guild_id)
-    rows = await mongo.bot_config.find({
-        "kind": REQUEST_KIND, "guild_id": int(guild_id), "status": "pending",
-    }).to_list(length=limit)
+    rows = await mongo.bot_config.find(
+        {
+            "kind": REQUEST_KIND,
+            "guild_id": int(guild_id),
+            "status": "pending",
+        }
+    ).to_list(length=limit)
     for row in rows[:limit]:
         await process_roster_request(mongo, row, sender, authorize=authorize)
     return len(rows[:limit])

@@ -1,4 +1,5 @@
 """Dashboard lifecycle for the shared Mongo recovery owner."""
+
 import asyncio
 import logging
 from contextlib import suppress
@@ -7,20 +8,31 @@ from utils.cwl_dashboard_state import DashboardDurabilityError
 
 
 async def lifecycle(app):
-    durability = app['store'].durability
+    durability = app["store"].durability
     if durability is None:
         yield
         return
 
     async def renew():
+        degraded = False
         while True:
             await asyncio.sleep(20)
             try:
-                durability.heartbeat()
+                if durability.poisoned:
+                    await asyncio.to_thread(app["store"].recover_durability)
+                else:
+                    durability.heartbeat()
+                if degraded:
+                    logging.getLogger(__name__).info(
+                        "Dashboard durable storage recovered; saved receipts reconciled."
+                    )
+                degraded = False
             except DashboardDurabilityError:
-                logging.getLogger(__name__).critical(
-                    'Dashboard durable storage unavailable; writes fenced until restart/recovery.')
-                return
+                if not degraded:
+                    logging.getLogger(__name__).warning(
+                        "Dashboard storage is recovering; saves are temporarily unavailable."
+                    )
+                degraded = True
 
     worker = asyncio.create_task(renew())
     try:

@@ -414,6 +414,62 @@ class Store:
         self.durability = durability
         self._recover_role_progress()
 
+    def recover_durability(self):
+        """Reconcile a fenced writer without retrying any external side effect."""
+        owner = self.durability
+        if owner is None or not owner.poisoned:
+            return False
+        from utils.cwl_dashboard_state import (
+            DashboardDurabilityError,
+            decode,
+            reconcile_sqlite,
+        )
+        from utils import cwl_pool_roles as roles
+
+        db = sqlite3.connect(self.path, timeout=15, isolation_level=None)
+        db.row_factory = sqlite3.Row
+        recovered = None
+        try:
+            db.execute("PRAGMA foreign_keys=ON")
+            db.execute("PRAGMA synchronous=FULL")
+            db.execute("BEGIN IMMEDIATE")
+            local_progress = roles.progress_image(db)
+            image = owner.recovery_image()
+            recovered = decode(image)
+            reconcile_sqlite(db, recovered)
+            progress = roles.recover_progress(db, local_progress)
+            unfinished = db.execute(
+                "SELECT 1 FROM cwl_pool_role_jobs WHERE state IN ('pending','leased') LIMIT 1"
+            ).fetchone()
+            if unfinished and (progress.get("older") or progress.get("uncovered")):
+                roles.pause_recovery(db)
+            paused = roles.recovery_paused(db)
+            clock = db.execute(
+                "SELECT progress_version,last_backup_version FROM cwl_pool_role_clock WHERE id=1"
+            ).fetchone()
+            owner.confirm_recovery(image)
+            db.commit()
+            owner.finish_recovery(image)
+            self.role_dirty = clock[0] > clock[1]
+            self.role_recovery_error = (
+                "Role work is paused after recovery. Check roles, turn both settings off, then save them again. Signups are unchanged."
+                if paused
+                else None
+            )
+            return True
+        except Exception as error:
+            owner.poisoned = True
+            db.rollback()
+            if isinstance(error, DashboardDurabilityError):
+                raise
+            raise DashboardDurabilityError(
+                "Dashboard storage recovery is temporarily unavailable."
+            ) from None
+        finally:
+            if recovered is not None:
+                recovered.close()
+            db.close()
+
     @contextmanager
     def tx(self):
         if self.durability:

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 import lightbulb
 import hikari
@@ -86,9 +87,7 @@ def get_signup_close_timestamp(schedule_day: int) -> str:
     last_day_of_month = now.end_of("month")
 
     # Subtract 2 days to get the close date
-    close_date = last_day_of_month.subtract(days=2).replace(
-        hour=17, minute=0, second=0
-    )
+    close_date = last_day_of_month.subtract(days=2).replace(hour=17, minute=0, second=0)
 
     # If we're already past the close date this month, get next month's close date
     if now > close_date:
@@ -147,9 +146,7 @@ def create_cwl_reminder_message(
                         Text(
                             content=f"\nDirect all questions and concerns in <#{LAZY_DISCUSSION_CHANNEL}> <:warriorcat:947992348971905035>"
                         ),
-                        Media(
-                            items=[MediaItem(media="assets/Gold_Footer.png")]
-                        ),
+                        Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
                         ActionRow(components=button_components),
                     ],
                 )
@@ -180,9 +177,7 @@ def create_cwl_reminder_message(
                                 "Direct all questions and concerns to <#801950200133976124> <:warriorcat:947992348971905035>"
                             )
                         ),
-                        Media(
-                            items=[MediaItem(media="assets/Gold_Footer.png")]
-                        ),
+                        Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
                         ActionRow(components=button_components),
                     ],
                 )
@@ -238,9 +233,7 @@ def create_cwl_reminder_message(
                                 "Outside involvement is not permitted."
                             )
                         ),
-                        Text(
-                            content=f"\n# **Signups close {close_timestamp}**"
-                        ),
+                        Text(content=f"\n# **Signups close {close_timestamp}**"),
                         Text(
                             content=f"\nDirect all questions and concerns in <#{LAZY_DISCUSSION_CHANNEL}> <:warriorcat:947992348971905035>"
                         ),
@@ -275,9 +268,7 @@ def create_cwl_reminder_message(
                                 "the better it is on us making Rosters."
                             )
                         ),
-                        Text(
-                            content=f"\n# **Signups close {close_timestamp}**"
-                        ),
+                        Text(content=f"\n# **Signups close {close_timestamp}**"),
                         Text(
                             content="\nDirect all questions and concerns to <#801950200133976124> <:warriorcat:947992348971905035>"
                         ),
@@ -345,16 +336,14 @@ def get_last_sent(schedule_data: dict):
     return schedule_data.get("last_sent_0") or schedule_data.get("last_sent")
 
 
-def _campaign_job_id(
-    guild_id: int, cycle: str, message_id: str, variant: str
-) -> str:
-    return (
-        f"{CAMPAIGN_JOB_PREFIX}{int(guild_id)}:{cycle}:{message_id}:{variant}"
-    )
+def _campaign_job_id(guild_id: int, cycle: str, message_id: str, variant: str) -> str:
+    return f"{CAMPAIGN_JOB_PREFIX}{int(guild_id)}:{cycle}:{message_id}:{variant}"
 
 
 def _campaign_generation(loaded: dict) -> str:
-    version = f"{int(loaded.get('defaults_revision', 0))}:{int(loaded.get('revision', 0))}"
+    version = (
+        f"{int(loaded.get('defaults_revision', 0))}:{int(loaded.get('revision', 0))}"
+    )
     return (
         f"{version}:{loaded['recurring_version']}"
         if loaded.get("recurring_version")
@@ -417,9 +406,7 @@ async def _persist_campaign_job(
     )
 
 
-async def _release_campaign_claim(
-    guild_id: int, cycle: str, occurrence: str
-) -> None:
+async def _release_campaign_claim(guild_id: int, cycle: str, occurrence: str) -> None:
     claim_key = occurrence.replace(".", "_")
     await mongo_client.bot_config.update_one(
         {"_id": cwl_campaign.cycle_id(guild_id, cycle)},
@@ -465,9 +452,7 @@ async def _claim_campaign_occurrence(
         {
             "_id": cwl_campaign.cycle_id(guild_id, cycle),
             f"delivery_claims.{claim_key}.at": (
-                existing.get("at")
-                if isinstance(existing, dict)
-                else {"$exists": False}
+                existing.get("at") if isinstance(existing, dict) else {"$exists": False}
             ),
             "sent_occurrences": {"$ne": occurrence},
             "uncertain_occurrences": {"$ne": occurrence},
@@ -495,9 +480,7 @@ async def _claim_campaign_occurrence(
     )
 
 
-async def _campaign_channel_belongs_to_guild(
-    channel_id: int, guild_id: int
-) -> bool:
+async def _campaign_channel_belongs_to_guild(channel_id: int, guild_id: int) -> bool:
     cache = getattr(bot_instance, "cache", None)
     channel = (
         cache.get_guild_channel(channel_id)
@@ -525,8 +508,7 @@ async def _schedule_campaign_retry(
     for variant, exc in errors:
         job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
         pending = (
-            await mongo_client.cwl_pending_reminders.find_one({"_id": job_id})
-            or {}
+            await mongo_client.cwl_pending_reminders.find_one({"_id": job_id}) or {}
         )
         failure_count = max(0, int(pending.get("failure_count", 0))) + 1
         permanent = _is_permanent_delivery_error(exc)
@@ -548,9 +530,7 @@ async def _schedule_campaign_retry(
                     "revision": generation,
                 },
             )
-            await mongo_client.cwl_pending_reminders.delete_one(
-                {"_id": job_id}
-            )
+            await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
             if scheduler.get_job(job_id):
                 scheduler.remove_job(job_id)
             continue
@@ -572,9 +552,7 @@ async def _schedule_campaign_retry(
                     "reason": "The retry would run after signup closes or outside the reminder sequence.",
                 },
             )
-            await mongo_client.cwl_pending_reminders.delete_one(
-                {"_id": job_id}
-            )
+            await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
             if scheduler.get_job(job_id):
                 scheduler.remove_job(job_id)
             continue
@@ -623,8 +601,7 @@ def _sequence_spacing_blocked(loaded, message_id, variant, now):
     # tolerance avoids dropping an on-time reminder at the exact gap boundary.
     gap = max(
         0,
-        int(loaded["campaign"]["reminder_sequence"]["min_gap_hours"]) * 3600
-        - 60,
+        int(loaded["campaign"]["reminder_sequence"]["min_gap_hours"]) * 3600 - 60,
     )
     times = {
         row["message_id"]: pendulum.parse(row["run_at"])
@@ -636,8 +613,7 @@ def _sequence_spacing_blocked(loaded, message_id, variant, now):
     current = times.get(message_id)
     # An overdue job must not crowd a newer reminder, including after restart.
     if current and any(
-        when > current and (when - now).total_seconds() < gap
-        for when in times.values()
+        when > current and (when - now).total_seconds() < gap for when in times.values()
     ):
         return True
     for row in loaded.get("deliveries", ()):
@@ -688,9 +664,7 @@ async def send_campaign_message(
     ):
         for variant in variants or cwl_campaign.AUDIENCES:
             job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
-            await mongo_client.cwl_pending_reminders.delete_one(
-                {"_id": job_id}
-            )
+            await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
             if scheduler.get_job(job_id):
                 scheduler.remove_job(job_id)
         return False
@@ -727,12 +701,8 @@ async def send_campaign_message(
         channel_id = int(item["destination_channel_id"])
         discord_message_id = None
         try:
-            if not await _campaign_channel_belongs_to_guild(
-                channel_id, guild_id
-            ):
-                raise ValueError(
-                    "Configured destination is outside the campaign guild"
-                )
+            if not await _campaign_channel_belongs_to_guild(channel_id, guild_id):
+                raise ValueError("Configured destination is outside the campaign guild")
             components = await cwl_campaign.render_message(
                 {"campaign": campaign, "deadline": loaded["deadline"]},
                 message_id,
@@ -768,9 +738,7 @@ async def send_campaign_message(
             discord_message_id = getattr(result, "id", None)
             sent_any = True
         except Exception as exc:
-            if message_id == "roster" and not _is_permanent_delivery_error(
-                exc
-            ):
+            if message_id == "roster" and not _is_permanent_delivery_error(exc):
                 try:
                     await cwl_campaign.record_delivery(
                         mongo_client,
@@ -827,11 +795,7 @@ async def send_campaign_message(
             # producing a second ping.
             try:
                 await mongo_client.cwl_pending_reminders.update_one(
-                    {
-                        "_id": _campaign_job_id(
-                            guild_id, cycle, message_id, variant
-                        )
-                    },
+                    {"_id": _campaign_job_id(guild_id, cycle, message_id, variant)},
                     {
                         "$set": {
                             "status": "ledger_pending",
@@ -904,8 +868,7 @@ async def send_campaign_message(
     for variant in selected:
         job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
         pending = (
-            await mongo_client.cwl_pending_reminders.find_one({"_id": job_id})
-            or {}
+            await mongo_client.cwl_pending_reminders.find_one({"_id": job_id}) or {}
         )
         if pending.get("status") == "ledger_pending":
             continue
@@ -920,9 +883,7 @@ async def sync_campaign_schedule(guild_id: int, cycle: str) -> None:
     if not scheduler.get_job(CAMPAIGN_ROLLOVER_JOB_ID):
         scheduler.add_job(
             _sync_all_campaigns,
-            trigger=CronTrigger(
-                day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE
-            ),
+            trigger=CronTrigger(day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE),
             id=CAMPAIGN_ROLLOVER_JOB_ID,
             replace_existing=True,
             **JOB_OPTIONS,
@@ -931,12 +892,8 @@ async def sync_campaign_schedule(guild_id: int, cycle: str) -> None:
     generation = _campaign_generation(loaded)
     # Activating the dashboard hands ownership to the guild-scoped scheduler.
     # Retire the globally keyed legacy jobs/state so both systems cannot send.
-    legacy = (
-        await mongo_client.cwl_reminder.find_one({"_id": "schedule"}) or {}
-    )
-    if int(guild_id) == cwl_campaign.LEGACY_WU_GUILD_ID and legacy.get(
-        "enabled"
-    ):
+    legacy = await mongo_client.cwl_reminder.find_one({"_id": "schedule"}) or {}
+    if int(guild_id) == cwl_campaign.LEGACY_WU_GUILD_ID and legacy.get("enabled"):
         existing_defaults = await mongo_client.bot_config.find_one(
             {"_id": cwl_campaign.defaults_id(guild_id)}
         )
@@ -1009,18 +966,12 @@ async def sync_campaign_schedule(guild_id: int, cycle: str) -> None:
         ]:
             if scheduler.get_job(job_id):
                 scheduler.remove_job(job_id)
-            await mongo_client.cwl_pending_reminders.delete_one(
-                {"_id": job_id}
-            )
+            await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
 
-        loaded = await cwl_campaign.load_campaign(
-            mongo_client, guild_id, cycle
-        )
+        loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
         generation = _campaign_generation(loaded)
 
-    all_pending = await mongo_client.cwl_pending_reminders.find().to_list(
-        length=None
-    )
+    all_pending = await mongo_client.cwl_pending_reminders.find().to_list(length=None)
     scoped = {
         row.get("_id"): row
         for row in all_pending
@@ -1065,9 +1016,7 @@ async def sync_campaign_schedule(guild_id: int, cycle: str) -> None:
                 continue
             message_id = occurrence["message_id"]
             variant = occurrence["variant"]
-            when = pendulum.parse(occurrence["run_at"]).in_timezone(
-                DEFAULT_TIMEZONE
-            )
+            when = pendulum.parse(occurrence["run_at"]).in_timezone(DEFAULT_TIMEZONE)
             if when <= now:
                 continue
             job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
@@ -1109,9 +1058,7 @@ def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def queue_campaign_retry(
-    guild_id: int, cycle: str, occurrence: str
-) -> None:
+async def queue_campaign_retry(guild_id: int, cycle: str, occurrence: str) -> None:
     event_cycle, message_id, variant = occurrence.split("|", 2)
     if event_cycle != cycle:
         raise ValueError("Occurrence belongs to another cycle")
@@ -1119,9 +1066,7 @@ async def queue_campaign_retry(
     generation = _campaign_generation(loaded)
     run_time = pendulum.now(DEFAULT_TIMEZONE).add(seconds=2)
     if _sequence_delivery_blocked(loaded, message_id, run_time):
-        raise ValueError(
-            "This reminder is no longer scheduled or signups have closed."
-        )
+        raise ValueError("This reminder is no longer scheduled or signups have closed.")
     job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
     await _persist_campaign_job(
         job_id,
@@ -1145,9 +1090,7 @@ async def queue_manual_campaign_occurrence(
     generation = _campaign_generation(loaded)
     run_time = pendulum.now(DEFAULT_TIMEZONE).add(seconds=2)
     if _sequence_delivery_blocked(loaded, message_id, run_time):
-        raise ValueError(
-            "This reminder is no longer scheduled or signups have closed."
-        )
+        raise ValueError("This reminder is no longer scheduled or signups have closed.")
     job_ids = []
     for variant in variants:
         job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
@@ -1174,9 +1117,7 @@ async def queue_manual_campaign_occurrence(
     return ",".join(job_ids)
 
 
-async def remove_followup_configuration(
-    number: int, mongo: MongoClient
-) -> bool:
+async def remove_followup_configuration(number: int, mongo: MongoClient) -> bool:
     """Remove a configured follow-up and all of its runnable state."""
     schedule_data = await mongo.cwl_reminder.find_one({"_id": "schedule"})
     if not schedule_data:
@@ -1269,9 +1210,7 @@ async def _schedule_durable_reminder(
     channel_keys: list[str] | None = None,
 ) -> None:
     """Persist a date job before exposing it to the in-memory scheduler."""
-    await _persist_pending_reminder(
-        job_id, run_time, reminder_number, channel_keys
-    )
+    await _persist_pending_reminder(job_id, run_time, reminder_number, channel_keys)
     _add_reminder_job(job_id, run_time, reminder_number, channel_keys)
 
 
@@ -1375,10 +1314,7 @@ async def _schedule_retry(
 
     now = pendulum.now(DEFAULT_TIMEZONE)
     job_id = _pending_job_id(reminder_number)
-    pending = (
-        await mongo_client.cwl_pending_reminders.find_one({"_id": job_id})
-        or {}
-    )
+    pending = await mongo_client.cwl_pending_reminders.find_one({"_id": job_id}) or {}
     try:
         previous_failures = max(0, int(pending.get("failure_count", 0)))
     except (TypeError, ValueError):
@@ -1390,9 +1326,7 @@ async def _schedule_retry(
     failure_count = previous_failures + 1
     first_failed_at = pending.get("first_failed_at")
     try:
-        first_failed = (
-            pendulum.parse(first_failed_at) if first_failed_at else now
-        )
+        first_failed = pendulum.parse(first_failed_at) if first_failed_at else now
     except (TypeError, ValueError):
         first_failed = now
 
@@ -1401,9 +1335,7 @@ async def _schedule_retry(
         f"{key}:{type(exc).__name__}:{_delivery_error_detail(exc)}"
         for key, exc in failures
     )[:DELIVERY_ERROR_TEXT_LIMIT]
-    has_permanent_error = any(
-        _is_permanent_delivery_error(exc) for _, exc in failures
-    )
+    has_permanent_error = any(_is_permanent_delivery_error(exc) for _, exc in failures)
     retry_age_hours = max(0.0, (now - first_failed).total_seconds() / 3600)
 
     if has_permanent_error:
@@ -1610,13 +1542,9 @@ async def send_cwl_reminder(
         job_id = _pending_job_id(reminder_number)
         if scheduler.get_job(job_id):
             scheduler.remove_job(job_id)
-        result = await mongo_client.cwl_pending_reminders.delete_one(
-            {"_id": job_id}
-        )
+        result = await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
         if result.deleted_count > 0:
-            print(
-                f"[CWL Reminder] Cleaned up completed {reminder_type} reminder"
-            )
+            print(f"[CWL Reminder] Cleaned up completed {reminder_type} reminder")
 
         if reminder_number == 0:
             schedule_data = await mongo_client.cwl_reminder.find_one(
@@ -1661,9 +1589,7 @@ async def schedule_followup_reminder(
 
     await _schedule_durable_reminder(job_id, run_time, reminder_number)
 
-    print(
-        f"[CWL Reminder] Scheduled follow-up #{reminder_number} for {run_time}"
-    )
+    print(f"[CWL Reminder] Scheduled follow-up #{reminder_number} for {run_time}")
 
 
 async def restore_pending_reminders():
@@ -1679,8 +1605,8 @@ async def restore_pending_reminders():
     now = pendulum.now(DEFAULT_TIMEZONE)
 
     # Find all pending reminders
-    pending_reminders = (
-        await mongo_client.cwl_pending_reminders.find().to_list(length=None)
+    pending_reminders = await mongo_client.cwl_pending_reminders.find().to_list(
+        length=None
     )
 
     if not pending_reminders:
@@ -1725,9 +1651,7 @@ async def restore_pending_reminders():
                     if value in cwl_campaign.AUDIENCES
                 ]
                 run_time = pendulum.parse(run_time_str)
-                loaded = await cwl_campaign.load_campaign(
-                    mongo_client, guild_id, cycle
-                )
+                loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
                 generation = _campaign_generation(loaded)
                 if (
                     not variants
@@ -1798,9 +1722,7 @@ async def restore_pending_reminders():
             continue
 
         if LEGACY_RUNTIME_DISABLED:
-            await mongo_client.cwl_pending_reminders.delete_one(
-                {"_id": reminder_id}
-            )
+            await mongo_client.cwl_pending_reminders.delete_one({"_id": reminder_id})
             if reminder_id and scheduler.get_job(reminder_id):
                 scheduler.remove_job(reminder_id)
             continue
@@ -1809,43 +1731,26 @@ async def restore_pending_reminders():
         job_id = reminder.get("job_id")
 
         if reminder.get("status") == "abandoned":
-            await mongo_client.cwl_pending_reminders.delete_one(
-                {"_id": reminder_id}
-            )
-            print(
-                f"[CWL Reminder] Cleaned up terminal pending reminder {reminder_id}"
-            )
+            await mongo_client.cwl_pending_reminders.delete_one({"_id": reminder_id})
+            print(f"[CWL Reminder] Cleaned up terminal pending reminder {reminder_id}")
             continue
 
-        if (
-            not reminder_id
-            or not run_time_str
-            or reminder_number is None
-            or not job_id
-        ):
+        if not reminder_id or not run_time_str or reminder_number is None or not job_id:
             # Invalid reminder data, clean it up
-            await mongo_client.cwl_pending_reminders.delete_one(
-                {"_id": reminder_id}
-            )
+            await mongo_client.cwl_pending_reminders.delete_one({"_id": reminder_id})
             continue
 
         try:
             run_time = pendulum.parse(run_time_str)
         except Exception as e:
-            print(
-                f"[CWL Reminder] Invalid pending reminder {reminder_id}: {e}"
-            )
-            await mongo_client.cwl_pending_reminders.delete_one(
-                {"_id": reminder_id}
-            )
+            print(f"[CWL Reminder] Invalid pending reminder {reminder_id}: {e}")
+            await mongo_client.cwl_pending_reminders.delete_one({"_id": reminder_id})
             continue
 
         try:
             if run_time > now:
                 channel_keys = reminder.get("channel_keys")
-                _add_reminder_job(
-                    job_id, run_time, reminder_number, channel_keys
-                )
+                _add_reminder_job(job_id, run_time, reminder_number, channel_keys)
 
                 print(
                     f"[CWL Reminder] Restored follow-up #{reminder_number} for {run_time}"
@@ -1865,9 +1770,7 @@ async def restore_pending_reminders():
                     channel_keys,
                     reset_delivery_state=False,
                 )
-                _add_reminder_job(
-                    job_id, retry_time, reminder_number, channel_keys
-                )
+                _add_reminder_job(job_id, retry_time, reminder_number, channel_keys)
                 print(
                     f"[CWL Reminder] Restored overdue reminder #{reminder_number} "
                     f"for retry at {retry_time}"
@@ -1886,9 +1789,7 @@ async def restore_pending_reminders():
         except Exception as e:
             # Keep valid durable state so another restart can recover it if
             # scheduler registration is temporarily unavailable.
-            print(
-                f"[CWL Reminder] Error scheduling reminder {reminder_id}: {e}"
-            )
+            print(f"[CWL Reminder] Error scheduling reminder {reminder_id}: {e}")
             failed_count += 1
 
     if restored_count > 0:
@@ -1949,9 +1850,7 @@ async def restore_missed_base_reminder(
 
     retry_time = current.add(seconds=5)
     await _schedule_durable_reminder(cwl_initial_retry_job_id, retry_time, 0)
-    print(
-        f"[CWL Reminder] Restored missed base reminder for retry at {retry_time}"
-    )
+    print(f"[CWL Reminder] Restored missed base reminder for retry at {retry_time}")
     return True
 
 
@@ -1963,9 +1862,7 @@ async def schedule_cwl_reminder(
     """Schedule or reschedule the CWL reminder"""
     global scheduler, mongo_client
     if LEGACY_RUNTIME_DISABLED:
-        raise RuntimeError(
-            "Legacy CWL scheduling is retired; use /manage section:CWL"
-        )
+        raise RuntimeError("Legacy CWL scheduling is retired; use /manage section:CWL")
     if mongo_client:
         legacy_state = (
             await mongo_client.cwl_reminder.find_one({"_id": "schedule"}) or {}
@@ -1978,9 +1875,7 @@ async def schedule_cwl_reminder(
         scheduler.remove_job(cwl_base_job_id)
 
     # Create new trigger for base reminder
-    trigger = CronTrigger(
-        day=day, hour=hour, minute=minute, timezone=DEFAULT_TIMEZONE
-    )
+    trigger = CronTrigger(day=day, hour=hour, minute=minute, timezone=DEFAULT_TIMEZONE)
 
     # Schedule the base job
     scheduler.add_job(
@@ -2014,21 +1909,22 @@ async def schedule_cwl_reminder(
 
 async def _poll_web_roster_bridge() -> None:
     """Deliver reviewed web requests through the native campaign sender."""
+    from utils.manage_poll_cache import timed_step
+
     if mongo_client is None or bot_instance is None:
         return
     try:
         try:
-            await cwl_web_bridge.reconcile_campaign_changes(
-                mongo_client,
-                _sync_all_campaigns,
-                guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
-            )
+            with timed_step(logging.getLogger(__name__), "reconcile_campaign_changes"):
+                await cwl_web_bridge.reconcile_campaign_changes(
+                    mongo_client,
+                    _sync_all_campaigns,
+                    guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
+                )
         except Exception as exc:
             # A bad schedule must not block the independent reviewed roster queue.
             # No acknowledgement is written; the next poll retries reconciliation.
-            print(
-                f"[CWL Web Bridge] Schedule sync failed: {type(exc).__name__}"
-            )
+            print(f"[CWL Web Bridge] Schedule sync failed: {type(exc).__name__}")
 
         async def can_send_roster(row):
             from utils.dashboard_access import (
@@ -2055,32 +1951,67 @@ async def _poll_web_roster_bridge() -> None:
             )
             return "cwl_send" in expand_legacy(grant.get("permissions", []))
 
-        await cwl_web_bridge.process_pending_roster_requests(
-            mongo_client,
-            send_campaign_message,
-            authorize=can_send_roster,
-            guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
-        )
+        with timed_step(logging.getLogger(__name__), "process_pending_roster_requests"):
+            await cwl_web_bridge.process_pending_roster_requests(
+                mongo_client,
+                send_campaign_message,
+                authorize=can_send_roster,
+                guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
+            )
     except Exception as exc:
         # Leave pending or sending rows in place for inspection. In particular,
         # never auto-reset a possibly posted sending row after an outage.
         print(f"[CWL Web Bridge] Poll failed: {type(exc).__name__}")
 
 
-async def _poll_web_roster_requests() -> None:
-    from utils.manage_web_worker import queue_lock
+_roster_driver = None
 
-    # Both paths can edit campaign/management state; preserve serial execution.
-    async with queue_lock():
-        await _poll_web_roster_bridge()
-    # Independent bot-owned management queue: a CWL reconciliation failure must
-    # not prevent staff from managing tickets, templates, or FWA settings.
+
+async def _drive_web_roster_requests():
+    from utils.manage_web_worker import queue_lock, maintain_worker_heartbeat
+    from utils.manage_poll_cache import timed_step
+
+    logger = logging.getLogger(__name__)
+    heartbeat = asyncio.create_task(maintain_worker_heartbeat(mongo_client))
     try:
-        from utils.manage_web_worker import poll as poll_management
+        # Preserve the shared side-effect lane. Timing separates waiting for it
+        # from actual Mongo/Discord work; admission ticks never start a duplicate.
+        lock = queue_lock()
+        with timed_step(logger, "cwl_queue_wait"):
+            await lock.acquire()
+        try:
+            with timed_step(logger, "cwl_bridge"):
+                await _poll_web_roster_bridge()
+        finally:
+            lock.release()
+        try:
+            from utils.manage_web_worker import poll as poll_management
 
-        await poll_management(bot_instance, mongo_client)
+            with timed_step(logger, "management_poll"):
+                await poll_management(bot_instance, mongo_client)
+        except Exception as exc:
+            logger.warning("Manage Web Bridge poll failed: %s", type(exc).__name__)
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
-        print(f"[Manage Web Bridge] Poll failed: {type(exc).__name__}")
+        logger.warning("CWL Web Bridge driver failed: %s", type(exc).__name__)
+    finally:
+        heartbeat.cancel()
+        import contextlib
+
+        try:
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat
+        except Exception as exc:
+            logger.warning("Management heartbeat unavailable: %s", type(exc).__name__)
+
+
+async def _poll_web_roster_requests() -> None:
+    global _roster_driver
+    if _management_stopping:
+        return
+    if _roster_driver is None or _roster_driver.done():
+        _roster_driver = asyncio.create_task(_drive_web_roster_requests())
 
 
 _management_driver = None
@@ -2103,7 +2034,10 @@ async def _poll_web_management_fast():
     if _management_stopping or bot_instance is None or mongo_client is None:
         return
     if _management_driver is None or _management_driver.done():
-        _management_driver = asyncio.create_task(_drive_web_management())
+        from utils.manage_web_worker import idle_poll_due
+
+        if idle_poll_due(mongo_client):
+            _management_driver = asyncio.create_task(_drive_web_management())
 
 
 def _silence_fast_job_logs():
@@ -2111,9 +2045,9 @@ def _silence_fast_job_logs():
 
     class FastJobFilter(logging.Filter):
         def filter(self, record):
-            return (
-                record.levelno > logging.INFO
-                or "_poll_web_management_fast" not in record.getMessage()
+            return record.levelno > logging.INFO or not any(
+                name in record.getMessage()
+                for name in ("_poll_web_management_fast", "_poll_web_roster_requests")
             )
 
     logger = logging.getLogger("apscheduler.executors.default")
@@ -2157,9 +2091,7 @@ async def _reconcile_cwl_startup() -> None:
         ]:
             if scheduler.get_job(job_id):
                 scheduler.remove_job(job_id)
-        pending = await mongo_client.cwl_pending_reminders.find().to_list(
-            length=None
-        )
+        pending = await mongo_client.cwl_pending_reminders.find().to_list(length=None)
         for row in pending:
             if row.get("kind") == "campaign":
                 continue
@@ -2167,17 +2099,13 @@ async def _reconcile_cwl_startup() -> None:
             if job_id and scheduler.get_job(job_id):
                 scheduler.remove_job(job_id)
             if job_id:
-                await mongo_client.cwl_pending_reminders.delete_one(
-                    {"_id": job_id}
-                )
+                await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
 
         await restore_pending_reminders()
         await _sync_all_campaigns()
         scheduler.add_job(
             _sync_all_campaigns,
-            trigger=CronTrigger(
-                day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE
-            ),
+            trigger=CronTrigger(day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE),
             id=CAMPAIGN_ROLLOVER_JOB_ID,
             replace_existing=True,
             **JOB_OPTIONS,
@@ -2190,9 +2118,7 @@ async def _reconcile_cwl_startup() -> None:
     await restore_pending_reminders()
 
     # Load saved schedule from MongoDB
-    schedule_data = await mongo_client.cwl_reminder.find_one(
-        {"_id": "schedule"}
-    )
+    schedule_data = await mongo_client.cwl_reminder.find_one({"_id": "schedule"})
 
     if schedule_data and schedule_data.get("enabled", False):
         day = schedule_data.get("day")
@@ -2233,9 +2159,7 @@ async def _reconcile_cwl_startup() -> None:
     await _sync_all_campaigns()
     scheduler.add_job(
         _sync_all_campaigns,
-        trigger=CronTrigger(
-            day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE
-        ),
+        trigger=CronTrigger(day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE),
         id=CAMPAIGN_ROLLOVER_JOB_ID,
         replace_existing=True,
         **JOB_OPTIONS,
@@ -2296,15 +2220,16 @@ async def on_bot_started(
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Shutdown scheduler when bot stops"""
-    global startup_reconciler, _management_driver, _management_stopping
+    global startup_reconciler, _management_driver, _management_stopping, _roster_driver
     _management_stopping = True
-    if _management_driver is not None:
-        _management_driver.cancel()
-        import contextlib
+    import contextlib
 
-        with contextlib.suppress(asyncio.CancelledError):
-            await _management_driver
-        _management_driver = None
+    for driver in (_management_driver, _roster_driver):
+        if driver is not None:
+            driver.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await driver
+    _management_driver = _roster_driver = None
     if startup_reconciler is not None:
         await startup_reconciler.stop()
         startup_reconciler = None
@@ -2335,10 +2260,7 @@ async def _legacy_campaign_guard(ctx, mongo) -> bool:
             ephemeral=True,
         )
         return True
-    if (
-        int(getattr(interaction, "guild_id", 0) or 0)
-        != cwl_campaign.LEGACY_WU_GUILD_ID
-    ):
+    if int(getattr(interaction, "guild_id", 0) or 0) != cwl_campaign.LEGACY_WU_GUILD_ID:
         await ctx.respond(
             "Use `/manage section:CWL` to manage CWL in this server.",
             ephemeral=True,
@@ -2375,9 +2297,7 @@ class Schedule(
     name="schedule",
     description="Schedule the monthly CWL reminder",
 ):
-    day = lightbulb.integer(
-        "day", "Day of the month (1-31)", min_value=1, max_value=31
-    )
+    day = lightbulb.integer("day", "Day of the month (1-31)", min_value=1, max_value=31)
 
     hour = lightbulb.integer(
         "hour", "Hour (0-23, 24-hour format)", min_value=0, max_value=23
@@ -2436,9 +2356,7 @@ class Status(
         )
         # Get schedule from MongoDB
         try:
-            schedule_data = await mongo.cwl_reminder.find_one(
-                {"_id": "schedule"}
-            )
+            schedule_data = await mongo.cwl_reminder.find_one({"_id": "schedule"})
         except Exception as exc:
             await ctx.respond(
                 "## CWL Reminder Status\n"
@@ -2480,7 +2398,9 @@ class Status(
 
         if last_sent:
             last_sent_dt = pendulum.parse(last_sent)
-            status_text += f"\n• **Last Sent**: {last_sent_dt.format('MMM D, YYYY [at] h:mm A')}"
+            status_text += (
+                f"\n• **Last Sent**: {last_sent_dt.format('MMM D, YYYY [at] h:mm A')}"
+            )
 
         if job:
             next_run = job.next_run_time
@@ -2498,14 +2418,10 @@ class Status(
         for number, issue in sorted(
             delivery_issues.items(), key=lambda item: str(item[0])
         ):
-            reminder_label = (
-                "initial" if str(number) == "0" else f"follow-up {number}"
-            )
+            reminder_label = "initial" if str(number) == "0" else f"follow-up {number}"
             failure_count = issue.get("failure_count", "?")
             max_failures = issue.get("max_failures", MAX_DELIVERY_FAILURES)
-            channels = (
-                ", ".join(issue.get("channel_keys", [])) or "unknown channel"
-            )
+            channels = ", ".join(issue.get("channel_keys", [])) or "unknown channel"
             if issue.get("status") == "retrying":
                 status_text += (
                     f"\n• **Delivery retry ({reminder_label})**: "
@@ -2522,9 +2438,7 @@ class Status(
 
 
 @cwl_reminder.register()
-class Test(
-    lightbulb.SlashCommand, name="test", description="Send a test CWL reminder"
-):
+class Test(lightbulb.SlashCommand, name="test", description="Send a test CWL reminder"):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         await ctx.defer(ephemeral=True)
@@ -2539,9 +2453,7 @@ class Test(
                     f"Check <#{TEST_CHANNEL_ID}> to see the message."
                 )
             else:
-                await ctx.respond(
-                    "❌ **The test reminder could not be delivered.**"
-                )
+                await ctx.respond("❌ **The test reminder could not be delivered.**")
         except Exception as e:
             await ctx.respond(
                 f"❌ **Failed to send test reminder!**\n" f"Error: {str(e)}"
@@ -2591,8 +2503,7 @@ class Cancel(
         )
 
         await ctx.respond(
-            "✅ **CWL reminder cancelled**\n"
-            "The monthly reminder has been disabled.",
+            "✅ **CWL reminder cancelled**\n" "The monthly reminder has been disabled.",
             ephemeral=True,
         )
 
@@ -2657,11 +2568,7 @@ class AddFollowup(
 
         # Find existing follow-up with this number or create new
         existing_index = next(
-            (
-                i
-                for i, f in enumerate(followups)
-                if f.get("number") == self.number
-            ),
+            (i for i, f in enumerate(followups) if f.get("number") == self.number),
             None,
         )
 
@@ -2710,7 +2617,9 @@ class AddFollowup(
                 base_job.next_run_time, tz=DEFAULT_TIMEZONE
             )
             next_followup_time = next_base_time.add(minutes=total_delay)
-            next_run_info = f"\n• **Next run**: {next_followup_time.format('MMM D [at] h:mm A')}"
+            next_run_info = (
+                f"\n• **Next run**: {next_followup_time.format('MMM D [at] h:mm A')}"
+            )
 
         await ctx.respond(
             f"✅ **Follow-up reminder #{self.number} configured!**\n"
@@ -2742,9 +2651,7 @@ class RemoveFollowup(
             return
 
         if not await remove_followup_configuration(self.number, mongo):
-            await ctx.respond(
-                f"❌ **No follow-up reminder #{self.number} found!**"
-            )
+            await ctx.respond(f"❌ **No follow-up reminder #{self.number} found!**")
             return
 
         await ctx.respond(f"✅ **Removed follow-up reminder #{self.number}**")
@@ -2803,15 +2710,11 @@ class List(
             # Calculate cumulative delays
             current_delay = 0
 
-            for followup in sorted(
-                followups, key=lambda x: x.get("number", 0)
-            ):
+            for followup in sorted(followups, key=lambda x: x.get("number", 0)):
                 if followup.get("enabled", True):
                     number = followup.get("number")
                     delay = followup.get("delay_minutes", 0)
-                    delay_display = followup.get(
-                        "delay_display", f"{delay} minutes"
-                    )
+                    delay_display = followup.get("delay_display", f"{delay} minutes")
                     current_delay += delay
 
                     # Calculate actual time with date
@@ -2865,9 +2768,7 @@ class TestAll(
             return
 
         followups = schedule_data.get("followups", [])
-        total_reminders = 1 + len(
-            [f for f in followups if f.get("enabled", True)]
-        )
+        total_reminders = 1 + len([f for f in followups if f.get("enabled", True)])
 
         await ctx.respond(
             f"🚀 **Testing {total_reminders} reminder(s)...**\n"
