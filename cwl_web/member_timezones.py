@@ -101,11 +101,20 @@ async def inventory(request, *, with_role_context=False, timing=None):
             roles, guild, bot, acting = hierarchy_context(actor, me_data, bot_data)
         else:
             roles, guild, bot, acting = await hierarchy(request, actor)
-    with measure(timing, "profiles_ms"):
+    ids = [row["user"]["id"] for row in raw]
+
+    async def fetch_profiles():
         async with mongo(request) as db:
-            profiles = await MemberProfiles(db).for_members(
-                [row["user"]["id"] for row in raw], display_only=True
+            return await MemberProfiles(db).for_members(ids, display_only=True)
+
+    with measure(timing, "profiles_ms"):
+        profiles = (
+            await cache.state(request.app).profiles(
+                ids, fetch_profiles, force=request.query.get("refresh") == "1"
             )
+            if cached_read
+            else await fetch_profiles()
+        )
     if snapshot is not None and snapshot.cached:
         from datetime import datetime, timezone
 
@@ -119,7 +128,8 @@ async def inventory(request, *, with_role_context=False, timing=None):
         )
         if changed:
             previous_ids = {str(row["user"]["id"]) for row in raw}
-            cache.invalidate(request.app)
+            if cache.state(request.app).generation == snapshot.generation:
+                cache.invalidate(request.app)
             with measure(timing, "directory_ms"):
                 snapshot = await cache.state(request.app).read(
                     fetch_snapshot, force=True

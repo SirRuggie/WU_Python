@@ -34,6 +34,7 @@ class Pending:
     generation: int
     task: object = None
     readers: int = 0
+    forced: bool = False
 
 
 class DirectoryCache:
@@ -45,6 +46,7 @@ class DirectoryCache:
         self.captured_at = None
         self.pending = None
         self.receipts = OrderedDict()
+        self.profile_pending = {}
 
     def invalidate(self):
         self.generation += 1
@@ -59,8 +61,8 @@ class DirectoryCache:
         ):
             return Read(deepcopy(self.value), self.captured_at, True, self.generation)
         entry = self.pending
-        if entry is None or entry.task.done():
-            entry = Pending(self.generation)
+        if entry is None or entry.task.done() or (force and not entry.forced):
+            entry = Pending(self.generation, forced=force)
             self.pending = entry
 
             async def load():
@@ -94,6 +96,32 @@ class DirectoryCache:
                 if self.pending is entry:
                     self.pending = None
                 entry.task.cancel()  # No orphaned fetch after all HTTP readers leave.
+
+    async def profiles(self, ids, fetch, *, force=False):
+        """Share only simultaneous display reads; never retain profile results."""
+        key = (self.generation, force, tuple(sorted(set(map(str, ids)))))
+        entry = self.profile_pending.get(key)
+        if entry is None or entry.task.done():
+            entry = Pending(self.generation)
+            self.profile_pending[key] = entry
+            entry.task = asyncio.create_task(fetch(), name="members-display-profiles")
+
+            def finished(task):
+                if not task.cancelled():
+                    task.exception()
+                if self.profile_pending.get(key) is entry:
+                    self.profile_pending.pop(key, None)
+
+            entry.task.add_done_callback(finished)
+        entry.readers += 1
+        try:
+            return deepcopy(await asyncio.shield(entry.task))
+        finally:
+            entry.readers -= 1
+            if not entry.readers and not entry.task.done():
+                if self.profile_pending.get(key) is entry:
+                    self.profile_pending.pop(key, None)
+                entry.task.cancel()
 
     def observe(self, key, version):
         if self.receipts.get(key) == version:

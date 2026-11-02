@@ -207,6 +207,9 @@ async def change(request):
         if already == (operation == 'add'):
             skipped.append(roles[int(selected_id)].name)
             continue
+        from .member_directory_cache import invalidate
+        # Invalidate before transport: Discord may accept even if its reply fails.
+        invalidate(request.app)
         try:
             await discord(request, 'PUT' if operation == 'add' else 'DELETE', f'/guilds/{GUILD_ID}/members/{target_id}/roles/{selected_id}')
         except web.HTTPException as exc:

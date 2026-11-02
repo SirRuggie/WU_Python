@@ -59,7 +59,8 @@ export default function useMembersDirectory(
             typeof next.directory_cache.cached !== "boolean" ||
             typeof next.directory_cache.checked_at !== "string" ||
             !Number.isFinite(Date.parse(next.directory_cache.checked_at)) ||
-            next.directory_cache.max_age_seconds !== 60)) ||
+            !Number.isFinite(next.directory_cache.max_age_seconds) ||
+            next.directory_cache.max_age_seconds <= 0)) ||
         !Array.isArray(next.members) ||
         next.members.length > 10000 ||
         next.members.some(

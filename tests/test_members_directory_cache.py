@@ -654,3 +654,187 @@ def test_cached_bot_membership_cannot_allow_role_preview_after_bot_loses_roles(w
             await c.close()
 
     asyncio.run(run())
+
+
+def test_force_never_joins_or_publishes_an_older_plain_read():
+    async def run():
+        cache = DirectoryCache()
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def old():
+            entered.set()
+            await release.wait()
+            return {"value": "old"}
+
+        async def fresh():
+            return {"value": "new"}
+
+        pending = asyncio.create_task(cache.read(old))
+        await entered.wait()
+        result = await cache.read(fresh, force=True)
+        assert result.value == {"value": "new"} and not result.cached
+        release.set()
+        assert (await pending).value == {"value": "old"}
+        hit = await cache.read(old)
+        assert hit.cached and hit.value == {"value": "new"}
+
+    asyncio.run(run())
+
+
+def test_simultaneous_profiles_share_only_inflight_generation_and_mode():
+    async def run():
+        cache = DirectoryCache()
+        release, entered = asyncio.Event(), asyncio.Event()
+        calls = []
+
+        async def fetch():
+            calls.append(True)
+            entered.set()
+            await release.wait()
+            return {"id": {"revision": len(calls)}}
+
+        tasks = [asyncio.create_task(cache.profiles(["1"], fetch)) for _ in range(8)]
+        await entered.wait()
+        await asyncio.sleep(0)
+        assert len(calls) == 1
+        forced = asyncio.create_task(cache.profiles(["1"], fetch, force=True))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert len(calls) == 2
+        release.set()
+        values = await asyncio.gather(*tasks, forced)
+        values[0]["id"]["revision"] = 999
+        assert values[1]["id"]["revision"] != 999
+        await asyncio.sleep(0)
+        await cache.profiles(["1"], fetch)
+        assert len(calls) == 3 and not cache.profile_pending
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "method,path,expected",
+    [
+        ("GET", "/api/cwl/manage/members/overview", True),
+        ("POST", "/api/cwl/manage/members/overview", False),
+        ("GET", "/api/cwl/manage/members/overview/", False),
+        ("GET", "/api/cwl/manage/members", False),
+        ("GET", "/api/cwl/manage/member-profiles", False),
+    ],
+)
+def test_eligible_is_only_the_exact_read_only_overview(method, path, expected):
+    from cwl_web.member_directory_cache import eligible
+
+    assert eligible(S(method=method, path=path)) is expected
+
+
+def test_eight_stale_readers_share_profile_fetch_and_one_fresh_directory(
+    wire, monkeypatch
+):
+    async def run():
+        c = await client()
+        try:
+            await c.get("/api/cwl/manage/members/overview")
+            wire["members"][2]["nick"] = "Saved nickname"
+            wire["profiles"][wire["target_id"]] = dict(
+                source="staff",
+                updated_at=datetime.now(timezone.utc),
+                zone_id="utc",
+                gmt_label="GMT",
+                revision=1,
+            )
+            original = routes.MemberProfiles.for_members
+            entered, release = asyncio.Event(), asyncio.Event()
+
+            async def blocked(store, ids, **kwargs):
+                entered.set()
+                await release.wait()
+                return await original(store, ids, **kwargs)
+
+            monkeypatch.setattr(routes.MemberProfiles, "for_members", blocked)
+            pending = [
+                asyncio.create_task(c.get("/api/cwl/manage/members/overview"))
+                for _ in range(8)
+            ]
+            await entered.wait()
+
+            async def all_waiting():
+                while (
+                    sum(
+                        entry.readers
+                        for entry in c.server.app[KEY].profile_pending.values()
+                    )
+                    != 8
+                ):
+                    await asyncio.sleep(0)
+
+            await asyncio.wait_for(all_waiting(), 2)
+            release.set()
+            responses = await asyncio.gather(*pending)
+            results = [await response.json() for response in responses]
+            assert len(wire["profile_reads"]) == 2
+            assert wire["calls"].count(f"/guilds/{routes.GUILD_ID}/members") == 2
+            assert all(
+                next(
+                    r for r in data["members"] if r["discord_id"] == wire["target_id"]
+                )["nickname"]
+                == "Saved nickname"
+                for data in results
+            )
+        finally:
+            await c.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("uncertain", [False, True])
+def test_direct_role_write_invalidates_before_transport_even_on_uncertainty(
+    monkeypatch, uncertain
+):
+    async def run():
+        cache = DirectoryCache()
+        await cache.read(AsyncMock(return_value={"old": True}))
+        target_id, role_id = "800000000000000001", "800000000000000002"
+        role = S(name="Member")
+        request = S(
+            app={KEY: cache},
+            match_info={"action": "add"},
+            json=AsyncMock(
+                return_value={"values": {"member_id": target_id, "role_ids": [role_id]}}
+            ),
+        )
+        target = S(role_ids=[])
+
+        async def transport(request, method, path):
+            if method == "GET":
+                return {"unused": True}
+            assert cache.value is None
+            if uncertain:
+                raise web.HTTPServiceUnavailable()
+
+        monkeypatch.setattr(manage_roles, "require_manage", AsyncMock(return_value={}))
+        monkeypatch.setattr(
+            manage_roles, "dashboard_grant_roles", AsyncMock(return_value=set())
+        )
+        monkeypatch.setattr(
+            manage_roles,
+            "hierarchy",
+            AsyncMock(return_value=({int(role_id): role}, S(), S(), S())),
+        )
+        monkeypatch.setattr(manage_roles, "member", lambda value: target)
+        monkeypatch.setattr(manage_roles, "role_is_manageable", lambda *args: True)
+        monkeypatch.setattr(
+            manage_roles.perms, "actor_can_manage_member", lambda *args: True
+        )
+        monkeypatch.setattr(
+            manage_roles.perms, "actor_can_manage_role", lambda *args: True
+        )
+        monkeypatch.setattr(manage_roles, "discord", transport)
+        if uncertain:
+            with pytest.raises(web.HTTPServiceUnavailable):
+                await manage_roles.change(request)
+        else:
+            assert (await manage_roles.change(request)).status == 200
+        assert cache.value is None
+
+    asyncio.run(run())

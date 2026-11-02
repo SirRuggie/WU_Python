@@ -63,6 +63,7 @@ class MemberProfiles:
     async def for_members(
         self, discord_ids, *, include_departed=False, display_only=False
     ):
+        read_started = perf_counter()
         keys = sorted({member_id(value) for value in discord_ids})
         if not keys:
             return {}
@@ -79,8 +80,40 @@ class MemberProfiles:
             )
         else:
             cursor = self.collection.find(query)
-        rows = await cursor.to_list(length=None)
-        return {row["discord_id"]: row for row in rows}
+        if not display_only:
+            rows = await cursor.to_list(length=None)
+            return {row["discord_id"]: row for row in rows}
+        from utils.mongo_read_metrics import collect
+        from bson import BSON
+
+        started = perf_counter()
+        with collect() as metrics:
+            rows = await cursor.to_list(length=None)
+        cursor_ms = (perf_counter() - started) * 1000
+        result = {row["discord_id"]: row for row in rows}
+        # BSON document bytes, not wire-compressed bytes or billed bandwidth.
+        # Observability failure must never change a successful read outcome.
+        try:
+            document_bytes = sum(len(BSON.encode(row)) for row in rows)
+            logging.getLogger(__name__).info(
+                "Member display profiles timing setup_ms=%.1f checkout_ms=%.1f first_response_ms=%.1f command_ms=%.1f cursor_ms=%.1f adapt_ms=%.1f total_ms=%.1f commands=%d responses=%d failures=%d checkouts=%d docs=%d bson_bytes=%d",
+                (started - read_started) * 1000,
+                metrics.checkout_ms,
+                metrics.first_response_ms,
+                metrics.command_ms,
+                cursor_ms,
+                (perf_counter() - started) * 1000 - cursor_ms,
+                (perf_counter() - read_started) * 1000,
+                metrics.commands,
+                metrics.responses,
+                metrics.failures,
+                metrics.checkouts,
+                len(rows),
+                document_bytes,
+            )
+        except Exception:
+            pass
+        return result
 
     async def membership_rows(self):
         rows = await self.collection.find({}, {"_id": 1, "left_at": 1}).to_list(

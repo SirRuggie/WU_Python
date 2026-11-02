@@ -8,6 +8,7 @@ import pytest
 from pymongo import AsyncMongoClient, monitoring
 from local_mongo_fixture import fixture_uri
 from utils.member_profiles import MemberProfiles, DIRECTORY_FIELDS
+from utils.mongo_read_metrics import NumericReadListener, collect
 
 URI = fixture_uri(os.environ.get("WU_ACTIVITY_TEST_MONGO_URI"))
 pytestmark = pytest.mark.skipif(
@@ -35,10 +36,13 @@ class Commands(monitoring.CommandListener):
 @pytest.mark.parametrize("active", [479, 1451])
 def test_directory_profile_dto_is_bounded_single_batch_and_edit_reads_stay_complete(
     active,
+    caplog,
 ):
     async def run():
         listener = Commands()
-        client = AsyncMongoClient(URI, event_listeners=[listener])
+        client = AsyncMongoClient(
+            URI, event_listeners=[listener, NumericReadListener()]
+        )
         db = client["wu_p141_" + uuid4().hex]
         try:
             ids = [str(800000000000000000 + n) for n in range(1451)]
@@ -77,7 +81,23 @@ def test_directory_profile_dto_is_bounded_single_batch_and_edit_reads_stay_compl
             indexes = await db.member_profiles.index_information()
             listener.commands.clear()
             listener.cursors.clear()
-            rows = await store.for_members(ids + [ids[0]], display_only=True)
+            import logging
+
+            caplog.set_level(logging.INFO, logger="utils.member_profiles")
+            with collect() as outer:
+                rows = await store.for_members(ids + [ids[0]], display_only=True)
+            # for_members owns a nested metrics context, restored afterwards.
+            assert outer.commands == 0
+            messages = [
+                r.getMessage()
+                for r in caplog.records
+                if r.name == "utils.member_profiles"
+            ]
+            assert len(messages) == 1
+            assert "commands=1 responses=1 failures=0 checkouts=1" in messages[0]
+            assert f"docs={active}" in messages[0]
+            assert ids[0] not in messages[0] and "private" not in messages[0]
+            assert "checkout_ms=" in messages[0] and "first_response_ms=" in messages[0]
             assert len(rows) == active
             assert listener.commands == ["find"] and listener.cursors == [0]
             assert all(

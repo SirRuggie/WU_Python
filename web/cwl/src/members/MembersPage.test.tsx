@@ -167,7 +167,7 @@ it.each([
             cached: bad === "cache flag" ? "yes" : true,
             checked_at:
               bad === "cache date" ? "invalid" : "2026-11-02T00:00:00Z",
-            max_age_seconds: bad === "cache age" ? 3600 : 60,
+            max_age_seconds: bad === "cache age" ? 0 : 60,
           },
         };
       if (bad === "duplicate role")
@@ -541,7 +541,7 @@ it("a person above the actor keeps every role switch disabled", async () => {
   ).toBe(false);
 });
 
-it("manual refresh bypasses server cache while retaining visible members", async () => {
+it("manual refresh accepts the server TTL and retains visible members", async () => {
   const previous = vi.mocked(api).getMockImplementation()!;
   let finish: (value: unknown) => void = () => {};
   let original: unknown;
@@ -558,7 +558,7 @@ it("manual refresh bypasses server cache while retaining visible members", async
         directory_cache: {
           cached: true,
           checked_at: "2026-11-02T00:00:00Z",
-          max_age_seconds: 60,
+          max_age_seconds: 120,
         },
       };
     }
