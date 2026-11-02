@@ -17,7 +17,13 @@ GUILD, USER, CYCLE = 100, 200, "2026-11"
 COPY = {
     "title": "New roster title",
     "body": "New body @everyone <@&999>",
-    "buttons": [{"label": "My tasks", "url": "https://dash.warriorsunited.cc/tasks", "emoji": "✅"}],
+    "buttons": [
+        {
+            "label": "My tasks",
+            "url": "https://dash.warriorsunited.cc/tasks",
+            "emoji": "✅",
+        }
+    ],
 }
 
 
@@ -114,7 +120,9 @@ def test_real_service_edit_preserves_observed_images_buttons_and_no_mentions():
         assert ready["status"] == "ready"
         assert mongo.bot_config.documents[campaign.cycle_id(GUILD, CYCLE)] == raw
         assert ready["target"]["channel_name"] == "roster-announcements"
-        assert ready["draft_preview"][-1]["children"][-1]["children"][0]["emoji"] == "✅"
+        assert (
+            ready["draft_preview"][-1]["children"][-1]["children"][0]["emoji"] == "✅"
+        )
         assert ready["live_preview"][0]["text"] == "Existing outer text"
         assert ready["draft_preview"][0]["text"] == "Existing outer text"
         queued = await worker.store.request_update(ready, future_months=False)
@@ -368,3 +376,57 @@ def test_confirmed_edit_with_concurrent_saved_copy_change_reports_warning_not_re
         bot.rest.edit_message.assert_awaited_once()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("change", ["added", "filename", "description"])
+def test_attachment_only_change_during_final_scope_check_is_not_overwritten(change):
+    async def run():
+        mongo, bot, message = fixture()
+        row = await review(mongo)
+        worker = PostUpdateWorker(mongo, bot, runtime_id="process-a")
+        count = 0
+
+        async def allowed(_):
+            nonlocal count
+            count += 1
+            if count == 3:
+                if change == "added":
+                    message.attachments.append(
+                        NS(
+                            id=601,
+                            filename="later.png",
+                            url="https://cdn.example/later.png",
+                        )
+                    )
+                elif change == "filename":
+                    message.attachments[0].filename = "renamed.png"
+                else:
+                    message.attachments[0].description = (
+                        "Changed attachment description"
+                    )
+            return True
+
+        await worker.poll(guild_id=GUILD, authorize=allowed)
+        ready = await worker.store.collection.find_one({"_id": row["_id"]})
+        await worker.store.request_update(ready)
+        await worker.poll(guild_id=GUILD, authorize=allowed)
+        result = await worker.store.collection.find_one({"_id": row["_id"]})
+        assert result["status"] == "failed"
+        assert result["error"] == "Post changed. Preview again."
+        bot.rest.edit_message.assert_not_awaited()
+        bot.rest.create_message.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_attachment_fingerprint_ignores_only_rotating_discord_signatures():
+    from utils.cwl_publishing import _fingerprint
+
+    _, _, message = fixture()
+    attachment = message.attachments[0]
+    attachment.url = "https://cdn.discordapp.com/attachments/100/600/observed.png?ex=old&is=old&hm=old&width=600"
+    before = _fingerprint(message)
+    attachment.url = "https://cdn.discordapp.com/attachments/100/600/observed.png?ex=new&is=new&hm=new&width=600"
+    assert _fingerprint(message) == before
+    attachment.url = "https://cdn.discordapp.com/attachments/100/600/observed.png?ex=new&is=new&hm=new&width=800"
+    assert _fingerprint(message) != before

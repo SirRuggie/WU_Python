@@ -28,7 +28,17 @@ def _fingerprint(message):
 
     def node(component):
         result = {"type": int(component.type)}
-        for key in ("content", "label", "url", "custom_id", "style", "is_disabled", "accent_color", "divider", "spacing"):
+        for key in (
+            "content",
+            "label",
+            "url",
+            "custom_id",
+            "style",
+            "is_disabled",
+            "accent_color",
+            "divider",
+            "spacing",
+        ):
             value = getattr(component, key, None)
             if value is not None and value is not hikari.UNDEFINED:
                 result[key] = int(value) if isinstance(value, int) else str(value)
@@ -39,14 +49,34 @@ def _fingerprint(message):
             result["components"] = [node(child) for child in component.components]
         if hasattr(component, "items"):
             result["media"] = [
-                {"url": canonical_media_url(str(getattr(item.media, "url", item.media))),
-                 "description": str(getattr(item, "description", "") or ""),
-                 "spoiler": bool(getattr(item, "is_spoiler", False))}
+                {
+                    "url": canonical_media_url(
+                        str(getattr(item.media, "url", item.media))
+                    ),
+                    "description": str(getattr(item, "description", "") or ""),
+                    "spoiler": bool(getattr(item, "is_spoiler", False)),
+                }
                 for item in component.items
             ]
         return result
 
-    data = {"content": getattr(message, "content", None), "components": [node(item) for item in message.components]}
+    data = {
+        "content": getattr(message, "content", None),
+        "components": [node(item) for item in message.components],
+        # Attachment retention is part of this edit's reviewed state. An
+        # attachment-only edit can otherwise drop a newly attached file or
+        # break an attachment:// reference without changing the components.
+        "attachments": [
+            {
+                "id": str(item.id),
+                "filename": str(getattr(item, "filename", "")),
+                "description": str(getattr(item, "description", "") or ""),
+                "spoiler": bool(getattr(item, "is_spoiler", False)),
+                "url": canonical_media_url(str(getattr(item, "url", ""))),
+            }
+            for item in (getattr(message, "attachments", ()) or ())
+        ],
+    }
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 

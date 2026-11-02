@@ -92,3 +92,20 @@ exception even when its content and timestamp are identical. No clock is moved.
 Full backend, exact committed production-shaped boot, additional browser failure
 cases and final preview manifest remain pending at this checkpoint. Release is
 held for owner review. No production state or Discord post was changed.
+
+An additional end-to-end review found that the preexisting message fingerprint
+omitted attachments. A local callback added attachment 601 while the final scope
+check awaited; the old worker edited with retained attachment 600 only. Three
+worker/service regressions (added attachment, filename, description) each failed
+before the fix. The same fingerprint now includes stable attachment identity and
+relevant metadata, canonicalizing only Discord's rotating CDN signatures. Those
+three races refuse the edit; a regression proves signature rotation stays equal
+while another query change remains distinct. Removing attachment fingerprinting
+is a sixth genuine killed mutant (four failing regressions). No other publishing
+policy changed.
+
+The full backend at the earlier 84a94b0a checkpoint passed 6377 checks, 99 skipped,
+and 267 subtests in 589.73 seconds. That pass predates the attachment fix and is
+not the final gate. The corrected source passes 138 affected regressions and
+repeated owned-Mongo checks. A fresh full backend run and exact artifact boot are
+still required; the global full-test slot is currently assigned to prompt 143.
