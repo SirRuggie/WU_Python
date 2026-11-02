@@ -2124,6 +2124,7 @@ async def _poll_web_roster_requests() -> None:
 
 _management_driver = None
 _management_stopping = False
+_external_health = None
 
 
 async def _drive_web_management():
@@ -2146,6 +2147,8 @@ async def _poll_web_management_fast():
 
         if idle_poll_due(mongo_client):
             _management_driver = asyncio.create_task(_drive_web_management())
+    if _external_health is not None:
+        _external_health.job_ran()
 
 
 def _silence_fast_job_logs():
@@ -2321,7 +2324,7 @@ async def on_bot_started(
     event: hikari.StartedEvent, mongo: MongoClient = lightbulb.di.INJECTED
 ) -> None:
     """Start non-blocking, self-healing restoration of the saved schedule."""
-    global bot_instance, mongo_client, startup_reconciler, _management_stopping
+    global bot_instance, mongo_client, startup_reconciler, _management_stopping, _external_health
     _management_stopping = False
 
     bot_instance = event.app
@@ -2333,13 +2336,20 @@ async def on_bot_started(
             _reconcile_cwl_startup,
         )
     startup_reconciler.start()
+    if _external_health is None:
+        from extensions.tasks.service_health import start
+
+        _external_health = start(bot_instance, mongo_client, scheduler)
 
 
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Shutdown scheduler when bot stops"""
-    global startup_reconciler, _management_driver, _management_stopping, _roster_driver
+    global startup_reconciler, _management_driver, _management_stopping, _roster_driver, _external_health
     _management_stopping = True
+    if _external_health is not None:
+        await _external_health.close()
+        _external_health = None
     import contextlib
 
     for driver in (_management_driver, _roster_driver):

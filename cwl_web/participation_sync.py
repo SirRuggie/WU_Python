@@ -658,7 +658,7 @@ def _aggregate_for_account(
     return attacks, stars, status, complete, checked, warning
 
 
-async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
+async def sync_season(app, season_id: int, *, force: bool = False, observe=None) -> dict:
     """Fetch outside SQLite transactions; commit only to the same draft snapshot."""
     from .app import _fail
 
@@ -678,6 +678,11 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             if not settings["cycle"]:
                 _fail(409, "Select a CWL month before syncing")
             if not force and not settings["enabled"]:
+                if observe is not None:
+                    try:
+                        observe(True)
+                    except Exception:
+                        pass
                 return {"sync": settings, "updated_accounts": 0}
             latest = db.execute(
                 "SELECT id,version FROM roster_publications "
@@ -1106,6 +1111,12 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 ),
             )
             result = settings_view(db, season_id)
+        from .healthchecks import record_capture
+
+        record_capture(
+            observe, force=force, clans=clans, groups=fresh_groups,
+            wars=fresh_wars, waiting=waiting_clans,
+        )
         return {"sync": result, "updated_accounts": updated}
 
 
@@ -1177,9 +1188,13 @@ async def force_sync(request):
 
 
 async def _worker(app):
+    from .healthchecks import CapturePass
+
+    sender = app.get("capture_external_heartbeat")
     try:
         while True:
             await asyncio.sleep(INTERVAL_SECONDS)
+            outcome = CapturePass()
             with app["store"].tx() as db:
                 season_ids = [
                     row["season_id"]
@@ -1191,15 +1206,37 @@ async def _worker(app):
                 ]
             for season_id in season_ids:
                 try:
-                    await sync_season(app, season_id)
+                    if sender is None:
+                        await sync_season(app, season_id)
+                    else:
+                        await sync_season(app, season_id, observe=outcome.record)
+                except web.HTTPException as error:
+                    # Snapshot edits/archive/removal are ordinary cancellation,
+                    # not a crashed capture. No refresh is forced to retry them.
+                    if error.status in {404, 409, 423}:
+                        outcome.record(True)
+                    else:
+                        outcome.crashed = True
                 except Exception:
-                    # One season or provider outage must not stop later cycles.
-                    continue
+                    # Preserve the existing later-season isolation.
+                    outcome.crashed = True
+            if sender is not None:
+                sender.submit(outcome.healthy(no_seasons=not season_ids))
     except asyncio.CancelledError:
+        raise
+    except Exception:
+        if sender is not None:
+            sender.submit(False)
         raise
 
 
 async def lifecycle(app):
+    import os
+    from utils.external_heartbeat import ExternalHeartbeat
+    from .healthchecks import CAPTURE_ENV
+
+    sender = ExternalHeartbeat(os.getenv(CAPTURE_ENV, ""), "capture")
+    app["capture_external_heartbeat"] = sender if sender.enabled else None
     task = asyncio.create_task(_worker(app), name="cwl-participation-sync")
     try:
         yield
@@ -1209,6 +1246,8 @@ async def lifecycle(app):
             await task
         except asyncio.CancelledError:
             pass
+        finally:
+            await sender.close()
 
 
 def routes():

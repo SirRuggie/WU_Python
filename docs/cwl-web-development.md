@@ -1341,3 +1341,90 @@ dashboard `cwl-backup.timer` remains every five minutes. This reduces full Mongo
 dumps from 96 to 24 per day; actual client-transfer estimates belong to the
 read-only Mongo audit rather than assuming stored/compressed size equals wire
 traffic. The intended Mongo recovery window becomes one hour plus job runtime.
+
+### Optional service Healthchecks (source preparation, release held)
+
+Three independent dead-man switches complement backup monitoring. Ruggie creates
+three checks on Healthchecks and puts each private Ping URL in the service's
+existing Git-ignored environment file. No checks or private URLs are created by
+this change. Leave the existing `CWL_BACKUP_HEALTHCHECK_URL` unchanged.
+
+For the bot's existing private `.env` / service environment:
+
+```dotenv
+WU_BOT_HEALTHCHECK_URL=https://hc-ping.com/<BOT_CHECK_UUID>
+```
+
+For the backend's existing private `.local/cwl-web.env`:
+
+```dotenv
+CWL_DASHBOARD_HEALTHCHECK_URL=https://hc-ping.com/<DASHBOARD_CHECK_UUID>
+CWL_CAPTURE_HEALTHCHECK_URL=https://hc-ping.com/<CAPTURE_CHECK_UUID>
+```
+
+These are placeholders, not working URLs. Keep the files private (0600); never
+paste actual values into source, handoffs, command output or logs. An unset or
+empty value silently disables that check. Invalid configured values disable it
+with a generic warning. Only HTTPS `hc-ping.com` UUID URLs are accepted; redirects
+are refused. Requests have 5-second connect / 10-second read timeouts, carry no
+logs or application data, and failures are logged without exception text or the
+URL. A request-scoped logging filter also redacts its UUID from Requests/urllib3
+connection-pool DEBUG messages and is removed after the attempt. Each service queues at most one off-loop request at a time, at least 60
+seconds apart; there is no automatic retry loop. Ping failures never change a
+capture result or service readiness. A request already executing in its thread
+may finish after shutdown begins, but no further attempts are scheduled.
+
+| Check | Period | Suggested grace | Proof before success |
+| --- | --- | --- | --- |
+| Bot | 5 minutes | 15 minutes | Public Hikari gateway connected/alive, APScheduler running, existing management job and independent Mongo heartbeat both no older than 90 seconds |
+| Dashboard | 5 minutes | 10 minutes | Actual loopback `/api/cwl/config` returns the expected JSON and a read-only SQLite query succeeds; existing durability fence is healthy |
+| Capture | Existing 15-minute ordinary interval, plus pass runtime | 30 minutes | Ordinary enabled-season pass completes with useful fresh progress or a validated waiting state; no enabled draft seasons is healthy |
+
+Grace is additional time after the period: these suggestions alert after about
+20, 15 and 45 minutes without a success. Capture waits 15 minutes before its
+first ordinary pass; existing group/war network budgets can consume about six
+minutes per season. With several enabled seasons or unusual existing queueing,
+choose a larger capture grace rather than forcing a capture. A normal 210-second
+bot drain plus startup fits the suggested bot grace. Environment changes take
+effect only on the relevant approved bot/backend restart. This source change
+requires a future bot and backend restart; release remains held for Ruggie.
+
+The bot reporter does not treat a historical finite `heartbeat_latency` as a
+recent gateway ACK. Hikari 2.6's public connected/alive state relies on its own
+heartbeat watchdog; this code uses no private gateway fields. Separately, the
+existing scheduled admission job supplies scheduler progress, and the existing
+independent management heartbeat runs every ten seconds and writes at most once
+per 30 seconds, including while a job waits on Discord or a queue lock. The
+90-second freshness bound covers the tested normal 70-second rate-limit wait,
+150-second profile edit and 200-second owned worker budget because that heartbeat
+continues during those waits. A stale scheduler or stale heartbeat stops bot
+pings even if the reporting timer still runs. There are no additional Mongo
+reads or writes and no additional Clash/Discord calls for monitoring.
+
+The dashboard check uses the existing configured loopback host/port, rejects
+redirects, sends no cookies and queries SQLite in read-only mode off the event
+loop. Its public config handler bypasses upstream authorization reads. Before the first successful self-check, startup/recovery produces no ping rather
+than an immediate `/fail`; the outside grace covers the bind and recovery window.
+The check is cancelled before backend resources close. An unset dashboard URL
+starts no self-check task or periodic local I/O. Capture adds no
+queries: it observes the existing ordinary worker's already-selected seasons and
+already-computed fresh-group, fresh-war and validated-wait counts. Manual forced
+refreshes never emit a monitoring ping.
+
+Capture sends one result after an ordinary pass across enabled draft seasons.
+Any unexpected exception makes the pass `/fail`, while later seasons still run.
+When every clan lacks fresh groups, fresh wars and a validated waiting state,
+it also sends `/fail`; old cached rows alone cannot keep an all-provider-outage
+green. Partial or stale output with some fresh progress, legitimate waiting,
+empty clan sets and ordinary concurrent edit/archive/removal cancellation count
+as completed work. With no enabled season it sends success on the ordinary
+schedule, so offseason silence is not mistaken for a dead worker. A crashed
+worker that cannot even run the failure attempt is detected when pings stop.
+
+Validation includes real scheduled-entrypoint/independent-heartbeat execution at
+normal maximum job durations, disconnected/stale/dead scheduler cases, actual
+loopback HTTP plus SQLite checks, ordinary capture success/partial/cache-only
+outage/crash/offseason/manual-force behavior, and harmless bounded ping outages.
+External delivery is tested with injected transports only: no actual Healthchecks
+request, production API timing, Discord delivery or live role change is claimed.
+There is no UI change or new preview for this monitoring-only feature.

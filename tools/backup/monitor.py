@@ -7,8 +7,6 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from urllib.parse import urlsplit
-from uuid import UUID
 
 from dotenv import dotenv_values
 import requests
@@ -18,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if not __package__:
     sys.path.insert(0, str(ROOT))
 from tools.backup.tmp_quota import inspect_tmp_quota, quota_issues
+from utils.external_heartbeat import ping_external
 
 STATE = Path.home() / '.local/state/wu-backup'
 CONFIG = Path.home() / '.config/wu-backup'
@@ -102,29 +101,6 @@ def send_discord(content):
         json={'content': content, 'allowed_mentions': {'parse': []}}, timeout=20)
     if response.status_code != 200:
         raise RuntimeError(f'Backup alert delivery failed (HTTP {response.status_code})')
-
-
-def ping_external(url, healthy, get=requests.get):
-    """Use Healthchecks' managed dead-man switch; never transmit logs or secrets."""
-    if not url:
-        return False
-    parsed = urlsplit(url)
-    if (parsed.scheme != 'https' or parsed.netloc != 'hc-ping.com'
-            or parsed.query or parsed.fragment):
-        raise RuntimeError('External heartbeat must be an HTTPS hc-ping.com UUID URL')
-    try:
-        check_id = str(UUID(parsed.path.strip('/')))
-    except ValueError:
-        raise RuntimeError('External heartbeat URL has an invalid check ID') from None
-    endpoint = 'https://hc-ping.com/' + check_id + ('' if healthy else '/fail')
-    try:
-        response = get(endpoint, timeout=(5, 10), allow_redirects=False)
-    except requests.RequestException:
-        # Request errors include the private Ping URL; do not leak them to journal.
-        raise RuntimeError('External heartbeat delivery failed') from None
-    if response.status_code != 200:
-        raise RuntimeError(f'External heartbeat rejected (HTTP {response.status_code})')
-    return True
 
 
 def main():
