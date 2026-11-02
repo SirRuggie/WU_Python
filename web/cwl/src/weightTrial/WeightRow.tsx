@@ -68,7 +68,14 @@ export default function WeightRow({
         <TownHallIcon level={row.town_hall} />
         <span>
           <strong title={row.name}>{row.name}</strong>
-          <small>{row.tag}</small>
+          <small>
+            {row.tag}
+            {row.current_member === false ? " · Left clan" : ""}
+          </small>
+          {row.name === row.tag && <small>Name unavailable</small>}
+          {row.town_hall == null && (
+            <small>Town Hall unavailable · choose storages</small>
+          )}
         </span>
       </div>
       <label className="weight-trial-storages">
@@ -81,6 +88,7 @@ export default function WeightRow({
             onChange(editDraft(draft, "storages", event.target.value))
           }
         >
+          {!draft.storages && <option value="">—</option>}
           {[1, 2, 3, 4, 5].map((n) => (
             <option key={n} value={n}>
               ×{n}

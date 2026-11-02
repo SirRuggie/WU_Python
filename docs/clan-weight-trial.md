@@ -45,7 +45,7 @@ revision gate remains mandatory, and prior placement receipts become stale after
 a weight change. Legacy manual rows remain available for code rollback.
 
 Saves recheck that the clan is still in the family and the edited accounts are
-still current members. Per-player revisions reject conflicting edits atomically.
+current members or in either retained usable war lineup (prompt 131 below). Per-player revisions reject conflicting edits atomically.
 Replaying an already accepted value does not duplicate history. Different
 players can be updated independently. Membership can still change immediately
 after a Clash API response; a later refresh reflects that upstream change.
@@ -218,9 +218,10 @@ invalidation. Unknown current location is shown separately from verified nonfami
 membership. Build roster links managed and current-FWA accounts to this editor;
 manual override remains blocked for managed rows.
 
-Old captured lineups contain positions without names. New captures optionally
-include names for departed-slot placeholders. Gaps have no controls and never
-count toward missing/weighed. Copy still refuses shifted or incomplete war data.
+Old captured lineups may contain positions without names or Town Halls.
+Prompt 131 below replaces departed-slot placeholders with normal editors; missing
+details are labelled and unknown Town Hall does not guess Storages. Copy still
+refuses shifted or incomplete war data.
 The export checklist checks saved/loot/lineup state; matching the actual sheet war,
 storage counts and small-storage adjustment remains a user check.
 
@@ -304,3 +305,115 @@ runtime revision and continued scanner passes. No bad-timestamp warnings or
 backend tracebacks appeared. Nothing was saved or sent; live notification
 delivery was not tested. The bad-linked-timestamp regression and per-tag hourly
 warning limit remain non-blocking follow-up work.
+
+## Two saved wars and departed-player weights (prompt 131)
+
+The weight editor now uses the selected saved usable war lineup plus current
+members. It opens the most recent war; a date-labelled selector opens the one
+before it. Every saved-lineup player has the normal Loot, Full and Storages
+editor, including a player who left. `Left clan` is separate from current
+membership. Current members outside the selected war remain below its rows.
+Weights remain per player, not per war; choosing a different lineup never
+creates a second weight or changes a saved value.
+
+`ClanWeightStore` remains the sole storage owner. The existing four-column
+`clan_weight_war_lineups` latest row is preserved unchanged during migration.
+An additive `clan_weight_war_lineup_previous` table holds at most one predecessor
+per clan. An existing single lineup stays intact; no older war is invented or
+backfilled, and the selector appears once a second distinct usable war is captured.
+A newer usable war atomically rotates latest to previous and drops
+the older predecessor. Older responses cannot displace either newer war, and
+same-war states cannot move backwards. Partial, malformed or inaccessible war
+responses retain both saved lineups. Optional names/Town Halls already known for
+the same war survive later omission. A legacy/fixture response without a war identity can display current-member
+ordering but cannot create departed-player eligibility; the fallback explicitly
+asks for verification. Older saved lineups without optional member details
+remain readable; the editor labels missing details and requires the user to
+choose Storages instead of guessing from an unknown Town Hall. Saved per-player
+Storages still wins over a default in either war.
+
+The legacy `members` response remains current-members-only; additive
+`weight_members` supplies the two-lineup editing union. New clients consume it,
+while older open tabs do not mislabel previous-war players as current members.
+
+The normal entrypoint restores the Mongo-authoritative image, performs
+idempotent schema initialization, then publishes that schema **before**
+`web.run_app` or any workers start. The new empty predecessor table follows that
+existing handshake. A failed or uncertain migration publication fails startup;
+no page or user write is accepted first. A subsequent restart restores the
+acknowledged image and repeats the idempotent handshake. Old code can still
+read and write the unchanged four-column latest table on rollback; it ignores
+but retains the predecessor table. Do not drop that table or restore a database
+when rolling back code.
+
+A clan save freshly verifies the family FWA clan and current roster. In its
+immediate write transaction, the owner rebuilds eligibility from those current
+members and **both saved lineups**, never from a client-supplied list. A player
+only in the older lineup can be saved. If a third war removes that player's
+last eligibility before Save, the stale page receives a conflict; earlier
+weights/history remain. The bounded save accepts up to 150 distinct eligible people (50 current plus
+two 50-player lineups), so a disjoint current/war view can still save atomically.
+Per-player CAS, all-or-none batches, actor/source
+history, idempotent replay and shared draft-roster invalidation remain intact.
+The saved-player endpoint still edits any already saved row under its existing
+rule. Its only new creation exception is a player in a saved lineup from a
+freshly verified family FWA clan, rechecked inside the owner's transaction.
+
+Reader surfaces are explicit:
+
+- Clan directory progress counts the latest saved lineup plus current members,
+  without duplicate tags. The selected editor counts its selected war plus
+  current members; unknown roster progress remains unknown.
+- Column F includes every selected-war slot, including departed players; missing
+  weights/storage details or incomplete ordering still block copying.
+- Member-table copy uses the selected view. XLSX continues to export the shared
+  saved ledger, including departed saves, with safe external text cells.
+- Working Roster, Compare and working exports resolve the same saved per-player
+  ledger, so a departed save appears immediately there. Published snapshots stay
+  immutable. Unsaved saved-lineup participants get a separate
+  `weight_lineup_clan_tag` reference for Clan weights navigation; this never
+  claims that they are currently in that clan.
+- Missing weights uses `Non-FWA accounts`, omits the repeated missing-weight
+  reason, and says `Saving doesn't move players.` Loot/Full and row Save remain.
+
+A permission-denied read/save clears clan progress and any opened saved-player
+search; explicit retry can reload after access returns. It does not replay a save.
+A current-roster outage still blocks clan saves under the existing verification
+rule; both saved lineups and earlier weights remain intact.
+
+QA and remaining limits are recorded in the review handoff. All tests and
+screenshots use isolated fixtures; none establishes live Discord delivery or
+production weight writes. Release remains held for Ruggie's preview/approval.
+
+### Review136 delta
+
+Departed-player display and writes prefer the selected lineup's known name/Town
+Hall, then the existing per-player ledger value, then unknown. Blank names and
+player tags do not replace a known ledger name. Additive saved-name/Town-Hall
+response fields let an older selected war use ledger metadata without borrowing
+another war's details. Weight values, revisions, replay receipts and storage
+selection rules are unchanged.
+
+A same-war response that removes any previously saved player is incomplete,
+even if the returned positions are contiguous and no teamSize was supplied. It
+is rejected before modifying either saved lineup. A complete newer war can
+still rotate the two retained snapshots as before.
+
+Cold background Roster reads resolve saved-lineup navigation from the same
+SQLite owner when family metadata has not loaded. This is saved participation
+provenance, not a claim of current membership or current family authorization.
+An explicit known family result restricts that routing to its FWA clans. Later
+metadata merges and same-season refreshes retain an omitted lineup field;
+explicit canonical null clears it. Save and saved-player creation still verify
+the fresh family FWA list and the owner's transaction-time eligibility.
+
+A weight-only save retains the page's verified war label only for the exact same
+war identity, state, capture timestamp and order. Another capture/war never
+inherits that freshness; a normal failed war refresh still displays saved-lineup
+wording. This avoids adding a live provider request merely to keep a label.
+
+The review regressions reproduce legacy-detail loss, shrinking same-war
+responses and cold background routing before the fix. The delta uses isolated
+SQLite/HTTP/browser fixtures, owned Mongo recovery, behavioral mutants and a
+production-shaped blocked-network boot. No production writes or live provider
+probe are part of this review. Release remains held for Ruggie.

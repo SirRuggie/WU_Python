@@ -295,6 +295,7 @@ class LiveProviders:
             raise ProviderUnavailable('Incomplete war roster size.')
         order = {}
         names = {}
+        town_halls = {}
         for row in rows:
             if not isinstance(row, dict):
                 raise ProviderUnavailable('Invalid war lineup member.')
@@ -305,10 +306,25 @@ class LiveProviders:
             order[player] = position
             if isinstance(row.get('name'), str) and row['name'].strip():
                 names[player] = row['name']
+            town_hall = row.get("townhallLevel", row.get("townHallLevel"))
+            if town_hall is not None:
+                if type(town_hall) is not int or not 0 < town_hall < 100:
+                    raise ProviderUnavailable("Invalid war member Town Hall.")
+                town_halls[player] = town_hall
         if set(order.values()) != set(range(1, len(rows) + 1)):
             raise ProviderUnavailable('Incomplete war positions.')
-        return {"order": order, "names": names, "state": body["state"], "end_time": body.get("endTime"),
-                "opponent": body["opponent"].get("name") if isinstance(body.get("opponent"), dict) else None}
+        return {
+            "order": order,
+            "names": names,
+            "town_halls": town_halls,
+            "state": body["state"],
+            "end_time": body.get("endTime"),
+            "opponent": (
+                body["opponent"].get("name")
+                if isinstance(body.get("opponent"), dict)
+                else None
+            ),
+        }
 
     async def weight_war_order(self, value):
         return (await self.weight_war_lineup(value))["order"]
