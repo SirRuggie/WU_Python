@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import time
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -13,6 +14,11 @@ from dotenv import dotenv_values
 import requests
 
 ROOT = Path(__file__).resolve().parents[2]
+# Also work when systemd invokes this file by absolute path from another cwd.
+if not __package__:
+    sys.path.insert(0, str(ROOT))
+from tools.backup.tmp_quota import inspect_tmp_quota, quota_issues
+
 STATE = Path.home() / '.local/state/wu-backup'
 CONFIG = Path.home() / '.config/wu-backup'
 JOBS = {'cwl': ('cwl-backup', 20 * 60), 'mongo': ('cwl-mongo-backup', 90 * 60),
@@ -77,7 +83,7 @@ def deliver(current, previous, now, send):
         content = '**CWL backup needs attention**\n' + '\n'.join('- ' + item for item in current)
         content += '\nCheck the CWL backup services on the host. No live data has been restored or changed.'
     else:
-        content = '**CWL backups recovered**\nAll monitored jobs, timers, and local/R2 freshness checks are healthy again.'
+        content = "**CWL backups recovered**\nAll monitored jobs, timers, local/R2 freshness and temporary-space checks are healthy again."
     send(content)
     return {'issues': current, 'notified_at': now}
 
@@ -138,10 +144,21 @@ def main():
             current = issues(now, records, units, (CONFIG / 'r2-enabled').exists())
         except (OSError, subprocess.SubprocessError):
             current = ['Could not inspect backup services; monitoring needs attention.']
+        quota = inspect_tmp_quota()
+        current = sorted(set(current + quota_issues(quota)))
         current = retain_running_incidents(current, previous, units)
         report = STATE / 'monitor-health.json'
         temporary = report.with_suffix('.pending')
-        temporary.write_text(json.dumps({'checked_at': datetime.now(timezone.utc).isoformat(), 'issues': current}, indent=2))
+        temporary.write_text(
+            json.dumps(
+                {
+                    "checked_at": datetime.now(timezone.utc).isoformat(),
+                    "issues": current,
+                    "tmp_user_quota": quota,
+                },
+                indent=2,
+            )
+        )
         os.replace(temporary, report)
         # Make an unconfigured notification route visible even while healthy.
         configured = str(dotenv_values(ROOT / '.local/cwl-backup-alerts.env').get('CWL_BACKUP_ALERT_CHANNEL_ID') or '')
