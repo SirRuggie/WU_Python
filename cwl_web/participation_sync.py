@@ -238,11 +238,40 @@ async def _fetch_groups(providers, clans: list[str], cycle: str):
                     providers.league_group(clan_tag), timeout=10
                 )
                 observed = group.get("season") if isinstance(group, dict) else None
-                if not isinstance(observed, str) or not _CYCLE.fullmatch(observed):
+                state = (
+                    str(group.get("state") or "").upper()
+                    if isinstance(group, dict)
+                    else ""
+                )
+                if state not in {"PREPARATION", "INWAR", "WAR", "ENDED"}:
+                    raise ProviderUnavailable("CWL group state is unavailable")
+                missing = isinstance(group, dict) and observed is None
+                inferred = (
+                    missing
+                    and cycle == datetime.now(timezone.utc).strftime("%Y-%m")
+                    and state in {"PREPARATION", "INWAR", "WAR", "ENDED"}
+                )
+                if not inferred and (
+                    not isinstance(observed, str) or not _CYCLE.fullmatch(observed)
+                ):
                     raise ProviderUnavailable("Clash CWL month is unavailable")
-                # Validate ownership/shape even for an older group. The provider
-                # preserves the API season; it does not substitute our selection.
-                validated = _valid_group(group, observed, clan_tag)
+                # A local effective copy leaves the provider's observed month
+                # untouched. Explicit dates always win, including mismatches.
+                effective = dict(group, season=cycle) if inferred else group
+                validated = _valid_group(
+                    effective, cycle if inferred else observed, clan_tag
+                )
+                logging.getLogger(__name__).info(
+                    "CWL group month clan=%s group_state=%s season_present=%s inferred_current=%s",
+                    clan_tag,
+                    state if state in LEAGUE_GROUP_DIAGNOSTIC_STATES else "other",
+                    not missing,
+                    inferred,
+                )
+                if inferred and state == "ENDED":
+                    return clan_tag, None, "no_group"
+                if inferred:
+                    observed = cycle
                 mismatch = _group_month_status(observed, cycle)
                 if mismatch:
                     return clan_tag, None, mismatch
@@ -284,6 +313,7 @@ async def _fetch_groups(providers, clans: list[str], cycle: str):
                 # discover why a previous generic unavailable result was stored.
                 reasons = {
                     "Clash CWL month is unavailable": "missing_month",
+                    "CWL group state is unavailable": "invalid_group_state",
                     "Invalid Clash league-group response": "invalid_group_shape",
                     "Invalid Clash API response": "invalid_json_shape",
                     "Invalid Clash league-group clan": "invalid_clan",
@@ -531,9 +561,12 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
         fresh_groups = set()
         groups_to_write = []
         failures = []
+        waiting_clans = set()
         for clan_tag, result, error in group_fetches:
             if result is None:
                 failures.append(error or "unavailable")
+                if error in {"season_older", "no_group"}:
+                    waiting_clans.add(clan_tag)
                 continue
             rounds, members, state, league = result
             groups_to_write.append((clan_tag, state, rounds, members, league))
@@ -745,6 +778,19 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     prior,
                     cycle,
                 )
+                if (
+                    identity["assigned_clan_tag"] in waiting_clans
+                    and _upcoming_cycle(cycle)
+                    and not _month_wars_seen(db, cycle)
+                ):
+                    values = (
+                        None,
+                        None,
+                        "waiting",
+                        False,
+                        stamp,
+                        _waiting_message(cycle),
+                    )
                 attacks, stars, status, complete, checked_at, warning = values
                 statuses.add(status)
                 if attacks is not None or stars is not None:
@@ -834,7 +880,11 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 and _upcoming_cycle(cycle)
                 and not _month_wars_seen(db, cycle)
             ):
-                overall, warning = "waiting", _waiting_message(cycle)
+                overall, warning = (
+                    ("partial", None)
+                    if fresh_groups
+                    else ("waiting", _waiting_message(cycle))
+                )
             elif any(
                 error in {"season_mismatch", "season_older", "season_later"}
                 for error in failures
@@ -872,7 +922,19 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     stamp,
                     (
                         stamp
-                        if not failures and clans and (fresh_wars or not all_tags)
+                        if clans
+                        and (fresh_wars or not all_tags)
+                        and (
+                            not failures
+                            or (
+                                fresh_groups
+                                and all(
+                                    error in {"season_older", "no_group"}
+                                    for error in failures
+                                )
+                                and not _month_wars_seen(db, cycle)
+                            )
+                        )
                         else None
                     ),
                     "sync",
