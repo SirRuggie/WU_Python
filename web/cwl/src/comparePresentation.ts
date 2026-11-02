@@ -32,6 +32,6 @@ export function comparisonPublishNote(
   const previous = published.find((item) => item.tag === account.tag);
   if (!previous) return "Not published yet";
   return previous.assigned_clan_tag !== account.assigned_clan_tag
-    ? `Moved since publish · members still see ${previous.assigned_clan_name || previous.assigned_clan_tag || "Unassigned"}`
+    ? `Moved since publish · members still see ${previous.assigned_clan_name || previous.assigned_clan_tag || "Unplaced"}`
     : "";
 }

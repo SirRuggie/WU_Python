@@ -83,7 +83,7 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
     {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
     {saveError && <p className="notice error" role="alert">{saveError}</p>}
     <div className="section-heading">
-      <div><p className="eyebrow">Saved this season</p><h2 ref={headingRef} tabIndex={-1}>Signed-up accounts</h2></div>
+      <div><h2 ref={headingRef} tabIndex={-1}>Signed-up accounts</h2></div>
       {editable && signups.length > 0 && <button disabled={busy} aria-pressed={selecting} onClick={() => {setSelecting(!selecting);setTags([])}}>{selecting ? 'Cancel selection' : 'Select accounts'}</button>}
     </div>
     {selecting && editable && <div className="saved-signup-toolbar" aria-label="Selected signup actions">

@@ -427,7 +427,7 @@ export function ClanSettingsEditor({
                 ? `${clan.pool === "main" ? "Main" : "Lazy"} CWL`
                 : "Not set up"}
             </dd>
-            <dt>CWL war size</dt>
+            <dt>Clan size</dt>
             <dd>
               {clan.capacity
                 ? `${clan.capacity}v${clan.capacity}`
@@ -455,7 +455,7 @@ export function ClanSettingsEditor({
             }))}
           />
           <RosterMenu
-            label="CWL war size"
+            label="Clan size"
             value={draft.capacity}
             disabled={busy}
             onValueChange={(capacity) => setDraft({ ...draft, capacity })}
@@ -550,7 +550,7 @@ export function ClanSettingsEditor({
           {error && <p role="alert">{error}</p>}
           {stale && changed && (
             <p role="alert">
-              Clan settings changed elsewhere. Your edits are preserved.{" "}
+              Hosting clans changed elsewhere. Your edits are preserved.{" "}
               <Button disabled={busy} onClick={latest}>
                 Discard edits and use latest settings
               </Button>

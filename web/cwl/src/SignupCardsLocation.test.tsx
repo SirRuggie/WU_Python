@@ -80,7 +80,7 @@ it.each([false, true])(
     expect(host.querySelector(".member-signup-success")).toBeNull();
     expect(host.querySelector(".member-signup-remaining")).toBeNull();
     expect(host.textContent).toContain(
-      value ? "Published clan assignments" : "Not published yet",
+      value ? "Clan assignments" : "Waiting for a clan",
     );
     if (!value) {
       expect(host.textContent).toContain("You'll see your clan by");
@@ -97,7 +97,7 @@ it("preserves the empty assignment card", async () => {
     root.render(<MemberAssignments seasonId="1" seasons={[season]} />),
   );
   expect(host.textContent).toContain("You haven't signed up any accounts yet.");
-  expect(host.textContent).not.toContain("Not published yet");
+  expect(host.textContent).not.toContain("Waiting for a clan");
   expect(host.querySelector(".member-signup-refresh")?.textContent).toBe(
     "Refresh",
   );
@@ -254,10 +254,9 @@ it("distinguishes a publication with no placements for this member", async () =>
   await act(async () =>
     root.render(<MemberAssignments seasonId="1" seasons={[season]} />),
   );
-  expect(host.textContent).toContain(
-    "Published · your accounts are waiting for a clan",
-  );
+  expect(host.textContent).toContain("Waiting for a clan");
   expect(host.textContent).not.toContain("Not published yet");
+  expect(host.textContent).not.toContain("You'll see your clan by");
   expect(host.textContent).toContain("2 accounts signed up");
   expect(host.querySelector('a[href="/my-signups"]')).not.toBeNull();
   expect(

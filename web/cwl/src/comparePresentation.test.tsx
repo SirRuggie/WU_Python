@@ -51,7 +51,7 @@ describe("Compare presentation contracts", () => {
       comparisonPublishNote(account, [
         { tag: "#P", assigned_clan_tag: null, assigned_clan_name: null },
       ]),
-    ).toBe("Moved since publish · members still see Unassigned");
+    ).toBe("Moved since publish · members still see Unplaced");
     expect(
       comparisonPublishNote(account, [
         { tag: "#P", assigned_clan_tag: "#A", assigned_clan_name: "A" },

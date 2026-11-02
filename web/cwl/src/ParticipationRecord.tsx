@@ -237,7 +237,7 @@ export default function ParticipationRecord({
           {account.tag} · TH {account.town_hall ?? "—"} ·{" "}
           {account.assigned_clan_name ||
             account.assigned_clan_tag ||
-            "Awaiting placement"}
+            "Unplaced"}
         </small>
       </div>
       <div className="participation-values">
@@ -335,7 +335,7 @@ export default function ParticipationRecord({
               {account.pool === "main" ? "Main CWL" : "Lazy CWL"} ·{" "}
               {account.assigned_clan_name ||
                 account.assigned_clan_tag ||
-                "Unassigned"}
+                "Unplaced"}
             </small>
           </div>
           <button type="button" disabled={busy} onClick={closeEditor}>
@@ -367,7 +367,7 @@ export default function ParticipationRecord({
               ·{" "}
               {account.previous_results.assigned_clan_name ||
                 account.previous_results.assigned_clan_tag ||
-                "Unassigned"}{" "}
+                "Unplaced"}{" "}
               · {account.previous_results.attacks ?? "—"} attacks ·{" "}
               {account.previous_results.stars ?? "—"} stars
             </p>

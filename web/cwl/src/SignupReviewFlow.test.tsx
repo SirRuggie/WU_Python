@@ -111,6 +111,15 @@ it("review Change links retain eligible accounts and clear the removal notice af
 
   try {
     await act(async () => root.render(<App />));
+    expect(document.body.textContent).toContain(
+      "Main: play at full strength. No hero upgrades.",
+    );
+    expect(document.body.textContent).toContain(
+      "Lazy: relaxed CWL. You can upgrade during the event.",
+    );
+    expect(document.body.textContent).toContain(
+      "If you’re in FWA… it’s Lazy Way or No Way!!!",
+    );
     await settle();
     await choosePool("Lazy CWL");
     expect(checked("Normal fixture")).toBe(false);

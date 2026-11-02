@@ -137,7 +137,7 @@ export default function RosterBalance({
       )
     : null;
   const clanName = (tag: string | null) =>
-    roster.clans.find((c) => c.tag === tag)?.name || tag || "Unassigned";
+    roster.clans.find((c) => c.tag === tag)?.name || tag || "Unplaced";
   const skippedLocked =
     preview?.unassigned.filter(
       (item) => item.reason === "locked" || item.reason === "kept",
@@ -209,7 +209,7 @@ export default function RosterBalance({
   return (
     <ActionPanel
       className="roster-ui"
-      title={automatic ? "Auto-place unassigned" : "Balance across clans"}
+      title={automatic ? "Auto-place unplaced" : "Balance across clans"}
       trigger={trigger}
       busy={busy}
       onClose={onClose}
@@ -271,7 +271,7 @@ export default function RosterBalance({
           <>
             <p>
               {automatic
-                ? "Place unassigned accounts using the current clan rules."
+                ? "Place unplaced accounts using the current clan rules."
                 : `${tags.length} selected · Choose at least 2 hosting clans.`}
             </p>
             {!!hiddenTags.length && (
@@ -366,7 +366,7 @@ export default function RosterBalance({
                             </small>
                           )}
                           {!configured && (
-                            <small>Set capacity in Hosting clans first.</small>
+                            <small>Set clan size in Hosting clans first.</small>
                           )}
                         </span>
                       </label>

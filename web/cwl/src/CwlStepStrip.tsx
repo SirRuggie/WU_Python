@@ -23,6 +23,7 @@ export function MemberStepStrip({
       ).map(([value, label]) => (
         <button
           key={value}
+          aria-label={value === "assignments" ? "My clan assignments" : label}
           aria-current={step === value ? "step" : undefined}
           onClick={() => onNavigate(value)}
         >
@@ -54,6 +55,7 @@ export default function CwlStepStrip({
     <nav className="cwl-step-strip roster-ui" aria-label="CWL workflow">
       {(roster || signups) && (
         <button
+          aria-label="Build roster"
           aria-current={step === "build" ? "step" : undefined}
           onClick={onBuild}
         >
@@ -62,6 +64,7 @@ export default function CwlStepStrip({
       )}
       {publish && (
         <button
+          aria-label="Finalize roster"
           aria-current={step === "review" ? "step" : undefined}
           onClick={onFinalize}
         >
@@ -79,6 +82,7 @@ export default function CwlStepStrip({
       )}
       {send && (
         <button
+          aria-label="Announcements"
           aria-current={step === "announce" ? "step" : undefined}
           onClick={onAnnounce}
         >
