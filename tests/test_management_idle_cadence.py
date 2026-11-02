@@ -119,7 +119,7 @@ def test_idle_observation_skips_only_recent_confirmed_empty_work_and_band_update
                 len(band_writes()) == 3
             )  # Unchanged values still refresh readiness each minute.
             assert activate.await_count == 2
-            assert mongo.bot_config.update_many.await_count == 4
+            assert mongo.bot_config.update_many.await_count == 2
 
     asyncio.run(run())
 

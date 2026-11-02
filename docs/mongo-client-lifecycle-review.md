@@ -206,7 +206,7 @@ readiness, rollback and public hashes. A necessary bot restart requires the
 and Claude read-only smoke remain required; a local build is not deployment.
 
 
-## Prompt 105 rework checkpoint
+## Prompt 105 rework validation
 
 The earlier whole-workflow CSOT contexts were incorrect: Mongo’s absolute block
 deadline included non-Mongo waits and was inherited by spawned tasks. The shared
@@ -217,5 +217,54 @@ Fast aggregate worker timings now use DEBUG; slow steps retain INFO. SQLite-open
 failures are inside the guarded recovery path. The uncertain-save message asks
 staff to wait for recovery and check the result. Formatter-only changes in four
 legacy files were restored using AST-identical statement replacements, preserving
-all semantic changes. Final real-Mongo, mutation and full regression evidence is
-still pending; this checkpoint is not READY.
+all semantic changes. The previous real-Mongo gate selected role/core/pool tests
+and omitted the member-profile file, so it missed the stale-sweep regression.
+The new gate exercises every opt-in real-Mongo file, including the previously
+omitted stop/restart case.
+
+Final guarded backend matrix: 5,901 passed, 82 optional skips, 253 subtests in
+three disjoint file groups. Full frontend: 1,431 tests in 253 files; TypeScript
+and production build passed. Required war-reminder check: 213 backend passed,
+one optional skip, 35 frontend tests and build. The complete idle-command fixture
+was rerun after the sweep correction and retains the 1,412 to 642 comparison.
+These are fake command counts, not production bytes or quota evidence.
+
+Owned Mongo: 125 tests with all main opt-in fixtures enabled, plus all 18 Lazy
+CWL replica-set transaction tests. The profile stop/restart regression passed an
+additional 16/16 runs. A ten-chunk fake Discord send taking over 15 seconds keeps
+all ten real Mongo receipts and clears attempting; the actual strike preview
+adapter survives a 16-second fake upstream fetch before a real Mongo write.
+No real Discord or production provider request was used.
+
+Initial local fixture failures were setup issues: authenticated-user bootstrap
+and default 60-second TTL sweeping versus tests that wait 12 seconds. The final
+owned fixture uses authenticated ticket access and a one-second TTL monitor;
+failed evidence is retained. One full backend run also found redundant active
+sweeps introduced during rework; the corrected code performs the idle sweep in
+the idle branch and one immediate sweep in the active worker, and the final full
+matrix passed. No production behavior was inferred from these fixture failures.
+
+Ten targeted backend mutations and one frontend mutation failed behavior tests,
+including every requested survivor, old workflow deadline and pending-sweep
+cache, permanent-fence downgrade and aggregate INFO noise. The mutation harness
+initially lacked its temporary directory and then matched three role-clock
+assignments; neither setup failure was counted as a kill. Corrected scoped
+controls passed and owned exports were removed after preserving logs.
+
+Actual built App layouts at 360 and 1440 cover transient recovery, permanent
+attention, a later transient error that must not downgrade attention, and a
+successful authenticated read clearing the notice. All requests were GET-only,
+with no page errors or horizontal overflow. Narrow/wide attention screenshots
+were visually reviewed. Preview 8920 adds read-only controls while the older
+8918 preview remains alive.
+
+The caller audit covers all adapters using the shared context, including war
+reminders, command tests, member events, strike preview/apply and declaration
+launch/delivery. No shared context holds CSOT across their external awaits.
+Per-operation wrappers retain public collection/cursor methods and the same pool;
+they do not create another client or reach into provider internals. The native
+server-management pool applies its configured per-operation timeoutMS.
+
+Release still requires direct Claude delta ACCEPT and the usual fresh gates.
+After activation, observe ordinary connection rate, transferred bytes, job time
+and skips for 30 minutes. No quota pass or live speed improvement is claimed.

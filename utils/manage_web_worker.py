@@ -594,8 +594,8 @@ async def _poll(bot, mongo):
     # Cache sweeps only after a fresh confirmed-empty work observation. Pending
     # or unknown work must retain the original immediate stale-claim cleanup.
     idle = time.monotonic() - state.ready_at <= 2 and state.ready is None
-    await _expire_requests(mongo, idle=idle)
     if idle:
+        await _expire_requests(mongo, idle=True)
         from utils.member_profile_runs import ProfileRuns
 
         await ProfileRuns(mongo).prune_throttled(time.time())
