@@ -1882,9 +1882,18 @@ async def my_assignments(request):
         if result['published'] else []
     )
     await background_enrich(request, placed)
-    statuses = {account['tag']: arrival_status(account) for account in placed}
+    locations = {account['tag']: account for account in placed}
     for account in result['accounts']:
-        account['arrival_status'] = statuses.get(account['tag'], 'unassigned')
+        observed = locations.get(account['tag'])
+        account['arrival_status'] = arrival_status(observed) if observed else 'unassigned'
+        if observed and observed.get('current_clan_checked_at'):
+            # Only this member's already-filtered placements are projected. The
+            # checked timestamp lets the existing UI merge keep verified values
+            # while background refresh runs, without leaking lookup internals.
+            for field in ('current_clan_tag', 'current_clan_name',
+                          'current_clan_checked_at', 'current_clan_status'):
+                if field in observed:
+                    account[field] = observed[field]
     return web.json_response(result)
 
 

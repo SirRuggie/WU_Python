@@ -63,9 +63,11 @@ export default function DeclarationMemberMarks({
                       Moved here · not published yet
                     </span>
                   )}
-                  <span className="declaration-member-context">
-                    {member.context}
-                  </span>
+                  {member.not_published_yet !== true && (
+                    <span className="declaration-member-context">
+                      {member.context}
+                    </span>
+                  )}
                   {(control || (index === 0 && group.userId)) && (
                     <div className="declaration-member-actions">
                       {control && (

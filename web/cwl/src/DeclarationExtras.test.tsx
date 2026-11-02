@@ -128,7 +128,9 @@ it("separates a neutral draft move from intruders without changing account count
   );
   expect(host.textContent).toContain("1 not on roster · 1 not published yet");
   expect(host.textContent).toContain("Moved here · not published yet");
-  expect(host.textContent).toContain("Assigned to Fixture");
+  expect(host.querySelector(".is-unpublished")?.textContent).not.toContain(
+    "Assigned to Fixture",
+  );
   expect(host.querySelectorAll(".is-unpublished")).toHaveLength(1);
   expect(host.querySelectorAll(".declaration-member-account")).toHaveLength(2);
   await act(async () =>

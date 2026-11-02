@@ -1,6 +1,7 @@
 import asyncio
 import time
 import unittest
+from datetime import datetime, timezone
 import test_cwl_web_roster as fixtures
 from utils.cwl_location_rules import outside_family, arrival_status
 
@@ -86,6 +87,7 @@ class AssignmentHTTP(unittest.IsolatedAsyncioTestCase):
                     "current_clan_status": "current",
                     "current_clan_tag": "#C2Y",
                     "current_clan_name": "Host",
+                    "current_clan_checked_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
         }
@@ -112,6 +114,10 @@ class AssignmentHTTP(unittest.IsolatedAsyncioTestCase):
                 "assigned_clan_tag",
                 "assigned_clan_name",
                 "arrival_status",
+                "current_clan_tag",
+                "current_clan_name",
+                "current_clan_checked_at",
+                "current_clan_status",
             },
         )
         other = await self.call(
@@ -121,7 +127,11 @@ class AssignmentHTTP(unittest.IsolatedAsyncioTestCase):
         player.assert_not_called()
         self.app["roster_location_cache"]["#P2Y"] = (
             time.monotonic() - 121,
-            {"current_clan_status": "current", "current_clan_tag": "#C2Y"},
+            {
+                "current_clan_status": "current",
+                "current_clan_tag": "#C2Y",
+                "current_clan_checked_at": rows[0]["current_clan_checked_at"],
+            },
         )
         block = asyncio.Event()
 
@@ -132,9 +142,13 @@ class AssignmentHTTP(unittest.IsolatedAsyncioTestCase):
         result = await asyncio.wait_for(
             self.call("GET", f"/seasons/{self.sid}/my-assignments", self.member), 1
         )
+        stale = (await result.json())["accounts"][0]
+        self.assertEqual(stale["arrival_status"], "unknown")
+        self.assertEqual(stale["current_clan_tag"], "#C2Y")
         self.assertEqual(
-            (await result.json())["accounts"][0]["arrival_status"], "unknown"
+            stale["current_clan_checked_at"], rows[0]["current_clan_checked_at"]
         )
+        self.assertNotIn("location_updating", stale)
 
     async def test_arrival_snapshot_and_roster_agree_on_host_and_archived(self):
         await self.prepared()

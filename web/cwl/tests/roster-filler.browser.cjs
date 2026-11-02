@@ -104,14 +104,19 @@ fs.mkdirSync(out, { recursive: true });
             .count(),
           2,
         );
-        await page.locator(".declaration-low-th summary").click();
+        if (
+          !(await page
+            .locator(".declaration-extras")
+            .evaluate((element) => element.open))
+        )
+          await page.locator(".declaration-extras summary").click();
         const low = page.getByRole("checkbox", {
           name: "Filler: Low TH sample",
           exact: true,
         });
         await low.click();
         await page.waitForFunction(() => window.fillerFixture().revision === 3);
-        assert.equal(await page.locator(".declaration-low-th").count(), 1);
+        assert.equal(await page.locator(".declaration-extras").count(), 1);
         assert(
           await page
             .getByRole("checkbox", {
@@ -120,7 +125,12 @@ fs.mkdirSync(out, { recursive: true });
             })
             .isChecked(),
         );
-        await page.locator(".declaration-extras summary").click();
+        if (
+          !(await page
+            .locator(".declaration-extras")
+            .evaluate((element) => element.open))
+        )
+          await page.locator(".declaration-extras summary").click();
         const dm = page
           .locator(".declaration-extras")
           .getByRole("link", { name: /DM/ });
@@ -142,10 +152,20 @@ fs.mkdirSync(out, { recursive: true });
         });
         await extra.click();
         await page.waitForFunction(() => window.fillerFixture().revision === 4);
-        assert.equal(await page.locator(".declaration-extras").count(), 0);
+        assert.equal(await page.locator(".declaration-extras").count(), 1);
+        assert(
+          (
+            await page.locator(".declaration-extras summary").innerText()
+          ).includes("0 not on roster"),
+        );
         await page.getByRole("button", { name: "Undo", exact: true }).click();
         await page.waitForFunction(() => window.fillerFixture().revision === 5);
         assert.equal(await page.locator(".declaration-extras").count(), 1);
+        assert(
+          (
+            await page.locator(".declaration-extras summary").innerText()
+          ).includes("1 not on roster"),
+        );
 
         assert(
           await page

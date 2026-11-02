@@ -29,6 +29,10 @@ export type PublicationDraft = {
   next_version: number;
 };
 export type MemberAssignment = {
+  current_clan_tag?: string | null;
+  current_clan_name?: string | null;
+  current_clan_checked_at?: string;
+  current_clan_status?: string;
   arrival_status?: "arrived" | "missing" | "unknown" | "unassigned";
   tag: string;
   player_name: string;

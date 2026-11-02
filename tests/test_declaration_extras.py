@@ -268,3 +268,24 @@ def test_draft_move_classification_never_changes_published_membership():
     assert not intruder[0].get("not_published_yet")
     assert intruder[0]["assigned_here"] is False
     assert not extras_for("#C2Y", member, [], {})[0].get("not_published_yet")
+
+
+def test_published_low_th_and_marked_fillers_never_become_unpublished_moves():
+    for category, th, marked in (
+        ("low_th", 8, False),
+        ("fillers", 16, True),
+        ("fillers", 8, True),
+    ):
+        assignment = [{"tag": "#P2Y", "assigned_clan_tag": "#C2Y"}]
+        rows = extras_for(
+            "#C2Y",
+            [{"tag": "#P2Y", "name": "Rostered", "town_hall": th}],
+            assignment,
+            {"#C2Y": "Target"},
+            current_accounts=assignment,
+            roster_marks={"#P2Y": {"roster_filler": marked}},
+            category=category,
+        )
+        assert len(rows) == 1
+        assert rows[0]["assigned_here"] is True
+        assert not rows[0].get("not_published_yet")

@@ -17,10 +17,13 @@ The existing comparisonLocation carry-over behavior is unchanged.
 Member assignments retain their existing ownership/publication/pool filtering.
 Only already filtered, published placements enter the existing shared background
 location cache. Reads return immediately; cached current values use the same
-arrival rule as Declaration. The response adds only arrival_status, rather than
-exposing the working lookup records or other users' accounts. No new polling or
-per-row browser requests were added; existing visible-view refresh obtains later
-results. Unknown/stale/missing statuses never produce a check. Each arrived row
+arrival rule as Declaration. Alongside arrival_status, verified own-account
+observations project current clan tag/name/status and their checked timestamp.
+Lookup jobs, other users' accounts and unrelated provider records are not exposed.
+No new polling or per-row browser requests were added; existing visible-view
+refresh obtains later results. A cold unknown or a confirmed missing result
+never produces a check. A previous verified location survives stale/unavailable
+refreshes until a newer verified observation replaces it. Each arrived row
 has an image-semantic green check with accessible name In clan. Clan headings
 show N of M in clan or All M in clan. Main now precedes Lazy in the existing pool
 role settings, without mutating the received array or changing save behavior.
@@ -70,13 +73,16 @@ nonmember directory entries retain the existing no-guessed-identity behavior.
 No additional per-account provider requests were added. Obsolete category-only
 disclosures and styles were removed.
 
-Copy mentions had been hidden when a clan met its war-size threshold and disabled
-when another location was unavailable, even with known linked late members. It
-now remains available whenever the published clan has linked late mentions. A
-confirmed-empty or entirely unlinked late list disables it. This changes copying,
-not sending, and does not infer a mention for an unknown location. The offline
-bridge message now says: “The bot is restarting or offline. Refresh status in a
-minute.”
+Copy mentions had been hidden when a clan met its war-size threshold. Prompt
+102's removal of the page-wide unavailable guard also exposed a pre-existing
+classification error: `!arrived` included unknown/checking accounts. Prompt 103
+corrects this to the shared location helper's `missing` state. Only accounts
+verified elsewhere (including confirmed clanless accounts) enter Copy mentions
+or “Can't mention.” The actual clipboard text is asserted for mixed verified,
+unknown, linked and unlinked rows. An all-unknown or entirely unlinked late list
+keeps Copy disabled. The war-ready gate stays removed. Native sending and the
+published roster basis are unchanged. The offline bridge message says: “The bot
+is restarting or offline. Refresh status in a minute.”
 
 Prompt 102 checks: 46 focused UI cases and 19 focused backend cases pass. Full
 frontend: 1,416 passed across 251 files; TypeScript and isolated production build
@@ -97,3 +103,42 @@ Each fake PATCH targets only its selected account and updates on its receipt;
 this is not evidence of a production write. Phone and desktop screenshots were
 visually reviewed. The inherited global DM margin was overridden locally after
 the initial alignment measurement exposed it. No real DM link was opened.
+
+## Prompt 103 review corrections
+
+MemberAssignments reuses mergeComparisonLocations, with per-season records and
+pruning to the currently returned accounts. Equal/older timestamps cannot erase
+a newer observation; missing timestamps cannot replace verified locations. A
+newer confirmed move clears the check, including when the backend status string
+alone would be misleading. Changing seasons clears prior records. Cold unknown
+headings show “11 accounts,” then “8 of 11 in clan” once eight arrivals are known;
+zero in-clan counts appear only with confirmed results rather than unknowns.
+
+Unpublished moved rows omit the redundant “Assigned to” line. The filler browser
+harness now targets the combined disclosure, keeps it open and checks neutral
+zero-intruder summaries while low-TH/filler rows remain visible. New survivor
+assertions cover the separate top-line unpublished count, unpublished-only
+assigned and extra-only hosts in the extras filter, and rostered low-TH/marked
+filler rows staying unflagged.
+
+The dedicated final member preview fixes its fixture season to 4 and supports
+isolated arrived/stale/elsewhere/unknown transitions. The browser demonstrated
+retained checks across expiry, clearing after a confirmed move, and cold unknown
+account headings without overflow. It was reset to arrived for review. No live
+provider freshness, message delivery or production write is certified.
+
+Final prompt 103 validation: backend 5,842 passed/71 skipped/253 subtests across
+all 5,913 nodes in 399 files; frontend 1,421 passed/251 files; TypeScript, build
+and required war reminders (213 backend/one skipped, 35 frontend/build) pass.
+Three new genuine mutants fail their assertions: unknown locations in copied
+mentions, forgetting verified locations on refresh, and falsely flagging a
+rostered low-TH/filler row. The prior false-arrival-check mutant was also rerun
+and killed after the merge change. Source was not mutated on disk. Four-width
+grouped/integrated layouts and all twelve filler size/width states pass. Narrow
+and wide final screenshots were visually reviewed. Served hashes accompany READY.
+Initial full checks exposed four inherited exact-response assertions that needed
+to validate the deliberate verified-location projection, plus an inherited
+frontend assertion that incorrectly treated unavailable data as late. Those
+contracts now retain exact core/privacy checks and explicitly validate the new
+fields. The initial helper return type needed a TypeScript union correction.
+These initial failures are retained in evidence and not called passing gates.

@@ -752,3 +752,111 @@ it("allows a linked late mention when the war is ready or another location is un
     host.querySelector<HTMLButtonElement>(".declaration-copy button")?.disabled,
   ).toBe(false);
 });
+it("copies only confirmed elsewhere accounts and excludes unknown linked and unlinked accounts", async () => {
+  const a = state.value.data.arrival.accounts;
+  for (const row of a) {
+    row.user_id = "123456789012345678";
+    state.value.records[row.tag] = {
+      ...row,
+      current_clan_checked_at: undefined,
+    };
+  }
+  a[0].user_id = "234567890123456789";
+  a[1].user_id = "";
+  a[2].user_id = "";
+  state.value.records[a[0].tag] = {
+    ...a[0],
+    current_clan_tag: "#ELSE",
+    current_clan_checked_at: new Date(now).toISOString(),
+  };
+  state.value.records[a[1].tag] = {
+    ...a[1],
+    current_clan_tag: "#ELSE",
+    current_clan_checked_at: new Date(now).toISOString(),
+  };
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
+  await render();
+  await act(async () => toggles()[0].click());
+  const copy = host.querySelector<HTMLButtonElement>(
+    ".declaration-copy button",
+  )!;
+  expect(copy.disabled).toBe(false);
+  await act(async () => copy.click());
+  expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+    "<@234567890123456789>",
+  );
+  expect(host.textContent).toContain("Can't mention: Player 1");
+  expect(host.textContent).not.toContain("Player 1, Player 2");
+  state.value.records = Object.fromEntries(
+    a.map((row: any) => [
+      row.tag,
+      { ...row, current_clan_checked_at: undefined },
+    ]),
+  );
+  await render();
+  expect(
+    host.querySelector<HTMLButtonElement>(".declaration-copy button")?.disabled,
+  ).toBe(true);
+  expect(host.textContent).not.toContain("Can't mention:");
+});
+it("includes unpublished-only clans in both extras filters and the separate top-line count", async () => {
+  localStorage.setItem("wu-staff-cwl-pool", "lazy");
+  for (const a of state.value.data.arrival.accounts) {
+    a.pool = "lazy";
+    a.hosting_pool = "lazy";
+  }
+  const extra = (tag: string, name: string, n: number) => ({
+    tag,
+    name,
+    capacity: 15,
+    status: "current",
+    checked_at: new Date(now).toISOString(),
+    count: 0,
+    extras: [],
+    unpublished_count: n,
+    unpublished: Array.from({ length: n }, (_, i) => ({
+      tag: `${tag}${i}`,
+      name: `Moved ${name} ${i}`,
+      town_hall: 16,
+      context: `Assigned to ${name}`,
+      not_published_yet: true,
+    })),
+  });
+  extraState.value = {
+    data: {
+      source: "published",
+      basis: 1,
+      clans: [
+        extra("#A", "Amber", 1),
+        extra("#B", "Blaze", 0),
+        extra("#C", "Unpublished only host", 2),
+      ],
+    },
+    loading: false,
+    error: "",
+    refresh: vi.fn(),
+  };
+  await render();
+  expect(host.querySelector(".declaration-summary")?.textContent).toContain(
+    "0 not on roster · 3 not published yet",
+  );
+  const ping = host
+    .querySelector("[data-ping-count]")
+    ?.getAttribute("data-ping-count");
+  const filter = host.querySelector<HTMLInputElement>(
+    ".declaration-extras-filter input",
+  )!;
+  await act(async () => filter.click());
+  expect(toggles()).toHaveLength(1);
+  expect(toggles()[0].textContent).toContain("Amber");
+  expect(host.querySelector(".declaration-extra-only")?.textContent).toContain(
+    "Unpublished only host",
+  );
+  expect(host.querySelectorAll(".declaration-extra-only")).toHaveLength(1);
+  expect(
+    host.querySelector("[data-ping-count]")?.getAttribute("data-ping-count"),
+  ).toBe(ping);
+});
