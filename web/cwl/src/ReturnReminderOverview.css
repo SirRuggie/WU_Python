@@ -1,4 +1,5 @@
-/* Return reminder overview: routine list and status first, maintenance secondary. */ .return-overview .return-context {
+/* Return reminder overview: routine list and status first, maintenance secondary. */
+.return-overview .return-context {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
@@ -84,11 +85,11 @@
   color: #bdd4f3;
 }
 .return-overview .return-maintenance summary::before {
-  content: '▸';
+  content: "▸";
   margin-right: 7px;
 }
 .return-overview .return-maintenance[open] summary::before {
-  content: '▾';
+  content: "▾";
 }
 .return-overview summary:focus-visible {
   outline: 3px solid #e0b43c;
@@ -102,7 +103,8 @@
   .return-overview .return-clan-row {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .return-overview .return-clan-row > div:nth-child(2), .return-overview .return-window {
+  .return-overview .return-clan-row > div:nth-child(2),
+  .return-overview .return-window {
     grid-column: 1;
   }
   .return-overview .return-row-actions {
@@ -115,8 +117,9 @@
   }
 }
 
-.return-overview .return-selection-note {
-  margin: -5px 0 9px;
-  color: #b7c1cb;
-  font-size: 11px;
+@media (max-width: 700px) {
+  .return-overview .return-row-actions {
+    flex-direction: column;
+    max-width: 105px;
+  }
 }
