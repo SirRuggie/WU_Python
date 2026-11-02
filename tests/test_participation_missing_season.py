@@ -28,7 +28,9 @@ def test_state_and_explicit_month_matrix(state, season):
     )
     with patch.object(sync, "datetime", November):
         row = asyncio.run(sync._fetch_groups(provider, ["#C2Y"], "2026-11"))[0]
-    if state not in {"PREPARATION", "INWAR", "WAR", "ENDED"} and season is None:
+    if state not in {"PREPARATION", "INWAR", "WAR", "ENDED"} and (
+        season is None or season == ""
+    ):
         assert row[2] == "unavailable"
     elif season == "2026-11":
         assert row[1] is not None
@@ -36,9 +38,9 @@ def test_state_and_explicit_month_matrix(state, season):
         assert row[2] == "season_older"
     elif season == "2026-12":
         assert row[2] == "season_later"
-    elif season is None and state in {"PREPARATION", "INWAR", "WAR"}:
+    elif (season is None or season == "") and state in {"PREPARATION", "INWAR", "WAR"}:
         assert row[1] is not None
-    elif season is None and state == "ENDED":
+    elif (season is None or season == "") and state == "ENDED":
         assert row[2] == "no_group" and row[1] is None
     else:
         assert row[2] == "unavailable"
