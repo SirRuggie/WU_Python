@@ -1441,7 +1441,7 @@ Delivery is tested with injected transports and isolated loopback servers only: 
 request, production API timing, Discord delivery or live role change is claimed.
 There is no UI change or new preview for this monitoring-only feature.
 
-Original prompt133 validation before this rework: 6,321 guarded backend tests passed, 99 skipped
+Original prompt 133 validation before this rework: 6,321 guarded backend tests passed, 99 skipped
 and 267 subtests passed; 130 focused checks; five genuine adversarial mutants
 killed. The required war gate passed 213 backend checks (one skip), 35 frontend
 checks, TypeScript and an isolated build. Exact committed runtime boot passed
@@ -1449,14 +1449,14 @@ all 51 production routes with the native pool and real owner on owned Mongo /
 copied SQLite, external networking blocked, config 200 and unauthenticated auth
 401. Owned fixtures were stopped and removed; source hashes and logs retained.
 
-Prompt138 corrects finished-month and dashboard shutdown false alarms. Regressions
-include real Nov25/Dec3 syncs with captured ended wars and no new war calls,
+Prompt 138 corrects finished-month and dashboard shutdown false alarms. Regressions
+include real November 25 / December 3 syncs with captured ended wars and no new war calls,
 pending-war failure, actual stopped listener, SQLite writer lock past two seconds,
 rate-limited private diagnostics, trickling response headers and actual bot/backend
-process exits during HTTP/DNS stalls. Final prompt138 gates: 6,335 guarded backend tests passed, 99 skipped and
-267 subtests passed (590.14 seconds); 144 focused checks and nine genuine rework
-mutants passed. Required war validation passed 213 backend checks (one skip),
+process exits during HTTP/DNS stalls. Final prompt 138 gates: 6,335 guarded backend
+tests passed, 99 skipped and 267 subtests passed (590.14 seconds); 144 focused
+checks passed and nine genuine rework mutants were killed. Required war validation passed 213 backend checks (one skip),
 35 frontend checks, TypeScript and an isolated build. Exact committed runtime
 boot passed all 51 production routes with native pool, real owner on owned Mongo /
-copied SQLite, external networking blocked, config200/auth401 and cleanup/hash
+copied SQLite, external networking blocked, config 200 / auth 401 and cleanup/hash
 proof. Release remains held; no real check was created or contacted.
