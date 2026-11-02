@@ -166,9 +166,7 @@ export default function MemberAssignments({
           {data.accounts.length > 0 && assignedGroups === 0 && (
             <section className="card member-unpublished-status">
               <strong>
-                {data.published
-                  ? "Published · your accounts are waiting for a clan"
-                  : "Not published yet"}
+                {data.published ? "Waiting for a clan" : "Waiting for a clan"}
               </strong>
               {memberDateLines(season, !!data.published, Date.now())
                 .slice(-1)
@@ -198,17 +196,11 @@ export default function MemberAssignments({
               <div className="member-status-line">
                 <div>
                   <strong>
-                    Published clan assignments
+                    Clan assignments
                     {memberPlacementStatus(data) === "provisional"
                       ? " · May change"
                       : ""}
                   </strong>
-                  {data.published && (
-                    <p>
-                      Version {data.published.version} · Published{" "}
-                      {new Date(data.published.published_at).toLocaleString()}
-                    </p>
-                  )}
                 </div>
                 <button onClick={() => void load()}>Refresh</button>
               </div>
@@ -236,7 +228,7 @@ export default function MemberAssignments({
                 {data.accounts.length} account
                 {data.accounts.length === 1 ? "" : "s"} · {assignedGroups}{" "}
                 hosting clan{assignedGroups === 1 ? "" : "s"}
-                {awaiting ? ` · ${awaiting} awaiting placement` : ""}
+                {awaiting ? ` · ${awaiting} waiting for a clan` : ""}
               </p>
               <p>✅ = in the right clan</p>
               <div className="member-clan-list">
@@ -260,7 +252,7 @@ export default function MemberAssignments({
                           <small>
                             {group.clanTag
                               ? `${group.clanTag} · ${assignmentArrivalLabel(group.accounts)}`
-                              : `${group.accounts.length} account${group.accounts.length === 1 ? "" : "s"} without a hosting clan`}
+                              : `${group.accounts.length} account${group.accounts.length === 1 ? "" : "s"} waiting for a clan`}
                           </small>
                         </div>
                         {group.clanTag && (
@@ -292,7 +284,7 @@ export default function MemberAssignments({
                       </div>
                       {!group.clanTag && (
                         <p className="member-awaiting-note">
-                          Signed up · Waiting for the final roster.
+                          Signed up · Waiting for a clan.
                         </p>
                       )}
                       <div className="member-clan-rows">

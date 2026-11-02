@@ -44,7 +44,7 @@ export default function PublicationChanges({
         if (!active) return;
         if (snapshot.summary.published_version !== draft.published?.version)
           throw new Error(
-            "Published version changed. Refresh Finalize before reviewing.",
+            "Published version changed. Refresh Finalize roster before reviewing.",
           );
         setResult(publicationChanges(draft, snapshot.rows));
         onReady(true);

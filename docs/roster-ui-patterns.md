@@ -1,10 +1,47 @@
 # Roster UI patterns
 
+## CWL names and plain words (audit 119)
+
+| Thing | Visible name |
+| --- | --- |
+| Member clan destination | My clan assignments |
+| Member without a clan assignment | Waiting for a clan |
+| Staff account without a placement | Unplaced |
+| Bonus page and navigation | Bonus medals |
+| 15/30-player limit and progress labels | Clan size |
+| Hide the member roster | Hide roster; Roster hidden. |
+| Campaign message/reminder workspace | Signup reminders |
+| Staff workflow destinations | Build roster; Finalize roster; Announcements |
+| CWL clan configuration | Hosting clans |
+| Existing staff CWL page eyebrow | CWL |
+| Member page eyebrows | None |
+| Existing account-linking help control | Link an account |
+| Search that actually matches players and clans | Find a player or clan |
+
+At 320 px, the existing strip may retain My clan / Build / Finalize / Announce;
+accessible names use the full destination names. Other headings and navigation
+use the full names. Staff counts say signups; no-weight counts add `(all pools)`
+only when that global count differs from the current pool's count. API filter
+keys, CSS class names and stored capacity/status fields are not renamed.
+
+Main: `Main: play at full strength. No hero upgrades.`
+Lazy: `Lazy: relaxed CWL. You can upgrade during the event.`
+The FWA line remains exactly `If you’re in FWA… it’s Lazy Way or No Way!!!`.
+Tour titles and narrative stay unchanged; its 13 actual cards use sequential
+card ordinals and a matching total rather than repeated 5s. The original eight
+decorative progress groups retain their layout and stage advances through an
+explicit `progressGroup`; these are not thirteen individually numbered dots.
+
+The later review 137, item 6 governs empty My clan assignments: without a known
+empty linked-account result, offer Signup for CWL alone. Do not add a linking
+helper or fetch accounts merely to satisfy the older119 label request. Existing
+linking controls elsewhere share the canonical label.
+
 ## Member signup confirmation
 
 Home and My signups share a green confirmation naming signed accounts and pools. My signups lists every saved account and uses the account cards below for changes; My clan assignments uses a compact unpublished status or the published clan list. When some accounts are signed up, remaining linked accounts appear in a separate red card below the green confirmation without account names. Zero signups keep the grey signup action. Closed signups remove mutation-navigation links, not read-only navigation. Partial published assignments retain their clan cards; hidden publications use unpublished wording.
 
-Optional campaign guidance uses local dates and minute-updated relative time, or a muted taking-longer line. Missing guidance never hides saved signups. The member strip reuses the staff pattern: Sign up / My signups / My clan. My CWL starts expanded and remembers collapse.
+Optional campaign guidance uses local dates and minute-updated relative time, or the muted `Clans are not ready yet. Check back soon.` line. Missing guidance never hides saved signups. The member strip reuses the staff pattern: Sign up / My signups / My clan. My CWL starts expanded and remembers collapse.
 
 The roster page's UI system. Source of truth for tokens and states: `web/cwl/src/rosterUi/primitives.css`. Scope: roster page only (other dashboard pages adopt these later, by decision, not by drift).
 

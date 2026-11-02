@@ -307,7 +307,7 @@ it("excludes awaiting placement from late totals and gives it a neutral section"
     "0 players not in their clan",
   );
   expect(host.querySelector(".is-unassigned")?.textContent).toContain(
-    "Awaiting placement",
+    "Unplaced",
   );
   expect(host.querySelector(".is-unassigned")?.className).not.toContain(
     "is-not-ready",

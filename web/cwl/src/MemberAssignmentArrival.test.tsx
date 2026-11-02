@@ -61,6 +61,8 @@ it("shows only confirmed checks and per-clan counts across multiple clans", asyn
   expect(host.textContent).toContain("1 of 4 in clan");
   expect(host.textContent).toContain("All 1 in clan");
   expect(host.querySelectorAll(".member-clan-row")).toHaveLength(5);
+  expect(host.textContent).not.toContain("Version 1");
+  expect(host.textContent).not.toContain("Published");
   expect(vi.mocked(api)).toHaveBeenCalledTimes(1);
 });
 it("renders unavailable location accounts without a false check", async () => {

@@ -1165,3 +1165,28 @@ suite. Fresh disposable before/after browser fixtures cover 320/360/390/1440,
 keyboard recovery, no overflow, one helper and unchanged domain counts. Browser
 mutation observation reproduces the linked-member helper flash before and not
 after. All preserved review previews remain untouched.
+
+
+### Audit 119: one name for each thing
+
+Frontend presentation only: use My clan assignments, Waiting for a clan on
+member views, Unplaced on staff views, Bonus medals, Clan size, Hosting clans,
+Signup reminders, and the complete workflow destination names. Existing staff
+CWL eyebrows say CWL; member-page eyebrows are removed. Display cycle values in
+Results and Bonus as month/year using the existing presentation formatter;
+month inputs, API arguments and persisted values retain their original forms.
+
+Home's ordinary members no longer see staff weight values or the refresh-period
+copy/pause control; background refresh and the visible manual Refresh action are
+unchanged. Member assignments omit publication-version detail. Linking help has
+one label where it exists; empty assignments still follow review 137, item 6's
+Signup-only policy, with no added account read or inference of missing links.
+
+Owner 378 supplies the exact Main/Lazy rules and protects the FWA line verbatim.
+All tour narrative is protected; only the repeated numbering bug is fixed across
+its 13 cards and counter/ARIA total. Existing eight decorative progress groups
+retain their original layout and stage advances. No Discord text, layout CSS, API route/payload,
+notification, destination, selection, save, permission or delivery policy changes
+are part of 119. Short strip labels are the320-width exception, with full
+accessible names. See the kept-term/scope checklist in
+[cwl-plain-words-review.md](cwl-plain-words-review.md).

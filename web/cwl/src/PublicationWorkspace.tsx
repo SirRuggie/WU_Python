@@ -290,7 +290,7 @@ export default function PublicationWorkspace({
       );
       if (currentSeason.current !== sid) return;
       setSuccess(
-        "Publication withdrawn. Members will see assignments only after you publish again.",
+        "Roster hidden. Members will see assignments only after you publish again.",
       );
       await load();
     } catch (cause) {
@@ -325,7 +325,7 @@ export default function PublicationWorkspace({
     const key = account.assigned_clan_tag || "unassigned";
     const name = account.assigned_clan_tag
       ? clanNames.get(account.assigned_clan_tag) || account.assigned_clan_tag
-      : "Awaiting placement";
+      : "Unplaced";
     const group = rosterGroups.get(key) || { name, accounts: [] };
     group.accounts.push(account);
     rosterGroups.set(key, group);
@@ -397,7 +397,7 @@ export default function PublicationWorkspace({
               : `Publish version ${draft.next_version}?`
           }
           confirmLabel="Publish roster"
-          text={`Publish the current draft for Main and Lazy? ${draft.preview.accounts.length} account${draft.preview.accounts.length === 1 ? "" : "s"}: ${draft.preview.assigned_count} assigned and ${draft.preview.unassigned_count} awaiting placement. Members will see these assignments. No Discord message is sent.`}
+          text={`Publish the current draft for Main and Lazy? ${draft.preview.accounts.length} account${draft.preview.accounts.length === 1 ? "" : "s"}: ${draft.preview.assigned_count} assigned and ${draft.preview.unassigned_count} unplaced. Members will see these assignments. No Discord message is sent.`}
           onCancel={() => setConfirmRevision(null)}
           onConfirm={() => void publish()}
           disabled={!canPublish}
@@ -418,7 +418,7 @@ export default function PublicationWorkspace({
 
       <div className="page-head">
         <div>
-          <p className="eyebrow">Staff · CWL</p>
+          <p className="eyebrow">CWL</p>
           <h1 ref={pageHeading} tabIndex={-1}>
             {step === "announce" ? "Announcements" : "Finalize roster"}
           </h1>
@@ -522,7 +522,7 @@ export default function PublicationWorkspace({
                       {check.accounts.length}{" "}
                       {check.filter === "missing_weight"
                         ? `missing weight${check.accounts.length === 1 ? "" : "s"}`
-                        : `account${check.accounts.length === 1 ? "" : "s"} awaiting placement`}{" "}
+                        : `account${check.accounts.length === 1 ? "" : "s"} unplaced`}{" "}
                       ›
                     </Button>
                   ))}
@@ -533,7 +533,7 @@ export default function PublicationWorkspace({
                     onClick={() => onFix("over_capacity")}
                   >
                     {overCapacity.clans} clan
-                    {overCapacity.clans === 1 ? "" : "s"} over capacity · +
+                    {overCapacity.clans === 1 ? "" : "s"} over clan size · +
                     {overCapacity.players} ›
                   </Button>
                 )}
@@ -564,7 +564,7 @@ export default function PublicationWorkspace({
                     {draft.preview.unassigned_count === 1
                       ? " is"
                       : "s are"}{" "}
-                    still awaiting placement and will appear that way to
+                    still unplaced and will appear that way to
                     members.
                   </span>
                 </label>
@@ -594,13 +594,13 @@ export default function PublicationWorkspace({
               </summary>
               <div className="publication-preview-filters">
                 <label>
-                  Find an account or clan
+                  Find a player or clan
                   <input
                     type="search"
                     value={rosterSearch}
                     disabled={locked || loading}
                     onChange={(event) => setRosterSearch(event.target.value)}
-                    placeholder="Name, tag, pool, or clan"
+                    placeholder="Find a player or clan"
                   />
                 </label>
               </div>

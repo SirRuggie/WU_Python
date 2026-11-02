@@ -161,6 +161,9 @@ export default function RosterHeader({
   const missingWeight = allAccounts.filter(
     (account) => account.effective_weight === null,
   ).length;
+  const poolMissingWeight = accounts.filter(
+    (account) => account.effective_weight === null,
+  ).length;
   const publicationStatus =
     publication?.seasonId === seasonId ? publication.status : null;
   const selectedSeasonLabel = seasons.find(
@@ -191,7 +194,7 @@ export default function RosterHeader({
     <header className="roster-header roster-ui" aria-label="Roster overview">
       <div className="roster-header-title-row">
         <div className="roster-header-title">
-          <p className="eyebrow">Staff roster</p>
+          <p className="eyebrow">CWL</p>
           <h1 data-roster-heading tabIndex={-1}>
             Build roster
           </h1>
@@ -243,7 +246,7 @@ export default function RosterHeader({
                         onAutoPlace(actionsTrigger.current);
                     }}
                   >
-                    Auto-place unassigned
+                    Auto-place unplaced
                   </Button>
                 )}
               </div>
@@ -318,7 +321,7 @@ export default function RosterHeader({
           <span>
             ⚠ {missingCapacityClans.length === 1
               ? `${missingCapacityClans[0].name} has`
-              : `${missingCapacityClans.length} clans have`} no capacity set
+              : `${missingCapacityClans.length} clans have`} no clan size set
           </span>
           {onCapacitySettings && (
             <button
@@ -340,7 +343,7 @@ export default function RosterHeader({
           aria-label="Working roster counts"
         >
           <Button onClick={() => onStatusFilter("all")} disabled={uiLocked}>
-            <strong>{accounts.length}</strong> signed
+            <strong>{accounts.length}</strong> signups
           </Button>
           <div className="roster-header-unplaced">
             <Button
@@ -366,7 +369,7 @@ export default function RosterHeader({
             disabled={uiLocked}
           >
             <strong>{missingWeight}</strong> no weight
-            {pool === "all" ? "" : " (all pools)"}
+            {pool !== "all" && missingWeight !== poolMissingWeight ? " (all pools)" : ""}
           </Button>
         </div>
       )}

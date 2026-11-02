@@ -102,7 +102,7 @@ export default function CompareClanHeader({
         className={capacity.barClass}
         value={summary.count}
         max={clan.effective_capacity}
-        label={`${clan.name} capacity`}
+        label={`${clan.name} clan size`}
       />
     </div>
   );

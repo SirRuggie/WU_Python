@@ -343,7 +343,7 @@ export default function ArrivalCheck({
           )}
           {helpOpen && (
             <p className="declaration-help">
-              Ready = enough players in their clan for its war size, checked in
+              Ready = enough players in their clan for its clan size, checked in
               the last 5 minutes.
             </p>
           )}

@@ -427,7 +427,7 @@ export default function MemberTour({
               <div className="tour-copy">
                 <p className="tour-step">
                   <Sparkles size={14} aria-hidden="true" /> Step{" "}
-                  {current.number} of 8
+                  {current.number} of {steps.length}
                 </p>
                 <h2 id="tour-title" tabIndex={-1}>
                   {current.title}
@@ -460,15 +460,15 @@ export default function MemberTour({
               <footer>
                 <span
                   className="tour-progress"
-                  aria-label={`Step ${current.number} of 8`}
+                  aria-label={`Step ${current.number} of ${steps.length}`}
                 >
                   {Array.from({ length: 8 }, (_, i) => (
                     <i
                       key={i}
                       className={
-                        i + 1 === current.number
+                        i + 1 === current.progressGroup
                           ? "current"
-                          : i < current.number
+                          : i < current.progressGroup
                             ? "done"
                             : ""
                       }

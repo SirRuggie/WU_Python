@@ -107,10 +107,10 @@ describe("roster header counts", () => {
       ],
     } as RosterSnapshot;
     const html = render("all", "1", "June", [], testRoster, () => {});
-    expect(html).toContain("Funnies has no capacity set");
+    expect(html).toContain("Funnies has no clan size set");
     expect(html).toContain("Set in Hosting clans ›");
-    expect(html).not.toContain("Ready has no capacity set");
-    expect(html).not.toContain("Old has no capacity set");
+    expect(html).not.toContain("Ready has no clan size set");
+    expect(html).not.toContain("Old has no clan size set");
     expect(html.indexOf("signup-activity")).toBeLessThan(
       html.indexOf("roster-capacity-alert"),
     );
@@ -142,19 +142,38 @@ describe("roster header counts", () => {
     );
   });
   it("scopes signed and unplaced to the chosen pool but keeps missing weight global", () => {
-    expect(render("main")).toContain("<strong>2</strong> signed");
+    expect(render("main")).toContain("<strong>2</strong> signups");
     expect(render("main")).toContain("<strong>1</strong> unplaced");
     expect(render("main")).toContain(
       "<strong>2</strong> no weight (all pools)",
     );
-    expect(render("lazy")).toContain("<strong>1</strong> signed");
+    expect(render("lazy")).toContain("<strong>1</strong> signups");
     expect(render("lazy")).toContain("<strong>1</strong> unplaced");
     expect(render("lazy")).toContain(
       "<strong>2</strong> no weight (all pools)",
     );
-    expect(render("all")).toContain("<strong>3</strong> signed");
+    expect(render("all")).toContain("<strong>3</strong> signups");
     expect(render("all")).toContain("<strong>2</strong> unplaced");
     expect(render("all")).toContain("<strong>2</strong> no weight");
     expect(render("all")).not.toContain("(all pools)");
   });
+});
+
+it("omits all-pools noise when the selected pool has the same missing-weight count", () => {
+  const samePool = {
+    ...roster,
+    accounts: [
+      account("#A", "main", null, null),
+      account("#B", "lazy", null, 100000),
+    ],
+  };
+  expect(render("main", "1", "November 2026", [], samePool)).toContain(
+    "<strong>1</strong> no weight",
+  );
+  expect(render("main", "1", "November 2026", [], samePool)).not.toContain(
+    "(all pools)",
+  );
+  expect(render("lazy", "1", "November 2026", [], samePool)).toContain(
+    "<strong>1</strong> no weight (all pools)",
+  );
 });

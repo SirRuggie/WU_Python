@@ -28,7 +28,7 @@ export function declarationGroups(
     if (!map.has(key))
       map.set(key, {
         tag,
-        name: source.assigned_clan_name || tag || "Awaiting placement",
+        name: source.assigned_clan_name || tag || "Unplaced",
         pool: source.hosting_pool,
         capacity:
           data.roster.clans.find((c) => c.tag === tag)?.capacity ?? null,

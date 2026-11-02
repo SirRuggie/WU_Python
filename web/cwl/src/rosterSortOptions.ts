@@ -1,5 +1,5 @@
 export const rosterSortOptions = [
-  ["unassigned_first", "Unassigned first"],
+  ["unassigned_first", "Unplaced first"],
   ["weight_desc", "Weight: highest first"],
   ["weight_asc", "Weight: lowest first"],
   ["name", "Name A–Z"],

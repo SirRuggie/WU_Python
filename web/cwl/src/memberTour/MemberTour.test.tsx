@@ -164,6 +164,18 @@ it("walks every step, target advances, phone menu closes for practice, finishes 
     "This material is unofficial",
   );
   for (let i = 0; i < steps.length; i++) {
+    expect(steps[i].number).toBe(i + 1);
+    const originalGroups = [1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 6, 7, 8];
+    expect(steps[i].progressGroup).toBe(originalGroups[i]);
+    expect(
+      [...document.querySelectorAll(".tour-progress > i")].findIndex((dot) =>
+        dot.classList.contains("current"),
+      ),
+    ).toBe(originalGroups[i] - 1);
+    expect(
+      document.querySelector(".tour-progress")?.getAttribute("aria-label"),
+    ).toBe(`Step ${i + 1} of ${steps.length}`);
+    expect(document.querySelectorAll(".tour-progress > i")).toHaveLength(8);
     expect(document.querySelector("#tour-title")?.textContent).toBe(
       steps[i].title,
     );
