@@ -37,6 +37,7 @@ const ready: PostReview = {
   generation: "g1",
   future_months: true,
   worker_ready: true,
+  has_changes: true,
   channel_name: "main-rosters",
   message_url: "https://discord.com/channels/1/2/3",
   live_preview: [{ type: "text", text: "Actual live post" }],
@@ -135,7 +136,7 @@ it("confirm sends only reviewed boolean scope once; repeated clicks cannot queue
     }),
   );
   expect(document.body.textContent).toContain(
-    "Post updated. Saved for this campaign.",
+    "Post updated. Saved for this month.",
   );
   expect(updated).toHaveBeenCalledTimes(1);
   expect(document.querySelector("a")?.href).toBe(
@@ -211,7 +212,7 @@ it("pins editor generation instead of attaching a new generation to stale text",
   await click("Edit post");
   await mount({ generation: "g2" });
   expect(button("Preview").disabled).toBe(true);
-  expect(document.body.textContent).toContain("Saved campaign changed");
+  expect(document.body.textContent).toContain("Saved settings changed");
   expect(api).not.toHaveBeenCalled();
 });
 
@@ -278,4 +279,50 @@ it("only an explicit fresh-preview action uses a changed campaign generation", a
   });
   expect(document.body.textContent).toContain("Proposed post");
   expect(button("Update post")).toBeTruthy();
+});
+
+for (const changes of [false, undefined]) {
+  it(`refuses Update when has_changes is ${changes}`, async () => {
+    api.mockResolvedValueOnce({ ...ready, has_changes: changes });
+    await mount();
+    await preview();
+    expect(button("Update post").disabled).toBe(true);
+    expect(document.body.textContent).toContain(
+      changes === false ? "No changes" : "Preview again.",
+    );
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+}
+it("Refresh status preserves an unticked future-month choice", async () => {
+  api.mockResolvedValue({ ...ready, worker_ready: false });
+  await mount();
+  await preview();
+  const checkbox = () =>
+    document.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+  await act(async () => checkbox().click());
+  expect(checkbox().checked).toBe(false);
+  await click("Refresh status");
+  expect(checkbox().checked).toBe(false);
+  expect(document.body.textContent).toContain("This month");
+});
+
+it("uses plain review/status copy and the shared post link style", async () => {
+  api.mockResolvedValueOnce({ ...ready, has_changes: false });
+  await mount();
+  await preview();
+  expect(document.body.textContent).toContain("Edits this post. No ping.");
+  expect(document.body.textContent).toContain("This month and future months");
+  expect(
+    document.querySelector("a")?.classList.contains("announcement-result-link"),
+  ).toBe(true);
+  expect(document.body.textContent).not.toMatch(
+    /\b(pool|cycle|recurring|campaign|unconfirmed|snapshot)\b/i,
+  );
+});
+it("shows the short updating status without claiming completion", async () => {
+  api.mockResolvedValueOnce({ ...ready, status: "pending_update" });
+  await mount();
+  await preview();
+  expect(document.body.textContent).toContain("Updating…");
+  expect(document.body.textContent).not.toContain("Post updated.");
 });

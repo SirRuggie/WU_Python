@@ -45,11 +45,10 @@ export default function AnnouncementPostReview({
             />
             Also use for future months
           </label>
-          <p>
-            {future
-              ? "Also saves only this pool’s recurring roster text and buttons. Other messages are unchanged."
-              : "Only this campaign’s saved roster copy changes. Its existing future-month copy stays as it is."}
-          </p>
+          {review.has_changes === false && <p role="status">No changes</p>}
+          {review.has_changes === undefined && (
+            <p role="status">Preview again.</p>
+          )}
           {!review.worker_ready && (
             <>
               <p role="status">
@@ -67,7 +66,7 @@ export default function AnnouncementPostReview({
         <p role="status">
           {["pending_preview", "previewing"].includes(review.status)
             ? "Preparing preview…"
-            : "Updating the reviewed post…"}{" "}
+            : "Updating…"}{" "}
           You can close this panel and reopen it to check the result.
         </p>
       )}
@@ -86,7 +85,7 @@ export default function AnnouncementPostReview({
           <p role="status">
             Post updated.
             {review.campaign_saved
-              ? ` Saved for this campaign${review.recurring_saved ? " and future months" : ""}.`
+              ? ` Saved for this month${review.recurring_saved ? " and future months" : ""}.`
               : ""}
           </p>
           {review.save_warning && <p role="alert">{review.save_warning}</p>}
@@ -94,7 +93,7 @@ export default function AnnouncementPostReview({
       )}
       {review.error_code !== "deleted" && safePostUrl(review.message_url) && (
         <a
-          className="announcement-post-link"
+          className="announcement-post-link announcement-result-link"
           href={review.message_url!}
           target="_blank"
           rel="noreferrer"
@@ -114,7 +113,7 @@ export default function AnnouncementPostReview({
           <details
             onToggle={(event) => setHistoryOpen(event.currentTarget.open)}
           >
-            <summary>Reviewed snapshots</summary>
+            <summary>Earlier preview</summary>
             {historyOpen && comparison}
           </details>
         ))}

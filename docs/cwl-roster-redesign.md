@@ -1078,3 +1078,17 @@ owned pending copies only after the recovered SQL state and consumed receipt are
 committed, retaining the base investigation proof. Tests cover pause persistence,
 both-off reset, owned leases, older/uncovered proof, pool scope, season round-trip,
 CAS race and head revision. All eleven new behavioral mutants were killed.
+
+### Update-post review corrections (146)
+
+Only an actual whole-template save supersedes a saved future-month roster copy;
+pause/resume and other metadata updates preserve it. Pending edits expire after
+five minutes unless atomically claimed. Expiry says “Not updated. Preview again.”;
+only a possibly applied Discord edit is uncertain. Native galleries retain their
+original positions or the edit is refused. Role previews resolve names without
+showing IDs. The backend compares native observed/proposed payloads and exposes
+`has_changes`; the UI refuses Update unless it is explicitly true. Refresh status
+preserves the staff member's future-month checkbox choice. Open post uses the
+shared link style, with short month/status copy. This review uses fake Discord and
+owned databases; it does not establish live delivery. Release remains held for the
+owner's preview approval. Final gate evidence is recorded in the PR review notes.

@@ -55,6 +55,7 @@ export default function AnnouncementPostUpdate(props: Props) {
   const storageKey = `wu-post-review:${props.seasonId}:${props.pool}:${props.cycle}`;
   const base = `/seasons/${encodeURIComponent(props.seasonId)}/manage-bridge/${props.pool}/post-updates`;
   const readSequence = useRef(0);
+  const futureChosen = useRef(false);
   const initial = useRef(JSON.stringify(props.copy));
   const reviewedGeneration = useRef(props.generation);
   const dirty = open && editing && JSON.stringify(value) !== initial.current;
@@ -94,7 +95,7 @@ export default function AnnouncementPostUpdate(props: Props) {
     setReview(next);
     setValue(clone(next.candidate));
     setEditing(false);
-    setFuture(next.future_months);
+    if (!futureChosen.current) setFuture(next.future_months);
     if (next.status === "done") {
       try {
         sessionStorage.removeItem(storageKey);
@@ -174,6 +175,7 @@ export default function AnnouncementPostUpdate(props: Props) {
     initial.current = JSON.stringify(current.current.copy);
     setEditing(true);
     setFuture(true);
+    futureChosen.current = false;
     let saved: string | null = null;
     try {
       saved = sessionStorage.getItem(storageKey);
@@ -247,6 +249,9 @@ export default function AnnouncementPostUpdate(props: Props) {
       !nonce ||
       !props.allowed ||
       review?.status !== "ready" ||
+      review.has_changes !== true ||
+      !review.worker_ready ||
+      !review.channel_name ||
       props.generation !== reviewedGeneration.current
     )
       return;
@@ -278,6 +283,7 @@ export default function AnnouncementPostUpdate(props: Props) {
     setEditing(true);
     setError("");
     setFuture(true);
+    futureChosen.current = false;
     remember(null);
   };
   const footer = editing ? (
@@ -295,9 +301,7 @@ export default function AnnouncementPostUpdate(props: Props) {
     </button>
   ) : review?.status === "ready" ? (
     <div className="announcement-post-footer">
-      <small>
-        {future ? "This campaign and future months" : "This campaign only"}
-      </small>
+      <small>{future ? "This month and future months" : "This month"}</small>
       <button
         type="button"
         disabled={
@@ -305,7 +309,8 @@ export default function AnnouncementPostUpdate(props: Props) {
           !props.allowed ||
           props.generation !== reviewedGeneration.current ||
           !review.worker_ready ||
-          !review.channel_name
+          !review.channel_name ||
+          review.has_changes !== true
         }
         onClick={() => setConfirm(true)}
       >
@@ -331,10 +336,7 @@ export default function AnnouncementPostUpdate(props: Props) {
           onClose={close}
           footer={footer}
         >
-          <p>
-            Update the same Discord post in place. Images, destination and
-            notification roles stay unchanged. This update sends no ping.
-          </p>
+          <p>Edits this post. No ping.</p>
           {error && <p role="alert">{error}</p>}
           {denied && (
             <p>
@@ -352,7 +354,7 @@ export default function AnnouncementPostUpdate(props: Props) {
             review?.status !== "done" && (
               <div>
                 <p role="alert">
-                  Saved campaign changed. Preview against the latest settings
+                  Saved settings changed. Preview against the latest settings
                   before updating.
                 </p>
                 {editing && (
@@ -376,10 +378,6 @@ export default function AnnouncementPostUpdate(props: Props) {
                 onChange={setValue}
                 disabled={busy || !props.allowed}
               />
-              <p>
-                Preview changes no post or saved campaign. A successful update
-                saves this pool’s current-cycle text and buttons.
-              </p>
             </>
           ) : (
             <>
@@ -389,7 +387,10 @@ export default function AnnouncementPostUpdate(props: Props) {
                   key={nonce || "receipt"}
                   review={review}
                   future={future}
-                  onFutureChange={setFuture}
+                  onFutureChange={(value) => {
+                    futureChosen.current = true;
+                    setFuture(value);
+                  }}
                   canEdit={!busy && props.allowed}
                   onRefresh={() => {
                     if (nonce) void read(nonce, epoch.current);
@@ -410,7 +411,7 @@ export default function AnnouncementPostUpdate(props: Props) {
           {confirm && review?.channel_name && (
             <ConfirmDialog
               heading="Update roster post"
-              text={`Update the existing post in #${review.channel_name}? No ping or new post is sent. ${future ? "Also save this pool’s copy for future months." : "Save this pool’s copy for this campaign only."}`}
+              text={`Update the existing post in #${review.channel_name}? No ping or new post is sent. ${future ? "Also save this text for future months." : "Save this text for this month."}`}
               confirmLabel="Update post"
               disabled={
                 busy ||

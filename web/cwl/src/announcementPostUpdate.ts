@@ -16,6 +16,7 @@ export type PostReview = {
   generation: string;
   future_months: boolean;
   worker_ready: boolean;
+  has_changes?: boolean;
   channel_name?: string | null;
   message_url?: string | null;
   error?: string;
@@ -91,7 +92,8 @@ export function checkedPostReview(value: PostReview): PostReview {
     ) ||
     typeof value.generation !== "string" ||
     typeof value.worker_ready !== "boolean" ||
-    typeof value.future_months !== "boolean"
+    typeof value.future_months !== "boolean" ||
+    (value.has_changes !== undefined && typeof value.has_changes !== "boolean")
   )
     throw new Error(
       "The post review is incomplete. Refresh its status before updating.",
