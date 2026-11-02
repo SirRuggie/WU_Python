@@ -117,12 +117,9 @@ export default function DeclarationClan({
       )}
       {open && (
         <div id={panelId} className="declaration-clan-content">
-          {group.tag && !ready && (
+          {group.tag && (
             <div className="declaration-copy">
-              <Button
-                onClick={() => void copy()}
-                disabled={!mentions.count || !!locationStatus}
-              >
+              <Button onClick={() => void copy()} disabled={!mentions.count}>
                 Copy mentions
               </Button>
               {!!mentions.unlinked.length && (

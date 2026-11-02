@@ -1,3 +1,8 @@
+import {
+  mergeAssignmentLocations,
+  assignmentArrivalLabel,
+} from "./memberAssignmentLocations";
+import type { LocationRecords } from "./comparisonLocation";
 import JoiningInstructionsCard from "./JoiningInstructionsCard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Season } from "./api";
@@ -26,6 +31,7 @@ export default function MemberAssignments({
   const [data, setData] = useState<MyAssignments | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const locations = useRef<LocationRecords>({});
   const inFlight = useRef(false);
   const requestId = useRef(0);
   const activeSeason = useRef(seasonId);
@@ -42,8 +48,11 @@ export default function MemberAssignments({
         const result = await api<MyAssignments>(
           `/seasons/${encodeURIComponent(sid)}/my-assignments`,
         );
-        if (id === requestId.current && activeSeason.current === sid)
-          setData(result);
+        if (id === requestId.current && activeSeason.current === sid) {
+          const next = mergeAssignmentLocations(locations.current, result);
+          locations.current = next.records;
+          setData(next.data);
+        }
       } catch (cause) {
         if (id === requestId.current && activeSeason.current === sid)
           setError(errorText(cause));
@@ -58,6 +67,7 @@ export default function MemberAssignments({
   useEffect(() => {
     requestId.current += 1;
     setData(null);
+    locations.current = {};
     setError("");
     if (seasonId) void load();
     return () => {
@@ -207,7 +217,7 @@ export default function MemberAssignments({
                           <h2>{group.clanName}</h2>
                           <small>
                             {group.clanTag
-                              ? `${group.clanTag} · ${group.accounts.length} account${group.accounts.length === 1 ? "" : "s"}`
+                              ? `${group.clanTag} · ${assignmentArrivalLabel(group.accounts)}`
                               : `${group.accounts.length} account${group.accounts.length === 1 ? "" : "s"} without a hosting clan`}
                           </small>
                         </div>
@@ -247,7 +257,15 @@ export default function MemberAssignments({
                         {group.accounts.map((account) => (
                           <div className="member-clan-row" key={account.tag}>
                             <div>
-                              <strong>{account.player_name}</strong>
+                              <strong>
+                                {account.player_name}
+                                {account.arrival_status === "arrived" && (
+                                  <span role="img" aria-label="In clan">
+                                    {" "}
+                                    ✅
+                                  </span>
+                                )}
+                              </strong>
                               <small>{account.tag}</small>
                             </div>
                             <span>

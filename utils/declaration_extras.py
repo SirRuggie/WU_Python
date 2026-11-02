@@ -46,6 +46,11 @@ def extras_for(
         )
         result.append(
             {
+                **(
+                    {"not_published_yet": True}
+                    if assigned == clan_tag and not assigned_here
+                    else {}
+                ),
                 "tag": member["tag"],
                 "name": member["name"],
                 "town_hall": member.get("town_hall"),

@@ -77,7 +77,12 @@ export function declarationGroups(
           a.player_name.localeCompare(b.player_name) ||
           a.tag.localeCompare(b.tag),
       );
-      const late = accounts.filter((a) => !!g.tag && !arrived(a));
+      const late = accounts.filter(
+        (a) =>
+          !!g.tag &&
+          comparisonLocation(observed(a), g.tag, now, g.name).state ===
+            "missing",
+      );
       const presentFillers =
         extra?.fillers?.filter(
           (f) =>

@@ -1075,16 +1075,10 @@ async def roster(request):
         account['current_fwa_clan_tag'] = (
             account.get('current_clan_tag') if known and account.get('current_clan_tag') in fwa_tags else None)
         account['current_fwa_status'] = 'current' if known else 'unavailable'
-    hosting_tags = {clan["tag"] for clan in result["clans"] if not clan["archived"]}
-    for account in result["accounts"]:
-        # Unknown/stale locations or directory outages are not proof of an outside clan.
-        account["outside_family_and_hosts"] = bool(
-            account["current_clan_status"] == "current"
-            and account["current_clan_tag"]
-            and family is not None
-            and account["current_clan_tag"] not in family
-            and account["current_clan_tag"] not in hosting_tags
-        )
+    from utils.cwl_location_rules import outside_family
+    hosts = _store(request).active_hosting_tags()
+    for account in result['accounts']:
+        account['outside_family_and_hosts'] = outside_family(account, family, hosts)
     from .roster_owner_names import enrich as enrich_owner_names
     enrich_owner_names(request, result)
     return web.json_response(result)
@@ -1120,6 +1114,8 @@ async def arrival_snapshot(request, *, source=None, force=None):
         for account in accounts:
             account['hosting_pool'] = clan_pools.get(account['assigned_clan_tag']) or account['pool']
     from .roster_locations import enrich, background_enrich
+    from utils.cwl_location_rules import outside_family, arrival_status
+    hosts = _store(request).active_hosting_tags()
     updating = False
     if force is None and request.query.get('background') == '1':
         updating = await background_enrich(request, accounts, force=request.query.get('refresh') == '1')
@@ -1127,10 +1123,8 @@ async def arrival_snapshot(request, *, source=None, force=None):
         await enrich(request, accounts, force=force if force is not None else request.query.get('refresh') == '1')
     family = await _family_tags(request)
     for account in accounts:
-        current = account['current_clan_status'] == 'current'
-        account['arrival_status'] = ('unassigned' if not account['assigned_clan_tag'] else
-            'unknown' if not current else 'arrived' if account['current_clan_tag'] == account['assigned_clan_tag'] else 'missing')
-        account['outside_family'] = current and family is not None and account['current_clan_tag'] not in family
+        account['arrival_status'] = arrival_status(account)
+        account['outside_family'] = outside_family(account, family, hosts)
     return {'season_archived': season['status'] == 'archived', 'source':'published' if published else 'draft',
         'version':latest['version'] if published else None, 'accounts':accounts, 'updating':updating,
         'publication_available': latest is not None, 'publication_outdated': publication_outdated,
@@ -1880,6 +1874,26 @@ async def my_assignments(request):
         )
     except MemberError as exc:
         _fail(exc.status, str(exc))
+    from .roster_locations import background_enrich
+    from utils.cwl_location_rules import arrival_status
+    # Only the already ownership-filtered published placements enter the cache.
+    placed = (
+        [dict(account) for account in result['accounts'] if account.get('assigned_clan_tag')]
+        if result['published'] else []
+    )
+    await background_enrich(request, placed)
+    locations = {account['tag']: account for account in placed}
+    for account in result['accounts']:
+        observed = locations.get(account['tag'])
+        account['arrival_status'] = arrival_status(observed) if observed else 'unassigned'
+        if observed and observed.get('current_clan_checked_at'):
+            # Only this member's already-filtered placements are projected. The
+            # checked timestamp lets the existing UI merge keep verified values
+            # while background refresh runs, without leaking lookup internals.
+            for field in ('current_clan_tag', 'current_clan_name',
+                          'current_clan_checked_at', 'current_clan_status'):
+                if field in observed:
+                    account[field] = observed[field]
     return web.json_response(result)
 
 

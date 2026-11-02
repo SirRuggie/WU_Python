@@ -155,7 +155,10 @@ export default function ArrivalCheck({
       pool !== "lazy" ||
       !onlyExtras ||
       !!extras.data?.clans.find(
-        (c) => c.tag === g.tag && c.status === "current" && (c.count || 0) > 0,
+        (c) =>
+          c.tag === g.tag &&
+          c.status === "current" &&
+          (c.count || 0) + (c.unpublished_count || 0) > 0,
       ),
   );
   const needle = search.trim().toLowerCase();
@@ -292,6 +295,8 @@ export default function ArrivalCheck({
               : extras.loading || !extras.data
                 ? "Checking clan members…"
                 : `${extras.data.clans.reduce((n, c) => n + (c.count || 0), 0)} ${failedExtras ? "confirmed " : ""}not on roster`}
+            {!!extras.data?.clans.some((c) => (c.unpublished_count || 0) > 0) &&
+              ` · ${extras.data.clans.reduce((n, c) => n + (c.unpublished_count || 0), 0)} ${failedExtras ? "confirmed " : ""}not published yet`}
             {failedExtras > 0 &&
               ` · ${failedExtras} ${failedExtras === 1 ? "clan" : "clans"} couldn't be checked`}
             <button
@@ -411,7 +416,11 @@ export default function ArrivalCheck({
           />
           {pool === "lazy" &&
             extraOnlyHosts
-              .filter((c) => !onlyExtras || (c.count || 0) > 0)
+              .filter(
+                (c) =>
+                  !onlyExtras ||
+                  (c.count || 0) + (c.unpublished_count || 0) > 0,
+              )
               .map((c) => (
                 <section className="declaration-extra-only" key={c.tag}>
                   <h3>{c.name}</h3>
