@@ -1,6 +1,6 @@
 import { membersText as t } from "./strings";
 import "./Members.css";
-import ActionMenu from "../rosterUi/ActionMenu";
+import SelectionActionBar from "../SelectionActionBar";
 export default function MemberBulkBar({
   pageSelected,
   pagePartial,
@@ -35,98 +35,62 @@ export default function MemberBulkBar({
   onClear: () => void;
 }) {
   if (!count) return null;
+  const actions = [
+    ...(canRoles
+      ? [
+          { id: "add", label: t.addRole, onAction: onAdd, disabled: busy },
+          {
+            id: "remove",
+            label: t.removeRole,
+            onAction: onRemove,
+            disabled: busy,
+          },
+        ]
+      : []),
+    ...(canProfiles
+      ? [{ id: "fix", label: t.fixNames, onAction: onFix, disabled: busy }]
+      : []),
+  ];
   return (
-    <div
-      className="members-bulk-bar"
-      role="region"
-      aria-label={t.selectionLabel}
-    >
-      <button onClick={onShow} aria-label={t.selected(count, hidden)}>
-        <span className="members-selection-full">
-          {t.selected(count, hidden)}
-        </span>
-        <span className="members-selection-short" aria-hidden="true">
-          {t.selectedShort(count, hidden)}
-        </span>
-      </button>
-      <div className="members-bulk-phone">
-        <ActionMenu
-          name={t.selectionLabel}
-          label={t.actions}
-          items={[
-            ...(canRoles
-              ? [
-                  {
-                    id: "add",
-                    label: t.addRole,
-                    onAction: onAdd,
-                    disabled: busy,
-                  },
-                  {
-                    id: "remove",
-                    label: t.removeRole,
-                    onAction: onRemove,
-                    disabled: busy,
-                  },
-                ]
-              : []),
-            ...(canProfiles
-              ? [
-                  {
-                    id: "fix",
-                    label: t.fixNames,
-                    onAction: onFix,
-                    disabled: busy,
-                  },
-                ]
-              : []),
-            {
-              id: "page",
-              label: pageSelected ? t.unselectPage : t.selectPage,
-              onAction: onSelectPage,
-            },
-            {
-              id: "matching",
-              label: t.selectMatching(matchingCount),
-              onAction: onSelectMatching,
-            },
-            { id: "clear", label: t.selectNone, onAction: onClear },
-          ]}
-        />
-      </div>
-      <div className="members-bulk-desktop">
-        <button onClick={onClear}>{t.selectNone}</button>
-        <label className="members-checkbox">
-          <input
-            type="checkbox"
-            aria-label={t.selectPage}
-            checked={pageSelected}
-            ref={(node) => {
-              if (node) node.indeterminate = pagePartial;
-            }}
-            onChange={onSelectPage}
-          />
-          {t.selectPage}
-        </label>
-        <button onClick={onSelectMatching}>
-          {t.selectMatching(matchingCount)}
-        </button>
-        {canRoles && (
-          <>
-            <button disabled={busy} onClick={onAdd}>
-              {t.addRole}
-            </button>
-            <button disabled={busy} onClick={onRemove}>
-              {t.removeRole}
-            </button>
-          </>
-        )}
-        {canProfiles && (
-          <button disabled={busy} onClick={onFix}>
-            {t.fixNames}
+    <SelectionActionBar
+      name={t.selectionLabel}
+      label={t.selected(count, hidden)}
+      shortLabel={t.selectedShort(count, hidden)}
+      onShow={onShow}
+      actions={actions}
+      selectionActions={[
+        {
+          id: "page",
+          label: pageSelected ? t.unselectPage : t.selectPage,
+          onAction: onSelectPage,
+        },
+        {
+          id: "matching",
+          label: t.selectMatching(matchingCount),
+          onAction: onSelectMatching,
+        },
+        { id: "clear", label: t.selectNone, onAction: onClear },
+      ]}
+      desktopSelection={
+        <>
+          <button onClick={onClear}>{t.selectNone}</button>
+          <label className="members-checkbox">
+            <input
+              type="checkbox"
+              aria-label={t.selectPage}
+              checked={pageSelected}
+              ref={(node) => {
+                if (node) node.indeterminate = pagePartial;
+              }}
+              onChange={onSelectPage}
+            />
+            {t.selectPage}
+          </label>
+          <button onClick={onSelectMatching}>
+            {t.selectMatching(matchingCount)}
           </button>
-        )}
-      </div>
-    </div>
+        </>
+      }
+    />
   );
 }
