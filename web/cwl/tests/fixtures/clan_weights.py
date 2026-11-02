@@ -86,6 +86,13 @@ def war(t, *, previous=False):
     town_halls = {r["tag"]: r["town_hall"] for r in selected}
     town_halls.update({departed: 18, "#Y2Y": 14})
     town_halls = {t: value for t, value in town_halls.items() if t in order}
+    # Existing saved wars predate optional names/TH. The ledger still knows Änne.
+    names.pop(departed, None)
+    town_halls.pop(departed, None)
+    if mode.get("war_shrink"):
+        order = dict(list(order.items())[:2])
+        names = {tag: value for tag, value in names.items() if tag in order}
+        town_halls = {tag: value for tag, value in town_halls.items() if tag in order}
     return {
         "order": order,
         "names": names,

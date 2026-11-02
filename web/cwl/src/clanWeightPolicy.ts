@@ -17,7 +17,10 @@ export function usesClanWeights(account: {
 export function retainFwaMembership(
   previous: RosterAccount | undefined,
   incoming: RosterAccount,
-): Pick<RosterAccount, "current_fwa_clan_tag" | "current_fwa_status"> {
+): Pick<
+  RosterAccount,
+  "current_fwa_clan_tag" | "current_fwa_status" | "weight_lineup_clan_tag"
+> {
   const retain =
     previous &&
     previous.tag === incoming.tag &&
@@ -28,12 +31,20 @@ export function retainFwaMembership(
       incoming.current_clan_status === "current" &&
       incoming.current_clan_tag !== previous.current_clan_tag
     );
+  const lineup =
+    incoming.weight_lineup_clan_tag === undefined &&
+    previous?.tag === incoming.tag &&
+    previous.pool === incoming.pool
+      ? previous.weight_lineup_clan_tag
+      : incoming.weight_lineup_clan_tag;
   return retain
     ? {
+        weight_lineup_clan_tag: lineup,
         current_fwa_clan_tag: previous.current_fwa_clan_tag,
         current_fwa_status: "stale",
       }
     : {
+        weight_lineup_clan_tag: lineup,
         current_fwa_clan_tag: incoming.current_fwa_clan_tag,
         current_fwa_status: incoming.current_fwa_status,
       };

@@ -8,6 +8,7 @@ import SavedPlayers from "./SavedPlayers";
 import {
   isMissing,
   selectedRoster,
+  retainSavedWarSource,
   draftsForRoster,
   gaps,
   copyTable,
@@ -311,7 +312,7 @@ export default function WeightTrial({
         { changes },
       );
       if (id !== request.current) return;
-      setRoster(result);
+      setRoster((previous) => retainSavedWarSource(previous, result));
       setValues(draftsForRoster(result, selectedWar));
       setDirectoryAttempt((value) => value + 1);
       setNotice(

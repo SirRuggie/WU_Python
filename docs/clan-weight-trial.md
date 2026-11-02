@@ -384,3 +384,36 @@ rule; both saved lineups and earlier weights remain intact.
 QA and remaining limits are recorded in the review handoff. All tests and
 screenshots use isolated fixtures; none establishes live Discord delivery or
 production weight writes. Release remains held for Ruggie's preview/approval.
+
+### Review136 delta
+
+Departed-player display and writes prefer the selected lineup's known name/Town
+Hall, then the existing per-player ledger value, then unknown. Blank names and
+player tags do not replace a known ledger name. Additive saved-name/Town-Hall
+response fields let an older selected war use ledger metadata without borrowing
+another war's details. Weight values, revisions, replay receipts and storage
+selection rules are unchanged.
+
+A same-war response that removes any previously saved player is incomplete,
+even if the returned positions are contiguous and no teamSize was supplied. It
+is rejected before modifying either saved lineup. A complete newer war can
+still rotate the two retained snapshots as before.
+
+Cold background Roster reads resolve saved-lineup navigation from the same
+SQLite owner when family metadata has not loaded. This is saved participation
+provenance, not a claim of current membership or current family authorization.
+An explicit known family result restricts that routing to its FWA clans. Later
+metadata merges and same-season refreshes retain an omitted lineup field;
+explicit canonical null clears it. Save and saved-player creation still verify
+the fresh family FWA list and the owner's transaction-time eligibility.
+
+A weight-only save retains the page's verified war label only for the exact same
+war identity, state, capture timestamp and order. Another capture/war never
+inherits that freshness; a normal failed war refresh still displays saved-lineup
+wording. This avoids adding a live provider request merely to keep a label.
+
+The review regressions reproduce legacy-detail loss, shrinking same-war
+responses and cold background routing before the fix. The delta uses isolated
+SQLite/HTTP/browser fixtures, owned Mongo recovery, behavioral mutants and a
+production-shaped blocked-network boot. No production writes or live provider
+probe are part of this review. Release remains held for Ruggie.

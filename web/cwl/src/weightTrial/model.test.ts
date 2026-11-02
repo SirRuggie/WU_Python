@@ -286,3 +286,76 @@ it("accepts the additive eligible union without relabelling current-member data"
   expect(wire.members.map((row) => row.tag)).toEqual(["#P2Y"]);
   expect(draftsForRoster(wire)["#G2Y"].storages).toBe("5");
 });
+
+import { retainSavedWarSource, type Roster } from "./model";
+it("uses selected lineup details then ledger details rather than another war or unknown", () => {
+  const latest = {
+    end_time: "20261102",
+    state: "inWar",
+    order: { "#G2Y": 1 },
+    names: { "#G2Y": "New name" },
+    town_halls: { "#G2Y": 18 },
+  };
+  const older = {
+    end_time: "20261101",
+    state: "warEnded",
+    order: { "#G2Y": 1 },
+  };
+  const row = {
+    tag: "#G2Y",
+    name: "New name",
+    town_hall: 18,
+    current_member: false,
+    saved_name: "Ace",
+    saved_town_hall: 16,
+  };
+  const roster = {
+    members: [],
+    weight_members: [row],
+    war_lineups: [latest, older],
+  } as unknown as Roster;
+  expect(selectedRoster(roster, older.end_time)?.members[0]).toMatchObject({
+    name: "Ace",
+    town_hall: 16,
+  });
+  expect(selectedRoster(roster, latest.end_time)?.members[0]).toMatchObject({
+    name: "New name",
+    town_hall: 18,
+  });
+});
+it("keeps exact verified war labeling through a weight-only save without refreshing another snapshot", () => {
+  const war = {
+    end_time: "20261102",
+    state: "inWar",
+    order: { "#G2Y": 1 },
+    cached: false,
+    captured_at: "2026-11-02T12:00:00Z",
+  };
+  const before = {
+    members: [],
+    war_lineups: [war],
+    war_order: war.order,
+    war_source: war,
+  } as unknown as Roster;
+  const saved = {
+    ...before,
+    war_lineups: [{ ...war, cached: true }],
+    war_source: { ...war, cached: true },
+  };
+  const retained = retainSavedWarSource(before, saved);
+  expect(orderLabel(selectedRoster(retained)!)).toBe(
+    "Current war · Battle day order",
+  );
+  for (const change of [
+    { end_time: "20261103" },
+    { state: "warEnded" },
+    { captured_at: "2026-11-02T13:00:00Z" },
+    { order: { "#P2Y": 1 } },
+  ]) {
+    const next = { ...war, ...change, cached: true };
+    expect(
+      retainSavedWarSource(before, { ...saved, war_lineups: [next] })
+        .war_lineups?.[0].cached,
+    ).toBe(true);
+  }
+});

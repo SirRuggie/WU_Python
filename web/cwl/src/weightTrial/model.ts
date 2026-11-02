@@ -1,4 +1,6 @@
 export type Member = {
+  saved_name?: string | null;
+  saved_town_hall?: number | null;
   tag: string;
   name: string;
   town_hall: number | null;
@@ -65,11 +67,54 @@ export function selectedRoster(
           ? row
           : {
               ...row,
-              name: lineup.names?.[row.tag] || row.tag,
-              town_hall: lineup.town_halls?.[row.tag] ?? null,
+              name:
+                [lineup.names?.[row.tag], row.saved_name].find(
+                  (name) => !!name?.trim() && name.trim() !== row.tag,
+                ) || row.tag,
+              town_hall:
+                lineup.town_halls?.[row.tag] ?? row.saved_town_hall ?? null,
             },
       ),
   };
+}
+
+/** A weight-only save cannot make the exact same verified snapshot "cached".
+ * Never carry freshness to another war, state, order or capture.
+ */
+export function retainSavedWarSource(
+  previous: Roster | null,
+  incoming: Roster,
+): Roster {
+  const same = (
+    before: WarLineup | Roster["war_source"],
+    after: WarLineup | Roster["war_source"],
+    beforeOrder: unknown,
+    afterOrder: unknown,
+  ) =>
+    !!before &&
+    !!after &&
+    before.cached === false &&
+    before.end_time === after.end_time &&
+    before.state === after.state &&
+    before.captured_at === after.captured_at &&
+    JSON.stringify(beforeOrder) === JSON.stringify(afterOrder);
+  const lineups = incoming.war_lineups?.map((war) => {
+    const before = previous?.war_lineups?.find(
+      (old) => old.end_time === war.end_time,
+    );
+    return same(before, war, before?.order, war.order)
+      ? { ...war, cached: false }
+      : war;
+  });
+  const source = same(
+    previous?.war_source,
+    incoming.war_source,
+    previous?.war_order,
+    incoming.war_order,
+  )
+    ? { ...incoming.war_source!, cached: false }
+    : incoming.war_source;
+  return { ...incoming, war_lineups: lineups, war_source: source };
 }
 
 export function draftsForRoster(roster: Roster, selected = "") {

@@ -1105,7 +1105,7 @@ async def roster(request):
         except ProviderUnavailable:
             fwa_tags = None
     lineup_clans = request.app["clan_weight_trial"].lineup_assignments(
-        [account["tag"] for account in result["accounts"]], fwa_tags or ()
+        [account["tag"] for account in result["accounts"]], fwa_tags
     )
     for account in result['accounts']:
         known = account.get('current_clan_status') == 'current' and fwa_tags is not None

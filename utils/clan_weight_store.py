@@ -194,9 +194,34 @@ class ClanWeightStore:
             )
 
     @staticmethod
+    def _member_details(player_tag, member, saved=None):
+        """Optional provider details may enrich, never erase, known ledger data."""
+        saved = dict(saved) if saved is not None else {}
+        name = next(
+            (
+                value
+                for value in (member.get("name"), saved.get("player_name"))
+                if isinstance(value, str)
+                and value.strip()
+                and value.strip() != player_tag
+            ),
+            player_tag,
+        )
+        town_hall = next(
+            (
+                value
+                for value in (member.get("town_hall"), saved.get("town_hall"))
+                if type(value) is int and 0 < value < 100
+            ),
+            None,
+        )
+        return {"name": name, "town_hall": town_hall}
+
+    @staticmethod
     def _write(
         db, change, current, member, clan, actor, actor_name, now, source="Clan weights"
     ):
+        details = ClanWeightStore._member_details(change["tag"], member, current)
         revision = current["revision"] if current else 0
         storages = change.get("storages", current["storages"] if current else None)
         effective = effective_weights(db, [change["tag"]]).get(change["tag"])
@@ -219,8 +244,8 @@ class ClanWeightStore:
                 change["tag"],
                 change["weight"],
                 revision + 1,
-                member["name"],
-                member["town_hall"],
+                details["name"],
+                details["town_hall"],
                 clan["tag"],
                 clan["name"],
                 now,
@@ -428,13 +453,39 @@ class ClanWeightStore:
                         "war_position": position,
                         "current_member": False,
                     }
+        if rows:
+            placeholders = ",".join("?" for _ in rows)
+            saved = {
+                row["tag"]: row
+                for row in db.execute(
+                    "SELECT tag,player_name,town_hall FROM clan_player_weights WHERE tag IN ("
+                    + placeholders
+                    + ")",
+                    tuple(rows),
+                )
+            }
+            for player_tag, member in rows.items():
+                member.update(
+                    self._member_details(player_tag, member, saved.get(player_tag))
+                )
         return list(rows.values())
 
-    def lineup_assignments(self, tags, clan_tags):
-        """Resolve a player's newest saved-war clan within verified family clans."""
+    def lineup_assignments(self, tags, clan_tags=None):
+        """Resolve saved-war routing; None uses captured clans when family is unknown.
+
+        This is display provenance only. Every creation/write still verifies the
+        fresh family FWA directory and transaction-time saved-lineup eligibility.
+        """
         wanted = set(tags)
         candidates = []
         with self.connect() as db:
+            if clan_tags is None:
+                clan_tags = [
+                    row[0]
+                    for row in db.execute(
+                        "SELECT clan_tag FROM clan_weight_war_lineups UNION SELECT clan_tag FROM clan_weight_war_lineup_previous"
+                    )
+                ]
             for clan_tag in clan_tags:
                 for lineup in self._lineups(db, clan_tag):
                     for player in wanted.intersection(lineup["order"]):
@@ -512,6 +563,10 @@ class ClanWeightStore:
             existing = next((item for item in slots if item[0] == stamp), None)
             if existing:
                 previous_payload = json.loads(existing[2])
+                if not set(previous_payload["order"]).issubset(order):
+                    raise ValueError(
+                        "Incomplete war lineup: saved war players are missing"
+                    )
                 if states[previous_payload["state"]] > states[lineup["state"]]:
                     return
                 # A later response may omit optional details. Keep known details

@@ -58,6 +58,8 @@ def response(roster, saved):
             {
                 **member,
                 "weight": saved.get(member["tag"], {}).get("weight"),
+                "saved_name": saved.get(member["tag"], {}).get("player_name"),
+                "saved_town_hall": saved.get(member["tag"], {}).get("town_hall"),
                 "storages": storage_count(member),
                 "storages_saved": saved.get(member["tag"], {}).get("storages")
                 is not None,

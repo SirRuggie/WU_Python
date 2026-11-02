@@ -811,3 +811,47 @@ it("does not restore protected clan counts from a stale success after access den
   expect(host.querySelector(".weight-saved-search")).toBeNull();
   expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(0);
 });
+
+it("does not relabel an unchanged verified war after saving a weight", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  const war = {
+    state: "inWar",
+    end_time: "20261102T070000.000Z",
+    captured_at: "2026-11-02T12:00:00Z",
+    cached: false,
+    order: roster.war_order,
+  };
+  const fresh = { ...roster, war_lineups: [war], war_source: war };
+  vi.mocked(api).mockImplementation(async (path, method, ...rest) => {
+    if (path.includes("/clans/"))
+      return method === "PUT"
+        ? {
+            ...fresh,
+            members: fresh.members.map((row) =>
+              row.tag === "#P2Y"
+                ? { ...row, weight: 155000, revision: 2 }
+                : row,
+            ),
+            war_lineups: [{ ...war, cached: true }],
+            war_source: { ...war, cached: true },
+          }
+        : fresh;
+    return original(path, method, ...rest);
+  });
+  await render();
+  await click("Needs work");
+  expect(host.querySelector(".weight-trial-order")?.textContent).toContain(
+    "Current war · Battle day order",
+  );
+  await input(
+    host.querySelector<HTMLInputElement>(
+      '[data-player="#P2Y"] .weight-trial-loot input',
+    )!,
+    "31000",
+  );
+  await click("Save weights");
+  expect(host.textContent).toContain("1 weight saved.");
+  expect(host.querySelector(".weight-trial-order")?.textContent).toContain(
+    "Current war · Battle day order",
+  );
+});
