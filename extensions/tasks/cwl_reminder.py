@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 import logging
 import re
 import lightbulb
@@ -49,6 +50,27 @@ scheduler = AsyncIOScheduler(timezone=DEFAULT_TIMEZONE)
 bot_instance = None
 mongo_client = None
 startup_reconciler = None
+# Proof belongs to this bot process and is recorded only after a complete load.
+_campaign_load_targets: dict[int, set[str]] = {}
+_campaign_loaded_generations: dict[tuple[int, str], str] = {}
+_campaign_runtime_id = uuid.uuid4().hex
+_campaign_load_scan_complete = False
+_campaign_sync_locks: dict[tuple[int, str], asyncio.Lock] = {}
+
+
+def _loaded_campaign_generations(guild_id: int) -> dict[str, str] | None:
+    targets = _campaign_load_targets.get(int(guild_id))
+    if targets is None:
+        return {} if _campaign_load_scan_complete else None
+    if any(
+        (int(guild_id), cycle) not in _campaign_loaded_generations for cycle in targets
+    ):
+        return None
+    return {
+        cycle: _campaign_loaded_generations[(int(guild_id), cycle)] for cycle in targets
+    }
+
+
 cwl_base_job_id = "cwl_monthly_reminder"
 cwl_followup_job_prefix = "cwl_followup_"
 cwl_initial_retry_job_id = "cwl_initial_retry"
@@ -917,13 +939,23 @@ async def send_campaign_message(
 
 
 async def sync_campaign_schedule(guild_id: int, cycle: str) -> None:
+    """Install one complete cycle atomically with respect to concurrent reloads."""
+    key = (int(guild_id), cycle)
+    lock = _campaign_sync_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        await _install_campaign_schedule(guild_id, cycle)
+
+
+async def _install_campaign_schedule(guild_id: int, cycle: str) -> None:
     """Replace this cycle's jobs from durable config, preserving sent events."""
+    runtime_id = _campaign_runtime_id
+    proof_key = (int(guild_id), cycle)
+    _campaign_load_targets.setdefault(int(guild_id), set()).add(cycle)
+    _campaign_loaded_generations.pop(proof_key, None)
     if not scheduler.get_job(CAMPAIGN_ROLLOVER_JOB_ID):
         scheduler.add_job(
             _sync_all_campaigns,
-            trigger=CronTrigger(
-                day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE
-            ),
+            trigger=CronTrigger(day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE),
             id=CAMPAIGN_ROLLOVER_JOB_ID,
             replace_existing=True,
             **JOB_OPTIONS,
@@ -932,12 +964,8 @@ async def sync_campaign_schedule(guild_id: int, cycle: str) -> None:
     generation = _campaign_generation(loaded)
     # Activating the dashboard hands ownership to the guild-scoped scheduler.
     # Retire the globally keyed legacy jobs/state so both systems cannot send.
-    legacy = (
-        await mongo_client.cwl_reminder.find_one({"_id": "schedule"}) or {}
-    )
-    if int(guild_id) == cwl_campaign.LEGACY_WU_GUILD_ID and legacy.get(
-        "enabled"
-    ):
+    legacy = await mongo_client.cwl_reminder.find_one({"_id": "schedule"}) or {}
+    if int(guild_id) == cwl_campaign.LEGACY_WU_GUILD_ID and legacy.get("enabled"):
         existing_defaults = await mongo_client.bot_config.find_one(
             {"_id": cwl_campaign.defaults_id(guild_id)}
         )
@@ -1010,18 +1038,12 @@ async def sync_campaign_schedule(guild_id: int, cycle: str) -> None:
         ]:
             if scheduler.get_job(job_id):
                 scheduler.remove_job(job_id)
-            await mongo_client.cwl_pending_reminders.delete_one(
-                {"_id": job_id}
-            )
+            await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
 
-        loaded = await cwl_campaign.load_campaign(
-            mongo_client, guild_id, cycle
-        )
+        loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
         generation = _campaign_generation(loaded)
 
-    all_pending = await mongo_client.cwl_pending_reminders.find().to_list(
-        length=None
-    )
+    all_pending = await mongo_client.cwl_pending_reminders.find().to_list(length=None)
     scoped = {
         row.get("_id"): row
         for row in all_pending
@@ -1066,9 +1088,7 @@ async def sync_campaign_schedule(guild_id: int, cycle: str) -> None:
                 continue
             message_id = occurrence["message_id"]
             variant = occurrence["variant"]
-            when = pendulum.parse(occurrence["run_at"]).in_timezone(
-                DEFAULT_TIMEZONE
-            )
+            when = pendulum.parse(occurrence["run_at"]).in_timezone(DEFAULT_TIMEZONE)
             if when <= now:
                 continue
             job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
@@ -1104,6 +1124,8 @@ async def sync_campaign_schedule(guild_id: int, cycle: str) -> None:
         if scheduler.get_job(job_id):
             scheduler.remove_job(job_id)
         await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
+    if runtime_id == _campaign_runtime_id:
+        _campaign_loaded_generations[proof_key] = generation
 
 
 def _utc_iso() -> str:
@@ -2026,13 +2048,15 @@ async def _poll_web_roster_bridge() -> None:
                     mongo_client,
                     _sync_all_campaigns,
                     guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
+                    loaded_generations=lambda: _loaded_campaign_generations(
+                        cwl_campaign.LEGACY_WU_GUILD_ID
+                    ),
+                    runtime_id=_campaign_runtime_id,
                 )
         except Exception as exc:
             # A bad schedule must not block the independent reviewed roster queue.
             # No acknowledgement is written; the next poll retries reconciliation.
-            print(
-                f"[CWL Web Bridge] Schedule sync failed: {type(exc).__name__}"
-            )
+            print(f"[CWL Web Bridge] Schedule sync failed: {type(exc).__name__}")
 
         async def can_send_roster(row):
             from utils.dashboard_access import (
@@ -2065,6 +2089,11 @@ async def _poll_web_roster_bridge() -> None:
                 send_campaign_message,
                 authorize=can_send_roster,
                 guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
+                worker_epoch=_campaign_runtime_id,
+                schedule_ready=_loaded_campaign_generations(
+                    cwl_campaign.LEGACY_WU_GUILD_ID
+                )
+                is not None,
             )
     except Exception as exc:
         # Leave pending or sending rows in place for inspection. In particular,
@@ -2286,6 +2315,7 @@ async def _reconcile_cwl_startup() -> None:
 
 async def _sync_all_campaigns() -> bool:
     """Install current/next-cycle jobs for every guild using the dashboard."""
+    global _campaign_load_scan_complete
     if not hasattr(mongo_client, "bot_config"):
         return False
     rows = await mongo_client.bot_config.find().to_list(length=None)
@@ -2307,11 +2337,16 @@ async def _sync_all_campaigns() -> bool:
         and row.get("guild_id") is not None
         and row.get("cycle")
     }
+    for guild_id in set(_campaign_load_targets) - guilds:
+        _campaign_load_targets[guild_id] = set()
     for guild_id in guilds:
-        for cycle in {current, following} | {
+        targets = {current, following} | {
             value for owner, value in explicit_cycles if owner == guild_id
-        }:
+        }
+        _campaign_load_targets[guild_id] = targets
+        for cycle in targets:
             await sync_campaign_schedule(guild_id, cycle)
+    _campaign_load_scan_complete = True
     return bool(guilds)
 
 
@@ -2321,8 +2356,14 @@ async def on_bot_started(
     event: hikari.StartedEvent, mongo: MongoClient = lightbulb.di.INJECTED
 ) -> None:
     """Start non-blocking, self-healing restoration of the saved schedule."""
-    global bot_instance, mongo_client, startup_reconciler, _management_stopping
+    global bot_instance, mongo_client, startup_reconciler, _management_stopping, _campaign_runtime_id, _campaign_load_scan_complete
     _management_stopping = False
+    if bot_instance is not event.app or mongo_client is not mongo:
+        _campaign_load_targets.clear()
+        _campaign_loaded_generations.clear()
+        _campaign_sync_locks.clear()
+        _campaign_load_scan_complete = False
+        _campaign_runtime_id = uuid.uuid4().hex
 
     bot_instance = event.app
     mongo_client = mongo
@@ -2338,8 +2379,12 @@ async def on_bot_started(
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Shutdown scheduler when bot stops"""
-    global startup_reconciler, _management_driver, _management_stopping, _roster_driver
+    global startup_reconciler, _management_driver, _management_stopping, _roster_driver, _campaign_load_scan_complete
     _management_stopping = True
+    _campaign_load_targets.clear()
+    _campaign_loaded_generations.clear()
+    _campaign_sync_locks.clear()
+    _campaign_load_scan_complete = False
     import contextlib
 
     for driver in (_management_driver, _roster_driver):

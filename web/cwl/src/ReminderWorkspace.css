@@ -47,7 +47,8 @@
 .reminders-workspace details details {
   border-bottom: 1px solid #444;
 }
-.reminder-status, .reminder-save {
+.reminder-status,
+.reminder-save {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -85,7 +86,8 @@
 .reminder-save > span {
   margin-right: auto;
 }
-.reminder-schedule > div, .reminder-history-row {
+.reminder-schedule > div,
+.reminder-history-row {
   display: grid;
   grid-template-columns: 2fr 1fr 2fr 1fr;
   gap: 12px;
@@ -110,7 +112,8 @@
   .reminder-columns {
     grid-template-columns: 1fr;
   }
-  .reminder-schedule > div,   .reminder-history-row {
+  .reminder-schedule > div,
+  .reminder-history-row {
     grid-template-columns: 1fr 1fr;
   }
   .reminder-save button {
@@ -186,7 +189,7 @@
 }
 .signup-date-grid {
   display: grid;
-  grid-template-columns: repeat(2,minmax(0,1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 .signup-date-grid > section {
@@ -198,12 +201,13 @@
 }
 @media (max-width: 800px) {
   .signup-date-grid {
-    grid-template-columns: minmax(0,1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 0;
   }
 }
 /* Keep actions attached to their status or editor;
-navigation uses the shared rail. */ .reminder-status {
+navigation uses the shared rail. */
+.reminder-status {
   padding: 14px 16px;
   background: #181818;
   border: 1px solid #393939;
@@ -252,8 +256,9 @@ navigation uses the shared rail. */ .reminder-status {
 .reminder-save:not(.has-changes) .reminder-control-actions {
   display: none;
 }
-@media (max-width:800px) {
-  .reminder-status .reminder-control-actions, .reminder-save .reminder-control-actions {
+@media (max-width: 800px) {
+  .reminder-status .reminder-control-actions,
+  .reminder-save .reminder-control-actions {
     width: 100%;
     margin-left: 0;
   }
@@ -271,7 +276,8 @@ navigation uses the shared rail. */ .reminder-status {
   white-space: nowrap;
 }
 /* Daily reminder review is a compact list;
-only editing opens the long forms. */ .reminder-overview {
+only editing opens the long forms. */
+.reminder-overview {
   min-width: 0;
 }
 .reminder-overview-head {
@@ -291,46 +297,6 @@ only editing opens the long forms. */ .reminder-overview {
 .reminder-overview-list {
   border-top: 1px solid #ffffff28;
 }
-.reminder-overview-row {
-  display: grid;
-  grid-template-columns: minmax(130px, 1.2fr) minmax(105px, 1fr) minmax(105px, 1fr) minmax(120px, 1fr) auto;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 9px 2px;
-  border-bottom: 1px solid #ffffff1a;
-  min-width: 0;
-}
-.reminder-overview-row > div {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.reminder-overview-row strong, .reminder-overview-row small, .reminder-overview-row span {
-  display: block;
-}
-.reminder-overview-row strong {
-  font-size: 13px;
-}
-.reminder-overview-row small {
-  color: #bbc3ce;
-  font-size: 11px;
-}
-.reminder-overview-row span {
-  margin-top: 2px;
-  font-size: 12px;
-}
-.reminder-overview-row button {
-  min-width: 44px;
-  min-height: 44px;
-  border: 0;
-  background: transparent;
-  color: #bdd4f3;
-  font-size: 12px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.reminder-overview-row button:hover {
-  background: #ffffff10;
-}
 .reminder-visually-hidden {
   position: absolute;
   width: 1px;
@@ -342,7 +308,8 @@ only editing opens the long forms. */ .reminder-overview {
   white-space: nowrap;
   border: 0;
 }
-.reminder-overview-note, .reminder-lookup-warning {
+.reminder-overview-note,
+.reminder-lookup-warning {
   margin: 10px 0 0;
   font-size: 12px;
 }
@@ -379,18 +346,6 @@ only editing opens the long forms. */ .reminder-overview {
   padding: 0;
   color: #f0d37e;
 }
-@media (max-width: 950px) {
-  .reminder-overview-row {
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
-  }
-  .reminder-overview-row > div:nth-child(4) {
-    grid-column: 2 / 4;
-  }
-  .reminder-overview-row button {
-    grid-column: 4;
-    grid-row: 1 / 3;
-  }
-}
 @media (max-width: 650px) {
   .shell .reminders-workspace .workflow-tabs {
     display: grid;
@@ -407,21 +362,50 @@ only editing opens the long forms. */ .reminder-overview {
     align-items: start;
     flex-wrap: wrap;
   }
-  .reminder-overview-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 4px 8px;
-  }
-  .reminder-overview-row > div:nth-child(2), .reminder-overview-row > div:nth-child(3), .reminder-overview-row > div:nth-child(4) {
-    grid-column: 1;
-  }
-  .reminder-overview-row button {
-    grid-column: 2;
-    grid-row: 1 / 5;
-  }
-  .reminder-overview-row span {
-    font-size: 12px;
-  }
   .reminders-workspace .reminder-status .reminder-control-actions {
     width: 100%;
   }
+}
+
+.signup-reminder-shared,
+.signup-reminder-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.signup-reminder-shared {
+  padding: 12px 0;
+}
+.signup-reminder-shared > div,
+.signup-reminder-pool {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.signup-reminder-row {
+  padding: 12px 0;
+  border-bottom: 1px solid #ffffff28;
+}
+.signup-reminder-row h4 {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.signup-reminder-pool {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+.signup-reminder-pool p,
+.signup-reminder-shared p {
+  margin: 4px 0;
+  font-size: 12px;
+}
+.signup-reminder-pool button {
+  min-height: 44px;
+  justify-self: start;
+}
+
+.signup-reminder-common {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
 }

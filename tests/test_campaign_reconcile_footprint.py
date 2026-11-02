@@ -1,5 +1,7 @@
 """Native campaign change detection is identical without unrelated BSON payloads."""
 
+from reminder_ack_fixture import reconcile_installed
+
 import asyncio
 from copy import deepcopy
 import hashlib
@@ -133,7 +135,7 @@ def test_signature_generations_and_response_budget_match_original_semantics():
             for cycle in ("2026-11", "2026-12")
         }
         start = len(mongo.bot_config.reads)
-        assert await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+        assert await reconcile_installed(mongo, sync, guild_id=GUILD)
         worker = await mongo.bot_config.find_one({"_id": bridge.worker_id(GUILD)})
         assert worker["schedule_fingerprint"] == expected
         assert worker["schedule_generations"] == generations
@@ -145,7 +147,7 @@ def test_signature_generations_and_response_budget_match_original_semantics():
         )
         assert read["rows"] == 3 and read["bson_bytes"] < 2000
         assert read["bson_bytes"] < old_bytes / 1000
-        assert not await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+        assert not await reconcile_installed(mongo, sync, guild_id=GUILD)
         assert sync.await_count == 1
 
     asyncio.run(scenario())
@@ -164,7 +166,7 @@ def test_every_change_detection_field_still_invalidates_the_fingerprint(field, v
     async def scenario():
         mongo = seed()
         sync = AsyncMock()
-        await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+        await reconcile_installed(mongo, sync, guild_id=GUILD)
         mongo.bot_config.documents[cwl_campaign.cycle_id(GUILD, "2026-11")][
             field
         ] = value
@@ -176,7 +178,7 @@ def test_every_change_detection_field_still_invalidates_the_fingerprint(field, v
                 "revision"
             ] += 1
             expected = original_signature(mongo)
-        assert await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+        assert await reconcile_installed(mongo, sync, guild_id=GUILD)
         worker = await mongo.bot_config.find_one({"_id": bridge.worker_id(GUILD)})
         assert worker["schedule_fingerprint"] == expected
         cycles = {
@@ -198,18 +200,18 @@ def test_activation_and_deactivation_both_reconcile(activate):
     async def scenario():
         mongo = seed()
         sync = AsyncMock()
-        await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+        await reconcile_installed(mongo, sync, guild_id=GUILD)
         if activate:
             mongo.bot_config.documents["inactive"]["activated"] = True
         else:
             for row in mongo.bot_config.documents.values():
                 if row.get("kind") in KINDS:
                     row["activated"] = False
-        assert await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+        assert await reconcile_installed(mongo, sync, guild_id=GUILD)
         assert mongo.bot_config.documents[bridge.worker_id(GUILD)][
             "schedule_fingerprint"
         ] == original_signature(mongo)
-        assert not await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+        assert not await reconcile_installed(mongo, sync, guild_id=GUILD)
 
     asyncio.run(scenario())
 
@@ -218,10 +220,10 @@ def test_unrelated_parent_receipt_and_large_body_changes_do_not_reschedule():
     async def scenario():
         mongo = seed()
         sync = AsyncMock()
-        await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+        await reconcile_installed(mongo, sync, guild_id=GUILD)
         mongo.bot_config.documents["profile-0"]["revision"] += 1
         mongo.bot_config.documents["profile-1"]["items"] = ["new body"]
-        assert not await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+        assert not await reconcile_installed(mongo, sync, guild_id=GUILD)
         assert sync.await_count == 1
 
     asyncio.run(scenario())
@@ -232,7 +234,7 @@ def test_failed_sync_does_not_acknowledge_and_concurrent_edit_is_seen_next_tick(
         mongo = seed()
         sync = AsyncMock(side_effect=RuntimeError("fixture sync failed"))
         with pytest.raises(RuntimeError):
-            await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+            await reconcile_installed(mongo, sync, guild_id=GUILD)
         assert bridge.worker_id(GUILD) not in mongo.bot_config.documents
         before = original_signature(mongo)
 
@@ -241,14 +243,12 @@ def test_failed_sync_does_not_acknowledge_and_concurrent_edit_is_seen_next_tick(
                 "revision"
             ] += 1
 
-        assert await bridge.reconcile_campaign_changes(mongo, edit, guild_id=GUILD)
+        assert await reconcile_installed(mongo, edit, guild_id=GUILD)
         assert (
             mongo.bot_config.documents[bridge.worker_id(GUILD)]["schedule_fingerprint"]
             == before
         )
         assert original_signature(mongo) != before
-        assert await bridge.reconcile_campaign_changes(
-            mongo, AsyncMock(), guild_id=GUILD
-        )
+        assert await reconcile_installed(mongo, AsyncMock(), guild_id=GUILD)
 
     asyncio.run(scenario())
