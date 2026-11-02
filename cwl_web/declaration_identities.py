@@ -13,7 +13,7 @@ async def decorate(request, clans):
     rows = [
         row
         for clan in clans
-        for field in ("extras", "low_th", "fillers")
+        for field in ("extras", "low_th", "fillers", "unpublished")
         for row in clan.get(field) or []
     ]
     tags = sorted({row["tag"] for row in rows})

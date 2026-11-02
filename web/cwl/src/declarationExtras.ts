@@ -1,4 +1,6 @@
 export type DeclarationExtraClan = {
+  unpublished?: DeclarationExtraClan["extras"];
+  unpublished_count?: number | null;
   low_th?: DeclarationExtraClan["extras"];
   fillers?: DeclarationExtraClan["extras"];
   tag: string;
@@ -9,6 +11,7 @@ export type DeclarationExtraClan = {
   count: number | null;
   extras:
     | {
+        not_published_yet?: boolean;
         discord_id?: string;
         discord_profile?: import("./DiscordIdentity").DiscordProfile;
         roster_filler?: boolean;

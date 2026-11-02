@@ -305,7 +305,7 @@ it("bot unavailable prevents all sends, and loading explains the wait without hi
   bridge.worker_ready = false;
   await mount();
   expect(host.textContent).toContain(
-    "The bot can't send right now. Refresh status in a minute.",
+    "The bot is restarting or offline. Refresh status in a minute.",
   );
   expect(button("Review and send").disabled).toBe(true);
   expect(host.textContent).not.toContain("Sender ready");

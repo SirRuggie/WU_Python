@@ -4,7 +4,6 @@ import DeclarationMemberMarks, {
 import { comparisonAge } from "./comparisonLocation";
 import type { DeclarationExtraClan } from "./declarationExtras";
 import "./DeclarationExtras.css";
-
 export default function DeclarationExtras({
   row,
   markControl,
@@ -24,13 +23,19 @@ export default function DeclarationExtras({
         Checking clan members…
       </p>
     );
+  const unpublished = row?.unpublished || [];
+  const unpublishedCount = row?.unpublished_count ?? unpublished.length;
   if (
     error ||
     row?.status !== "current" ||
     typeof row.count !== "number" ||
     !Array.isArray(row.extras) ||
-    row.count !== row.extras.length
-  )
+    row.count !== row.extras.length ||
+    !Array.isArray(unpublished) ||
+    row.unpublished_count === null ||
+    unpublishedCount !== unpublished.length ||
+    unpublished.some((member) => member.not_published_yet !== true)
+  ) {
     return (
       <p className="declaration-extras-status" role="status">
         Couldn't check
@@ -39,6 +44,8 @@ export default function DeclarationExtras({
           : " · Never checked"}
       </p>
     );
+  }
+  const low = row.low_th || [];
   const otherFillers =
     row.fillers?.filter(
       (member) =>
@@ -48,35 +55,39 @@ export default function DeclarationExtras({
           member.town_hall <= 9
         ),
     ) || [];
+  const rows = [
+    ...new Map(
+      [...low, ...otherFillers, ...row.extras, ...unpublished].map((member) => [
+        member.tag,
+        member,
+      ]),
+    ).values(),
+  ];
+  const counts = [
+    `${row.count} not on roster`,
+    ...(unpublishedCount ? [`${unpublishedCount} not published yet`] : []),
+    ...(low.length ? [`${low.length} low TH in clan`] : []),
+    ...(otherFillers.length
+      ? [
+          `${otherFillers.length} other filler${otherFillers.length === 1 ? "" : "s"} in clan`,
+        ]
+      : []),
+  ].join(" · ");
+  if (!rows.length)
+    return (
+      <p className="declaration-extras-status">
+        0 not on roster · Checked{" "}
+        {comparisonAge(row.checked_at || undefined, now)}
+      </p>
+    );
   return (
-    <>
-      {!!row.low_th?.length && (
-        <details className="declaration-low-th">
-          <summary>{row.low_th.length} low TH in clan</summary>
-          <DeclarationMemberMarks rows={row.low_th} control={markControl} />
-        </details>
-      )}
-      {!!otherFillers.length && (
-        <details className="declaration-fillers">
-          <summary>
-            {otherFillers.length} other filler
-            {otherFillers.length === 1 ? "" : "s"} in clan
-          </summary>
-          <DeclarationMemberMarks rows={otherFillers} control={markControl} />
-        </details>
-      )}
-      {!row.count ? (
-        <p className="declaration-extras-status">
-          0 not on roster · Checked{" "}
-          {comparisonAge(row.checked_at || undefined, now)}
-        </p>
-      ) : (
-        <details className="declaration-extras">
-          <summary>⚠ {row.count} not on roster</summary>
-          <p>Checked {comparisonAge(row.checked_at || undefined, now)}</p>
-          <DeclarationMemberMarks rows={row.extras} control={markControl} />
-        </details>
-      )}
-    </>
+    <details className={`declaration-extras${row.count ? "" : " is-neutral"}`}>
+      <summary>
+        {row.count ? "⚠ " : ""}
+        {counts}
+      </summary>
+      <p>Checked {comparisonAge(row.checked_at || undefined, now)}</p>
+      <DeclarationMemberMarks rows={rows} control={markControl} />
+    </details>
   );
 }

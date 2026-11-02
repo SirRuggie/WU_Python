@@ -639,7 +639,7 @@ export default function ManageBridgeWorkspace({
           />
           {bridge.cycle && !bridge.worker_ready && (
             <p className="notice error" role="alert">
-              The bot can't send right now. Refresh status in a minute.
+              The bot is restarting or offline. Refresh status in a minute.
             </p>
           )}
           {bridge.cycle && (

@@ -338,3 +338,13 @@ it("saving an eligible replacement clears old ineligible metadata immediately", 
   expect(host.textContent).toContain("Role saved. Updates are queued.");
   expect(host.textContent).not.toContain("Saved role is no longer eligible");
 });
+it("shows Main before Lazy without mutating the server response", async () => {
+  const reversed = data();
+  reversed.pools.reverse();
+  vi.mocked(api).mockResolvedValue(reversed);
+  await render();
+  expect(
+    [...host.querySelectorAll("legend")].map((x) => x.textContent),
+  ).toEqual(["Main", "Lazy"]);
+  expect(reversed.pools.map((x) => x.pool)).toEqual(["lazy", "main"]);
+});
