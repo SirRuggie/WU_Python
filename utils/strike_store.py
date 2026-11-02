@@ -687,8 +687,21 @@ class StrikeService:
         async def accept_batch(grouped):
             nonlocal total
             tags = [row['_id'] for row in grouped]
+            # Match the existing result cap on Mongo too, so an exactly full
+            # first batch closes its cursor without deferred cleanup calls.
             profiles = await self.mongo.strike_profiles.find(
-                {'guild_id': int(guild_id), 'player_tag': {'$in': tags}}).to_list(length=len(tags))
+                {"guild_id": int(guild_id), "player_tag": {"$in": tags}},
+                {
+                    "_id": 0,
+                    "player_tag": 1,
+                    "player_name": 1,
+                    "member_id": 1,
+                    "current_clan_tag": 1,
+                    "roster_seen_at": 1,
+                },
+                batch_size=len(tags),
+                limit=len(tags),
+            ).to_list(length=len(tags))
             profile_by_tag = {row['player_tag']: row for row in profiles}
             for row in grouped:
                 if status == 'active' and row['active_strikes'] <= 0:

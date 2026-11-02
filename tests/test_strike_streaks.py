@@ -79,7 +79,7 @@ class Collection:
     def __init__(self):
         self.rows = {}
 
-    def find(self, query, projection=None):
+    def find(self, query, projection=None, **kwargs):
         return Cursor([row for row in self.rows.values() if matches(row, query)])
 
     async def count_documents(self, query):
