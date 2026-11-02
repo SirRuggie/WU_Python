@@ -223,12 +223,14 @@ it.each(["hidden", "never"])(
     expect(host.textContent).toContain(
       kind === "hidden"
         ? "Hidden from members · last published version 2"
-        : "Publish the roster first",
+        : "Finalize roster first ›",
     );
     expect(host.querySelectorAll(".declaration-clan")).toHaveLength(0);
-    expect(host.querySelector("a")?.getAttribute("href")).toContain(
-      "step=review",
+    const finalize = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Finalize roster first ›",
     );
+    expect(finalize).toBeDefined();
+    expect(host.querySelector("a")).toBeNull();
   },
 );
 it("draft changed remains ready; names open read-only snapshot Details with clan order", async () => {
@@ -859,4 +861,33 @@ it("includes unpublished-only clans in both extras filters and the separate top-
   expect(
     host.querySelector("[data-ping-count]")?.getAttribute("data-ping-count"),
   ).toBe(ping);
+});
+
+it("uses guarded in-app Finalize and one read-only Next to Results", async () => {
+  const finalize = vi.fn(),
+    results = vi.fn();
+  await act(async () =>
+    root.render(
+      <ArrivalCheck seasonId="1" onFinalize={finalize} onResults={results} />,
+    ),
+  );
+  expect(host.querySelectorAll(".cwl-next-cue")).toHaveLength(1);
+  await act(async () =>
+    (host.querySelector(".cwl-next-cue") as HTMLButtonElement).click(),
+  );
+  expect(results).toHaveBeenCalledOnce();
+  state.value.data.publication.published = null;
+  state.value.data.arrival.publication_available = false;
+  await act(async () =>
+    root.render(
+      <ArrivalCheck seasonId="1" onFinalize={finalize} onResults={results} />,
+    ),
+  );
+  expect(host.querySelector(".cwl-next-cue")).toBeNull();
+  const button = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "Finalize roster first ›",
+  )!;
+  await act(async () => button.click());
+  expect(finalize).toHaveBeenCalledOnce();
+  expect(host.querySelector("a")).toBeNull();
 });

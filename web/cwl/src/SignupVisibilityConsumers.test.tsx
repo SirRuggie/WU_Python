@@ -65,6 +65,14 @@ it.each(["staff", "seasons"])(
           </DashboardPermissions.Provider>,
         ),
       );
+      if (consumer === "seasons") {
+        expect(host.textContent).not.toContain(
+          "Couldn't check signup visibility",
+        );
+        expect(host.textContent).toContain("Next: Build roster");
+        expect(retry).not.toHaveBeenCalled();
+        return;
+      }
       expect(host.textContent).toContain("Couldn't check signup visibility");
       const button = [...host.querySelectorAll("button")].find(
         (b) => b.textContent === "Retry",

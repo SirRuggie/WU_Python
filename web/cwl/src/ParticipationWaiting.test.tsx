@@ -68,10 +68,12 @@ it.each([
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
+    const next = vi.fn();
     try {
       await act(async () => {
         root.render(
           <ParticipationWorkspace
+            onBonus={next}
             seasonId="1"
             seasons={[
               {
@@ -85,6 +87,13 @@ it.each([
           />,
         );
       });
+      expect(host.querySelectorAll(".cwl-next-cue")).toHaveLength(1);
+      const beforeCalls = fixture.api.mock.calls.length;
+      await act(async () =>
+        (host.querySelector(".cwl-next-cue") as HTMLButtonElement).click(),
+      );
+      expect(next).toHaveBeenCalledOnce();
+      expect(fixture.api.mock.calls).toHaveLength(beforeCalls);
       const text = host.textContent || "";
       expect(
         host.querySelector(".participation-capture")?.textContent,

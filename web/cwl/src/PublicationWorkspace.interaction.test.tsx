@@ -82,6 +82,13 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
     (e) => e.textContent === "Publish updated roster",
   )!;
   expect(button.disabled).toBe(true);
+  expect(host.querySelector("#publish-blocked-reason")?.textContent).toBe(
+    "Review the roster changes before publishing.",
+  );
+  expect(button.getAttribute("aria-describedby")).toBe(
+    "publish-blocked-reason",
+  );
+  expect(host.querySelectorAll(".cwl-next-cue")).toHaveLength(1);
   await act(async () =>
     finishComparison({
       rows: [{ ...account, assigned_clan_tag: "#B" }],
@@ -89,6 +96,7 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
     }),
   );
   expect(button.disabled).toBe(false);
+  expect(host.querySelector("#publish-blocked-reason")).toBeNull();
   const text = host.textContent!;
   expect(text.indexOf("Members still see")).toBeLessThan(
     text.indexOf("Publishing creates version"),
@@ -148,6 +156,10 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
   );
   expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
     true,
+  );
+  expect(host.querySelectorAll(".cwl-next-cue")).toHaveLength(1);
+  expect(host.querySelector(".cwl-next-cue")?.textContent).toBe(
+    "Next: Announcements ›",
   );
   act(() => root.unmount());
   host.remove();

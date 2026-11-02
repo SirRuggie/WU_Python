@@ -1,3 +1,4 @@
+import CwlNextLink from "./CwlNextLink";
 import { api } from "./api";
 import RosterUndoToast from "./RosterUndoToast";
 import type { FillerSaveResult } from "./RosterFillerCheckbox";
@@ -20,10 +21,14 @@ import "./ArrivalCheck.css";
 
 export default function ArrivalCheck({
   seasonId,
+  onFinalize,
+  onResults,
   onDirty = () => {},
   onWorking = () => {},
 }: {
   seasonId: string;
+  onFinalize?: () => void;
+  onResults?: () => void;
   onDirty?: (dirty: boolean) => void;
   onWorking?: (working: boolean) => void;
 }) {
@@ -262,11 +267,15 @@ export default function ArrivalCheck({
         <p>
           {data.publication.last_publication?.withdrawn_at
             ? hiddenPublicationStatus(data.publication.last_publication)
-            : "Publish the roster first"}{" "}
-          ·{" "}
-          <a href={`/cwl/publish?season=${seasonId}&step=review`}>
-            Finalize roster ›
-          </a>
+            : null}{" "}
+          <button
+            type="button"
+            className="text-link"
+            onClick={onFinalize}
+            disabled={!onFinalize}
+          >
+            Finalize roster first ›
+          </button>
         </p>
       )}
       {data && published && context && (
@@ -508,6 +517,9 @@ export default function ArrivalCheck({
           onUndo={() => void undoMark()}
           onDismiss={() => setMarkUndo(null)}
         />
+      )}
+      {data && published && (
+        <CwlNextLink label="Results" onNext={onResults} disabled={checking} />
       )}
     </section>
   );

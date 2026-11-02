@@ -1,3 +1,4 @@
+import CwlNextLink from "./CwlNextLink";
 import "./MemberRefreshNote.css"
 import { memberSignupsOpen } from "./memberSeason"
 import DashboardStorageStatus from './DashboardStorageStatus'
@@ -1024,7 +1025,7 @@ function App() {
         {isManagementArea(view) && view !== 'members-settings' && <ServerManagement key={view} area={view} onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {(view === 'members-settings' || view === 'member-timezones') && <MembersPage onDirty={setManageDirty} initialMember={entryAccount} onInitialConsumed={() => setEntryAccount(null)} />}
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
-        {view === 'reminders' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Signup reminders</h1></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!reminderDirty || window.confirm('Discard unsaved reminder edits and change season?')) setSeasonId(event.target.value) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Choose a season to manage its reminders.</p>}</>}
+        {view === 'reminders' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Signup reminders</h1></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!reminderDirty || window.confirm('Discard unsaved reminder edits and change season?')) setSeasonId(event.target.value) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Choose a season to manage its reminders.</p>}{seasonId && <CwlNextLink label="Build roster" onNext={allowedView("roster") === "roster" ? () => changeView("roster") : undefined} disabled={rosterBusy} />}</>}
         {view === 'search' && <DashboardSearch key={session.user.id} session={session} includeFamily={session.can_edit} query={searchQuery} onQuery={value => { setSearchQuery(value); setSearchPage(0) }} kind={searchKind} onKind={value => { setSearchKind(value); setSearchPage(0) }} page={searchPage} onPage={setSearchPage} onTasks={tag => changeView('todo', tag)} />}
         {view === 'todo' && <TodoWorkspace key={`${session.user.id}:${activitySearch}:${activityKind || "default"}`} userId={session.user.id} initialSearch={activitySearch} initialTab={activityKind} onWars={kind => changeView('wars', '', kind)} />}
         {view === 'wars' && <WarsWorkspace key={`${session.user.id}:${activityVisit}:${activityKind || "default"}`} userId={session.user.id} visit={activityVisit} initialType={activityKind === 'cwl' ? 'cwl' : 'regular'} canEdit={session.can_edit} onTasks={(tag,kind) => changeView('todo', tag,kind)} />}
@@ -1141,6 +1142,8 @@ function App() {
                 <ArrivalCheck
                   key={seasonId}
                   seasonId={seasonId}
+                  onFinalize={allowedView("publication") === "publication" ? () => { setPublicationStep("review"); changeView("publication"); } : undefined}
+                  onResults={allowedView("participation") === "participation" ? () => changeView("participation") : undefined}
                   onDirty={setCwlDirty}
                   onWorking={setRosterBusy}
                 />
@@ -1157,6 +1160,7 @@ function App() {
               onDirty={setPublicationDirty}
               step={publicationStep}
               onStepChange={setPublicationStep}
+              onNavigateStep={openPublication}
               onFix={(filter) => {
                 setRosterReadiness(filter);
                 changeView("roster");
@@ -1182,7 +1186,7 @@ function App() {
             />
           )
         }
-        {view === 'participation' && session.can_edit && <ParticipationWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'participation' && session.can_edit && <ParticipationWorkspace onBonus={allowedView("bonuses") === "bonuses" ? () => changeView("bonuses") : undefined} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === "roster" && session.can_edit && (
           <RosterWorkspace
@@ -1229,11 +1233,11 @@ function App() {
           onBusy={setRosterBusy}
           onDirty={setCwlDirty}
           onSeasonChange={id => { if (canLeave()) setSeasonId(id) }}
-          onClans={() => {
-            if (!canLeave() || allowedView('roster') !== 'roster') return
-            try { sessionStorage.setItem(`wu-roster-${staffSeasonId}-mode`, JSON.stringify('rules')) } catch { /* Optional preference. */ }
+          onClans={allowedView('roster') === 'roster' ? () => {
+            if (!canLeave()) return
+            try { sessionStorage.setItem(`wu-roster-${staffSeasonId}-mode`, JSON.stringify('assign')) } catch { /* Optional preference. */ }
             changeView('roster')
-          }}
+          } : undefined}
         />}
         {session.access_warning && <div className="notice error" role="alert">{session.access_warning}</div>}
         {view === 'issues' && session.is_owner && <DashboardIssues />}

@@ -10,7 +10,7 @@ vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
 vi.mock("./rosterUi/Menu", () => ({
   default: () => <span>Season selector</span>,
 }));
-it("shows season controls without hosting/family sections and remembers the per-user moved note", async () => {
+it("keeps signup writes on Build roster and offers one read-only Next destination", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   localStorage.clear();
   const season = {
@@ -26,7 +26,8 @@ it("shows season controls without hosting/family sections and remembers the per-
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  const render = () => (
+  const next = vi.fn();
+  const render = (canBuild = true) => (
     <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
       <SeasonsPage
         userId="12"
@@ -35,7 +36,7 @@ it("shows season controls without hosting/family sections and remembers the per-
         memberSeason={{ season_id: 1, revision: 1 }}
         onSeasonChange={() => {}}
         onRefresh={async () => {}}
-        onClans={() => {}}
+        onClans={canBuild ? next : undefined}
         onBusy={() => {}}
       />
     </DashboardPermissions.Provider>
@@ -46,16 +47,17 @@ it("shows season controls without hosting/family sections and remembers the per-
     expect(host.textContent).toContain("Direct signup link");
     expect(host.textContent).not.toContain("Hosting clan directory");
     expect(host.textContent).not.toContain("Family clans");
-    expect(host.textContent).toContain("Hosting clans moved to");
-    await act(async () =>
-      (
-        host.querySelector(
-          '[aria-label="Dismiss hosting clans note"]',
-        ) as HTMLButtonElement
-      ).click(),
-    );
-    expect(localStorage.getItem("wu-hosting-clans-moved:12")).toBe("1");
     expect(host.textContent).not.toContain("Hosting clans moved to");
+    expect(host.querySelectorAll(".cwl-next-cue")).toHaveLength(1);
+    expect(host.textContent).not.toContain("Open signups");
+    expect(host.textContent).not.toContain("Close signups");
+    await act(async () =>
+      (host.querySelector(".cwl-next-cue") as HTMLButtonElement).click(),
+    );
+    expect(next).toHaveBeenCalledOnce();
+    await act(async () => root.render(render(false)));
+    expect(host.querySelector(".cwl-next-cue")).toBeNull();
+    expect(host.textContent).toContain("Create season");
     expect(api.mock.calls.every((call) => call[1] === undefined)).toBe(true);
   } finally {
     await act(async () => root.unmount());

@@ -1,3 +1,4 @@
+import CwlNextLink from "./CwlNextLink";
 import { retainRosterFwa } from "./roster";
 import ConfirmDialog from "./ConfirmDialog";
 import useStaffDetailsPage from "./useStaffDetailsPage";
@@ -1624,15 +1625,29 @@ export default function RosterWorkspace({
           )}
         </>
       )}
-      {canPublish && (
-        <button
-          className="cwl-next-cue"
-          disabled={uiLocked || !onReviewPublication}
-          onClick={onReviewPublication}
-        >
-          Next: Finalize roster ›
-        </button>
-      )}
+      {canPublish &&
+        mode === "assign" &&
+        roster &&
+        (roster.accounts.some((account) => !account.assigned_clan_tag) ? (
+          <p className="inline-reason">
+            {
+              roster.accounts.filter((account) => !account.assigned_clan_tag)
+                .length
+            }{" "}
+            account
+            {roster.accounts.filter((account) => !account.assigned_clan_tag)
+              .length === 1
+              ? ""
+              : "s"}{" "}
+            unplaced. Place them before Finalize roster.
+          </p>
+        ) : (
+          <CwlNextLink
+            label="Finalize roster"
+            disabled={uiLocked}
+            onNext={onReviewPublication}
+          />
+        ))}
       <div
         className="roster-selection-spacer"
         style={{
