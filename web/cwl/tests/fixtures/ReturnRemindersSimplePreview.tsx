@@ -10,9 +10,9 @@ const now = new Date();
 const rows: ReturnClan[] = [
   ["AAA", "Running", "scheduled"],
   ["BBB", "Paused", "paused"],
-  ["CCC", "Not started", "idle"],
+  ["CCC", "Running", "scheduled"],
   ["DDD", "No saved list", "not_saved"],
-  ["EEE", "Window ended", "expired"],
+  ["EEE", "Running", "scheduled"],
 ].map(([id, label, state]) => ({
   id: "FWA#" + id,
   label: "Local clan " + id,
@@ -26,7 +26,14 @@ const rows: ReturnClan[] = [
     state,
     label,
     players: state === "not_saved" ? 0 : 26,
-    every_minutes: state === "not_saved" ? null : 60,
+    every_minutes:
+      state === "not_saved"
+        ? null
+        : id === "AAA"
+          ? 30
+          : id === "EEE"
+            ? 120
+            : 60,
     last_sent_at:
       state === "scheduled"
         ? new Date(now.getTime() - 3600000).toISOString()
@@ -55,7 +62,7 @@ rows.push({
   },
 });
 let nextError = 0;
-const calls: { path: string; method: string }[] = [];
+const calls: { path: string; method: string; body?: unknown }[] = [];
 Object.assign(window, {
   returnFixture: {
     calls,
@@ -67,7 +74,11 @@ Object.assign(window, {
 window.fetch = async (input, init) => {
   const path = String(input).replace("/api/cwl", ""),
     method = init?.method || "GET";
-  calls.push({ path, method });
+  calls.push({
+    path,
+    method,
+    body: init?.body ? JSON.parse(String(init.body)) : undefined,
+  });
   const answer = (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), {
       status,
@@ -130,6 +141,10 @@ window.fetch = async (input, init) => {
     return answer({
       status: "done",
       message: "Local fixture saved. No message sent.",
+      result: {
+        details:
+          "Local clan AAA: changed\nLocal clan CCC: failed (fixture)\nLocal clan EEE: changed",
+      },
     });
   return answer({ error: "Fixture endpoint unavailable" }, 404);
 };

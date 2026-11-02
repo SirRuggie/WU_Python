@@ -1,3 +1,4 @@
+import SelectionActionBar from "./SelectionActionBar";
 import ActionMenu from "./rosterUi/ActionMenu";
 import ActionPanel from "./ActionPanel";
 import "./members/Members.css";
@@ -65,10 +66,10 @@ export default function ReturnReminderOverview({
   const [section, setSection] = useState<"FWA" | "MAIN">("FWA");
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
-  const [action, setAction] = useState<ReturnAction>("start");
   const [batch, setBatch] = useState<{
     action: ReturnAction;
     clans: ReturnClan[];
+    hiddenIds: string[];
   } | null>(null);
   const [loadedAt, setLoadedAt] = useState("");
   const [destinationIds, setDestinationIds] = useState<
@@ -185,8 +186,12 @@ export default function ReturnReminderOverview({
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
   );
-  const chosen = visible.filter((row) => selected.includes(row.id));
-  const incompatible = chosen.filter((row) => !canApply(row, action)).length;
+  const chosen = group.filter((row) => selected.includes(row.id));
+  const hidden = chosen.filter(
+    (row) => !visible.some((value) => value.id === row.id),
+  );
+  const openBatch = (action: ReturnAction) =>
+    setBatch({ action, clans: chosen, hiddenIds: hidden.map((row) => row.id) });
   const destinationId = destinationIds[section];
   const destinationName = destinationLoading
     ? "Checking destination…"
@@ -204,17 +209,17 @@ export default function ReturnReminderOverview({
   const actions: ReturnAction[] =
     section === "FWA"
       ? [
-          "start",
+          "frequency",
           "pause",
           "resume",
-          ...(chosen.some((row) => canApply(row, "frequency"))
-            ? ["frequency" as const]
-            : []),
+          "start",
           "save",
           "send",
           "away",
+          "replace",
+          "clear",
         ]
-      : ["send", "save", "away"];
+      : ["save", "send", "away", "replace", "clear"];
   return (
     <section
       className="return-overview"
@@ -236,7 +241,6 @@ export default function ReturnReminderOverview({
                 setSection(value);
                 setFilter("all");
                 setSelected([]);
-                setAction(value === "FWA" ? "start" : "send");
               }}
             >
               {value === "MAIN" ? "Main" : value}
@@ -305,8 +309,6 @@ export default function ReturnReminderOverview({
             requestAnimationFrame(() => focusTarget.current?.focus());
           }}
           onDone={() => {
-            if (batch.action === "save")
-              setAction(section === "FWA" ? "start" : "send");
             void load();
             void loadDestinations();
           }}
@@ -322,7 +324,6 @@ export default function ReturnReminderOverview({
               placeholder="Find a clan"
               onChange={(event) => {
                 setQuery(event.target.value);
-                setSelected([]);
               }}
             />
           </label>
@@ -352,7 +353,6 @@ export default function ReturnReminderOverview({
                     value={filter}
                     onChange={(event) => {
                       setFilter(event.target.value);
-                      setSelected([]);
                     }}
                   >
                     <option value="all">All statuses</option>
@@ -407,94 +407,57 @@ export default function ReturnReminderOverview({
           />
         </div>
         {chosen.length > 0 && (
-          <div
-            className="return-bulk-bar"
-            role="region"
-            aria-label="Clan selection"
-          >
-            <div className="return-selection-controls">
-              <label className="return-select-all">
-                <input
-                  type="checkbox"
-                  ref={(node) => {
-                    if (node)
-                      node.indeterminate =
-                        visible.some((row) => selected.includes(row.id)) &&
-                        !visible.every((row) => selected.includes(row.id));
-                  }}
-                  checked={
-                    visible.length > 0 &&
-                    visible.every((row) => selected.includes(row.id))
-                  }
-                  disabled={!visible.length}
-                  onChange={(event) =>
-                    setSelected((current) =>
-                      event.target.checked
-                        ? [
-                            ...new Set([
-                              ...current,
-                              ...visible.map((row) => row.id),
-                            ]),
-                          ]
-                        : current.filter(
-                            (id) => !visible.some((row) => row.id === id),
-                          ),
-                    )
-                  }
-                />
-                {query.trim() || filter !== "all"
-                  ? "Select all matching clans"
-                  : `Select all ${section === "MAIN" ? "Main" : "FWA"} clans`}{" "}
-                ({visible.length})
-              </label>
-              {chosen.length > 0 && (
-                <button type="button" onClick={() => setSelected([])}>
-                  Clear selection
-                </button>
-              )}
-            </div>
-            <span>
-              {chosen.length
-                ? `${chosen.length} selected`
-                : `${visible.length} visible`}
-            </span>
-            {chosen.length > 0 && (
+          <SelectionActionBar
+            name="Clan selection"
+            busy={!!batch || loading}
+            label={`${chosen.length} selected${hidden.length ? ` (${hidden.length} hidden)` : ""}`}
+            shortLabel={`${chosen.length} selected${hidden.length ? ` · ${hidden.length} hidden` : ""}`}
+            onShow={() => {
+              setQuery("");
+              setFilter("all");
+            }}
+            actions={actions
+              .filter((action) =>
+                visible.some(
+                  (row) => selected.includes(row.id) && canApply(row, action),
+                ),
+              )
+              .map((action) => ({
+                id: action,
+                label: actionLabels[action],
+                disabled: chosen.length > 50,
+                onAction: () => openBatch(action),
+              }))}
+            selectionActions={[
+              {
+                id: "all",
+                label: "Select all",
+                onAction: () =>
+                  setSelected((current) => [
+                    ...new Set([...current, ...visible.map((row) => row.id)]),
+                  ]),
+              },
+              {
+                id: "none",
+                label: "Select none",
+                onAction: () => setSelected([]),
+              },
+            ]}
+            desktopSelection={
               <>
-                <label>
-                  Action
-                  <select
-                    value={action}
-                    onChange={(event) =>
-                      setAction(event.target.value as ReturnAction)
-                    }
-                  >
-                    {actions.map((value) => (
-                      <option key={value} value={value}>
-                        {actionLabels[value]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <button
-                  className="primary"
-                  disabled={chosen.length > 50 || incompatible > 0}
-                  onClick={() => setBatch({ action, clans: chosen })}
+                  onClick={() =>
+                    setSelected((current) => [
+                      ...new Set([...current, ...visible.map((row) => row.id)]),
+                    ])
+                  }
                 >
-                  {actionLabels[action]} ({chosen.length})
+                  Select all
                 </button>
+                <button onClick={() => setSelected([])}>Select none</button>
               </>
-            )}
-          </div>
-        )}
-        {chosen.length > 0 && incompatible > 0 && (
-          <p role="status">
-            {action === "save"
-              ? `${incompatible} clans already have a list. Select clans without one.`
-              : `${incompatible} selected clans cannot ${actionLabels[action].toLowerCase()}. Check their status or choose another action.`}
-            {action === "send" &&
-              chosen.some((row) => row.return_status?.state === "not_saved") &&
-              " Capture current members first for clans without a list."}
-          </p>
+            }
+          />
         )}
         {chosen.length > 50 && (
           <p role="alert">Choose up to 50 clans per action.</p>
@@ -511,7 +474,7 @@ export default function ReturnReminderOverview({
                 chosen.length > 50 ||
                 chosen.some((row) => !canApply(row, "schedule"))
               }
-              onClick={() => setBatch({ action: "schedule", clans: chosen })}
+              onClick={() => openBatch("schedule")}
             >
               Schedule for later ({chosen.length})
             </button>
@@ -572,15 +535,6 @@ export default function ReturnReminderOverview({
                 </small>
               </div>
               <div className="return-row-actions">
-                {canApply(row, "frequency") && (
-                  <button
-                    onClick={() =>
-                      setBatch({ action: "frequency", clans: [row] })
-                    }
-                  >
-                    Change frequency
-                  </button>
-                )}
                 <button onClick={() => onOpen(row)}>
                   Members &amp; details
                 </button>

@@ -30,11 +30,6 @@
   min-height: 44px;
 }
 
-.return-overview .return-bulk-bar {
-  margin-bottom: 8px;
-  padding: 10px;
-  border-radius: 9px;
-}
 .return-overview .return-clan-list {
   border: 0;
   border-top: 1px solid #ffffff26;

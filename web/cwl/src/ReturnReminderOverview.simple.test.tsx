@@ -8,6 +8,7 @@ import ReturnBatch from "./returns/ReturnBatch";
 import { api, ApiError } from "./api";
 import {
   canApply,
+  actionLabels,
   captureMonth,
   returnFrequency,
   type ReturnClan,
@@ -149,14 +150,14 @@ it("changes frequency with exactly one resume write, never start/send", async ()
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await click("Review action");
-  expect(button("Change frequency")).toBeTruthy();
+  expect(button("Change frequency for 1 clan")).toBeTruthy();
   expect(document.querySelector("dialog")?.textContent).toContain(
     "Every 2 hours",
   );
   expect(document.querySelector("dialog")?.textContent).not.toContain(
     "120 minutes",
   );
-  await click("Change frequency");
+  await click("Change frequency for 1 clan");
   const writes = vi.mocked(api).mock.calls.filter((call) => call[1] === "POST");
   expect(writes).toHaveLength(1);
   expect(writes[0][0]).toBe("/manage/return-bulk/resume/run");
@@ -181,7 +182,7 @@ it.each([500, 401, 403])(
     );
     expect(host.textContent).toContain("Every hour");
     expect(host.textContent).toContain(captureMonth());
-    expect(host.querySelectorAll(".return-row-actions button")).toHaveLength(3);
+    expect(host.querySelectorAll(".return-row-actions button")).toHaveLength(2);
     fail = true;
     await click("Refresh");
     if (status === 500) {
@@ -189,7 +190,7 @@ it.each([500, 401, 403])(
       expect(
         (host.querySelector("fieldset") as HTMLFieldSetElement).disabled,
       ).toBe(false);
-      expect(button("Change frequency")).toBeTruthy();
+      expect(host.querySelector('[aria-label="Select A"]')).toBeTruthy();
     } else expect(host.querySelectorAll(".return-clan-row")).toHaveLength(0);
   },
 );
@@ -198,7 +199,7 @@ it.each([
   ["start", "Start reminders"],
   ["resume", "Resume"],
   ["pause", "Pause"],
-] as const)("names confirmation action %s", async (action, label) => {
+] as const)("names confirmation action %s", async (action, _label) => {
   vi.mocked(api).mockResolvedValue({
     revision: "r1",
     fields: [{ key: "clans", options: [{ value: "FWA:#A" }] }],
@@ -207,7 +208,7 @@ it.each([
     root.render(
       <ReturnBatch
         action={action}
-        clans={[row("A")]}
+        clans={[action === "resume" ? row("A", "paused", "Paused") : row("A")]}
         onClose={vi.fn()}
         onDone={vi.fn()}
       />,
@@ -219,7 +220,7 @@ it.each([
       "Starts now. Repeats every hour. Stops within 7 days.",
     );
   await click("Review action");
-  expect(button(label)).toBeTruthy();
+  expect(button(`${actionLabels[action]} for 1 clan`)).toBeTruthy();
 });
 it("keeps capture guidance short after the saved receipt", async () => {
   vi.mocked(api).mockImplementation(async (_path, method) =>
@@ -241,7 +242,7 @@ it("keeps capture guidance short after the saved receipt", async () => {
     ),
   );
   await click("Review action");
-  await click("Capture current members");
+  await click("Capture current members for 1 clan");
   expect(host.textContent).toContain("Next: Start return reminders.");
 });
 it("says away checks send nothing", async () => {
@@ -313,6 +314,89 @@ it("shows Select all only after a clan tick and keeps filters in the disclosure"
     "Filters",
   );
   await press(host.querySelector(".return-clan-name input")!);
-  expect(host.querySelector(".return-select-all")).not.toBeNull();
+  expect(host.querySelector(".members-bulk-bar")).not.toBeNull();
+  expect(button("Select all")).toBeTruthy();
   expect(host.textContent).not.toContain("CWL month for new member lists:");
+});
+
+it("reviews five mixed clans, explicitly skips hidden/paused/unavailable and writes only applicable visible running clans", async () => {
+  const rows = [
+    row("A"),
+    row("B"),
+    row("C"),
+    row("D", "paused", "Paused"),
+    row("E", "not_saved", "No saved list"),
+  ];
+  rows[0].return_status!.every_minutes = 30;
+  rows[1].return_status!.every_minutes = 120;
+  vi.mocked(api).mockImplementation(async (_path, method) =>
+    method === "POST"
+      ? {
+          status: "done",
+          message: "Completed with one failure",
+          result: { details: "A: changed\nC: failed" },
+        }
+      : ({
+          revision: "r1",
+          fields: [
+            {
+              key: "clans",
+              options: rows
+                .slice(0, 4)
+                .map((value) => ({ value: `FWA:${value.clan_tag}` })),
+            },
+          ],
+        } as never),
+  );
+  await act(async () =>
+    root.render(
+      <ReturnBatch
+        action="frequency"
+        clans={rows}
+        hiddenIds={[rows[1].id]}
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    ),
+  );
+  expect(host.textContent).toContain("B · Hidden by the current filters");
+  expect(host.textContent).toContain("D · Paused");
+  expect(host.textContent).toContain("E · No saved list");
+  expect(host.textContent).toContain("currently every 30 minutes");
+  await click("Review action");
+  expect(button("Change frequency for 2 clans")).toBeTruthy();
+  await click("Change frequency for 2 clans");
+  const writes = vi.mocked(api).mock.calls.filter((call) => call[1] === "POST");
+  expect(writes).toHaveLength(1);
+  expect(writes[0][0]).toBe("/manage/return-bulk/resume/run");
+  expect(writes[0][2]).toMatchObject({
+    values: { clans: ["FWA:#A", "FWA:#C"], every_minutes: 60 },
+  });
+  expect(host.textContent).toContain("A: changed");
+  expect(host.textContent).toContain("C: failed");
+});
+it("selection has no preselected action and survives a filter edit without an automatic review", async () => {
+  vi.mocked(api).mockImplementation(async (path) =>
+    path === "/manage/return-reminders"
+      ? ({ documents: [row("A"), row("B")] } as never)
+      : ({ fields: [], channels: [] } as never),
+  );
+  await act(async () =>
+    root.render(<ReturnReminderOverview onOpen={vi.fn()} />),
+  );
+  expect(host.querySelectorAll(".return-row-actions button")).toHaveLength(2);
+  expect(host.querySelector(".members-bulk-bar")).toBeNull();
+  await press(host.querySelector('[aria-label="Select A"]')!);
+  expect(host.querySelector(".members-bulk-bar")).not.toBeNull();
+  expect(host.querySelector(".return-batch")).toBeNull();
+  expect(host.querySelector('select[aria-label="Action"]')).toBeNull();
+  const search = host.querySelector('input[type="search"]') as HTMLInputElement;
+  await act(async () => {
+    search.value = "B";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.querySelector(".members-bulk-bar")?.textContent).toContain(
+    "1 selected",
+  );
+  expect(host.querySelector(".return-batch")).toBeNull();
 });

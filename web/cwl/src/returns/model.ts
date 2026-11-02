@@ -5,6 +5,8 @@ export type ReturnClan = ManagementSection & {
   clan_name?: string;
 };
 export type ReturnAction =
+  | "replace"
+  | "clear"
   | "save"
   | "start"
   | "schedule"
@@ -15,6 +17,8 @@ export type ReturnAction =
   | "away";
 export const actionLabels: Record<ReturnAction, string> = {
   save: "Capture current members",
+  replace: "Replace saved lists",
+  clear: "Clear lists",
   start: "Start return reminders",
   schedule: "Schedule for later",
   pause: "Pause",

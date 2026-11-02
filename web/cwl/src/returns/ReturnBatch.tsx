@@ -4,6 +4,7 @@ import ConfirmDialog from "../ConfirmDialog";
 import type { ManagementDocument } from "../serverManagement";
 import {
   actionLabels,
+  canApply,
   returnOperation,
   returnFrequency,
   clanKey,
@@ -22,10 +23,17 @@ type Receipt = {
 type Props = {
   action: ReturnAction;
   clans: ReturnClan[];
+  hiddenIds?: string[];
   onClose: () => void;
   onDone: () => void;
 };
-export default function ReturnBatch({ action, clans, onClose, onDone }: Props) {
+export default function ReturnBatch({
+  action,
+  clans,
+  hiddenIds = [],
+  onClose,
+  onDone,
+}: Props) {
   const [document, setDocument] = useState<ManagementDocument | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -81,11 +89,25 @@ export default function ReturnBatch({ action, clans, onClose, onDone }: Props) {
       .find((field) => field.key === "clans")
       ?.options?.map((option) => option.value) || [],
   );
-  const changed = document
-    ? clans.filter((clan) => !permitted.has(clanKey(clan)))
-    : [];
+  const skipped = clans
+    .map((clan) => ({
+      clan,
+      reason: hiddenIds.includes(clan.id)
+        ? "Hidden by the current filters; not changed."
+        : !canApply(clan, action)
+          ? action === "frequency"
+            ? `${clan.return_status?.label || "Unavailable"}; frequency changes require running automatic reminders.`
+            : `${clan.return_status?.label || "Unavailable"}; this action does not apply.`
+          : document && !permitted.has(clanKey(clan))
+            ? "No longer available for this action; not changed."
+            : "",
+    }))
+    .filter((item) => item.reason);
+  const targets = clans.filter(
+    (clan) => !skipped.some((item) => item.clan.id === clan.id),
+  );
   const pending = receipt?.status === "pending";
-  const captureCount = clans.filter(
+  const captureCount = targets.filter(
     (clan) => clan.return_status?.state === "not_saved",
   ).length;
   const check = async () => {
@@ -163,10 +185,31 @@ export default function ReturnBatch({ action, clans, onClose, onDone }: Props) {
           {receipt ? "Done" : "Cancel"}
         </button>
       </div>
-      <details>
-        <summary>Selected clans ({clans.length})</summary>
-        <p>{clans.map((clan) => clan.clan_name || clan.label).join(" · ")}</p>
-      </details>
+      <div className="return-review-scope" aria-label="Selected clans">
+        <p>{targets.length} clans will change.</p>
+        <ul>
+          {targets.map((clan) => (
+            <li key={clan.id}>
+              {clan.clan_name || clan.label}
+              {action === "frequency"
+                ? ` · currently ${returnFrequency(clan.return_status?.every_minutes || 60).toLowerCase()}`
+                : ""}
+            </li>
+          ))}
+        </ul>
+        {skipped.length > 0 && (
+          <>
+            <h4>Skipped ({skipped.length})</h4>
+            <ul>
+              {skipped.map(({ clan, reason }) => (
+                <li key={clan.id}>
+                  {clan.clan_name || clan.label} · {reason}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
       {error && (
         <div role="alert" className="notice error">
           {error}
@@ -178,12 +221,6 @@ export default function ReturnBatch({ action, clans, onClose, onDone }: Props) {
         </div>
       )}
       {!document && !error && <p role="status">Checking member lists…</p>}
-      {changed.length > 0 && (
-        <p role="alert">
-          {changed.length} selected clans are no longer available for this
-          action. Cancel and refresh the overview.
-        </p>
-      )}
       {receipt ? (
         <div aria-live="polite">
           <p>{receipt.message}</p>
@@ -209,7 +246,7 @@ export default function ReturnBatch({ action, clans, onClose, onDone }: Props) {
         </div>
       ) : (
         <>
-          <fieldset disabled={busy || !document || changed.length > 0}>
+          <fieldset disabled={busy || !document || targets.length === 0}>
             {["schedule", "start", "resume", "frequency"].includes(action) && (
               <label>
                 Frequency
@@ -307,13 +344,25 @@ export default function ReturnBatch({ action, clans, onClose, onDone }: Props) {
                   </p>
                 ))}
             {action === "away" && <p>Checks only. Sends nothing.</p>}
+            {action === "replace" && (
+              <p>
+                Replaces the selected saved member lists with current clan
+                members. Sends nothing.
+              </p>
+            )}
+            {action === "clear" && (
+              <p>
+                Closes and archives the selected member lists and stops their
+                reminders. History is retained.
+              </p>
+            )}
             <button
               className="primary"
               onClick={() => {
                 try {
                   setError("");
                   setReview({
-                    clans: clans.map(clanKey),
+                    clans: targets.map(clanKey),
                     every_minutes: Number(minutes),
                     ...(action === "schedule"
                       ? scheduleValues(start, end)
@@ -335,12 +384,10 @@ export default function ReturnBatch({ action, clans, onClose, onDone }: Props) {
       )}
       {review && (
         <ConfirmDialog
-          confirmLabel={
-            action === "start" ? "Start reminders" : actionLabels[action]
-          }
+          confirmLabel={`${actionLabels[action]} for ${targets.length} ${targets.length === 1 ? "clan" : "clans"}`}
           onCancel={() => setReview(null)}
           onConfirm={() => void submit()}
-          text={`${actionLabels[action]} for ${clans.map((clan) => clan.clan_name || clan.label).join(", ")}?${action === "schedule" ? ` Start ${new Date(String(review.schedule_start)).toLocaleString()}; stop ${new Date(String(review.schedule_end)).toLocaleString()}; ${returnFrequency(Number(minutes)).toLowerCase()}.` : ""}${action === "start" ? ` Capture current members for ${captureCount} clans without a list; keep all existing lists. Start now and repeat ${returnFrequency(Number(minutes)).toLowerCase()}. This can send Discord messages immediately and replaces any future start; existing earlier stop times remain.` : ""}${action === "frequency" ? ` ${returnFrequency(Number(minutes))}. The existing stop time stays unchanged.` : ""}${action === "send" ? " This sends Discord messages." : ""}${action === "schedule" || action === "start" || action === "resume" ? " Automatic reminders will be enabled." : ""}`}
+          text={`${actionLabels[action]} for ${targets.map((clan) => clan.clan_name || clan.label).join(", ")}?${skipped.length ? ` Skipped: ${skipped.map(({ clan, reason }) => `${clan.clan_name || clan.label}: ${reason}`).join("; ")}` : ""}${action === "schedule" ? ` Start ${new Date(String(review.schedule_start)).toLocaleString()}; stop ${new Date(String(review.schedule_end)).toLocaleString()}; ${returnFrequency(Number(minutes)).toLowerCase()}.` : ""}${action === "start" ? ` Capture current members for ${captureCount} clans without a list; keep all existing lists. Start now and repeat ${returnFrequency(Number(minutes)).toLowerCase()}. This can send Discord messages immediately and replaces any future start; existing earlier stop times remain.` : ""}${action === "frequency" ? ` ${returnFrequency(Number(minutes))}. The existing stop time stays unchanged.` : ""}${action === "send" ? " This sends Discord messages." : ""}${action === "schedule" || action === "start" || action === "resume" ? " Automatic reminders will be enabled." : ""}`}
         />
       )}
     </section>
