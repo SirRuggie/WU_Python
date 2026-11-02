@@ -1,7 +1,11 @@
+import ActionMenu from "./rosterUi/ActionMenu";
+import ActionPanel from "./ActionPanel";
+import "./members/Members.css";
 import ReturnBatch from "./returns/ReturnBatch";
 import {
   actionLabels,
   captureMonth,
+  returnFrequency,
   canApply,
   clanSection,
   displayDate,
@@ -26,7 +30,7 @@ export function ReturnStatusSummary({ status }: { status: ReturnStatus }) {
         <strong>{status.label}</strong>
         <span>{status.players} saved players</span>
         {status.every_minutes && (
-          <span>Every {status.every_minutes} minutes</span>
+          <span>{returnFrequency(status.every_minutes)}</span>
         )}
         <small>
           Last recorded send:{" "}
@@ -53,6 +57,7 @@ export default function ReturnReminderOverview({
   onOpen: (section: ManagementSection) => void;
   onDirty?: (dirty: boolean) => void;
 }) {
+  const [aboutTrigger, setAboutTrigger] = useState<HTMLElement | null>(null);
   const [records, setRecords] = useState<ReturnClan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -219,7 +224,7 @@ export default function ReturnReminderOverview({
         if (target && !batch) focusTarget.current = target;
       }}
     >
-      <p className="small">CWL month for new member lists: {captureMonth()}</p>
+      <p className="return-cycle">{captureMonth()}</p>
       <div className="return-toolbar">
         <div className="workflow-tabs" role="group" aria-label="Home clan type">
           {(["FWA", "MAIN"] as const).map((value) => (
@@ -241,40 +246,32 @@ export default function ReturnReminderOverview({
             </button>
           ))}
         </div>
-        <div>
-          <button
-            disabled={loading || !!batch}
-            onClick={() => {
-              void load();
-              void loadDestinations();
-            }}
-          >
-            Refresh
-          </button>
-          <button
-            disabled={loading || !!batch}
-            onClick={() => utility("return-channels")}
-          >
-            Return channels
-          </button>
-        </div>
       </div>
-      <div className="return-context">
-        <span>
-          <strong>Purpose</strong>Bring saved members back to their home clans
-          after CWL.
-        </span>
-        <span>
-          <strong>Destination</strong>
-          {destinationName}
-        </span>
-        <span>
-          <strong>Timing</strong>
-          {section === "FWA"
-            ? "Automatic after start; stops at cutoff"
-            : "Manual send only"}
-        </span>
-      </div>
+      {aboutTrigger && (
+        <ActionPanel
+          className="return-about-panel"
+          title="About this page"
+          trigger={aboutTrigger}
+          onClose={() => setAboutTrigger(null)}
+        >
+          <div className="return-context">
+            <span>
+              <strong>Purpose</strong>Bring saved members back to their home
+              clans after CWL.
+            </span>
+            <span>
+              <strong>Destination</strong>
+              {destinationName}
+            </span>
+            <span>
+              <strong>Timing</strong>
+              {section === "FWA"
+                ? "Automatic after start; stops at cutoff"
+                : "Manual send only"}
+            </span>
+          </div>
+        </ActionPanel>
+      )}
       {destinationError && (
         <p className="return-destination-warning" role="status">
           {destinationError}{" "}
@@ -316,124 +313,179 @@ export default function ReturnReminderOverview({
         />
       )}
       <fieldset disabled={!!batch || loading || (!!error && !records.length)}>
-        <div className="return-filters">
+        <div className="members-search-line return-search-line">
           <label>
-            Find a clan
+            <span className="members-search-label">Find a clan</span>
             <input
               type="search"
               value={query}
+              placeholder="Find a clan"
               onChange={(event) => {
                 setQuery(event.target.value);
                 setSelected([]);
               }}
-              placeholder="Clan name or tag"
             />
           </label>
-          <label>
-            Status
-            <select
-              value={filter}
-              onChange={(event) => {
-                setFilter(event.target.value);
-                setSelected([]);
+          <div className="members-filter-tools">
+            <details
+              className="members-more-filters"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.currentTarget.open = false;
+                  event.currentTarget
+                    .querySelector<HTMLElement>("summary")
+                    ?.focus();
+                }
               }}
             >
-              <option value="all">All statuses</option>
-              {(section === "FWA"
-                ? [
-                    ["scheduled", "Running / scheduled"],
-                    ["paused", "Paused"],
-                    ["idle", "Not started"],
-                    ["not_saved", "No saved list"],
-                    ["expired", "Window ended"],
-                  ]
-                : [
-                    ["manual", "Ready for manual sends"],
-                    ["not_saved", "No saved list"],
-                    ["expired", "Window ended"],
-                  ]
-              ).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="return-bulk-bar">
-          <div className="return-selection-controls">
-            <label className="return-select-all">
-              <input
-                type="checkbox"
-                ref={(node) => {
-                  if (node)
-                    node.indeterminate =
-                      visible.some((row) => selected.includes(row.id)) &&
-                      !visible.every((row) => selected.includes(row.id));
-                }}
-                checked={
-                  visible.length > 0 &&
-                  visible.every((row) => selected.includes(row.id))
-                }
-                disabled={!visible.length}
-                onChange={(event) =>
-                  setSelected((current) =>
-                    event.target.checked
+              <summary>
+                Filters
+                {filter !== "all" && (
+                  <span aria-label="1 active filter"> · 1</span>
+                )}
+              </summary>
+              <div className="members-filter-panel">
+                <label>
+                  Status
+                  <select
+                    value={filter}
+                    onChange={(event) => {
+                      setFilter(event.target.value);
+                      setSelected([]);
+                    }}
+                  >
+                    <option value="all">All statuses</option>
+                    {(section === "FWA"
                       ? [
-                          ...new Set([
-                            ...current,
-                            ...visible.map((row) => row.id),
-                          ]),
+                          ["scheduled", "Running / scheduled"],
+                          ["paused", "Paused"],
+                          ["idle", "Not started"],
+                          ["not_saved", "No saved list"],
+                          ["expired", "Window ended"],
                         ]
-                      : current.filter(
-                          (id) => !visible.some((row) => row.id === id),
-                        ),
-                  )
-                }
-              />
-              {query.trim() || filter !== "all"
-                ? "Select all matching clans"
-                : `Select all ${section === "MAIN" ? "Main" : "FWA"} clans`}{" "}
-              ({visible.length})
-            </label>
+                      : [
+                          ["manual", "Ready for manual sends"],
+                          ["not_saved", "No saved list"],
+                          ["expired", "Window ended"],
+                        ]
+                    ).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </details>
+          </div>
+          <ActionMenu
+            name="Return reminders"
+            disabled={!!batch}
+            items={[
+              {
+                id: "refresh",
+                label: "Refresh",
+                disabled: loading,
+                onAction: () => {
+                  void load();
+                  void loadDestinations();
+                },
+              },
+              {
+                id: "channels",
+                label: "Return channels",
+                disabled: loading,
+                onAction: () => utility("return-channels"),
+              },
+              {
+                id: "about",
+                label: "About this page",
+                onAction: setAboutTrigger,
+              },
+            ]}
+          />
+        </div>
+        {chosen.length > 0 && (
+          <div
+            className="return-bulk-bar"
+            role="region"
+            aria-label="Clan selection"
+          >
+            <div className="return-selection-controls">
+              <label className="return-select-all">
+                <input
+                  type="checkbox"
+                  ref={(node) => {
+                    if (node)
+                      node.indeterminate =
+                        visible.some((row) => selected.includes(row.id)) &&
+                        !visible.every((row) => selected.includes(row.id));
+                  }}
+                  checked={
+                    visible.length > 0 &&
+                    visible.every((row) => selected.includes(row.id))
+                  }
+                  disabled={!visible.length}
+                  onChange={(event) =>
+                    setSelected((current) =>
+                      event.target.checked
+                        ? [
+                            ...new Set([
+                              ...current,
+                              ...visible.map((row) => row.id),
+                            ]),
+                          ]
+                        : current.filter(
+                            (id) => !visible.some((row) => row.id === id),
+                          ),
+                    )
+                  }
+                />
+                {query.trim() || filter !== "all"
+                  ? "Select all matching clans"
+                  : `Select all ${section === "MAIN" ? "Main" : "FWA"} clans`}{" "}
+                ({visible.length})
+              </label>
+              {chosen.length > 0 && (
+                <button type="button" onClick={() => setSelected([])}>
+                  Clear selection
+                </button>
+              )}
+            </div>
+            <span>
+              {chosen.length
+                ? `${chosen.length} selected`
+                : `${visible.length} visible`}
+            </span>
             {chosen.length > 0 && (
-              <button type="button" onClick={() => setSelected([])}>
-                Clear selection
-              </button>
+              <>
+                <label>
+                  Action
+                  <select
+                    value={action}
+                    onChange={(event) =>
+                      setAction(event.target.value as ReturnAction)
+                    }
+                  >
+                    {actions.map((value) => (
+                      <option key={value} value={value}>
+                        {actionLabels[value]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="primary"
+                  disabled={chosen.length > 50 || incompatible > 0}
+                  onClick={() => setBatch({ action, clans: chosen })}
+                >
+                  {actionLabels[action]} ({chosen.length})
+                </button>
+              </>
             )}
           </div>
-          <span>
-            {chosen.length
-              ? `${chosen.length} selected`
-              : `${visible.length} visible`}
-          </span>
-          {chosen.length > 0 && (
-            <>
-              <label>
-                Action
-                <select
-                  value={action}
-                  onChange={(event) =>
-                    setAction(event.target.value as ReturnAction)
-                  }
-                >
-                  {actions.map((value) => (
-                    <option key={value} value={value}>
-                      {actionLabels[value]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="primary"
-                disabled={chosen.length > 50 || incompatible > 0}
-                onClick={() => setBatch({ action, clans: chosen })}
-              >
-                {actionLabels[action]} ({chosen.length})
-              </button>
-            </>
-          )}
-        </div>
+        )}
         {chosen.length > 0 && incompatible > 0 && (
           <p role="status">
             {action === "save"
@@ -494,7 +546,7 @@ export default function ReturnReminderOverview({
                 <small>
                   {section === "FWA"
                     ? row.return_status!.every_minutes
-                      ? `Every ${row.return_status!.every_minutes} minutes`
+                      ? returnFrequency(row.return_status!.every_minutes)
                       : "No schedule"
                     : "Manual sends only"}
                 </small>

@@ -5,6 +5,7 @@ import type { ManagementDocument } from "../serverManagement";
 import {
   actionLabels,
   returnOperation,
+  returnFrequency,
   clanKey,
   localDate,
   scheduleValues,
@@ -278,12 +279,8 @@ export default function ReturnBatch({ action, clans, onClose, onDone }: Props) {
                 </p>
                 <p>
                   Starts now. Repeats{" "}
-                  {minutes === "30"
-                    ? "every 30 minutes"
-                    : minutes === "60"
-                      ? "every hour"
-                      : "every 2 hours"}
-                  . Stops within 7 days.
+                  {returnFrequency(Number(minutes)).toLowerCase()}. Stops within
+                  7 days.
                 </p>
               </>
             )}
@@ -343,7 +340,7 @@ export default function ReturnBatch({ action, clans, onClose, onDone }: Props) {
           }
           onCancel={() => setReview(null)}
           onConfirm={() => void submit()}
-          text={`${actionLabels[action]} for ${clans.map((clan) => clan.clan_name || clan.label).join(", ")}?${action === "schedule" ? ` Start ${new Date(String(review.schedule_start)).toLocaleString()}; stop ${new Date(String(review.schedule_end)).toLocaleString()}; every ${minutes} minutes.` : ""}${action === "start" ? ` Capture current members for ${captureCount} clans without a list; keep all existing lists. Start now and repeat every ${minutes} minutes. This can send Discord messages immediately and replaces any future start; existing earlier stop times remain.` : ""}${action === "frequency" ? ` Every ${minutes} minutes. The existing stop time stays unchanged.` : ""}${action === "send" ? " This sends Discord messages." : ""}${action === "schedule" || action === "start" || action === "resume" ? " Automatic reminders will be enabled." : ""}`}
+          text={`${actionLabels[action]} for ${clans.map((clan) => clan.clan_name || clan.label).join(", ")}?${action === "schedule" ? ` Start ${new Date(String(review.schedule_start)).toLocaleString()}; stop ${new Date(String(review.schedule_end)).toLocaleString()}; ${returnFrequency(Number(minutes)).toLowerCase()}.` : ""}${action === "start" ? ` Capture current members for ${captureCount} clans without a list; keep all existing lists. Start now and repeat ${returnFrequency(Number(minutes)).toLowerCase()}. This can send Discord messages immediately and replaces any future start; existing earlier stop times remain.` : ""}${action === "frequency" ? ` ${returnFrequency(Number(minutes))}. The existing stop time stays unchanged.` : ""}${action === "send" ? " This sends Discord messages." : ""}${action === "schedule" || action === "start" || action === "resume" ? " Automatic reminders will be enabled." : ""}`}
         />
       )}
     </section>

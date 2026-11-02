@@ -2,10 +2,16 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { closeRosterActionMenus } from "./rosterUi/actionMenuState";
 import ReturnReminderOverview from "./ReturnReminderOverview";
 import ReturnBatch from "./returns/ReturnBatch";
 import { api, ApiError } from "./api";
-import { canApply, captureMonth, type ReturnClan } from "./returns/model";
+import {
+  canApply,
+  captureMonth,
+  returnFrequency,
+  type ReturnClan,
+} from "./returns/model";
 vi.mock("./api", async (original) => ({
   ...(await original<typeof import("./api")>()),
   api: vi.fn(),
@@ -37,9 +43,51 @@ const button = (label: string) =>
   [...document.querySelectorAll("button")].find(
     (node) => node.textContent?.trim() === label,
   )!;
-const click = async (label: string) => act(async () => button(label).click());
+async function press(element: Element) {
+  await act(async () => {
+    element.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        pointerType: "mouse",
+        pointerId: 1,
+        button: 0,
+      }),
+    );
+    element.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0 }),
+    );
+    element.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        pointerType: "mouse",
+        pointerId: 1,
+        button: 0,
+      }),
+    );
+    element.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, button: 0 }),
+    );
+    (element as HTMLElement).click();
+  });
+}
+async function click(label: string) {
+  const direct = button(label);
+  if (direct) return press(direct);
+  await press(
+    document.querySelector('[aria-label="Actions for Return reminders"]')!,
+  );
+  const item = [...document.querySelectorAll('[role="menuitem"]')].find(
+    (node) => node.textContent?.trim() === label,
+  )!;
+  return press(item);
+}
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -53,6 +101,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  closeRosterActionMenus();
   host.remove();
 });
 it("offers frequency only on running FWA and preserves paused Resume", () => {
@@ -101,6 +150,12 @@ it("changes frequency with exactly one resume write, never start/send", async ()
   });
   await click("Review action");
   expect(button("Change frequency")).toBeTruthy();
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "Every 2 hours",
+  );
+  expect(document.querySelector("dialog")?.textContent).not.toContain(
+    "120 minutes",
+  );
   await click("Change frequency");
   const writes = vi.mocked(api).mock.calls.filter((call) => call[1] === "POST");
   expect(writes).toHaveLength(1);
@@ -124,8 +179,8 @@ it.each([500, 401, 403])(
     await act(async () =>
       root.render(<ReturnReminderOverview onOpen={vi.fn()} />),
     );
-    expect(host.textContent).toContain("Every 60 minutes");
-    expect(host.textContent).toContain("CWL month for new member lists:");
+    expect(host.textContent).toContain("Every hour");
+    expect(host.textContent).toContain(captureMonth());
     expect(host.querySelectorAll(".return-row-actions button")).toHaveLength(3);
     fail = true;
     await click("Refresh");
@@ -235,4 +290,29 @@ it("uses member list for clear while retaining its existing review route", async
   expect(host.textContent).not.toContain(
     "Changing search or status clears selection",
   );
+});
+
+it("formats supported frequencies as words", () => {
+  expect([30, 60, 120].map(returnFrequency)).toEqual([
+    "Every 30 minutes",
+    "Every hour",
+    "Every 2 hours",
+  ]);
+});
+it("shows Select all only after a clan tick and keeps filters in the disclosure", async () => {
+  vi.mocked(api).mockResolvedValue({
+    fields: [],
+    channels: [],
+    documents: [row("A")],
+  } as never);
+  await act(async () =>
+    root.render(<ReturnReminderOverview onOpen={vi.fn()} />),
+  );
+  expect(host.querySelector(".return-select-all")).toBeNull();
+  expect(host.querySelector(".members-more-filters summary")?.textContent).toBe(
+    "Filters",
+  );
+  await press(host.querySelector(".return-clan-name input")!);
+  expect(host.querySelector(".return-select-all")).not.toBeNull();
+  expect(host.textContent).not.toContain("CWL month for new member lists:");
 });

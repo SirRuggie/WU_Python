@@ -107,3 +107,9 @@ export function captureMonth(now = new Date()) {
     ),
   );
 }
+
+export function returnFrequency(minutes: number) {
+  if (minutes === 60) return "Every hour";
+  if (minutes === 120) return "Every 2 hours";
+  return `Every ${minutes} minutes`;
+}

@@ -15,7 +15,7 @@ fs.mkdirSync(out, { recursive: true });
   try {
     for (const width of [320, 360, 390, 1440]) {
       const context = await browser.newContext({
-        viewport: { width, height: 1000 },
+        viewport: { width, height: 800 },
       });
       const page = await context.newPage();
       const errors = [];
@@ -29,6 +29,9 @@ fs.mkdirSync(out, { recursive: true });
         .waitFor();
       async function capture(state) {
         const layout = await page.evaluate(() => ({
+          firstClanTop:
+            document.querySelector(".return-clan-row")?.getBoundingClientRect()
+              .top ?? null,
           scroll: document.documentElement.scrollWidth,
           width: innerWidth,
           controls: [
@@ -53,6 +56,58 @@ fs.mkdirSync(out, { recursive: true });
         proof.push({ width, state, ...layout });
       }
       await capture("overview");
+      const firstTop = await page
+        .locator(".return-clan-row")
+        .first()
+        .evaluate((node) => node.getBoundingClientRect().top);
+      if (width === 360 && firstTop >= 300)
+        throw Error("First clan too low: " + firstTop);
+      if (await page.locator(".return-select-all").count())
+        throw Error("Select all shown before a tick");
+      if (await page.locator(".members-filter-panel select").isVisible())
+        throw Error("Status not disclosed");
+      await page.getByText("Filters", { exact: true }).focus();
+      await page.keyboard.press("Enter");
+      await page.locator(".members-filter-panel select").selectOption("paused");
+      if ((await page.locator(".return-clan-row").count()) !== 1)
+        throw Error("Status filter failed");
+      await capture("filters");
+      await page.locator(".members-filter-panel select").focus();
+      await page.keyboard.press("Escape");
+      if (
+        await page
+          .locator(".members-more-filters")
+          .evaluate((node) => node.open)
+      )
+        throw Error("Filters Escape failed");
+      await page.locator(".members-more-filters summary").click();
+      await page.locator(".members-filter-panel select").selectOption("all");
+      await page.locator(".members-filter-panel select").focus();
+      await page.keyboard.press("Escape");
+      await page
+        .getByRole("button", { name: "Actions for Return reminders" })
+        .click();
+      await page
+        .getByRole("menuitem", { name: "About this page", exact: true })
+        .click();
+      await page.getByRole("dialog").waitFor();
+      await capture("about");
+      await page.keyboard.press("Escape");
+      if (await page.getByRole("dialog").count())
+        throw Error("About Escape failed");
+      await page
+        .getByRole("button", { name: "Actions for Return reminders" })
+        .click();
+      page.once("dialog", (dialog) => dialog.dismiss());
+      await page
+        .getByRole("menuitem", { name: "Return channels", exact: true })
+        .click();
+      await page.getByLabel("Select Local clan AAA", { exact: true }).check();
+      await page.locator(".return-select-all").waitFor();
+      await capture("selection");
+      await page
+        .getByRole("button", { name: "Clear selection", exact: true })
+        .click();
       await page
         .getByRole("button", { name: "Change frequency", exact: true })
         .click();
@@ -76,7 +131,12 @@ fs.mkdirSync(out, { recursive: true });
         throw Error(JSON.stringify(writes));
       await page.getByRole("button", { name: "Done", exact: true }).click();
       await page.evaluate(() => window.returnFixture.failRefresh(500));
-      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Actions for Return reminders" })
+        .click();
+      await page
+        .getByRole("menuitem", { name: "Refresh", exact: true })
+        .click();
       await page.getByRole("alert").waitFor();
       await capture("refresh-error");
       if (
@@ -87,7 +147,12 @@ fs.mkdirSync(out, { recursive: true });
         throw Error("stale controls disabled");
       await page.getByRole("button", { name: "Retry", exact: true }).click();
       await page.evaluate(() => window.returnFixture.failRefresh(403));
-      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Actions for Return reminders" })
+        .click();
+      await page
+        .getByRole("menuitem", { name: "Refresh", exact: true })
+        .click();
       await page.getByRole("alert").waitFor();
       if (await page.locator(".return-clan-row").count())
         throw Error("auth rows retained");

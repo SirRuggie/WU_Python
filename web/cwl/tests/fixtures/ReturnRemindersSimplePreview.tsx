@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import ReturnReminderOverview from "../../src/ReturnReminderOverview";
 import type { ReturnClan } from "../../src/returns/model";
 import "../../src/style.css";
+import "../../src/ServerManagement.css";
 import "../../src/workflowControls.css";
 import "../../src/accessibility.css";
 const now = new Date();
@@ -80,7 +81,24 @@ window.fetch = async (input, init) => {
     nextError = 0;
     return answer({ error: "Local refresh failure" }, status);
   }
-  if (path === "/manage/return-reminders") return answer({ documents: rows });
+  if (path === "/manage/return-reminders")
+    return answer({
+      documents: [
+        ...rows,
+        ...[
+          ["return-channels", "Return channels"],
+          ["return-history", "Recent actions"],
+          ["return-bulk-clear", "Clear member list"],
+          ["return-bulk-replace", "Replace member list"],
+        ].map(([id, label]) => ({
+          id,
+          label,
+          description: "Local fixture navigation",
+          group: "War",
+          endpoint: "/manage/" + id,
+        })),
+      ],
+    });
   if (path === "/manage/return-channels")
     return answer({
       fields: [
@@ -117,19 +135,26 @@ window.fetch = async (input, init) => {
 };
 createRoot(document.getElementById("root")!).render(
   <div className="shell" style={{ display: "block" }}>
+    <header className="topbar">
+      <strong>Return reminders</strong>
+    </header>
     <main style={{ maxWidth: 1200, margin: "auto", padding: 16 }}>
-      <h1>Return reminders</h1>
-      <p>
-        Isolated sample data. All requests stay in this page; no Discord sends.
-      </p>
-      <ReturnReminderOverview
-        onOpen={(section) =>
-          window.alert(
-            "Existing member-list details/clear confirmation preserved: " +
-              section.label,
-          )
-        }
-      />
+      <section className="server-management">
+        <header className="manage-heading">
+          <div>
+            <p className="eyebrow">CWL</p>
+            <h2>Return reminders</h2>
+            <p>Saved home-clan members, separate from signup placements.</p>
+          </div>
+        </header>
+        <div>
+          <ReturnReminderOverview
+            onOpen={(section) =>
+              window.alert("Local fixture navigation: " + section.label)
+            }
+          />
+        </div>
+      </section>
     </main>
   </div>,
 );
