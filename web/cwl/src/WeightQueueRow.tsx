@@ -51,10 +51,10 @@ export default function WeightQueueRow({
         </div>
         <div className="weight-queue-meta">
           TH {account.town_hall ?? "—"} · {account.tag} ·{" "}
-          {account.pool === "lazy" ? "Lazy" : "Main"} CWL ·{" "}
+          {account.pool === "lazy" ? "Lazy" : "Main"}
           {account.source_status === "unavailable"
-            ? "FWA source unavailable"
-            : "No saved FWA weight"}
+            ? " · FWA source unavailable"
+            : ""}
         </div>
       </div>
       {usesClanWeights(account) ? (

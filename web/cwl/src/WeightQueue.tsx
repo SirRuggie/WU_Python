@@ -192,9 +192,7 @@ export default function WeightQueue({
           </div>
         </div>
       )}
-      <div className="weight-queue-help">
-        Saving doesn't move anyone. Refresh keeps manual weights.
-      </div>
+      <div className="weight-queue-help">Saving doesn't move players.</div>
       {accounts.some((account) => account.current_fwa_status === "stale") && (
         <p role="status">
           Clan membership could not be checked. Showing last known groups.
@@ -223,7 +221,7 @@ export default function WeightQueue({
                 <h3>
                   {fwa
                     ? "FWA players · set in Clan weights ›"
-                    : "Other accounts · enter here"}
+                    : "Non-FWA accounts"}
                 </h3>
               )}
               {shown
