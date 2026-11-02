@@ -6,7 +6,7 @@ import hikari
 from extensions.commands.recruit import perms
 from utils.member_profiles import member_id
 from utils.member_profile_runs import ProfileRuns
-from utils.role_permissions import role_is_manageable
+from utils.role_permissions import role_is_manageable, member_role_ids
 from utils.manage_web_worker import WORKER_ID
 from .server_management import API, GUILD_ID, require_manage, mongo
 from .manage_roles import hierarchy, dashboard_grant_roles
@@ -47,10 +47,22 @@ async def preview(request):
     if not role_is_manageable(guild, bot, role) or not perms.actor_can_manage_role(
         person, guild, role
     ):
-        raise web.HTTPForbidden(text="This role cannot be changed by you or the bot.")
+        return web.json_response(
+            {
+                "error": "This role cannot be changed by you or the bot.",
+                "code": "role_refused",
+            },
+            status=422,
+        )
     forbidden = await dashboard_grant_roles(request, actor)
     if role_id in forbidden:
-        raise web.HTTPForbidden(text="Only dashboard owners can change access roles.")
+        return web.json_response(
+            {
+                "error": "Only dashboard owners can change access roles.",
+                "code": "role_refused",
+            },
+            status=422,
+        )
     # Include owner-visible access roles in the explicit confirmation warning.
     from utils.dashboard_access import AccessRepository
 
@@ -70,26 +82,52 @@ async def preview(request):
         )
     from .manage_roles import member
 
-    rows = []
+    rows, blocked = [], []
     for uid in ids:
         data = known[uid]
-        if "guard_role_ids" in body and sorted(map(str,data.get("roles", []))) != sorted(body["guard_role_ids"]):
+        if "guard_role_ids" in body and member_role_ids(
+            data.get("roles", []), GUILD_ID
+        ) != member_role_ids(body["guard_role_ids"], GUILD_ID):
             raise web.HTTPConflict(text="This person’s roles changed. Refresh before Undo; no role was changed.")
         if data["user"].get("bot") or not perms.actor_can_manage_member(
             person, member(data), guild
         ):
-            raise web.HTTPForbidden(
-                text="This selection includes a bot, server owner or person above your role. No changes were queued."
+            from .manage_roles import member_option
+
+            profile = member_option(data)
+            blocked.append(
+                {
+                    "discord_id": uid,
+                    "reason": (
+                        "Bot account"
+                        if data["user"].get("bot")
+                        else "Server owner or above your role"
+                    ),
+                    "discord_profile": {
+                        key: profile.get(key)
+                        for key in ("id", "display_name", "username", "avatar_url")
+                    },
+                }
             )
+            continue
         rows.append(
             dict(
                 discord_id=uid,
                 role_id=role_id,
                 operation=operation,
-                expected_role_ids=sorted(map(str, data.get("roles", []))),
+                expected_role_ids=member_role_ids(data.get("roles", []), GUILD_ID),
                 bot=False,
                 protected=protected,
             )
+        )
+    if blocked:
+        return web.json_response(
+            {
+                "error": "Some selected people cannot be changed. No changes were queued.",
+                "code": "member_targets_refused",
+                "blocked": blocked,
+            },
+            status=422,
         )
     async with mongo(request) as db:
         try:

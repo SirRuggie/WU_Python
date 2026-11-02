@@ -39,6 +39,7 @@ class AcceleratedLoop(asyncio.SelectorEventLoop):
     ("section", "action", "expected"),
     [
         ("member_profiles", "save", "done"),
+        ("roles", "bulk_one", "done"),
         ("fwa_points", "enable", "uncertain"),
     ],
 )

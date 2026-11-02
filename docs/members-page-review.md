@@ -64,3 +64,51 @@ fixture does not supply a guild icon. Full frontend tests passed despite one
 loopback proxy ECONNREFUSED diagnostic; no warning-free harness claim is made.
 Vite reports its existing large-chunk advisory. No production role, nickname,
 import, notification or DM action was performed.
+
+## Prompt 106 rework
+
+Real Hikari members include the guild's everyone role. Both REST review state
+and Hikari write state now normalize that ID away, with actual entity-factory
+regressions. The directory moved to `/manage/members/overview`; the original
+member picker keeps its real route and ticket-settings fallback.
+
+Per-person hierarchy refusal is a 422 review result with named blocked people,
+not loss of page authorization or a silently reduced selection. Unmanageable
+person switches are disabled. Clear selection remains available after a person
+leaves. Role runs share the profile 150-second edit / 200-second worker budget
+and known-429 retry boundary. Forbidden and NotFound are confirmed failures;
+missing members have an explicit Left-the-server explanation. History pruning
+uses separate per-type caps and preserves role receipts needed for auditing.
+
+On phones, search, chips and Showing precede the list. Refresh, Fix nicknames,
+Past nickname changes and About share one action menu; Bots is in Filters.
+Page/all selection appears after the first tick. The bar is one horizontal line,
+and the document is the sole vertical scroll surface. First-row top was 278.3px
+at 360×800, including the local-fixture notice. At 320/360/390, the selection bar
+was 58px high. Four-width checks also covered single-tap menus, Escape focus
+return, keyboard opening, and Back restoring document scroll and opener focus.
+Narrow selected and wide overview screenshots were visually reviewed.
+
+Removed the unreachable `RoleMembers` disclosure, old roles-editor introductory
+copy, role-only draft/action branches and their obsolete styles from
+ServerManagement. Its catalog already routes that section to Members. The
+original shared member picker remains for other authorized editors. Role
+progress stays bounded to the current run's rows; no speculative polling API
+or interval change was introduced.
+
+Checks: guarded backend 5,988 passed / 89 skipped / 266 subtests; final frontend
+1,479 passed in 260 files, TypeScript/build. Additional focused HTTP/transport
+35 passed. Seven owned-Mongo role cases passed in 82.53 seconds, including real
+Hikari against loopback HTTP: four role changes completed after a 70-second
+429 wait; Stop during a two-second wait completed only the current person and
+left three untouched. These are disconnected transport tests, never live
+Discord evidence. The fixture database/server were removed. All six requested
+survivor mutants were killed: Undo guard, receipt failure, Stop write permission,
+second Stop check, protected confirmation and Stop pending guard. Required war
+checks passed: 213 backend / 1 skip plus 35 frontend and build.
+
+The first full frontend attempt failed 12 old-route/menu expectations in the
+existing time-zone flow tests. Those were updated to exercise the new public
+route and menu, and the final full suite passed. The exact staged boot check
+is recorded separately before READY. First real role change remains Ruggie's,
+on one person; no agent live role, rename, import, send or DM action was run.

@@ -24,7 +24,7 @@ const names: Partial<Record<DashboardView, string>> = {
   "text-commands": "Command triggers",
   roster: "Build roster",
   "applications-settings": "Ticket settings",
-  "members-settings": "Members & roles",
+  "members-settings": "Members",
   "fwa-settings": "FWA tools",
   "connections-settings": "Integrations",
 };

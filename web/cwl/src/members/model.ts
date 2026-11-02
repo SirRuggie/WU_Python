@@ -1,6 +1,8 @@
 import type { Member } from "../memberTimezones/types";
 export type DirectoryMember = Member & {
   role_ids: string[];
+  role_editable?: boolean;
+  role_skip_reason?: string | null;
   username?: string;
 };
 export type MemberStatus = "all" | "needs_flag" | "no_time_zone" | "check_name";

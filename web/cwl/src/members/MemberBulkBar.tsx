@@ -1,6 +1,11 @@
 import { membersText as t } from "./strings";
 import "./Members.css";
 export default function MemberBulkBar({
+  pageSelected,
+  pagePartial,
+  onSelectPage,
+  matchingCount,
+  onSelectMatching,
   count,
   hidden,
   canRoles,
@@ -12,6 +17,11 @@ export default function MemberBulkBar({
   onFix,
   onClear,
 }: {
+  pageSelected: boolean;
+  pagePartial: boolean;
+  onSelectPage: () => void;
+  matchingCount: number;
+  onSelectMatching: () => void;
   count: number;
   hidden: number;
   canRoles: boolean;
@@ -31,6 +41,22 @@ export default function MemberBulkBar({
       aria-label={t.selectionLabel}
     >
       <button onClick={onShow}>{t.selected(count, hidden)}</button>
+      <button onClick={onClear}>{t.selectNone}</button>
+      <label className="members-checkbox">
+        <input
+          type="checkbox"
+          aria-label={t.selectPage}
+          checked={pageSelected}
+          ref={(node) => {
+            if (node) node.indeterminate = pagePartial;
+          }}
+          onChange={onSelectPage}
+        />
+        {t.selectPage}
+      </label>
+      <button onClick={onSelectMatching}>
+        {t.selectMatching(matchingCount)}
+      </button>
       {canRoles && (
         <>
           <button disabled={busy} onClick={onAdd}>
@@ -46,9 +72,6 @@ export default function MemberBulkBar({
           {t.fixNames}
         </button>
       )}
-      <button disabled={busy} onClick={onClear}>
-        {t.selectNone}
-      </button>
     </div>
   );
 }

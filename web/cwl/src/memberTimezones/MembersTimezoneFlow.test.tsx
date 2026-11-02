@@ -8,7 +8,8 @@ vi.mock("../api", async (original) => ({
   api: async (...args: unknown[]) => {
     if (String(args[0]).endsWith("runs?active=1")) return { runs: [] };
     const result = await transport(...args);
-    if (args[0] !== "/manage/members" || !result?.members) return result;
+    if (args[0] !== "/manage/members/overview" || !result?.members)
+      return result;
     return {
       ...result,
       roles: [],
@@ -86,7 +87,18 @@ async function click(text: string) {
   if (text === "Next members") text = "Next review members";
   if (text === "Past runs") text = "Past nickname changes";
   if (text === "Review nicknames") text = "Fix nicknames";
-  const button = [...document.body.querySelectorAll("button")].find(
+  if (
+    ["Refresh members", "Past nickname changes", "Fix nicknames"].includes(text)
+  ) {
+    const trigger = host.querySelector<HTMLButtonElement>(
+      'button[aria-label="Actions for Members"]',
+    );
+    if (trigger && !document.querySelector('[role="menu"]'))
+      await act(async () => trigger.click());
+  }
+  const button = [
+    ...document.body.querySelectorAll<HTMLElement>("button, [role=menuitem]"),
+  ].find(
     (x) => x.textContent === text || x.getAttribute("aria-label") === text,
   );
   expect(button).toBeTruthy();
@@ -104,7 +116,9 @@ it("lists states, searches and edits without fetching a closed Standardize previ
     transport.mock.calls.every((c) => !String(c[0]).includes("preview")),
   ).toBe(true);
   await click("Edit Ada");
-  expect(document.querySelector<HTMLInputElement>(".mt-editor input")?.value).toBe("Ada");
+  expect(
+    document.querySelector<HTMLInputElement>(".mt-editor input")?.value,
+  ).toBe("Ada");
   expect(document.body.textContent).toContain(
     "Also change the Discord nickname",
   );
@@ -131,7 +145,9 @@ it("preserves the editor after a conflict and never silently queues a nickname c
   await click("Edit Ada");
   await click("Save profile");
   expect(document.body.textContent).toContain("Profile changed");
-  expect(document.querySelector<HTMLInputElement>(".mt-editor input")?.value).toBe("Ada");
+  expect(
+    document.querySelector<HTMLInputElement>(".mt-editor input")?.value,
+  ).toBe("Ada");
   const posted = transport.mock.calls.find((c) => c[1] === "POST")!;
   expect(posted[2].rename).toBe(false);
   expect(posted[2].revision).toBe(3);

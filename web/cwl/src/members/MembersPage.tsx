@@ -30,6 +30,8 @@ import {
 import { membersText as t } from "./strings";
 import "../memberTimezones/MemberTimezones.css";
 import "./Members.css";
+import ActionMenu from "../rosterUi/ActionMenu";
+import ActionPanel from "../ActionPanel";
 
 type RoleAction = {
   ids: readonly string[];
@@ -62,15 +64,15 @@ export default function MembersPage({
     [nameBusy, setNameBusy] = useState(false),
     [nameOpen, setNameOpen] = useState(false),
     [fixTrigger, setFixTrigger] = useState(0),
+    [historyTrigger, setHistoryTrigger] = useState(0),
+    [helpTrigger, setHelpTrigger] = useState<HTMLElement | null>(null),
     [fixIds, setFixIds] = useState<readonly string[] | undefined>(),
     [action, setAction] = useState<RoleAction | null>(null),
     [actionError, setActionError] = useState(""),
     [denied, setDenied] = useState(false),
     [lastWasUndo, setLastWasUndo] = useState(false);
-  const scroll = useRef<HTMLDivElement | null>(null),
-    savedScroll = useRef(0),
+  const savedScroll = useRef(0),
     opener = useRef<HTMLElement | null>(null),
-    headerCheck = useRef<HTMLInputElement | null>(null),
     initialConsumed = useRef(false),
     progress = useRef<HTMLElement | null>(null);
   const deny = useCallback(() => {
@@ -114,10 +116,6 @@ export default function MembersPage({
     return () => onDirty(false);
   }, [panelDirty, navigationBusy, onDirty]);
   useEffect(() => {
-    if (headerCheck.current)
-      headerCheck.current.indeterminate = summary.partial;
-  }, [summary.partial]);
-  useEffect(() => {
     if (!allowed) deny();
     else setDenied(false);
   }, [allowed, deny]);
@@ -141,7 +139,7 @@ export default function MembersPage({
     setPersonId(null);
     setPanelDirty(false);
     requestAnimationFrame(() => {
-      if (scroll.current) scroll.current.scrollTop = savedScroll.current;
+      window.scrollTo({ top: savedScroll.current, behavior: "instant" });
       opener.current?.focus({ preventScroll: true });
     });
   };
@@ -149,7 +147,7 @@ export default function MembersPage({
     if (personId === id) return;
     requestDetailsNavigation(() => {
       opener.current = trigger;
-      savedScroll.current = scroll.current?.scrollTop || 0;
+      savedScroll.current = window.scrollY;
       setPersonId(id);
       setActionError("");
     });
@@ -220,26 +218,26 @@ export default function MembersPage({
   return (
     <section
       aria-label={t.title}
+      data-dashboard-focus-fallback
+      tabIndex={-1}
       className={`roster-ui members-workspace${person ? " has-panel" : ""}`}
     >
       <header>
         <h1>{t.title}</h1>
-        <div>
-          <button
-            disabled={busy || panelDirty || directory.loading}
-            onClick={() => void directory.load()}
-          >
-            {t.refresh}
-          </button>
-          <button
-            disabled={busy || panelDirty || !data || unknown}
-            onClick={() => fix(selected.size ? [...selected] : undefined)}
-          >
-            {t.fixNames}
-          </button>
-        </div>
       </header>
+      {helpTrigger && (
+        <ActionPanel
+          title={t.nicknameHelp}
+          trigger={helpTrigger}
+          onClose={() => setHelpTrigger(null)}
+        >
+          <p>{t.nicknameExplanation}</p>
+        </ActionPanel>
+      )}
       {directory.error && <p role="alert">{directory.error}</p>}
+      {!data && directory.error && (
+        <button onClick={() => void directory.load()}>{t.refresh}</button>
+      )}
       {!person && (actionError || roles.error) && (
         <p role="alert">{actionError || roles.error}</p>
       )}
@@ -247,6 +245,40 @@ export default function MembersPage({
       {data && (
         <>
           <MemberFilters
+            actions={
+              <ActionMenu
+                name={t.title}
+                disabled={busy || panelDirty}
+                items={[
+                  {
+                    id: "refresh",
+                    label: t.refresh,
+                    disabled: directory.loading,
+                    onAction: () => void directory.load(),
+                  },
+                  {
+                    id: "fix",
+                    label: t.fixNames,
+                    disabled: !data || unknown,
+                    onAction: () =>
+                      fix(selected.size ? [...selected] : undefined),
+                  },
+                  {
+                    id: "past",
+                    label: t.pastNames,
+                    onAction: () => {
+                      setPersonId(null);
+                      setHistoryTrigger((value) => value + 1);
+                    },
+                  },
+                  {
+                    id: "about",
+                    label: t.nicknameHelp,
+                    onAction: setHelpTrigger,
+                  },
+                ]}
+              />
+            }
             value={filters}
             counts={statusCounts(data.members, filters, selected)}
             roles={data.roles}
@@ -260,44 +292,32 @@ export default function MembersPage({
               setPage(0);
             }}
           />
-          <div className="members-selection-tools">
-            <label className="members-checkbox">
-              <input
-                ref={headerCheck}
-                type="checkbox"
-                checked={summary.all}
-                aria-label={t.selectPage}
-                onChange={() => {
-                  if (summary.all)
-                    setSelected(
-                      (old) =>
-                        new Set(
-                          [...old].filter(
-                            (id) =>
-                              !visible.some((row) => row.discord_id === id),
-                          ),
-                        ),
-                    );
-                  else setSelected((old) => selectPage(old, visible));
-                }}
-              />
-              {t.selectPage}
-            </label>
-            <button
-              onClick={() => setSelected((old) => selectMatching(old, rows))}
-            >
-              {t.selectMatching(rows.filter((row) => !row.bot).length)}
-            </button>
-            <span>
-              {t.showing(
-                rows.length ? currentPage * 25 + 1 : 0,
-                Math.min((currentPage + 1) * 25, rows.length),
-                rows.length,
-              )}
-            </span>
-          </div>
+          <p className="members-range">
+            {t.showing(
+              rows.length ? currentPage * 25 + 1 : 0,
+              Math.min((currentPage + 1) * 25, rows.length),
+              rows.length,
+            )}
+          </p>
           {unknown && <p role="alert">{t.selectedLeft}</p>}
           <MemberBulkBar
+            pageSelected={summary.all}
+            pagePartial={summary.partial}
+            onSelectPage={() =>
+              setSelected((old) =>
+                summary.all
+                  ? new Set(
+                      [...old].filter(
+                        (id) => !visible.some((row) => row.discord_id === id),
+                      ),
+                    )
+                  : selectPage(old, visible),
+              )
+            }
+            matchingCount={rows.filter((row) => !row.bot).length}
+            onSelectMatching={() =>
+              setSelected((old) => selectMatching(old, rows))
+            }
             count={selected.size}
             hidden={summary.hidden}
             canRoles
@@ -312,7 +332,7 @@ export default function MembersPage({
             onFix={() => fix([...selected])}
             onClear={() => setSelected(new Set())}
           />
-          <div className="members-directory-scroll" ref={scroll}>
+          <div className="members-directory-scroll">
             <Standardize
               disabled={roles.active || roles.busy || !!action || panelDirty}
               members={data.members}
@@ -321,6 +341,8 @@ export default function MembersPage({
               onOpenChange={setNameOpen}
               onImported={() => void directory.load()}
               hideEntry
+              hideTools
+              externalHistoryTrigger={historyTrigger}
               externalTrigger={fixTrigger}
               selectedIds={fixIds}
               visibleIds={filteredIds}

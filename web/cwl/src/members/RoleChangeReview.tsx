@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import ConfirmDialog from "../ConfirmDialog";
 import RoleSelect from "../RoleSelect";
+import DiscordIdentity, { type DiscordProfile } from "../DiscordIdentity";
+import { MemberPages } from "../memberTimezones/NicknameReview";
+type RefusedTarget = {
+  discord_id: string;
+  reason: string;
+  discord_profile: DiscordProfile | null;
+};
 import type { RoleChoice } from "../CommandExtras";
 import type { RoleReview } from "./useRoleRun";
 import { membersText as t } from "./strings";
@@ -32,7 +39,9 @@ export default function RoleChangeReview({
     [review, setReview] = useState<RoleReview | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [attempt, setAttempt] = useState(0);
+    [attempt, setAttempt] = useState(0),
+    [blocked, setBlocked] = useState<RefusedTarget[]>([]),
+    [blockedPage, setBlockedPage] = useState(0);
   const pending = useRef(false),
     alive = useRef(true);
   useEffect(() => {
@@ -51,6 +60,8 @@ export default function RoleChangeReview({
     pending.current = true;
     setBusy(true);
     setError("");
+    setBlocked([]);
+    setBlockedPage(0);
     try {
       const next = await api<RoleReview>(
         "/manage/members/role-preview",
@@ -87,10 +98,29 @@ export default function RoleChangeReview({
       if (!alive.current) return;
       if (cause instanceof ApiError && [401, 403].includes(cause.status))
         onDenied();
+      const body =
+        cause instanceof ApiError
+          ? (cause.responseData as { code?: string; blocked?: RefusedTarget[] })
+          : undefined;
+      const refused =
+        body?.code === "member_targets_refused" &&
+        Array.isArray(body.blocked) &&
+        body.blocked.every(
+          (row) =>
+            row &&
+            ids.includes(row.discord_id) &&
+            typeof row.reason === "string",
+        )
+          ? body.blocked
+          : [];
+      setBlocked(refused);
       setError(cause instanceof Error ? cause.message : t.roleUnavailable);
       setAttempt((value) => value + 1);
       if (single) {
-        onError(cause instanceof Error ? cause.message : t.roleUnavailable);
+        onError(
+          refused[0]?.reason ||
+            (cause instanceof Error ? cause.message : t.roleUnavailable),
+        );
         onCancel();
       }
     } finally {
@@ -152,12 +182,41 @@ export default function RoleChangeReview({
           label={t.roles}
           roles={roles}
           value={role}
-          onChange={setRole}
+          onChange={(value) => {
+            setRole(value);
+            setBlocked([]);
+            setError("");
+          }}
           disabled={busy}
         />
       )}
       {review?.role.protected && <p role="status">{t.protectedRole}</p>}
       {error && <p role="alert">{error}</p>}
+      {!!blocked.length && (
+        <section aria-label={t.refusedPeople}>
+          <p>{t.refusedCount(blocked.length)}</p>
+          <ul>
+            {blocked
+              .slice(blockedPage * 25, blockedPage * 25 + 25)
+              .map((row) => (
+                <li key={row.discord_id}>
+                  <DiscordIdentity
+                    userId={row.discord_id}
+                    resolvedMember={row.discord_profile || null}
+                    contact={false}
+                    variant="compact"
+                  />
+                  <span>{row.reason}</span>
+                </li>
+              ))}
+          </ul>
+          <MemberPages
+            page={blockedPage}
+            total={blocked.length}
+            onChange={setBlockedPage}
+          />
+        </section>
+      )}
     </ConfirmDialog>
   );
 }

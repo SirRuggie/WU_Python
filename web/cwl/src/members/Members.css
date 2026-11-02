@@ -129,12 +129,12 @@
   margin: 0;
 }
 .members-directory-scroll {
-  overflow: auto;
+  overflow: visible;
   flex: 0 0 auto;
-  height: min(60dvh, 680px);
-  min-height: 320px;
+  height: auto;
+  min-height: 0;
   min-width: 0;
-  padding: 4px;
+  padding: 0;
 }
 .members-selection-tools {
   display: flex;
@@ -255,5 +255,91 @@
   }
   .members-filters {
     gap: 8px;
+  }
+}
+
+.members-search-line {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  min-width: 0;
+}
+.members-search-line > label {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.members-search-line input[type="search"] {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+.members-search-line .members-filter-tools {
+  flex: 0 0 auto;
+  display: block;
+}
+.members-search-line .members-more-filters {
+  position: static;
+}
+.members-search-line .members-more-filters[open] {
+  padding: 0;
+  border: 0;
+}
+.members-search-line .members-more-filters > summary {
+  min-height: 44px;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--roster-border);
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.members-filter-panel {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(300px, calc(100vw - 32px));
+  box-sizing: border-box;
+  border: 1px solid var(--roster-border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface, #24252a);
+  box-shadow: 0 8px 24px #0008;
+}
+.members-range {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.members-bulk-bar {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+@media (max-width: 767px) {
+  .members-workspace {
+    gap: 6px;
+  }
+  .members-workspace > header,
+  .members-search-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .members-bulk-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 6px;
+    padding: 6px;
+  }
+  .members-bulk-bar > button,
+  .members-bulk-bar > label {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 }

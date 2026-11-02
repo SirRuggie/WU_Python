@@ -154,3 +154,46 @@ it("an initial progress outage blocks writes without automatically posting and r
     false,
   );
 });
+
+it("sends the explicit protected-role confirmation after review", async () => {
+  vi.mocked(api).mockImplementation(async (path, method) => {
+    if (method === "POST") return { run_id: "run", state: "queued" };
+    if (path.includes("active=1")) return { runs: [] };
+    return status;
+  });
+  await act(async () => root.render(<Harness />));
+  await act(async () =>
+    latest.confirm({ ...review, role: { ...review.role, protected: true } }),
+  );
+  const write = vi.mocked(api).mock.calls.find((call) => call[1] === "POST")!;
+  expect(write[2]).toEqual({
+    token: review.token,
+    selected: review.selected,
+    protected_confirmed: true,
+  });
+});
+
+it("a second Stop while the first is pending never posts again", async () => {
+  let release: () => void = () => {};
+  vi.mocked(api).mockImplementation(async (path, method) => {
+    if (method === "POST")
+      return await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    if (path.includes("active=1")) return { runs: [{ run_id: "run" }] };
+    return status;
+  });
+  await act(async () => root.render(<Harness />));
+  let first: Promise<void>;
+  await act(async () => {
+    first = latest.stop();
+    await latest.stop();
+  });
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === "POST"),
+  ).toHaveLength(1);
+  await act(async () => {
+    release();
+    await first!;
+  });
+});

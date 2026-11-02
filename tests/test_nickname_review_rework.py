@@ -173,7 +173,7 @@ def test_rate_limit_receipt_defers_next_member(monkeypatch):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("section", ["member_profiles", "fwa_points"])
+@pytest.mark.parametrize("section", ["member_profiles", "roles", "fwa_points"])
 def test_long_rate_limit_receipt_retains_delay_and_never_retries(monkeypatch, section):
     import hikari
 
@@ -183,7 +183,11 @@ def test_long_rate_limit_receipt_retains_delay_and_never_retries(monkeypatch, se
             kind="manage_web_request",
             status="pending",
             section=section,
-            action="save" if section == "member_profiles" else "enable",
+            action=(
+                "save"
+                if section == "member_profiles"
+                else "bulk_one" if section == "roles" else "enable"
+            ),
             guild_id=worker.GUILD_ID,
             user_id="123",
             values={},
@@ -211,7 +215,7 @@ def test_long_rate_limit_receipt_retains_delay_and_never_retries(monkeypatch, se
         await worker._process_requests(None, S(bot_config=coll))
         update = coll.update_one.await_args.args[1]["$set"]
         assert update["status"] == "uncertain"
-        if section == "member_profiles":
+        if section in ("member_profiles", "roles"):
             assert update["retry_not_before"] >= before + 90
         else:
             assert "retry_not_before" not in update

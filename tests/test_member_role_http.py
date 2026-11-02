@@ -30,6 +30,7 @@ def test_every_role_run_route_denies_viewer_before_body_or_provider(monkeypatch)
         request.json.assert_not_awaited()
         directory.assert_not_awaited()
         assert all(call.args[1] == "roles" for call in gate.await_args_list)
+        assert gate.await_args_list[-1].kwargs.get("write") is True
 
     asyncio.run(run())
 
@@ -160,5 +161,128 @@ def test_real_dashboard_policy_requires_existing_member_roles_for_confirmation(
             request.json.assert_awaited_once()
         else:
             request.json.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_real_app_route_table_keeps_old_member_picker_and_ticket_fallback(
+    tmp_path, monkeypatch
+):
+    from aiohttp.test_utils import TestClient, TestServer
+    from cwl_web.app import create_app
+    from cwl_web import manage_roles, member_timezones
+
+    calls = []
+    ticket_only = False
+
+    async def gate(request, section, *args, **kwargs):
+        calls.append(section)
+        if ticket_only and section == "roles":
+            raise web.HTTPForbidden()
+        return {"user_id": USER, "roles": []}
+
+    monkeypatch.setattr(manage_roles, "require_manage", gate)
+    monkeypatch.setattr(
+        manage_roles,
+        "discord",
+        AsyncMock(
+            return_value=[
+                {
+                    "user": {
+                        "id": USER,
+                        "username": "Fixture picker",
+                        "global_name": None,
+                        "avatar": None,
+                    },
+                    "roles": [],
+                    "nick": None,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        manage_roles, "dashboard_grant_roles", AsyncMock(return_value=set())
+    )
+    monkeypatch.setattr(
+        member_timezones,
+        "inventory",
+        AsyncMock(return_value=([], {}, S(), S(), S(), {"user_id": USER})),
+    )
+
+    async def run():
+        nonlocal ticket_only
+        app = create_app(db_path=str(tmp_path / "routes.sqlite"), dev_fixture=True)
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            for restricted in (False, True):
+                ticket_only = restricted
+                response = await client.get("/api/cwl/manage/members")
+                assert response.status == 200
+                data = await response.json()
+                assert (
+                    isinstance(data["options"], list)
+                    and data["options"][0]["value"] == USER
+                )
+                assert "members" not in data
+            assert "ticket_settings" in calls
+            response = await client.get("/api/cwl/manage/members/overview")
+            assert response.status == 200
+            assert (await response.json())["members"] == []
+        finally:
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_undo_preview_rejects_changed_live_roles_without_creating_review(monkeypatch):
+    from contextlib import asynccontextmanager
+    import hikari
+
+    async def run():
+        monkeypatch.setattr(
+            routes, "require_manage", AsyncMock(return_value={"user_id": USER})
+        )
+        role = S(id=int(ROLE), name="Fixture role", permissions=hikari.Permissions.NONE)
+        monkeypatch.setattr(
+            routes,
+            "hierarchy",
+            AsyncMock(return_value=({int(ROLE): role}, S(), S(), S())),
+        )
+        monkeypatch.setattr(routes, "role_is_manageable", lambda *args: True)
+        monkeypatch.setattr(routes.perms, "actor_can_manage_role", lambda *args: True)
+        monkeypatch.setattr(
+            routes, "dashboard_grant_roles", AsyncMock(return_value=set())
+        )
+        db = S(bot_config=S(find_one=AsyncMock(return_value=None)))
+
+        @asynccontextmanager
+        async def mongo(request):
+            yield db
+
+        monkeypatch.setattr(routes, "mongo", mongo)
+        monkeypatch.setattr(
+            routes,
+            "directory",
+            AsyncMock(
+                return_value=[{"user": {"id": USER, "bot": False}, "roles": [ROLE]}]
+            ),
+        )
+        preview = AsyncMock()
+        monkeypatch.setattr(routes.ProfileRuns, "preview", preview)
+        request = S(
+            json=AsyncMock(
+                return_value=dict(
+                    member_ids=[USER],
+                    role_id=ROLE,
+                    operation="remove",
+                    guard_role_ids=[],
+                )
+            )
+        )
+        with pytest.raises(web.HTTPConflict) as error:
+            await routes.preview(request)
+        assert "roles changed" in error.value.text
+        preview.assert_not_awaited()
 
     asyncio.run(run())

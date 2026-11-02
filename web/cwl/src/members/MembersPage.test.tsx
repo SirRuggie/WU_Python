@@ -30,7 +30,7 @@ beforeEach(() => {
   root = createRoot(host);
   vi.mocked(api).mockReset();
   vi.mocked(api).mockImplementation(async (path) => {
-    if (path === "/manage/members")
+    if (path === "/manage/members/overview")
       return {
         members: [
           ...Array.from({ length: 26 }, (_, i) => member(i)),
@@ -74,6 +74,11 @@ it("Select page counts exactly the 25 visible people and hides bots", async () =
   await render();
   expect(host.textContent).toContain("Showing 1-25 of 26");
   expect(host.textContent).not.toContain("Fixture bot");
+  expect(host.querySelector('input[aria-label="Select page"]')).toBeNull();
+  expect(host.textContent).not.toContain("Select all matching");
+  await act(async () =>
+    host.querySelector<HTMLInputElement>(".members-person input")!.click(),
+  );
   const page = host.querySelector<HTMLInputElement>(
     'input[aria-label="Select page"]',
   )!;
@@ -116,7 +121,7 @@ it.each(["profile text", "duplicate role", "country choices"])(
   async (bad) => {
     let healthy = false;
     vi.mocked(api).mockImplementation(async (path) => {
-      if (path !== "/manage/members") return { runs: [] };
+      if (path !== "/manage/members/overview") return { runs: [] };
       const roles = [{ id: ROLE, name: "Officer" }];
       const person = member(0);
       const result = {
@@ -185,7 +190,7 @@ it("one-person role change refreshes immediately and Undo sends the exact post-c
   const confirmations: unknown[] = [],
     previews: { guard_role_ids?: string[] }[] = [];
   vi.mocked(api).mockImplementation(async (path, method, body) => {
-    if (path === "/manage/members")
+    if (path === "/manage/members/overview")
       return {
         members: [{ ...member(0), role_ids: [...roleIds] }],
         roles: [{ id: ROLE, name: "Officer" }],
@@ -329,7 +334,7 @@ it("keeps displayed local time current without repeating directory or progress r
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-11-01T20:00:00Z"));
   vi.mocked(api).mockImplementation(async (path) =>
-    path === "/manage/members"
+    path === "/manage/members/overview"
       ? {
           members: [
             {
@@ -442,4 +447,45 @@ it("shows a confirmed per-person role failure inside the person panel", async ()
   expect(
     document.querySelector<HTMLInputElement>('input[role="switch"]')!.checked,
   ).toBe(false);
+});
+
+it("Clear selection remains available after a refreshed directory loses a selected person", async () => {
+  let departed = false;
+  vi.mocked(api).mockImplementation(async (path) =>
+    path.includes("active=1")
+      ? { runs: [] }
+      : {
+          members: departed ? [member(1)] : [member(0), member(1)],
+          roles: [],
+          manageable_roles: [],
+          countries: [],
+          zones: [],
+          permission: "member_roles",
+        },
+  );
+  await render();
+  await act(async () =>
+    host.querySelector<HTMLInputElement>(".members-person input")!.click(),
+  );
+  departed = true;
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="Actions for Members"]',
+      )!
+      .click(),
+  );
+  const refresh = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((row) => row.textContent?.includes("Refresh members"))!;
+  expect(refresh).toBeTruthy();
+  await act(async () => refresh.click());
+  const clear = button("Select none");
+  expect(clear.disabled).toBe(false);
+  await act(async () => clear.click());
+  expect(host.querySelector(".members-bulk-bar")).toBeNull();
+  await act(async () =>
+    host.querySelector<HTMLInputElement>(".members-person input")!.click(),
+  );
+  expect(host.textContent).toContain("1 selected");
 });

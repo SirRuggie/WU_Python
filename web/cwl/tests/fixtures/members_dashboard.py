@@ -28,7 +28,8 @@ async def sample(request, handler):
     if not request.path.startswith(BASE):return await handler(request)
     fixture.requests.append(dict(method=request.method,path=request.path))
     if zones.state['denied']:return web.json_response({'error':'Fixture access revoked'},status=403)
-    if request.path==BASE:return web.json_response(directory())
+    if request.path == BASE + "/overview":
+        return web.json_response(directory())
     body=await request.json() if request.can_read_body else {}
     if request.path==BASE+'/role-preview':
         selected=body.get('member_ids',[]);role=next((r for r in roles if r['id']==body.get('role_id')),None)

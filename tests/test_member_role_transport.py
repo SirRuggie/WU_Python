@@ -239,3 +239,92 @@ def test_owner_protected_role_requires_explicit_confirmation_in_durable_manifest
         bot.rest.add_role_to_member.assert_awaited_once()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("operation,held", [("add", False), ("remove", True)])
+def test_real_hikari_entity_everyone_role_matches_rest_snapshot(operation, held):
+    import hikari
+    from hikari.impl import EntityFactoryImpl
+
+    async def run():
+        bot, mongo, state, roles, row, parent, policy = fixture()
+        if held:
+            state[int(USER)] = [int(ROLE)]
+        row["values"].update(
+            operation=operation, expected_role_ids=[ROLE] if held else []
+        )
+        factory = EntityFactoryImpl(app=S())
+        native = factory.deserialize_member(
+            {
+                "user": {
+                    "id": USER,
+                    "username": "Owned fixture",
+                    "discriminator": "0",
+                    "avatar": None,
+                    "bot": False,
+                },
+                "roles": [ROLE] if held else [],
+                "joined_at": "2026-01-01T00:00:00Z",
+                "deaf": False,
+                "mute": False,
+                "flags": 0,
+            },
+            guild_id=transport.GUILD_ID,
+        )
+        assert transport.GUILD_ID in native.role_ids
+        original = bot.rest.fetch_member.side_effect
+
+        async def member(guild, uid):
+            return native if int(uid) == int(USER) else await original(guild, uid)
+
+        bot.rest.fetch_member.side_effect = member
+        ctx = await transport.request_context(bot, mongo, row)
+        result = await transport.apply(bot, mongo, row, ctx)
+        assert result["changed"]
+        assert (int(ROLE) in state[int(USER)]) is (operation == "add")
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("error_type", ["ForbiddenError", "NotFoundError"])
+def test_definitive_discord_role_refusal_is_failed_not_uncertain(error_type):
+    import hikari
+
+    async def run():
+        bot, mongo, state, roles, row, parent, policy = fixture()
+        error = getattr(hikari, error_type)(
+            url="https://fixture.invalid", headers={}, raw_body=b"", message="fixture"
+        )
+        bot.rest.add_role_to_member.side_effect = error
+        ctx = await transport.request_context(bot, mongo, row)
+        with pytest.raises(ValueError):
+            await transport.apply(bot, mongo, row, ctx)
+        assert state[int(USER)] == []
+
+    asyncio.run(run())
+
+
+def test_stop_arriving_between_preparation_and_final_guard_blocks_the_write():
+    async def run():
+        bot, mongo, state, roles, row, parent, policy = fixture()
+        ctx = await transport.request_context(bot, mongo, row)
+        original = mongo.bot_config.find_one.side_effect
+        calls = 0
+
+        async def read(query, *args, **kwargs):
+            nonlocal calls
+            result = await original(query, *args, **kwargs)
+            if query.get("_id") == "run":
+                calls += 1
+                if calls == 1:
+                    parent["stop_requested"] = True
+            return result
+
+        mongo.bot_config.find_one.side_effect = read
+        with pytest.raises(ProfileRunStopped):
+            await transport.apply(bot, mongo, row, ctx)
+        assert calls == 2
+        bot.rest.add_role_to_member.assert_not_awaited()
+        assert state[int(USER)] == []
+
+    asyncio.run(run())

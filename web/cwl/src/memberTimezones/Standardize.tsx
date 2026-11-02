@@ -19,6 +19,8 @@ export default function Standardize({
   selectedIds,
   visibleIds,
   hideEntry = false,
+  hideTools = false,
+  externalHistoryTrigger = 0,
 }: {
   disabled: boolean;
   onDenied: () => void;
@@ -32,6 +34,8 @@ export default function Standardize({
   selectedIds?: readonly string[];
   visibleIds?: ReadonlySet<string>;
   hideEntry?: boolean;
+  hideTools?: boolean;
+  externalHistoryTrigger?: number;
 }) {
   const [preview, setPreview] = useState<{
       token: string;
@@ -66,8 +70,8 @@ export default function Standardize({
     };
   }, []);
   useEffect(() => {
-    onOpenChange(!!preview || !!run || !!phase);
-  }, [!!preview, !!run, !!phase, onOpenChange]);
+    onOpenChange(!!preview || !!run || !!phase || (hideTools && past));
+  }, [!!preview, !!run, !!phase, hideTools, past, onOpenChange]);
   function fail(cause: unknown) {
     if (!alive.current) return;
     if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
@@ -184,6 +188,9 @@ export default function Standardize({
   useEffect(() => {
     if (externalTrigger > 0) void review();
   }, [externalTrigger]);
+  useEffect(() => {
+    if (externalHistoryTrigger > 0) setPast(true);
+  }, [externalHistoryTrigger]);
   async function review() {
     if (!start()) return;
     const targetIds = selectedIds?.length ? [...selectedIds] : undefined;
@@ -332,49 +339,58 @@ export default function Standardize({
     setPreview(null);
     setRun(null);
     setError("");
+    if (hideTools) setPast(false);
   }
+  if (hideTools && !preview && !run && !busy && !past && !error) return null;
   return (
     <section className="mt-nickname-review">
-      <div className={`mt-review-entry${hideEntry ? " is-compact" : ""}`}>
-        {!hideEntry && (
+      {!hideTools && (
+        <div className={`mt-review-entry${hideEntry ? " is-compact" : ""}`}>
+          {!hideEntry && (
+            <button
+              disabled={
+                disabled ||
+                busy ||
+                (!!run && ["queued", "stopping"].includes(run.state))
+              }
+              onClick={() => void review()}
+            >
+              {membersText.fixNames}
+            </button>
+          )}
+          {onRefresh && (
+            <button
+              disabled={busy || disabled || refreshing}
+              onClick={onRefresh}
+            >
+              Refresh members
+            </button>
+          )}
+          {!run &&
+            !preview &&
+            !busy &&
+            (hideEntry ? (
+              <details>
+                <summary>{membersText.nicknameHelp}</summary>
+                <p>{membersText.nicknameExplanation}</p>
+              </details>
+            ) : (
+              <p className="mt-review-help">
+                {membersText.nicknameExplanation}
+              </p>
+            ))}
           <button
-            disabled={
-              disabled ||
-              busy ||
-              (!!run && ["queued", "stopping"].includes(run.state))
-            }
-            onClick={() => void review()}
+            className="link-button"
+            disabled={busy}
+            onClick={() => setPast(!past)}
           >
-            {membersText.fixNames}
+            {membersText.pastNames}
           </button>
-        )}
-        {onRefresh && (
-          <button disabled={busy || disabled || refreshing} onClick={onRefresh}>
-            Refresh members
-          </button>
-        )}
-        {!run &&
-          !preview &&
-          !busy &&
-          (hideEntry ? (
-            <details>
-              <summary>{membersText.nicknameHelp}</summary>
-              <p>{membersText.nicknameExplanation}</p>
-            </details>
-          ) : (
-            <p className="mt-review-help">{membersText.nicknameExplanation}</p>
-          ))}
-        <button
-          className="link-button"
-          disabled={busy}
-          onClick={() => setPast(!past)}
-        >
-          {membersText.pastNames}
-        </button>
-      </div>
+        </div>
+      )}
       {error && <p role="alert">{error}</p>}
       {busy && phase && <p role="status">{phase}</p>}
-      {(busy || preview || run) && (
+      {(busy || preview || run || (hideTools && past)) && (
         <button disabled={busy && !phase} onClick={close}>
           Back to members
         </button>

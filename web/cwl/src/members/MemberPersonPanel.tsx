@@ -108,6 +108,9 @@ function PersonRoles({
           onChange={(event) => setQuery(event.target.value)}
         />
       </label>
+      {member.role_editable === false && member.role_skip_reason && (
+        <p role="status">{member.role_skip_reason}</p>
+      )}
       <div className="members-person-role-list">
         {rows.map((role) => (
           <label className="members-checkbox" key={role.id}>
@@ -115,7 +118,12 @@ function PersonRoles({
               type="checkbox"
               role="switch"
               checked={member.role_ids.includes(role.id)}
-              disabled={busy || member.bot || !manageable.has(role.id)}
+              disabled={
+                busy ||
+                member.bot ||
+                member.role_editable === false ||
+                !manageable.has(role.id)
+              }
               onChange={(event) =>
                 onRole(
                   role.id,

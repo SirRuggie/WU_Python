@@ -623,7 +623,8 @@ class ProfileRuns:
         await self.prune()
 
     async def prune(self):
-        # Keep 20 terminal runs at most, for at most 30 days. Never touch active work.
+        # Keep 20 terminal runs per guild/type for 30 days; active and uncertain
+        # role work retain the receipts needed for safe reconciliation.
         rows = (
             await self.collection.find(
                 {"kind": KIND, "state": {"$in": ["done", "stopped"]}}
@@ -633,7 +634,12 @@ class ProfileRuns:
         )
         now = time.time()
         cutoff = now - 30 * 86400
+        ranks, retained_roles = {}, []
         for row in rows:
+            kind = "roles" if row.get("run_type") == "roles" else "profiles"
+            key = (row.get("guild_id"), kind)
+            rank = ranks.get(key, 0)
+            ranks[key] = rank + 1
             uncertain = await self.collection.find_one(
                 {
                     "parent_id": row["_id"],
@@ -641,13 +647,18 @@ class ProfileRuns:
                     "status": "uncertain",
                 }
             )
-            if (row in rows[:20] or uncertain) and row.get("finished_at", 0) >= cutoff:
+            if ((rank < 20 or uncertain) and row.get("finished_at", 0) >= cutoff) or (
+                kind == "roles" and uncertain
+            ):
+                if kind == "roles":
+                    retained_roles.append(row["_id"])
                 continue
             await self.collection.delete_many(
                 {
                     "parent_id": row["_id"],
                     "kind": "manage_web_request",
                     "status": {"$in": list(TERMINAL)},
+                    "role_audit": {"$exists": False},
                 }
             )
             await self.collection.delete_one(
@@ -657,6 +668,22 @@ class ProfileRuns:
                     "state": {"$in": ["done", "stopped"]},
                 }
             )
+
+        # Keep confirmed role receipts independently for 30 days, even when a
+        # parent falls outside its own history cap. Never delete a retained run's
+        # audit, or an uncertain effect that still needs staff reconciliation.
+        await self.collection.delete_many(
+            {
+                "kind": "manage_web_request",
+                "section": "roles",
+                "role_audit": {"$exists": True},
+                "parent_id": {"$nin": retained_roles},
+                "status": {
+                    "$in": [value for value in TERMINAL if value != "uncertain"]
+                },
+                "finished_at": {"$lt": cutoff},
+            }
+        )
 
         # Older crashed requests had no completion timestamp. Establish it once
         # before sorting/pruning, retaining the newest uncertain receipt correctly.

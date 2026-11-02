@@ -1,3 +1,4 @@
+import { membersText as t } from "./strings";
 /** Selection is a stable set of IDs, independent of filtering and pagination. */
 export type SelectableMember = { discord_id: string; bot: boolean };
 export function toggleMember(selected: ReadonlySet<string>, id: string) {
@@ -45,6 +46,6 @@ export function confirmedTargets(
   const available = new Map(known.map((row) => [row.discord_id, row]));
   const ids = [...selected].sort();
   if (ids.some((id) => !available.has(id) || available.get(id)!.bot))
-    throw new Error("Selection changed. Review the selected people.");
+    throw new Error(t.selectionChanged);
   return Object.freeze(ids);
 }

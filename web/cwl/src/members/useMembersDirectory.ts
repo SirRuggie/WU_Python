@@ -41,7 +41,7 @@ export default function useMembersDirectory(
     const timer = window.setTimeout(() => abort.abort(), 45000);
     try {
       const next = await api<MembersDirectory>(
-        "/manage/members",
+        "/manage/members/overview",
         "GET",
         undefined,
         { signal: abort.signal },
@@ -58,6 +58,11 @@ export default function useMembersDirectory(
             typeof row.name !== "string" ||
             (row.nickname !== null && typeof row.nickname !== "string") ||
             typeof row.bot !== "boolean" ||
+            (row.role_editable !== undefined &&
+              typeof row.role_editable !== "boolean") ||
+            (row.role_skip_reason !== undefined &&
+              row.role_skip_reason !== null &&
+              typeof row.role_skip_reason !== "string") ||
             typeof row.status !== "string" ||
             (row.username !== undefined && typeof row.username !== "string") ||
             (row.skip_reason !== null && typeof row.skip_reason !== "string") ||

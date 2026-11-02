@@ -6,7 +6,7 @@ vi.mock("../api", async (original) => ({
   ...(await original<object>()),
   api: vi.fn(),
 }));
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import RoleChangeReview from "./RoleChangeReview";
 const ROLE = "333333333333333333",
   ids = ["111111111111111111", "222222222222222222"];
@@ -35,7 +35,10 @@ const response = () => ({
   role: { id: ROLE, name: "Officer", protected: false },
   operation: "remove" as const,
 });
-async function render(onConfirm = vi.fn().mockResolvedValue(true)) {
+async function render(
+  onConfirm = vi.fn().mockResolvedValue(true),
+  onDenied = vi.fn(),
+) {
   await act(async () =>
     root.render(
       <RoleChangeReview
@@ -44,7 +47,7 @@ async function render(onConfirm = vi.fn().mockResolvedValue(true)) {
         roles={[{ id: ROLE, name: "Officer" }]}
         onCancel={() => {}}
         onConfirm={onConfirm}
-        onDenied={() => {}}
+        onDenied={onDenied}
       />,
     ),
   );
@@ -134,4 +137,35 @@ it("a single protected role still needs explicit confirmation", async () => {
   await act(async () => button("Add role").click());
   expect(confirm).toHaveBeenCalledTimes(1);
   expect(confirm.mock.calls[0][0].role.protected).toBe(true);
+});
+
+it("a refused target keeps the review available and names the blocked person without confirming a subset", async () => {
+  vi.mocked(api).mockRejectedValue(
+    new ApiError("One selected member cannot be changed", 422, undefined, {
+      code: "member_targets_refused",
+      blocked: [
+        {
+          discord_id: ids[1],
+          reason: "This member is above your highest role.",
+          discord_profile: {
+            id: ids[1],
+            display_name: "Blocked fixture person",
+            username: "blocked_fixture",
+            avatar_url: null,
+          },
+        },
+      ],
+    }),
+  );
+  const denied = vi.fn();
+  const confirm = await render(undefined, denied);
+  await act(async () => button("Review changes").click());
+  expect(denied).not.toHaveBeenCalled();
+  expect(confirm).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain(
+    "This member is above your highest role.",
+  );
+  expect(document.body.textContent).toContain("Blocked fixture person");
+  expect(api).toHaveBeenCalledTimes(1);
+  expect(document.querySelector("select")).not.toBeNull();
 });

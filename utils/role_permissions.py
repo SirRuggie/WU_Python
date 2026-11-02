@@ -51,3 +51,10 @@ def role_is_safe_for_pool(guild, bot, role) -> bool:
         role_is_manageable(guild, bot, role)
         and not (role.permissions & hikari.Permissions.ADMINISTRATOR)
     )
+
+
+def member_role_ids(role_ids, guild_id):
+    """Canonical REST/Hikari role snapshot; @everyone is implicit membership."""
+    return sorted(
+        {str(role_id) for role_id in role_ids if str(role_id) != str(guild_id)}
+    )

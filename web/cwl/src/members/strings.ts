@@ -1,5 +1,9 @@
 /** All text owned by the unified Members page. Shared editors keep their own text. */
 export const membersText = {
+  refusedPeople: "People who cannot be changed",
+  refusedCount: (count: number) =>
+    `${count} selected ${count === 1 ? "person cannot" : "people cannot"} be changed. No changes were queued.`,
+  selectionChanged: "Selection changed. Review the selected people.",
   roleRun: "Role changes",
   roleUpdating: "Changing role…",
   roleState: (state: string) =>
@@ -98,7 +102,7 @@ export const membersText = {
   sortZone: "Sort: time zone",
   sortName: "Sort: name",
   sortLabel: "Sort",
-  moreFilters: "Roles and sort",
+  moreFilters: "Filters",
   nicknameHelp: "About nickname changes",
   nicknameExplanation:
     "Saves time zones from nicknames, then shows the changes. Nobody is renamed until you confirm.",

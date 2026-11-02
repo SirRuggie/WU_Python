@@ -201,6 +201,21 @@ async def members_overview(request):
         and role_is_manageable(guild, bot, role)
         and actor_can_manage_role(acting, guild, role)
     ]
+    from extensions.commands.recruit.perms import actor_can_manage_member
+    from types import SimpleNamespace
+
+    for row in rows:
+        target = SimpleNamespace(
+            id=int(row["discord_id"]), role_ids=tuple(map(int, row["role_ids"]))
+        )
+        row["role_editable"] = not row["bot"] and actor_can_manage_member(
+            acting, target, guild
+        )
+        row["role_skip_reason"] = (
+            None
+            if row["role_editable"]
+            else ("Bot account" if row["bot"] else "Server owner or above your role")
+        )
     all_roles = [
         dict(id=str(role.id), name=role.name)
         for role in roles.values()
@@ -463,7 +478,7 @@ async def standardize_status(request):
 
 
 routes = [
-    web.get(API + "/members", members_overview),
+    web.get(API + "/members/overview", members_overview),
     web.get(API + "/member-timezones/runs", standardize_runs),
     web.post(API + "/member-timezones/preview", standardize_preview),
     web.post(API + "/member-timezones/confirm", standardize_confirm),

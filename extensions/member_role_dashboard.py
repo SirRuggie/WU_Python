@@ -9,8 +9,7 @@ from utils.constants import WARRIORS_UNITED_GUILD_ID as GUILD_ID
 from utils.dashboard_access import OWNER_IDS, AccessRepository, dashboard_allowed
 from utils.member_profiles import member_id
 from utils.member_profile_runs import ProfileRuns
-from utils.role_permissions import role_is_manageable
-
+from utils.role_permissions import role_is_manageable, member_role_ids
 
 async def request_context(bot, mongo, row):
     values = row.get("values")
@@ -18,14 +17,29 @@ async def request_context(bot, mongo, row):
         raise ValueError("Choose a reviewed role change.")
     uid = member_id(values.get("discord_id"))
     role_id = member_id(values.get("role_id"))
-    async with asyncio.timeout(20):
-        actor, target, me, role_rows, guild_row = await asyncio.gather(
-            bot.rest.fetch_member(GUILD_ID, int(member_id(row["user_id"]))),
-            bot.rest.fetch_member(GUILD_ID, int(uid)),
-            bot.rest.fetch_member(GUILD_ID, int(bot.get_me().id)),
-            bot.rest.fetch_roles(GUILD_ID),
-            bot.rest.fetch_guild(GUILD_ID),
-        )
+    async def fetch_target():
+        try:
+            return await bot.rest.fetch_member(GUILD_ID, int(uid))
+        except hikari.NotFoundError:
+            raise ValueError("Left the server. No role was changed.") from None
+
+    try:
+        async with asyncio.timeout(20):
+            actor, target, me, role_rows, guild_row = await asyncio.gather(
+                bot.rest.fetch_member(GUILD_ID, int(member_id(row["user_id"]))),
+                fetch_target(),
+                bot.rest.fetch_member(GUILD_ID, int(bot.get_me().id)),
+                bot.rest.fetch_roles(GUILD_ID),
+                bot.rest.fetch_guild(GUILD_ID),
+            )
+    except hikari.NotFoundError:
+        raise ValueError(
+            "Discord could not find a required member or role. No role was changed."
+        ) from None
+    except hikari.ForbiddenError:
+        raise ValueError(
+            "Discord refused access. Check permissions and role hierarchy."
+        ) from None
     roles = {int(role.id): role for role in role_rows}
     guild = NS(
         id=GUILD_ID,
@@ -79,7 +93,9 @@ async def apply(bot, mongo, row, ctx):
     held = int(role.id) in target.role_ids
     if held == desired:
         return dict(message="Already up to date.", changed=False)
-    if sorted(map(str, target.role_ids)) != values["expected_role_ids"]:
+    if member_role_ids(target.role_ids, GUILD_ID) != member_role_ids(
+        values["expected_role_ids"], GUILD_ID
+    ):
         raise ValueError(
             "This person’s roles changed after review. No role was changed."
         )
@@ -88,7 +104,19 @@ async def apply(bot, mongo, row, ctx):
     method = (
         bot.rest.add_role_to_member if desired else bot.rest.remove_role_from_member
     )
-    await method(GUILD_ID, target.id, role.id, reason="Reviewed Members role change")
+    try:
+        async with asyncio.timeout(150):
+            await method(
+                GUILD_ID, target.id, role.id, reason="Reviewed Members role change"
+            )
+    except hikari.NotFoundError:
+        raise ValueError(
+            "Left the server or the role was removed. No role was changed."
+        ) from None
+    except (hikari.ForbiddenError, hikari.BadRequestError):
+        raise ValueError(
+            "Discord refused this role change. Check permissions and role hierarchy."
+        ) from None
     logging.getLogger(__name__).info(
         "Member role confirmed request=%s actor=%s member=%s role=%s added=%s",
         row["_id"],
