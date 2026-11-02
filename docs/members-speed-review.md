@@ -137,3 +137,40 @@ fresh identity, paged directory, hierarchy, profile query, row CPU and JSON befo
 choosing connection reuse, request-local duplicate-read removal or a directory
 cache. A cache needs a separate freshness and authorization design; it is not
 included in this change. No production timing instrumentation is deployed here.
+
+## Log-only production attribution (prompt 117)
+
+One best-effort INFO line is emitted for each Members overview handler request:
+`Members overview timing directory_ms= hierarchy_ms= profiles_ms= rows_ms=
+json_ms= total_ms= members= roles= discord_pages= discord_requests= bytes=`.
+Only numeric values are supplied. No member ID, name, token, exception text or
+response body is logged. Failed requests may have partial/zero counts and zero
+bytes; they are not successful page-load measurements.
+
+Directory includes paging and its self lookup; hierarchy includes its two
+existing Discord reads; profiles includes the one existing profile query; rows
+includes inventory and role-editability projection; JSON includes the unchanged
+response construction. Total measures the handler, including its existing auth
+and protected-role work, and excludes logger and client/network transfer time.
+Role count includes the guild's everyone role. Pages count page attempts; the
+Discord counter tracks existing request dispatches, including auth when it runs
+inside the handler. Bytes count the uncompressed JSON body, not billed quota.
+
+The recorder is bound only to this request and removed afterward. The shared
+Discord adapter increments a counter around its existing dispatch; it performs
+no extra call and is a no-op on other requests. Clock, constructor, counter and
+logger failures are best-effort and cannot change authorization or response
+outcomes. There is no flag, setting, cache change or new polling.
+
+Focused tests verify one numeric line without identities, exact response bytes
+with/without timing, unchanged IO counts, actual injected-dispatch counting,
+constructor/clock/logger failure and unchanged authorization denial. Full gates
+for this delta are pending.
+
+Approval 376 applies only after Claude accepts the new delta; capture 116 goes
+first. The dashboard needs the optimized helper in its new backend archive,
+but the bot does not need that performance-only implementation changed live: its
+permission results are identical, so no bot restart is required for this batch.
+After approved release, nobody probes Members. Observe a real successful page
+load's timing line, then report its stage values and limits before attributing
+the production delay.
