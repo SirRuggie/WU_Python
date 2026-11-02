@@ -8,7 +8,7 @@ tour-numbering correction. No production data or provider/API probe is used.
 - `Main CWL`, `Lazy CWL` and the FWA sentence remain per owner 378. Exact rule
   descriptions use the supplied Main/Lazy lines. Every tour title/text stays
   verbatim; only card ordinals and their total change. The original eight decorative groups
-retain their layout and advances through explicit `progressGroup` data.
+  retain their layout and advances through explicit `progressGroup` data.
 - The compact workflow strip retains visual `My clan`, `Build`, `Finalize` and
   `Announce` for 320 px widths, with full accessible destination names. All page
   headings, other links and navigation use their complete names.
@@ -35,7 +35,7 @@ retain their layout and advances through explicit `progressGroup` data.
   Signup for CWL under later review 137, item 6; no new help, account request or
   inference of missing links is introduced. No new controls are needed.
 - Staff-only Home weight and polling controls remain for existing editors;
-  ordinary members omit them. The30-second polling logic and manual Refresh are
+  ordinary members omit them. The 30-second polling logic and manual Refresh are
   unchanged. Non-CWL sign-in branding and isolated fixture warnings remain.
 
 ## End-to-end review
@@ -49,4 +49,31 @@ Use isolated member/staff data at 320 px and 1440 px; inspect longer headings/bu
 no horizontal overflow, touch targets, keyboard focus and Back. These checks do
 not prove real Discord delivery or assistive-technology coverage.
 
-Gates and rendered evidence will be recorded after the final 145 copy handoff.
+Final frozen runtime `5a49d7e` passed 1,555 frontend tests in 268 files,
+TypeScript and production build. Four genuine assertion mutants were killed:
+repeated tour five, thirteen decorative dots, raw Bonus month and member-only
+weight visibility. Source was restored before the final full run. An initial
+raw-month mutant selected no test and is not counted.
+
+Real Chrome checked 22 isolated page/panel cases at 320 and 1440 px: member Home,
+Signup, My signups, assignments; staff Build, Finalize, Announcements, Results,
+Bonus, Signup reminders and Hosting clan settings. No horizontal overflow,
+browser errors or post-login writes occurred; staff rows stayed identical and
+Escape closed the clan panel. Another 26 cases walked every tour card at both
+widths: thirteen unique ordinals, eight original groups, original routes/practice,
+footer fit and unchanged narrative text. Narrow Signup, assignments and clan
+settings, wide Build and tour images were visually reviewed. Confirmation
+cancellation remains covered by component regressions, not browser submission.
+
+The initial thirteen-dot interpretation overflowed the narrow footer and was
+corrected to the approved eight-group layout. Stale copy assertions and one
+negative-assertion replacement were corrected before final pass; initial logs
+remain. Semantic TypeScript AST comparison pins unchanged fetch/API arguments
+and existing link destinations across 39 runtime files. Backend and CSS are
+unchanged. Existing large-chunk build warnings remain outside this scope.
+
+Evidence: `.local/p119-ready-evidence.json`, `.local/p119-layout/`,
+`.local/p119-tour-browser-groups.log` and `.local/p119-api-proof.json`. These are
+local fixture checks, not deployment, live Discord delivery or full assistive
+technology coverage. No backend full suite was repeated for this frontend-only
+wording and explicit tour-counter change. Release remains held.
