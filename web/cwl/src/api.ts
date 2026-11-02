@@ -119,7 +119,14 @@ export async function api<T>(
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.headers.get("X-Dashboard-Storage-Degraded") === "1")
-      window.dispatchEvent(new Event(STORAGE_UNAVAILABLE));
+      window.dispatchEvent(
+        new CustomEvent(STORAGE_UNAVAILABLE, {
+          detail: {
+            attention:
+              response.headers.get("X-Dashboard-Storage-Attention") === "1",
+          },
+        }),
+      );
     handleAuthorizationFailure(response.status, path);
     const message =
       typeof data?.error === "string"

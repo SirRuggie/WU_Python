@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 
 import aiohttp
 from aiohttp import web
-from pymongo import timeout
 from .mongo_client import get_client, lifecycle as mongo_lifecycle
 
 API = '/api/cwl/manage'
@@ -22,8 +21,9 @@ async def mongo(request):
             client = get_client(request.app)
             if client is None:
                 raise web.HTTPServiceUnavailable(text='Server settings are not connected.')
-        with timeout(15):
-            yield client
+        # The startup-owned driver applies timeoutMS to each Mongo operation.
+        # No CSOT context may span Discord waits or task creation here.
+        yield client
     except PyMongoError as exc:
         raise web.HTTPServiceUnavailable(text='Server settings are unavailable. Try again shortly.') from exc
 

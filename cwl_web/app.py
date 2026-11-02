@@ -1924,6 +1924,9 @@ async def errors(request, handler):
     except DashboardDurabilityError as exc:
         response = web.json_response({"error": str(exc)}, status=503)
         response.headers["X-Dashboard-Storage-Degraded"] = "1"
+        from utils.cwl_dashboard_state import DashboardDurabilityAttention
+        if isinstance(exc, DashboardDurabilityAttention):
+            response.headers["X-Dashboard-Storage-Attention"] = "1"
     except ProviderUnavailable as exc:
         response = web.json_response({"error": str(exc)}, status=503)
         if getattr(exc, "read_retries_exhausted", False) or getattr(exc, "read_retry_blocked", False):

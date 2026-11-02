@@ -591,10 +591,11 @@ async def _poll(bot, mongo):
 
         await activate(mongo)
         state.activation_at = time.monotonic()
-    await _expire_requests(mongo)
-    # Reuse only a fresh confirmed-empty observation from the indexed one-second
-    # lane. A failed/missing/stale read keeps the original ten-second fallback.
-    if time.monotonic() - state.ready_at <= 2 and state.ready is None:
+    # Cache sweeps only after a fresh confirmed-empty work observation. Pending
+    # or unknown work must retain the original immediate stale-claim cleanup.
+    idle = time.monotonic() - state.ready_at <= 2 and state.ready is None
+    await _expire_requests(mongo, idle=idle)
+    if idle:
         from utils.member_profile_runs import ProfileRuns
 
         await ProfileRuns(mongo).prune_throttled(time.time())
@@ -602,9 +603,9 @@ async def _poll(bot, mongo):
     return await _process_requests(bot, mongo)
 
 
-async def _expire_requests(mongo):
+async def _expire_requests(mongo, *, idle=False):
     state = state_for(mongo)
-    if time.monotonic() - state.sweep_at < 60:
+    if idle and time.monotonic() - state.sweep_at < 60:
         return
     # A crashed sending claim is never replayed: the Discord effect may exist.
     await mongo.bot_config.update_many(

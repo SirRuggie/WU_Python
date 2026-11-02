@@ -15,9 +15,10 @@ adapter test injections are retained, and unavailable Todo messages are
 unchanged. Constructing a routed client creates collection handles, not indexes.
 
 The async pool has appName `wu-dashboard-http`, maxPoolSize 20, server selection
-budget 5 seconds and default operation budget 15 seconds. Per-operation CSOT
-contexts retain Todo and family reads at 5 seconds, Manage bridge at 10 seconds
-and server-management at 15 seconds. Existing outer Todo seven-second bounds
+budget 5 seconds and default operation budget 15 seconds. Todo and family lookup helpers retain 5-second CSOT bounds. Manage bridge
+collection operations and cursor consumption each get a fresh 10-second budget;
+server-management uses the driver’s 15-second per-operation default. Neither
+adapter holds CSOT across a workflow, Discord wait or background-task creation. Existing outer Todo seven-second bounds
 also remain. Parallel requests share a client, not their timeout contexts.
 
 The synchronous durability client stays separate because publishing is inside
@@ -40,7 +41,9 @@ messages, app cleanup once and standalone provider cleanup once. These pool cont
 ## Worker cadence and recovery
 
 The bot pool is named `wu-bot`, limited to 20 connections per server, with a
-3-second selection budget and 30-second default Mongo operation budget. The
+3-second serverSelectionTimeoutMS setting and 30-second default Mongo operation
+budget. CSOT can override that selection setting: a dead server may consume
+the full 30 seconds, so this is not a three-second failure guarantee. The
 30-second choice leaves more maintenance headroom than the first 10-second
 prototype; it does not change Discord edit/worker/lease budgets (150/200 seconds).
 Index bootstrap, clan-history bulk writes, legacy full CWL cursors, full profile
@@ -54,7 +57,8 @@ maintenance remains every ten seconds with successful writes at most every 30
 seconds, preserving the 60-second readiness window. Failed writes never advance
 the cache clock. Band status writes on change or after a minute. Base-image data
 is projected and validated atomically, then cached for a minute; failures are not
-cached. Expiry sweeps and bulk activation have a minute cadence. The ten-second
+cached. Only confirmed-empty expiry sweeps have a minute cache; pending or unknown work
+sweeps immediately. Bulk activation retains its minute cadence. The ten-second
 CWL admission tick owns one background delivery task, preventing slow delivery
 from blocking that ticker or admitting duplicate drivers; the shared side-effect
 lane is retained. Per-step timing distinguishes queue wait from actual work.
@@ -83,8 +87,10 @@ fail closed. Matching local role progress is merged through its existing storage
 owner; confirmed terminal receipts survive, and newly accepted intents without
 local proof stay paused. Mongo ownership is confirmed before the local commit;
 only after commit is the fence cleared. No notification or role action is retried
-by recovery. The lifecycle keeps retrying recovery instead of requiring restart.
-While fenced, the API error surface says storage is recovering, with a reminder
+by recovery. Transient outages keep retrying recovery instead of requiring restart. Permanent
+foreign-owner, corrupt-image or schema fences log once at CRITICAL and retain a
+separate needs-attention state for staff. A later transient error cannot downgrade
+that notice. While transiently fenced, the API says storage is recovering, with a reminder
 to check saved results before retry. A storage-only response header also shows
 staff one short line at the top of the existing shell. It does not sign staff out,
 change authorization, add polling or retry a possibly accepted write. Only a
@@ -198,3 +204,18 @@ restore, protected state and staff-write proof, no queued Standardize/bulk work,
 readiness, rollback and public hashes. A necessary bot restart requires the
 210-second drain. Ordinary post-release timing, skips, connection/transfer rates
 and Claude read-only smoke remain required; a local build is not deployment.
+
+
+## Prompt 105 rework checkpoint
+
+The earlier whole-workflow CSOT contexts were incorrect: Mongo’s absolute block
+deadline included non-Mongo waits and was inherited by spawned tasks. The shared
+driver’s timeoutMS is per operation; the bridge applies its shorter bound only
+inside collection/cursor calls. See [MongoDB CSOT documentation](https://www.mongodb.com/docs/languages/python/pymongo-driver/current/connect/connection-options/csot/).
+
+Fast aggregate worker timings now use DEBUG; slow steps retain INFO. SQLite-open
+failures are inside the guarded recovery path. The uncertain-save message asks
+staff to wait for recovery and check the result. Formatter-only changes in four
+legacy files were restored using AST-identical statement replacements, preserving
+all semantic changes. Final real-Mongo, mutation and full regression evidence is
+still pending; this checkpoint is not READY.

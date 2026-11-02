@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 from aiohttp import web
-from pymongo import timeout
+from .mongo_operations import BudgetedCollection
 from .mongo_client import get_client
 from pymongo.errors import PyMongoError
 from utils import cwl_campaign
@@ -29,11 +29,10 @@ async def _mongo(request):
     if client is None:
         raise web.HTTPServiceUnavailable(text='Bot campaign database is not configured')
     routes = load_routes()
-    facade = SimpleNamespace(**{name: collection_for(client, name, routes=routes)
+    facade = SimpleNamespace(**{name: BudgetedCollection(collection_for(client, name, routes=routes), 10)
                                for name in ('bot_config', 'cwl_reminder', 'cwl_pending_reminders')})
     try:
-        with timeout(10):
-            yield facade
+        yield facade
     except PyMongoError as exc:
         raise web.HTTPServiceUnavailable(text='Bot campaign database is unavailable; refresh before retrying') from exc
 

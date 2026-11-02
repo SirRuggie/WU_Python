@@ -2,7 +2,7 @@
 
 SQLite remains the relational working copy. A changed transaction is published
 in Mongo *before* its local commit/success response. Only one leased writer may
-publish. Ambiguous writes fence this process until recovery from Mongo on restart.
+publish. Ambiguous writes fence this process until authoritative recovery from Mongo.
 """
 
 from contextlib import contextmanager
@@ -31,6 +31,10 @@ LEASE_SECONDS = 90
 
 class DashboardDurabilityError(RuntimeError):
     """Do not report success or retry external delivery after this error."""
+
+
+class DashboardDurabilityAttention(DashboardDurabilityError):
+    """A permanent fence requires operator attention, not a transient retry."""
 
 
 def utcnow():
@@ -121,7 +125,7 @@ def reconcile_sqlite(target, recovered):
 
     names = tables(target)
     if names != tables(recovered):
-        raise DashboardDurabilityError(
+        raise DashboardDurabilityAttention(
             "Recovery schema differs from the running dashboard."
         )
 
@@ -132,7 +136,7 @@ def reconcile_sqlite(target, recovered):
 
     owned_triggers = triggers(target)
     if owned_triggers != triggers(recovered):
-        raise DashboardDurabilityError(
+        raise DashboardDurabilityAttention(
             "Recovery trigger schema differs from the running dashboard."
         )
 
@@ -150,7 +154,7 @@ def reconcile_sqlite(target, recovered):
             for row in recovered.execute("PRAGMA table_info(" + quoted(name) + ")")
         ]
         if current != prior:
-            raise DashboardDurabilityError(
+            raise DashboardDurabilityAttention(
                 "Recovery columns differ from the running dashboard."
             )
         columns[name] = [row[1] for row in current]
@@ -196,7 +200,7 @@ def reconcile_sqlite(target, recovered):
     for definition in owned_triggers.values():
         target.execute(definition)
     if target.execute("PRAGMA foreign_key_check").fetchone():
-        raise DashboardDurabilityError("Recovery rows violate current relationships.")
+        raise DashboardDurabilityAttention("Recovery rows violate current relationships.")
 
 
 @contextmanager
@@ -209,7 +213,7 @@ def database_lock(path):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise DashboardDurabilityError(
+            raise DashboardDurabilityAttention(
                 "The dashboard database is already in use."
             ) from None
         try:
@@ -452,7 +456,20 @@ class MongoDashboardState:
     def load_role_progress(self):
         return self.collection.find_one({"_id": self.key + ":pool-roles-progress"})
 
+    def require_attention(self, reason):
+        if not getattr(self, "attention_reason", None):
+            self.attention_reason = reason
+            logging.getLogger(__name__).critical(
+                "Dashboard storage needs attention; saves remain fenced: %s", reason
+            )
+        self.poisoned = True
+        return DashboardDurabilityAttention(
+            "Dashboard storage needs attention. Saves are unavailable; contact an administrator."
+        )
+
     def check(self):
+        if getattr(self, "attention_reason", None):
+            raise self.require_attention(self.attention_reason)
         if self.poisoned:
             raise DashboardDurabilityError(
                 "Dashboard storage is recovering; saves are temporarily unavailable. Check saved results before retrying."
@@ -466,7 +483,9 @@ class MongoDashboardState:
                 {"$set": {"lease_until": utcnow() + timedelta(seconds=LEASE_SECONDS)}},
             )
             if result.matched_count != 1:
-                raise DashboardDurabilityError("Dashboard writer lease was lost.")
+                raise self.require_attention("Dashboard writer lease was lost.")
+        except DashboardDurabilityAttention:
+            raise
         except Exception:
             self.poisoned = True
             raise DashboardDurabilityError(
@@ -493,18 +512,18 @@ class MongoDashboardState:
                 },
             )
             if result.matched_count != 1:
-                raise DashboardDurabilityError(
-                    "Dashboard writer lease or revision was lost."
-                )
+                raise self.require_attention("Dashboard writer lease or revision was lost.")
             self.revision += 1
             self._known_head = receipt
             self._receipts = {token: receipt}
+        except DashboardDurabilityAttention:
+            raise
         except Exception:
             # Mongo may have accepted the write. Never retry using the stale
             # local copy, and never let a notification silently retry either.
             self.poisoned = True
             raise DashboardDurabilityError(
-                "Mongo could not confirm this save. Changes may have reached recovery storage. Restart and check the saved result before retrying."
+                "Mongo could not confirm this save. Changes may have reached recovery storage. Wait for storage recovery, then check the saved result before retrying."
             ) from None
 
     @staticmethod
@@ -523,6 +542,8 @@ class MongoDashboardState:
         fence is essential: reading the old image alone cannot rule out a timed
         out write reaching Mongo after the read.
         """
+        if getattr(self, "attention_reason", None):
+            raise self.require_attention(self.attention_reason)
         if not self.poisoned or not self.acquired:
             raise DashboardDurabilityError("No fenced dashboard recovery is pending.")
         try:
@@ -536,10 +557,11 @@ class MongoDashboardState:
                     and fingerprint not in self._receipts.values()
                 )
             ):
-                raise DashboardDurabilityError(
-                    "Recovery head is not a known writer receipt."
-                )
-            checked = decode(head)
+                raise self.require_attention("Recovery head is not a known writer receipt.")
+            try:
+                checked = decode(head)
+            except (DashboardDurabilityError, sqlite3.DatabaseError, ValueError, KeyError, TypeError, zlib.error):
+                raise self.require_attention("Authoritative recovery image is corrupt or unsupported.") from None
             checked.close()
             # Reuse one receipt per base/image across ambiguous recovery retries.
             base, digest, prior_token = fingerprint
@@ -611,7 +633,7 @@ class MongoDashboardState:
             {"$set": {"lease_until": utcnow() + timedelta(seconds=LEASE_SECONDS)}},
         )
         if result.matched_count != 1:
-            raise DashboardDurabilityError("Recovery writer lease was lost.")
+            raise self.require_attention("Recovery writer lease was lost.")
 
     def finish_recovery(self, document):
         """Called only after the caller has committed the reconciled local copy."""

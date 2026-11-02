@@ -57,10 +57,6 @@ def test_all_async_http_paths_share_startup_pool_and_cleanup_once():
             todo, "timeout", budget
         ), patch.object(
             providers, "timeout", budget
-        ), patch.object(
-            manage_bridge, "timeout", budget
-        ), patch.object(
-            server_management, "timeout", budget
         ):
             lifetime = mongo_client.lifecycle(app)
             await anext(lifetime)
@@ -74,13 +70,14 @@ def test_all_async_http_paths_share_startup_pool_and_cleanup_once():
             async with server_management.mongo(request) as shared:
                 assert shared is client
             async with manage_bridge._mongo(request) as facade:
-                assert facade.bot_config is client.bot_config
+                assert facade.bot_config.collection is client.bot_config
+                assert facade.bot_config.seconds == 10
             assert history.await_args.args[0] is client
             assert outcomes.await_args.args[0] is client
             factory.assert_called_once()
             client.close.assert_not_awaited()
             assert budgets.count(5) == 6
-            assert budgets.count(10) == 1 and budgets.count(15) == 1
+            assert budgets.count(10) == 0 and budgets.count(15) == 0
             try:
                 await anext(lifetime)
             except StopAsyncIteration:

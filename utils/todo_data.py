@@ -64,8 +64,8 @@ _fetch_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
     weakref.WeakValueDictionary()
 )
 
-TTL_LINKS = 6 * 60 * 60  # linking is a rare manual act
-TTL_WAR_ACTIVE = 120  # short-lived active-war application cache
+TTL_LINKS = 6 * 60 * 60      # linking is a rare manual act
+TTL_WAR_ACTIVE = 120         # short-lived active-war application cache
 
 # The player cache is THE PLAYER->CLAN MAPPING, and that is why it gets its own
 # constant instead of borrowing TTL_WAR_ACTIVE as it used to. Staleness here has
@@ -87,10 +87,10 @@ TTL_WAR_ACTIVE = 120  # short-lived active-war application cache
 # Refresh - which drops this prefix - fixes it immediately. Clan changes are
 # rare; opening the dashboard is not.
 TTL_PLAYER = 10 * 60
-TTL_WAR_IDLE = 15 * 60  # notInWar / warEnded - stable for hours
-TTL_CWL_ABSENT = 60 * 60  # not in CWL - stable for WEEKS outside the season
-TTL_CWL_ACTIVE = 600  # rounds advance once per day
-TTL_ERROR = 60  # coalesce a brief outage without hiding it for long
+TTL_WAR_IDLE = 15 * 60       # notInWar / warEnded - stable for hours
+TTL_CWL_ABSENT = 60 * 60     # not in CWL - stable for WEEKS outside the season
+TTL_CWL_ACTIVE = 600         # rounds advance once per day
+TTL_ERROR = 60               # coalesce a brief outage without hiding it for long
 
 # Simultaneous player lookups. coc.py's own BasicThrottler is the real ceiling -
 # it spaces request STARTS ~33ms apart across the whole client (throttle_limit
@@ -368,8 +368,7 @@ def live_keys(prefix: str) -> int:
     """
     now = time.monotonic()
     return sum(
-        1
-        for key, (expires_at, _f, _v) in _cache.items()
+        1 for key, (expires_at, _f, _v) in _cache.items()
         if expires_at > now and key.startswith(prefix)
     )
 
@@ -388,7 +387,9 @@ def live_keys_for(prefix: str, identifiers: list[str]) -> tuple[int, int]:
     }
     now = time.monotonic()
     live = sum(
-        1 for key in keys if (entry := _cache.get(key)) is not None and entry[0] > now
+        1
+        for key in keys
+        if (entry := _cache.get(key)) is not None and entry[0] > now
     )
     return live, len(keys)
 
@@ -453,14 +454,13 @@ def _gap_note(unreadable: int, what: str) -> str:
 @dataclass(frozen=True, slots=True)
 class Row:
     """One actionable account. Rendered as a single line."""
-
     account: str
     tag: str
     clan_name: str
     clan_tag: str
     used: int
     limit: int
-    ends_at: int | None  # unix seconds, for <t:N:R>. None if unknown.
+    ends_at: int | None   # unix seconds, for <t:N:R>. None if unknown.
     # "inWar" or "preparation". A preparation row is REAL WORK - you cannot
     # attack yet, but you owe the attack and the deadline is already fixed.
     # Dropping these is what made the dashboard say "all caught up" while three
@@ -483,7 +483,6 @@ class ViewData:
     ok=False means WE COULD NOT READ THIS. It must never render as "all caught
     up" - see rule 2 at the top of this module.
     """
-
     rows: list[Row] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     ok: bool = True
@@ -505,14 +504,13 @@ class ViewData:
 @dataclass(frozen=True, slots=True)
 class Account:
     """A resolved linked account and where it currently sits."""
-
     tag: str
     name: str
     clan_tag: str | None
     clan_name: str | None
     town_hall: int = 0
-    clan_badge: str | None = None  # badge URL, for the per-clan Thumbnail
-    share_link: str | None = None  # official in-game player-profile link
+    clan_badge: str | None = None   # badge URL, for the per-clan Thumbnail
+    share_link: str | None = None   # official in-game player-profile link
 
 
 # ---------------------------------------------------------------------------
@@ -520,12 +518,7 @@ class Account:
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_one_player(
-    coc_client: coc.Client,
-    tag: str,
-    sem: asyncio.Semaphore,
-    lookup_timeout: float | None = None,
-):
+async def _fetch_one_player(coc_client: coc.Client, tag: str, sem: asyncio.Semaphore, lookup_timeout: float | None = None):
     """One player lookup. NEVER RAISES - returns (tag, Account|None, error|None).
 
     Swallowing here rather than at the gather is deliberate. asyncio.gather with
@@ -542,9 +535,7 @@ async def _fetch_one_player(
                 if lookup_timeout is None:
                     player = await coc_client.get_player(tag)
                 else:
-                    player = await asyncio.wait_for(
-                        coc_client.get_player(tag), lookup_timeout
-                    )
+                    player = await asyncio.wait_for(coc_client.get_player(tag), lookup_timeout)
         except coc.NotFound:
             # A linked tag for an account that no longer exists. Common with
             # abandoned alts; not an error worth surfacing to the user.
@@ -563,19 +554,15 @@ async def _fetch_one_player(
 
     clan = getattr(player, "clan", None)
     badge = getattr(getattr(clan, "badge", None), "medium", None) if clan else None
-    return (
-        tag,
-        Account(
-            tag=player.tag,
-            name=player.name,
-            clan_tag=clan.tag if clan else None,
-            clan_name=clan.name if clan else None,
-            town_hall=getattr(player, "town_hall", 0) or 0,
-            clan_badge=badge,
-            share_link=getattr(player, "share_link", None),
-        ),
-        None,
-    )
+    return tag, Account(
+        tag=player.tag,
+        name=player.name,
+        clan_tag=clan.tag if clan else None,
+        clan_name=clan.name if clan else None,
+        town_hall=getattr(player, "town_hall", 0) or 0,
+        clan_badge=badge,
+        share_link=getattr(player, "share_link", None),
+    ), None
 
 
 def new_semaphore(concurrency: int = FETCH_CONCURRENCY) -> asyncio.Semaphore:
@@ -606,17 +593,13 @@ async def gather_clans(sem: asyncio.Semaphore, clan_tags: list[str], fn):
     guarantees that regardless of completion order, which is what keeps the row
     order on the panel stable between identical runs.
     """
-
     async def one(clan_tag: str):
         try:
             async with sem:
                 return await fn(clan_tag)
         except Exception as exc:  # noqa: BLE001 - one clan must not kill a view
-            print(
-                f"[todo] clan fetch failed for {clan_tag}: "
-                f"{type(exc).__name__}: {exc}",
-                flush=True,
-            )
+            print(f"[todo] clan fetch failed for {clan_tag}: "
+                  f"{type(exc).__name__}: {exc}", flush=True)
             return ("error", None)
 
     budget = _clan_batch_budget.get()
@@ -759,9 +742,7 @@ async def _get_war(
             cache_put(key, result, TTL_ERROR)
             return result
         except Exception as exc:  # noqa: BLE001
-            print(
-                f"[todo] war lookup errored for {clan_tag}: {type(exc).__name__}: {exc}"
-            )
+            print(f"[todo] war lookup errored for {clan_tag}: {type(exc).__name__}: {exc}")
             result = ("error", None)
             cache_put(key, result, TTL_ERROR)
             return result
@@ -838,9 +819,7 @@ async def _get_cwl_round(
             cache_put(key, result, TTL_ERROR)
             return result
         except Exception as exc:  # noqa: BLE001
-            print(
-                f"[todo] CWL group lookup errored for {clan_tag}: {type(exc).__name__}: {exc}"
-            )
+            print(f"[todo] CWL group lookup errored for {clan_tag}: {type(exc).__name__}: {exc}")
             result = ("error", None)
             cache_put(key, result, TTL_ERROR)
             return result
@@ -856,15 +835,15 @@ async def _get_cwl_round(
             cache_put(key, result, TTL_CWL_ABSENT)
             return result
 
-        # coc.py filters "#0" placeholder war tags out of rounds when building the
-        # model, so the last remaining round is the newest one that has been drawn.
-        #
-        # Check the PREVIOUS round too. During a round transition the newest round
-        # is in `preparation` while the previous one is still `inWar` with attacks
-        # owed - and the attacks owed are what this dashboard is for. ClashKingBot
-        # handles the same case via get_current_war(cwl_round=current_preparation)
-        # (classes/bot.py:664); this is the cheaper equivalent, costing one extra
-        # round scan only during the transition window.
+    # coc.py filters "#0" placeholder war tags out of rounds when building the
+    # model, so the last remaining round is the newest one that has been drawn.
+    #
+    # Check the PREVIOUS round too. During a round transition the newest round
+    # is in `preparation` while the previous one is still `inWar` with attacks
+    # owed - and the attacks owed are what this dashboard is for. ClashKingBot
+    # handles the same case via get_current_war(cwl_round=current_preparation)
+    # (classes/bot.py:664); this is the cheaper equivalent, costing one extra
+    # round scan only during the transition window.
         candidates: list[str] = []
         for round_tags in (rounds[-1], rounds[-2] if len(rounds) > 1 else []):
             for war_tag in round_tags:
@@ -876,11 +855,11 @@ async def _get_cwl_round(
             cache_put(key, result, TTL_CWL_ABSENT)
             return result
 
-        # Prefer a currently actionable Battle Day round over preparation; remember
-        # the newest preparation fallback.  A league response can briefly retain
-        # the previous round as ``inWar`` after its end timestamp, and returning
-        # that stale object used to hide the newly drawn preparation round once the
-        # view correctly suppressed its expired deadline.
+    # Prefer a currently actionable Battle Day round over preparation; remember
+    # the newest preparation fallback.  A league response can briefly retain
+    # the previous round as ``inWar`` after its end timestamp, and returning
+    # that stale object used to hide the newly drawn preparation round once the
+    # view correctly suppressed its expired deadline.
         fallback = None
 
         for war_tag in candidates:
@@ -903,9 +882,7 @@ async def _get_cwl_round(
                     cache_put(key, result, TTL_ERROR)
                     return result
                 except Exception as exc:  # noqa: BLE001
-                    print(
-                        f"[todo] CWL war {war_tag} errored: {type(exc).__name__}: {exc}"
-                    )
+                    print(f"[todo] CWL war {war_tag} errored: {type(exc).__name__}: {exc}")
                     result = ("error", None)
                     cache_put(key, result, TTL_ERROR)
                     return result
@@ -919,18 +896,14 @@ async def _get_cwl_round(
 
             ours = getattr(war, "clan", None)
             theirs = getattr(war, "opponent", None)
-            if not (
-                (ours is not None and ours.tag == clan_tag)
-                or (theirs is not None and theirs.tag == clan_tag)
-            ):
+            if not ((ours is not None and ours.tag == clan_tag)
+                    or (theirs is not None and theirs.tag == clan_tag)):
                 continue
 
             starts = _starts_at(war)
             ends = _ends_at(war)
             actionable_state = _actionable_war_state(
-                _state(war),
-                starts,
-                ends,
+                _state(war), starts, ends,
             )
             if actionable_state == "inWar":
                 result = ("war", war)
@@ -948,9 +921,7 @@ async def _get_cwl_round(
 
         # The group said we are in CWL but no war in either round names this clan.
         # That is not "nothing to do" - it is a shape we did not expect. Say so.
-        print(
-            f"[todo] CWL group for {clan_tag} listed rounds but no war matched the clan"
-        )
+        print(f"[todo] CWL group for {clan_tag} listed rounds but no war matched the clan")
         result = ("error", None)
         cache_put(key, result, TTL_ERROR)
         return result
@@ -1030,8 +1001,7 @@ def _side_member(side, player_tag: str):
         target = str(player_tag or "").upper()
         return next(
             (
-                member
-                for member in (getattr(side, "members", None) or [])
+                member for member in (getattr(side, "members", None) or [])
                 if str(getattr(member, "tag", "")).upper() == target
             ),
             None,
@@ -1061,13 +1031,11 @@ def _accounts_by_war_clan(
         for candidate in candidates.get(account.tag.upper(), ()):
             if not getattr(candidate, f"check_{kind}", True):
                 continue
-            options.append(
-                (
-                    getattr(candidate, "clan_tag", ""),
-                    getattr(candidate, "clan_name", None),
-                    getattr(candidate, "clan_badge", None),
-                )
-            )
+            options.append((
+                getattr(candidate, "clan_tag", ""),
+                getattr(candidate, "clan_name", None),
+                getattr(candidate, "clan_badge", None),
+            ))
 
         for clan_tag, clan_name, clan_badge in options:
             clan_tag = (clan_tag or "").strip().upper()
@@ -1155,13 +1123,11 @@ async def build_war_view(
 
     sem = sem or new_semaphore()
     order = list(by_clan)
-
     async def fetch_war(clan_tag: str):
         if recheck_negative_after is None:
             return await _get_war(coc_client, clan_tag)
         return await _get_war(
-            coc_client,
-            clan_tag,
+            coc_client, clan_tag,
             recheck_negative_after=recheck_negative_after,
         )
 
@@ -1200,21 +1166,13 @@ async def build_war_view(
             used = len(getattr(member, "attacks", None) or [])
             if used >= limit:
                 continue
-            rows.append(
-                Row(
-                    account=acct.name,
-                    tag=acct.tag,
-                    clan_name=acct.clan_name or clan_tag,
-                    clan_tag=clan_tag,
-                    used=used,
-                    limit=limit,
-                    ends_at=ends,
-                    state=state,
-                    starts_at=starts,
-                    town_hall=acct.town_hall,
-                    clan_badge=acct.clan_badge,
-                )
-            )
+            rows.append(Row(
+                account=acct.name, tag=acct.tag,
+                clan_name=acct.clan_name or clan_tag, clan_tag=clan_tag,
+                used=used, limit=limit, ends_at=ends,
+                state=state, starts_at=starts,
+                town_hall=acct.town_hall, clan_badge=acct.clan_badge,
+            ))
 
     # No "in war prep" note any more - preparation wars are ROWS now, not a
     # footnote. Counting them into a note is what hid them.
@@ -1247,13 +1205,11 @@ async def build_cwl_view(
 
     sem = sem or new_semaphore()
     order = list(by_clan)
-
     async def fetch_cwl(clan_tag: str):
         if recheck_negative_after is None:
             return await _get_cwl_round(coc_client, clan_tag)
         return await _get_cwl_round(
-            coc_client,
-            clan_tag,
+            coc_client, clan_tag,
             recheck_negative_after=recheck_negative_after,
         )
 
@@ -1293,31 +1249,19 @@ async def build_cwl_view(
             used = len(getattr(member, "attacks", None) or [])
             if used >= limit:
                 continue
-            rows.append(
-                Row(
-                    account=acct.name,
-                    tag=acct.tag,
-                    clan_name=acct.clan_name or clan_tag,
-                    clan_tag=clan_tag,
-                    used=used,
-                    limit=limit,
-                    ends_at=ends,
-                    state=state,
-                    starts_at=starts,
-                    town_hall=acct.town_hall,
-                    clan_badge=acct.clan_badge,
-                )
-            )
+            rows.append(Row(
+                account=acct.name, tag=acct.tag,
+                clan_name=acct.clan_name or clan_tag, clan_tag=clan_tag,
+                used=used, limit=limit, ends_at=ends,
+                state=state, starts_at=starts,
+                town_hall=acct.town_hall, clan_badge=acct.clan_badge,
+            ))
 
     if unreadable:
         notes.append(_gap_note(unreadable, "CWL"))
 
-    return ViewData(
-        rows=rows,
-        notes=notes,
-        ok=not (unreadable and not rows),
-        incomplete=_gap_note(unreadable, "CWL") if unreadable else "",
-    )
+    return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows),
+                    incomplete=_gap_note(unreadable, "CWL") if unreadable else "")
 
 
 async def build_blocked_view(
@@ -1349,13 +1293,11 @@ async def build_blocked_view(
 
     sem = sem or new_semaphore()
     order = list(by_clan)
-
     async def fetch_war(clan_tag: str):
         if recheck_negative_after is None:
             return await _get_war(coc_client, clan_tag)
         return await _get_war(
-            coc_client,
-            clan_tag,
+            coc_client, clan_tag,
             recheck_negative_after=recheck_negative_after,
         )
 
@@ -1365,20 +1307,13 @@ async def build_blocked_view(
         if kind not in ("private", "error"):
             continue
         for acct in members:
-            rows.append(
-                Row(
-                    account=acct.name,
-                    tag=acct.tag,
-                    clan_name=acct.clan_name or clan_tag,
-                    clan_tag=clan_tag,
-                    used=0,
-                    limit=0,
-                    ends_at=None,
-                    town_hall=acct.town_hall,
-                    clan_badge=acct.clan_badge,
-                    reason="private" if kind == "private" else "error",
-                )
-            )
+            rows.append(Row(
+                account=acct.name, tag=acct.tag,
+                clan_name=acct.clan_name or clan_tag, clan_tag=clan_tag,
+                used=0, limit=0, ends_at=None,
+                town_hall=acct.town_hall, clan_badge=acct.clan_badge,
+                reason="private" if kind == "private" else "error",
+            ))
 
     # Always ok=True: an empty list here is a real answer meaning "every clan is
     # readable", which is good news rather than a failure to report.
@@ -1389,7 +1324,7 @@ async def build_blocked_view(
 # Raid weekend
 # ---------------------------------------------------------------------------
 
-TTL_RAID_ACTIVE = 300  # attacks trickle in over ~3 days; 5 min lag is invisible
+TTL_RAID_ACTIVE = 300        # attacks trickle in over ~3 days; 5 min lag is invisible
 
 
 def _raid_weekend_is_open(now: datetime | None = None) -> bool:
@@ -1404,8 +1339,7 @@ def _raid_weekend_is_open(now: datetime | None = None) -> bool:
     now = now or datetime.now(timezone.utc)
     days_since_friday = (now.weekday() - 4) % 7  # Monday=0 ... Friday=4
     opens = (now - timedelta(days=days_since_friday)).replace(
-        hour=7, minute=0, second=0, microsecond=0
-    )
+        hour=7, minute=0, second=0, microsecond=0)
     return opens <= now < opens + timedelta(days=3)
 
 
@@ -1418,10 +1352,9 @@ def _seconds_until_raid_opens() -> int:
     results short-lived so a clan that opts in later can appear.
     """
     now = datetime.now(timezone.utc)
-    days_ahead = (4 - now.weekday()) % 7  # Monday=0 ... Friday=4
+    days_ahead = (4 - now.weekday()) % 7          # Monday=0 ... Friday=4
     opens = (now + timedelta(days=days_ahead)).replace(
-        hour=7, minute=0, second=0, microsecond=0
-    )
+        hour=7, minute=0, second=0, microsecond=0)
     if opens <= now:
         opens += timedelta(days=7)
     return max(60, int((opens - now).total_seconds()))
@@ -1450,7 +1383,11 @@ async def _get_raid(coc_client: coc.Client, clan_tag: str):
     except coc.NotFound:
         weekend_open = _raid_weekend_is_open()
         result = ("not_started", None) if weekend_open else ("none", None)
-        ttl = TTL_RAID_ACTIVE if weekend_open else _seconds_until_raid_opens()
+        ttl = (
+            TTL_RAID_ACTIVE
+            if weekend_open
+            else _seconds_until_raid_opens()
+        )
         cache_put(key, result, ttl)
         return result
     except coc.PrivateWarLog:
@@ -1577,19 +1514,12 @@ async def build_raid_view(
             if used >= limit:
                 continue
 
-            rows.append(
-                Row(
-                    account=acct.name,
-                    tag=acct.tag,
-                    clan_name=acct.clan_name or clan_tag,
-                    clan_tag=clan_tag,
-                    used=used,
-                    limit=limit,
-                    ends_at=ends,
-                    town_hall=acct.town_hall,
-                    clan_badge=acct.clan_badge,
-                )
-            )
+            rows.append(Row(
+                account=acct.name, tag=acct.tag,
+                clan_name=acct.clan_name or clan_tag, clan_tag=clan_tag,
+                used=used, limit=limit, ends_at=ends,
+                town_hall=acct.town_hall, clan_badge=acct.clan_badge,
+            ))
 
     if unreadable:
         notes.append(_gap_note(unreadable, "raid"))
@@ -1604,13 +1534,9 @@ async def build_raid_view(
             else "No raid weekend right now."
         )
 
-    return ViewData(
-        rows=rows,
-        notes=notes,
-        ok=not (unreadable and not rows),
-        unavailable=unavailable,
-        incomplete=_gap_note(unreadable, "raid") if unreadable else "",
-    )
+    return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows),
+                    unavailable=unavailable,
+                    incomplete=_gap_note(unreadable, "raid") if unreadable else "")
 
 
 async def fetch_clan_overview(client, clan_tag: str, kind: str, *, accounts=None):
@@ -1625,29 +1551,25 @@ async def fetch_clan_overview(client, clan_tag: str, kind: str, *, accounts=None
         try:
             return await asyncio.wait_for(fetch, 10)
         except Exception:
-            return "error", None
+            return 'error', None
 
-    if kind == "raid":
+    if kind == 'raid':
         status, raid = await bounded(_get_raid(client, clan_tag))
-        return {"raid": raid_summary(status, raid)}
+        return {'raid': raid_summary(status, raid)}
     (regular_status, regular), (league_status, league) = await asyncio.gather(
         bounded(_get_war(client, clan_tag, recheck_negative_after=60)),
         bounded(_get_cwl_round(client, clan_tag, recheck_negative_after=60)),
     )
-    return {
-        "regular": war_summary(regular_status, regular, clan_tag, accounts=accounts),
-        "cwl": war_summary(league_status, league, clan_tag, accounts=accounts),
-    }
+    return {'regular': war_summary(regular_status, regular, clan_tag, accounts=accounts),
+            'cwl': war_summary(league_status, league, clan_tag, accounts=accounts)}
 
 
 async def fetch_current_war(client, clan_tag: str, kind: str):
     """Public bounded read through the coalesced current-war cache."""
-    if kind not in ("regular", "cwl"):
-        raise ValueError("Invalid war kind")
-    lookup = _get_war if kind == "regular" else _get_cwl_round
+    if kind not in ('regular', 'cwl'):
+        raise ValueError('Invalid war kind')
+    lookup = _get_war if kind == 'regular' else _get_cwl_round
     try:
-        return await asyncio.wait_for(
-            lookup(client, clan_tag, recheck_negative_after=60), 10
-        )
+        return await asyncio.wait_for(lookup(client, clan_tag, recheck_negative_after=60), 10)
     except Exception:
-        return "error", None
+        return 'error', None

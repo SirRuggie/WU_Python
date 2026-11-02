@@ -421,15 +421,17 @@ class Store:
             return False
         from utils.cwl_dashboard_state import (
             DashboardDurabilityError,
+            DashboardDurabilityAttention,
             decode,
             reconcile_sqlite,
         )
         from utils import cwl_pool_roles as roles
 
-        db = sqlite3.connect(self.path, timeout=15, isolation_level=None)
-        db.row_factory = sqlite3.Row
+        db = None
         recovered = None
         try:
+            db = sqlite3.connect(self.path, timeout=15, isolation_level=None)
+            db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys=ON")
             db.execute("PRAGMA synchronous=FULL")
             db.execute("BEGIN IMMEDIATE")
@@ -460,7 +462,10 @@ class Store:
             return True
         except Exception as error:
             owner.poisoned = True
-            db.rollback()
+            if db is not None:
+                db.rollback()
+            if isinstance(error, DashboardDurabilityAttention):
+                raise owner.require_attention(str(error)) from None
             if isinstance(error, DashboardDurabilityError):
                 raise
             raise DashboardDurabilityError(
@@ -469,7 +474,8 @@ class Store:
         finally:
             if recovered is not None:
                 recovered.close()
-            db.close()
+            if db is not None:
+                db.close()
 
     @contextmanager
     def tx(self):

@@ -42,7 +42,7 @@ def timed_step(logger, stage):
         elapsed = 1000 * (time.perf_counter() - started)
         write = (
             logger.info
-            if elapsed >= 1000 or stage in {"cwl_bridge", "management_poll"}
+            if elapsed >= 1000
             else logger.debug
         )
         write("Web worker timing stage=%s elapsed_ms=%.2f", stage, elapsed)

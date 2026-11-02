@@ -121,3 +121,32 @@ def test_bot_budget_keeps_index_bulk_and_hourly_read_shapes_working():
             await client.close()
 
     asyncio.run(run())
+
+
+def test_slow_strike_history_fetch_does_not_spend_later_mongo_budget():
+    """Actual import-preview adapter, fake 16s provider, real local receipt write."""
+    from unittest.mock import AsyncMock, patch
+    from cwl_web import strikes
+    assert URI == "mongodb://127.0.0.1:27154"
+    async def run():
+        client = AsyncMongoClient(URI, timeoutMS=15000)
+        db = client["wu_p105_import_" + uuid4().hex]
+        app = {"server_management_mongo": SimpleNamespace(bot_config=db.bot_config)}
+        async def history(*args, **kwargs):
+            await asyncio.sleep(16)
+            return {"wars": [], "cwl_wars": [], "skipped": [], "source_count": 0}
+        async def preview(*args, **kwargs):
+            await db.bot_config.insert_one({"_id": "preview-complete"})
+            return {"preview_id": "fixture", "summary": {}, "items": [], "wars": 0}
+        ledger = SimpleNamespace(preview_import=preview)
+        try:
+            with patch.object(strikes, "service", AsyncMock(return_value=ledger)), patch.object(
+                strikes, "clan_rows", AsyncMock(return_value=[{"tag": "#P2Y", "name": "Fixture"}])
+            ), patch("utils.strike_wars.fetch_history_report", history):
+                result = await strikes._preview_work(app, 5, 60)
+            assert result["preview_id"] == "fixture"
+            assert await db.bot_config.find_one({"_id": "preview-complete"})
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+    asyncio.run(run())

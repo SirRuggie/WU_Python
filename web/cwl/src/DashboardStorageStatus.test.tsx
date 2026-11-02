@@ -91,3 +91,25 @@ it("removes storage listeners when the staff notice unmounts", async () => {
   );
   expect(remove).toHaveBeenCalledWith(STORAGE_RECOVERED, expect.any(Function));
 });
+
+it("keeps permanent attention visible when a later transient error arrives", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<DashboardStorageStatus />));
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent(STORAGE_UNAVAILABLE, { detail: { attention: true } }),
+      );
+    });
+    expect(host.textContent).toContain("needs attention");
+    await act(async () => window.dispatchEvent(new Event(STORAGE_UNAVAILABLE)));
+    expect(host.textContent).toContain("needs attention");
+    expect(host.textContent).not.toContain("recovering");
+    await act(async () => window.dispatchEvent(new Event(STORAGE_RECOVERED)));
+    expect(host.textContent).toBe("");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

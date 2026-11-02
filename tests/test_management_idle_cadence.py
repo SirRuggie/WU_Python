@@ -115,8 +115,11 @@ def test_idle_observation_skips_only_recent_confirmed_empty_work_and_band_update
             clock[0] += 60
             state.ready_at = clock[0]
             assert await worker._poll(None, mongo) == 0
+            assert (
+                len(band_writes()) == 3
+            )  # Unchanged values still refresh readiness each minute.
             assert activate.await_count == 2
-            assert mongo.bot_config.update_many.await_count == 2
+            assert mongo.bot_config.update_many.await_count == 4
 
     asyncio.run(run())
 
@@ -263,3 +266,77 @@ def test_independent_heartbeat_survives_a_temporary_mongo_failure(caplog):
         )
         == 1
     )
+
+
+def test_pending_work_sweeps_immediately_but_successful_empty_sweeps_are_cached():
+    async def run():
+        clock = [100.0]
+        mongo = NS(bot_config=NS(update_many=AsyncMock()))
+        with patch.object(
+            worker, "time", NS(monotonic=lambda: clock[0], time=lambda: clock[0])
+        ):
+            await worker._expire_requests(mongo, idle=True)
+            await worker._expire_requests(mongo, idle=True)
+            assert mongo.bot_config.update_many.await_count == 1
+            clock[0] += 1
+            await worker._expire_requests(mongo)
+            await worker._expire_requests(mongo)
+            assert mongo.bot_config.update_many.await_count == 3
+
+    asyncio.run(run())
+
+
+def test_failed_empty_sweep_does_not_cache_failure():
+    async def run():
+        calls = AsyncMock(side_effect=[RuntimeError("owned outage"), None])
+        mongo = NS(bot_config=NS(update_many=calls))
+        with patch.object(
+            worker, "time", NS(monotonic=lambda: 100.0, time=lambda: 100.0)
+        ):
+            with pytest.raises(RuntimeError):
+                await worker._expire_requests(mongo, idle=True)
+            await worker._expire_requests(mongo, idle=True)
+            assert calls.await_count == 2
+
+    asyncio.run(run())
+
+
+def test_fast_poll_aggregate_is_debug_but_slow_steps_stay_visible():
+    from unittest.mock import Mock
+    from utils import manage_poll_cache
+
+    logger = Mock()
+    with patch.object(
+        manage_poll_cache.time, "perf_counter", side_effect=[0, 0.001, 0, 1.1]
+    ):
+        with manage_poll_cache.timed_step(logger, "management_poll"):
+            pass
+        with manage_poll_cache.timed_step(logger, "management_poll"):
+            pass
+    assert logger.debug.call_count == 1
+    assert logger.info.call_count == 1
+
+
+def test_stopping_cancels_both_owned_drivers(monkeypatch):
+    from extensions.tasks import cwl_reminder as bridge
+
+    async def run():
+        first = asyncio.create_task(asyncio.Event().wait())
+        second = asyncio.create_task(asyncio.Event().wait())
+        await asyncio.sleep(0)
+        monkeypatch.setattr(bridge, "_management_driver", first)
+        monkeypatch.setattr(bridge, "_roster_driver", second)
+        monkeypatch.setattr(bridge, "startup_reconciler", None)
+        monkeypatch.setattr(bridge, "scheduler", NS(running=False))
+        monkeypatch.setattr(bridge, "_management_stopping", False)
+        try:
+            await bridge.on_bot_stopping(None)
+            assert first.cancelled() and second.cancelled()
+            assert bridge._management_driver is None and bridge._roster_driver is None
+            assert bridge._management_stopping
+        finally:
+            for task in (first, second):
+                task.cancel()
+            await asyncio.gather(first, second, return_exceptions=True)
+
+    asyncio.run(run())

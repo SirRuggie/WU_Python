@@ -4,7 +4,7 @@ import asyncio
 import logging
 from contextlib import suppress
 
-from utils.cwl_dashboard_state import DashboardDurabilityError
+from utils.cwl_dashboard_state import DashboardDurabilityError, DashboardDurabilityAttention
 
 
 async def lifecycle(app):
@@ -27,6 +27,10 @@ async def lifecycle(app):
                         "Dashboard durable storage recovered; saved receipts reconciled."
                     )
                 degraded = False
+            except DashboardDurabilityAttention:
+                # The owner logs the permanent fence once at CRITICAL. Keep the
+                # renew task alive, but do not relabel it as automatic recovery.
+                degraded = True
             except DashboardDurabilityError:
                 if not degraded:
                     logging.getLogger(__name__).warning(

@@ -12,7 +12,6 @@
 # deletes the utcnow() calls. If you ever need to suppress a warning in this
 # process, DO NOT assume a filter here will work - it demonstrably did not.
 import sys
-
 # Force line-buffered stdout/stderr so logs reach journald immediately.
 # Without this, Python block-buffers output when piped (as under systemd),
 # delaying log delivery by hours. Belt-and-suspenders with PYTHONUNBUFFERED
@@ -101,7 +100,8 @@ if not _mongodb_uri:
 mongo_client = MongoClient(
     uri=_mongodb_uri,
     # Index bootstrap and maintenance cursors get headroom; unreachable servers
-    # still fail selection in three seconds. Discord budgets are independent.
+    # have a 30-second total operation budget, including server selection.
+    # CSOT can override the shorter selection setting. Discord budgets are independent.
     timeoutMS=30000,
     serverSelectionTimeoutMS=3000,
     maxPoolSize=20,
@@ -124,7 +124,6 @@ registry = client.di.registry_for(lightbulb.di.Contexts.DEFAULT)
 registry.register_value(MongoClient, mongo_client)
 registry.register_value(MediaStore, media_store)
 registry.register_value(hikari.GatewayBot, bot)
-
 
 @bot.listen(hikari.StartingEvent)
 async def on_starting(_: hikari.StartingEvent) -> None:
@@ -170,12 +169,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         load_cogs(
             disallowed={"example"},
             disallowed_folders={
-                "clan",
-                "fwa",
-                "recruit",
-                "setup",
-                "tickets",
-                "tickets_legacy",
+                "clan", "fwa", "recruit", "setup", "tickets", "tickets_legacy",
             },
         ),
     )
@@ -204,25 +198,19 @@ async def on_bot_start(event: hikari.StartedEvent):
         # delivery-optimized ones, so every render site is covered at once.
         # Load war base images
         if "war_base_images" in fwa_data:
-            FWA_WAR_BASE.update(
-                {
-                    th: optimized(url, width=DETAIL)
-                    for th, url in fwa_data["war_base_images"].items()
-                }
-            )
+            FWA_WAR_BASE.update({
+                th: optimized(url, width=DETAIL)
+                for th, url in fwa_data["war_base_images"].items()
+            })
             print(f"[INFO] Loaded {len(fwa_data['war_base_images'])} FWA war base URLs")
 
         # Load active base images
         if "active_base_images" in fwa_data:
-            FWA_ACTIVE_WAR_BASE.update(
-                {
-                    th: optimized(url, width=DETAIL)
-                    for th, url in fwa_data["active_base_images"].items()
-                }
-            )
-            print(
-                f"[INFO] Loaded {len(fwa_data['active_base_images'])} FWA active base URLs"
-            )
+            FWA_ACTIVE_WAR_BASE.update({
+                th: optimized(url, width=DETAIL)
+                for th, url in fwa_data["active_base_images"].items()
+            })
+            print(f"[INFO] Loaded {len(fwa_data['active_base_images'])} FWA active base URLs")
 
     # Check for reboot notification
     try:
@@ -246,21 +234,15 @@ async def on_bot_start(event: hikari.StartedEvent):
                             Container(
                                 accent_color=GREEN_ACCENT,
                                 components=[
-                                    Text(
-                                        content=(
-                                            "## ✅ Bot is Back Online!\n\n"
-                                            "Reboot completed successfully.\n"
-                                            "All systems operational."
-                                        )
-                                    ),
-                                    Media(
-                                        items=[
-                                            MediaItem(media="assets/Green_Footer.png")
-                                        ]
-                                    ),
-                                ],
+                                    Text(content=(
+                                        "## ✅ Bot is Back Online!\n\n"
+                                        "Reboot completed successfully.\n"
+                                        "All systems operational."
+                                    )),
+                                    Media(items=[MediaItem(media="assets/Green_Footer.png")])
+                                ]
                             )
-                        ],
+                        ]
                     )
                 except Exception as e:
                     print(f"Failed to send reboot notification: {e}")
@@ -288,7 +270,8 @@ async def on_stopped(_: hikari.StoppedEvent) -> None:
     await asyncio.sleep(0)
     current = asyncio.current_task()
     remaining = [
-        task for task in asyncio.all_tasks() if task is not current and not task.done()
+        task for task in asyncio.all_tasks()
+        if task is not current and not task.done()
     ]
     if remaining:
         labels = set()
@@ -302,6 +285,5 @@ async def on_stopped(_: hikari.StoppedEvent) -> None:
         print(f"[shutdown] pending_tasks count={len(remaining)} names={names}")
     else:
         print("[shutdown] pending_tasks count=0")
-
 
 bot.run()

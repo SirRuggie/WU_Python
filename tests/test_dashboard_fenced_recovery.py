@@ -247,6 +247,7 @@ def test_local_confirmed_role_receipts_survive_core_reconciliation(durable_setup
         ).fetchall()
     state.poisoned = True
     assert store.recover_durability()
+    assert store.role_dirty  # Recovered local terminal receipts still need backup.
     with sqlite3.connect(path) as db:
         assert (
             db.execute(
@@ -420,3 +421,124 @@ def test_role_work_after_recovery_unfences_cannot_lose_its_dirty_flag(durable_se
     state.finish_recovery = writer_immediately_after_unfencing
     assert store.recover_durability()
     assert store.role_dirty
+
+
+def test_local_database_open_failure_stays_retryable_and_fenced(
+    durable_setup, monkeypatch
+):
+    _path, store, state, collection = durable_setup
+    collection.find_one = lambda query: (
+        deepcopy(collection.doc) if collection.matches(query) else None
+    )
+    state.poisoned = True
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            sqlite3,
+            "connect",
+            lambda *a, **kw: (_ for _ in ()).throw(
+                sqlite3.OperationalError("owned open failure")
+            ),
+        )
+        with pytest.raises(DashboardDurabilityError, match="temporarily unavailable"):
+            store.recover_durability()
+    assert state.poisoned
+    assert store.recover_durability()
+
+
+@pytest.mark.parametrize("damage", ["foreign", "corrupt"])
+def test_permanent_recovery_fence_logs_once_and_never_downgrades(owner, caplog, damage):
+    from utils.cwl_dashboard_state import DashboardDurabilityAttention
+
+    state, collection, _path = owner
+    state.poisoned = True
+    if damage == "foreign":
+        collection.doc["owner"] = "another-writer"
+    else:
+        collection.doc["payload"] = b"invalid-compressed-image"
+    for _ in range(2):
+        with pytest.raises(DashboardDurabilityAttention, match="needs attention"):
+            state.recovery_image()
+        with pytest.raises(DashboardDurabilityAttention):
+            state.check()
+    assert state.poisoned
+    assert sum(record.levelname == "CRITICAL" for record in caplog.records) == 1
+
+
+def test_recovery_stays_fenced_at_the_actual_local_commit(durable_setup, monkeypatch):
+    path, store, state, collection = durable_setup
+    collection.find_one = lambda query: (
+        deepcopy(collection.doc) if collection.matches(query) else None
+    )
+    state.poisoned = True
+    connect = sqlite3.connect
+    committed = []
+
+    class ObservedCommit(sqlite3.Connection):
+        def commit(self):
+            assert state.poisoned, "Writer became available before local FULL commit"
+            committed.append(True)
+            return super().commit()
+
+    def observed(database, *args, **kwargs):
+        if str(database) == str(path):
+            kwargs["factory"] = ObservedCommit
+        return connect(database, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(sqlite3, "connect", observed)
+        assert store.recover_durability()
+    assert committed == [True]
+    assert not state.poisoned
+
+
+def test_store_rechecks_owner_before_committing_recovered_rows(durable_setup):
+    path, store, state, collection = durable_setup
+    collection.find_one = lambda query: (
+        deepcopy(collection.doc) if collection.matches(query) else None
+    )
+    collection.fail = "after"
+    with pytest.raises(DashboardDurabilityError):
+        with store.tx() as db:
+            db.execute("UPDATE roster_entries SET manual_weight=155000")
+    collection.fail = None
+    recover = state.recovery_image
+
+    def changed_owner_after_image():
+        image = recover()
+        collection.doc["owner"] = "foreign-writer"
+        return image
+
+    state.recovery_image = changed_owner_after_image
+    with pytest.raises(DashboardDurabilityError):
+        store.recover_durability()
+    assert state.poisoned
+    with sqlite3.connect(path) as db:
+        assert (
+            db.execute("SELECT manual_weight FROM roster_entries").fetchone()[0]
+            == 149000
+        )
+
+
+def test_known_foreign_lease_is_attention_immediately(owner, caplog):
+    from utils.cwl_dashboard_state import DashboardDurabilityAttention
+    state, collection, _path = owner
+    collection.doc["owner"] = "foreign"
+    with pytest.raises(DashboardDurabilityAttention):
+        state.heartbeat()
+    with pytest.raises(DashboardDurabilityAttention):
+        state.check()
+    assert state.poisoned
+    assert sum(record.levelname == "CRITICAL" for record in caplog.records) == 1
+
+
+def test_permanent_storage_response_carries_attention_header():
+    import asyncio
+    from cwl_web.app import errors
+    from utils.cwl_dashboard_state import DashboardDurabilityAttention
+    async def handler(_request):
+        raise DashboardDurabilityAttention("Dashboard storage needs attention.")
+    from types import SimpleNamespace
+    response = asyncio.run(errors(SimpleNamespace(path="/api/cwl/fixture"), handler))
+    assert response.status == 503
+    assert response.headers["X-Dashboard-Storage-Degraded"] == "1"
+    assert response.headers["X-Dashboard-Storage-Attention"] == "1"
