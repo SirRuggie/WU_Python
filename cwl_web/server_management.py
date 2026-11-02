@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import aiohttp
 from aiohttp import web
 from .mongo_client import get_client, lifecycle as mongo_lifecycle
+from .members_overview_timing import note_discord
 
 API = '/api/cwl/manage'
 GUILD_ID = 644963518025826315
@@ -46,12 +47,14 @@ class DiscordItemNotFound(web.HTTPNotFound):
 async def discord(request, method, path, *, roster_delivery=False, **kwargs):
     injected = request.app.get('server_management_discord')
     if injected:
+        note_discord(request)
         return await injected(method, path, **({"roster_delivery": True} if roster_delivery else {}), **kwargs)
     token = os.getenv('DISCORD_TOKEN', '').strip()
     if not token:
         raise web.HTTPServiceUnavailable(text='Discord connection is not configured.')
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as client:
+            note_discord(request)
             async with client.request(method, 'https://discord.com/api/v10' + path,
                     headers={'Authorization': 'Bot ' + token}, **kwargs) as response:
                 if response.status == 404:

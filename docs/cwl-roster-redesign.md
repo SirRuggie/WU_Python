@@ -1079,6 +1079,93 @@ committed, retaining the base investigation proof. Tests cover pause persistence
 both-off reset, owned leases, older/uncovered proof, pool scope, season round-trip,
 CAS race and head revision. All eleven new behavioral mutants were killed.
 
+### Saved-war weight eligibility — prompt 131
+
+Clan weights keeps the two latest usable war lineups, defaulting to the most
+recent. Staff can save a departed player who is in either retained lineup.
+Weights remain the shared per-player ledger: working Roster, Compare and exports
+read the saved result, while publication snapshots remain unchanged. An unsaved
+lineup participant has a separate saved-war clan link, never a false current
+membership label. The server rechecks family ownership, fresh members and saved
+lineup eligibility; a third war can invalidate a stale creation attempt without
+removing an older saved weight.
+
+Missing weights labels the manual group `Non-FWA accounts`, uses compact
+TH/tag/pool metadata and shows a differing source failure only when present.
+`Saving doesn't move players.` replaces the repeated refresh explanation;
+refresh still preserves manual weights through the existing ledger resolver.
+Column F in Clan weights now includes departed slots in the selected saved war.
+The selected-war view and unknown Town Hall/storage handling are documented in
+`docs/clan-weight-trial.md`. No assignment, lock, publication or delivery rule
+changes.
+
+## Member trust — audit batch 118 (review)
+
+The first season read runs even when the dashboard opens in a hidden/background
+tab. Later automatic reads remain visibility-gated; becoming visible refreshes
+the season. Home waits for a successful season read before showing season
+absence or signup status. The earlier redirect/login explanation was superseded
+by Claude's correction 406: the shared cause was the initial hidden guard. The
+auth initial read, assignment initial read and saved-publication initial read
+already run independently of visibility; their repeat policies are preserved.
+
+Assignments and Home retain successful data after ordinary refresh errors and
+show `Couldn't refresh. Showing last update.` with Retry. First-load failures
+remain distinct; 401/403 clear protected rows/details. Recovery is read-only.
+Assignments name accounts under `Waiting for a clan`, label known missing
+arrivals `Not in clan yet`, and explain `✅ = in the right clan`; unknown arrival
+stays unlabelled. `May change` uses the same `memberPlacementStatus` as Home.
+
+My signups shows publication loading until its own request finishes, including
+when the season or saved signup set changes. A published response always links
+to My clan assignments, including partial placement. Closed, unsigned members
+see `Ask staff for help.` Account-link help precedes the pool choice after a
+completed empty linked-account read. Empty assignments provide signup navigation
+without assuming linked-account absence.
+`memberSignupsOpen` is shared by App, Home and member status components: only
+a draft season with signup_open is open. Main/Lazy rule text, the FWA line and
+the member tour wording are unchanged.
+
+Validation: full frontend, TypeScript/build, focused failure/recovery and hidden
+first-load regressions, and the failed-refresh-hides-list mutant. Isolated
+before/after screenshots cover 320/360/390/1440; narrow/wide review checks
+retained errors, waiting names, missing arrival, 44px actions, keyboard-readable
+recovery, no horizontal overflow and unchanged signup/assignment/lock counts.
+The HTML review embeds screenshots and records exact final counts. No backend,
+API contract, stored signup, assignment, publication or notification policy
+changed. No production calls, live Discord delivery or real-phone assistive
+technology testing was performed. Release is subject to Claude ACCEPT and
+root-coordinated fresh gates under approval 395.
+
+### Review137 corrections
+
+`MemberSeasonLine` now shares the same draft/open rule as the signup flow. A
+published or archived season cannot show an Open line merely because its raw
+signup_open flag remains true. A failed season refresh after a successful read
+uses the compact, shared muted retry style on Signup and other member pages;
+the urgent availability block is reserved for a season that has never loaded.
+An explicit signup remains subject to the server's fresh policy: the existing
+isolated HTTP regression returns 423 after staff close signups, and the frontend
+keeps the failed explicit submission as an error rather than showing success.
+
+Link help requires a completed account read for this member and season, remains
+hidden during rechecks and appears once after an empty result, including the
+account-selection step. The existing tour target moves to that one helper;
+no tour text changes. Empty assignments do not fetch linked accounts or infer
+that a member has none: they offer signup navigation. Published accounts all
+waiting for a clan now say `Your accounts`; partial waiting still says `Some`.
+
+Regressions distinguish unknown arrival from known missing arrival, assert
+`May change` on the actual clan row, verify Home's hidden first read directly,
+exercise App visibilitychange without Home masking its listener, observe the
+initial help render with React Profiler, and hold a read during recheck. They
+also keep assignments unmounted until seasons are known. Nine behavioral
+mutants, including all six review survivors, are covered in the full frontend
+suite. Fresh disposable before/after browser fixtures cover 320/360/390/1440,
+keyboard recovery, no overflow, one helper and unchanged domain counts. Browser
+mutation observation reproduces the linked-member helper flash before and not
+after. All preserved review previews remain untouched.
+
 ## Discord member links and new default copy (127)
 
 Discord member messages share **My clan assignments**, **My tasks** and **Wars** destinations. New CWL default copy is explicitly versioned; saved, partial, legacy and custom campaigns retain their prior normalization without a production rewrite. The native Discord editor supports text and buttons; web signup buttons remain locked. The read-only comparison from November 2 at 16:14 UTC is historical evidence, not a current production claim. See [Discord dashboard links review](discord-dashboard-links-review.md) for the message inventory, new-default provenance, local checks and limits.

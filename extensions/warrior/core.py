@@ -77,8 +77,9 @@ def permissions(member, roles, owner_id):
     if int(member.id) == int(owner_id):
         return hikari.Permissions.all_permissions()
     value = hikari.Permissions.NONE
+    role_ids = set(member.role_ids)
     for role in roles:
-        if role.id == member.guild_id or role.id in member.role_ids:
+        if role.id == member.guild_id or role.id in role_ids:
             value |= role.permissions
     return (
         hikari.Permissions.all_permissions()
@@ -88,7 +89,8 @@ def permissions(member, roles, owner_id):
 
 
 def top(member, roles):
-    return max((r.position for r in roles if r.id in member.role_ids), default=0)
+    role_ids = set(member.role_ids)
+    return max((r.position for r in roles if r.id in role_ids), default=0)
 
 
 async def context(bot, mongo, guild_id, actor_id, user_id, *, fresh=True):

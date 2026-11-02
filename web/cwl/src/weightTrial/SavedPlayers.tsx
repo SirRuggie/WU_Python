@@ -16,9 +16,11 @@ export default function SavedPlayers({
   guard,
   resetToken,
   externalBusy = false,
+  onDenied,
 }: {
   resetToken: number;
   externalBusy?: boolean;
+  onDenied?: (message: string) => void;
   target?: string;
   onState: (count: number, busy: boolean) => void;
   guard: (action: () => void) => void;
@@ -78,10 +80,13 @@ export default function SavedPlayers({
         );
       })
       .catch((cause) => {
-        if (id === request.current)
+        if (id === request.current) {
           setError(
             cause instanceof Error ? cause.message : "Search unavailable.",
           );
+          if (cause instanceof ApiError && [401, 403].includes(cause.status))
+            onDenied?.(cause.message);
+        }
       })
       .finally(() => {
         if (id === request.current) setLoading(false);
@@ -89,7 +94,7 @@ export default function SavedPlayers({
     return () => {
       request.current++;
     };
-  }, [term, page]);
+  }, [term, page, onDenied]);
   async function save(row: SavedPlayer) {
     if (saving.current || externalBusy) return;
     let body;
@@ -127,6 +132,7 @@ export default function SavedPlayers({
         if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
           setRows([]);
           setValues({});
+          onDenied?.(cause.message);
         }
       }
     } finally {

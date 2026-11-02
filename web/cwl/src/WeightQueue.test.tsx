@@ -394,7 +394,7 @@ it("keeps the FWA split and link through unavailable metadata and updates when k
     accounts: [{ ...unknown.accounts[0], current_fwa_status: "current" }],
   }) as typeof snapshot;
   await show();
-  expect(host.textContent).toContain("Other accounts · enter here");
+  expect(host.textContent).toContain("Non-FWA accounts");
   expect(host.querySelector(".weight-queue-row input")).not.toBeNull();
 });
 
@@ -422,4 +422,47 @@ it("keeps roster-only queue read-only and shows permission notice instead of ope
     "Permission needed: changing weights needs Clan weights access. Ask an owner.",
   );
   expect(button("Refresh weights").disabled).toBe(false);
+});
+
+import { retainRosterFwa } from "./roster";
+import { usesClanWeights } from "./clanWeightPolicy";
+it("routes cold departed lineup players through metadata merge and later reads", async () => {
+  const cold = {
+    ...accounts[0],
+    current_fwa_clan_tag: null,
+    current_fwa_status: "unavailable",
+    weight_lineup_clan_tag: "#FWA",
+  };
+  let snapshot = { revision: 1, accounts: [cold], clans: [], undo: null };
+  await render({ accounts: snapshot.accounts });
+  expect(host.querySelector(".weight-queue-row input")).toBeNull();
+  expect(host.textContent).toContain("Set in Clan weights");
+  const { weight_lineup_clan_tag: _, ...unknown } = cold;
+  snapshot = retainRosterFwa(snapshot, {
+    ...snapshot,
+    accounts: [unknown],
+  }) as typeof snapshot;
+  await render({ accounts: snapshot.accounts });
+  expect(host.querySelector(".weight-queue-row input")).toBeNull();
+  expect(snapshot.accounts[0].weight_lineup_clan_tag).toBe("#FWA");
+  const without = {
+    ...snapshot,
+    accounts: [{ ...unknown, weight_lineup_clan_tag: null }],
+  };
+  snapshot = mergeRosterMetadata(without, {
+    ...snapshot,
+    accounts: [cold],
+  }) as typeof snapshot;
+  await render({ accounts: snapshot.accounts });
+  expect(host.querySelector(".weight-queue-row input")).toBeNull();
+  expect(snapshot.accounts[0].weight_lineup_clan_tag).toBe("#FWA");
+  expect(usesClanWeights({ weight_lineup_clan_tag: "#FWA" })).toBe(true);
+  snapshot = mergeRosterMetadata(snapshot, {
+    ...snapshot,
+    accounts: [
+      { ...cold, weight_lineup_clan_tag: null, current_fwa_status: "current" },
+    ],
+  }) as typeof snapshot;
+  await render({ accounts: snapshot.accounts });
+  expect(host.querySelector(".weight-queue-row input")).not.toBeNull();
 });
