@@ -52,9 +52,11 @@ export function dashboardTarget(
   const value =
     pathname === "/server/member-activity" || requested === "member-activity"
       ? "moderation"
-      : requested === "manage-signups"
-        ? "roster"
-        : requested;
+      : requested === "member-timezones"
+        ? "members-settings"
+        : requested === "manage-signups"
+          ? "roster"
+          : requested;
   return {
     ...(family && pathname !== "/clans" ? { familyClan: family } : {}),
     ...(value === "weight-trial"
@@ -121,7 +123,10 @@ export function dashboardPath(route: DashboardRoute) {
   if (route.view === "signup" && route.signupPanel === "saved")
     return "/my-signups";
   if (memberPaths[route.view]) return memberPaths[route.view];
-  const path = staffPaths[route.view];
+  const path =
+    route.view === "member-timezones"
+      ? managementPaths["members-settings"]
+      : staffPaths[route.view];
   const params = new URLSearchParams(path ? {} : { view: route.view });
   if (
     route.view === "replacements" &&

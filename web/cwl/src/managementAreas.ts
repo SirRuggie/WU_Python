@@ -1,8 +1,8 @@
 import type { ManagementSection } from "./serverManagement";
 export const managementAreas = {
   "members-settings": {
-    title: "Members & roles",
-    description: "Find members and manage their roles.",
+    title: "Members",
+    description: "Find people, manage roles, time zones and nicknames.",
   },
   "applications-settings": {
     title: "Ticket settings",

@@ -22,6 +22,7 @@ import {
   Handshake,
   House,
   Image,
+  Inbox,
   IdCard,
   KeyRound,
   LayoutDashboard,
@@ -56,6 +57,7 @@ import {
 import "./dashboardIcons.css";
 
 const icons = {
+  ticketGroup: Inbox,
   timeZones: Globe,
   baseBank: LandPlot,
   search: Search,

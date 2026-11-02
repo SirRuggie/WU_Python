@@ -1,0 +1,199 @@
+// @vitest-environment happy-dom
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
+vi.mock("../api", async (original) => ({
+  ...(await original<object>()),
+  api: vi.fn(),
+}));
+import { api } from "../api";
+import useRoleRun, { type RoleReview } from "./useRoleRun";
+const review: RoleReview = {
+  token: "review",
+  selected: ["111111111111111111", "222222222222222222"],
+  count: 2,
+  role: { id: "333333333333333333", name: "Officer", protected: false },
+  operation: "remove",
+};
+const status = {
+  run_id: "run",
+  state: "queued",
+  rows: review.selected.map((discord_id) => ({
+    discord_id,
+    status: "waiting",
+    message: "",
+  })),
+};
+let host: HTMLDivElement,
+  root: ReturnType<typeof createRoot>,
+  latest: ReturnType<typeof useRoleRun>;
+function Harness() {
+  latest = useRoleRun(
+    () => {},
+    () => {},
+  );
+  return <p>{latest.error}</p>;
+}
+beforeEach(() => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  vi.mocked(api).mockReset();
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  host.remove();
+  vi.useRealTimers();
+});
+it("sends exactly the reviewed IDs and one write despite a second tap", async () => {
+  let release: (value: { run_id: string; state: string }) => void = () => {};
+  vi.mocked(api).mockImplementation(async (path, method) => {
+    if (method === "POST")
+      return await new Promise((resolve) => {
+        release = resolve;
+      });
+    if (path.includes("active=1")) return { runs: [] };
+    return status;
+  });
+  await act(async () => root.render(<Harness />));
+  let first: Promise<boolean>;
+  await act(async () => {
+    first = latest.confirm(review);
+    expect(await latest.confirm(review)).toBe(false);
+  });
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === "POST"),
+  ).toHaveLength(1);
+  expect(
+    vi.mocked(api).mock.calls.find((call) => call[1] === "POST")?.[2],
+  ).toEqual({
+    token: "review",
+    selected: review.selected,
+    protected_confirmed: false,
+  });
+  await act(async () => {
+    release({ run_id: "run", state: "queued" });
+    await first!;
+  });
+  expect(latest.run?.rows).toHaveLength(2);
+});
+it("an uncertain confirm is not retried; safe progress refresh recovers its run", async () => {
+  let active = false;
+  vi.mocked(api).mockImplementation(async (path, method) => {
+    if (method === "POST") {
+      active = true;
+      throw new Error("response lost");
+    }
+    if (path.includes("active=1"))
+      return { runs: active ? [{ run_id: "run" }] : [] };
+    return status;
+  });
+  await act(async () => root.render(<Harness />));
+  await act(async () => {
+    expect(await latest.confirm(review)).toBe(false);
+  });
+  expect(host.textContent).toContain("could not be confirmed");
+  await act(async () => {
+    expect(await latest.confirm(review)).toBe(false);
+  });
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === "POST"),
+  ).toHaveLength(1);
+  await act(async () => latest.refresh());
+  expect(latest.run?.run_id).toBe("run");
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === "POST"),
+  ).toHaveLength(1);
+});
+
+it.each([
+  { expected_role_ids: {} },
+  { expected_role_ids: ["bad"] },
+  { expected_role_ids: [review.role.id, review.role.id] },
+  { operation: "send" },
+  { role_id: "bad" },
+  { role_id: 123456789012345670 },
+  { discord_id: 123456789012345670 },
+  { changed: "yes" },
+  { status: "unrecognized" },
+])(
+  "malformed active receipt blocks a new write until progress can be read: %j",
+  async (bad) => {
+    let healthy = false;
+    vi.mocked(api).mockImplementation(async (path) =>
+      path.includes("active=1")
+        ? { runs: [{ run_id: "run" }] }
+        : healthy
+          ? status
+          : { ...status, rows: [{ ...status.rows[0], ...bad }] },
+    );
+    await act(async () => root.render(<Harness />));
+    expect(latest.run).toBeNull();
+    expect(latest.active).toBe(true);
+    await act(async () => expect(await latest.confirm(review)).toBe(false));
+    expect(vi.mocked(api).mock.calls.some((call) => call[1] === "POST")).toBe(
+      false,
+    );
+    healthy = true;
+    await act(async () => latest.refresh());
+    expect(latest.run?.run_id).toBe("run");
+    expect(latest.uncertain).toBe(false);
+  },
+);
+
+it("an initial progress outage blocks writes without automatically posting and recovers on Refresh", async () => {
+  vi.mocked(api).mockRejectedValue(new Error("Progress unavailable"));
+  await act(async () => root.render(<Harness />));
+  expect(latest.active).toBe(true);
+  await act(async () => expect(await latest.confirm(review)).toBe(false));
+  vi.mocked(api).mockResolvedValue({ runs: [] });
+  await act(async () => latest.refresh());
+  expect(latest.active).toBe(false);
+  expect(vi.mocked(api).mock.calls.some((call) => call[1] === "POST")).toBe(
+    false,
+  );
+});
+
+it("sends the explicit protected-role confirmation after review", async () => {
+  vi.mocked(api).mockImplementation(async (path, method) => {
+    if (method === "POST") return { run_id: "run", state: "queued" };
+    if (path.includes("active=1")) return { runs: [] };
+    return status;
+  });
+  await act(async () => root.render(<Harness />));
+  await act(async () =>
+    latest.confirm({ ...review, role: { ...review.role, protected: true } }),
+  );
+  const write = vi.mocked(api).mock.calls.find((call) => call[1] === "POST")!;
+  expect(write[2]).toEqual({
+    token: review.token,
+    selected: review.selected,
+    protected_confirmed: true,
+  });
+});
+
+it("a second Stop while the first is pending never posts again", async () => {
+  let release: () => void = () => {};
+  vi.mocked(api).mockImplementation(async (path, method) => {
+    if (method === "POST")
+      return await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    if (path.includes("active=1")) return { runs: [{ run_id: "run" }] };
+    return status;
+  });
+  await act(async () => root.render(<Harness />));
+  let first: Promise<void>;
+  await act(async () => {
+    first = latest.stop();
+    await latest.stop();
+  });
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === "POST"),
+  ).toHaveLength(1);
+  await act(async () => {
+    release();
+    await first!;
+  });
+});

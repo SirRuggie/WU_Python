@@ -1,12 +1,4 @@
-.member-timezones {
-  max-width: 1000px;
-  margin: auto;
-  padding: 16px;
-}
-.member-timezones h1 {
-  margin-top: 0;
-}
-.mt-toolbar,
+/* Shared time-zone editor and nickname review, used inside Members. */
 .mt-actions {
   display: flex;
   flex-wrap: wrap;
@@ -14,26 +6,34 @@
   gap: 12px;
   margin-block: 16px;
 }
-.member-timezones label {
+.mt-editor {
+  max-width: 560px;
+}
+.mt-editor label {
   display: grid;
   gap: 6px;
   margin-block: 10px;
 }
-.member-timezones input:not([type="checkbox"]),
-.member-timezones select {
+.mt-editor input:not([type="checkbox"]),
+.mt-editor select {
   width: 100%;
   min-height: 44px;
   box-sizing: border-box;
   max-width: 100%;
 }
-.member-timezones button,
-.member-timezones summary {
+.mt-editor button {
   min-height: 44px;
-  padding: 10px 12px;
 }
-.member-timezones :focus-visible {
-  outline: 3px solid #eebc48;
-  outline-offset: 3px;
+.mt-editor .mt-check {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 10px;
+}
+.mt-check input {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
 }
 .mt-list {
   list-style: none;
@@ -55,30 +55,21 @@
 .mt-list p {
   margin: 5px 0;
 }
-.member-timezones .mt-check {
+.mt-pagination {
   display: flex;
   align-items: center;
-  min-height: 44px;
-  gap: 10px;
+  justify-content: space-between;
+  flex: none;
+  gap: 4px;
+  font-size: 12px;
 }
-.mt-check input {
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-}
-.mt-editor {
-  max-width: 560px;
-}
-.member-timezones details {
-  margin-top: 20px;
-  border-top: 1px solid #657080;
-  padding-top: 8px;
+.mt-pagination button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  box-sizing: border-box;
 }
 @media (max-width: 500px) {
-  .mt-toolbar {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
   .mt-list li {
     align-items: stretch;
     flex-direction: column;
@@ -87,120 +78,6 @@
     width: 100%;
   }
 }
-
-.mt-search-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  background: #18191b;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px;
-  gap: 8px;
-  padding: 4px 0;
-  margin: 8px 0;
-}
-.member-timezones .mt-search-toolbar label {
-  margin: 0;
-  font-size: 12px;
-}
-.mt-pagination {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-  font-size: 12px;
-}
-.mt-member-list {
-  margin: 8px 0;
-}
-.mt-member-list li {
-  display: block;
-  padding: 0;
-}
-.member-timezones .mt-member-row {
-  display: grid;
-  gap: 3px;
-  width: 100%;
-  min-width: 0;
-  height: 86px;
-  padding: 8px;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  color: inherit;
-  box-sizing: border-box;
-}
-.mt-member-row > * {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.mt-member-nickname,
-.mt-member-zone {
-  font-size: 12px;
-}
-.mt-member-zone {
-  color: #bfbbae;
-}
-.shell .member-timezones :is(input, select, button, summary) {
-  scroll-margin-block: 150px 140px;
-}
-@media (max-width: 900px) {
-  .shell .mt-search-toolbar {
-    top: 70px;
-  }
-}
-.member-timezones h1 {
-  font-size: 24px;
-  margin-bottom: 6px;
-}
-.member-timezones .mt-intro {
-  font-size: 12px;
-  margin: 6px 0 10px;
-}
-
-.member-timezones .mt-top-actions :is(summary, button) {
-  font-size: 12px;
-  padding: 6px 8px;
-  box-sizing: border-box;
-}
-.mt-directory-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 6px 0;
-  min-width: 0;
-}
-.mt-directory-summary p {
-  margin: 0;
-  min-width: 0;
-  font-size: 12px;
-}
-.mt-directory-summary p span,
-.mt-directory-summary p small {
-  display: block;
-}
-.mt-directory-summary p small {
-  color: #bfbbae;
-}
-.mt-pagination {
-  flex: none;
-  gap: 4px;
-}
-.member-timezones .mt-pagination button {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  box-sizing: border-box;
-}
-.member-timezones .mt-member-row {
-  grid-template-columns: minmax(0, 1fr);
-  justify-content: stretch;
-  justify-items: stretch;
-}
-
 .mt-standardize-actions {
   position: sticky;
   top: 64px;
@@ -213,9 +90,6 @@
   background: #222326;
   border: 1px solid #59503d;
   border-radius: 8px;
-}
-.mt-top-actions[hidden] {
-  display: none;
 }
 /* Nickname review reuses the directory pager and extracted activity chips. */
 
@@ -234,8 +108,13 @@
   justify-self: start;
 }
 @media (min-width: 600px) {
-  .mt-review-entry { grid-template-columns: max-content max-content max-content; }
-  .mt-review-entry .link-button { grid-column: 3; grid-row: 1; }
+  .mt-review-entry {
+    grid-template-columns: max-content max-content max-content;
+  }
+  .mt-review-entry .link-button {
+    grid-column: 3;
+    grid-row: 1;
+  }
 }
 .mt-review-help {
   grid-column: 1 / -1;
@@ -282,10 +161,16 @@
   }
 }
 
-.mt-top-actions {
+.mt-nickname-review progress {
   display: block;
+  width: 100%;
+  height: 6px;
+  accent-color: #d4a017;
 }
 
-.mt-nickname-review progress {display:block;width:100%;height:6px;accent-color:#d4a017;}
-
-.mt-review-entry .link-button {border:0;background:none;text-decoration:underline;font-size:12px;}
+.mt-review-entry .link-button {
+  border: 0;
+  background: none;
+  text-decoration: underline;
+  font-size: 12px;
+}

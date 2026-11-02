@@ -14,6 +14,7 @@ from utils.member_profiles import ProfileOutcomeUncertain
 WORKER_ID = "manage-web-worker:644963518025826315"
 GUILD_ID = 644963518025826315
 ACTIONS = {
+    ("roles", "bulk_one"),
     *{("member_profiles", x) for x in ("save", "import", "standardize_one")},
     ("clans", "emoji"),
     ("clans", "thread"),
@@ -59,6 +60,10 @@ async def context(bot, mongo, row):
     from extensions.commands.recruit.perms import guild_permissions
     from utils.dashboard_access import dashboard_allowed as allowed
 
+    if row.get("section") == "roles":
+        from extensions.member_role_dashboard import request_context
+
+        return await request_context(bot, mongo, row)
     if row.get("section") == "member_profiles":
         from extensions.warrior.profile_dashboard import request_context
 
@@ -120,6 +125,10 @@ async def dispatch(bot, mongo, row, ctx):
     section, action, values = row["section"], row["action"], row["values"]
     if (section, action) not in ACTIONS or not isinstance(values, dict):
         raise ValueError("Unknown management action.")
+    if section == "roles":
+        from extensions.member_role_dashboard import apply
+
+        return await apply(bot, mongo, row, ctx)
     if section == "member_profiles":
         from extensions.warrior.profile_dashboard import apply
 
@@ -647,7 +656,14 @@ async def _process_requests(bot, mongo):
             window, used = time.monotonic(), 0
         query = {"kind": "manage_web_request", "status": "pending"}
         if used >= 5:
-            query["section"] = "member_profiles"
+            query["section"] = {"$in": ["member_profiles", "roles"]}
+        # Do not claim a standalone or already-materialized child while another
+        # member write's known Discord backoff is active. Other sections flow.
+        backoff = await ProfileRuns(mongo).lane_backoff(GUILD_ID)
+        if backoff:
+            if used >= 5:
+                break
+            query["section"] = {"$nin": ["member_profiles", "roles"]}
         claim_started = time.perf_counter()
         row = await mongo.bot_config.find_one_and_update(
             query,
@@ -665,7 +681,7 @@ async def _process_requests(bot, mongo):
                 sweep_ms,
                 1000 * (time.perf_counter() - dispatch_started),
             )
-        if row.get("section") != "member_profiles":
+        if row.get("section") not in ("member_profiles", "roles"):
             used += 1
         _OTHER_WINDOWS[loop] = (window, used)
         handled += 1
@@ -698,7 +714,7 @@ async def _process_requests(bot, mongo):
             )
             result = await asyncio.wait_for(
                 dispatch(bot, mongo, row, ctx),
-                200 if row["section"] == "member_profiles" else 120,
+                200 if row["section"] in ("member_profiles", "roles") else 120,
             )
             update = {
                 "status": "done",
@@ -718,7 +734,7 @@ async def _process_requests(bot, mongo):
                 "status": "uncertain",
                 "message": "The bot could not confirm this action. Check Discord before repeating it.",
             }
-            if row.get("section") == "member_profiles":
+            if row.get("section") in ("member_profiles", "roles"):
                 retry_after = getattr(error, "retry_after", None)
                 if isinstance(retry_after, (int, float)) and retry_after > 0:
                     update["retry_not_before"] = time.time() + retry_after
@@ -732,11 +748,10 @@ async def _process_requests(bot, mongo):
             update["status"],
             1000 * (time.perf_counter() - claimed),
         )
-        if (
-            row.get("parent_id")
-            and row.get("section") == "member_profiles"
-            and row.get("action") == "standardize_one"
-        ):
+        if row.get("parent_id") and (row.get("section"), row.get("action")) in {
+            ("member_profiles", "standardize_one"),
+            ("roles", "bulk_one"),
+        }:
             try:
                 await ProfileRuns(mongo).advance()
             except Exception:

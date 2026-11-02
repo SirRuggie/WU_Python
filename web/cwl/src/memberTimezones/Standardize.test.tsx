@@ -93,7 +93,7 @@ async function click(text: string) {
 it("imports before a fresh preview, defaults only safe changes, and never auto-confirms", async () => {
   await mount();
   expect(transport).not.toHaveBeenCalled();
-  await click("Review nicknames");
+  await click("Fix nicknames");
   expect(transport.mock.calls.map((c) => c[0])).toEqual([
     "/manage/member-timezones/import",
     "/manage/member-timezones/preview",
@@ -110,7 +110,7 @@ it("imports before a fresh preview, defaults only safe changes, and never auto-c
 });
 it("keeps selection across pages, filters and search, and sends exactly the bar count including hidden selection", async () => {
   await mount();
-  await click("Review nicknames");
+  await click("Fix nicknames");
   await click("Next review members");
   await act(async () =>
     host.querySelector<HTMLInputElement>("input[type=checkbox]")!.click(),
@@ -149,15 +149,15 @@ it("uncertain import shows one message and no preview, and explicit retry uses a
     status_url: "/receipt",
   });
   await mount();
-  await click("Review nicknames");
+  await click("Fix nicknames");
   expect(host.querySelectorAll("[role=alert]")).toHaveLength(1);
   expect(host.textContent).toContain(
-    "Import stopped early. No nicknames changed. Press Review nicknames again.",
+    "Import stopped early. No nicknames changed. Press Fix nicknames again.",
   );
   expect(
     transport.mock.calls.some((c) => String(c[0]).endsWith("/preview")),
   ).toBe(false);
-  await click("Review nicknames");
+  await click("Fix nicknames");
   expect(transport.mock.calls[0][2].request_id).not.toBe(
     transport.mock.calls[1][2].request_id,
   );
@@ -184,9 +184,9 @@ it("double tap queues one import and Back discards late preview without cancelli
   expect(transport).toHaveBeenCalledTimes(1);
   expect(host.querySelector('[aria-label="Nickname review"]')).toBeNull();
 });
-it("Past runs loads on demand, stops once and never offers replay of uncertain results", async () => {
+it("Past nickname changes loads on demand, stops once and never offers replay of uncertain results", async () => {
   await mount();
-  await click("Past runs");
+  await click("Past nickname changes");
   const select = host.querySelector("select")!;
   await act(async () => {
     select.value = "run";
@@ -224,9 +224,9 @@ it("closing an in-flight import aborts the read but explicit retry retains its d
     },
   );
   await mount();
-  await click("Review nicknames");
+  await click("Fix nicknames");
   await click("Back to members");
-  await click("Review nicknames");
+  await click("Fix nicknames");
   expect(ids).toHaveLength(2);
   expect(ids[0]).toBe(ids[1]);
   expect(host.textContent).toContain("51 selected");
@@ -253,7 +253,7 @@ it("Stop uses the existing one-shot command and terminal polling never retries a
     };
   });
   await mount();
-  await click("Past runs");
+  await click("Past nickname changes");
   const select = host.querySelector("select")!;
   await act(async () => {
     select.value = "run";
@@ -278,7 +278,7 @@ it("Rename switches immediately to progress and a double tap sends one confirmat
       : normal(path, ...args),
   );
   await mount();
-  await click("Review nicknames");
+  await click("Fix nicknames");
   const button = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
     (b) => b.textContent === "Rename 51",
   )!;
@@ -310,7 +310,7 @@ it("running status polls each second and stops as soon as finished", async () =>
         },
   );
   await mount();
-  await click("Past runs");
+  await click("Past nickname changes");
   const select = host.querySelector("select")!;
   await act(async () => {
     select.value = "run";
@@ -347,7 +347,7 @@ it("keeps confirmed run and Stop when a subsequent read fails, then polling reco
     return original(...args);
   });
   await mount();
-  await click("Review nicknames");
+  await click("Fix nicknames");
   await click("Rename");
   expect(host.textContent).toContain("Renaming");
   expect(host.textContent).toContain("Stop run");
@@ -361,8 +361,8 @@ it("keeps confirmed run and Stop when a subsequent read fails, then polling reco
 
 it("shows attribution only when viewing a past run, not when the history control is open on a new run", async () => {
   await mount();
-  await click("Past runs");
-  await click("Review nicknames");
+  await click("Past nickname changes");
+  await click("Fix nicknames");
   expect(host.querySelector(".mt-review-help")).toBeNull();
   await click("Rename");
   expect(host.textContent).not.toContain("Started by");
@@ -372,7 +372,7 @@ it("shows attribution only when viewing a past run, not when the history control
 it("hides one-page review pagers and restores entry help only after Back", async () => {
   await mount();
   expect(host.querySelector(".mt-review-entry .mt-review-help")).not.toBeNull();
-  await click("Review nicknames");
+  await click("Fix nicknames");
   expect(host.querySelector(".mt-review-help")).toBeNull();
   await click("Needs flag");
   expect(host.querySelector('nav[aria-label="Review pages"]')).toBeNull();
@@ -408,7 +408,7 @@ it("shows history loading until the summary request finishes", async () => {
       }),
   );
   await mount();
-  await click("Past runs");
+  await click("Past nickname changes");
   expect(host.textContent).toContain("Loading…");
   await act(async () => resolve({ runs: [] }));
   expect(host.textContent).toContain("Choose a run");

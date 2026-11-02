@@ -252,19 +252,21 @@ const sections: Section[] = [
     id: "members",
     label: "Members",
     icon: "users",
+    direct: true,
     items: [
       {
         view: "members-settings",
-        label: "Members & roles",
+        label: "Members",
         icon: "memberRoles",
         permissions: ["member_roles"],
       },
-      {
-        view: "member-timezones",
-        label: "Member time zones",
-        icon: "timeZones",
-        permissions: ["member_roles"],
-      },
+    ],
+  },
+  {
+    id: "tickets",
+    label: "Tickets",
+    icon: "ticketGroup",
+    items: [
       {
         view: "tickets",
         label: "Tickets",
@@ -383,7 +385,6 @@ const preferenceIds = new Set([
   "my-cwl",
   "cwl",
   "clans",
-  "members",
   "bot",
   "admin",
 ]);

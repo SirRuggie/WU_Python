@@ -1,4 +1,3 @@
-import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
 import ServerSettingsIndex from "./ServerSettingsIndex";
 import BandStatusSummary, { bandStatusWarning } from "./BandStatusSummary";
 import ApplicationSettingsIndex from "./ApplicationSettingsIndex";
@@ -327,90 +326,6 @@ async function hydrateFields(fields: ManagementField[]) {
                   ? choices.roles
                   : undefined,
         },
-  );
-}
-function RoleMembers({ roles }: { roles: { value: string; label: string }[] }) {
-  const [role, setRole] = useState(""),
-    [members, setMembers] = useState<
-      { id: string; name: string; discord_profile?: DiscordProfile }[]
-    >([]),
-    [loading, setLoading] = useState(false),
-    [error, setError] = useState(""),
-    [show, setShow] = useState(false);
-  useEffect(() => {
-    if (!role || !show) return;
-    let alive = true;
-    setMembers([]);
-    setLoading(true);
-    setError("");
-    void (async () => {
-      try {
-        let after: string | null = null;
-        do {
-          const result: {
-            members: {
-              id: string;
-              name: string;
-              discord_profile?: DiscordProfile;
-            }[];
-            next: string | null;
-          } = await api(
-            `/manage/roles/${encodeURIComponent(role)}/members${after ? "?after=" + encodeURIComponent(after) : ""}`,
-          );
-          if (!alive) return;
-          setMembers((current) => [...current, ...result.members]);
-          after = result.next;
-        } while (after && alive);
-      } catch (error) {
-        if (alive) setError(message(error));
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [role, show]);
-  return (
-    <details
-      className="manage-role-members"
-      onToggle={(event) => setShow(event.currentTarget.open)}
-    >
-      <summary>Members with a role</summary>
-      <label>
-        Role
-        <select value={role} onChange={(event) => setRole(event.target.value)}>
-          <option value="">Choose a role</option>
-          {roles.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {error && <p role="alert">{error}</p>}
-      {role && (
-        <p role="status">
-          {loading
-            ? `Finding members… ${members.length} found`
-            : error
-              ? `${members.length} members loaded. List incomplete.`
-              : `${members.length} members`}
-        </p>
-      )}
-      <ul>
-        {members.map((member) => (
-          <li key={member.id}>
-            <DiscordIdentity
-              userId={member.id}
-              displayName={member.name}
-              resolvedMember={member.discord_profile || null}
-              variant="compact"
-            />
-          </li>
-        ))}
-      </ul>
-    </details>
   );
 }
 export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
@@ -1076,13 +991,6 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       )}
       {selected && document && (
         <>
-          {document.id === "roles" && (
-            <p className="small">
-              These controls change Discord roles. Dashboard access is managed
-              separately by the protected owners. Choose a member first; role
-              changes require confirmation.
-            </p>
-          )}
           {document.return_status && (
             <ReturnStatusSummary status={document.return_status} />
           )}
@@ -1196,21 +1104,10 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                         revision={document.revision}
                         field={field}
                         value={draft[field.key]}
-                        disabled={
-                          busy ||
-                          !!document.readonly ||
-                          (document.id === "roles" &&
-                            field.key === "role_ids" &&
-                            !draft.member_id)
-                        }
+                        disabled={busy || !!document.readonly}
                         onChange={(value) => {
                           setDraft((current) => ({
                             ...current,
-                            ...(document.id === "roles" &&
-                            field.key === "member_id" &&
-                            current.member_id !== value
-                              ? { role_ids: [] }
-                              : {}),
                             [field.key]: value,
                           }));
                           setNotice("");
@@ -1284,7 +1181,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
               }}
             />
           )}
-          <div className={document.id === "roles" ? "manage-role-actions" : ""}>
+          <div>
             {[false, true].map((advanced) => {
               const actions = (document.actions || []).filter(
                 (action) => !!action.advanced === advanced,
@@ -1299,11 +1196,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                         disabled={
                           busy ||
                           !!statusUrl ||
-                          (dirty && !document.action_only) ||
-                          (document.id === "roles" &&
-                            (!draft.member_id ||
-                              !Array.isArray(draft.role_ids) ||
-                              !draft.role_ids.length))
+                          (dirty && !document.action_only)
                         }
                         onClick={async () => {
                           if (writing.current) return;
@@ -1414,14 +1307,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                               member_refresh: Date.now(),
                               fields: await hydrateFields(result.fields || []),
                             });
-                            setDraft(
-                              result.id === "roles"
-                                ? {
-                                    ...fieldValues(result.fields || []),
-                                    member_id: draft.member_id,
-                                  }
-                                : fieldValues(result.fields || []),
-                            );
+                            setDraft(fieldValues(result.fields || []));
                           } catch (error) {
                             setError(message(error));
                           } finally {
@@ -1477,15 +1363,6 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
               }}
             />
           )}{" "}
-          {document.action_only &&
-            document.fields.some((field) => field.key === "role_ids") && (
-              <RoleMembers
-                roles={
-                  document.fields.find((field) => field.key === "role_ids")
-                    ?.options || []
-                }
-              />
-            )}{" "}
         </>
       )}
     </section>

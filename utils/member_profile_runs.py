@@ -79,15 +79,84 @@ def selected_manifest(preview, selected):
 _LAST_PRUNE = {}
 
 
+def role_manifest(preview, selected):
+    """Normalize only the server-reviewed single-role selection."""
+    if not isinstance(preview, list) or not 1 <= len(preview) <= MAX_MEMBERS:
+        raise ValueError("Choose a bounded reviewed selection.")
+    if (
+        not isinstance(selected, list)
+        or not selected
+        or len(selected) != len(set(selected))
+    ):
+        raise ValueError("Choose each member once.")
+    chosen = set(selected)
+    known, result, operation = set(), [], None
+    for row in preview:
+        if not isinstance(row, dict):
+            raise ValueError("Invalid role preview.")
+        uid = member_id(row.get("discord_id"))
+        if uid in known:
+            raise ValueError("Duplicate member in preview.")
+        known.add(uid)
+        if uid not in chosen:
+            continue
+        role = member_id(row.get("role_id"))
+        action = row.get("operation")
+        expected = row.get("expected_role_ids")
+        if (
+            action not in ("add", "remove")
+            or row.get("bot") is not False
+            or type(row.get("protected", False)) is not bool
+        ):
+            raise ValueError("Bots and unreviewed changes cannot be selected.")
+        if (
+            not isinstance(expected, list)
+            or len(expected) > 250
+            or len(set(expected)) != len(expected)
+        ):
+            raise ValueError("Invalid reviewed member roles.")
+        expected = sorted(member_id(value) for value in expected)
+        if operation is None:
+            operation = (role, action)
+        if operation != (role, action):
+            raise ValueError("Review one role action at a time.")
+        result.append(
+            dict(
+                discord_id=uid,
+                role_id=role,
+                operation=action,
+                expected_role_ids=expected,
+                bot=False,
+                protected=row.get("protected", False),
+                revision=0,
+            )
+        )
+    if chosen != {row["discord_id"] for row in result}:
+        raise ValueError("Selection no longer matches the review.")
+    if len(json.dumps(result).encode()) > MAX_BYTES:
+        raise ValueError("Reviewed role change is too large.")
+    return result
+
+
+def run_manifest(preview, selected, run_type):
+    if run_type == "roles":
+        return role_manifest(preview, selected)
+    if run_type != "profiles":
+        raise ValueError("Unknown member change.")
+    return selected_manifest(preview, selected)
+
+
 class ProfileRuns:
     def __init__(self, mongo):
         self.mongo = mongo
         self.collection = mongo.bot_config
 
-    async def preview(self, *, actor_id, guild_id, rows):
+    async def preview(self, *, actor_id, guild_id, rows, run_type="profiles"):
         from datetime import datetime, timezone, timedelta
 
         actor = member_id(actor_id)
+        if run_type not in ("profiles", "roles"):
+            raise ValueError("Unknown member change.")
         if len(rows) > MAX_MEMBERS or len(json.dumps(rows).encode()) > MAX_BYTES:
             raise ValueError(
                 "Full preview exceeds the supported size; nothing was queued."
@@ -100,6 +169,7 @@ class ProfileRuns:
         document = dict(
             _id="member-profile-preview:" + actor,
             type="member_profile_preview",
+            run_type=run_type,
             component_state=True,
             user_id=actor,
             guild_id=int(guild_id),
@@ -114,7 +184,16 @@ class ProfileRuns:
         )
         return nonce
 
-    async def confirm(self, *, actor_id, guild_id, nonce, selected):
+    async def confirm(
+        self,
+        *,
+        actor_id,
+        guild_id,
+        nonce,
+        selected,
+        run_type="profiles",
+        protected_confirmed=False,
+    ):
         from datetime import datetime, timezone
 
         actor = member_id(actor_id)
@@ -127,14 +206,20 @@ class ProfileRuns:
                 "nonce": nonce,
             }
         )
-        if not row:
+        if not row or row.get("run_type", "profiles") != run_type:
             raise ValueError("Preview was replaced. Review the complete changes again.")
         expiry = row["expires_at"]
         if expiry.tzinfo is None:
             expiry = expiry.replace(tzinfo=timezone.utc)
         if expiry <= datetime.now(timezone.utc):
             raise ValueError("Preview expired. Review the complete changes again.")
-        items = selected_manifest(row["rows"], selected)
+        items = run_manifest(row["rows"], selected, run_type)
+        if (
+            run_type == "roles"
+            and any(item["protected"] for item in items)
+            and protected_confirmed is not True
+        ):
+            raise ValueError("Confirm this protected role before changing it.")
         selection_hash = fingerprint(items)
         key = "member-profile-run:" + fingerprint([actor, str(uuid.UUID(nonce))])
         consumed = await self.mongo.component_state.update_one(
@@ -179,13 +264,33 @@ class ProfileRuns:
             request_id=nonce,
             preview=row["rows"],
             selected=selected,
+            run_type=run_type,
+            protected_confirmed=protected_confirmed,
         )
 
-    async def create(self, *, actor_id, guild_id, request_id, preview, selected):
+    async def create(
+        self,
+        *,
+        actor_id,
+        guild_id,
+        request_id,
+        preview,
+        selected,
+        run_type="profiles",
+        protected_confirmed=False,
+    ):
         actor = member_id(actor_id)
         request_id = str(uuid.UUID(request_id))
-        items = selected_manifest(preview, selected)
+        items = run_manifest(preview, selected, run_type)
+        if (
+            run_type == "roles"
+            and any(item["protected"] for item in items)
+            and protected_confirmed is not True
+        ):
+            raise ValueError("Confirm this protected role before changing it.")
         payload = dict(user_id=actor, guild_id=int(guild_id), items=items)
+        if run_type == "roles":
+            payload["run_type"] = "roles"
         digest = fingerprint(payload)
         key = "member-profile-run:" + fingerprint([actor, request_id])
         # One global paced lane; a second run must wait rather than race members.
@@ -194,6 +299,14 @@ class ProfileRuns:
             name="member_profile_single_run",
             unique=True,
             partialFilterExpression={"kind": KIND, "state": "queued"},
+        )
+        await self.collection.create_index(
+            [("guild_id", 1), ("retry_not_before", -1)],
+            name="member_change_lane_backoff",
+            partialFilterExpression={
+                "kind": "manage_web_request",
+                "retry_not_before": {"$exists": True},
+            },
         )
         await self.prune()
         existing = await self.collection.find_one({"_id": key})
@@ -206,8 +319,9 @@ class ProfileRuns:
         active = await self.collection.find_one({"kind": KIND, "state": "queued"})
         if active:
             raise ValueError(
-                "Another Standardize run is still working. Review its progress first."
+                "Another member change run is still working. Review its progress first."
             )
+        backoff = await self.lane_backoff(guild_id)
         row = dict(
             _id=key,
             kind=KIND,
@@ -216,7 +330,7 @@ class ProfileRuns:
             state="queued",
             cursor=0,
             created_at=time.time(),
-            next_at=0,
+            next_at=backoff,
             **payload,
         )
         try:
@@ -233,7 +347,31 @@ class ProfileRuns:
             return old
         return row
 
+    async def lane_backoff(self, guild_id, *, now=None):
+        """Greatest known Discord delay shared by nickname and role writes."""
+        at = time.time() if now is None else now
+        row = await self.collection.find_one(
+            {
+                "kind": "manage_web_request",
+                "guild_id": int(guild_id),
+                "section": {"$in": ["member_profiles", "roles"]},
+                "retry_not_before": {"$gt": at},
+            },
+            {"retry_not_before": 1},
+            sort=[("retry_not_before", -1)],
+            hint="member_change_lane_backoff",
+        )
+        return row["retry_not_before"] if row else 0
+
     async def ensure_work_index(self):
+        await self.collection.create_index(
+            [("guild_id", 1), ("retry_not_before", -1)],
+            name="member_change_lane_backoff",
+            partialFilterExpression={
+                "kind": "manage_web_request",
+                "retry_not_before": {"$exists": True},
+            },
+        )
         await self.collection.create_index(
             [("kind", 1), ("status", 1), ("state", 1)],
             name="management_ready_work",
@@ -327,12 +465,21 @@ class ProfileRuns:
                     await self.prune()
             # Pending/running/uncertain children are never re-created or reset.
             return
+        backoff = await self.lane_backoff(parent["guild_id"], now=at)
+        if backoff:
+            await self.collection.update_one(
+                {"_id": parent["_id"], "state": "queued", "cursor": index},
+                {"$max": {"next_at": backoff}},
+            )
+            return
         child = dict(
             _id=child_id,
             kind="manage_web_request",
             parent_id=parent["_id"],
-            section="member_profiles",
-            action="standardize_one",
+            section="roles" if parent.get("run_type") == "roles" else "member_profiles",
+            action=(
+                "bulk_one" if parent.get("run_type") == "roles" else "standardize_one"
+            ),
             values=item,
             revision=item["revision"],
             user_id=parent["user_id"],
@@ -348,12 +495,13 @@ class ProfileRuns:
         except DuplicateKeyError:
             pass
 
-    async def stop(self, run_id, *, actor_id, guild_id):
+    async def stop(self, run_id, *, actor_id, guild_id, run_type="profiles"):
         actor = member_id(actor_id)
         query = {
             "_id": run_id,
             "kind": KIND,
             "guild_id": int(guild_id),
+            "run_type": "roles" if run_type == "roles" else {"$ne": "roles"},
         }
         parent = await self.collection.find_one(query)
         if not parent:
@@ -407,6 +555,65 @@ class ProfileRuns:
             )
             await self.prune()
 
+    async def record_role_change(self, row, *, before, after):
+        receipt = dict(
+            actor_id=row["user_id"],
+            discord_id=row["values"]["discord_id"],
+            role_id=row["values"]["role_id"],
+            operation=row["values"]["operation"],
+            before=bool(before),
+            after=bool(after),
+            confirmed_at=time.time(),
+        )
+        saved = await self.collection.update_one(
+            {"_id": row["_id"], "kind": "manage_web_request", "status": "running"},
+            {"$set": {"role_audit": receipt}},
+        )
+        if not saved.matched_count:
+            from utils.member_profiles import ProfileOutcomeUncertain
+
+            raise ProfileOutcomeUncertain(
+                "Role changed but its receipt could not be confirmed. Refresh the person before trying again."
+            )
+        return receipt
+
+    async def get(self, run_id, *, guild_id, run_type="profiles"):
+        parent = await self.collection.find_one(
+            {
+                "_id": run_id,
+                "kind": KIND,
+                "guild_id": int(guild_id),
+                "run_type": "roles" if run_type == "roles" else {"$ne": "roles"},
+            }
+        )
+        if not parent:
+            raise ValueError("This run is no longer available.")
+        return parent
+
+    async def status(self, run_id, *, guild_id, run_type="profiles"):
+        parent = await self.get(run_id, guild_id=guild_id, run_type=run_type)
+        children = await self.collection.find(
+            {"parent_id": run_id, "kind": "manage_web_request"}
+        ).to_list(length=MAX_MEMBERS)
+        return parent, children
+
+    async def reviewed_child(self, row, *, run_type):
+        parent = await self.get(
+            row.get("parent_id"), guild_id=row["guild_id"], run_type=run_type
+        )
+        if parent.get("stop_requested"):
+            raise ProfileRunStopped("Stopped before this member started.")
+        index = parent.get("cursor", -1)
+        if (
+            parent.get("state") != "queued"
+            or parent.get("user_id") != row.get("user_id")
+            or not 0 <= index < len(parent["items"])
+            or row["_id"] != parent["_id"] + ":" + str(index)
+            or parent["items"][index] != row.get("values")
+        ):
+            raise ValueError("This member does not match the reviewed selection.")
+        return parent
+
     async def timed(self, stage, operation, run="-"):
         started = time.perf_counter()
         try:
@@ -419,8 +626,12 @@ class ProfileRuns:
                 1000 * (time.perf_counter() - started),
             )
 
-    async def summaries(self, guild_id, *, active_only=False):
-        query = {"kind": KIND, "guild_id": guild_id}
+    async def summaries(self, guild_id, *, active_only=False, run_type="profiles"):
+        query = {
+            "kind": KIND,
+            "guild_id": guild_id,
+            "run_type": "roles" if run_type == "roles" else {"$ne": "roles"},
+        }
         if active_only:
             query["state"] = "queued"
         # Manifests contain every member's reviewed data. The picker needs none
@@ -452,7 +663,8 @@ class ProfileRuns:
         await self.prune()
 
     async def prune(self):
-        # Keep 20 terminal runs at most, for at most 30 days. Never touch active work.
+        # Keep 20 terminal runs per guild/type for 30 days; active and uncertain
+        # role work retain the receipts needed for safe reconciliation.
         rows = (
             await self.collection.find(
                 {"kind": KIND, "state": {"$in": ["done", "stopped"]}}
@@ -462,7 +674,16 @@ class ProfileRuns:
         )
         now = time.time()
         cutoff = now - 30 * 86400
+        ranks, retained_roles = {}, []
         for row in rows:
+            kind = "roles" if row.get("run_type") == "roles" else "profiles"
+            key = (row.get("guild_id"), kind)
+            rank = ranks.get(key, 0)
+            ranks[key] = rank + 1
+            if row.get("next_at", 0) > now:
+                if kind == "roles":
+                    retained_roles.append(row["_id"])
+                continue
             uncertain = await self.collection.find_one(
                 {
                     "parent_id": row["_id"],
@@ -470,13 +691,18 @@ class ProfileRuns:
                     "status": "uncertain",
                 }
             )
-            if (row in rows[:20] or uncertain) and row.get("finished_at", 0) >= cutoff:
+            if ((rank < 20 or uncertain) and row.get("finished_at", 0) >= cutoff) or (
+                kind == "roles" and uncertain
+            ):
+                if kind == "roles":
+                    retained_roles.append(row["_id"])
                 continue
             await self.collection.delete_many(
                 {
                     "parent_id": row["_id"],
                     "kind": "manage_web_request",
                     "status": {"$in": list(TERMINAL)},
+                    "role_audit": {"$exists": False},
                 }
             )
             await self.collection.delete_one(
@@ -486,6 +712,22 @@ class ProfileRuns:
                     "state": {"$in": ["done", "stopped"]},
                 }
             )
+
+        # Keep confirmed role receipts independently for 30 days, even when a
+        # parent falls outside its own history cap. Never delete a retained run's
+        # audit, or an uncertain effect that still needs staff reconciliation.
+        await self.collection.delete_many(
+            {
+                "kind": "manage_web_request",
+                "section": "roles",
+                "role_audit": {"$exists": True},
+                "parent_id": {"$nin": retained_roles},
+                "status": {
+                    "$in": [value for value in TERMINAL if value != "uncertain"]
+                },
+                "finished_at": {"$lt": cutoff},
+            }
+        )
 
         # Older crashed requests had no completion timestamp. Establish it once
         # before sorting/pruning, retaining the newest uncertain receipt correctly.
@@ -512,6 +754,8 @@ class ProfileRuns:
             .to_list(length=10001)
         )
         for index, row in enumerate(standalone):
+            if row.get("retry_not_before", 0) > now:
+                continue
             if (index < 20 or row.get("status") == "uncertain") and row.get(
                 "finished_at", 0
             ) >= cutoff:

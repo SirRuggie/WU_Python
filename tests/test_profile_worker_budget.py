@@ -39,6 +39,7 @@ class AcceleratedLoop(asyncio.SelectorEventLoop):
     ("section", "action", "expected"),
     [
         ("member_profiles", "save", "done"),
+        ("roles", "bulk_one", "done"),
         ("fwa_points", "enable", "uncertain"),
     ],
 )
@@ -72,6 +73,7 @@ def test_profile_work_can_outlast_120_seconds_but_other_sections_cannot(
         monkeypatch.setattr(worker, "context", AsyncMock())
         monkeypatch.setattr(worker, "dispatch", dispatch)
         monkeypatch.setattr(ProfileRuns, "advance", AsyncMock())
+        monkeypatch.setattr(ProfileRuns, "lane_backoff", AsyncMock(return_value=0))
         started = asyncio.get_running_loop().time()
         await worker._process_requests(
             None, SimpleNamespace(bot_config=collection)

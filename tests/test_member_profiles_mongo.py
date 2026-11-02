@@ -7,11 +7,12 @@ from types import SimpleNamespace as S
 from uuid import uuid4
 from unittest.mock import AsyncMock
 import pytest
+from local_mongo_fixture import fixture_uri
 from pymongo import AsyncMongoClient
 from utils.member_profiles import MemberProfiles, ProfileConflict
 from utils.member_profile_leases import editing, ProfileBusy
 
-URI = os.environ.get("WU_ACTIVITY_TEST_MONGO_URI")
+URI = fixture_uri(os.environ.get("WU_ACTIVITY_TEST_MONGO_URI"))
 pytestmark = pytest.mark.skipif(
     not URI, reason="dedicated local profile Mongo fixture not provided"
 )
@@ -21,7 +22,6 @@ FIELDS = {"zone_id": "gmt-5", "country": "US", "name_source_tag": None}
 
 
 def test_real_profile_lease_concurrency_failure_cas_and_ttl():
-    assert URI == "mongodb://127.0.0.1:27154"
 
     async def run():
         client = AsyncMongoClient(URI)
@@ -110,7 +110,6 @@ def test_real_profile_lease_concurrency_failure_cas_and_ttl():
 def test_consumed_preview_survives_restart_after_discord_success_storage_failure(
     monkeypatch,
 ):
-    assert URI == "mongodb://127.0.0.1:27154"
     from extensions.warrior import nickname_setup as ui, core
     from extensions.commands import warrior
     from tests.test_warrior_setup import context
@@ -184,7 +183,6 @@ def test_consumed_preview_survives_restart_after_discord_success_storage_failure
 
 
 def test_receipt_nonce_cas_preserves_newer_drafts(monkeypatch):
-    assert URI == "mongodb://127.0.0.1:27154"
 
     async def run():
         client = AsyncMongoClient(URI)
@@ -242,7 +240,6 @@ def test_receipt_nonce_cas_preserves_newer_drafts(monkeypatch):
 
 
 def test_real_standardize_selection_restart_pacing_and_bounded_receipts():
-    assert URI == "mongodb://127.0.0.1:27154"
 
     async def run():
         from utils.member_profile_runs import ProfileRuns, KIND
@@ -393,7 +390,6 @@ def test_real_standardize_selection_restart_pacing_and_bounded_receipts():
 def test_uncertain_receipt_missing_completion_is_retained_for_its_full_lifetime(
     monkeypatch,
 ):
-    assert URI == "mongodb://127.0.0.1:27154"
 
     async def run():
         from utils import member_profile_runs as module
@@ -452,7 +448,6 @@ def test_uncertain_receipt_missing_completion_is_retained_for_its_full_lifetime(
 
 
 def test_real_standardize_stop_retains_inflight_and_never_resumes(monkeypatch):
-    assert URI == "mongodb://127.0.0.1:27154"
 
     async def check():
         import time
@@ -565,7 +560,6 @@ def test_real_standardize_stop_retains_inflight_and_never_resumes(monkeypatch):
 
 
 def test_stopped_run_never_starts_the_next_member(monkeypatch):
-    assert URI == "mongodb://127.0.0.1:27154"
 
     async def check():
         import time, hikari
@@ -653,7 +647,6 @@ def test_stopped_run_never_starts_the_next_member(monkeypatch):
 
 
 def test_cross_staff_stop_and_uncertain_receipt_survives_newer_history():
-    assert URI == "mongodb://127.0.0.1:27154"
 
     async def run():
         from utils.member_profile_runs import ProfileRuns, KIND
@@ -727,7 +720,6 @@ def test_cross_staff_stop_and_uncertain_receipt_survives_newer_history():
 def test_real_import_batch_preserves_saved_imported_and_concurrent_cas():
     from utils.member_timezone_import import import_nicknames
 
-    assert URI == "mongodb://127.0.0.1:27154"
 
     async def run():
         client = AsyncMongoClient(URI)
@@ -929,7 +921,6 @@ def test_fast_run_stop_between_members_and_restart_never_replays_uncertain(
 
 
 def test_expired_lease_after_slow_preparation_never_edits():
-    assert URI == "mongodb://127.0.0.1:27154"
 
     async def run():
         client = AsyncMongoClient(URI)
@@ -973,7 +964,6 @@ def test_expired_lease_after_slow_preparation_never_edits():
 
 
 def test_ready_work_partial_index_avoids_archived_manifest_scan():
-    assert URI == "mongodb://127.0.0.1:27154"
     from utils.member_profile_runs import ProfileRuns
 
     async def run():
@@ -1023,7 +1013,6 @@ def test_real_hikari_seventy_second_429_finishes_four_members_without_uncertaint
     monkeypatch, stop
 ):
     """Actual Hikari bucket wait, loopback HTTP, owned Mongo; never Discord."""
-    assert URI == "mongodb://127.0.0.1:27154"
     import time
     import hikari
     from aiohttp import web
@@ -1190,7 +1179,6 @@ def test_real_hikari_seventy_second_429_finishes_four_members_without_uncertaint
 
 
 def test_real_run_summaries_exclude_large_manifests_and_find_shared_active():
-    assert URI == 'mongodb://127.0.0.1:27154'
     from utils.member_profile_runs import ProfileRuns, KIND
 
     async def run():

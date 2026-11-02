@@ -74,10 +74,10 @@ it('loads an existing selected member by ID without assigning roles',async()=>{
  expect(hook.values[2]).toEqual([ada]);expect(onChange).not.toHaveBeenCalled()
  if(cleanup)cleanup()
 })
-it('confirms member and role names instead of raw IDs',()=>{
+it('does not append obsolete role-editor confirmation copy',()=>{
  const fields:ManagementField[]=[{key:'member_id',label:'Member',type:'member',value:'',options:[ada]},{key:'role_ids',label:'Roles',type:'multiselect',value:[],options:[{value:'999',label:'Leader'}]}]
  const text=actionConfirmation('Add roles?',fields,{member_id:ada.value,role_ids:['999']})
- expect(text).toBe('Add roles?\n\nMember: Ada (@ada)\nRoles: Leader');expect(text).not.toContain(ada.value)
+ expect(text).toBe('Add roles?');expect(text).not.toContain(ada.value);expect(text).not.toContain('999')
 })
 it('selecting a member only edits the draft and does not call a role endpoint',()=>{
  hook.values=['',[ada],[ada],null,false,'',false,0]

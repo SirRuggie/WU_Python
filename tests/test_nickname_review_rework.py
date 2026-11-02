@@ -15,7 +15,7 @@ def test_idle_fast_check_is_one_projected_indexed_query(monkeypatch):
         for _ in range(3):
             await worker.fast_poll(None, mongo)
         assert coll.find_one.await_count == 3
-        assert coll.create_index.await_count == 1
+        assert coll.create_index.await_count == 2
         call = coll.find_one.await_args
         assert call.kwargs["hint"] == "management_ready_work"
         assert call.args[1] == {"_id": 1, "kind": 1, "next_at": 1}
@@ -69,6 +69,7 @@ def test_other_sections_keep_five_per_ten_seconds_and_dispatch_budget(
         )
         mongo = S(bot_config=coll)
         monkeypatch.setattr(ProfileRuns, "advance", AsyncMock())
+        monkeypatch.setattr(ProfileRuns, "lane_backoff", AsyncMock(return_value=0))
         monkeypatch.setattr(worker, "context", AsyncMock())
         dispatch = AsyncMock(return_value={"message": "ok"})
         monkeypatch.setattr(worker, "dispatch", dispatch)
@@ -173,7 +174,7 @@ def test_rate_limit_receipt_defers_next_member(monkeypatch):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("section", ["member_profiles", "fwa_points"])
+@pytest.mark.parametrize("section", ["member_profiles", "roles", "fwa_points"])
 def test_long_rate_limit_receipt_retains_delay_and_never_retries(monkeypatch, section):
     import hikari
 
@@ -183,7 +184,11 @@ def test_long_rate_limit_receipt_retains_delay_and_never_retries(monkeypatch, se
             kind="manage_web_request",
             status="pending",
             section=section,
-            action="save" if section == "member_profiles" else "enable",
+            action=(
+                "save"
+                if section == "member_profiles"
+                else "bulk_one" if section == "roles" else "enable"
+            ),
             guild_id=worker.GUILD_ID,
             user_id="123",
             values={},
@@ -195,6 +200,7 @@ def test_long_rate_limit_receipt_retains_delay_and_never_retries(monkeypatch, se
             update_one=AsyncMock(),
         )
         monkeypatch.setattr(ProfileRuns, "advance", AsyncMock())
+        monkeypatch.setattr(ProfileRuns, "lane_backoff", AsyncMock(return_value=0))
         monkeypatch.setattr(worker, "context", AsyncMock())
         error = hikari.RateLimitTooLongError(
             route=S(),
@@ -211,7 +217,7 @@ def test_long_rate_limit_receipt_retains_delay_and_never_retries(monkeypatch, se
         await worker._process_requests(None, S(bot_config=coll))
         update = coll.update_one.await_args.args[1]["$set"]
         assert update["status"] == "uncertain"
-        if section == "member_profiles":
+        if section in ("member_profiles", "roles"):
             assert update["retry_not_before"] >= before + 90
         else:
             assert "retry_not_before" not in update
@@ -314,6 +320,7 @@ def test_nonprofile_window_resets_and_profiles_are_uncapped_uncounted(
         )
         mongo = S(bot_config=coll)
         monkeypatch.setattr(ProfileRuns, "advance", AsyncMock())
+        monkeypatch.setattr(ProfileRuns, "lane_backoff", AsyncMock(return_value=0))
         monkeypatch.setattr(worker, "context", AsyncMock())
         dispatch = AsyncMock(return_value={"message": "ok"})
         monkeypatch.setattr(worker, "dispatch", dispatch)
@@ -372,6 +379,7 @@ def test_missing_created_at_is_contained_and_next_request_is_processed(
             update_one=AsyncMock(),
         )
         monkeypatch.setattr(ProfileRuns, "advance", AsyncMock())
+        monkeypatch.setattr(ProfileRuns, "lane_backoff", AsyncMock(return_value=0))
         monkeypatch.setattr(worker, "context", AsyncMock())
         dispatch = AsyncMock(return_value={"message": "ok"})
         monkeypatch.setattr(worker, "dispatch", dispatch)

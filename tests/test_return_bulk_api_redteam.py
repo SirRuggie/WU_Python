@@ -164,7 +164,13 @@ def test_worker_queue_expiry_preserves_single_and_bulk_limits(monkeypatch,bulk,a
         now=time.time()
         row=dict(_id='job',kind='manage_web_request',guild_id=worker.GUILD_ID,section='fwa_points',action='enable',user_id='123',values={},revision='r',created_at=now-age)
         if bulk: row.update(parent_id='batch',expires_at=now-age+900)
-        config=SimpleNamespace(find=lambda query:Cursor([]),update_one=AsyncMock(),update_many=AsyncMock(),find_one_and_update=AsyncMock(side_effect=[row,None]))
+        config = SimpleNamespace(
+            find_one=AsyncMock(return_value=None),
+            find=lambda query: Cursor([]),
+            update_one=AsyncMock(),
+            update_many=AsyncMock(),
+            find_one_and_update=AsyncMock(side_effect=[row, None]),
+        )
         db=SimpleNamespace(bot_config=config)
         monkeypatch.setattr(worker,'context',AsyncMock())
         dispatch=AsyncMock(return_value={'message':'Done'});monkeypatch.setattr(worker,'dispatch',dispatch)
