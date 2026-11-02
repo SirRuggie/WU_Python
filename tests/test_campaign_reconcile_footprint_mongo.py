@@ -1,5 +1,7 @@
 """Owned Mongo verifies type/filter/projection semantics; no live provider calls."""
 
+from reminder_ack_fixture import reconcile_installed
+
 import asyncio
 import hashlib
 import json
@@ -106,13 +108,11 @@ def test_real_mongo_filter_projected_signature_and_native_generation():
                 await cwl_campaign.load_campaign(mongo, GUILD, "2026-11")
             )
             sync = AsyncMock()
-            assert await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+            assert await reconcile_installed(mongo, sync, guild_id=GUILD)
             worker = await col.find_one({"_id": bridge.worker_id(GUILD)})
             assert worker["schedule_fingerprint"] == expected
             assert worker["schedule_generations"] == {"2026-11": expected_generation}
-            assert not await bridge.reconcile_campaign_changes(
-                mongo, sync, guild_id=GUILD
-            )
+            assert not await reconcile_installed(mongo, sync, guild_id=GUILD)
             await col.update_one(
                 {"_id": cwl_campaign.cycle_id(GUILD, "2026-11")},
                 {
@@ -120,7 +120,7 @@ def test_real_mongo_filter_projected_signature_and_native_generation():
                     "$set": {"recurring_updated_at": "recurring-after"},
                 },
             )
-            assert await bridge.reconcile_campaign_changes(mongo, sync, guild_id=GUILD)
+            assert await reconcile_installed(mongo, sync, guild_id=GUILD)
             assert sync.await_count == 2
             projected = [
                 row

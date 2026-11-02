@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import logging
+import time
 from utils.manage_poll_cache import timed_step
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
@@ -16,6 +17,10 @@ REQUEST_KIND = "cwl_web_send_request"
 WORKER_KIND = "cwl_web_worker"
 _CYCLE = re.compile(r"20\d\d-(?:0[1-9]|1[0-2])\Z")
 _POOLS = frozenset(("main", "lazy"))
+# One bounded repair attempt per unchanged generation and process. No new poll
+# or durable writes: configuration changes bypass this cooldown immediately.
+_schedule_repair_attempts: dict[int, tuple[str, str, float]] = {}
+SCHEDULE_REPAIR_RETRY_SECONDS = 300
 
 
 class BridgeConflict(ValueError):
@@ -205,10 +210,28 @@ async def get_roster_send_status(mongo, guild_id: int, cycle: str, pool: str) ->
     return row
 
 
-async def mark_worker_alive(mongo, guild_id: int) -> None:
+async def mark_worker_alive(
+    mongo,
+    guild_id: int,
+    *,
+    worker_epoch: str | None = None,
+    schedule_ready: bool | None = None,
+) -> None:
     await mongo.bot_config.update_one(
         {"_id": worker_id(guild_id)},
-        {"$set": {"kind": WORKER_KIND, "guild_id": int(guild_id), "updated_at": _now()}},
+        {
+            "$set": {
+                "kind": WORKER_KIND,
+                "guild_id": int(guild_id),
+                "updated_at": _now(),
+                **({"worker_epoch": worker_epoch} if worker_epoch else {}),
+                **(
+                    {"schedule_ready": schedule_ready}
+                    if schedule_ready is not None
+                    else {}
+                ),
+            }
+        },
         upsert=True,
     )
 
@@ -300,25 +323,50 @@ async def process_roster_request(
     return await mongo.bot_config.find_one({"_id": key})
 
 
-async def process_pending_roster_requests(mongo, sender, *, guild_id: int, limit: int = 10, authorize=None) -> int:
-    await mark_worker_alive(mongo, guild_id)
-    rows = await mongo.bot_config.find({
-        "kind": REQUEST_KIND, "guild_id": int(guild_id), "status": "pending",
-    }).to_list(length=limit)
+async def process_pending_roster_requests(
+    mongo,
+    sender,
+    *,
+    guild_id: int,
+    limit: int = 10,
+    authorize=None,
+    worker_epoch: str | None = None,
+    schedule_ready: bool | None = None,
+) -> int:
+    await mark_worker_alive(
+        mongo, guild_id, worker_epoch=worker_epoch, schedule_ready=schedule_ready
+    )
+    rows = await mongo.bot_config.find(
+        {
+            "kind": REQUEST_KIND,
+            "guild_id": int(guild_id),
+            "status": "pending",
+        }
+    ).to_list(length=limit)
     for row in rows[:limit]:
         await process_roster_request(mongo, row, sender, authorize=authorize)
     return len(rows[:limit])
 
 
-async def reconcile_campaign_changes(mongo, sync_all, *, guild_id: int) -> bool:
+async def reconcile_campaign_changes(
+    mongo,
+    sync_all,
+    *,
+    guild_id: int,
+    loaded_generations: Callable[[], dict[str, str] | None],
+    runtime_id: str,
+) -> bool:
     """Reuse the native scheduler when a web or Discord edit changes a campaign.
 
-    A persisted fingerprint acknowledges successful reconciliation only. Failed
-    syncs retry on the existing worker poll; a concurrent edit changes the next
-    fingerprint and therefore cannot be accidentally acknowledged.
+    Fingerprints detect edits; only the native scheduler's completed process
+    proof acknowledges a load. Missing acknowledgements can be repaired without
+    rescheduling. Failed or incomplete loads remain pending on the existing poll.
     """
     import hashlib
     import json
+
+    if not isinstance(runtime_id, str) or not runtime_id:
+        raise ValueError("A process identity is required for schedule acknowledgement")
 
     # Only these active records participate in change detection. Do not fetch
     # unrelated profile manifests, child receipts or campaign bodies every tick.
@@ -351,23 +399,62 @@ async def reconcile_campaign_changes(mongo, sync_all, *, guild_id: int) -> bool:
         ).encode()
     ).hexdigest()
     worker = await mongo.bot_config.find_one({"_id": worker_id(guild_id)}) or {}
-    if worker.get("schedule_fingerprint") == signature:
+
+    def installed():
+        proof = loaded_generations()
+        if proof is None:
+            return None
+        if (
+            not isinstance(proof, dict)
+            or not isinstance(runtime_id, str)
+            or not runtime_id
+            or any(
+                not isinstance(cycle, str)
+                or not _CYCLE.fullmatch(cycle)
+                or not isinstance(generation, str)
+                or not generation
+                for cycle, generation in proof.items()
+            )
+        ):
+            raise ValueError(
+                "Schedule acknowledgement requires exact installed generations"
+            )
+        return dict(proof)
+
+    generations = installed()
+    same_signature = worker.get("schedule_fingerprint") == signature
+    same_epoch = worker.get("schedule_epoch") == runtime_id
+    # A stored fingerprint is not proof that this process restored its jobs.
+    # Completed startup loads can repair missing/default-only acknowledgements
+    # directly. Failed or absent process proof requires one real load first.
+    if not same_signature or generations is None:
+        now = time.monotonic()
+        prior = _schedule_repair_attempts.get(int(guild_id))
+        if (
+            prior
+            and prior[:2] == (runtime_id, signature)
+            and now - prior[2] < SCHEDULE_REPAIR_RETRY_SECONDS
+        ):
+            return False
+        _schedule_repair_attempts[int(guild_id)] = (runtime_id, signature, now)
+        await sync_all()
+        generations = installed()
+    if generations is None or (rows and not generations):
+        raise ValueError("No schedule load completed; nothing was acknowledged")
+    _schedule_repair_attempts.pop(int(guild_id), None)
+    if (
+        same_signature
+        and same_epoch
+        and worker.get("schedule_generations") == generations
+    ):
         return False
-    cycles = {row["cycle"] for row in rows if row.get("cycle")}
-    # Capture generations before sync; never acknowledge a later concurrent edit.
-    generations = {
-        cycle: campaign_generation(
-            await cwl_campaign.load_campaign(mongo, guild_id, cycle)
-        )
-        for cycle in cycles
-    }
-    await sync_all()
     await mongo.bot_config.update_one(
         {"_id": worker_id(guild_id)},
         {
             "$set": {
                 "schedule_fingerprint": signature,
                 "schedule_generations": generations,
+                "schedule_epoch": runtime_id,
                 "schedule_sync_at": _now(),
             }
         },
