@@ -7,8 +7,8 @@ Local reproduction uses the actual native scheduler with MemoryMongo and
 MemoryScheduler from `tests/test_reminder_schedule_ack.py`:
 
 1. Activate default settings and freeze November22,2026 at noon New York time.
-2. Persist an unsent signup/main occurrence from one hour earlier with the current
-   generation, `job_kind="scheduled"`, and zero failures.
+2. Persist the unsent signup/main occurrence at its actual template time,
+   November20,2026 at17:00 New York time, with the current generation, `job_kind="scheduled"`, and zero failures.
 3. Call `restore_pending_reminders()`: the job is restored for five seconds later,
    and both scheduler and durable pending record contain it.
 4. Call `sync_campaign_schedule(guild_id, "2026-11")` immediately: both disappear.
@@ -24,3 +24,22 @@ workspace evidence, not production configuration. Baseline presence is from
 Claude's independent review; this local reproduction confirms the current
 behaviour without changing it. Scope and a safe delivery policy need a separate
 owner decision, especially because an uncertain send must not be retried blindly.
+
+
+## Acknowledgement scope clarification pending
+
+The removed job is campaign-owned, not a legacy reminder:
+`cwl_campaign:644963518025826315:2026-11:signup:main`, generation `1:0`.
+After restore then sync/reconciliation, both native process proof and worker
+acknowledgement report November/December `1:0` while that overdue job is absent.
+All eight expected future November jobs (reminders2–5, both pools) are installed
+exactly; twelve future December jobs and the rollover job are also installed.
+There are no missing future November IDs. Exact local IDs/counts are retained in
+`.local/p142-missed-scope.json`, with the actual template run time.
+
+READY is held pending reviewer clarification of whether the acknowledgement
+contract includes this restored overdue job, rather than only the native sync's
+future desired schedule. The existing native sync deliberately excludes past
+ordinary scheduled occurrences; this acknowledgement patch does not change that
+policy. No repair policy or send is introduced here. Zero mock sender calls are
+only evidence that this fixture did not invoke the mock, not delivery evidence.

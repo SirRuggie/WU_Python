@@ -87,3 +87,12 @@ callsites were audited before the final frozen full run. Those earlier failing
 runs were deliberately interrupted and their logs retained; they are not passing
 gates. A browser-only aggregate locator was corrected after initially matching
 six rows with a single-element API. No production call or delivery was tested.
+
+
+READY remains held for acknowledgement-scope clarification: the separate known
+issue concerns a campaign-owned overdue job of the acknowledged generation, not
+a legacy job. Native sync installs every expected future job but removes the
+restored overdue plain job before acknowledging the generation. See the exact
+local IDs/counts and open contract question in
+`docs/reminder-restored-plain-job-known-issue.md`. Passing tests alone do not
+resolve that product/safety contract; no policy fix was added without approval.
