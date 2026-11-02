@@ -90,17 +90,44 @@ hook regression fails before the fix and passes after it. A disposed queue now
 reports no active page work immediately, while its already-started request may
 still settle. No queued request starts after disposal.
 
-## Checkpoint validation
+## Final validation
 
-The full frontend at the preceding source passes 1575 checks across 270 files.
-Focused queue and integration tests cover ten serial writes, latest revisions,
-same-row changes, mixed list/Details controls, failure halting, unknown outcomes,
-explicit refresh, disposal and Undo. Actual owned SQLite/browser checks prove the
-healthy ten-row wire trace, Details/list reversals, Undo, keyboard focus and four
-known refusals (409/401/403/504), with every unrelated table hash unchanged.
-Five meaningful mutants are killed. An initial unbounded-retry mutant timed out
-and is not counted; the one-retry mutant fails actual assertions. The corrected
-disposal source still needs its final full suite/build and repeated unmount gate.
-The 45-second held-ack case has exercised a committed unknown outcome and learned
-it through Refresh; final structured evidence is being completed. Release remains
-held. No mock or fixture is evidence of production behavior or Discord delivery.
+Frozen runtime source `1a77140391bfbede22b124dd8e93b0e29fcb63f7` passes
+1576 frontend tests across 270 files, 60 affected tests, TypeScript, the main
+build, and the isolated preview build/typecheck. Five genuine mutants fail
+behavior assertions: stale revision, one automatic retry, parallel sends,
+continuing after failure, and sending after unmount. An initial unbounded-retry
+mutant timed out and is not counted.
+
+Actual browser checks against owned SQLite cover ten rapid serial saves,
+list/Details reversals, Undo, and 409/401/403/504 refusals. Confirmed rows stay
+saved; the remaining queue stops. Unrelated table hashes remain unchanged.
+The actual 45-second held-ack deadline finished in 45.347 seconds: Refresh learned
+two committed marks, the third remained unsent, and nothing replayed. Navigation
+cleanup clears the guard and starts no later queued write. At 360 and 1440 pixels,
+layout, readable pending states, 44-pixel controls and keyboard Space/focus checks
+pass; pending-row screenshots were visually reviewed at both widths.
+
+Adversarial checks cover stale global/per-row revisions, same-row coalescing,
+malformed acknowledgements, concurrent observations, mixed Details/list intents,
+partial and unknown outcomes, authentication/permission refusals, reciprocal
+Undo/Refresh locks, and unmount/deadline races. Existing HTTP ownership and CAS
+checks remain authoritative. These isolated tests do not prove production writes
+or Discord delivery. The browser retransmission limitation above remains explicit.
+
+Evidence is retained in `.local/p145-*`, including final suite/build logs,
+`p145-mutants.json`, `p145-browser/success.json`, `p145-failures/known-proof.json`,
+`p145-deadline/proof.json`, `p145-layout/proof.json`, and the no-routing socket probe.
+Earlier failed harness/reproduction logs are retained rather than relabeled pass.
+
+## Review fixture
+
+Open `http://127.0.0.1:32793/` and choose **Open local test session**. This runs the
+real existing mark/Undo handlers on owned persistent SQLite with synthetic read
+fixtures; external network access is blocked. Saves persist locally. PID 3300970
+and `.local/p145-preview/fixture.sqlite` are intentionally retained for review.
+Entry `filler-queue-preview-D7Z7rwB_.js` has SHA256
+`ca0892821682585fb654f78453a13ba7d2be49640e2a77be716d87b3d859e6fa`.
+Fixture controls exercise refusals and lost acknowledgements without production
+requests. Existing QA marks are retained; the database has not been reseeded.
+Release remains held for Ruggie's preview approval.
