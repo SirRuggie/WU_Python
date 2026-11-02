@@ -89,7 +89,7 @@ it("shows one member season line with local close time, no internal Draft chip",
         />,
       ),
     );
-    expect(host.textContent).toBe("November 2026 · Open");
+    expect(host.textContent).toBe("November 2026 · Signups closed");
     await act(async () =>
       root.render(
         <MemberSeasonLine season={{ ...season, signup_open: false }} />,

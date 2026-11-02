@@ -223,8 +223,8 @@ export default function ReminderWorkspace({
   const [notice, setNotice] = useState("");
   const [confirmation, setConfirmation] = useState<{
     text: string;
-    action: () => void;
     confirmLabel?: string;
+    action: () => void;
   } | null>(null);
   const load = useCallback(async () => {
     const request = ++loadRequest.current;
@@ -1057,63 +1057,53 @@ export default function ReminderWorkspace({
                           : "Unsaved changes"
                         : "All changes saved")}
                   </span>
-                  <div
-                    className="reminder-control-actions"
-                    role="group"
-                    aria-label="Review and save"
-                  >
-                    <button
-                      disabled={disabled || !dirty}
-                      onClick={() =>
-                        void act(async () => {
-                          setPreview(
-                            await api<CampaignState>(
-                              base + "/preview",
-                              "POST",
-                              body,
-                            ),
-                          );
-                          setNotice(
-                            "Preview ready. Review the schedule below before saving.",
-                          );
-                        })
-                      }
-                    >
-                      Preview schedule
-                    </button>
-                    <button
-                      className="primary"
-                      disabled={disabled || !dirty}
-                      onClick={() =>
-                        void act(async () => {
-                          const checked = await api<CampaignState>(
+                  <div className="reminder-control-actions" role="group" aria-label="Review and save">
+                  <button
+                    disabled={disabled || !dirty}
+                    onClick={() =>
+                      void act(async () => {
+                        setPreview(
+                          await api<CampaignState>(
                             base + "/preview",
                             "POST",
                             body,
-                          );
-                          setPreview(checked);
-                          setConfirmation({
-                            confirmLabel: "Save",
-                            text: "Save these reminder settings? They repeat monthly, and the bot will use the new times for enabled messages. Already-sent messages will not be sent again.",
-                            action: () =>
-                              void act(async () => {
-                                const result = await api<CampaignState>(
-                                  base,
-                                  "PATCH",
-                                  body,
-                                );
-                                await load();
-                                setNotice(
-                                  result.warning ||
-                                    "Saved to Manage. Signup links are unchanged; the existing bot will reconcile scheduled sends.",
-                                );
-                              }),
-                          });
-                        })
-                      }
-                    >
-                      Save
-                    </button>
+                          ),
+                        );
+                        setNotice(
+                          "Preview ready. Review the schedule below before saving.",
+                        );
+                      })
+                    }
+                  >
+                    Preview schedule
+                  </button>
+                  <button
+                    className="primary"
+                    disabled={disabled || !dirty}
+                    onClick={() => void act(async () => {
+                      const checked = await api<CampaignState>(base + "/preview", "POST", body);
+                      setPreview(checked);
+                      setConfirmation({
+                        confirmLabel: "Save",
+                        text: "Save these reminder settings? They repeat monthly, and the bot will use the new times for enabled messages. Already-sent messages will not be sent again.",
+                        action: () =>
+                          void act(async () => {
+                            const result = await api<CampaignState>(
+                              base,
+                              "PATCH",
+                              body,
+                            );
+                            await load();
+                            setNotice(
+                              result.warning ||
+                                "Saved to Manage. Signup links are unchanged; the existing bot will reconcile scheduled sends.",
+                            );
+                          }),
+                      });
+                    })}
+                  >
+                    Save changes
+                  </button>
                   </div>
                 </div>
               )}
@@ -1185,8 +1175,8 @@ export default function ReminderWorkspace({
       )}
       {confirmation && (
         <ConfirmDialog
-          text={confirmation.text}
           confirmLabel={confirmation.confirmLabel}
+          text={confirmation.text}
           onCancel={() => setConfirmation(null)}
           onConfirm={() => {
             const action = confirmation.action;

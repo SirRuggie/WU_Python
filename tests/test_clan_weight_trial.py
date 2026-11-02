@@ -210,5 +210,11 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         cached = await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
         self.assertTrue(cached['war_source']['cached'])
         self.assertTrue(cached['war_source']['captured_at'])
-        self.assertEqual([row['tag'] for row in cached['members']], ['#P2Y'])
+        self.assertEqual([row["tag"] for row in cached["members"]], ["#P2Y"])
+        self.assertEqual(
+            [row["tag"] for row in cached["weight_members"]], ["#P2Y", "#Q2Y"]
+        )
+        self.assertFalse(cached["weight_members"][1]["current_member"])
+        self.assertIsNone(cached["weight_members"][1]["town_hall"])
+        self.assertIsNone(cached["weight_members"][1]["storages"])
         self.assertEqual(cached['war_order'], first['war_order'])
