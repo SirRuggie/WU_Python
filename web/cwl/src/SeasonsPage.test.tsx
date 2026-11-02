@@ -6,7 +6,7 @@ import { DashboardPermissions } from "./DashboardPermissions";
 import SeasonsPage from "./SeasonsPage";
 import type { Season } from "./api";
 const { api } = vi.hoisted(() => ({ api: vi.fn() }));
-vi.mock("./api", () => ({ api }));
+vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
 vi.mock("./rosterUi/Menu", () => ({
   default: () => <span>Season selector</span>,
 }));

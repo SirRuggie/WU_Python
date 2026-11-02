@@ -5,6 +5,7 @@ import { api, type Season } from "./api";
 import { Button, Input, StatusPill } from "./rosterUi/primitives";
 import RosterMenu from "./rosterUi/Menu";
 import ConfirmDialog from "./ConfirmDialog";
+import CwlPoolRoles from "./CwlPoolRoles";
 import MemberSeasonSettings from "./MemberSeasonSettings";
 import useSignupAction from "./useSignupAction";
 import {
@@ -23,6 +24,7 @@ type Props = {
   onRefresh: () => Promise<void>;
   onClans: () => void;
   onBusy: (value: boolean) => void;
+  onDirty?: (value: boolean) => void;
 };
 export default function SeasonsPage({
   userId,
@@ -33,6 +35,7 @@ export default function SeasonsPage({
   onRefresh,
   onClans,
   onBusy,
+  onDirty,
 }: Props) {
   const allowed = useDashboardPermission("cwl_settings");
   const season = seasons.find((item) => String(item.id) === seasonId);
@@ -52,7 +55,8 @@ export default function SeasonsPage({
       return false;
     }
   });
-  const working = busy || signup.busy;
+  const [roleBusy, setRoleBusy] = useState(false);
+  const working = busy || signup.busy || roleBusy;
   useEffect(() => {
     onBusy(working);
     return () => onBusy(false);
@@ -255,6 +259,7 @@ export default function SeasonsPage({
           disabled={working || !allowed}
         />
       )}
+      <CwlPoolRoles onBusy={setRoleBusy} onDirty={onDirty} />
       {signup.visibilityCheck}
       {signup.dialog}
     </section>

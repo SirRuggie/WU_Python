@@ -184,5 +184,6 @@ it("unavailable filler observations cannot add off-roster readiness", () => {
   extra.status = "unavailable";
   const group = declarationGroups(data, roster, {}, now, [extra])[0];
   expect(group.readiness.arrivedCount).toBe(0);
-  expect(group.late).toHaveLength(1);
+  // An unavailable observation is not evidence that this account needs a mention.
+  expect(group.late).toHaveLength(0);
 });

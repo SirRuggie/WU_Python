@@ -1193,6 +1193,7 @@ function App() {
           memberSeason={memberSeason}
           onRefresh={loadSeasons}
           onBusy={setRosterBusy}
+          onDirty={setCwlDirty}
           onSeasonChange={id => { if (canLeave()) setSeasonId(id) }}
           onClans={() => {
             if (!canLeave() || allowedView('roster') !== 'roster') return

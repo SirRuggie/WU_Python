@@ -1,3 +1,4 @@
+from datetime import datetime
 """Staff roster rules, weights, placement, and revision invariants."""
 
 import hashlib
@@ -708,9 +709,17 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
             "joining_instructions": published["joining_instructions"],
         })
         self.assertNotIn("published_by", str(mine))
-        self.assertEqual(mine["accounts"], [{"tag": "#P2Y", "player_name": "Main", "town_hall": 16,
+        location_fields = {"current_clan_tag", "current_clan_name", "current_clan_checked_at", "current_clan_status"}
+        observed = mine["accounts"][0]
+        self.assertEqual(observed["current_clan_tag"], "#R2Y")
+        self.assertEqual(observed["current_clan_name"], "Family")
+        self.assertEqual(observed["current_clan_status"], "current")
+        self.assertIsNotNone(datetime.fromisoformat(observed["current_clan_checked_at"]).tzinfo)
+        core = [{key: value for key, value in row.items() if key not in location_fields}
+                for row in mine["accounts"]]
+        self.assertEqual(core, [{"tag": "#P2Y", "player_name": "Main", "town_hall": 16,
                                             "pool": "main", "assigned_clan_tag": "#C2Y",
-                                            "assigned_clan_name": "Host #C2Y"}])
+                                            "assigned_clan_name": "Host #C2Y", "arrival_status": "missing"}])
         self.assertNotIn("weight", str(mine).lower())
         self.assertNotIn("user_id", str(mine))
         response = await self.call("GET", f"/seasons/{self.sid}/my-assignments", other)

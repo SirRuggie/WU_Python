@@ -37,14 +37,14 @@ async def hierarchy(request, actor):
     return roles, guild, bot, member(actor['member'])
 
 
-async def dashboard_grant_roles(request, actor):
+async def dashboard_grant_roles(request, actor, *, include_owner=False):
     """Non-owners must not manage the roles that confer dashboard access."""
-    from utils.dashboard_access import OWNER_IDS, AccessRepository
-    if actor['user_id'] in OWNER_IDS:
+    from utils.dashboard_access import OWNER_IDS
+    if actor['user_id'] in OWNER_IDS and not include_owner:
         return set()
     async with mongo(request) as shared:
-        policy = await AccessRepository(shared.bot_config).read()
-    return {g['id'] for g in (policy or {}).get('grants', []) if g['kind'] == 'role'}
+        from utils.dashboard_access import dashboard_role_grants
+        return await dashboard_role_grants(shared)
 
 
 async def page(request):
