@@ -1428,3 +1428,11 @@ outage/crash/offseason/manual-force behavior, and harmless bounded ping outages.
 External delivery is tested with injected transports only: no actual Healthchecks
 request, production API timing, Discord delivery or live role change is claimed.
 There is no UI change or new preview for this monitoring-only feature.
+
+Source validation for this batch: 6,321 guarded backend tests passed, 99 skipped
+and 267 subtests passed; 130 focused checks; five genuine adversarial mutants
+killed. The required war gate passed 213 backend checks (one skip), 35 frontend
+checks, TypeScript and an isolated build. Exact committed runtime boot passed
+all 51 production routes with the native pool and real owner on owned Mongo /
+copied SQLite, external networking blocked, config 200 and unauthenticated auth
+401. Owned fixtures were stopped and removed; source hashes and logs retained.
