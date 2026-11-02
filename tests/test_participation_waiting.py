@@ -82,6 +82,7 @@ class WaitingTests(unittest.IsolatedAsyncioTestCase):
         await self.prepare()
         self.set_group([["#Y2Y"]], season="2026-10")
         with self.app["store"].tx() as db:
+            db.execute("INSERT INTO participation_group_observations VALUES(?,?,'#C2Y',?,'WAR','[[\"#Y2Y\"]]','[]','2026-11-01T00:00:00Z')",(self.sid,'2026-11','2026-11'))
             db.execute(
                 "INSERT INTO participation_war_fetches VALUES(?,?,'#Y2Y',0,'[]','2026-11-01T00:00:00Z')",
                 (self.sid, "2026-11"),
@@ -142,6 +143,7 @@ class WaitingTests(unittest.IsolatedAsyncioTestCase):
                 "season_mismatch",
             )
         with self.app["store"].tx() as db:
+            db.execute("INSERT INTO participation_group_observations VALUES(?,?,'#C2Y',?,'WAR','[[\"#Y2Y\"]]','[]','2026-11-01T00:00:00Z')",(self.sid,'2026-11','2026-11'))
             db.execute(
                 "INSERT INTO participation_war_fetches VALUES(?,?,'#Y2Y',0,'[]','2026-11-01T00:00:00Z')",
                 (self.sid, "2026-11"),
@@ -164,7 +166,7 @@ class WaitingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["source_attacks"], 7)
         self.assertEqual(row["source_stars"], 21)
 
-    async def test_one_old_clan_and_current_war_data_keeps_warning_and_scores(self):
+    async def test_one_old_clan_and_current_war_data_is_partial_and_keeps_scores(self):
         await self.prepare()
         self.set_group([["#Y2Y"]], season="2026-10")
         await self.signup("main", "#Q2Y")
@@ -189,10 +191,10 @@ class WaitingTests(unittest.IsolatedAsyncioTestCase):
         }
         self.set_war("#Y2Y", state="WAR")
         _, data = await self.result()
-        self.assertEqual(data["sync"]["status"], "season_mismatch")
+        self.assertEqual(data["sync"]["status"], "partial")
         other = next(row for row in data["accounts"] if row["tag"] == "#Q2Y")
         self.assertEqual(other["source_attacks"], 1)
-        self.assertTrue(data["sync"]["warning"])
+        self.assertIsNone(data["sync"]["warning"])
 
     def test_next_month_rule_crosses_the_year_without_accepting_an_arbitrary_future_month(
         self,
@@ -275,6 +277,7 @@ class NoGroupTests(unittest.IsolatedAsyncioTestCase):
                 _, data = await self.result()
             self.assertNotEqual(data["sync"]["status"], "waiting")
         with self.app["store"].tx() as db:
+            db.execute("INSERT INTO participation_group_observations VALUES(?,?,'#C2Y',?,'WAR','[[\"#Y2Y\"]]','[]','2026-11-01T00:00:00Z')",(self.sid,'2026-11','2026-11'))
             db.execute(
                 "INSERT INTO participation_war_fetches VALUES(?,?,'#Y2Y',0,'[]','2026-11-01T00:00:00Z')",
                 (self.sid, "2026-11"),
