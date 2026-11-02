@@ -25,13 +25,13 @@ has an image-semantic green check with accessible name In clan. Clan headings
 show N of M in clan or All M in clan. Main now precedes Lazy in the existing pool
 role settings, without mutating the received array or changing save behavior.
 
-Validation: final guarded backend5,840 passed/71 skipped/253 subtests; frontend
+Before prompt 102, the final guarded backend had 5,840 passed/71 skipped/253 subtests; frontend
 1,409 passed/251 files; TypeScript/isolated build pass. Four focused HTTP/pure-rule
 cases (eight subtests), the inherited publication/privacy cases, and seventeen
 focused UI cases pass. Required war-reminder validation passed213 backend cases
 (one skipped),35 frontend cases and build. Dropping the hosting rule and allowing
 unknown checks both fail genuine existing assertions; no collection failures
-were counted as kills. The initial full run's four inherited response-contract
+were counted as kills. That initial full run's four inherited response-contract
 failures were corrected by keeping the response minimal and updating the new
 status expectation; the final frozen backend run passed. An intermediate run
 was intentionally stopped before the domain/storage boundary cleanup.
@@ -82,8 +82,13 @@ Prompt 102 checks: 46 focused UI cases and 19 focused backend cases pass. Full
 frontend: 1,416 passed across 251 files; TypeScript and isolated production build
 pass. The draft-moved-as-intruder mutant fails the HTTP assertion (3 versus 2),
 with no collection or fixture error counted as a kill. Required war reminders:
-213 backend passed, one skipped; 35 frontend passed and build. Full combined
-backend completion is recorded with the READY handoff.
+213 backend passed, one skipped; 35 frontend passed and build. Full combined backend: 5,841 passed, 71 skipped and 253 subtests. All 5,912
+collected nodes across 399 files ran exactly once in three disjoint file groups.
+The earlier single-process attempt ended with SIGTERM at 41% without a failure
+report, so it was not counted as a pass. The initial sandbox attempt was also
+interrupted; final groups permitted isolated loopback HTTP while blocking
+external networking. The final identity-batch assertion was additionally rerun
+in the 19 focused backend cases.
 
 Disconnected row fixtures at 320/360/390/1440 assert one identity/DM for three
 accounts, individual unlinked rows, escaped text, neutral moved styling, separate
