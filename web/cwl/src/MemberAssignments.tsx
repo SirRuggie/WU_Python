@@ -1,5 +1,5 @@
+import "./MemberRefreshNote.css";
 import { memberSignupsOpen } from "./memberSeason";
-import AccountLinkHelp from "./AccountLinkHelp";
 import {
   mergeAssignmentLocations,
   assignmentArrivalLabel,
@@ -140,13 +140,6 @@ export default function MemberAssignments({
             <div className="member-signup-summary">
               <section className="member-signup-empty">
                 <h2>You haven't signed up any accounts yet.</h2>
-                <details>
-                  <summary>Link an account</summary>
-                  <AccountLinkHelp
-                    busy={loading}
-                    onRefresh={() => void load()}
-                  />
-                </details>
                 {memberSignupsOpen(season) ? (
                   <button
                     onClick={

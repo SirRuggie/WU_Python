@@ -147,7 +147,10 @@ export default function MemberSignupStatus({
                 >
                   My clan assignments ›
                 </a>
-                {waiting.length > 0 && " Some accounts are waiting for a clan."}
+                {waiting.length > 0 &&
+                  (waiting.length === signups.length
+                    ? " Your accounts are waiting for a clan."
+                    : " Some accounts are waiting for a clan.")}
               </>
             ) : (
               "We've got your signup. Your clan will show here once staff finish the roster."

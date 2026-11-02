@@ -1100,7 +1100,8 @@ My signups shows publication loading until its own request finishes, including
 when the season or saved signup set changes. A published response always links
 to My clan assignments, including partial placement. Closed, unsigned members
 see `Ask staff for help.` Account-link help precedes the pool choice after a
-completed empty linked-account read and is available in empty assignments.
+completed empty linked-account read. Empty assignments provide signup navigation
+without assuming linked-account absence.
 `memberSignupsOpen` is shared by App, Home and member status components: only
 a draft season with signup_open is open. Main/Lazy rule text, the FWA line and
 the member tour wording are unchanged.
@@ -1115,3 +1116,32 @@ API contract, stored signup, assignment, publication or notification policy
 changed. No production calls, live Discord delivery or real-phone assistive
 technology testing was performed. Release is subject to Claude ACCEPT and
 root-coordinated fresh gates under approval 395.
+
+### Review137 corrections
+
+`MemberSeasonLine` now shares the same draft/open rule as the signup flow. A
+published or archived season cannot show an Open line merely because its raw
+signup_open flag remains true. A failed season refresh after a successful read
+uses the compact, shared muted retry style on Signup and other member pages;
+the urgent availability block is reserved for a season that has never loaded.
+An explicit signup remains subject to the server's fresh policy: the existing
+isolated HTTP regression returns 423 after staff close signups, and the frontend
+keeps the failed explicit submission as an error rather than showing success.
+
+Link help requires a completed account read for this member and season, remains
+hidden during rechecks and appears once after an empty result, including the
+account-selection step. The existing tour target moves to that one helper;
+no tour text changes. Empty assignments do not fetch linked accounts or infer
+that a member has none: they offer signup navigation. Published accounts all
+waiting for a clan now say `Your accounts`; partial waiting still says `Some`.
+
+Regressions distinguish unknown arrival from known missing arrival, assert
+`May change` on the actual clan row, verify Home's hidden first read directly,
+exercise App visibilitychange without Home masking its listener, observe the
+initial help render with React Profiler, and hold a read during recheck. They
+also keep assignments unmounted until seasons are known. Nine behavioral
+mutants, including all six review survivors, are covered in the full frontend
+suite. Fresh disposable before/after browser fixtures cover 320/360/390/1440,
+keyboard recovery, no overflow, one helper and unchanged domain counts. Browser
+mutation observation reproduces the linked-member helper flash before and not
+after. All preserved review previews remain untouched.

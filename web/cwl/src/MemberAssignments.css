@@ -390,12 +390,3 @@
   display: list-item;
   align-content: center;
 }
-.member-refresh-note {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 8px 0;
-  color: #c5c4c1;
-  font-size: 13px;
-}
