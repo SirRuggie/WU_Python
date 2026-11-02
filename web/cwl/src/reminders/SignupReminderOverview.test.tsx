@@ -30,7 +30,7 @@ function fixture() {
     signup_deadline: "",
     reminder_sequence: { enabled: false },
     messages: Object.fromEntries(
-      Array.from({ length: 7 }, (_, index) => [
+      Array.from({ length: 6 }, (_, index) => [
         `message${index}`,
         {
           enabled: true,
@@ -42,7 +42,7 @@ function fixture() {
     ),
   } as Campaign;
 }
-function render(campaign: Campaign) {
+function render(campaign: Campaign, activated = true) {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -51,6 +51,7 @@ function render(campaign: Campaign) {
     root.render(
       <Overview
         campaign={campaign}
+        activated={activated}
         cycle="2026-11"
         schedule={[]}
         destination={(id) => `channel-${id}`}
@@ -69,12 +70,12 @@ describe("signup reminder overview", () => {
     expect(targetCwlMonth("2026-13")).toContain("unavailable");
     expect(shortReminderTime("invalid")).toBe("invalid");
   });
-  it("shows seven rows, common settings once per pool and routes every Edit exactly", () => {
+  it("shows six rows, common settings once per pool and routes every Edit exactly", () => {
     const edit = render(fixture());
-    expect(host.querySelectorAll("article")).toHaveLength(7);
+    expect(host.querySelectorAll("article")).toHaveLength(6);
     expect(host.textContent?.match(/Destination:/g)).toHaveLength(2);
     const buttons = [...host.querySelectorAll("article button")];
-    expect(buttons).toHaveLength(14);
+    expect(buttons).toHaveLength(12);
     buttons.forEach((button, index) => {
       act(() =>
         button.dispatchEvent(new MouseEvent("click", { bubbles: true })),
@@ -94,9 +95,15 @@ describe("signup reminder overview", () => {
     render(campaign);
     expect(host.textContent).toContain("channel-different");
     expect(host.textContent).toContain("Notify: other");
-    expect(host.querySelectorAll("article")).toHaveLength(7);
+    expect(host.querySelectorAll("article")).toHaveLength(6);
     expect(
       host.querySelector('[aria-label="Message 5"]')?.textContent,
     ).toContain("Disabled");
   });
+});
+
+it("inactive campaign never labels a row On or an upcoming send", () => {
+  render(fixture(), false);
+  expect(host.textContent).not.toMatch(/\bOn\b/);
+  expect(host.textContent).not.toContain("No upcoming send");
 });

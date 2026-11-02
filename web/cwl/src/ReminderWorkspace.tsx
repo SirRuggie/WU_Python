@@ -503,6 +503,7 @@ export default function ReminderWorkspace({
               {tab === "overview" && (
                 <>
                   <SignupReminderOverview
+                    activated={state.activated}
                     campaign={draft}
                     cycle={state.cycle}
                     schedule={schedule}

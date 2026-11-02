@@ -50,6 +50,13 @@ const path = require("node:path");
           throw Error("Wrong roster announcement route");
         const rows = page.locator(".signup-reminder-row");
         if ((await rows.count()) !== 6) throw Error("Missing reminder row");
+        if (mode === "off") {
+          const text = await rows.innerText();
+          if (/\bOn\b|No upcoming send|Nov 22/.test(text))
+            throw Error("Inactive rows imply a send");
+          if ((await rows.getByText("Not scheduled", { exact: false }).count()) < 6)
+            throw Error("Inactive scheduling state missing");
+        }
         if (mode === "different") {
           await page
             .getByText("Destination: Different destination", { exact: true })

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import logging
+import time
 from utils.manage_poll_cache import timed_step
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
@@ -16,6 +17,10 @@ REQUEST_KIND = "cwl_web_send_request"
 WORKER_KIND = "cwl_web_worker"
 _CYCLE = re.compile(r"20\d\d-(?:0[1-9]|1[0-2])\Z")
 _POOLS = frozenset(("main", "lazy"))
+# One bounded repair attempt per unchanged generation and process. No new poll
+# or durable writes: configuration changes bypass this cooldown immediately.
+_schedule_repair_attempts: dict[int, tuple[str, str, float]] = {}
+SCHEDULE_REPAIR_RETRY_SECONDS = 300
 
 
 class BridgeConflict(ValueError):
@@ -423,10 +428,20 @@ async def reconcile_campaign_changes(
     # Completed startup loads can repair missing/default-only acknowledgements
     # directly. Failed or absent process proof requires one real load first.
     if not same_signature or generations is None:
+        now = time.monotonic()
+        prior = _schedule_repair_attempts.get(int(guild_id))
+        if (
+            prior
+            and prior[:2] == (runtime_id, signature)
+            and now - prior[2] < SCHEDULE_REPAIR_RETRY_SECONDS
+        ):
+            return False
+        _schedule_repair_attempts[int(guild_id)] = (runtime_id, signature, now)
         await sync_all()
         generations = installed()
     if generations is None or (rows and not generations):
         raise ValueError("No schedule load completed; nothing was acknowledged")
+    _schedule_repair_attempts.pop(int(guild_id), None)
     if (
         same_signature
         and same_epoch

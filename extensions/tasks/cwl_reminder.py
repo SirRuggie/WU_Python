@@ -2318,7 +2318,10 @@ async def _sync_all_campaigns() -> bool:
     global _campaign_load_scan_complete
     if not hasattr(mongo_client, "bot_config"):
         return False
-    rows = await mongo_client.bot_config.find().to_list(length=None)
+    rows = await mongo_client.bot_config.find(
+        {"kind": {"$in": ["cwl_campaign_defaults", "cwl_campaign_cycle"]}, "activated": True},
+        {"_id": 1, "kind": 1, "activated": 1, "guild_id": 1, "cycle": 1},
+    ).to_list(length=None)
     guilds = {
         int(row["guild_id"])
         for row in rows

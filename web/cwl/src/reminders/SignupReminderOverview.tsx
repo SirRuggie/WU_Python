@@ -30,6 +30,7 @@ export function shortReminderTime(value?: string | null) {
 }
 export default function SignupReminderOverview({
   campaign,
+  activated,
   cycle,
   schedule,
   destination,
@@ -38,6 +39,7 @@ export default function SignupReminderOverview({
   onTiming,
 }: {
   campaign: Campaign;
+  activated: boolean;
   cycle: string | null;
   schedule: Occurrence[];
   destination: (id: string) => string;
@@ -114,7 +116,7 @@ export default function SignupReminderOverview({
           const lazyNext = nextReminderOccurrence(schedule, id, "lazy")?.run_at;
           const sameTime = sameState && mainNext === lazyNext;
           const status = (enabled: boolean) =>
-            !enabled ? "Off" : campaign.paused ? "Paused" : "On";
+            !activated || !enabled ? "Off" : campaign.paused ? "Paused" : "On";
           return (
             <article
               className="signup-reminder-row"
@@ -126,7 +128,7 @@ export default function SignupReminderOverview({
                 <p className="signup-reminder-common">
                   {sameState && status(mainEnabled)}
                   {sameTime &&
-                    ` · ${mainEnabled ? shortReminderTime(mainNext) : "Disabled"}`}
+                    ` · ${!activated ? "Not scheduled" : mainEnabled ? shortReminderTime(mainNext) : "Disabled"}`}
                 </p>
               )}
               {pools.map((pool) => {
@@ -148,9 +150,11 @@ export default function SignupReminderOverview({
                     )}
                     {!sameTime && (
                       <p>
-                        {!enabled
-                          ? "Disabled"
-                          : shortReminderTime(next?.run_at)}
+                        {!activated
+                          ? "Not scheduled"
+                          : !enabled
+                            ? "Disabled"
+                            : shortReminderTime(next?.run_at)}
                       </p>
                     )}
                     <button type="button" onClick={() => onEdit(id, pool)}>

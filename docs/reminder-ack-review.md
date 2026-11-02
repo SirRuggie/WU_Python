@@ -36,3 +36,30 @@ Clarified by Shaka420: six rows, one per editable reminder type (signup plus fiv
 Authorization, revision comparison and server-owned links remain in the same HTTP service. No recipients, destinations or new message transport rules are introduced. Invalid/stale edits still receive server errors. Generation races acknowledge only what was actually installed, and the next fingerprint catches a later edit. A failed refresh retains old rows for inspection; 401/403 clears protected state. Text renders as React text, not raw HTML. Disabled and differing settings are retained. Existing confirmation focus handling and duplicate-action guard remain in use. Native send callbacks are forbidden in the acknowledgement fixtures. No test is claimed as live Discord rendering or delivery proof.
 
 Local preview: `http://127.0.0.1:33917/signup-reminders-preview.html`; add `?different`, `?pending`, `?offline`, `?paused` or `?off`. Fictional frontend state only; external requests are rejected. Keep this preview and its files until review ends.
+
+
+## Review delta 142
+
+Both defects reproduced before the fixes: six unchanged failed polls invoked the
+native reload six times, and inactive overview rows still said On. Inactive rows
+now say Off / Not scheduled and show no next-send date. The six-row fixture
+matches the actual signup plus five reminder types.
+
+An unsuccessful or incomplete native load is attempted at most once per 300
+seconds for the same fingerprint and process. A configuration fingerprint change
+or a new process bypasses this cooldown immediately; a successful load clears
+it. Completed native proof still repairs an acknowledgement without reloading.
+The cooldown is process-local and uses the existing 10-second poll; it adds no
+Mongo write or polling job. The native guild scan now filters active campaign
+records and projects only ownership/cycle metadata. It does not fetch unrelated
+bot configuration or full campaign bodies for that scan.
+
+A deployment must restart the bot along with the web/backend changes. New web
+with an old bot correctly remains waiting until the new bot installs and proves
+its jobs. This source remains held for owner preview.
+
+Direct native regressions cover a second-job installation failure (no partial
+proof), cleared process proof with an unchanged fingerprint (real reinstall),
+invalid process identities, and a process replacement during installation.
+The reported proof-before-install and unchanged-fingerprint mutants, plus runtime
+guard and unbounded-repair mutants, all fail genuine assertions.
