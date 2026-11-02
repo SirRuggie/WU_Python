@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 from cwl_web import participation_sync
 import test_cwl_web_participation_sync as fixtures
@@ -228,3 +228,122 @@ class WaitingTests(unittest.IsolatedAsyncioTestCase):
             view = participation_sync.settings_view(db, self.sid)
         self.assertEqual(view["status"], "stale")
         self.assertIn("30 minutes", view["warning"])
+
+
+class NoGroupTests(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp = WaitingTests.asyncSetUp
+    asyncTearDown = WaitingTests.asyncTearDown
+    auth = WaitingTests.auth
+    call = WaitingTests.call
+    revision = WaitingTests.revision
+    signup = WaitingTests.signup
+    setup_published = WaitingTests.setup_published
+    set_group = WaitingTests.set_group
+    set_war = WaitingTests.set_war
+    sync = WaitingTests.sync
+    account = WaitingTests.account
+    base = WaitingTests.base
+    prepare = WaitingTests.prepare
+    result = WaitingTests.result
+
+    async def test_current_month_404_without_war_is_normal_wait(self):
+        await self.prepare()
+        from cwl_web.providers import ProviderUnavailable
+
+        error = ProviderUnavailable("Clash API returned 404")
+        error.status_code = 404
+        with patch.object(self.providers, "league_group", AsyncMock(side_effect=error)):
+            row, data = await self.result()
+        self.assertEqual(data["sync"]["status"], "waiting")
+        self.assertEqual(
+            data["sync"]["warning"], "November CWL hasn't started in Clash yet"
+        )
+        self.assertIsNone(row["source_attacks"])
+        self.assertEqual(self.league.war_calls, [])
+
+    async def test_no_group_does_not_hide_outages_or_prior_wars(self):
+        from cwl_web.providers import ProviderUnavailable
+
+        await self.prepare()
+        for status in (403, 429, 500, 503, None):
+            error = ProviderUnavailable("unavailable")
+            if status is not None:
+                error.status_code = status
+            with patch.object(
+                self.providers, "league_group", AsyncMock(side_effect=error)
+            ):
+                _, data = await self.result()
+            self.assertNotEqual(data["sync"]["status"], "waiting")
+        with self.app["store"].tx() as db:
+            db.execute(
+                "INSERT INTO participation_war_fetches VALUES(?,?,'#Y2Y',0,'[]','2026-11-01T00:00:00Z')",
+                (self.sid, "2026-11"),
+            )
+        error = ProviderUnavailable("not found")
+        error.status_code = 404
+        with patch.object(self.providers, "league_group", AsyncMock(side_effect=error)):
+            _, data = await self.result()
+        self.assertNotEqual(data["sync"]["status"], "waiting")
+        with self.app["store"].tx() as db:
+            stored = db.execute(
+                "SELECT status FROM participation_sync_settings WHERE season_id=?",
+                (self.sid,),
+            ).fetchone()["status"]
+        self.assertNotEqual(stored, "waiting")
+
+    async def test_no_group_wait_is_limited_to_current_or_next_month(self):
+        from cwl_web.providers import ProviderUnavailable
+
+        await self.prepare()
+        error = ProviderUnavailable("not found")
+        error.status_code = 404
+        for cycle, waiting in (
+            ("2026-10", False),
+            ("2026-11", True),
+            ("2026-12", True),
+            ("2027-01", False),
+        ):
+            with self.app["store"].tx() as db:
+                db.execute(
+                    "UPDATE participation_sync_settings SET cycle=? WHERE season_id=?",
+                    (cycle, self.sid),
+                )
+            with patch.object(
+                self.providers, "league_group", AsyncMock(side_effect=error)
+            ):
+                _, data = await self.result()
+            self.assertEqual(data["sync"]["status"] == "waiting", waiting, cycle)
+            with self.app["store"].tx() as db:
+                stored = db.execute(
+                    "SELECT status FROM participation_sync_settings WHERE season_id=?",
+                    (self.sid,),
+                ).fetchone()["status"]
+            self.assertEqual(stored == "waiting", waiting, cycle)
+
+    async def test_no_group_for_one_clan_does_not_hide_another_clan_outage(self):
+        from cwl_web.providers import ProviderUnavailable
+
+        await self.prepare()
+        await self.signup("main", "#Q2Y")
+        response = await self.call("POST", "/clans", self.owner, json={"tag": "#J2Y"})
+        self.assertEqual(response.status, 201)
+        response = await self.call(
+            "PATCH",
+            f"/seasons/{self.sid}/roster/%23Q2Y",
+            self.owner,
+            json={
+                "revision": await self.revision(),
+                "assigned_clan_tag": "#J2Y",
+                "kept": True,
+            },
+        )
+        self.assertEqual(response.status, 200)
+
+        async def fail(tag):
+            error = ProviderUnavailable("not found" if tag == "#C2Y" else "outage")
+            error.status_code = 404 if tag == "#C2Y" else 503
+            raise error
+
+        with patch.object(self.providers, "league_group", fail):
+            _, data = await self.result()
+        self.assertNotEqual(data["sync"]["status"], "waiting")

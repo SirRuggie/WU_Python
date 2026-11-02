@@ -286,3 +286,35 @@ def test_failed_negative_rechecks_share_one_short_lived_error():
     assert results == [("error", None), ("error", None)]
     assert client.calls == 1
     todo_data._cache.clear()
+
+
+def test_fresh_push_reads_back_off_private_war_but_refresh_positive_state(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    todo_data._cache.clear()
+    clock = [100.0]
+    monkeypatch.setattr(todo_data.time, "monotonic", lambda: clock[0])
+    client = SimpleNamespace(
+        get_clan_war=AsyncMock(
+            side_effect=coc.PrivateWarLog(data={"reason": "accessDenied"})
+        )
+    )
+
+    async def run():
+        for _ in range(3):
+            with todo_data.fresh_reads():
+                assert await todo_data._get_war(client, "#PRIVATE") == ("private", None)
+            clock[0] += 55
+        assert client.get_clan_war.await_count == 1
+        clock[0] += todo_data.TTL_WAR_IDLE
+        with todo_data.fresh_reads():
+            assert await todo_data._get_war(client, "#PRIVATE") == ("private", None)
+        assert client.get_clan_war.await_count == 2
+        todo_data.cache_put("war:#PUBLIC", ("war", object()), 600)
+        with todo_data.fresh_reads():
+            assert todo_data.cache_get("war:#PUBLIC") is None
+
+    try:
+        asyncio.run(run())
+    finally:
+        todo_data._cache.clear()
