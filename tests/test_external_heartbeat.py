@@ -157,3 +157,63 @@ def test_requests_debug_logging_redacts_private_ping_path_and_restores_filter(ca
     assert "<private-check>" in caplog.text
     assert "12345678-1234-5678-1234-567812345678" not in caplog.text
     assert logger.filters == prior
+
+
+def test_overlapping_private_checks_keep_each_other_and_existing_filters(caplog):
+    import logging
+
+    first = "11111111-1111-1111-1111-111111111111"
+    second = "22222222-2222-2222-2222-222222222222"
+    logger = logging.getLogger("urllib3.connectionpool")
+    existing = logging.Filter()
+    a_ready, b_ready, a_finished = (threading.Event() for _ in range(3))
+    failures = []
+    logger.addFilter(existing)
+    before = list(logger.filters)
+
+    def get_a(url, **kwargs):
+        a_ready.set()
+        assert b_ready.wait(3)
+        logger.debug("overlap %s %s", url, second)
+        raise requests.ConnectionError(url)
+
+    def get_b(url, **kwargs):
+        b_ready.set()
+        assert a_ready.wait(3) and a_finished.wait(3)
+        logger.debug("remaining %s", url)
+        raise requests.ConnectionError(url)
+
+    def attempt(check_id, get):
+        try:
+            health.ping_external("https://hc-ping.com/" + check_id, True, get=get)
+        except RuntimeError as error:
+            failures.append(str(error))
+
+    a = threading.Thread(target=attempt, args=(first, get_a))
+    b = threading.Thread(target=attempt, args=(second, get_b))
+    try:
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
+            a.start()
+            assert a_ready.wait(3)
+            b.start()
+            assert b_ready.wait(3)
+            a.join(3)
+            assert not a.is_alive()
+            # A removes only its own filter; B and the prior filter remain.
+            assert all(item in logger.filters for item in before)
+            assert len(logger.filters) == len(before) + 1
+            a_finished.set()
+            b.join(3)
+            assert not b.is_alive()
+        assert failures == ["External heartbeat delivery failed"] * 2
+        assert "overlap" in caplog.text and "remaining" in caplog.text
+        assert first not in caplog.text and second not in caplog.text
+        assert logger.filters == before
+    finally:
+        b_ready.set()
+        a_finished.set()
+        if a.ident is not None:
+            a.join(3)
+        if b.ident is not None:
+            b.join(3)
+        logger.removeFilter(existing)
