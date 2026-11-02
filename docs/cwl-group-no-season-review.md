@@ -1,38 +1,74 @@
 # CWL groups without a season
 
-Prompt 107 follows the ordinary capture diagnostics in handoff 671. At
+Prompts 107/108 follow ordinary capture diagnostics in handoff 671. At
 06:23:52 UTC on November 2, seven normalized groups had no season value:
 four `ENDED`, three `PREPARATION`. Three other clans returned leaguegroup 404.
-The agent made no provider probe or Check Clash request.
+No agent provider probe or Check Clash request was made.
 
-For the selected cycle equal to the current UTC month, a valid group with no
-season and `PREPARATION`, `INWAR` or `WAR` is attributed to that month. This is
-an explicit inference requested in prompt 107, not a verified provider contract.
-Explicit month values always win: older/later groups are never relabeled.
-A group without a month in `ENDED` is not captured as active; it can yield a
-normal wait only when no matching-month war has been observed. Past, future
-and archived selections never infer a missing month. Ownership, roster and
-round shape validation still precede either inference or waiting.
+## Month attribution and completion
 
-A war with an explicit different season remains rejected. In-progress groups
-never complete early. Waiting clans mixed with active clans produce partial
-progress with no outage warning; unavailable or invalid responses, denied
-access and timeouts still warn. Counts remain unknown for waiting clans.
-Cached source/receipt data is not attributed to a different month. No schema
-migration or provider polling was added.
+A valid missing-season `PREPARATION`, `INWAR` or `WAR` group is attributed only
+to a selection equal to the current UTC month. This is the explicit inference
+requested in prompt 107, not a verified provider contract. Explicit month values
+always win. The state restriction applies only to the missing-month path;
+explicit-season responses keep their existing validation behavior.
 
-Group month diagnostics log a validated clan tag, whitelisted state and boolean
-season presence/inference, never response bodies. Results and Bonus consumers
-read cycle-keyed participation observations rather than interpreting raw group
-season fields themselves. The existing strict group validator receives only a
-local effective copy; normalized provider evidence is unchanged.
+Missing-season `ENDED` is captured only if its nonempty set of real war tags
+exactly equals that clan's stored group tags for this season and cycle. Exact
+matching is proof, so it also permits finishing a past, nonarchived selected
+month after UTC rollover. Mere overlap, empty tags or another season's records
+do not qualify. Archived seasons remain read-only. Explicitly mismatching war
+months still fail closed, and an inferred group referencing such a war is not
+stored or exposed to Results/Bonus allowance readers.
+
+Seven ended wars followed by a matching missing-season final group now set
+`source_complete=True` and satisfy the existing Bonus completeness gate. The
+original immutable-ended-war cache policy remains: reused observations keep
+their old checked timestamp and can be labeled stale; they are not presented
+as newly fetched wars. Source completeness and cached freshness are distinct.
+
+## Waiting is per clan
+
+The predicate is keyed by season ID, selected cycle and clan. A clan's own
+stored group with real, non-`#0` tags is month evidence. Fetches/observations
+belong to that clan only through those group tags; another hosting clan's
+response or global scanned-clan list cannot end its wait.
+
+A valid older group, leaguegroup 404, or missing-season group that is not
+attributed to the selection can wait only for the current or upcoming month
+and without that clan's own month evidence. Missing-season active groups for
+next month wait without being captured into the future. Past selections never
+guess. Shape, ownership, roster and round validation still precede a wait.
+
+One predicate supplies both row and overall behavior. Waiting rows retain
+unknown counts and the month-specific hasn't-started text. Fresh active groups
+plus only waiting clans produce partial progress without an outage warning.
+No fresh groups produces waiting. Healthy mixed captures advance last-success
+time; real outages, 403, timeout, malformed data and conflicting own-month
+evidence keep warnings. Nothing is marked complete early.
+
+Two older expectations changed deliberately under prompt 108: an old clan
+alongside another clan's current war now yields neutral partial progress while
+keeping scores; prior-war warning tests seed the affected clan's own group tags
+rather than unrelated global fetch evidence.
+
+## Boundaries and evidence
+
+Group diagnostics log a validated clan tag, whitelisted state and boolean season
+presence/inference/tag-match values, never response bodies. Results and Bonus
+consume cycle-keyed observations rather than independently guessing raw group
+months. The strict group validator receives a local effective copy; normalized
+provider evidence remains unchanged. No schema migration or polling was added.
 
 The official [API documentation](https://developer.clashofclans.com/#/documentation)
 was checked read-only. Its JavaScript shell exposed no readable specification
-of when season is omitted. Existing provider normalization preserves an absent
-or null season as `None`; the captured safe diagnostics establish the seven
-missing values but not the API's general omission rules. No claim about those
-rules or live November capture is made from isolated tests.
+of when season is omitted. Existing normalization preserves absent/null season
+as `None`; safe recorded diagnostics establish those seven values, not a general
+API omission rule. Isolated tests are not evidence of live November delivery.
 
-Release is held pending Ruggie's approval and Claude's review. No production
-activation, role change, notification or forced capture is part of these checks.
+Checks include consecutive mixed captures with real war tags for missing-season
+ENDED, 404 and explicit older groups; own evidence, per-season scope, next-month
+waiting, seven-war completion and Bonus eligibility, exact versus overlapping
+tags, rollover, archives, mismatching-war rejection and unchanged outage/cache
+freshness. Mutation evidence and final suite counts accompany the READY entry.
+Release remains held pending Ruggie's approval and Claude's review.

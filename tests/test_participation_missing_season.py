@@ -28,7 +28,7 @@ def test_state_and_explicit_month_matrix(state, season):
     )
     with patch.object(sync, "datetime", November):
         row = asyncio.run(sync._fetch_groups(provider, ["#C2Y"], "2026-11"))[0]
-    if state not in {"PREPARATION", "INWAR", "WAR", "ENDED"}:
+    if state not in {"PREPARATION", "INWAR", "WAR", "ENDED"} and season is None:
         assert row[2] == "unavailable"
     elif season == "2026-11":
         assert row[1] is not None
@@ -51,7 +51,9 @@ def test_past_or_future_cycle_never_infers_missing_month(cycle, state):
     provider = SimpleNamespace(league_group=AsyncMock(return_value=group(state)))
     with patch.object(sync, "datetime", November):
         row = asyncio.run(sync._fetch_groups(provider, ["#C2Y"], cycle))[0]
-    assert row[1] is None and row[2] == "unavailable"
+    assert row[1] is None and row[2] == (
+        "no_group" if cycle == "2026-12" else "unavailable"
+    )
 
 
 class CaptureTests(WaitingTests):
@@ -95,8 +97,12 @@ class CaptureTests(WaitingTests):
 
     async def test_missing_month_ended_after_matching_war_is_not_waiting(self):
         await self.prepare()
-        self.set_group([["#Y2Y"]], state="ENDED", season=None)
+        self.set_group([["#Y2Q"]], state="ENDED", season=None)
         with self.app["store"].tx() as db:
+            db.execute(
+                "INSERT INTO participation_group_observations VALUES(?,?,'#C2Y',?,'WAR','[[\"#Y2Y\"]]','[]','2026-11-01T00:00:00Z')",
+                (self.sid, "2026-11", "2026-11"),
+            )
             db.execute(
                 "INSERT INTO participation_war_fetches VALUES(?,?,'#Y2Y',0,'[]','2026-11-01T00:00:00Z')",
                 (self.sid, "2026-11"),
