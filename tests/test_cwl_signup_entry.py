@@ -1,4 +1,5 @@
 from copy import deepcopy
+import pytest
 
 from utils import cwl_campaign
 from cwl_web.app import login_destination
@@ -77,9 +78,10 @@ def test_saved_roster_links_upgrade_and_keep_guide_and_custom_copy():
     assert item['buttons'][0]['url'] == cwl_campaign.LEGACY_ROSTER_URLS[1]
 
 
-def test_signup_help_footer_covers_both_pools_and_all_reminders_only():
+@pytest.mark.parametrize("new_copy", [False, True])
+def test_signup_help_footer_covers_both_pools_and_all_reminders_only(new_copy):
     import asyncio
-    campaign = cwl_campaign.default_campaign()
+    campaign = cwl_campaign.default_campaign(new_copy=new_copy)
     original = deepcopy(campaign)
     for key, message in campaign['messages'].items():
         for pool in message['variants']:
@@ -95,6 +97,9 @@ def test_signup_help_footer_covers_both_pools_and_all_reminders_only():
                 assert len(children[-3]['components']) == 2
                 assert children[-3]['components'][0]['url'] == cwl_campaign.SIGNUP_URL
                 assert children[-3]['components'][1]['custom_id'] == cwl_campaign.SIGNUP_CHECK_ID
-                assert str(built).count(cwl_campaign.SIGNUP_CHECK_LINE) == 1
+                short_default = new_copy and key.startswith("reminder:")
+                assert str(built).count(cwl_campaign.SIGNUP_CHECK_LINE) == int(not short_default)
+                if short_default:
+                    assert str(built).count(cwl_campaign.SHORT_SIGNUP_CHECK_LINE) == 1
             assert 'cwl signup' not in str(built)
     assert campaign == original

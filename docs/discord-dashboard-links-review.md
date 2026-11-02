@@ -44,3 +44,5 @@ The existing Discord `/manage` editor supports Edit text and Edit buttons (label
 Fixed public destinations and existing OAuth return sanitization reject foreign-origin return links. Mention recipients/flags, event timing and uncertain-delivery behavior are unchanged. Button/text/nested limits and native transport forwarding are tested. Existing owner/draft/editor validation remains authoritative. Fake OAuth/transport/component tests are not live Discord rendering or delivery proof. A future approved release needs a bot restart but sends/edits nothing on activation.
 
 Shared roster-redesign documentation summary will be supplied to its concurrent owner for append at that owner's checkpoint.
+
+The first full backend run completed with 6340 passes and two obsolete copy expectations: the closing link still expected “My assignments”, and the help-footer test required the old long line in new marked reminders. The corrected footer regression now checks both old/unmarked and new marked defaults, preserving exact footer/button structure and one intended body check line. Runtime source was unchanged by these test corrections; the final full rerun is pending.
