@@ -537,6 +537,49 @@ Official Mongo binaries were obtained from the URLs/checksums retained in the
 September Mongo recovery manifest; installed copies now live persistently in
 `~/.local/opt/wu-backup-tools`, not `/tmp`.
 
+### Disposable backup temporary files and quota warning (2026-11-02)
+
+The systemd user overrides for `cwl-backup.service`,
+`cwl-mongo-backup.service` and `cwl-backup-check.service` set
+`TMPDIR=/home/ruggie/.local/state/wu-backup/tmp`. This private `0700` directory
+is on the main disk (`/dev/sda4`), beside the backup working files. It contains
+**disposable working files only, never backups**. Keep the encrypted repository,
+backup staging directories and recovery evidence separate; never clean them as
+if they were temporary pack files. The override is applied with daemon-reload
+only; it does not change timers, retention, repository configuration or alert
+recipients, and does not restart a oneshot backup.
+
+Restic commands inherit `TMPDIR` through `restic_env()` and the command runner.
+The Python dump and restore-check directories already use an explicit
+`dir=STATE`, on the same main disk; their location does not depend on Python's
+default `/tmp`. Child tools also inherit the service environment. Prove the
+change on the next naturally scheduled runs and the next 04:17 check rather
+than forcing a backup or treating configuration alone as run-success evidence.
+Only confirmed-unused leftovers inside the dedicated temporary directory may
+be cleaned. Preserve backups, restore evidence, tarballs and active work.
+
+The existing monitor also reads `/tmp`'s **own-user Linux block quota**, using
+read-only `Q_GETQUOTA` on the mount fd. Filesystem-wide free space is not a
+substitute for a per-user limit. At 85% of the earlier nonzero soft/hard limit,
+it joins the existing incident/notification path; there is no new timer,
+polling process or destination. The incident text stays stable as usage moves
+above the threshold, preserving the existing six-hour deduplication. Exact
+used/limit bytes and percent are recorded in `monitor-health.json` under
+`tmp_user_quota`. Unsupported or failed quota inspection is explicitly unknown
+and raises a monitoring issue; it is never reported as zero usage or healthy.
+Quota block limits are converted from 1024-byte units; current usage is already
+bytes. Only the caller's user ID is queried. The named libc wrapper is preferred;
+the fallback syscall number is used only for Linux x86_64, not guessed elsewhere.
+
+The live 04:17 `cwl-backup-check.service` runs `cwl_backup.py maintain`, not the
+standalone `verify` action. `maintain()` verifies the local repository and, when
+`r2-enabled` is present, separately verifies the R2 repository before pruning.
+Each verification reads all repository data and restores the latest CWL
+SQLite/artwork and Mongo snapshots into isolated scratch space for checks.
+Thus the enabled daily job tests **both the local and R2 copies**. Running
+`cwl_backup.py verify` by itself checks only the local copy. No schedule,
+verification scope or retention change is made by this temporary-file fix.
+
 ### Recovery limits and verified evidence
 
 No system guarantees zero loss. With successful jobs, the intended local
