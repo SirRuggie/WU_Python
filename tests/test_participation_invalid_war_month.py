@@ -127,7 +127,7 @@ def test_summary_masks_caps_shapes_and_reports_rejection(caplog):
     assert len(caplog.records) == 1
     record = caplog.records[0]
     counts, shapes, mismatches = record.args
-    assert counts == dict(none=1, empty=1, invalid=7, valid=1)
+    assert counts == dict(none=1, empty=1, invalid=6, valid=1, date=1)
     assert len(shapes) == 5 and all(len(shape) <= 12 for shape in shapes)
     assert mismatches == 1
     assert (

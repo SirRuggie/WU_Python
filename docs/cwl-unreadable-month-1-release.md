@@ -77,7 +77,7 @@ stored tag containment. Four `NOT_IN_WAR` groups remained unavailable with
 `invalid_group_shape`; one other group returned 404. The war summary reports 16
 fetched wars, all `none`, zero empty/invalid/valid, no shapes and zero month
 mismatches. No raw month value or separator was observed. The shape resembles a
-full date; interpreting it as an explicit month is future prompt 116, not behavior
+full date; follow-up 125 logs its masked month without interpreting it, not behavior
 claimed for this release.
 
 Overall status remains `stale`, with no successful full capture and no attacks
@@ -93,7 +93,7 @@ Their attacks/stars remain unknown and complete is false. This is no evidence of
 a code bug or zero attacks; no fix is made for them.
 
 This is a real improvement for four clans, not a full capture PASS. Residual
-NOT_IN_WAR shape handling and date-shaped month interpretation are queued for
+NOT_IN_WAR shape handling and log-only date diagnostics are queued for
 separate review and release approval. No forced capture, provider probe, restart
 or rule weakening was used to obtain these facts.
 
@@ -105,3 +105,14 @@ to the exact live invocation; the invocation filter itself was correct.
 
 The Members speed optimization is a separate unreleased branch and is not
 included in this release.
+
+## Follow-up 116/125 diagnostics
+
+The observed month has a date shape. The exact raw value and separators were
+not fetched. Follow-up 125 recognizes a fully matching dash-separated date
+only in diagnostics (`season_kind=date`, `YYYY-MM-dd`). Capture decisions keep
+the deployed no-month rules for dates; only valid YYYY-MM is explicit evidence.
+A date never bypasses ENDED containment or rejects an active current-cycle group.
+It also classifies unusable NOT_IN_WAR responses per clan, regardless of season,
+while own cycle evidence still warns. This describes the follow-up source change,
+not behavior already in 516 or proof that its partial capture was complete.
