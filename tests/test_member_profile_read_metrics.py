@@ -45,3 +45,34 @@ def test_monitor_concurrent_tasks_do_not_share_request_metrics():
         assert await asyncio.gather(read(2), read(7)) == [2, 7]
 
     asyncio.run(run())
+
+
+def test_diagnostic_logging_failure_does_not_change_profile_read(monkeypatch):
+    from utils.member_profiles import MemberProfiles
+    import logging
+
+    class Cursor:
+        def batch_size(self, count):
+            return self
+
+        def limit(self, count):
+            return self
+
+        async def to_list(self, **kwargs):
+            return [{"discord_id": "800000000000000001"}]
+
+    collection = S(find=lambda *args: Cursor())
+
+    def unavailable(*args):
+        raise RuntimeError("diagnostic unavailable")
+
+    monkeypatch.setattr(logging.getLogger("utils.member_profiles"), "info", unavailable)
+
+    async def run():
+        result = await MemberProfiles(S(member_profiles=collection)).for_members(
+            ["800000000000000001"], display_only=True
+        )
+        assert result == {"800000000000000001": {"discord_id": "800000000000000001"}}
+        assert CURRENT.get() is None
+
+    asyncio.run(run())
