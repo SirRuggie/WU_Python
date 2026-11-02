@@ -4,13 +4,30 @@ export type Member = {
   town_hall: number | null;
   weight: number | null;
   revision: number;
-  storages?: number;
+  storages?: number | null;
+  storages_saved?: boolean;
+  current_member?: boolean;
+  war_position?: number;
   clan_position?: number;
+};
+export type WarLineup = {
+  order: Record<string, number>;
+  names?: Record<string, string>;
+  town_halls?: Record<string, number>;
+  state: string;
+  unverified_identity?: boolean;
+  end_time?: string | null;
+  cached?: boolean;
+  captured_at?: string;
+  opponent?: string | null;
 };
 export type Roster = {
   clan: { tag: string; name: string };
   members: Member[];
+  weight_members?: Member[];
   checked_at: string;
+  current_members_count?: number;
+  war_lineups?: WarLineup[];
   last_saved?: {
     at: string;
     discord_id: string;
@@ -20,6 +37,7 @@ export type Roster = {
   war_source?: {
     names?: Record<string, string>;
     state: string;
+    unverified_identity?: boolean;
     cached?: boolean;
     captured_at?: string;
     end_time?: string | null;
@@ -27,13 +45,54 @@ export type Roster = {
   } | null;
   war_order?: Record<string, number> | null;
 };
+/** A departed player's optional details belong to the selected saved war. */
+export function selectedRoster(
+  roster: Roster | null,
+  selected = "",
+): Roster | null {
+  if (!roster) return null;
+  const lineups = roster.war_lineups || [];
+  const lineup = lineups.find((war) => war.end_time === selected) || lineups[0];
+  const order = lineup?.order || roster.war_order;
+  return {
+    ...roster,
+    war_order: order,
+    war_source: lineup || roster.war_source,
+    members: (roster.weight_members || roster.members)
+      .filter((row) => row.current_member !== false || order?.[row.tag])
+      .map((row) =>
+        row.current_member !== false || !lineup
+          ? row
+          : {
+              ...row,
+              name: lineup.names?.[row.tag] || row.tag,
+              town_hall: lineup.town_halls?.[row.tag] ?? null,
+            },
+      ),
+  };
+}
+
+export function draftsForRoster(roster: Roster, selected = "") {
+  return Object.fromEntries(
+    [
+      ...(roster.weight_members || roster.members),
+      ...(selectedRoster(roster, selected)?.members || []),
+    ].map((row) => [row.tag, draftFor(row)]),
+  );
+}
+
 export type Draft = { storages: string; loot: string; full: string };
 export function draftFor(row: Member): Draft {
-  const storages = row.storages ?? ((row.town_hall ?? 18) > 8 ? 5 : 4);
+  const knownStorages = row.storages_saved === false ? null : row.storages;
+  const storages =
+    knownStorages ?? (row.town_hall == null ? null : row.town_hall > 8 ? 5 : 4);
   return {
-    storages: String(storages),
+    storages: storages == null ? "" : String(storages),
     full: row.weight === null ? "" : String(row.weight),
-    loot: row.weight === null ? "" : String(row.weight / storages),
+    loot:
+      row.weight === null || storages == null
+        ? ""
+        : String(row.weight / storages),
   };
 }
 export function whole(text: string, max: number): number {
@@ -74,6 +133,10 @@ export function gaps(roster: Roster) {
     }));
 }
 export function validateDraft(draft: Draft) {
+  if (!draft.storages.trim())
+    throw new Error(
+      "Choose storages; the saved lineup has no Town Hall default.",
+    );
   const storages = whole(draft.storages, 5);
   if (!draft.full.trim() && !draft.loot.trim())
     return { storages, weight: null };
@@ -125,7 +188,7 @@ export function warLoot(
       const row = rows.find((row) => row.tag === tag);
       if (!row || !drafts[tag])
         throw new Error(
-          "A war player is no longer in this clan. Match the spreadsheet manually using the full table export.",
+          "A saved war player is missing from this view. Refresh members before copying.",
         );
       const { weight, storages } = validateDraft(drafts[tag]);
       if (weight === null)
@@ -193,6 +256,8 @@ export function orderedMembers(roster: Roster | null): Member[] {
   );
 }
 export function orderLabel(roster: Roster): string {
+  if (roster.war_source?.unverified_identity)
+    return "War identity unavailable · only current members can be saved. Refresh members to check again.";
   if (!roster.war_order)
     return "Clan order · War lineup unavailable. Positions are not war placements.";
   if (roster.war_source?.cached) {

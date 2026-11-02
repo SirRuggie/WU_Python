@@ -4,8 +4,13 @@ import type { RosterAccount } from "./roster";
 export function usesClanWeights(account: {
   clan_weight_managed?: boolean;
   current_fwa_clan_tag?: string | null;
+  weight_lineup_clan_tag?: string | null;
 }): boolean {
-  return Boolean(account.clan_weight_managed || account.current_fwa_clan_tag);
+  return Boolean(
+    account.clan_weight_managed ||
+      account.current_fwa_clan_tag ||
+      account.weight_lineup_clan_tag,
+  );
 }
 
 /** Unknown is not evidence of leaving. Keep only this account/pool's known group. */

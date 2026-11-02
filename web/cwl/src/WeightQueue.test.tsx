@@ -394,7 +394,7 @@ it("keeps the FWA split and link through unavailable metadata and updates when k
     accounts: [{ ...unknown.accounts[0], current_fwa_status: "current" }],
   }) as typeof snapshot;
   await show();
-  expect(host.textContent).toContain("Other accounts · enter here");
+  expect(host.textContent).toContain("Non-FWA accounts");
   expect(host.querySelector(".weight-queue-row input")).not.toBeNull();
 });
 

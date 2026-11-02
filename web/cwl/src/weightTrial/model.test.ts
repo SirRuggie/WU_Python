@@ -173,3 +173,116 @@ it("parses every one- and two-decimal k value in the accepted range exactly", ()
   ])
     expect(() => whole(text, 999999), text).toThrow();
 });
+
+it("does not guess storages for an unknown saved-lineup Town Hall", () => {
+  const row = {
+    tag: "#G2Y",
+    name: "Departed",
+    town_hall: null,
+    weight: null,
+    revision: 0,
+    current_member: false,
+  };
+  expect(draftFor(row)).toEqual({ storages: "", loot: "", full: "" });
+  expect(() => validateDraft(draftFor(row))).toThrow("Choose storages");
+  expect(draftFor({ ...row, weight: 140000, storages: 4 })).toEqual({
+    storages: "4",
+    loot: "35000",
+    full: "140000",
+  });
+});
+
+import { selectedRoster, draftsForRoster } from "./model";
+it("uses selected-war details for departed people and saved per-player storage across wars", () => {
+  const current = {
+    tag: "#P2Y",
+    name: "Current name",
+    town_hall: 17,
+    weight: null,
+    revision: 0,
+    current_member: true,
+  };
+  const left = {
+    tag: "#G2Y",
+    name: "Latest name",
+    town_hall: 16,
+    weight: null,
+    storages: 5,
+    storages_saved: false,
+    revision: 0,
+    current_member: false,
+  };
+  const latest = {
+    order: { "#G2Y": 1 },
+    state: "inWar",
+    end_time: "20261102T070000.000Z",
+    names: { "#G2Y": "Latest name" },
+    town_halls: { "#G2Y": 16 },
+  };
+  const older = {
+    order: { "#G2Y": 1 },
+    state: "warEnded",
+    end_time: "20261031T070000.000Z",
+    names: { "#G2Y": "Old name" },
+  };
+  const roster = {
+    clan: { tag: "#R2Y", name: "Clan" },
+    members: [current, left],
+    checked_at: "",
+    war_lineups: [latest, older],
+  };
+  const previous = selectedRoster(roster, older.end_time)!;
+  expect(previous.members[1].name).toBe("Old name");
+  expect(previous.members[1].town_hall).toBeNull();
+  expect(draftsForRoster(roster, older.end_time)["#G2Y"].storages).toBe("");
+  expect(selectedRoster(roster)!.members[1].town_hall).toBe(16);
+  expect(
+    draftsForRoster(
+      {
+        ...roster,
+        members: [current, { ...left, storages: 4, storages_saved: true }],
+      },
+      older.end_time,
+    )["#G2Y"].storages,
+  ).toBe("4");
+});
+
+it("accepts the additive eligible union without relabelling current-member data", () => {
+  const current = {
+    tag: "#P2Y",
+    name: "Current",
+    town_hall: 16,
+    weight: null,
+    revision: 0,
+    current_member: true,
+  };
+  const departed = {
+    tag: "#G2Y",
+    name: "Left",
+    town_hall: 15,
+    weight: null,
+    revision: 0,
+    current_member: false,
+  };
+  const wire = {
+    clan: { tag: "#R2Y", name: "Clan" },
+    checked_at: "",
+    members: [current],
+    weight_members: [current, departed],
+    war_lineups: [
+      {
+        state: "inWar",
+        end_time: "20261102T070000.000Z",
+        order: { "#G2Y": 1 },
+        names: { "#G2Y": "Left" },
+        town_halls: { "#G2Y": 15 },
+      },
+    ],
+  };
+  expect(selectedRoster(wire)!.members.map((row) => row.tag)).toEqual([
+    "#P2Y",
+    "#G2Y",
+  ]);
+  expect(wire.members.map((row) => row.tag)).toEqual(["#P2Y"]);
+  expect(draftsForRoster(wire)["#G2Y"].storages).toBe("5");
+});

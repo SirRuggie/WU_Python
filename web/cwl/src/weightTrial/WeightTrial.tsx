@@ -7,6 +7,8 @@ import WeightRow from "./WeightRow";
 import SavedPlayers from "./SavedPlayers";
 import {
   isMissing,
+  selectedRoster,
+  draftsForRoster,
   gaps,
   copyTable,
   sheetWeightWarning,
@@ -67,6 +69,7 @@ export default function WeightTrial({
   const [search, setSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [roster, setRoster] = useState<Roster | null>(null);
+  const [selectedWar, setSelectedWar] = useState("");
   const [values, setValues] = useState<Record<string, Draft>>({});
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,7 +87,13 @@ export default function WeightTrial({
   const request = useRef(0);
   const saving = useRef(false);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
-  const members = orderedMembers(roster);
+  const lineups = roster?.war_lineups || [];
+  const lineup =
+    lineups.find((war) => war.end_time === selectedWar) || lineups[0];
+  const viewRoster = selectedRoster(roster, selectedWar);
+  const warOrder = viewRoster?.war_order;
+  const warSource = viewRoster?.war_source;
+  const members = orderedMembers(viewRoster);
   const changed = members.filter(
     (row) => JSON.stringify(values[row.tag]) !== JSON.stringify(draftFor(row)),
   );
@@ -96,10 +105,10 @@ export default function WeightTrial({
     (row) => !(values[row.tag] || draftFor(row)).loot.trim(),
   );
   const missingWarLoot = members.filter(
-    (row) => roster?.war_order?.[row.tag] && !values[row.tag]?.loot.trim(),
+    (row) => warOrder?.[row.tag] && !values[row.tag]?.loot.trim(),
   );
   const checks = members.filter((row) =>
-    sheetWeightWarning(row.tag, members, values, roster?.war_order),
+    sheetWeightWarning(row.tag, members, values, warOrder),
   );
   const visible = members.filter((row) =>
     filter === "missing"
@@ -107,14 +116,14 @@ export default function WeightTrial({
       : filter === "check"
         ? checks.includes(row) ||
           (changed.includes(row) &&
-            !!sheetWeightWarning(row.tag, members, {}, roster?.war_order))
+            !!sheetWeightWarning(row.tag, members, {}, warOrder))
         : true,
   );
-  const placeholders = roster ? gaps(roster) : [];
+  const placeholders = viewRoster ? gaps(viewRoster) : [];
   const entries = [
     ...visible.map((row) => ({
       tag: row.tag,
-      position: roster?.war_order?.[row.tag] ?? 1000,
+      position: warOrder?.[row.tag] ?? 1000,
       row,
     })),
     ...(filter === "all"
@@ -211,6 +220,7 @@ export default function WeightTrial({
   useEffect(() => {
     const id = ++request.current;
     setRoster(null);
+    setSelectedWar("");
     setValues({});
     setError("");
     setNotice("");
@@ -221,11 +231,7 @@ export default function WeightTrial({
         if (id !== request.current) return;
         setRoster(result);
         setDirectoryAttempt((value) => value + 1);
-        setValues(
-          Object.fromEntries(
-            result.members.map((row) => [row.tag, draftFor(row)]),
-          ),
-        );
+        setValues(draftsForRoster(result));
       })
       .catch((cause) => {
         if (id === request.current) setError(message(cause));
@@ -283,16 +289,8 @@ export default function WeightTrial({
         { changes },
       );
       if (id !== request.current) return;
-      setRoster({
-        ...result,
-        war_order: roster.war_order,
-        war_source: roster.war_source,
-      });
-      setValues(
-        Object.fromEntries(
-          result.members.map((row) => [row.tag, draftFor(row)]),
-        ),
-      );
+      setRoster(result);
+      setValues(draftsForRoster(result, selectedWar));
       setDirectoryAttempt((value) => value + 1);
       setNotice(
         `${changes.length} weight${changes.length === 1 ? "" : "s"} saved.`,
@@ -493,7 +491,10 @@ export default function WeightTrial({
               {roster && <h2>{roster.clan.name}</h2>}
               {roster && (
                 <small>
-                  {members.length} current members · Checked{" "}
+                  {roster.current_members_count ??
+                    roster.members.filter((row) => row.current_member !== false)
+                      .length}{" "}
+                  current members · {members.length} weight rows · Checked{" "}
                   {new Date(roster.checked_at).toLocaleTimeString()}
                 </small>
               )}
@@ -548,11 +549,47 @@ export default function WeightTrial({
           {roster && (
             <div className="weight-trial-editor">
               <p className="weight-trial-order" role="status">
-                {orderLabel(roster)}
-                {roster.war_source?.opponent
-                  ? ` · vs ${roster.war_source.opponent}`
-                  : ""}
+                {orderLabel(viewRoster!)}
+                {warSource?.opponent ? ` · vs ${warSource.opponent}` : ""}
               </p>
+              {targetPlayer &&
+                !warOrder?.[targetPlayer] &&
+                lineups.some((war) => war.order[targetPlayer]) && (
+                  <p role="status">
+                    This player is in the previous saved war. Choose Previous in
+                    War lineup.
+                  </p>
+                )}
+              {lineups.length > 1 && (
+                <label className="weight-trial-war-picker">
+                  War lineup
+                  <select
+                    disabled={anyBusy || loading}
+                    value={lineup?.end_time || ""}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      guard(() => {
+                        setSelectedWar(value);
+                        if (roster) setValues(draftsForRoster(roster, value));
+                        setFilter("all");
+                      });
+                    }}
+                  >
+                    {lineups.map((war, index) => (
+                      <option key={war.end_time} value={war.end_time || ""}>
+                        {index === 0 ? "Most recent" : "Previous"} ·{" "}
+                        {war.end_time
+                          ? war.end_time.slice(0, 4) +
+                            "-" +
+                            war.end_time.slice(4, 6) +
+                            "-" +
+                            war.end_time.slice(6, 8)
+                          : "Date unavailable"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <div className="weight-trial-columns" aria-hidden="true">
                 <span>#</span>
                 <span>Player</span>
@@ -597,18 +634,20 @@ export default function WeightTrial({
                     <div className="weight-trial-gap" key={entry.tag}>
                       {gap.position} ·{" "}
                       {gap.name
-                        ? `${gap.name} · left the clan`
-                        : "Not in clan anymore"}
+                        ? `${gap.name} · War player details unavailable`
+                        : "War player details unavailable"}
+                      <small>
+                        Refresh members to verify this player before editing.
+                      </small>
                     </div>
                   );
                 }
                 const index = visible.indexOf(row);
                 return (
                   <Fragment key={row.tag}>
-                    {roster.war_order &&
-                      !roster.war_order[row.tag] &&
-                      (index === 0 ||
-                        roster.war_order[visible[index - 1].tag]) && (
+                    {warOrder &&
+                      !warOrder[row.tag] &&
+                      (index === 0 || warOrder[visible[index - 1].tag]) && (
                         <h3 className="weight-trial-outside">
                           Current members outside this war
                         </h3>
@@ -617,15 +656,13 @@ export default function WeightTrial({
                       row={row}
                       draft={values[row.tag] || draftFor(row)}
                       position={
-                        roster.war_order
-                          ? roster.war_order[row.tag]
-                          : row.clan_position
+                        warOrder ? warOrder[row.tag] : row.clan_position
                       }
                       warning={sheetWeightWarning(
                         row.tag,
                         members,
                         values,
-                        roster.war_order,
+                        warOrder,
                       )}
                       busy={anyBusy}
                       last={index === visible.length - 1}
@@ -715,7 +752,7 @@ export default function WeightTrial({
                 }
                 try {
                   await navigator.clipboard.writeText(text);
-                  setNotice("Current member weights copied for Excel.");
+                  setNotice("Weight rows copied for Excel.");
                 } catch {
                   setError(
                     "Copy blocked by the browser. Select the text and copy it manually.",
@@ -730,7 +767,7 @@ export default function WeightTrial({
               onClick={async () => {
                 let text: string;
                 try {
-                  text = warLoot(members, values, roster?.war_order);
+                  text = warLoot(members, values, warOrder);
                 } catch (cause) {
                   setError(message(cause));
                   return;
@@ -755,14 +792,12 @@ export default function WeightTrial({
               <li>
                 {missingWarLoot.length > 0
                   ? "✕ Missing loot"
-                  : roster?.war_order
+                  : warOrder
                     ? "✓ War loot available"
                     : "✕ War loot not verified"}
               </li>
               <li>
-                {roster?.war_order
-                  ? "✓ War lineup available"
-                  : "✕ War lineup unknown"}
+                {warOrder ? "✓ War lineup available" : "✕ War lineup unknown"}
               </li>
               <li>Check: Same war in the sheet</li>
               <li>Check: Storage counts match</li>
@@ -784,9 +819,9 @@ export default function WeightTrial({
               </p>
             )}
             <p className="small">
-              Column F excludes members outside this war. Departed war players
-              block copying; match the sheet manually using the full table
-              export.
+              Column F includes every player in the selected saved war,
+              including players who left the clan. Current members outside that
+              war are excluded.
             </p>
           </details>
         </section>

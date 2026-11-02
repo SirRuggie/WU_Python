@@ -11,7 +11,9 @@ from cwl_web.clan_weights import observations
 from cwl_web.providers import ProviderUnavailable
 PORT = int(sys.argv[2])
 assert PORT == 0 or 8900 <= PORT <= 8999
-folder = tempfile.TemporaryDirectory(prefix='wu-weight21-fixture-', dir=os.environ['HOME'])
+folder = tempfile.TemporaryDirectory(
+    prefix="wu-weight21-fixture-", dir=os.environ.get("TMPDIR")
+)
 app = create_app(db_path=folder.name + '/fixture.sqlite', dev_fixture=True, secure_cookies=False, static_dir=Path(sys.argv[1]))
 p = app['providers']
 ledger = app['clan_weight_trial']
@@ -57,11 +59,54 @@ async def player(t):
 async def clan(t):
     return {'tag': t, 'name': next((c['name'] for c in clans if c['tag'] == t), 'Independent Clan'), 'cwl_league': 'Master League II'}
 
-async def lineup(t):
+
+def war(t, *, previous=False):
     rows = rosters[t]['members']
-    order = {r['tag']: i + 1 for i, r in enumerate(rows[:49]) if i != 47}
-    order[departed] = 48
-    return {'order': order, 'names': {departed: 'Departed Änne'}, 'state': 'inWar', 'end_time': '20261102T070000.000Z', 'opponent': 'Fixture Opponent'}
+    if t != "#R2Y":
+        return {
+            "order": {r["tag"]: i + 1 for i, r in enumerate(rows)},
+            "names": {r["tag"]: r["name"] for r in rows},
+            "town_halls": {r["tag"]: r["town_hall"] for r in rows},
+            "state": "inWar",
+            "end_time": "20261102T070000.000Z",
+        }
+    extra = ["#Y2Y", departed] if previous else [departed, "#U2Y"]
+    selected = rows[:48]
+    order = {r["tag"]: i + 1 for i, r in enumerate(selected)}
+    order.update({t: len(selected) + i + 1 for i, t in enumerate(extra)})
+    names = {r["tag"]: r["name"] for r in selected}
+    names.update(
+        {
+            departed: "Departed Änne",
+            "#Y2Y": "Previous-only Mara",
+            "#U2Y": "Departed unknown Town Hall",
+        }
+    )
+    names = {t: names[t] for t in order}
+    town_halls = {r["tag"]: r["town_hall"] for r in selected}
+    town_halls.update({departed: 18, "#Y2Y": 14})
+    town_halls = {t: value for t, value in town_halls.items() if t in order}
+    return {
+        "order": order,
+        "names": names,
+        "town_halls": town_halls,
+        "state": "warEnded" if previous else "inWar",
+        "end_time": "20261031T070000.000Z" if previous else "20261102T070000.000Z",
+        "opponent": (
+            "Previous Fixture Opponent" if previous else "Current Fixture Opponent"
+        ),
+    }
+
+
+async def lineup(t):
+    if mode.get("war_unavailable"):
+        raise ProviderUnavailable("Fixture war unavailable; saved lineups remain")
+    return war(t)
+
+
+ledger.remember_lineup("#R2Y", war("#R2Y", previous=True))
+ledger.remember_lineup("#R2Y", war("#R2Y"))
+
 p.family_clans = family
 p.clan_roster = roster
 p.player = player

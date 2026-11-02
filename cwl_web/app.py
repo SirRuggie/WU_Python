@@ -1104,11 +1104,16 @@ async def roster(request):
             fwa_tags = {clan['tag'] for clan in await weight_family(request)}
         except ProviderUnavailable:
             fwa_tags = None
+    lineup_clans = request.app["clan_weight_trial"].lineup_assignments(
+        [account["tag"] for account in result["accounts"]], fwa_tags or ()
+    )
     for account in result['accounts']:
         known = account.get('current_clan_status') == 'current' and fwa_tags is not None
         account['current_fwa_clan_tag'] = (
             account.get('current_clan_tag') if known and account.get('current_clan_tag') in fwa_tags else None)
         account['current_fwa_status'] = 'current' if known else 'unavailable'
+        # Saved war participation is separate from current clan membership.
+        account["weight_lineup_clan_tag"] = lineup_clans.get(account["tag"])
     from utils.cwl_location_rules import outside_family
     hosts = _store(request).active_hosting_tags()
     for account in result['accounts']:
