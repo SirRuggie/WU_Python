@@ -8,7 +8,9 @@ export default function RosterUndoToast({
   onUndo,
   bottomOffset = 0,
   onDismiss,
+  disabled = false,
 }: {
+  disabled?: boolean;
   state: RosterUndoState;
   onUndo: () => void;
   bottomOffset?: number;
@@ -41,7 +43,7 @@ export default function RosterUndoToast({
         <Button
           icon={Undo2}
           onClick={onUndo}
-          disabled={state.status !== "available"}
+          disabled={disabled || state.status !== "available"}
         >
           {presentation.actionLabel}
         </Button>

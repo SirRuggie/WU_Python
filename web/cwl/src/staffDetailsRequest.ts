@@ -1,6 +1,8 @@
+import type { FillerMarkQueue } from "./fillerMarkQueue";
 import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import type { RosterSnapshot } from "./roster";
 export type StaffDetailsRequest = {
+  fillerQueue?: FillerMarkQueue;
   seasonId: string;
   tag: string;
   order?: string[];

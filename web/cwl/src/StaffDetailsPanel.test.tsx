@@ -230,3 +230,139 @@ it("retains a confirmed filler receipt when follow-up roster read fails", async 
   expect(host.textContent).toContain("Undo");
   expect(changed).toHaveBeenCalledTimes(1);
 });
+
+it("shares the page queue, disables Undo while it works, and uses newest revision for the last saved mark", async () => {
+  const { FillerMarkQueue } = await import("./fillerMarkQueue");
+  let finish!: (saved: any) => void;
+  const wire = vi.fn(
+    () =>
+      new Promise<any>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const queue = new FillerMarkQueue("1", 9, wire);
+  const fillerChanged = vi.fn();
+  await act(async () =>
+    root.render(
+      <StaffDetailsPanel
+        request={{
+          seasonId: "1",
+          tag: "#PLAYER",
+          viewOnly: "declaration",
+          publishedSnapshot: {
+            roster: snapshot(1) as any,
+            version: 1,
+            signupTags: ["#PLAYER"],
+          },
+          fillerQueue: queue,
+          onFillerChanged: fillerChanged,
+        }}
+        setRequest={vi.fn()}
+      />,
+    ),
+  );
+  expect(spy.props.fillerQueue).toBe(queue);
+  await act(async () => {
+    queue.enqueue(
+      { tag: "#PLAYER", name: "Player", value: false, markRevision: 0 },
+      true,
+    );
+  });
+  expect(queue.working).toBe(true);
+  await act(async () =>
+    finish({
+      tag: "#PLAYER",
+      revision: 10,
+      roster_filler: true,
+      mark_revision: 1,
+      undo: { id: 88, label: "Change filler mark" },
+    }),
+  );
+  queue.syncRevision(12);
+  vi.mocked(api).mockImplementation(async (_path, method) =>
+    method
+      ? ({
+          tag: "#PLAYER",
+          revision: 13,
+          roster_filler: false,
+          mark_revision: 2,
+        } as any)
+      : snapshot(13),
+  );
+  const button = [...host.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Undo"),
+  )!;
+  expect(button).toBeTruthy();
+  await act(async () => button.click());
+  expect(api).toHaveBeenCalledWith("/seasons/1/roster/undo", "POST", {
+    revision: 12,
+    undo_id: 88,
+  });
+  expect(fillerChanged).toHaveBeenCalledWith({
+    tag: "#PLAYER",
+    revision: 13,
+    roster_filler: false,
+    mark_revision: 2,
+  });
+  expect(queue.working).toBe(false);
+  expect(queue.lastSaved).toBeNull();
+  expect(queue.latestRevision).toBe(13);
+  expect(queue.row("#PLAYER")?.value).toBe(false);
+  queue.dispose();
+});
+it("retains confirmed filler Undo in the page queue when its follow-up read fails", async () => {
+  const { FillerMarkQueue } = await import("./fillerMarkQueue");
+  const queue = new FillerMarkQueue("1", 10);
+  queue.lastSaved = {
+    tag: "#PLAYER",
+    revision: 10,
+    roster_filler: true,
+    mark_revision: 1,
+    undo: { id: 89, label: "Change filler mark" },
+  };
+  const changed = vi.fn();
+  await act(async () =>
+    root.render(
+      <StaffDetailsPanel
+        request={{
+          seasonId: "1",
+          tag: "#PLAYER",
+          viewOnly: "declaration",
+          publishedSnapshot: {
+            roster: snapshot(1) as any,
+            version: 1,
+            signupTags: ["#PLAYER"],
+          },
+          fillerQueue: queue,
+          onFillerChanged: changed,
+        }}
+        setRequest={vi.fn()}
+      />,
+    ),
+  );
+  vi.mocked(api).mockImplementation(async (_path, method) => {
+    if (method)
+      return {
+        tag: "#PLAYER",
+        revision: 11,
+        roster_filler: false,
+        mark_revision: 2,
+      } as any;
+    throw new Error("Read unavailable");
+  });
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo")!
+      .click(),
+  );
+  expect(changed).toHaveBeenCalledWith({
+    tag: "#PLAYER",
+    revision: 11,
+    roster_filler: false,
+    mark_revision: 2,
+  });
+  expect(queue.row("#PLAYER")?.value).toBe(false);
+  expect(queue.latestRevision).toBe(11);
+  expect(host.textContent).toContain("Undone. Refresh to see the latest.");
+  queue.dispose();
+});

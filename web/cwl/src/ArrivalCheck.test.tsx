@@ -542,6 +542,12 @@ it("keeps open extra lists and observations while marking five rows without live
   (extraState.value as any).applyMark = vi.fn((saved: any) => {
     extraState.value.data = patchDeclarationMark(extraState.value.data, saved);
   });
+  (extraState.value as any).applyMarks = vi.fn((saved: any[]) => {
+    extraState.value.data = saved.reduce(
+      (data, mark) => patchDeclarationMark(data, mark),
+      extraState.value.data,
+    );
+  });
   localStorage.setItem("wu-staff-cwl-pool", "lazy");
   await act(async () =>
     root.render(

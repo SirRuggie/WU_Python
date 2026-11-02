@@ -1,3 +1,5 @@
+import type { FillerMarkQueue } from "./fillerMarkQueue";
+import { useFillerQueueVersion } from "./useFillerMarkQueue";
 import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import RosterFillerCheckbox from "./RosterFillerCheckbox";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -27,6 +29,7 @@ import "./PlayerCard.css";
 import "./RosterPlayerDialog.css";
 
 type Props = {
+  fillerQueue?: FillerMarkQueue;
   seasonId?: string;
   onFillerChanged?: (saved?: FillerSaveResult) => Promise<void>;
   previous?: () => void;
@@ -75,6 +78,7 @@ export const detailsDate = (value?: string | null) =>
     : "Not recorded";
 
 export default function RosterPlayerDialog({
+  fillerQueue,
   seasonId,
   onFillerChanged,
   account,
@@ -97,6 +101,7 @@ export default function RosterPlayerDialog({
   viewOnly,
   publicationNote,
 }: Props) {
+  useFillerQueueVersion(fillerQueue);
   const [now] = useLocationNow();
   const locationCache = useRef<LocationRecords>({});
   locationCache.current = mergeComparisonLocations(locationCache.current, [
@@ -246,6 +251,7 @@ export default function RosterPlayerDialog({
         </header>
         {seasonId && roster && rosterPermission && !archived && (
           <RosterFillerCheckbox
+            queue={fillerQueue}
             seasonId={seasonId}
             tag={account.tag}
             name={account.player_name}
@@ -428,9 +434,10 @@ export default function RosterPlayerDialog({
         {(localError || error)?.includes("Changed by someone else") &&
           onReload && (
             <Button
-              disabled={busy}
+              disabled={busy || fillerQueue?.working}
               onClick={() =>
                 void run(async () => {
+                  if (fillerQueue?.working) return false;
                   await onReload();
                   return true;
                 })
