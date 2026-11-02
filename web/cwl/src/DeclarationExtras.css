@@ -1,17 +1,11 @@
-.declaration-extras,
-.declaration-low-th,
-.declaration-fillers {
+.declaration-extras {
   margin: 8px 12px;
   min-width: 0;
 }
 .declaration-extras {
   color: #d9bd79;
 }
-.declaration-low-th,
-.declaration-fillers {
-  color: #b6afa1;
-}
-:is(.declaration-extras, .declaration-low-th, .declaration-fillers) summary {
+.declaration-extras summary {
   min-height: 44px;
   display: list-item;
   align-content: center;
@@ -50,4 +44,43 @@
   align-items: center;
   gap: 8px;
   min-height: 44px;
+}
+.declaration-extras.is-neutral {
+  color: #b6afa1;
+}
+.declaration-member-accounts {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.declaration-member-account {
+  padding: 8px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.declaration-member-account.is-unpublished {
+  color: #d4cfc5;
+  background: #1b1c20;
+  border-radius: 6px;
+  padding: 8px;
+}
+.declaration-member-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 44px;
+}
+.declaration-member-actions .roster-filler-control {
+  min-width: 0;
+}
+.declaration-member-actions .declaration-member-dm {
+  margin-top: 0;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
 }
