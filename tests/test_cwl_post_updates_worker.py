@@ -27,6 +27,59 @@ COPY = {
 }
 
 
+def _native_rest_message(message):
+    """Discord REST supplies defaults omitted by native Hikari builders."""
+    components = [item.build()[0] for item in message.components]
+    count = 0
+
+    def defaults(nodes):
+        nonlocal count
+        for node in nodes:
+            count += 1
+            node.setdefault("id", count)
+            if node["type"] == 14:
+                node.setdefault("spacing", 1)
+                node.setdefault("divider", True)
+            defaults(node.get("components", []))
+
+    defaults(components)
+    payload = {
+        "id": "400",
+        "channel_id": "300",
+        "guild_id": "100",
+        "author": {
+            "id": "500",
+            "username": "Fixture bot",
+            "discriminator": "0001",
+            "avatar": None,
+            "bot": True,
+        },
+        "content": message.content,
+        "timestamp": "2026-11-01T00:00:00+00:00",
+        "edited_timestamp": None,
+        "tts": False,
+        "mention_everyone": False,
+        "mentions": [],
+        "mention_roles": [],
+        "attachments": [
+            {
+                "id": str(item.id),
+                "filename": item.filename,
+                "url": item.url,
+                "proxy_url": item.url,
+                "size": 100,
+            }
+            for item in message.attachments
+        ],
+        "embeds": [],
+        "pinned": False,
+        "type": 0,
+        "flags": 32768,
+        "components": components,
+    }
+    return hikari.impl.EntityFactoryImpl(NS()).deserialize_message(payload)
+
+
 def fixture():
     mongo = MemoryMongo()
     mongo.bot_config = Collection()
@@ -524,11 +577,14 @@ def test_gallery_before_title_keeps_its_exact_original_position():
     asyncio.run(run())
 
 
-def test_identical_proposal_has_no_changes_and_cannot_queue_an_edit():
+@pytest.mark.parametrize("native_rest", [False, True])
+def test_identical_proposal_has_no_changes_and_cannot_queue_an_edit(native_rest):
     from utils.cwl_post_update_store import PostUpdateConflict
 
     async def run():
-        mongo, bot, _ = fixture()
+        mongo, bot, message = fixture()
+        if native_rest:
+            bot.rest.fetch_message.return_value = _native_rest_message(message)
         loaded = await campaign.load_campaign(mongo, GUILD, CYCLE)
         row = await create_review(
             mongo,
@@ -574,3 +630,25 @@ def test_authorization_member_404_is_access_changed_not_deleted_post():
         bot.rest.edit_message.assert_not_awaited()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("change", ["large_spacing", "emoji"])
+def test_native_defaults_match_but_real_spacing_and_emoji_changes_stay_distinct(change):
+    from utils.cwl_publishing import _fingerprint
+
+    _, _, message = fixture()
+    native = _native_rest_message(message)
+    assert _fingerprint(message) == _fingerprint(native)
+    children = list(message.components[0].components)
+    if change == "large_spacing":
+        children[1] = hikari.impl.SeparatorComponentBuilder(
+            divider=True, spacing=hikari.SpacingType.LARGE
+        )
+    else:
+        children[-1] = hikari.impl.MessageActionRowBuilder().add_link_button(
+            "https://example.com", label="Old link", emoji="✅"
+        )
+    message.components = [hikari.impl.ContainerComponentBuilder(components=children)]
+    changed = _native_rest_message(message)
+    assert _fingerprint(message) == _fingerprint(changed)
+    assert _fingerprint(native) != _fingerprint(changed)

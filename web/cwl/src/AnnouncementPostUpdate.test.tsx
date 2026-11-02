@@ -326,3 +326,18 @@ it("shows the short updating status without claiming completion", async () => {
   expect(document.body.textContent).toContain("Updating…");
   expect(document.body.textContent).not.toContain("Post updated.");
 });
+
+for (const [status, message] of [
+  ["failed", "Not updated. Preview again."],
+  ["uncertain", "Not sure it updated. Check the post."],
+] as const) {
+  it(`shows the exact ${status} outcome without offering Update`, async () => {
+    api.mockResolvedValueOnce({ ...ready, status, error: message });
+    await mount();
+    await preview();
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe(message);
+    expect(button("Update post")).toBeUndefined();
+    expect(button("Preview again")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("Post updated.");
+  });
+}

@@ -47,8 +47,13 @@ def _fingerprint(message):
             value = getattr(component, key, None)
             if value is not None and value is not hikari.UNDEFINED:
                 result[key] = int(value) if isinstance(value, int) else str(value)
+        # Discord REST fills the separator's default SMALL spacing, while
+        # Hikari builders may leave it UNDEFINED. They describe the same post.
+        # Keep explicit LARGE spacing distinct for change/stale-post checks.
+        if int(component.type) == int(hikari.ComponentType.SEPARATOR):
+            result.setdefault("spacing", int(hikari.SpacingType.SMALL))
         emoji = getattr(component, "emoji", None)
-        if emoji is not None:
+        if emoji is not None and emoji is not hikari.UNDEFINED:
             result["emoji"] = str(emoji)
         if hasattr(component, "components"):
             result["components"] = [node(child) for child in component.components]
