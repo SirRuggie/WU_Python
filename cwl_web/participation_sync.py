@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import calendar
 import json
 import re
@@ -271,7 +272,18 @@ async def _fetch_groups(providers, clans: list[str], cycle: str):
                 TypeError,
                 TimeoutError,
             ) as exc:
-                return clan_tag, None, "unavailable"
+                status = getattr(exc, "status_code", None)
+                category = (
+                    "no_group"
+                    if isinstance(exc, ProviderUnavailable) and status == 404
+                    else "unavailable"
+                )
+                # Record categories on the ordinary capture; never probe again to
+                # discover why a previous generic unavailable result was stored.
+                logging.getLogger(__name__).info(
+                    "CWL group refresh category=%s http_status=%s", category, status
+                )
+                return clan_tag, None, category
 
     return await asyncio.gather(*(one(tag) for tag in clans))
 
@@ -793,8 +805,8 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 overall = "unassigned"
                 warning = "No assigned hosting clans to query"
             elif (
-                "season_older" in failures
-                and all(error == "season_older" for error in failures)
+                failures
+                and all(error in {"season_older", "no_group"} for error in failures)
                 and _upcoming_cycle(cycle)
                 and not _month_wars_seen(db, cycle)
             ):
