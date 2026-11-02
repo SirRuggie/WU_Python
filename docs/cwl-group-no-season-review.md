@@ -131,31 +131,33 @@ month leaves no group row or allowance capture. These are isolated fixtures,
 not proof that production capture works. After an approved release, the next
 ordinary capture must establish the production result without a forced probe.
 
-## Explicit date months and NOT_IN_WAR (prompt 116)
+## Log-only date shapes and NOT_IN_WAR (prompts 116/125)
 
 The first ordinary 516 capture logged `season_kind=invalid` with shape
 `ddddxddxdd`. This is date-shaped evidence, not an observation of the exact
 value or separators. The prior audit correctly records partial improvement,
 not a full capture pass.
 
-The shared group/war month helper now accepts a full `YYYY-MM` or a string fully
-matching `(20\d\d-(0[1-9]|1[0-2]))-\d\d`. The latter's first seven characters
-are explicit month evidence. It follows the existing same/older/later rules;
-it is never inferred as the current month. The day is deliberately only a
-two-digit shape under this rule, not a calendar validation. Other strings keep
-the existing no-month rules. Diagnostics use kind `date` and `YYYY-MM-dd`; the
-actual day and all other raw strings remain unlogged. War summaries also count
-`date` and include its masked shape within the existing five-shape cap.
+Only valid `YYYY-MM` values are explicit cycle evidence. Date-shaped strings
+remain under the deployed no-month rules at every group and war decision:
+active groups infer the selected current cycle, while ENDED groups require
+own stored-tag containment. Dates never bypass that proof or reject an active
+group because their month differs. Their meaning has not been observed.
+Diagnostics alone recognize `(20\d\d-(0[1-9]|1[0-2]))-\d\d`, recording kind
+`date` and `YYYY-MM-dd`; the actual day and all other raw strings stay unlogged.
+War summaries count `date` within the existing five-shape cap. Future ordinary
+captures provide evidence for review, not permission to interpret these dates.
 
 `NOT_IN_WAR` with no usable clan/round body becomes the same per-clan `no_group`
 category as 404. With no own cycle evidence it waits; a stored cycle-keyed group
 row, including PREPARATION before real war tags exist, keeps a warning. Another
-clan's observations and unattributed fetches do not block its wait. Explicit
-older/later month evidence still takes precedence over the no-group state.
+clan's observations and unattributed fetches do not block its wait. An unusable
+NOT_IN_WAR body is no_group regardless of its season value.
 Other malformed states continue to warn.
 
 The public provider's failure boundary remains `ProviderUnavailable`; its
 minimal NOT_IN_WAR shape failure only gains explicit metadata for sync to read.
+Its season metadata is retained solely for masked log diagnostics, never decisions.
 Empty-array normalized responses remain provider responses, classified only
 by sync. Source audit found sync is the sole production consumer of
 `LiveProviders.league_group`; FixtureProviders is unchanged. TODO and Discord

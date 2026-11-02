@@ -1,4 +1,4 @@
-"""Explicit date months and scoped NOT_IN_WAR waits through public HTTP parsers."""
+"""Log-only date shapes and scoped NOT_IN_WAR waits through public HTTP parsers."""
 
 import asyncio
 from contextlib import contextmanager
@@ -16,24 +16,36 @@ import test_participation_waiting as waiting
 
 
 @pytest.mark.parametrize("state", ["PREPARATION", "inWar", "warEnded", "ended"])
-@pytest.mark.parametrize(
-    "value,category",
-    [
-        ("2026-11-02", None),
-        ("2026-10-02", "season_older"),
-        ("2026-12-02", "season_later"),
-    ],
-)
-def test_public_group_parser_date_is_explicit_month(state, value, category, caplog):
+@pytest.mark.parametrize("value", ["2026-11-02", "2026-10-02", "2026-12-02"])
+def test_public_group_parser_date_is_no_month(state, value, caplog):
     with caplog.at_level(logging.INFO):
         row = asyncio.run(capture(body(state, value)))
-    assert row[2] == category
-    assert (row[1] is not None) == (category is None)
+    ended = state in {"warEnded", "ended"}
+    assert row[2] == ("no_group" if ended else None)
+    assert (row[1] is not None) == (not ended)
     if row[1] is not None:
-        assert row[1][-1] is False
+        assert row[1][-1] is True
     assert "season_kind=date" in caplog.text
     assert f"season_shape={value[:7]}-dd" in caplog.text
-    assert f"season_shape={value}" not in caplog.text
+    assert value not in caplog.text
+
+
+@pytest.mark.parametrize("value", ["2026-11-02", "2026-10-02", "2026-12-02"])
+def test_date_ended_requires_own_containment(value):
+    raw = body("ended", value)
+    known = {"#C2Y": {"rounds": [{"war_tags": ["#Y2Y"]}]}}
+    row = asyncio.run(capture(raw, known=known))
+    assert row[1] is not None and row[2] is None
+    assert row[1][2] == "ENDED"
+
+
+@pytest.mark.parametrize("value", [None, "2026-12", "2026-10-02", "2026-12-02"])
+@pytest.mark.parametrize("arrays", [False, True])
+def test_not_in_war_ignores_season_when_group_unusable(value, arrays):
+    raw = dict(state="notInWar", season=value)
+    if arrays:
+        raw.update(clans=[], rounds=[])
+    assert asyncio.run(capture(raw))[2] == "no_group"
 
 
 @pytest.mark.parametrize("state", ["PREPARATION", "ended"])
@@ -99,12 +111,12 @@ def http(groups, wars=None):
     "value,matched",
     [
         ("2026-11-02", True),
-        ("2026-10-02", False),
-        ("2026-12-02", False),
+        ("2026-10-02", True),
+        ("2026-12-02", True),
         ("2026/11/02", True),
     ],
 )
-def test_public_war_parser_uses_same_explicit_month_rule(value, matched, caplog):
+def test_public_war_parser_dates_remain_no_month(value, matched, caplog):
     async def run():
         with http({}, {"#Y2Y": war_body(value)}) as (real, calls):
             war = await real.league_war("#Y2Y")
@@ -171,10 +183,10 @@ class DateCaptureTests(unittest.IsolatedAsyncioTestCase):
                 == 1
             )
 
-    async def test_old_date_war_rejects_inferred_group(self):
+    async def test_valid_old_month_war_rejects_inferred_group(self):
         await self.prepare()
         raw = body("PREPARATION", "")
-        row, data = await self.refresh({"#C2Y": raw}, {"#Y2Y": war_body("2026-10-02")})
+        row, data = await self.refresh({"#C2Y": raw}, {"#Y2Y": war_body("2026-10")})
         assert (
             data["sync"]["status"] == "season_mismatch"
             and row["source_attacks"] is None

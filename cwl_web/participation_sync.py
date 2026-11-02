@@ -35,8 +35,7 @@ def _explicit_month(value):
         return None
     if _CYCLE.fullmatch(value):
         return value
-    match = _DATE_MONTH.fullmatch(value)
-    return match[1] if match else None
+    return None
 
 
 def _missing_month(value):
@@ -76,9 +75,9 @@ def _group_season_diagnostic(value):
         return "empty", "-"
     if isinstance(value, str) and _CYCLE.fullmatch(value):
         return "valid", "-"
-    explicit = _explicit_month(value)
-    if explicit is not None:
-        return "date", explicit + "-dd"
+    date_shape = _DATE_MONTH.fullmatch(value) if isinstance(value, str) else None
+    if date_shape is not None:
+        return "date", date_shape[1] + "-dd"
     shape = (
         "".join(
             "d" if char.isdigit() else "a" if char.isalpha() else "x"
@@ -343,12 +342,7 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     not group.get("clans") or not group.get("rounds")
                 ):
                     _log_group_month(clan_tag, state, reported, False, False)
-                    mismatch = (
-                        _group_month_status(observed, cycle)
-                        if _explicit_month(reported)
-                        else None
-                    )
-                    return clan_tag, None, mismatch or "no_group"
+                    return clan_tag, None, "no_group"
                 missing = isinstance(group, dict) and _missing_month(reported)
                 if missing and state not in {"PREPARATION", "INWAR", "WAR", "ENDED"}:
                     raise ProviderUnavailable("CWL group state is unavailable")
@@ -380,7 +374,7 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                 ):
                     raise ProviderUnavailable("Clash CWL month is unavailable")
                 # A local effective copy leaves the provider's observed month
-                # untouched. Explicit dates always win, including mismatches.
+                # untouched. Only valid YYYY-MM values are explicit cycle evidence.
                 effective = dict(group, season=cycle if inferred else observed)
                 validated = _valid_group(
                     effective, cycle if inferred else observed, clan_tag
@@ -437,10 +431,7 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     and getattr(exc, "group_state", None) == "NOT_IN_WAR"
                 ):
                     reported = getattr(exc, "group_season", None)
-                    month = _explicit_month(reported)
-                    category = (
-                        _group_month_status(month, cycle) if month else None
-                    ) or "no_group"
+                    category = "no_group"
                     _log_group_month(clan_tag, "NOT_IN_WAR", reported, False, False)
                 # Record categories on the ordinary capture; never probe again to
                 # discover why a previous generic unavailable result was stored.
