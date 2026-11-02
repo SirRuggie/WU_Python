@@ -106,3 +106,32 @@ it("shows protected access warning and never confirms automatically", async () =
   await act(async () => button("Keep role").click());
   expect(confirm).not.toHaveBeenCalled();
 });
+
+it("a single protected role still needs explicit confirmation", async () => {
+  vi.mocked(api).mockResolvedValue({
+    ...response(),
+    selected: [ids[0]],
+    count: 1,
+    operation: "add",
+    role: { id: ROLE, name: "Officer", protected: true },
+  });
+  const confirm = vi.fn().mockResolvedValue(true);
+  await act(async () =>
+    root.render(
+      <RoleChangeReview
+        ids={[ids[0]]}
+        operation="add"
+        fixedRole={ROLE}
+        roles={[{ id: ROLE, name: "Officer" }]}
+        onConfirm={confirm}
+        onCancel={() => {}}
+        onDenied={() => {}}
+      />,
+    ),
+  );
+  expect(confirm).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("This role gives extra access");
+  await act(async () => button("Add role").click());
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(confirm.mock.calls[0][0].role.protected).toBe(true);
+});

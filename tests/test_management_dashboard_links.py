@@ -68,9 +68,10 @@ class ManagementDashboardLinksTests(unittest.IsolatedAsyncioTestCase):
     def test_management_destinations_are_canonical_and_strict(self):
         for view, path in MANAGEMENT_PAGE_PATHS.items():
             with self.subTest(view=view):
-                self.assertEqual(login_destination({"view": view, "season": "12", "next": "https://evil.test"}), path)
+                expected = MANAGEMENT_PAGE_PATHS["members-settings"] if view == "member-timezones" else path
+                self.assertEqual(login_destination({"view": view, "season": "12", "next": "https://evil.test"}), expected)
                 request = SimpleNamespace(cookies={"wu_login_page": path + "?view=//evil.test&next=https://evil.test"})
-                self.assertEqual(saved_login_destination(request), path)
+                self.assertEqual(saved_login_destination(request), expected)
         for value in (
             "https://evil.test",
             "//evil.test/settings/access",

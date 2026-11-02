@@ -52,7 +52,7 @@ function Accounts({ id, onDenied }: { id: string; onDenied: () => void }) {
   return (
     <>
       {error && <p role="alert">{error}</p>}
-      {!rows ? (
+      {error ? null : !rows ? (
         <p role="status">{t.loadingAccounts}</p>
       ) : rows.length ? (
         <ul>
@@ -137,6 +137,7 @@ export default function MemberPersonPanel({
   busy,
   navigationBusy,
   roleError,
+  roleOutcome,
   refreshRoles,
   onClose,
   onDirty,
@@ -151,6 +152,7 @@ export default function MemberPersonPanel({
   busy: boolean;
   navigationBusy: boolean;
   roleError: string;
+  roleOutcome?: { status?: string; message?: string };
   refreshRoles?: () => void;
   onClose: () => void;
   onDirty: (dirty: boolean) => void;
@@ -244,7 +246,21 @@ export default function MemberPersonPanel({
             busy={busy || pending || dirty}
             onRole={onRole}
           />
-          {roleError && <p role="alert">{roleError}</p>}
+          {roleError ? (
+            <p role="alert">{roleError}</p>
+          ) : (
+            roleOutcome && (
+              <p
+                role={
+                  ["failed", "uncertain"].includes(roleOutcome.status || "")
+                    ? "alert"
+                    : "status"
+                }
+              >
+                {roleOutcome.message || t.roleState(roleOutcome.status || "")}
+              </p>
+            )
+          )}
           {refreshRoles && (
             <button disabled={navigationBusy || pending} onClick={refreshRoles}>
               {t.refreshProgress}

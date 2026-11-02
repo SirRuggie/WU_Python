@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useClock } from "../activity/useClock";
 import { requestDetailsNavigation } from "../detailsNavigation";
 import { useDashboardPermission } from "../DashboardPermissions";
 import Standardize from "../memberTimezones/Standardize";
@@ -45,6 +46,8 @@ export default function MembersPage({
   initialMember?: string | null;
   onInitialConsumed?: () => void;
 }) {
+  // Reuse the visible-page clock; local times update without directory polling.
+  useClock();
   const allowed = useDashboardPermission("member_roles");
   const [filters, setFilters] = useState<Filters>(emptyFilters),
     [sort, setSort] = useState<MemberSort>("name"),
@@ -404,6 +407,13 @@ export default function MembersPage({
           busy={busy}
           navigationBusy={navigationBusy}
           roleError={actionError || roles.error}
+          roleOutcome={
+            action?.fixedRole && action.ids.includes(person.discord_id)
+              ? { status: "pending", message: t.roleUpdating }
+              : roles.run?.rows.find(
+                  (row) => row.discord_id === person.discord_id,
+                )
+          }
           refreshRoles={roles.error ? () => void roles.refresh() : undefined}
           onClose={closePerson}
           onDirty={panelDirtyChange}

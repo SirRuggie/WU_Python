@@ -68,7 +68,7 @@ export default function NicknameReview({
     [page, setPage] = useState(0);
   const visible = rows.filter(
     (r) =>
-      (!visibleIds || visibleIds.has(r.discord_id)) &&
+      (filter === "selected" || !visibleIds || visibleIds.has(r.discord_id)) &&
       (filter === "selected"
         ? selected.has(r.discord_id)
         : r.category === filter) &&

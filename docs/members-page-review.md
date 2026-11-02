@@ -31,3 +31,26 @@ requested mutation gates and final screenshot review remain before READY.
 Evidence is in `.local/p93-*`. All browser and transport data is disconnected
 sample data; Mongo fixtures are owned loopback databases and are removed after
 checks. No real roles, nicknames, notifications, imports or DM clicks were tested.
+
+
+## Final workflow review checkpoint
+
+The whole page keeps `member_roles` under Claude entry 298. Shared editors keep
+their existing text and behavior; new page-owned words are in `members/strings`.
+Moderation is a generic history link under entry 309; no moderation file changes.
+
+The end-to-end review found and fixed two UI gaps: hidden selected nickname rows
+can now be revealed without changing selection or parent filters; a person's
+pending or failed role update now stays visible inside the phone/desktop person
+panel instead of relying on progress behind that panel. Regressions exercise
+the actual components with fake responses.
+
+No old-worker compatibility is claimed for new typed role manifests. Release
+requires no queued Standardize or bulk work and the normal 210-second drain. A
+rollback after role use must retain a compatible worker or safely freeze queued
+role work before an older worker is reintroduced; never erase accepted receipts
+or restore production data to make a code rollback appear clean.
+
+Current main includes participation follow-up PR151. Final full backend/frontend,
+mutation, keyboard and four-width sample-layout gates remain pending before
+READY. No production role or nickname action was performed.

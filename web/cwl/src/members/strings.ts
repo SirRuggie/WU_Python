@@ -1,11 +1,18 @@
 /** All text owned by the unified Members page. Shared editors keep their own text. */
 export const membersText = {
   roleRun: "Role changes",
+  roleUpdating: "Changing role…",
   roleState: (state: string) =>
     (
       ({
         queued: "Working",
         stopping: "Stopping",
+        waiting: "Waiting to change the role",
+        pending: "Waiting to change the role",
+        running: "Changing role…",
+        failed: "Role change failed",
+        uncertain: "Check the role before trying again.",
+        skipped: "No role change needed",
         done: "Done",
         stopped: "Stopped",
       }) as Record<string, string>

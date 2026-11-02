@@ -169,6 +169,10 @@ it.each(["profile text", "duplicate role", "country choices"])(
 );
 
 it("one-person role change refreshes immediately and Undo sends the exact post-change guard", async () => {
+  let releaseFirst!: () => void;
+  const firstConfirmation = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
   let roleIds: string[] = [];
   let prepared: {
     operation: string;
@@ -209,6 +213,7 @@ it("one-person role change refreshes immediately and Undo sends the exact post-c
     }
     if (path.endsWith("role-confirm") && method === "POST") {
       confirmations.push(body);
+      if (confirmations.length === 1) await firstConfirmation;
       const before = [...roleIds];
       roleIds = prepared!.operation === "add" ? [ROLE] : [];
       current = {
@@ -239,6 +244,12 @@ it("one-person role change refreshes immediately and Undo sends the exact post-c
     document.querySelector<HTMLInputElement>('input[role="switch"]')!;
   await act(async () => toggle().click());
   expect(confirmations).toHaveLength(1);
+  expect(
+    document.querySelector('section.members-person-section[aria-label="Roles"]')
+      ?.textContent,
+  ).toContain("Changing role…");
+  expect(toggle().disabled).toBe(true);
+  await act(async () => releaseFirst());
   expect(toggle().checked).toBe(true);
   const undo = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (item) => item.textContent === "Undo",
@@ -312,4 +323,123 @@ it("switching people keeps the existing detail history entry and confirms a dirt
   expect(history.state.wuActionPanel).toBe(firstMarker);
   expect(document.querySelector(".mt-editor")).toBeNull();
   expect(document.querySelectorAll(".details-frame")).toHaveLength(1);
+});
+
+it("keeps displayed local time current without repeating directory or progress reads", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-01T20:00:00Z"));
+  vi.mocked(api).mockImplementation(async (path) =>
+    path === "/manage/members"
+      ? {
+          members: [
+            {
+              ...member(0),
+              profile: {
+                zone_id: "gmt",
+                gmt_label: "GMT",
+                utc_offset_minutes: 0,
+                country: null,
+                flag: null,
+                source: "staff",
+                revision: 1,
+                name_source_tag: null,
+              },
+            },
+          ],
+          roles: [],
+          manageable_roles: [],
+          countries: [],
+          zones: [],
+          permission: "member_roles",
+        }
+      : { runs: [] },
+  );
+  await render();
+  const before = host.querySelector(".members-person-zone")!.textContent;
+  const calls = vi.mocked(api).mock.calls.length;
+  await act(async () => vi.advanceTimersByTime(60000));
+  expect(host.querySelector(".members-person-zone")!.textContent).not.toBe(
+    before,
+  );
+  expect(api).toHaveBeenCalledTimes(calls);
+  vi.useRealTimers();
+});
+
+it("does not fetch closed linked accounts and shows malformed account data as an error", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation(async (...args) =>
+    args[0].endsWith("/choices")
+      ? {
+          accounts: [
+            { tag: "#SAMPLE", name: { bad: true }, townHallLevel: 16 },
+          ],
+        }
+      : original(...args),
+  );
+  await render();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".members-person-open")!.click(),
+  );
+  expect(
+    vi.mocked(api).mock.calls.some((call) => call[0].endsWith("/choices")),
+  ).toBe(false);
+  const disclosure = [
+    ...document.querySelectorAll<HTMLDetailsElement>(".details-frame details"),
+  ].find(
+    (item) => item.querySelector("summary")?.textContent === "Linked accounts",
+  )!;
+  await act(async () => {
+    disclosure.open = true;
+    disclosure.dispatchEvent(new Event("toggle", { bubbles: true }));
+  });
+  expect(document.querySelector(".details-frame")?.textContent).toContain(
+    "Linked accounts are unavailable",
+  );
+  expect(document.querySelector(".details-frame")?.textContent).not.toContain(
+    "Loading linked accounts",
+  );
+});
+
+it("shows a confirmed per-person role failure inside the person panel", async () => {
+  const previous = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation(async (path, method, body, options) => {
+    if (path.endsWith("role-preview"))
+      return {
+        token: "review",
+        count: 1,
+        selected: [member(0).discord_id],
+        role: { id: ROLE, name: "Officer", protected: false },
+        operation: "add",
+      };
+    if (path.endsWith("role-confirm"))
+      return { run_id: "failed-role", state: "done" };
+    if (path.endsWith("/role-runs/failed-role"))
+      return {
+        run_id: "failed-role",
+        state: "done",
+        rows: [
+          {
+            discord_id: member(0).discord_id,
+            status: "failed",
+            message: "The role could not be changed.",
+            changed: false,
+          },
+        ],
+      };
+    return previous(path, method, body, options);
+  });
+  await render();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".members-person-open")!.click(),
+  );
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[role="switch"]')!.click(),
+  );
+  const failure = document.querySelector(
+    'section.members-person-section[aria-label="Roles"] [role="alert"]',
+  );
+  expect(failure?.textContent).toBe("The role could not be changed.");
+  expect(
+    document.querySelector<HTMLInputElement>('input[role="switch"]')!.checked,
+  ).toBe(false);
 });
