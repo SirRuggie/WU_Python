@@ -469,7 +469,8 @@ export default function ParticipationWorkspace({
                 </strong>
                 <span>
                   {data.sync?.cycle || "CWL month not set"} ·{" "}
-                  {syncStatusLabel(data.sync?.status)} · Last checked{" "}
+                  {syncStatusLabel(data.sync?.status, data.sync?.cycle)} · Last
+                  checked{" "}
                   {data.sync?.last_checked_at
                     ? dateText(data.sync.last_checked_at)
                     : "never"}
@@ -504,13 +505,13 @@ export default function ParticipationWorkspace({
                 retain current results.
               </p>
             )}
-            {!!incomplete && (
+            {!!incomplete && data.sync?.status !== "waiting" && (
               <p className="participation-capture-warning" role="status">
                 {incomplete} account{incomplete === 1 ? "" : "s"} with
                 incomplete, stale or unavailable source results.
               </p>
             )}
-            {data.sync?.warning && (
+            {data.sync?.warning && data.sync.status !== "waiting" && (
               <p className="participation-capture-warning" role="alert">
                 {data.sync.warning}
               </p>

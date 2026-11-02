@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from aiohttp import web
 
@@ -23,6 +24,46 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _upcoming_cycle(cycle: str | None) -> bool:
+    if not isinstance(cycle, str) or not _CYCLE.fullmatch(cycle):
+        return False
+    current = datetime.now(timezone.utc)
+    following_year = current.year + (current.month == 12)
+    following_month = current.month % 12 + 1
+    return cycle in {
+        current.strftime("%Y-%m"),
+        f"{following_year:04d}-{following_month:02d}",
+    }
+
+
+def _group_month_status(observed: str, cycle: str) -> str | None:
+    if observed == cycle:
+        return None
+    if observed > cycle:
+        return "season_later"
+    previous = (datetime.now(timezone.utc).replace(day=1) - timedelta(days=1)).strftime(
+        "%Y-%m"
+    )
+    return "season_older" if observed >= previous else "season_mismatch"
+
+
+def _month_wars_seen(db, cycle: str) -> bool:
+    # A matching group has already yielded a real war response (including
+    # preparation). Do not claim the month has not started after such evidence.
+    return (
+        db.execute(
+            "SELECT 1 FROM participation_war_observations WHERE cycle=? "
+            "UNION ALL SELECT 1 FROM participation_war_fetches WHERE cycle=? LIMIT 1",
+            (cycle, cycle),
+        ).fetchone()
+        is not None
+    )
+
+
+def _waiting_message(cycle: str) -> str:
+    return f"{calendar.month_name[int(cycle[5:7])]} CWL hasn't started in Clash yet"
+
+
 def settings_view(db, season_id: int) -> dict:
     row = db.execute(
         "SELECT * FROM participation_sync_settings WHERE season_id=?",
@@ -36,10 +77,34 @@ def settings_view(db, season_id: int) -> dict:
     status = row["status"] if row else "never"
     warning = row["warning"] if row else None
     updated_at = row["updated_at"] if row else None
-    season = db.execute("SELECT status FROM seasons WHERE id=?", (season_id,)).fetchone()
-    if row and row["last_success_at"] and status in {"complete", "partial", "preparation"}:
+    if status == "waiting":
+        if _upcoming_cycle(cycle) and not _month_wars_seen(db, cycle):
+            warning = _waiting_message(cycle)
+            try:
+                checked_age = (
+                    datetime.now(timezone.utc)
+                    - datetime.fromisoformat(row["last_checked_at"])
+                ).total_seconds()
+                if checked_age > 30 * 60:
+                    status, warning = "stale", "Last Clash check is over 30 minutes old"
+            except (TypeError, ValueError):
+                status, warning = "stale", "Clash check timestamp is invalid"
+        else:
+            status = "season_mismatch"
+            warning = "Clash CWL month differs from the selected month"
+    season = db.execute(
+        "SELECT status FROM seasons WHERE id=?", (season_id,)
+    ).fetchone()
+    if (
+        row
+        and row["last_success_at"]
+        and status in {"complete", "partial", "preparation"}
+    ):
         try:
-            age = (datetime.now(timezone.utc) - datetime.fromisoformat(row["last_success_at"])).total_seconds()
+            age = (
+                datetime.now(timezone.utc)
+                - datetime.fromisoformat(row["last_success_at"])
+            ).total_seconds()
             if age > 30 * 60:
                 if season and season["status"] == "archived":
                     status = "historical"
@@ -77,7 +142,9 @@ def _participants(db, season_id: int) -> dict:
     return working_accounts(db, season_id)
 
 
-def _valid_group(group: dict, cycle: str, clan_tag: str) -> tuple[list[list[str]], list[str]]:
+def _valid_group(
+    group: dict, cycle: str, clan_tag: str
+) -> tuple[list[list[str]], list[str]]:
     if not isinstance(group, dict) or group.get("season") != cycle:
         raise ValueError("CWL group season does not match configured month")
     rounds = group.get("rounds")
@@ -97,7 +164,9 @@ def _valid_group(group: dict, cycle: str, clan_tag: str) -> tuple[list[list[str]
     clans = group.get("clans")
     if not isinstance(clans, list):
         raise ValueError("CWL group clan roster is unavailable")
-    matching = [clan for clan in clans if isinstance(clan, dict) and clan.get("tag") == clan_tag]
+    matching = [
+        clan for clan in clans if isinstance(clan, dict) and clan.get("tag") == clan_tag
+    ]
     if len(matching) != 1 or not isinstance(matching[0].get("members"), list):
         raise ValueError("CWL hosting clan is missing from its league group")
     members = [normalize_tag(member["tag"]) for member in matching[0]["members"]]
@@ -162,21 +231,47 @@ async def _fetch_groups(providers, clans: list[str], cycle: str):
     async def one(clan_tag):
         async with semaphore:
             try:
-                group = await asyncio.wait_for(providers.league_group(clan_tag), timeout=10)
-                validated = _valid_group(group, cycle, clan_tag)
+                group = await asyncio.wait_for(
+                    providers.league_group(clan_tag), timeout=10
+                )
+                observed = group.get("season") if isinstance(group, dict) else None
+                if not isinstance(observed, str) or not _CYCLE.fullmatch(observed):
+                    raise ProviderUnavailable("Clash CWL month is unavailable")
+                # Validate ownership/shape even for an older group. The provider
+                # preserves the API season; it does not substitute our selection.
+                validated = _valid_group(group, observed, clan_tag)
+                mismatch = _group_month_status(observed, cycle)
+                if mismatch:
+                    return clan_tag, None, mismatch
                 state = str(group.get("state") or "").upper()
                 league = None
                 # Never infer a past season's league from a promoted clan profile.
-                if state in {"INWAR", "WAR", "PREPARATION"} and cycle == datetime.now(timezone.utc).strftime('%Y-%m'):
+                if state in {"INWAR", "WAR", "PREPARATION"} and cycle == datetime.now(
+                    timezone.utc
+                ).strftime("%Y-%m"):
                     try:
-                        clan = await asyncio.wait_for(providers.clan(clan_tag), timeout=10)
-                        if isinstance(clan, dict) and clan.get('tag') == clan_tag:
-                            league = clan.get('cwl_league')
-                    except (ProviderUnavailable, ValueError, KeyError, TypeError, TimeoutError):
+                        clan = await asyncio.wait_for(
+                            providers.clan(clan_tag), timeout=10
+                        )
+                        if isinstance(clan, dict) and clan.get("tag") == clan_tag:
+                            league = clan.get("cwl_league")
+                    except (
+                        ProviderUnavailable,
+                        ValueError,
+                        KeyError,
+                        TypeError,
+                        TimeoutError,
+                    ):
                         pass
                 return clan_tag, (*validated, state, league), None
-            except (ProviderUnavailable, ValueError, KeyError, TypeError, TimeoutError) as exc:
-                return clan_tag, None, "season_mismatch" if isinstance(exc, ValueError) and "season" in str(exc) else "unavailable"
+            except (
+                ProviderUnavailable,
+                ValueError,
+                KeyError,
+                TypeError,
+                TimeoutError,
+            ) as exc:
+                return clan_tag, None, "unavailable"
 
     return await asyncio.gather(*(one(tag) for tag in clans))
 
@@ -230,21 +325,42 @@ def _war_rows(db, season_id: int, cycle: str):
 
 
 def _aggregate_for_account(
-    identity, group, wars: dict, fresh_groups: set[str], fresh_wars: set[str],
-    prior, cycle: str,
+    identity,
+    group,
+    wars: dict,
+    fresh_groups: set[str],
+    fresh_wars: set[str],
+    prior,
+    cycle: str,
 ):
     clan = identity["assigned_clan_tag"]
     if not clan:
         return None, None, "unassigned", False, None, "No assigned hosting clan"
     if group is None:
         if prior:
-            return prior["attacks"], prior["stars"], "stale", False, prior["checked_at"], "League group unavailable; previous result retained"
+            return (
+                prior["attacks"],
+                prior["stars"],
+                "stale",
+                False,
+                prior["checked_at"],
+                "League group unavailable; previous result retained",
+            )
         return None, None, "unavailable", False, None, "League group unavailable"
     rounds = json.loads(group["war_tags_json"])
-    group_members = set(json.loads(group["members_json"])) if group["members_json"] else set()
+    group_members = (
+        set(json.loads(group["members_json"])) if group["members_json"] else set()
+    )
     registered = identity["tag"] in group_members
     if not rounds:
-        return None, None, "preparation", False, group["observed_at"], "CWL rounds have not been announced"
+        return (
+            None,
+            None,
+            "preparation",
+            False,
+            group["observed_at"],
+            "CWL rounds have not been announced",
+        )
     attacks_total = stars_total = 0
     member_seen = False
     known_rounds = 0
@@ -257,8 +373,7 @@ def _aggregate_for_account(
     seen_wars = set()
     for round_tags in rounds:
         matches = [
-            wars[(war_tag, clan)] for war_tag in round_tags
-            if (war_tag, clan) in wars
+            wars[(war_tag, clan)] for war_tag in round_tags if (war_tag, clan) in wars
         ]
         if len(matches) != 1:
             all_ended = False
@@ -281,7 +396,11 @@ def _aggregate_for_account(
             continue
         members = json.loads(war["attacks_json"])
         member = members.get(identity["tag"])
-        if member and member.get("attacks") is not None and member.get("stars") is not None:
+        if (
+            member
+            and member.get("attacks") is not None
+            and member.get("stars") is not None
+        ):
             member_seen = True
             known_rounds += 1
             attacks_total += member["attacks"]
@@ -302,12 +421,18 @@ def _aggregate_for_account(
     else:
         attacks, stars = attacks_total, stars_total
     complete = (
-        all_ended and not missing and not member_missing and bool(rounds)
+        all_ended
+        and not missing
+        and not member_missing
+        and bool(rounds)
         and registered
         and str(group["state"]).upper().replace("_", "") == "ENDED"
     )
     if stale:
-        status, warning = "stale", "Cached CWL observations used; results are not freshly verified"
+        status, warning = (
+            "stale",
+            "Cached CWL observations used; results are not freshly verified",
+        )
     elif complete:
         status, warning = "complete", None
     elif preparing and not member_seen:
@@ -315,9 +440,15 @@ def _aggregate_for_account(
     else:
         status, warning = "partial", "CWL wars are in progress or unavailable"
     if not registered and not member_seen:
-        status, warning = "no_data", "Player is not in the league-group roster or observed war rosters"
+        status, warning = (
+            "no_data",
+            "Player is not in the league-group roster or observed war rosters",
+        )
     elif not registered and not stale:
-        status, warning = "partial", "Player was observed in a war but not the league-group roster"
+        status, warning = (
+            "partial",
+            "Player was observed in a war but not the league-group roster",
+        )
     return attacks, stars, status, complete, checked, warning
 
 
@@ -330,7 +461,9 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
     async with lock:
         store = app["store"]
         with store.tx() as db:
-            season = db.execute("SELECT * FROM seasons WHERE id=?", (season_id,)).fetchone()
+            season = db.execute(
+                "SELECT * FROM seasons WHERE id=?", (season_id,)
+            ).fetchone()
             if season is None:
                 _fail(404, "Season not found")
             if season["status"] != "draft":
@@ -347,10 +480,13 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             ).fetchone()
             identities = _participants(db, season_id)
             working_snapshot = working_accounts(db, season_id)
-            clans = sorted({
-                row["assigned_clan_tag"] for row in identities.values()
-                if row["assigned_clan_tag"]
-            })
+            clans = sorted(
+                {
+                    row["assigned_clan_tag"]
+                    for row in identities.values()
+                    if row["assigned_clan_tag"]
+                }
+            )
             cycle = settings["cycle"]
             publication_version = latest["version"] if latest else 0
         if len(clans) > MAX_CLANS:
@@ -370,7 +506,8 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             captured_scores = AllowanceStore(db, season_id, cycle).captured_wars()
             cached_groups = _group_rows(db, season_id, cycle)
             cached_fetches = {
-                row["war_tag"]: row for row in db.execute(
+                row["war_tag"]: row
+                for row in db.execute(
                     "SELECT * FROM participation_war_fetches "
                     "WHERE season_id=? AND cycle=?",
                     (season_id, cycle),
@@ -393,12 +530,23 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
         for war_tag in sorted(all_tags):
             cached = cached_fetches.get(war_tag)
             scanned = set(json.loads(cached["scanned_clans_json"])) if cached else set()
-            if cached and cached["ended"] and set(clans) <= scanned and war_tag in captured_scores:
+            if (
+                cached
+                and cached["ended"]
+                and set(clans) <= scanned
+                and war_tag in captured_scores
+            ):
                 continue
             to_fetch.append(war_tag)
         war_fetches = await _fetch_wars(app["providers"], to_fetch)
-        war_fetches = [(tag, None, 'season_mismatch') if war and war.get('season') not in (None, cycle)
-                       else (tag, war, error) for tag, war, error in war_fetches]
+        war_fetches = [
+            (
+                (tag, None, "season_mismatch")
+                if war and war.get("season") not in (None, cycle)
+                else (tag, war, error)
+            )
+            for tag, war, error in war_fetches
+        ]
         fresh_wars = set()
         wars_to_write = []
         for war_tag, war, error in war_fetches:
@@ -411,7 +559,9 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     wars_to_write.append((war_tag, clan_tag, side))
         stamp = now()
         with store.tx() as db:
-            season = db.execute("SELECT status FROM seasons WHERE id=?", (season_id,)).fetchone()
+            season = db.execute(
+                "SELECT status FROM seasons WHERE id=?", (season_id,)
+            ).fetchone()
             latest = db.execute(
                 "SELECT version FROM roster_publications "
                 "WHERE withdrawn_at IS NULL AND season_id=? ORDER BY version DESC LIMIT 1",
@@ -419,14 +569,18 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             ).fetchone()
             current = settings_view(db, season_id)
             if (
-                season is None or season["status"] != "draft"
+                season is None
+                or season["status"] != "draft"
                 or (latest["version"] if latest else 0) != publication_version
                 or working_accounts(db, season_id) != working_snapshot
                 or current["cycle"] != cycle
                 or current["enabled"] != settings["enabled"]
                 or current["updated_at"] != settings["updated_at"]
             ):
-                _fail(409, "Season, signup assignments, or sync month changed during refresh")
+                _fail(
+                    409,
+                    "Season, signup assignments, or sync month changed during refresh",
+                )
             allowances = AllowanceStore(db, season_id, cycle)
             for clan_tag, state, rounds, members, league in groups_to_write:
                 # A stale active group near season end must not capture a promoted
@@ -434,12 +588,22 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 active_war = False
                 group_tags = {tag for values in rounds for tag in values}
                 for war_tag, war, _ in war_fetches:
-                    if war_tag not in group_tags or not war or _war_state(war.get('state')) not in {'WAR', 'PREPARATION'}:
+                    if (
+                        war_tag not in group_tags
+                        or not war
+                        or _war_state(war.get("state")) not in {"WAR", "PREPARATION"}
+                    ):
                         continue
-                    if not any(isinstance(war.get(key), dict) and war[key].get('tag') == clan_tag for key in ('clan', 'opponent')):
+                    if not any(
+                        isinstance(war.get(key), dict)
+                        and war[key].get("tag") == clan_tag
+                        for key in ("clan", "opponent")
+                    ):
                         continue
                     try:
-                        end = datetime.strptime(war['end_time'], '%Y%m%dT%H%M%S.%fZ').replace(tzinfo=timezone.utc)
+                        end = datetime.strptime(
+                            war["end_time"], "%Y%m%dT%H%M%S.%fZ"
+                        ).replace(tzinfo=timezone.utc)
                         active_war = active_war or end > datetime.now(timezone.utc)
                     except (KeyError, ValueError, TypeError):
                         pass
@@ -453,7 +617,16 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     "season=excluded.season,state=excluded.state,"
                     "war_tags_json=excluded.war_tags_json,"
                     "members_json=excluded.members_json,observed_at=excluded.observed_at",
-                    (season_id, cycle, clan_tag, cycle, state, json.dumps(rounds), json.dumps(members), stamp),
+                    (
+                        season_id,
+                        cycle,
+                        clan_tag,
+                        cycle,
+                        state,
+                        json.dumps(rounds),
+                        json.dumps(members),
+                        stamp,
+                    ),
                 )
             for war_tag, war, error in war_fetches:
                 if war is None:
@@ -468,7 +641,9 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     "ended=excluded.ended,scanned_clans_json=excluded.scanned_clans_json,"
                     "observed_at=excluded.observed_at",
                     (
-                        season_id, cycle, war_tag,
+                        season_id,
+                        cycle,
+                        war_tag,
                         int(
                             _war_state(war.get("state")) == "ENDED"
                             and all(
@@ -479,7 +654,8 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                                 for key in ("clan", "opponent")
                             )
                         ),
-                        json.dumps(clans), stamp,
+                        json.dumps(clans),
+                        stamp,
                     ),
                 )
             for war_tag, clan_tag, side in wars_to_write:
@@ -500,8 +676,14 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     "state=excluded.state,ended=excluded.ended,"
                     "attacks_json=excluded.attacks_json,observed_at=excluded.observed_at",
                     (
-                        season_id, cycle, war_tag, clan_tag, side["state"],
-                        int(side["ended"]), json.dumps(side["members"], sort_keys=True), stamp,
+                        season_id,
+                        cycle,
+                        war_tag,
+                        clan_tag,
+                        side["state"],
+                        int(side["ended"]),
+                        json.dumps(side["members"], sort_keys=True),
+                        stamp,
                     ),
                 )
             group_rows = _group_rows(db, season_id, cycle)
@@ -514,11 +696,18 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     "WHERE season_id=? AND cycle=? AND tag=?",
                     (season_id, cycle, player_tag),
                 ).fetchone()
-                if prior is not None and prior['roster_token'] != account_token(identity):
+                if prior is not None and prior["roster_token"] != account_token(
+                    identity
+                ):
                     prior = None  # Never retain another assignment's cached totals.
                 values = _aggregate_for_account(
-                    identity, group_rows.get(identity["assigned_clan_tag"]),
-                    war_rows, fresh_groups, fresh_wars, prior, cycle,
+                    identity,
+                    group_rows.get(identity["assigned_clan_tag"]),
+                    war_rows,
+                    fresh_groups,
+                    fresh_wars,
+                    prior,
+                    cycle,
                 )
                 attacks, stars, status, complete, checked_at, warning = values
                 statuses.add(status)
@@ -536,22 +725,47 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                             "attacks_override,stars_override"
                             ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                             (
-                                season_id, player_tag, publication_version,
-                                identity["user_id"], identity["player_name"],
-                                identity["town_hall"], identity["pool"],
-                                identity["assigned_clan_tag"], identity["assigned_clan_name"],
-                                None, None, "", 0, "sync", stamp, 0, 0,
+                                season_id,
+                                player_tag,
+                                publication_version,
+                                identity["user_id"],
+                                identity["player_name"],
+                                identity["town_hall"],
+                                identity["pool"],
+                                identity["assigned_clan_tag"],
+                                identity["assigned_clan_name"],
+                                None,
+                                None,
+                                "",
+                                0,
+                                "sync",
+                                stamp,
+                                0,
+                                0,
                             ),
                         )
                 if complete:
                     db.execute(
                         "UPDATE participation_records SET pool=?,assigned_clan_tag=?,assigned_clan_name=?,player_name=?,town_hall=?,user_id=? "
                         "WHERE season_id=? AND tag=? AND updated_by='sync' AND attacks_override=0 AND stars_override=0",
-                        (identity['pool'], identity['assigned_clan_tag'], identity['assigned_clan_name'], identity['player_name'], identity['town_hall'], identity['user_id'], season_id, player_tag),
+                        (
+                            identity["pool"],
+                            identity["assigned_clan_tag"],
+                            identity["assigned_clan_name"],
+                            identity["player_name"],
+                            identity["town_hall"],
+                            identity["user_id"],
+                            season_id,
+                            player_tag,
+                        ),
                     )
                 if prior is None or (
-                    prior["attacks"], prior["stars"], prior["status"],
-                    prior["complete"], prior["checked_at"], prior["warning"]
+                    prior["attacks"],
+                    prior["stars"],
+                    prior["status"],
+                    prior["complete"],
+                    prior["checked_at"],
+                    prior["warning"],
                 ) != (attacks, stars, status, int(complete), checked_at, warning):
                     updated += 1
                 db.execute(
@@ -562,14 +776,39 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     "attacks=excluded.attacks,stars=excluded.stars,status=excluded.status,"
                     "complete=excluded.complete,checked_at=excluded.checked_at,"
                     "warning=excluded.warning,roster_token=excluded.roster_token",
-                    (season_id, cycle, player_tag, attacks, stars, status, int(complete), checked_at, warning, account_token(identity)),
+                    (
+                        season_id,
+                        cycle,
+                        player_tag,
+                        attacks,
+                        stars,
+                        status,
+                        int(complete),
+                        checked_at,
+                        warning,
+                        account_token(identity),
+                    ),
                 )
             if not clans:
                 overall = "unassigned"
                 warning = "No assigned hosting clans to query"
-            elif "season_mismatch" in failures:
+            elif (
+                "season_older" in failures
+                and all(error == "season_older" for error in failures)
+                and _upcoming_cycle(cycle)
+                and not _month_wars_seen(db, cycle)
+            ):
+                overall, warning = "waiting", _waiting_message(cycle)
+            elif any(
+                error in {"season_mismatch", "season_older", "season_later"}
+                for error in failures
+            ):
                 overall = "season_mismatch"
-                warning = "Clash CWL month differs from the selected month"
+                warning = (
+                    "Clash reports a later CWL month than the selected month"
+                    if "season_later" in failures
+                    else "Clash CWL month differs from the selected month"
+                )
             elif failures or "stale" in statuses:
                 overall = "stale" if group_rows else "unavailable"
                 warning = "Some Clash CWL data could not be refreshed; cached results are marked stale"
@@ -589,9 +828,19 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 "last_checked_at=excluded.last_checked_at,"
                 "last_success_at=COALESCE(excluded.last_success_at,participation_sync_settings.last_success_at)",
                 (
-                    season_id, cycle, int(current["enabled"]), overall, warning,
-                    stamp, stamp if not failures and clans and (fresh_wars or not all_tags) else None,
-                    "sync", stamp,
+                    season_id,
+                    cycle,
+                    int(current["enabled"]),
+                    overall,
+                    warning,
+                    stamp,
+                    (
+                        stamp
+                        if not failures and clans and (fresh_wars or not all_tags)
+                        else None
+                    ),
+                    "sync",
+                    stamp,
                 ),
             )
             result = settings_view(db, season_id)
@@ -614,7 +863,8 @@ async def sync_settings(request):
         _fail(400, "Enabled must be a boolean")
     expected_updated_at = body.get("expected_updated_at")
     if (
-        "expected_updated_at" in body and expected_updated_at is not None
+        "expected_updated_at" in body
+        and expected_updated_at is not None
         and not isinstance(expected_updated_at, str)
     ):
         _fail(400, "expected_updated_at must be a timestamp or null")
@@ -641,12 +891,15 @@ async def sync_settings(request):
             "last_success_at=CASE WHEN cycle<>excluded.cycle THEN NULL ELSE last_success_at END,"
             "updated_by=excluded.updated_by,updated_at=excluded.updated_at",
             (
-                sid, cycle, int(enabled),
+                sid,
+                cycle,
+                int(enabled),
                 "never" if changed_cycle else prior["status"],
                 None if changed_cycle else prior["warning"],
                 None if changed_cycle else prior["last_checked_at"],
                 None if changed_cycle else prior["last_success_at"],
-                session["user_id"], stamp,
+                session["user_id"],
+                stamp,
             ),
         )
         result = settings_view(db, sid)
@@ -667,7 +920,8 @@ async def _worker(app):
             await asyncio.sleep(INTERVAL_SECONDS)
             with app["store"].tx() as db:
                 season_ids = [
-                    row["season_id"] for row in db.execute(
+                    row["season_id"]
+                    for row in db.execute(
                         "SELECT s.season_id FROM participation_sync_settings s "
                         "JOIN seasons x ON x.id=s.season_id "
                         "WHERE s.enabled=1 AND x.status='draft'"
@@ -699,6 +953,8 @@ def routes():
     from .app import API
 
     return [
-        web.post(API + "/seasons/{season_id}/participation/sync-settings", sync_settings),
+        web.post(
+            API + "/seasons/{season_id}/participation/sync-settings", sync_settings
+        ),
         web.post(API + "/seasons/{season_id}/participation/sync", force_sync),
     ]
