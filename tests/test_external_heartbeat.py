@@ -1,0 +1,428 @@
+"""Shared URL restrictions, privacy, and nonblocking bounded delivery."""
+
+import asyncio
+import threading
+from types import SimpleNamespace as S
+
+import pytest
+import requests
+
+from utils import external_heartbeat as health
+
+URL = "https://hc-ping.com/12345678-1234-1234-1234-123456789abc"
+
+
+def test_shared_transport_sends_only_canonical_status_url_and_no_payload():
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append((url, kwargs))
+        return S(status_code=200)
+
+    assert health.ping_external(URL, True, get)
+    assert health.ping_external(URL, False, get)
+    assert calls == [
+        (URL, {"timeout": (5, 10), "allow_redirects": False}),
+        (URL + "/fail", {"timeout": (5, 10), "allow_redirects": False}),
+    ]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://hc-ping.com/12345678-1234-1234-1234-123456789abc",
+        "https://example.com/12345678-1234-1234-1234-123456789abc",
+        URL + "?secret=yes",
+        URL + "#secret",
+        URL + "/fail",
+        "https://user:secret@hc-ping.com/12345678-1234-1234-1234-123456789abc",
+        "https://hc-ping.com:443/12345678-1234-1234-1234-123456789abc",
+        "https://hc-ping.com/not-a-check",
+        "https://[invalid/secret",
+    ],
+)
+def test_invalid_destinations_fail_closed_without_exposing_url(url):
+    def never(*a, **kw):
+        raise AssertionError("Network must not run")
+
+    with pytest.raises(RuntimeError) as error:
+        health.ping_external(url, True, never)
+    assert url not in str(error.value)
+    assert "secret" not in str(error.value)
+
+
+def test_delivery_error_hides_private_url_and_redirect_is_not_success():
+    def fail(*a, **kw):
+        raise requests.Timeout("private endpoint " + URL)
+
+    with pytest.raises(RuntimeError) as error:
+        health.ping_external(URL, True, fail)
+    assert URL not in str(error.value) and error.value.__suppress_context__
+    with pytest.raises(RuntimeError, match="302"):
+        health.ping_external(URL, True, lambda *a, **kw: S(status_code=302))
+
+
+def test_unset_is_silent_and_never_schedules_or_calls(caplog):
+    async def run():
+        sender = health.ExternalHeartbeat("", "bot", send=lambda *a: pytest.fail())
+        assert not sender.enabled and not sender.submit(True)
+        assert sender._task is None
+        await sender.close()
+
+    asyncio.run(run())
+    assert not caplog.records
+    assert health.ping_external("", True, lambda *a: pytest.fail()) is False
+
+
+def test_async_outage_is_harmless_and_logs_no_url(caplog):
+    async def run():
+        calls = []
+
+        async def fail(url, healthy):
+            calls.append(healthy)
+            raise RuntimeError("private endpoint " + url)
+
+        sender = health.ExternalHeartbeat(URL, "capture", send=fail)
+        assert sender.submit(False)
+        await sender._task
+        assert calls == [False]
+        assert not sender.submit(False)  # No immediate retry on failure.
+        await sender.close()
+
+    asyncio.run(run())
+    assert "delivery failed" in caplog.text
+    assert URL not in caplog.text and "12345678" not in caplog.text
+
+
+def test_single_inflight_off_loop_attempt_and_normal_cadence():
+    async def run():
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls, clock = [], [0.0]
+
+        async def send(url, healthy):
+            calls.append(healthy)
+            entered.set()
+            await asyncio.wait_for(release.wait(), 2)
+
+        sender = health.ExternalHeartbeat(
+            URL, "dashboard", send=send, clock=lambda: clock[0]
+        )
+        try:
+            assert sender.submit(True)
+            await asyncio.wait_for(entered.wait(), 1)
+            assert not sender.submit(False)
+            # The service loop still runs while the async HTTP attempt is blocked.
+            alive = []
+            await asyncio.sleep(0)
+            alive.append(True)
+            assert alive == [True]
+            release.set()
+            await sender._task
+            clock[0] = 59
+            assert not sender.submit(True)
+            clock[0] = 60
+            assert sender.submit(True)
+            await sender._task
+            assert calls == [True, True]
+        finally:
+            release.set()
+            await sender.close()
+        clock[0] = 1000
+        assert not sender.submit(True)
+
+    asyncio.run(run())
+
+
+def test_invalid_configuration_does_not_fail_service_or_log_secret(caplog):
+    sender = health.ExternalHeartbeat(URL + "?secret=yes", "bot")
+    assert not sender.enabled and not sender.submit(True)
+    assert "invalid configuration" in caplog.text
+    assert URL not in caplog.text and "secret" not in caplog.text
+
+
+def test_requests_debug_logging_redacts_private_ping_path_and_restores_filter(caplog):
+    import logging
+
+    private = "https://hc-ping.com/12345678-1234-5678-1234-567812345678"
+    logger = logging.getLogger("urllib3.connectionpool")
+    prior = list(logger.filters)
+
+    def get(url, **kwargs):
+        logger.debug("HTTPS hc-ping.com GET %s", url)
+        raise requests.ConnectionError(private)
+
+    with caplog.at_level(logging.DEBUG, logger=logger.name):
+        with pytest.raises(RuntimeError, match="delivery failed"):
+            health.ping_external(private, True, get=get)
+    assert "<private-check>" in caplog.text
+    assert "12345678-1234-5678-1234-567812345678" not in caplog.text
+    assert logger.filters == prior
+
+
+def test_overlapping_private_checks_keep_each_other_and_existing_filters(caplog):
+    import logging
+
+    first = "11111111-1111-1111-1111-111111111111"
+    second = "22222222-2222-2222-2222-222222222222"
+    logger = logging.getLogger("urllib3.connectionpool")
+    existing = logging.Filter()
+    a_ready, b_ready, a_finished = (threading.Event() for _ in range(3))
+    failures = []
+    logger.addFilter(existing)
+    before = list(logger.filters)
+
+    def get_a(url, **kwargs):
+        a_ready.set()
+        assert b_ready.wait(3)
+        logger.debug("overlap %s %s", url, second)
+        raise requests.ConnectionError(url)
+
+    def get_b(url, **kwargs):
+        b_ready.set()
+        assert a_ready.wait(3) and a_finished.wait(3)
+        logger.debug("remaining %s", url)
+        raise requests.ConnectionError(url)
+
+    def attempt(check_id, get):
+        try:
+            health.ping_external("https://hc-ping.com/" + check_id, True, get=get)
+        except RuntimeError as error:
+            failures.append(str(error))
+
+    a = threading.Thread(target=attempt, args=(first, get_a))
+    b = threading.Thread(target=attempt, args=(second, get_b))
+    try:
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
+            a.start()
+            assert a_ready.wait(3)
+            b.start()
+            assert b_ready.wait(3)
+            a.join(3)
+            assert not a.is_alive()
+            # A removes only its own filter; B and the prior filter remain.
+            assert all(item in logger.filters for item in before)
+            assert len(logger.filters) == len(before) + 1
+            a_finished.set()
+            b.join(3)
+            assert not b.is_alive()
+        assert failures == ["External heartbeat delivery failed"] * 2
+        assert "overlap" in caplog.text and "remaining" in caplog.text
+        assert first not in caplog.text and second not in caplog.text
+        assert logger.filters == before
+    finally:
+        b_ready.set()
+        a_finished.set()
+        if a.ident is not None:
+            a.join(3)
+        if b.ident is not None:
+            b.join(3)
+        logger.removeFilter(existing)
+
+
+def test_async_service_total_deadline_bounds_trickling_headers(monkeypatch, caplog):
+    async def run():
+        tasks = set()
+
+        async def trickle(reader, writer):
+            task = asyncio.current_task()
+            tasks.add(task)
+            try:
+                await reader.readuntil(b"\r\n\r\n")
+                writer.write(b"HTTP/1.1 200 OK\r\nX-Trickle: ")
+                await writer.drain()
+                while True:
+                    writer.write(b"a")
+                    await writer.drain()
+                    await asyncio.sleep(0.01)
+            except (ConnectionError, asyncio.CancelledError):
+                pass
+            finally:
+                writer.close()
+                tasks.discard(task)
+
+        server = await asyncio.start_server(trickle, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        monkeypatch.setattr(
+            health, "_endpoint", lambda *a: f"http://127.0.0.1:{port}/local-test"
+        )
+        monkeypatch.setattr(health, "TOTAL_DEADLINE_SECONDS", 0.1)
+        sender = health.ExternalHeartbeat(URL, "bot")
+        start = asyncio.get_running_loop().time()
+        try:
+            assert sender.submit(True)
+            await asyncio.wait_for(sender._task, 1)
+            assert asyncio.get_running_loop().time() - start < 0.8
+            assert not sender.submit(True)
+        finally:
+            await sender.close()
+            server.close()
+            for task in list(tasks):
+                task.cancel()
+            await asyncio.gather(*list(tasks), return_exceptions=True)
+            await server.wait_closed()
+
+    asyncio.run(run())
+    assert "delivery failed" in caplog.text and URL not in caplog.text
+
+
+@pytest.mark.parametrize("service", ["bot", "dashboard"])
+@pytest.mark.parametrize("stage", ["http", "dns"])
+def test_real_process_exit_not_held_by_inflight_service_ping(service, stage):
+    import os
+    import sys
+    import textwrap
+
+    async def run():
+        accepted = asyncio.Event()
+        tasks = set()
+
+        async def blocked(reader, writer):
+            task = asyncio.current_task()
+            tasks.add(task)
+            try:
+                await reader.readuntil(b"\r\n\r\n")
+                accepted.set()
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                pass
+            finally:
+                writer.close()
+                tasks.discard(task)
+
+        server = await asyncio.start_server(blocked, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        code = textwrap.dedent("""
+            import asyncio, os, sys
+            from utils import external_heartbeat as h
+            from extensions.tasks.service_health import BotHealth
+            from cwl_web import healthchecks as webhealth
+            url='https://hc-ping.com/12345678-1234-1234-1234-123456789abc'
+            if sys.argv[3]=='http':
+                h._endpoint=lambda *a: sys.argv[1]
+            else:
+                import socket, time
+                def blocked_dns(*a, **kw):
+                    print('dns-entered',flush=True)
+                    time.sleep(10)
+                    raise OSError('DNS unavailable')
+                socket.getaddrinfo=blocked_dns
+            async def run():
+                sender=h.ExternalHeartbeat(url,sys.argv[2])
+                if sys.argv[2]=='bot':
+                    owner=BotHealth(None,None,None,sender=sender)
+                    close=owner.close
+                else:
+                    os.environ[webhealth.DASHBOARD_ENV]=url
+                    webhealth.ExternalHeartbeat=lambda *a:sender
+                    owner=webhealth.lifecycle({})
+                    await anext(owner)
+                    close=owner.aclose
+                assert sender.submit(True)
+                await asyncio.sleep(.15)
+                await close()
+            asyncio.run(run())
+        """)
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            code,
+            f"http://127.0.0.1:{port}/local-test",
+            service,
+            stage,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            if stage == "http":
+                await asyncio.wait_for(accepted.wait(), 2)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), 2)
+            assert process.returncode == 0, (stdout, stderr)
+            if stage == "dns":
+                assert b"dns-entered" in stdout
+            assert URL.encode() not in stderr
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            server.close()
+            for task in list(tasks):
+                task.cancel()
+            await asyncio.gather(*list(tasks), return_exceptions=True)
+            await server.wait_closed()
+
+    asyncio.run(run())
+
+
+def test_service_resolver_uses_real_loopback_dns_without_executor(monkeypatch):
+    from aiohttp import web
+    from aiohttp.test_utils import TestServer
+
+    async def run():
+        app = web.Application()
+
+        async def ok(request):
+            return web.Response(text="ok")
+
+        app.router.add_get("/local-test", ok)
+        server = TestServer(app, host="127.0.0.1")
+        await server.start_server()
+        url = f"http://localhost:{server.port}/local-test"
+        monkeypatch.setattr(health, "_endpoint", lambda *a: url)
+        loop = asyncio.get_running_loop()
+        monkeypatch.setattr(
+            loop, "getaddrinfo", lambda *a, **kw: pytest.fail("No loop DNS executor")
+        )
+        try:
+            assert await health.ping_external_async(URL, True)
+        finally:
+            await server.close()
+
+    asyncio.run(run())
+
+
+def test_cancelled_dns_stays_single_flight_without_retry_threads(monkeypatch):
+    import socket
+
+    async def run():
+        entered, release = threading.Event(), threading.Event()
+        calls = []
+        original = socket.getaddrinfo
+
+        def blocked(host, port, **kw):
+            calls.append(host)
+            entered.set()
+            assert release.wait(2)
+            return original("localhost", port, **kw)
+
+        monkeypatch.setattr(health.socket, "getaddrinfo", blocked)
+        resolver = health._ServiceResolver()
+        first = asyncio.create_task(
+            resolver.resolve("one-local-test.invalid", 19777, 0)
+        )
+        second = asyncio.create_task(
+            resolver.resolve("one-local-test.invalid", 19777, 0)
+        )
+        try:
+            async with asyncio.timeout(1):
+                while not entered.is_set():
+                    await asyncio.sleep(0.001)
+            first.cancel()
+            second.cancel()
+            await asyncio.gather(first, second, return_exceptions=True)
+            third = asyncio.create_task(
+                resolver.resolve("one-local-test.invalid", 19777, 0)
+            )
+            await asyncio.sleep(0.01)
+            assert calls == ["one-local-test.invalid"]
+            release.set()
+            result = await asyncio.wait_for(third, 1)
+            assert result and all(row["host"] in {"127.0.0.1", "::1"} for row in result)
+        finally:
+            release.set()
+            first.cancel()
+            second.cancel()
+            await resolver.close()
+
+    asyncio.run(run())

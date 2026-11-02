@@ -2030,6 +2030,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     from .member_timing import lifecycle as member_timing_lifecycle
     app.cleanup_ctx.append(member_timing_lifecycle)
     app.cleanup_ctx.append(participation_sync_lifecycle)
+    from .healthchecks import lifecycle as healthchecks_lifecycle
+    app.cleanup_ctx.append(healthchecks_lifecycle)
     app.cleanup_ctx.append(_dashboard_accounts_lifecycle)
     from .roster_owner_names import lifecycle as owner_nicknames_lifecycle
     app.cleanup_ctx.append(owner_nicknames_lifecycle)

@@ -1341,3 +1341,122 @@ dashboard `cwl-backup.timer` remains every five minutes. This reduces full Mongo
 dumps from 96 to 24 per day; actual client-transfer estimates belong to the
 read-only Mongo audit rather than assuming stored/compressed size equals wire
 traffic. The intended Mongo recovery window becomes one hour plus job runtime.
+
+### Optional service Healthchecks (source preparation, release held)
+
+Three independent dead-man switches complement backup monitoring. Ruggie creates
+three checks on Healthchecks and puts each private Ping URL in the service's
+existing Git-ignored environment file. No checks or private URLs are created by
+this change. Leave the existing `CWL_BACKUP_HEALTHCHECK_URL` unchanged.
+
+For the bot's existing private `.env` / service environment:
+
+```dotenv
+WU_BOT_HEALTHCHECK_URL=https://hc-ping.com/<BOT_CHECK_UUID>
+```
+
+For the backend's existing private `.local/cwl-web.env`:
+
+```dotenv
+CWL_DASHBOARD_HEALTHCHECK_URL=https://hc-ping.com/<DASHBOARD_CHECK_UUID>
+CWL_CAPTURE_HEALTHCHECK_URL=https://hc-ping.com/<CAPTURE_CHECK_UUID>
+```
+
+These are placeholders, not working URLs. Keep the files private (0600); never
+paste actual values into source, handoffs, command output or logs. An unset or
+empty value silently disables that check. Invalid configured values disable it
+with a generic warning. Only HTTPS `hc-ping.com` UUID URLs are accepted; redirects
+are refused. The synchronous backup helper retains its existing 5-second connect /
+10-second read rules and request-scoped Requests/urllib3 UUID redaction. Service
+pings use async HTTP with a 15-second total deadline (also 5-second connect /
+10-second idle-read bounds) and do not read a response body. HTTP needs no
+executor thread. DNS uses one shared daemon lookup per unresolved host/port/
+family; the underlying OS call may outlive cancellation, but cannot hold process
+exit or multiply into retry threads. No logs/data are sent and delivery errors
+omit exception text and the private URL. Each service keeps one active attempt,
+at least 60 seconds apart, without an automatic retry loop. Ping failure never
+changes service readiness or a capture result. Stopping cancels the async request;
+actual bot/backend child-process tests cover blocked HTTP and blocked DNS.
+
+| Check | Period | Suggested grace | Proof before success |
+| --- | --- | --- | --- |
+| Bot | 5 minutes | 15 minutes | Public Hikari gateway connected/alive, APScheduler running, existing management job and independent Mongo heartbeat both no older than 90 seconds |
+| Dashboard | 5 minutes | 10 minutes | Actual loopback `/api/cwl/config` returns the expected JSON and a read-only SQLite query succeeds; existing durability fence is healthy |
+| Capture | Existing 15-minute ordinary interval, plus pass runtime | 30 minutes | Ordinary pass has fresh progress, validated waiting, or a valid finished/no-work answer; no enabled season is healthy |
+
+Grace is additional time after the period: these suggestions alert after about
+20, 15 and 45 minutes without a success. Capture waits 15 minutes before its
+first ordinary pass; existing group/war network budgets can consume about six
+minutes per season. With several enabled seasons or unusual existing queueing,
+choose a larger capture grace rather than forcing a capture. A normal 210-second
+bot drain plus startup fits the suggested bot grace. Environment changes take
+effect only on the relevant approved bot/backend restart. This source change
+requires a future bot and backend restart; release remains held for Ruggie.
+
+The bot reporter does not treat a historical finite `heartbeat_latency` as a
+recent gateway ACK. Hikari 2.6's public connected/alive state relies on its own
+heartbeat watchdog; this code uses no private gateway fields. Separately, the
+existing scheduled admission job supplies scheduler progress, and the existing
+independent management heartbeat runs every ten seconds and writes at most once
+per 30 seconds, including while a job waits on Discord or a queue lock. The
+90-second freshness bound covers the tested normal 70-second rate-limit wait,
+150-second profile edit and 200-second owned worker budget because that heartbeat
+continues during those waits. A stale scheduler or stale heartbeat stops bot
+pings even if the reporting timer still runs. There are no additional Mongo
+reads or writes and no additional Clash/Discord calls for monitoring.
+
+The dashboard check uses the existing configured loopback host/port, rejects
+redirects, sends no cookies and queries SQLite in read-only mode off the event
+loop. Its public config handler bypasses upstream authorization reads. Dashboard
+self-checks only send success: any failure, including listener shutdown or a
+writer lock past the read timeout, sends nothing. The dead-man expires after its
+normal grace instead of immediate `/fail`. A numeric-free local line,
+`Dashboard self-check unavailable`, is limited to once per five minutes; no URL,
+status number or duration is logged. An unset URL starts no self-check task/I/O.
+Capture adds no queries: it observes the ordinary worker's existing results and
+pending-war tags. Manual forced refreshes never emit a monitoring ping.
+
+Capture sends one result after an ordinary pass across enabled draft seasons.
+Any unexpected exception makes the pass `/fail`, while later seasons still run.
+A valid Clash answer (`no_group`, `not_in_war`, older or later month) with no
+remaining uncaptured wars for that clan counts as finished work and sends success,
+even while an enabled historical season's existing UI correctly remains stale or
+month-mismatched. It is not treated as an outage merely because no fresh war
+request was needed. Invalid/unavailable answers count against the pass; `/fail`
+requires every clan to lack fresh progress, a valid waiting state and a valid
+finished/no-work outcome. Cached rows alone cannot hide an all-provider outage,
+and an unfinished war that fails still prevents a no-group result from being
+called finished. Partial/stale output with some valid progress, empty clan sets
+and ordinary concurrent edit/archive/removal cancellation are completed work.
+With no enabled season, success continues on the ordinary schedule. A worker
+that dies before a failure attempt is detected when pings stop. Monitoring success
+means the ordinary capture completed sensibly, not that all selected-month data
+is newly available; stored statuses and captured data are unchanged.
+
+Validation includes real scheduled-entrypoint/independent-heartbeat execution at
+normal maximum job durations, disconnected/stale/dead scheduler cases, actual
+loopback HTTP plus SQLite checks, ordinary capture success/partial/cache-only
+outage/crash/offseason/manual-force behavior, and harmless bounded ping outages.
+Delivery is tested with injected transports and isolated loopback servers only: no actual Healthchecks
+request, production API timing, Discord delivery or live role change is claimed.
+There is no UI change or new preview for this monitoring-only feature.
+
+Original prompt 133 validation before this rework: 6,321 guarded backend tests passed, 99 skipped
+and 267 subtests passed; 130 focused checks; five genuine adversarial mutants
+killed. The required war gate passed 213 backend checks (one skip), 35 frontend
+checks, TypeScript and an isolated build. Exact committed runtime boot passed
+all 51 production routes with the native pool and real owner on owned Mongo /
+copied SQLite, external networking blocked, config 200 and unauthenticated auth
+401. Owned fixtures were stopped and removed; source hashes and logs retained.
+
+Prompt 138 corrects finished-month and dashboard shutdown false alarms. Regressions
+include real November 25 / December 3 syncs with captured ended wars and no new war calls,
+pending-war failure, actual stopped listener, SQLite writer lock past two seconds,
+rate-limited private diagnostics, trickling response headers and actual bot/backend
+process exits during HTTP/DNS stalls. Final prompt 138 gates: 6,335 guarded backend
+tests passed, 99 skipped and 267 subtests passed (590.14 seconds); 144 focused
+checks passed and nine genuine rework mutants were killed. Required war validation passed 213 backend checks (one skip),
+35 frontend checks, TypeScript and an isolated build. Exact committed runtime
+boot passed all 51 production routes with native pool, real owner on owned Mongo /
+copied SQLite, external networking blocked, config 200 / auth 401 and cleanup/hash
+proof. Release remains held; no real check was created or contacted.
