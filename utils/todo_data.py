@@ -144,14 +144,24 @@ def fresh_reads():
 
 def cache_get(key: str):
     """Cached value, or None if absent or expired."""
-    if _bypass_cache.get():
-        return None
     hit = _cache.get(key)
     if hit is None:
         return None
     expires_at, _filled_at, value = hit
     if time.monotonic() >= expires_at:
         _cache.pop(key, None)
+        return None
+    # A fresh push check must refresh game state, but repeated accessDenied is
+    # not game state. Retain the existing private-war negative TTL; manual cache
+    # clearing can still request a new check after permissions change.
+    private_war = (
+        key.startswith("war:")
+        and isinstance(value, tuple)
+        and len(value) == 2
+        and value[0] == "private"
+        and value[1] is None
+    )
+    if _bypass_cache.get() and not private_war:
         return None
     return value
 
