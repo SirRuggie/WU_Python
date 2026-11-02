@@ -70,4 +70,8 @@ Claude's browser pane reported hidden visibility. Production check icons, header
 count, grouped rows and narrow/wide layout were therefore not visually verified
 in this smoke. Isolated visual evidence remains the layout evidence; it is not a
 claim about production rendering. A real member view, DM click and a move clearing
-a check were not tested. Ruggie can confirm the visual result on his phone.
+a check were not tested.
+
+In entry 334, Ruggie confirmed the on-screen result on his phone: “Yes it looks
+good”. This is his visual confirmation, separate from Claude’s API checks; it
+does not establish a real DM delivery or a moved-account refresh.
