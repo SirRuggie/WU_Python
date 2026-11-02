@@ -139,7 +139,9 @@ def test_one_numeric_line_no_identity_and_byte_identical_with_without_timing(
     assert "PRIVATE" not in line and str(G) not in line and str(G + 20000) not in line
 
 
-@pytest.mark.parametrize("failure", ["clock", "logger", "constructor"])
+@pytest.mark.parametrize(
+    "failure", ["clock", "clock_after_start", "logger", "constructor"]
+)
 def test_timing_failure_never_changes_the_successful_response(monkeypatch, failure):
     fixture(monkeypatch)
     request = S()
@@ -153,6 +155,15 @@ def test_timing_failure_never_changes_the_successful_response(monkeypatch, failu
 
         if failure == "clock":
             monkeypatch.setattr(timing, "perf_counter", broken)
+        elif failure == "clock_after_start":
+            count = 0
+
+            def fails_after_start():
+                nonlocal count
+                count += 1
+                return 0.0 if count == 1 else broken()
+
+            monkeypatch.setattr(timing, "perf_counter", fails_after_start)
         elif failure == "logger":
             monkeypatch.setattr(timing.LOG, "info", broken)
         else:

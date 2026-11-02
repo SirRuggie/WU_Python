@@ -150,8 +150,9 @@ bytes; they are not successful page-load measurements.
 Directory includes paging and its self lookup; hierarchy includes its two
 existing Discord reads; profiles includes the one existing profile query; rows
 includes inventory and role-editability projection; JSON includes the unchanged
-response construction. Total measures the handler, including its existing auth
-and protected-role work, and excludes logger and client/network transfer time.
+response construction. Total measures the handler, including authorization invoked inside it and
+protected-role work; middleware before the handler, logging and client/network
+transfer time are excluded.
 Role count includes the guild's everyone role. Pages count page attempts; the
 Discord counter tracks existing request dispatches, including auth when it runs
 inside the handler. Bytes count the uncompressed JSON body, not billed quota.
@@ -164,8 +165,18 @@ outcomes. There is no flag, setting, cache change or new polling.
 
 Focused tests verify one numeric line without identities, exact response bytes
 with/without timing, unchanged IO counts, actual injected-dispatch counting,
-constructor/clock/logger failure and unchanged authorization denial. Full gates
-for this delta are pending.
+constructor/clock/logger failure (including a clock failing after request start)
+and unchanged authorization denial. Combined with current capture main3f, the
+backend passed 6,250 tests, 99 skipped and 267 subtests in560.71s; focused
+checks passed45. Frontend1484/261files, TypeScript/build and war reminders
+(213 backend/one skipped,35 frontend/build) passed without web source changes.
+Three adversarial mutations were killed: missing dispatch counting, raw response
+logging and a clock exception after request start. The initial global-clock
+mutation survived because the constructor fallback safely disabled timing;
+the new mid-request regression catches the meaningful failure. Its initial
+overall log is retained; final rerun overwrote per-case files, recorded honestly
+in the local evidence summary. Exact final-commit boot proof is recorded
+separately; these are isolated checks, not live timing or delivery evidence.
 
 Approval 376 applies only after Claude accepts the new delta; capture 116 goes
 first. The dashboard needs the optimized helper in its new backend archive,
