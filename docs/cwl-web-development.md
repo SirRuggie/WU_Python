@@ -1453,5 +1453,10 @@ Prompt138 corrects finished-month and dashboard shutdown false alarms. Regressio
 include real Nov25/Dec3 syncs with captured ended wars and no new war calls,
 pending-war failure, actual stopped listener, SQLite writer lock past two seconds,
 rate-limited private diagnostics, trickling response headers and actual bot/backend
-process exits during HTTP/DNS stalls. Final rework gates are recorded with its
-review handoff; release remains held and no real check was created or contacted.
+process exits during HTTP/DNS stalls. Final prompt138 gates: 6,335 guarded backend tests passed, 99 skipped and
+267 subtests passed (590.14 seconds); 144 focused checks and nine genuine rework
+mutants passed. Required war validation passed 213 backend checks (one skip),
+35 frontend checks, TypeScript and an isolated build. Exact committed runtime
+boot passed all 51 production routes with native pool, real owner on owned Mongo /
+copied SQLite, external networking blocked, config200/auth401 and cleanup/hash
+proof. Release remains held; no real check was created or contacted.
