@@ -111,7 +111,7 @@ class Collection:
     async def find_one(self, query, projection=None):
         return next((deepcopy(row) for row in self.rows.values() if matches(row, query)), None)
 
-    def find(self, query, projection=None):
+    def find(self, query, projection=None, **kwargs):
         if isinstance(query.get('player_tag'), dict):
             self.find_sizes.append(len(query['player_tag'].get('$in', [])))
         return Cursor([row for row in self.rows.values() if matches(row, query)])
