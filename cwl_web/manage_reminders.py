@@ -1,4 +1,5 @@
 """Web editor for the existing Manage campaign; the bot remains the scheduler."""
+
 import copy
 import re
 from datetime import datetime, timezone
@@ -93,49 +94,78 @@ def _public_campaign(campaign):
 
 async def _response(request, mongo, loaded, *, preview=False, protected=()):
     from .app import _store, _sid
-    history = await cwl_campaign.history(mongo, GUILD_ID, loaded['cycle'])
+
+    history = await cwl_campaign.history(mongo, GUILD_ID, loaded["cycle"])
     # History snapshots are large; expose receipts/actions, not stored campaigns.
-    history = [{key: value for key, value in event.items() if key not in ('campaign', 'draft_id', '_id')} for event in history]
+    history = [
+        {
+            key: value
+            for key, value in event.items()
+            if key not in ("campaign", "draft_id", "_id")
+        }
+        for event in history
+    ]
     for event in history:
-        parts = str(event.get('occurrence_id', '')).split('|')
+        parts = str(event.get("occurrence_id", "")).split("|")
         if len(parts) == 3:
-            event['message_id'], event['variant'] = parts[1], parts[2]
-        if 'by' in event and event['by'] is not None:
-            event['by'] = str(event['by'])
-    sent = set(loaded.get('sent_occurrences', [])) | {x.get('occurrence_id') for x in loaded.get('deliveries', []) if x.get('status') == 'sent'}
-    receipts = {x.get('occurrence_id'): x for x in loaded.get('deliveries', [])}
+            event["message_id"], event["variant"] = parts[1], parts[2]
+        if "by" in event and event["by"] is not None:
+            event["by"] = str(event["by"])
+    sent = set(loaded.get("sent_occurrences", [])) | {
+        x.get("occurrence_id")
+        for x in loaded.get("deliveries", [])
+        if x.get("status") == "sent"
+    }
+    receipts = {x.get("occurrence_id"): x for x in loaded.get("deliveries", [])}
     schedule = []
-    for item in loaded['schedule']:
-        receipt = receipts.get(item['id'], {})
-        if item['id'] in sent:
-            status = 'sent'
-        elif item['id'] in loaded.get('uncertain_occurrences', []):
-            status = 'uncertain'
-        elif item['id'] in loaded.get('skipped', []):
-            status = 'skipped'
-        elif receipt.get('status'):
-            status = receipt['status']
-        elif loaded['campaign'].get('paused'):
-            status = 'paused'
-        elif not loaded.get('activated'):
-            status = 'inactive'
-        elif not item['run_at']:
-            status = 'manual'
-        elif datetime.fromisoformat(item['run_at_utc']) < datetime.now(timezone.utc):
-            status = 'elapsed'
+    for item in loaded["schedule"]:
+        receipt = receipts.get(item["id"], {})
+        if item["id"] in sent:
+            status = "sent"
+        elif item["id"] in loaded.get("uncertain_occurrences", []):
+            status = "uncertain"
+        elif item["id"] in loaded.get("skipped", []):
+            status = "skipped"
+        elif receipt.get("status"):
+            status = receipt["status"]
+        elif loaded["campaign"].get("paused"):
+            status = "paused"
+        elif not loaded.get("activated"):
+            status = "inactive"
+        elif not item["run_at"]:
+            status = "manual"
+        elif datetime.fromisoformat(item["run_at_utc"]) < datetime.now(timezone.utc):
+            status = "elapsed"
         else:
-            status = 'scheduled'
-        schedule.append({**item, 'status': status})
-    worker = await mongo.bot_config.find_one({'_id': f'cwl:web-worker:{GUILD_ID}'}) or {}
-    season = _store(request).one('SELECT signup_open FROM seasons WHERE id=?', (_sid(request),))
-    return {'cycle': loaded['cycle'], 'generation': campaign_generation(loaded),
-            'worker_ready': await _worker_ready(mongo), 'activated': loaded['activated'],
-            'campaign': _public_campaign(loaded['campaign']), 'deadline': loaded['deadline'],
-            'schedule': schedule, 'history': history, 'signup_open': bool(season['signup_open']),
-            'schedule_synced': (worker.get('schedule_generations') or {}).get(loaded['cycle']) == campaign_generation(loaded),
-            'schedule_sync_at': worker.get('schedule_sync_at'),
-            'links_locked': True, 'preview': preview, 'protected_sent': list(protected),
-            'sync_note': 'The existing Manage bot reconciles saved schedules automatically.'}
+            status = "scheduled"
+        schedule.append({**item, "status": status})
+    worker = (
+        await mongo.bot_config.find_one({"_id": f"cwl:web-worker:{GUILD_ID}"}) or {}
+    )
+    season = _store(request).one(
+        "SELECT signup_open FROM seasons WHERE id=?", (_sid(request),)
+    )
+    return {
+        "cycle": loaded["cycle"],
+        "generation": campaign_generation(loaded),
+        "worker_ready": await _worker_ready(mongo),
+        "activated": loaded["activated"],
+        "campaign": _public_campaign(loaded["campaign"]),
+        "deadline": loaded["deadline"],
+        "schedule": schedule,
+        "history": history,
+        "signup_open": bool(season["signup_open"]),
+        "schedule_synced": worker.get("schedule_ready") is True
+        and bool(worker.get("worker_epoch"))
+        and worker.get("worker_epoch") == worker.get("schedule_epoch")
+        and (worker.get("schedule_generations") or {}).get(loaded["cycle"])
+        == campaign_generation(loaded),
+        "schedule_sync_at": worker.get("schedule_sync_at"),
+        "links_locked": True,
+        "preview": preview,
+        "protected_sent": list(protected),
+        "sync_note": "The existing Manage bot reconciles saved schedules automatically.",
+    }
 
 
 async def status(request):

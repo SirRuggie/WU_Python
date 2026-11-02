@@ -1,0 +1,370 @@
+{
+  "schema_version": 1,
+  "timezone": "America/New_York",
+  "paused": false,
+  "reminder_sequence": {
+    "enabled": false
+  },
+  "signup_deadline": {
+    "month_end_offset_days": 2,
+    "hour": 17,
+    "minute": 0
+  },
+  "messages": {
+    "signup": {
+      "enabled": true,
+      "label": "Signups open",
+      "schedule": {
+        "mode": "monthly",
+        "day": 20,
+        "hour": 17,
+        "minute": 0
+      },
+      "variants": {
+        "main": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> CWL Time <:CWL:1399013745598009375>",
+          "body": "Sign up for CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose Main or Lazy CWL, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#801950200133976124>.",
+          "media_url": "assets/Gold_Footer.png",
+          "destination_channel_id": "channel-main",
+          "role_ids": [
+            "role-main"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        },
+        "lazy": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> CWL Time <:CWL:1399013745598009375>",
+          "body": "Sign up for Lazy CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose **Lazy CWL**, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#872692009066958879>.",
+          "media_url": "assets/Gold_Footer.png",
+          "destination_channel_id": "channel-lazy",
+          "role_ids": [
+            "role-lazy"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        }
+      }
+    },
+    "reminder:1": {
+      "enabled": true,
+      "label": "Sign-up reminder 1",
+      "schedule": {
+        "mode": "legacy_chain",
+        "after": "signup",
+        "offset_minutes": 1440
+      },
+      "variants": {
+        "main": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> Sign-up Reminder #1 <:CWL:1399013745598009375>",
+          "body": "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\nSign up for CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose Main or Lazy CWL, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#801950200133976124>.\n\n# **Signups close {signup_deadline}**",
+          "media_url": "https://c.tenor.com/6b2bCHLqrUkAAAAd/tenor.gif",
+          "destination_channel_id": "channel-main",
+          "role_ids": [
+            "role-main"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        },
+        "lazy": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> Sign-up Reminder #1 <:CWL:1399013745598009375>",
+          "body": "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\nSign up for Lazy CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose **Lazy CWL**, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#872692009066958879>.\n\n# **Signups close {signup_deadline}**",
+          "media_url": "https://c.tenor.com/6b2bCHLqrUkAAAAd/tenor.gif",
+          "destination_channel_id": "channel-lazy",
+          "role_ids": [
+            "role-lazy"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        }
+      }
+    },
+    "reminder:2": {
+      "enabled": true,
+      "label": "Sign-up reminder 2",
+      "schedule": {
+        "mode": "legacy_chain",
+        "after": "reminder:1",
+        "offset_minutes": 1440
+      },
+      "variants": {
+        "main": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> Sign-up Reminder #2 <:CWL:1399013745598009375>",
+          "body": "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\nSign up for CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose Main or Lazy CWL, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#801950200133976124>.\n\n# **Signups close {signup_deadline}**",
+          "media_url": "https://media.tenor.com/0XVm8XNzxFUAAAAj/its-not-too-late-to-get-involved-engage.gif",
+          "destination_channel_id": "channel-main",
+          "role_ids": [
+            "role-main"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        },
+        "lazy": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> Sign-up Reminder #2 <:CWL:1399013745598009375>",
+          "body": "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\nSign up for Lazy CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose **Lazy CWL**, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#872692009066958879>.\n\n# **Signups close {signup_deadline}**",
+          "media_url": "https://media.tenor.com/0XVm8XNzxFUAAAAj/its-not-too-late-to-get-involved-engage.gif",
+          "destination_channel_id": "channel-lazy",
+          "role_ids": [
+            "role-lazy"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        }
+      }
+    },
+    "reminder:3": {
+      "enabled": true,
+      "label": "Sign-up reminder 3",
+      "schedule": {
+        "mode": "legacy_chain",
+        "after": "reminder:2",
+        "offset_minutes": 1440
+      },
+      "variants": {
+        "main": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> Sign-up Reminder #3 <:CWL:1399013745598009375>",
+          "body": "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\nSign up for CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose Main or Lazy CWL, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#801950200133976124>.\n\n# **Signups close {signup_deadline}**",
+          "media_url": "https://c.tenor.com/t-scOJYZGPEAAAAC/tenor.gif",
+          "destination_channel_id": "channel-main",
+          "role_ids": [
+            "role-main"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        },
+        "lazy": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> Sign-up Reminder #3 <:CWL:1399013745598009375>",
+          "body": "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\nSign up for Lazy CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose **Lazy CWL**, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#872692009066958879>.\n\n# **Signups close {signup_deadline}**",
+          "media_url": "https://c.tenor.com/t-scOJYZGPEAAAAC/tenor.gif",
+          "destination_channel_id": "channel-lazy",
+          "role_ids": [
+            "role-lazy"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        }
+      }
+    },
+    "reminder:4": {
+      "enabled": true,
+      "label": "Sign-up reminder 4",
+      "schedule": {
+        "mode": "legacy_chain",
+        "after": "reminder:3",
+        "offset_minutes": 1440
+      },
+      "variants": {
+        "main": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> Sign-up Reminder #4 <:CWL:1399013745598009375>",
+          "body": "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\nSign up for CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose Main or Lazy CWL, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#801950200133976124>.\n\n# **Signups close {signup_deadline}**",
+          "media_url": "https://c.tenor.com/fc51xvY2Tq4AAAAd/tenor.gif",
+          "destination_channel_id": "channel-main",
+          "role_ids": [
+            "role-main"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        },
+        "lazy": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> Sign-up Reminder #4 <:CWL:1399013745598009375>",
+          "body": "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\nSign up for Lazy CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose **Lazy CWL**, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#872692009066958879>.\n\n# **Signups close {signup_deadline}**",
+          "media_url": "https://c.tenor.com/fc51xvY2Tq4AAAAd/tenor.gif",
+          "destination_channel_id": "channel-lazy",
+          "role_ids": [
+            "role-lazy"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        }
+      }
+    },
+    "reminder:5": {
+      "enabled": true,
+      "label": "Sign-up reminder 5",
+      "schedule": {
+        "mode": "legacy_chain",
+        "after": "reminder:4",
+        "offset_minutes": 1440
+      },
+      "variants": {
+        "main": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> Sign-up Reminder #5 <:CWL:1399013745598009375>",
+          "body": "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\nSign up for CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose Main or Lazy CWL, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#801950200133976124>.\n\n# **Signups close {signup_deadline}**",
+          "media_url": "https://c.tenor.com/egVC6wj7VV8AAAAC/tenor.gif",
+          "destination_channel_id": "channel-main",
+          "role_ids": [
+            "role-main"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        },
+        "lazy": {
+          "enabled": true,
+          "title": "<:CWL:1399013745598009375> Sign-up Reminder #5 <:CWL:1399013745598009375>",
+          "body": "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\nSign up for Lazy CWL on our website.\n\n1. Select **Sign up for CWL** below.\n2. Sign in with Discord.\n3. Choose **Lazy CWL**, then select your accounts.\n4. Check your choices and select **Sign up**.\n\nFWA clan members must choose Lazy CWL.\nNeed help? Ask in <#872692009066958879>.\n\n# **Signups close {signup_deadline}**",
+          "media_url": "https://c.tenor.com/egVC6wj7VV8AAAAC/tenor.gif",
+          "destination_channel_id": "channel-lazy",
+          "role_ids": [
+            "role-lazy"
+          ],
+          "buttons": [
+            {
+              "label": "Sign up for CWL",
+              "url": "https://dash.warriorsunited.cc/signup"
+            },
+            {
+              "label": "Check my signups",
+              "custom_id": "cwl_member_check:open"
+            }
+          ]
+        }
+      }
+    },
+    "roster": {
+      "enabled": true,
+      "label": "Rosters released",
+      "schedule": {
+        "mode": "manual"
+      },
+      "variants": {
+        "main": {
+          "enabled": true,
+          "title": "<:league_medal:949137422933962753> CWL Time <:league_medal:949137422933962753>",
+          "body": "Below are the CWL Rosters. Once your attacks are complete, make your way to your assigned Clan.\n\nOpen My assignments below to see your published clan and its join link. You can also find them in <#1114047624216068136>\n\nDirect all questions and concerns to <#801950200133976124> <:warriorcat:947992348971905035>",
+          "media_url": "https://c.tenor.com/aXIInybKvOwAAAAd/tenor.gif",
+          "destination_channel_id": "channel-main",
+          "role_ids": [
+            "role-main"
+          ],
+          "buttons": [
+            {
+              "label": "My assignments",
+              "url": "https://dash.warriorsunited.cc/assignments",
+              "emoji": "\ud83d\udccb"
+            }
+          ]
+        },
+        "lazy": {
+          "enabled": true,
+          "title": "<:league_medal:949137422933962753> Lazy CWL Time <:league_medal:949137422933962753>",
+          "body": "Below are the Lazy CWL Rosters. If you cannot view the Roster or do not understand it, please ping <@&769130325460254740> in <#872692009066958879> and we'll get it sorted.\n\nAs soon as both your attacks are complete in the current war make your way to your assigned Clan. __The sooner the better.__\n\nThere are several Bots in the server that can provide war information. To many to list here. Feel free to play around in <#1128848663872028743>. War and CWL are good keywords for looking.",
+          "media_url": "https://c.tenor.com/aXIInybKvOwAAAAd/tenor.gif",
+          "destination_channel_id": "channel-lazy",
+          "role_ids": [
+            "role-lazy"
+          ],
+          "buttons": [
+            {
+              "label": "My assignments",
+              "url": "https://dash.warriorsunited.cc/assignments",
+              "emoji": "\ud83d\ude34"
+            },
+            {
+              "label": "LazyCWL Guide",
+              "url": "https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit",
+              "emoji": "\ud83d\udcd6"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
