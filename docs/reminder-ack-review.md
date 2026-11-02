@@ -25,11 +25,11 @@ Boundary: the default schema has signup, five reminders and roster. Roster editi
 - Same real native fixture before/after: 25 installed jobs both; old acknowledgement remains empty after another unchanged poll; fixed acknowledgement records November/December `1:0`; zero sender calls in either case (`.local/p134-baseline-reproducer.json`).
 - Eight actual native tests cover defaults-only, idle no reload/write, unchanged repair, absent/failed load refusal, racing revision, restart/sent ledger, repeated Started and concurrent same-cycle installs. Existing adapter/HTTP footprint tests use an explicit simulated installer contract; they do not substitute for native proof.
 - API cases cover generation mismatch, changed process, pending restore, loaded online and offline status.
-- Full frontend initially 1487 passed / 262 files; TypeScript, main and isolated preview builds pass. Final UI refinements require refreshed checks before READY.
+- Final full frontend: 1487 passed / 262 files; TypeScript, main and isolated preview builds pass.
 - Required war-reminder validation passed: 213 backend / 1 skip, 35 frontend, TypeScript/build. No delivery was attempted.
 - Two required backend mutants killed by actual native assertions: acknowledge without load and skip unchanged-fingerprint repair. Differing-destination mutant fails the real rendered-content assertion. Originals restored; initial mutant runner incorrectly looked for assertion text only in stdout, corrected to include stderr.
 - Browser preview covers matching/differing, paused/off/pending/offline at 360/1440, every editable message/pool and a fictional pause only. No overflow or browser errors. Initial wrapped-label selector was corrected. Initial wide preview used the sidebar grid column accidentally; fixture shell was corrected before final visual inspection. Source UI never used that malformed shell.
-- Full backend and exact staged production-shaped boot are pending their coordinated gates. No READY claim yet.
+- Exact committed source `9e7d308d961d05fe87504a50aaa0c64b3b964c5c` passed staged production-shaped boot: 51 configured routes, native pool, real owner on copied SQLite and owned Mongo 27169, external network blocked, config 200 / unauthenticated auth 401, cleanup and artifact hashes retained in `.local/p134-boot`. Owned Mongo and artifact were stopped/removed. Full backend remains pending its coordinated slot; no READY claim yet.
 
 ## Adversarial review
 
