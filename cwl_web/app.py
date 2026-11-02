@@ -219,8 +219,34 @@ async def config(request):
 async def me(request):
     session = _require(request)
     from .visitors import record
+
     await record(request, session)
-    return web.json_response({"authenticated": True, "access_warning": request.get("access_warning"), "user": {"id": session["user_id"], "username": session["username"], "display_name": session["display_name"] or session["username"], "avatar_url": session["avatar_url"]}, "is_owner": _owner(session), "can_edit": _editor(request, session), "dashboard_permissions": list(PERMISSIONS) if _owner(session) else sorted(request_scopes(request, session["user_id"])), "csrf_token": session["csrf"]})
+    # A fence can appear while visitor recording awaits. Confirm the owner again
+    # before claiming recovery; the browser also rejects stale in-flight reads.
+    owner = request.app["store"].durability
+    if owner is not None:
+        owner.check()
+    return web.json_response(
+        {
+            "authenticated": True,
+            "access_warning": request.get("access_warning"),
+            "user": {
+                "id": session["user_id"],
+                "username": session["username"],
+                "display_name": session["display_name"] or session["username"],
+                "avatar_url": session["avatar_url"],
+            },
+            "is_owner": _owner(session),
+            "can_edit": _editor(request, session),
+            "dashboard_permissions": (
+                list(PERMISSIONS)
+                if _owner(session)
+                else sorted(request_scopes(request, session["user_id"]))
+            ),
+            "csrf_token": session["csrf"],
+        },
+        headers={"X-Dashboard-Storage-State": "healthy"},
+    )
 
 
 RETURN_COOKIE = "wu_login_page"

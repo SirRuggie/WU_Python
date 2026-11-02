@@ -90,6 +90,8 @@ export function handleAuthorizationFailure(status: number, path = "") {
   if (path !== "/auth/me")
     window.dispatchEvent(new Event("dashboard-access-changed"));
 }
+let storageGeneration = 0;
+
 export async function api<T>(
   path: string,
   method = "GET",
@@ -97,6 +99,7 @@ export async function api<T>(
   options?: { signal?: AbortSignal },
 ): Promise<T> {
   assertTourRead(method);
+  const requestStorageGeneration = storageGeneration;
   let response: Response;
   try {
     response = await fetchReadWithRetry(`/api/cwl${path}`, {
@@ -118,7 +121,8 @@ export async function api<T>(
   }
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    if (response.headers.get("X-Dashboard-Storage-Degraded") === "1")
+    if (response.headers.get("X-Dashboard-Storage-Degraded") === "1") {
+      storageGeneration += 1;
       window.dispatchEvent(
         new CustomEvent(STORAGE_UNAVAILABLE, {
           detail: {
@@ -127,6 +131,7 @@ export async function api<T>(
           },
         }),
       );
+    }
     handleAuthorizationFailure(response.status, path);
     const message =
       typeof data?.error === "string"
@@ -157,7 +162,14 @@ export async function api<T>(
       data,
     );
   }
-  if (path === "/auth/me") window.dispatchEvent(new Event(STORAGE_RECOVERED));
+  if (
+    path === "/auth/me" &&
+    response.headers.get("X-Dashboard-Storage-State") === "healthy" &&
+    requestStorageGeneration === storageGeneration
+  )
+    window.dispatchEvent(
+      new CustomEvent(STORAGE_RECOVERED, { detail: { confirmed: true } }),
+    );
   if (method !== "GET") clearSnapshots();
   return data as T;
 }

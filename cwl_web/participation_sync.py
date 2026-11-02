@@ -13,7 +13,8 @@ from aiohttp import web
 
 from utils.cwl_working_roster import working_accounts, account_token
 from utils.cwl_bonus_allowance import AllowanceStore
-from .providers import ProviderUnavailable, tag as normalize_tag
+from .providers import (ProviderUnavailable,
+                        LEAGUE_GROUP_DIAGNOSTIC_STATES, tag as normalize_tag)
 
 INTERVAL_SECONDS = 15 * 60
 MAX_CLANS = 100
@@ -231,6 +232,7 @@ async def _fetch_groups(providers, clans: list[str], cycle: str):
 
     async def one(clan_tag):
         async with semaphore:
+            group = None
             try:
                 group = await asyncio.wait_for(
                     providers.league_group(clan_tag), timeout=10
@@ -280,8 +282,30 @@ async def _fetch_groups(providers, clans: list[str], cycle: str):
                 )
                 # Record categories on the ordinary capture; never probe again to
                 # discover why a previous generic unavailable result was stored.
+                reasons = {
+                    "Clash CWL month is unavailable": "missing_month",
+                    "Invalid Clash league-group response": "invalid_group_shape",
+                    "Invalid Clash API response": "invalid_json_shape",
+                    "Invalid Clash league-group clan": "invalid_clan",
+                    "Invalid Clash league-group clan tag": "invalid_clan_tag",
+                    "Invalid Clash league-group members": "invalid_members",
+                    "Invalid Clash league-group member": "invalid_member",
+                    "Invalid Clash league-group member tag": "invalid_member_tag",
+                    "Invalid Clash league-group town hall": "invalid_town_hall",
+                    "Invalid Clash league-group rounds": "invalid_rounds",
+                    "Invalid Clash league war tag": "invalid_war_tag",
+                    "CWL group rounds are unavailable": "invalid_rounds",
+                    "CWL round war tags are unavailable": "invalid_round_tags",
+                    "CWL group clan roster is unavailable": "invalid_clan_roster",
+                    "CWL hosting clan is missing from its league group": "missing_hosting_clan",
+                }
+                reason = reasons.get(str(exc), "other")
+                observed_state = group.get("state") if isinstance(group, dict) else getattr(exc, "group_state", None)
+                if not isinstance(observed_state, str) or observed_state not in LEAGUE_GROUP_DIAGNOSTIC_STATES:
+                    observed_state = "other"
                 logging.getLogger(__name__).info(
-                    "CWL group refresh category=%s http_status=%s", category, status
+                    "CWL group refresh clan=%s category=%s http_status=%s error_type=%s reason=%s group_state=%s",
+                    clan_tag, category, status, type(exc).__name__, reason, observed_state,
                 )
                 return clan_tag, None, category
 

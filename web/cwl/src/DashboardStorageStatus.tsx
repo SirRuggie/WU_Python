@@ -14,7 +14,10 @@ export default function DashboardStorageStatus() {
           ? "attention"
           : "recovering",
       );
-    const recovered = () => setDegraded(false);
+    const recovered = (event: Event) => {
+      if ((event as CustomEvent<{ confirmed?: boolean }>).detail?.confirmed)
+        setDegraded(false);
+    };
     window.addEventListener(STORAGE_UNAVAILABLE, unavailable);
     window.addEventListener(STORAGE_RECOVERED, recovered);
     return () => {

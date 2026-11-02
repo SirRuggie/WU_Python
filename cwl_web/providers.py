@@ -69,6 +69,12 @@ class ProviderUnavailable(Exception):
     pass
 
 
+LEAGUE_GROUP_DIAGNOSTIC_STATES = frozenset({
+    "NOT_IN_WAR", "GROUP_NOT_FOUND", "CLAN_NOT_FOUND", "ACCESS_DENIED",
+    "IN_MATCHMAKING", "ENTER_WAR", "MATCHED", "PREPARATION", "WAR", "ENDED",
+})
+
+
 WEIGHTS_URL = "https://www.fwastats.com/Weights.json"
 WEIGHTS_CACHE_SECONDS = 15 * 60
 WEIGHTS_MAX_BYTES = 8 * 1024 * 1024
@@ -350,7 +356,9 @@ class LiveProviders:
         if (not isinstance(state, str) or not state
                 or (season is not None and not isinstance(season, str))
                 or not isinstance(clans, list) or not isinstance(rounds, list)):
-            raise ProviderUnavailable("Invalid Clash league-group response")
+            error = ProviderUnavailable("Invalid Clash league-group response")
+            error.group_state = state if isinstance(state, str) and state in LEAGUE_GROUP_DIAGNOSTIC_STATES else "other"
+            raise error
         result_clans = []
         for clan in clans:
             if not isinstance(clan, dict) or not isinstance(clan.get("name"), str):

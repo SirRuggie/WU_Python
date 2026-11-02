@@ -96,6 +96,7 @@ const server = createServer((req, res) => {
         else if (url.pathname.endsWith("/strikes/tracking"))
           data = { clans: [] };
         await route.fulfill({
+          headers: url.pathname.endsWith("/auth/me") ? {"X-Dashboard-Storage-State": "healthy"} : {},
           contentType: "application/json",
           body: JSON.stringify(data),
         });
