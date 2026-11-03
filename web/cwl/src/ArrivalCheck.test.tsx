@@ -317,13 +317,13 @@ it("excludes awaiting placement from late totals and gives it a neutral section"
 });
 it("keeps readiness help collapsed until explicitly opened", async () => {
   await render();
-  expect(host.textContent).not.toContain("Ready = enough");
+  expect(host.textContent).not.toContain("Ready = clan is full");
   await act(async () =>
     host
       .querySelector<HTMLButtonElement>('[aria-label="About readiness"]')!
       .click(),
   );
-  expect(host.textContent).toContain("Ready = enough");
+  expect(host.textContent).toContain("Ready = clan is full");
 });
 
 it("does not turn pending locations into zero ping or in-clan counts, then shows loaded results", async () => {

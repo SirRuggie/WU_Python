@@ -102,6 +102,18 @@ export default function MemberAssignments({
   const groups = groupAssignments(data?.accounts || []);
   const awaiting = groups.find((group) => !group.clanTag)?.accounts.length || 0;
   const assignedGroups = groups.filter((group) => group.clanTag).length;
+  const waitingList = (
+    <ul>
+      {groups
+        .filter((group) => !group.clanTag)
+        .flatMap((group) => group.accounts)
+        .map((account) => (
+          <li key={account.tag}>
+            {account.player_name} · {account.pool === "main" ? "Main" : "Lazy"}
+          </li>
+        ))}
+    </ul>
+  );
   return (
     <div className="member-assignments">
       <div className="page-head">
@@ -165,9 +177,7 @@ export default function MemberAssignments({
           )}
           {data.accounts.length > 0 && assignedGroups === 0 && (
             <section className="card member-unpublished-status">
-              <strong>
-                {data.published ? "Waiting for a clan" : "Waiting for a clan"}
-              </strong>
+              <h2>Waiting for a clan</h2>
               {memberDateLines(season, !!data.published, Date.now())
                 .slice(-1)
                 .map((line) => (
@@ -188,6 +198,7 @@ export default function MemberAssignments({
                   My signups ›
                 </a>
               </p>
+              {waitingList}
               <button onClick={() => void load()}>Refresh</button>
             </section>
           )}
@@ -206,20 +217,10 @@ export default function MemberAssignments({
               </div>
             </div>
           )}
-          {awaiting > 0 && (
+          {awaiting > 0 && assignedGroups > 0 && (
             <section className="card">
               <h2>Waiting for a clan</h2>
-              <ul>
-                {groups
-                  .filter((group) => !group.clanTag)
-                  .flatMap((group) => group.accounts)
-                  .map((account) => (
-                    <li key={account.tag}>
-                      {account.player_name} ·{" "}
-                      {account.pool === "main" ? "Main" : "Lazy"}
-                    </li>
-                  ))}
-              </ul>
+              {waitingList}
             </section>
           )}
           {assignedGroups > 0 ? (

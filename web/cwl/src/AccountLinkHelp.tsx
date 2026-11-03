@@ -38,7 +38,9 @@ export default function AccountLinkHelp({
         </button>
       </div>
       <p className="small">
-        Use the same Discord account. If it still fails, ask staff.
+        Already linked but missing here? Check that you used the same Discord
+        account. If the bots show different owners, ask staff to help correct
+        the link.
       </p>
     </div>
   );

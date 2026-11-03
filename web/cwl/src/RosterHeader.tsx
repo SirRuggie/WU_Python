@@ -319,9 +319,11 @@ export default function RosterHeader({
       {canRoster && missingCapacityClans.length > 0 && (
         <div className="roster-capacity-alert">
           <span>
-            ⚠ {missingCapacityClans.length === 1
+            ⚠{" "}
+            {missingCapacityClans.length === 1
               ? `${missingCapacityClans[0].name} has`
-              : `${missingCapacityClans.length} clans have`} no clan size set
+              : `${missingCapacityClans.length} clans have`}{" "}
+            no clan size set
           </span>
           {onCapacitySettings && (
             <button
@@ -343,7 +345,8 @@ export default function RosterHeader({
           aria-label="Working roster counts"
         >
           <Button onClick={() => onStatusFilter("all")} disabled={uiLocked}>
-            <strong>{accounts.length}</strong> signups
+            <strong>{accounts.length}</strong> signup
+            {accounts.length === 1 ? "" : "s"}
           </Button>
           <div className="roster-header-unplaced">
             <Button
@@ -369,7 +372,9 @@ export default function RosterHeader({
             disabled={uiLocked}
           >
             <strong>{missingWeight}</strong> no weight
-            {pool !== "all" && missingWeight !== poolMissingWeight ? " (all pools)" : ""}
+            {pool !== "all" && missingWeight !== poolMissingWeight
+              ? " (all pools)"
+              : ""}
           </Button>
         </div>
       )}

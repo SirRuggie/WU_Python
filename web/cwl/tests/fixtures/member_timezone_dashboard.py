@@ -95,6 +95,13 @@ state = dict(
 async def sample(request, handler):
     if request.path == "/qa/member-timezones":
         body = await request.json()
+        if body.get("reset"):
+            # Snapshot lazily: the unified fixture adds its final person and roles
+            # before the first isolated browser width starts.
+            if "baseline_members" not in state:
+                state["baseline_members"] = deepcopy(members)
+            members[:] = deepcopy(state["baseline_members"])
+            state.update(request=None, preview=None, run=None, run_state="queued")
         state.update({k: v for k, v in body.items() if k in ("denied", "conflict")})
         return web.json_response({"ok": True})
     if not request.path.startswith(BASE) and not request.path.startswith(
@@ -153,7 +160,15 @@ async def sample(request, handler):
         for m in members:
             parsed=profile_zone(m['nickname'])
             if not m['bot'] and not m['profile'] and parsed and parsed['offsetMinutes'] is not None:
-                m['profile']=dict(canonical_zone(parsed['offsetMinutes']),country=nickname_country(m['nickname']),revision=1,source='nickname_import')
+                country = nickname_country(m["nickname"])
+                m["profile"] = dict(
+                    canonical_zone(parsed["offsetMinutes"]),
+                    country=country,
+                    flag=flag(country) if country else None,
+                    name_source_tag=None,
+                    revision=1,
+                    source="nickname_import",
+                )
         return web.json_response(dict(request_id='profile-import',status='done',status_url='/manage/requests/profile-import',message='Imported fixture profiles'))
     if request.path.endswith("/preview"):
         from utils.member_timezone_review import preview_rows
@@ -165,7 +180,10 @@ async def sample(request, handler):
             dict(
                 runs=(
                     [dict(run_id="fixture-run", state=state["run_state"],started_by="700731132936978456")]
-                    if state["run"]
+                    if state["run"] and (
+                        request.query.get("active") != "1"
+                        or state["run_state"] == "queued"
+                    )
                     else []
                 )
             )

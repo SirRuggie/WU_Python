@@ -1187,6 +1187,6 @@ All tour narrative is protected; only the repeated numbering bug is fixed across
 its 13 cards and counter/ARIA total. Existing eight decorative progress groups
 retain their original layout and stage advances. No Discord text, layout CSS, API route/payload,
 notification, destination, selection, save, permission or delivery policy changes
-are part of 119. Short strip labels are the320-width exception, with full
+are part of 119. Short strip labels are the 320-width exception, with full
 accessible names. See the kept-term/scope checklist in
 [cwl-plain-words-review.md](cwl-plain-words-review.md).

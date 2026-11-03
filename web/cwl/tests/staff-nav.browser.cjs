@@ -20,7 +20,8 @@ const expected = {
     CWL: ["Build roster", "Declaration check"],
     Moderation: null,
     Clans: ["Family clans", "Clan weights"],
-    Members: ["Members & roles", "Member time zones", "Tickets", "Ticket settings"],
+    Members: null,
+    Tickets: ["Tickets", "Ticket settings"],
     Bot: ["Command triggers", "Image gallery"],
   },
   owner: {
@@ -35,7 +36,7 @@ const expected = {
       "Return reminders",
       "Results & participation",
       "Bonus medals",
-      "Exports & history",
+      "Exports",
     ],
     Moderation: null,
     Clans: [
@@ -44,7 +45,8 @@ const expected = {
       "Strikes & replacements",
       "FWA tools",
     ],
-    Members: ["Members & roles", "Member time zones", "Tickets", "Ticket settings"],
+    Members: null,
+    Tickets: ["Tickets", "Ticket settings"],
     Bot: ["Command triggers", "Image gallery", "Integrations"],
     Admin: ["Staff access", "Dashboard issues"],
   },
@@ -228,7 +230,7 @@ const expected = {
             const cwl = staff.locator(":scope > .navigation-section").nth(1);
             await cwl.getByRole("button", { name: "Build roster" }).click();
             await openMenu();
-            await page
+            await cwl
               .getByRole("button", { name: "Build roster", exact: true })
               .waitFor();
             assert.equal(new URL(page.url()).pathname, "/cwl/roster");
@@ -281,7 +283,7 @@ const expected = {
             await openMenu();
             assert.equal(new URL(page.url()).pathname, "/server/moderation");
             assert.equal(
-              await page.locator(".topbar strong").textContent(),
+              await page.locator(".topbar > div > strong").textContent(),
               "Moderation",
             );
           }
