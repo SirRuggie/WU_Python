@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { CircleHelp, Sparkles, X } from "lucide-react";
 import {
   artAspect,
+  artDimensions,
   invitedThisSession,
   rememberSession,
   readPreference,
@@ -414,7 +415,9 @@ export default function MemberTour({
                 className="tour-character"
                 src={`/assets/tour/${current.art}.webp`}
                 alt=""
-                loading="lazy"
+                loading="eager"
+                width={artDimensions[current.art]?.width}
+                height={artDimensions[current.art]?.height}
               />
               <button
                 type="button"

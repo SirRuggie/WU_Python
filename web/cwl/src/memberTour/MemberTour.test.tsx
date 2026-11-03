@@ -181,7 +181,7 @@ it("walks every step, target advances, phone menu closes for practice, finishes 
     );
     expect(
       document.querySelector(".tour-character")?.getAttribute("loading"),
-    ).toBe("lazy");
+    ).toBe("eager");
     if (steps[i].target)
       expect(document.querySelector(".tour-spotlight")).not.toBeNull();
     if (i === 1) expect(menu).toHaveBeenLastCalledWith(true);

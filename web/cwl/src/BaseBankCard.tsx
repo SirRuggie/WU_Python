@@ -57,6 +57,8 @@ export default function BaseBankCard({
           <img
             src={base.war_base_image}
             alt={`TH${base.town_hall} ${label.toLowerCase()} war base`}
+            width={480}
+            height={480}
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"

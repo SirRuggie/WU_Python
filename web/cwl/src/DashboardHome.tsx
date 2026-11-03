@@ -1,3 +1,4 @@
+import { visibleRefresh } from "./visibleRefresh";
 import { memberSignupsOpen } from "./memberSeason";
 import MemberSignupStatus, { signupHeading } from "./MemberSignupStatus";
 import { useJourneyState, useJourneyPosition } from "./journeyState";
@@ -361,17 +362,14 @@ export default function DashboardHome(props: Props) {
       }
     };
     void load();
-    const tick = () => {
-      if (!paused) void load();
-    };
-    const timer = window.setInterval(tick, 30000);
-    document.addEventListener("visibilitychange", tick);
-    window.addEventListener("online", tick);
+    const tick = () => { if (!paused) return load(); };
+    const stopRefresh = visibleRefresh(tick, 30000);
+    const online = () => { if (!document.hidden) void tick(); };
+    window.addEventListener("online", online);
     return () => {
       cancelled = true;
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", tick);
-      window.removeEventListener("online", tick);
+      stopRefresh();
+      window.removeEventListener("online", online);
     };
   }, [seasonId, seasonsKnown, refreshKey, paused]);
   const rows = useMemo(

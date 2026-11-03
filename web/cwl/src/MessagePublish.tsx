@@ -1,3 +1,4 @@
+import { visibleRefresh } from "./visibleRefresh";
 import useConfirmDialog from './useConfirmDialog'
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
@@ -113,8 +114,7 @@ export default function MessagePublish({
   }
   useEffect(() => {
     if (!statusUrl) return
-    const timer = window.setInterval(() => void check(statusUrl), 2500)
-    return () => window.clearInterval(timer)
+    return visibleRefresh(() => check(statusUrl), 2500)
   }, [statusUrl])
   const { confirm, dialog: confirmation } = useConfirmDialog(
     `${endpoint}:${page?.revision}:${statusUrl}:${dirty}:${busy}`,

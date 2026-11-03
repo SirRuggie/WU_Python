@@ -1,3 +1,4 @@
+import { visibleRefresh } from "./visibleRefresh";
 import CwlPageHeader from "./CwlPageHeader";
 import "./rosterUi/tokens.css";
 import "./MemberRefreshNote.css";
@@ -88,17 +89,7 @@ export default function MemberAssignments({
     };
   }, [seasonId, load]);
   useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState === "visible") void load(true);
-    };
-    const timer = window.setInterval(refresh, 30000);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
+    return visibleRefresh(() => load(true), 30000);
   }, [load]);
   const season = seasons.find((item) => String(item.id) === seasonId);
   const groups = groupAssignments(data?.accounts || []);

@@ -189,3 +189,30 @@ RunMicrotasks/173.7ms FunctionCall, with EventTiming click216ms. This is evidenc
 of synchronous update work during the click, not a network wait; component-level
 attribution is still needed before a rendering fix. Timelines are retained as
 diagnostic-*-trace.json, separate from performance medians.
+
+## Approved implementation checkpoint (not READY)
+
+The five named pages now use a shared visibility-aware scheduler: hidden tabs
+remove periodic timers; visible return catches up; a32ms settling window coalesces
+neighboring focus/visibility/interval tasks. Existing cadences and page-owned
+in-flight/error/stale-source handling remain. Declaration countdown recomputes
+from wall-clock time on return. Eight scheduler regressions cover hidden start,
+hidden cancellation, coalescing, pending reads, cleanup and failure recovery.
+
+Known image work uses actual resized WebP dimensions verified offline, leaving
+existing tour layout artAspect values unchanged. Currently displayed tour and
+walkthrough art is eager; offscreen Town Hall/directory badges are lazy. The
+existing40px clan badge and square BaseBank presentation slot have dimensions.
+Variable-aspect remote galleries/uploads/Discord media still need correct
+metadata or an approved fixed presentation slot; no guessed natural ratios or
+new metadata API have been introduced. This gap remains for completion review.
+
+Current checkpoint:1688 frontend tests/287files,typecheck/build pass;33 refresh
+regressions and48 tour/panel cases pass. Initial full run retained four failures
+from assertions reading before the new32ms coalescing window; only waits were
+updated, retaining all failure/recovery/403/401 assertions. Earlier missing
+villager dimension metadata caused four focused failures, corrected with actual
+asset sizes; intentional eager-current-art expectations were then updated.
+No rendering/skeleton/memoization fix, entry split, final after campaign or READY
+claim is included in this checkpoint. Item5 next obtains component attribution and
+concrete geometry proposals for ROOT review before changing rendering.

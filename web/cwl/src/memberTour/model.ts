@@ -14,6 +14,26 @@ export function rememberSession() {
     /* Optional memory. */
   }
 }
+// Intrinsic dimensions of the checked-in, resized WebP files.
+export const artDimensions: Record<string, { width: number; height: number }> =
+  {
+    "villager-52545": { width: 167, height: 340 },
+    "villager-52538": { width: 171, height: 340 },
+    "villager-52543": { width: 137, height: 340 },
+    U33: { width: 338, height: 340 },
+    U31: { width: 204, height: 340 },
+    U24: { width: 313, height: 340 },
+    U09: { width: 245, height: 340 },
+    U35: { width: 276, height: 340 },
+    U13: { width: 273, height: 340 },
+    U18: { width: 265, height: 340 },
+    U15: { width: 323, height: 340 },
+    U34: { width: 203, height: 340 },
+    U01: { width: 771, height: 340 },
+    U32: { width: 174, height: 340 },
+    king: { width: 296, height: 340 },
+    U14: { width: 181, height: 340 },
+  };
 export const artAspect: Record<string, number> = {
   U33: 2818 / 2835,
   U31: 1816 / 3020,

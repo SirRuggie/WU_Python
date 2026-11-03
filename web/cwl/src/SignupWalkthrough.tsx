@@ -1,3 +1,4 @@
+import { artDimensions } from "./memberTour/model";
 import type { RefObject } from "react";
 import type { Pool } from "./api";
 import "./SignupWalkthrough.css";
@@ -86,7 +87,8 @@ export default function SignupWalkthrough({
                 className="walkthrough-art"
                 src={`/assets/tour/${step.art}.webp`}
                 alt=""
-                loading="lazy"
+                loading="eager"
+                width={Math.round(120 * artDimensions[step.art].width / artDimensions[step.art].height)}
                 height={120}
               />
             )}
