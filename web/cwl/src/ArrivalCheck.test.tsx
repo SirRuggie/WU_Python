@@ -4,7 +4,12 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ value: null as any }));
 const extraState = vi.hoisted(() => ({
-  value: { data: undefined as any, loading: true, error: "", refresh: vi.fn() },
+  value: {
+    data: undefined as any,
+    loading: true,
+    error: "",
+    refresh: vi.fn(),
+  } as any,
 }));
 vi.mock("./useDeclarationData", () => ({ default: () => state.value }));
 vi.mock("./useDeclarationExtras", () => ({ default: () => extraState.value }));
@@ -546,6 +551,12 @@ it("keeps open extra lists and observations while marking five rows without live
   (extraState.value as any).applyMark = vi.fn((saved: any) => {
     extraState.value.data = patchDeclarationMark(extraState.value.data, saved);
   });
+  (extraState.value as any).applyMarks = vi.fn((saved: any[]) => {
+    extraState.value.data = saved.reduce(
+      (data, mark) => patchDeclarationMark(data, mark),
+      extraState.value.data,
+    );
+  });
   localStorage.setItem("wu-staff-cwl-pool", "lazy");
   await act(async () =>
     root.render(
@@ -905,4 +916,285 @@ it("hides unavailable Finalize and Results destinations rather than showing disa
   state.value.data = makeData();
   await render();
   expect(host.querySelector(".cwl-next-cue")).toBeNull();
+});
+
+it("148 keeps a second row tappable during a held background poll and save", async () => {
+  const { DashboardPermissions } = await import("./DashboardPermissions");
+  const transport = vi
+    .spyOn(await import("./api"), "api")
+    .mockImplementation(() => new Promise<any>(() => {}));
+  for (const a of state.value.data.arrival.accounts) {
+    a.pool = "lazy";
+    a.hosting_pool = "lazy";
+  }
+  extraState.value = {
+    data: {
+      source: "published",
+      basis: 1,
+      revision: 1,
+      clans: [
+        {
+          tag: "#A",
+          name: "Amber",
+          capacity: 15,
+          status: "current",
+          checked_at: new Date(now).toISOString(),
+          count: 2,
+          extras: [0, 5].map((n) => ({
+            tag: `#X${n}`,
+            name: `Extra ${n}`,
+            town_hall: 16,
+            context: "Not signed up",
+            assigned_clan_tag: null,
+            roster_filler: false,
+            roster_filler_revision: 0,
+          })),
+        },
+      ],
+    },
+    loading: false,
+    error: "",
+    refresh: vi.fn(),
+  };
+  localStorage.setItem("wu-staff-cwl-pool", "lazy");
+  const render = () =>
+    root.render(
+      <DashboardPermissions.Provider
+        value={{ owner: false, permissions: ["cwl_roster"] }}
+      >
+        <ArrivalCheck seasonId="7" />
+      </DashboardPermissions.Provider>,
+    );
+  await act(async () => render());
+  await act(async () =>
+    host
+      .querySelector<HTMLInputElement>('input[aria-label="Filler: Extra 0"]')!
+      .click(),
+  );
+  expect(transport).toHaveBeenCalledTimes(1);
+  state.value = { ...state.value, checking: true };
+  await act(async () => render());
+  const second = host.querySelector<HTMLInputElement>(
+    'input[aria-label="Filler: Extra 5"]',
+  )!;
+  await act(async () => second.click());
+  expect(second.disabled).toBe(false);
+  expect(second.checked).toBe(true);
+  expect(transport).toHaveBeenCalledTimes(1);
+});
+
+async function queue148Page(
+  wire: (...args: any[]) => Promise<any>,
+  callbacks: {
+    onWorking?: (v: boolean) => void;
+    onDirty?: (v: boolean) => void;
+  } = {},
+) {
+  const { DashboardPermissions } = await import("./DashboardPermissions");
+  const transport = vi
+    .spyOn(await import("./api"), "api")
+    .mockImplementation(wire as any);
+  for (const a of state.value.data.arrival.accounts) {
+    a.pool = "lazy";
+    a.hosting_pool = "lazy";
+  }
+  let rosterId = 0,
+    extrasId = 0;
+  state.value.refresh = vi.fn(() => ++rosterId);
+  extraState.value = {
+    data: {
+      source: "published",
+      basis: 1,
+      revision: 1,
+      clans: [
+        {
+          tag: "#A",
+          name: "Amber",
+          capacity: 15,
+          status: "current",
+          checked_at: new Date(now).toISOString(),
+          count: 2,
+          extras: [0, 5].map((n) => ({
+            tag: `#X${n}`,
+            name: `Extra ${n}`,
+            town_hall: 16,
+            context: "Not signed up",
+            assigned_clan_tag: null,
+            roster_filler: false,
+            roster_filler_revision: 0,
+          })),
+        },
+      ],
+    },
+    loading: false,
+    error: "",
+    refresh: vi.fn(() => ++extrasId),
+  };
+  localStorage.setItem("wu-staff-cwl-pool", "lazy");
+  const render = () =>
+    root.render(
+      <DashboardPermissions.Provider
+        value={{ owner: false, permissions: ["cwl_roster"] }}
+      >
+        <ArrivalCheck seasonId="7" {...callbacks} />
+      </DashboardPermissions.Provider>,
+    );
+  await act(async () => render());
+  return {
+    transport,
+    render,
+    box: (n: number) =>
+      host.querySelector<HTMLInputElement>(
+        `input[aria-label="Filler: Extra ${n}"]`,
+      )!,
+    refreshButton: () =>
+      [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
+        /^(Refresh|Refreshing…|Checking…)$/.test(b.textContent || ""),
+      )!,
+  };
+}
+
+it("148 list Undo is gated mid-queue and submits the newest revision", async () => {
+  let finish!: (saved: any) => void;
+  const page = await queue148Page(async (_path, method) => {
+    if (method === "PATCH")
+      return await new Promise((resolve) => (finish = resolve));
+    return { tag: "#X5", revision: 21, roster_filler: false, mark_revision: 2 };
+  });
+  await act(async () => page.box(0).click());
+  expect(page.refreshButton().disabled).toBe(true);
+  await act(async () =>
+    finish({
+      tag: "#X0",
+      revision: 2,
+      roster_filler: true,
+      mark_revision: 1,
+      undo: { id: 80, label: "Change filler mark" },
+    }),
+  );
+  await act(async () => page.box(5).click());
+  const oldUndo = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent === "Undo",
+  )!;
+  expect(oldUndo.disabled).toBe(true);
+  await act(async () => oldUndo.click());
+  expect(page.transport.mock.calls.filter((c) => c[1] === "POST")).toHaveLength(
+    0,
+  );
+  await act(async () =>
+    finish({
+      tag: "#X5",
+      revision: 3,
+      roster_filler: true,
+      mark_revision: 1,
+      undo: { id: 85, label: "Change filler mark" },
+    }),
+  );
+  state.value = {
+    ...state.value,
+    data: {
+      ...state.value.data,
+      roster: { ...state.value.data.roster, revision: 20 },
+    },
+  };
+  await act(async () => page.render());
+  state.value = {
+    ...state.value,
+    data: {
+      ...state.value.data,
+      roster: { ...state.value.data.roster, revision: 1 },
+    },
+  };
+  await act(async () => page.render());
+  expect(host.textContent).toContain("Change filler mark · Extra 5");
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "Undo")!
+      .click(),
+  );
+  expect(
+    page.transport.mock.calls.find((c) => c[1] === "POST")?.slice(0, 3),
+  ).toEqual(["/seasons/7/roster/undo", "POST", { revision: 20, undo_id: 85 }]);
+});
+
+it("148 failed explicit data read cannot be rescued by a later background poll", async () => {
+  const { ApiError } = await import("./api");
+  const page = await queue148Page(async () => {
+    throw new ApiError("Conflict", 409);
+  });
+  await act(async () => page.box(0).click());
+  expect(host.textContent).toContain("1 not saved");
+  await act(async () => page.refreshButton().click());
+  expect(page.box(5).disabled).toBe(true);
+  state.value = {
+    ...state.value,
+    checking: true,
+    refreshResult: { id: 1, status: "pending" },
+  };
+  extraState.value = {
+    ...extraState.value,
+    loading: true,
+    refreshResult: { id: 1, status: "pending" },
+  };
+  await act(async () => page.render());
+  state.value = {
+    ...state.value,
+    checking: false,
+    error: "Read failed",
+    refreshResult: { id: 1, status: "failed" },
+  };
+  extraState.value = {
+    ...extraState.value,
+    data: { ...extraState.value.data },
+    loading: false,
+    refreshResult: { id: 1, status: "success" },
+  };
+  await act(async () => page.render());
+  state.value = {
+    ...state.value,
+    data: { ...state.value.data },
+    error: "",
+    checking: false,
+  };
+  await act(async () => page.render());
+  expect(host.textContent).toContain("1 not saved");
+  expect(page.box(5).disabled).toBe(true);
+  await act(async () => page.refreshButton().click());
+  state.value = {
+    ...state.value,
+    data: { ...state.value.data },
+    refreshResult: { id: 2, status: "success" },
+  };
+  await act(async () => page.render());
+  expect(host.textContent).toContain("1 not saved"); // extras is still the first attempt.
+  extraState.value = {
+    ...extraState.value,
+    data: { ...extraState.value.data },
+    refreshResult: { id: 2, status: "success" },
+  };
+  await act(async () => page.render());
+  expect(host.textContent).not.toContain("1 not saved");
+  expect(page.box(5).disabled).toBe(false);
+});
+
+it("148 unmount clears page guards and late save cannot turn them back on", async () => {
+  let finish!: (saved: any) => void;
+  const working = vi.fn(),
+    dirty = vi.fn();
+  const page = await queue148Page(
+    () => new Promise((resolve) => (finish = resolve)),
+    { onWorking: working, onDirty: dirty },
+  );
+  await act(async () => page.box(0).click());
+  expect(working).toHaveBeenLastCalledWith(true);
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  await act(async () => root.render(null));
+  expect(working).toHaveBeenLastCalledWith(false);
+  expect(dirty).toHaveBeenLastCalledWith(false);
+  await act(async () =>
+    finish({ tag: "#X0", revision: 2, roster_filler: true, mark_revision: 1 }),
+  );
+  expect(working).toHaveBeenLastCalledWith(false);
+  expect(dirty).toHaveBeenLastCalledWith(false);
+  expect(page.transport).toHaveBeenCalledTimes(1);
 });

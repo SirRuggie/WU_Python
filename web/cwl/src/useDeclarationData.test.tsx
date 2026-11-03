@@ -198,3 +198,27 @@ it("reports first-load failure without claiming previous results", async () => {
   await act(async () => root.render(<Probe />));
   expect(value.error).toBe("Couldn't check locations");
 });
+
+it("148 failed explicit read stays failed when a later background poll succeeds", async () => {
+  await act(async () => root.render(<Probe />));
+  const good = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(
+    async () => new Response("{}", { status: 400 }),
+  );
+  let failedId = 0;
+  await act(async () => {
+    failedId = value.refresh();
+  });
+  expect(value.refreshResult).toEqual({ id: failedId, status: "failed" });
+  const before = value.data;
+  vi.mocked(fetch).mockImplementation(good);
+  await act(async () => vi.advanceTimersByTimeAsync(300000));
+  expect(value.data).not.toBe(before);
+  expect(value.refreshResult).toEqual({ id: failedId, status: "failed" });
+  let successId = 0;
+  await act(async () => {
+    successId = value.refresh();
+  });
+  expect(successId).toBeGreaterThan(failedId);
+  expect(value.refreshResult).toEqual({ id: successId, status: "success" });
+});

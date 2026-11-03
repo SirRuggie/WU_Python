@@ -1206,3 +1206,11 @@ these diagnostic posts is **unproven**: their payload omits the original error.
 Investigate expected navigation failures and reporter noise separately. PR120
 changes no API/telemetry handling; review 475's exact diagnostic-route test
 exception applies only to that batch, and all earlier red traces are retained.
+
+### Filler queue delta (prompt148)
+
+Details Undo belongs to the current account and panel session, with a named saved
+notice and dismissible receipt. Background comparison reads do not disable filler
+ticks. Explicit Refresh locks marks and requires both matching reads to succeed
+before clearing a halted queue. Regression evidence, mutation checks and retained
+SQLite preview details are in `docs/filler-background-saves-review.md`.

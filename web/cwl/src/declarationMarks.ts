@@ -4,10 +4,25 @@ export function patchDeclarationMark(
   data: DeclarationExtraResponse,
   saved: FillerSaveResult,
 ) {
-  if (!saved.tag || typeof saved.roster_filler !== "boolean") return data;
+  return patchDeclarationMarks(data, [saved]);
+}
+
+export function patchDeclarationMarks(
+  data: DeclarationExtraResponse,
+  saves: FillerSaveResult[],
+) {
+  const marks = new Map(
+    saves
+      .filter((saved) => saved.tag && typeof saved.roster_filler === "boolean")
+      .map((saved) => [saved.tag!, saved]),
+  );
+  if (!marks.size) return data;
   return {
     ...data,
-    revision: saved.revision,
+    revision: Math.max(
+      data.revision || 0,
+      ...saves.map((saved) => saved.revision),
+    ),
     clans: data.clans.map((clan) => {
       if (clan.status !== "current") return clan;
       const members = new Map(
@@ -18,13 +33,15 @@ export function patchDeclarationMark(
           ...(clan.unpublished || []),
         ].map((m) => [m.tag, m]),
       );
-      const old = members.get(saved.tag!);
-      if (!old) return clan;
-      members.set(saved.tag!, {
-        ...old,
-        roster_filler: saved.roster_filler,
-        roster_filler_revision: saved.mark_revision,
-      });
+      for (const [tag, saved] of marks) {
+        const old = members.get(tag);
+        if (old)
+          members.set(tag, {
+            ...old,
+            roster_filler: saved.roster_filler,
+            roster_filler_revision: saved.mark_revision,
+          });
+      }
       const rows = [...members.values()].sort(
         (a, b) => a.name.localeCompare(b.name) || a.tag.localeCompare(b.tag),
       );

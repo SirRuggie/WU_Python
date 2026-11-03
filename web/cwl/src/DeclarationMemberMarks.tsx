@@ -1,3 +1,4 @@
+import type { FillerMarkQueue } from "./fillerMarkQueue";
 import DiscordIdentity from "./DiscordIdentity";
 import DiscordContact from "./DiscordContact";
 import type { DeclarationExtraClan } from "./declarationExtras";
@@ -5,6 +6,7 @@ import RosterFillerCheckbox, {
   type FillerSaveResult,
 } from "./RosterFillerCheckbox";
 export type DeclarationMarkControl = {
+  queue?: FillerMarkQueue;
   seasonId: string;
   revision: number;
   onChanged: (result?: FillerSaveResult) => void | Promise<void>;

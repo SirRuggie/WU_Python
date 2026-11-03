@@ -106,3 +106,23 @@ it("two quick receipt updates keep both members and mark revisions without fetch
   expect(current.data?.revision).toBe(3);
   expect(mock.api).toHaveBeenCalledTimes(1);
 });
+
+it("148 failed explicit extras read is not repaired by a later automatic basis read", async () => {
+  mock.api.mockResolvedValue({ source: "published", basis: 1, clans: [] });
+  await act(async () => root.render(<Probe />));
+  mock.api.mockRejectedValueOnce(new Error("offline"));
+  let failedId = 0;
+  await act(async () => {
+    failedId = current.refresh();
+  });
+  expect(current.refreshResult).toEqual({ id: failedId, status: "failed" });
+  mock.api.mockResolvedValue({ source: "published", basis: 2, clans: [] });
+  await act(async () => root.render(<Probe basis={2} />));
+  expect(current.data?.basis).toBe(2);
+  expect(current.refreshResult).toEqual({ id: failedId, status: "failed" });
+  let successId = 0;
+  await act(async () => {
+    successId = current.refresh();
+  });
+  expect(current.refreshResult).toEqual({ id: successId, status: "success" });
+});
