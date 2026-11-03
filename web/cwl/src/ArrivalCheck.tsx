@@ -31,8 +31,16 @@ export default function ArrivalCheck({
   const canMarkRosterFiller = useDashboardPermission("cwl_roster");
   const pingDirty = useRef(false);
   const pingWorking = useRef(false);
-  const { data, error, refresh, records, now, checkedAt, checking } =
-    useDeclarationData(seasonId);
+  const {
+    data,
+    error,
+    refresh,
+    records,
+    now,
+    checkedAt,
+    checking,
+    refreshResult,
+  } = useDeclarationData(seasonId);
   const fillerQueue = useFillerMarkQueue(seasonId);
   const fillerWorking = fillerQueue.working;
   const undoPending = useRef(false);
@@ -42,6 +50,7 @@ export default function ArrivalCheck({
   const [markUndo, setMarkUndo] = useState<FillerSaveResult | null>(null);
   const [undoBusy, setUndoBusy] = useState(false);
   const [undoError, setUndoError] = useState("");
+  const [explicitRefreshing, setExplicitRefreshing] = useState(false);
   const [pool, setPool] = useCwlPool();
   const [helpOpen, setHelpOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -125,8 +134,7 @@ export default function ArrivalCheck({
     !data ||
     !canMarkRosterFiller ||
     !!data.arrival.season_archived ||
-    checking ||
-    extras.loading ||
+    explicitRefreshing ||
     undoBusy ||
     pingWorking.current;
   useLayoutEffect(
@@ -149,31 +157,44 @@ export default function ArrivalCheck({
       extras.refresh();
     },
   );
-  const markRefresh = useRef<{
-    roster: typeof data;
-    extras: typeof extras.data;
-  } | null>(null);
+  const markRefresh = useRef<{ rosterId: number; extrasId: number } | null>(
+    null,
+  );
   function refreshMembers() {
-    if (fillerQueue.working) return;
-    markRefresh.current = { roster: data, extras: extras.data };
-    refresh();
-    extras.refresh();
+    if (fillerQueue.working || explicitRefreshing) return;
+    setExplicitRefreshing(true);
+    markRefresh.current = { rosterId: refresh(), extrasId: extras.refresh() };
   }
   useEffect(() => {
     const requested = markRefresh.current;
-    if (
-      requested &&
-      data &&
-      extras.data &&
-      data !== requested.roster &&
-      extras.data !== requested.extras &&
-      !checking &&
-      !extras.loading
-    ) {
-      markRefresh.current = null;
-      fillerQueue.refreshed(
-        Math.max(data.roster.revision, extras.data.revision || 0),
-      );
+    if (requested) {
+      const rosterResult =
+        refreshResult?.id === requested.rosterId ? refreshResult : null;
+      const extrasResult =
+        extras.refreshResult?.id === requested.extrasId
+          ? extras.refreshResult
+          : null;
+      if (
+        rosterResult?.status === "failed" ||
+        extrasResult?.status === "failed"
+      ) {
+        // This explicit attempt failed. A later background poll is not a new
+        // Refresh and must never silently clear a halted mutation queue.
+        markRefresh.current = null;
+        setExplicitRefreshing(false);
+      } else if (
+        rosterResult?.status === "success" &&
+        extrasResult?.status === "success" &&
+        !checking &&
+        !extras.loading
+      ) {
+        markRefresh.current = null;
+        setExplicitRefreshing(false);
+        if (data && extras.data && !error && !extras.error)
+          fillerQueue.refreshed(
+            Math.max(data.roster.revision, extras.data.revision || 0),
+          );
+      }
     }
     fillerQueue.observeRows([
       ...(extras.data?.clans
@@ -196,7 +217,18 @@ export default function ArrivalCheck({
         markRevision: row.roster_filler_revision || 0,
       })) || []),
     ]);
-  }, [data, extras.data, checking, extras.loading, fillerQueue, fillerWorking]);
+  }, [
+    data,
+    extras.data,
+    checking,
+    extras.loading,
+    refreshResult,
+    extras.refreshResult,
+    error,
+    extras.error,
+    fillerQueue,
+    fillerWorking,
+  ]);
   useEffect(() => {
     onWorking(fillerWorking || pingWorking.current);
     onDirty(fillerWorking || pingDirty.current);
@@ -221,7 +253,7 @@ export default function ArrivalCheck({
             extras.data?.revision || 0,
             ...Object.values(localMarks).map((m) => m.revision),
           ),
-          disabled: checking || extras.loading || undoBusy,
+          disabled: explicitRefreshing || undoBusy,
           onChanged: applySavedMark,
         }
       : undefined;
@@ -281,6 +313,7 @@ export default function ArrivalCheck({
   }
   useEffect(() => {
     markRefresh.current = null;
+    setExplicitRefreshing(false);
     setLocalMarks({});
     setMarkUndo(null);
     setUndoError("");
@@ -442,12 +475,16 @@ export default function ArrivalCheck({
             </span>
             <Button
               icon={RefreshCw}
-              disabled={extras.loading || fillerWorking}
+              disabled={explicitRefreshing || fillerWorking}
               onClick={() => {
                 refreshMembers();
               }}
             >
-              {checking || extras.loading ? "Checking…" : "Refresh"}
+              {explicitRefreshing
+                ? "Refreshing…"
+                : checking || extras.loading
+                  ? "Checking…"
+                  : "Refresh"}
             </Button>
           </div>
           <p className="declaration-extras-status">
@@ -624,8 +661,14 @@ export default function ArrivalCheck({
           disabled={fillerWorking}
           state={
             undoBusy
-              ? { status: "pending", label: markUndo.undo.label }
-              : { status: "available", label: markUndo.undo.label }
+              ? {
+                  status: "pending",
+                  label: `${markUndo.undo.label}${markUndo.tag && fillerQueue.row(markUndo.tag)?.name ? ` · ${fillerQueue.row(markUndo.tag)!.name}` : ""}`,
+                }
+              : {
+                  status: "available",
+                  label: `${markUndo.undo.label}${markUndo.tag && fillerQueue.row(markUndo.tag)?.name ? ` · ${fillerQueue.row(markUndo.tag)!.name}` : ""}`,
+                }
           }
           onUndo={() => void undoMark()}
           onDismiss={() => setMarkUndo(null)}

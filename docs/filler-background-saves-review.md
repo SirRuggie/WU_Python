@@ -131,3 +131,45 @@ Entry `filler-queue-preview-D7Z7rwB_.js` has SHA256
 Fixture controls exercise refusals and lost acknowledgements without production
 requests. Existing QA marks are retained; the database has not been reseeded.
 Release remains held for Ruggie's preview approval.
+
+## Prompt148 delta review
+
+Details now offers a filler Undo only for a save to that account made while its
+panel is open. Opening another account, reopening the same account, or dismissing
+its receipt cannot revive an earlier page-level Undo. Saved notices name the
+account. The page-level latest receipt remains available separately.
+
+Background location reads keep ticks available. An explicit Refresh still locks
+marks, and Refresh stays disabled while marks are saving. A halted queue recovers
+only after both reads in a new explicit Refresh succeed; a later background read
+cannot turn a failed Refresh into recovery. Explicit read outcomes have matching
+request IDs, rather than inferring success from replaced data objects.
+
+Before changing runtime code, two new assertions reproduced the wrong-account
+Undo and dropped background-read tap. Final checks:72 focused tests,1588 frontend
+tests across270 files, TypeScript and production build passed. Six genuine
+assertion mutants were killed: lower revision replacing a newer one, missing
+abort, refresh during a write, background disabling, automatic read recovering a
+failed Refresh, and offering a receipt from before the panel opened. Tests also
+cover latest-revision list Undo, disabled Undo/Refresh while running, guard cleanup
+and late acknowledgements after disposal. No backend or policy changes were made.
+
+The actual SQLite fixture reproduced the earlier wrong-account Undo at360/1440;
+the corrected build passes320/360/390/1440 with no horizontal overflow. Narrow
+Details and wide overview were visually inspected. Browser evidence and failed
+harness attempts remain in `.local/p148`. The HTTP/browser retransmission limit
+above still applies; these checks make no production or Discord delivery claim.
+
+The same32793 server and SQLite remain intact. A read-only SQLite backup and
+all-table counts/digests before and after the static asset refresh prove it did
+not reseed or alter existing marks/revisions. All old assets were retained. New
+entry `filler-queue-preview-TDbNT1E1.js` SHA256
+`4ce914a851b2715750973a7bf04a1bc823ff3b474fe4915cf6a395e4ebf65704`.
+Release remains held.
+
+A real copied-SQLite held-ack/held-background-read browser regression also passed:
+the second row stayed enabled and retained its tap, Refresh was disabled during
+the queue, both PATCHes succeeded in order (94→95→96), and observed maximum
+parallel writes was1. Evidence: `.local/p148/browser-after/background-race.json`.
+This used a separate copy, not the retained32793 database. The new32793 served
+entry was fetched and hash-verified after the asset-only refresh.

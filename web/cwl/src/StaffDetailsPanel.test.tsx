@@ -312,14 +312,18 @@ it("shares the page queue, disables Undo while it works, and uses newest revisio
 });
 it("retains confirmed filler Undo in the page queue when its follow-up read fails", async () => {
   const { FillerMarkQueue } = await import("./fillerMarkQueue");
-  const queue = new FillerMarkQueue("1", 10);
-  queue.lastSaved = {
+  const savedDuringPanel = {
     tag: "#PLAYER",
     revision: 10,
     roster_filler: true,
     mark_revision: 1,
     undo: { id: 89, label: "Change filler mark", revision: 10 },
   };
+  const queue = new FillerMarkQueue(
+    "1",
+    9,
+    vi.fn().mockResolvedValue(savedDuringPanel),
+  );
   const changed = vi.fn();
   await act(async () =>
     root.render(
@@ -338,6 +342,12 @@ it("retains confirmed filler Undo in the page queue when its follow-up read fail
         }}
         setRequest={vi.fn()}
       />,
+    ),
+  );
+  await act(async () =>
+    queue.enqueue(
+      { tag: "#PLAYER", name: "Player", value: false, markRevision: 0 },
+      true,
     ),
   );
   vi.mocked(api).mockImplementation(async (_path, method) => {
@@ -365,4 +375,101 @@ it("retains confirmed filler Undo in the page queue when its follow-up read fail
   expect(queue.latestRevision).toBe(11);
   expect(host.textContent).toContain("Undone. Refresh to see the latest.");
   queue.dispose();
+});
+
+it.each(["#OTHER", "#PLAYER"])(
+  "148 does not offer earlier list Undo for %s in newly opened Details",
+  async (priorTag) => {
+    const { FillerMarkQueue } = await import("./fillerMarkQueue");
+    const queue = new FillerMarkQueue("1", 9, vi.fn());
+    queue.lastSaved = {
+      tag: priorTag,
+      revision: 9,
+      roster_filler: true,
+      mark_revision: 1,
+      undo: { id: 77, label: "Change filler mark", revision: 9 },
+    };
+    await act(async () =>
+      root.render(
+        <StaffDetailsPanel
+          request={{
+            seasonId: "1",
+            tag: "#PLAYER",
+            fillerQueue: queue,
+            viewOnly: "declaration",
+            publishedSnapshot: {
+              roster: snapshot(9) as any,
+              version: 1,
+              signupTags: ["#PLAYER"],
+            },
+          }}
+          setRequest={vi.fn()}
+        />,
+      ),
+    );
+    expect(host.textContent).not.toContain("Undo");
+  },
+);
+
+it("148 only shows a new save for the open account and dismisses it without reviving", async () => {
+  const { FillerMarkQueue } = await import("./fillerMarkQueue");
+  let finish!: (saved: any) => void;
+  const queue = new FillerMarkQueue(
+    "1",
+    9,
+    vi.fn(() => new Promise<any>((resolve) => (finish = resolve))),
+  );
+  const roster = {
+    ...snapshot(9),
+    accounts: [
+      { tag: "#PLAYER", player_name: "Panel Player" },
+      { tag: "#OTHER", player_name: "Other Player" },
+    ],
+  };
+  const request = {
+    seasonId: "1",
+    tag: "#PLAYER",
+    fillerQueue: queue,
+    viewOnly: "declaration" as const,
+    publishedSnapshot: {
+      roster: roster as any,
+      version: 1,
+      signupTags: ["#PLAYER", "#OTHER"],
+    },
+  };
+  const show = (tag = "#PLAYER") =>
+    root.render(
+      <StaffDetailsPanel request={{ ...request, tag }} setRequest={vi.fn()} />,
+    );
+  await act(async () => show());
+  await act(async () => {
+    queue.enqueue(
+      { tag: "#PLAYER", name: "Panel Player", value: false, markRevision: 0 },
+      true,
+    );
+  });
+  await act(async () =>
+    finish({
+      tag: "#PLAYER",
+      revision: 10,
+      roster_filler: true,
+      mark_revision: 1,
+      undo: { id: 88, label: "Change filler mark" },
+    }),
+  );
+  expect(host.textContent).toContain("Panel Player");
+  expect(host.textContent).toContain("Undo");
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Dismiss undo notification"]',
+      )!
+      .click(),
+  );
+  await act(async () => show());
+  expect(host.textContent).not.toContain("Undo");
+  await act(async () => show("#OTHER"));
+  expect(host.textContent).not.toContain("Undo");
+  await act(async () => show("#PLAYER"));
+  expect(host.textContent).not.toContain("Undo");
 });

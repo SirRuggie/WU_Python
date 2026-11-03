@@ -3,6 +3,7 @@ import { useFillerQueueVersion } from "./useFillerMarkQueue";
 import { mergeRosterMarks } from "./roster";
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type Dispatch,
@@ -30,6 +31,23 @@ export default function StaffDetailsPanel({
   const [error, setError] = useState("");
   const [undo, setUndo] = useState<RosterUndoState | null>(null);
   const receipt = useRef<RosterSnapshot["undo"]>(null);
+  const [panelMark, setPanelMark] = useState<FillerSaveResult | null>(null);
+  const openedAfterMark = useRef(request.fillerQueue?.lastSaved);
+  const lastMark = request.fillerQueue?.lastSaved;
+  useLayoutEffect(() => {
+    openedAfterMark.current = request.fillerQueue?.lastSaved;
+    setPanelMark(null);
+    receipt.current = null;
+    setUndo(null);
+  }, [request.seasonId, request.tag, request.fillerQueue]);
+  useEffect(() => {
+    if (!lastMark) setPanelMark(null);
+    else if (
+      lastMark !== openedAfterMark.current &&
+      lastMark.tag === request.tag
+    )
+      setPanelMark(lastMark);
+  }, [lastMark, request.tag]);
   const generation = useRef(0);
   const pending = useRef(false);
   useEffect(() => {
@@ -162,9 +180,7 @@ export default function StaffDetailsPanel({
     }
   }
   async function undoPlacement() {
-    const available = request.fillerQueue
-      ? request.fillerQueue.lastSaved?.undo
-      : receipt.current;
+    const available = panelMark?.undo || receipt.current;
     if (
       !request ||
       !snapshot ||
@@ -300,19 +316,23 @@ export default function StaffDetailsPanel({
           clans={snapshot.clans}
           roster={snapshot}
           undo={
-            (request.fillerQueue?.lastSaved?.undo || undo) && (
+            (panelMark?.undo || undo) && (
               <RosterUndoToast
                 disabled={request.fillerQueue?.working}
                 state={
-                  request.fillerQueue?.lastSaved?.undo
+                  panelMark?.undo
                     ? {
                         status: "available",
-                        label: request.fillerQueue.lastSaved.undo.label,
+                        label: `${panelMark.undo.label} · ${account.player_name || request.tag}`,
                       }
                     : undo!
                 }
                 onUndo={() => void undoPlacement()}
-                onDismiss={() => setUndo(null)}
+                onDismiss={() => {
+                  setPanelMark(null);
+                  setUndo(null);
+                  receipt.current = null;
+                }}
               />
             )
           }

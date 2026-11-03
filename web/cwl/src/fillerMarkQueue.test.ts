@@ -287,3 +287,78 @@ it("blocks new ticks while another explicit revision write holds the page lock",
   f.releases.shift()!();
   await turn();
 });
+
+it("148 mid-queue lower read revision never replaces a newer revision", async () => {
+  let finish!: (saved: any) => void;
+  const wire = vi
+    .fn()
+    .mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    .mockResolvedValueOnce({
+      revision: 21,
+      roster_filler: true,
+      mark_revision: 1,
+    });
+  const q = new FillerMarkQueue("1", 9, wire);
+  q.enqueue(row("#A"), true);
+  q.enqueue(row("#B"), true);
+  await turn();
+  q.syncRevision(20);
+  q.syncRevision(7);
+  finish({ revision: 10, roster_filler: true, mark_revision: 1 });
+  await turn();
+  expect(wire.mock.calls[1][2]).toEqual({
+    revision: 20,
+    roster_filler: true,
+    mark_revision: 0,
+  });
+  expect(q.latestRevision).toBe(21);
+});
+
+it("148 dispose aborts the active request and never drains or flushes late results", async () => {
+  let finish!: (saved: any) => void;
+  let signal!: AbortSignal;
+  const wire = vi.fn((_path, _method, _body, options) => {
+    signal = options.signal;
+    return new Promise<any>((resolve) => (finish = resolve));
+  });
+  const q = new FillerMarkQueue("1", 9, wire);
+  const flush = vi.fn();
+  q.configure(flush, vi.fn());
+  q.enqueue(row("#A"), true);
+  q.enqueue(row("#B"), true);
+  await turn();
+  expect(signal.aborted).toBe(false);
+  q.dispose();
+  expect(signal.aborted).toBe(true);
+  finish({ revision: 10, roster_filler: true, mark_revision: 1 });
+  await turn();
+  expect(wire).toHaveBeenCalledTimes(1);
+  expect(flush).not.toHaveBeenCalled();
+  expect(q.working).toBe(false);
+});
+
+it("148 refreshed cannot clear state while saving, externally writing or disposed", async () => {
+  let finish!: (saved: any) => void;
+  const q = new FillerMarkQueue(
+    "1",
+    9,
+    vi.fn(() => new Promise<any>((resolve) => (finish = resolve))),
+  );
+  q.enqueue(row("#A"), true);
+  await turn();
+  q.refreshed(77);
+  expect(q.latestRevision).toBe(9);
+  expect(q.row("#A")?.pending).toBe(true);
+  finish({ revision: 10, roster_filler: true, mark_revision: 1 });
+  await turn();
+  q.setWriteBusy(true);
+  q.refreshed(88);
+  expect(q.latestRevision).toBe(10);
+  q.setWriteBusy(false);
+  q.refreshed(99);
+  expect(q.latestRevision).toBe(99);
+  expect(q.row("#A")).toBeUndefined();
+  q.dispose();
+  q.refreshed(123);
+  expect(q.latestRevision).toBe(99);
+});

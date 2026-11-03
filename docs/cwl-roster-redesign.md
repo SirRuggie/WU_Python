@@ -1165,3 +1165,11 @@ suite. Fresh disposable before/after browser fixtures cover 320/360/390/1440,
 keyboard recovery, no overflow, one helper and unchanged domain counts. Browser
 mutation observation reproduces the linked-member helper flash before and not
 after. All preserved review previews remain untouched.
+
+### Filler queue delta (prompt148)
+
+Details Undo belongs to the current account and panel session, with a named saved
+notice and dismissible receipt. Background comparison reads do not disable filler
+ticks. Explicit Refresh locks marks and requires both matching reads to succeed
+before clearing a halted queue. Regression evidence, mutation checks and retained
+SQLite preview details are in `docs/filler-background-saves-review.md`.

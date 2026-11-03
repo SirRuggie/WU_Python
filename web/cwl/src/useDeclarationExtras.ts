@@ -19,6 +19,11 @@ export default function useDeclarationExtras(
   const [error, setError] = useState("");
   const [refreshNonce, setRefreshNonce] = useState(0);
   const sequence = useRef(0);
+  const explicitRead = useRef(0);
+  const [refreshResult, setRefreshResult] = useState<{
+    id: number;
+    status: "pending" | "success" | "failed";
+  } | null>(null);
   useEffect(() => {
     const current = ++sequence.current;
     const controller = new AbortController();
@@ -45,12 +50,24 @@ export default function useDeclarationExtras(
               "Roster changed. Refresh the page before checking members.",
             );
           setData(result);
+          if (refreshNonce)
+            setRefreshResult((current) =>
+              current?.id === refreshNonce && current.status === "pending"
+                ? { id: refreshNonce, status: "success" }
+                : current,
+            );
         }
       })
       .catch(() => {
         if (!disposed && current === sequence.current) {
           setData(undefined);
           setError("Couldn't check clan members");
+          if (refreshNonce)
+            setRefreshResult((current) =>
+              current?.id === refreshNonce && current.status === "pending"
+                ? { id: refreshNonce, status: "failed" }
+                : current,
+            );
         }
       })
       .finally(() => {
@@ -75,6 +92,12 @@ export default function useDeclarationExtras(
       setData((current) =>
         current ? patchDeclarationMarks(current, saves) : current,
       ),
-    refresh: () => setRefreshNonce((n) => n + 1),
+    refreshResult,
+    refresh: () => {
+      const id = ++explicitRead.current;
+      setRefreshResult({ id, status: "pending" });
+      setRefreshNonce(id);
+      return id;
+    },
   };
 }
