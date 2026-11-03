@@ -8,9 +8,11 @@ tests, and the reminder task all use the same stored representation.
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
 import hikari
@@ -679,6 +681,136 @@ async def load_defaults_campaign(mongo, guild_id: int) -> dict:
     return default_campaign(new_copy=not bool(saved or existing_cycle))
 
 
+def _roster_copy_edit_stamps(row: dict | None) -> dict[str, str]:
+    """Field-only metadata is active only at the revision that wrote it.
+
+    Ordinary full-template writes increment revision, so even a clock tie cannot
+    misclassify them as another field-only write or revive stale pool overrides.
+    """
+    row = row or {}
+    marker = row.get("roster_copy_edit_revision")
+    if type(marker) is not int or marker != row.get("revision"):
+        return {}
+    stamps = row.get("roster_copy_edit_updated_at") or {}
+    if not isinstance(stamps, dict) or any(
+        pool not in AUDIENCES or not isinstance(stamp, str)
+        for pool, stamp in stamps.items()
+    ):
+        raise ValueError("Saved roster field edit metadata is invalid")
+    if not stamps or row.get("updated_at") != max(stamps.values()):
+        return {}
+    return stamps
+
+
+def _whole_template_updated_at(row: dict | None) -> str:
+    """One cutoff for whole recurring selection and per-pool inheritance."""
+    row = row or {}
+    field = (
+        "roster_copy_base_updated_at" if _roster_copy_edit_stamps(row) else "updated_at"
+    )
+    return str(row.get(field) or "")
+
+
+def _recurring_template_identity(row: dict | None) -> str | None:
+    """Distinguish field-after-whole clock ties from later whole-template saves."""
+    if not row:
+        return None
+    if row.get("pause_edit_revision") == row.get("revision") and row.get(
+        "pause_recurring_identity"
+    ):
+        return row["pause_recurring_identity"]
+    if _roster_copy_edit_stamps(row) and row.get("roster_copy_base_recurring_identity"):
+        return row["roster_copy_base_recurring_identity"]
+    revision = row.get("revision", 0)
+    if row.get("pause_edit_revision") == revision:
+        revision = row.get("pause_base_revision", revision)
+    if _roster_copy_edit_stamps(row):
+        revision = row.get("roster_copy_base_revision", revision)
+    value = [
+        row.get("_id"),
+        row.get("recurring_updated_at"),
+        revision,
+        row.get("recurring_campaign"),
+    ]
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _apply_recurring_roster_copy(
+    campaign: dict, rows: list[dict], current: dict | None, recurring: dict | None
+) -> str | None:
+    """Apply only newer per-pool text/buttons, never a whole future template."""
+    current = current or {}
+    edits = _roster_copy_edit_stamps(current)
+    global_stamp = _whole_template_updated_at(current)
+    versions = {}
+    for pool in AUDIENCES:
+        cutoff = max(
+            global_stamp,
+            str(edits.get(pool) or ""),
+            str((recurring or {}).get("recurring_updated_at") or ""),
+        )
+        # Preserve this cycle's explicit field edit even when its unrelated
+        # fields still inherit a newer whole recurring template.
+        if pool in edits and edits[pool] >= str(
+            (recurring or {}).get("recurring_updated_at") or ""
+        ):
+            local = current["campaign"]["messages"]["roster"]["variants"][pool]
+            campaign["messages"]["roster"]["variants"][pool].update(
+                validate_roster_copy(
+                    {
+                        key: copy.deepcopy(local[key])
+                        for key in ("title", "body", "buttons")
+                    }
+                )
+            )
+        candidates = []
+        for row in rows:
+            values = row.get("recurring_roster_copy") or {}
+            stamps = row.get("recurring_roster_copy_updated_at") or {}
+            if not isinstance(values, dict) or not isinstance(stamps, dict):
+                raise ValueError("Saved recurring roster copy is invalid")
+            if pool not in values:
+                continue
+            value, stamp = values[pool], stamps.get(pool)
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"title", "body", "buttons"}
+                or not isinstance(stamp, str)
+            ):
+                raise ValueError("Saved recurring roster copy is invalid")
+            try:
+                parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    raise ValueError
+                stamp = parsed.astimezone(timezone.utc).isoformat()
+            except ValueError as exc:
+                raise ValueError("Saved recurring roster version is invalid") from exc
+            # A field save may follow a whole save in the same clock tick.
+            # Its recorded source identity proves that order; a later whole
+            # save changes revision and invalidates this tie exception.
+            tied_after_whole = (
+                stamp
+                == cutoff
+                == str((recurring or {}).get("recurring_updated_at") or "")
+                and stamp > max(global_stamp, str(edits.get(pool) or ""))
+                and (row.get("recurring_roster_copy_base") or {}).get(pool)
+                == _recurring_template_identity(recurring)
+            )
+            if stamp > cutoff or tied_after_whole:
+                candidates.append((stamp, str(row["_id"]), value))
+        if candidates:
+            stamp, source, value = max(candidates, key=lambda item: item[:2])
+            campaign["messages"]["roster"]["variants"][pool].update(
+                copy.deepcopy(value)
+            )
+            versions[pool] = {"version": stamp, "source": source, "copy": value}
+    return (
+        hashlib.sha256(json.dumps(versions, sort_keys=True).encode()).hexdigest()[:24]
+        if versions
+        else None
+    )
+
+
 async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None) -> dict:
     guild_id = int(guild_id)
     saved = await mongo.bot_config.find_one({"_id": defaults_id(guild_id)})
@@ -691,16 +823,41 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
     selected_cycle = cycle or cycle_key(now, base.get("timezone", DEFAULT_TIMEZONE))
     row = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, selected_cycle)})
     override = copy.deepcopy(row.get("campaign")) if row else None
-    recurring_rows = await mongo.bot_config.find({
-        "kind": "cwl_campaign_cycle", "guild_id": guild_id,
-        "recurring_campaign": {"$exists": True},
-    }).to_list(length=None)
-    recurring_rows = [item for item in recurring_rows if item.get("cycle", "") <= selected_cycle]
-    recurring = max(recurring_rows, key=lambda item: item.get("recurring_updated_at", ""), default=None)
+    recurring_rows = await mongo.bot_config.find(
+        {
+            "kind": "cwl_campaign_cycle",
+            "guild_id": guild_id,
+            "$or": [
+                {"recurring_campaign": {"$exists": True}},
+                {"recurring_roster_copy": {"$exists": True}},
+            ],
+        }
+    ).to_list(length=None)
+    recurring_rows = [
+        item for item in recurring_rows if item.get("cycle", "") <= selected_cycle
+    ]
+    recurring = max(
+        (
+            item
+            for item in recurring_rows
+            if isinstance(item.get("recurring_campaign"), dict)
+        ),
+        key=lambda item: (
+            item.get("recurring_updated_at", ""),
+            item.get("recurring_pause_updated_at", ""),
+        ),
+        default=None,
+    )
+    using_recurring_override = False
     if recurring and recurring["_id"] != (row or {}).get("_id"):
-        if recurring.get("recurring_updated_at", "") >= (row or {}).get("updated_at", ""):
+        if recurring.get("recurring_updated_at", "") >= _whole_template_updated_at(row):
             override = copy.deepcopy(recurring["recurring_campaign"])
-    if isinstance(override, dict):
+            using_recurring_override = True
+    if isinstance(override, dict) and not (
+        _roster_copy_edit_stamps(row)
+        and row.get("roster_copy_base_campaign_missing") is True
+        and not using_recurring_override
+    ):
         # Older saved cycle snapshots predate the sequence feature. They keep
         # their individual schedules when future defaults adopt a sequence.
         override.setdefault("reminder_sequence", {"enabled": False})
@@ -715,17 +872,41 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
     # Full cycle snapshots are independent of future monthly defaults,
     # including newly provisioned sequence templates and sequence settings.
     campaign = _deep_merge(_saved_copy_baseline(override) if isinstance(override, dict) and "schema_version" in override else base, override)
-    if isinstance(override, dict) and not _uses_new_default_copy(override):
+    if (
+        isinstance(override, dict)
+        and not _uses_new_default_copy(override)
+        and not (
+            _roster_copy_edit_stamps(row)
+            and row.get("roster_copy_base_campaign_missing") is True
+            and not using_recurring_override
+        )
+    ):
         campaign.pop(DEFAULT_COPY_FIELD, None)
+    if recurring and recurring.get(
+        "recurring_pause_updated_at", ""
+    ) > _whole_template_updated_at(row):
+        campaign["paused"] = bool(recurring["recurring_campaign"].get("paused", False))
     if row is None:
         # Carry only destinations forward, not old messages, dates or delivery state.
         candidates = previous + ([saved] if saved and isinstance(saved.get("campaign"), dict) else [])
         for pool in ("main", "lazy"):
-            for source in sorted(candidates, key=lambda item: str(item.get("updated_at", "")), reverse=True):
-                channel = source["campaign"].get("messages", {}).get("roster", {}).get("variants", {}).get(pool, {}).get("destination_channel_id")
+            for source in sorted(
+                candidates,
+                key=lambda item: str(item.get("updated_at", "")),
+                reverse=True,
+            ):
+                channel = (
+                    source["campaign"]
+                    .get("messages", {})
+                    .get("roster", {})
+                    .get("variants", {})
+                    .get(pool, {})
+                    .get("destination_channel_id")
+                )
                 if channel:
                     campaign["messages"]["roster"]["variants"][pool]["destination_channel_id"] = channel
                     break
+    roster_copy_version = _apply_recurring_roster_copy(campaign, recurring_rows, row, recurring)
     campaign = normalize_signup_entry(campaign)
     validate_campaign(campaign)
     deliveries = copy.deepcopy((row or {}).get("deliveries", []))
@@ -738,6 +919,8 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
         "defaults_revision": int((saved or {}).get("revision", 0)),
         "activated": bool((row or {}).get("activated") or (saved or {}).get("activated") or recurring),
         "recurring_version": (recurring or {}).get("recurring_updated_at"),
+        "recurring_template_identity": _recurring_template_identity(recurring),
+        **({"recurring_roster_version": roster_copy_version} if roster_copy_version else {}),
         "campaign": campaign,
         "deliveries": deliveries,
         "sent_occurrences": sent_occurrences,
@@ -749,9 +932,11 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
     return result
 
 
-async def new_draft(mongo, guild_id: int, user_id: int, cycle: str | None = None, scope: str = "cycle") -> dict:
+async def new_draft(mongo, guild_id: int, user_id: int, cycle: str | None = None, scope: str = "cycle", *, purpose: str | None = None) -> dict:
     if scope not in {"cycle", "defaults"}:
         raise ValueError("scope must be cycle or defaults")
+    if purpose not in (None, "post_update"):
+        raise ValueError("Invalid campaign draft purpose")
     loaded = await load_campaign(mongo, guild_id, cycle)
     campaign = loaded["campaign"]
     if scope == "defaults":
@@ -760,12 +945,14 @@ async def new_draft(mongo, guild_id: int, user_id: int, cycle: str | None = None
     token = uuid.uuid4().hex
     draft = {
         "_id": draft_id(guild_id, token), "token": token, "kind": "cwl_campaign_draft",
+        **({"purpose": purpose, "expires_at": datetime.now(timezone.utc) + timedelta(days=1)} if purpose else {}),
         "guild_id": int(guild_id), "user_id": int(user_id), "cycle": loaded["cycle"],
         "scope": scope,
         "base_revision": loaded["defaults_revision"] if scope == "defaults" else loaded["revision"],
         "cycle_base_revision": loaded["revision"],
         "defaults_base_revision": loaded["defaults_revision"],
         "recurring_base_version": loaded.get("recurring_version"),
+        "recurring_roster_base_version": loaded.get("recurring_roster_version"),
         "campaign": copy.deepcopy(campaign), "created_at": now, "updated_at": now,
         "saved_campaign": copy.deepcopy(campaign),
     }
@@ -776,7 +963,28 @@ async def new_draft(mongo, guild_id: int, user_id: int, cycle: str | None = None
 async def load_draft(mongo, draft: str) -> dict | None:
     query = {"_id": draft} if str(draft).startswith("cwl:draft:") else {"kind": "cwl_campaign_draft", "token": str(draft)}
     row = await mongo.bot_config.find_one(query)
-    return row if row and row.get("kind") == "cwl_campaign_draft" else None
+    if row and row.get("kind") == "cwl_campaign_draft":
+        if row.get("purpose") == "post_update":
+            expiry = row.get("expires_at")
+            if not isinstance(expiry, datetime):
+                return None
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry <= datetime.now(timezone.utc):
+                return None
+        return row
+    return None
+
+
+async def discard_draft(mongo, draft: str, user_id: int) -> bool:
+    """Discard only an owned scratch draft, never a saved campaign."""
+    row = await load_draft(mongo, draft)
+    if row is None:
+        return False
+    if int(row["user_id"]) != int(user_id):
+        raise PermissionError("This draft belongs to another editor")
+    result = await mongo.bot_config.delete_one({"_id": row["_id"], "kind": "cwl_campaign_draft", "user_id": row["user_id"]})
+    return getattr(result, "deleted_count", 0) == 1
 
 
 async def find_draft(
@@ -784,7 +992,7 @@ async def find_draft(
 ) -> dict | None:
     """Return the editor's most recently updated resumable draft."""
     query = {
-        "kind": "cwl_campaign_draft", "guild_id": int(guild_id),
+        "kind": "cwl_campaign_draft", "purpose": {"$ne": "post_update"}, "guild_id": int(guild_id),
         "user_id": int(user_id),
     }
     if cycle is not None:
@@ -928,6 +1136,8 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
         from utils.cwl_web_bridge import campaign_generation
         if campaign_generation(live) != expected_generation:
             raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
+    if scope == "cycle" and row.get("recurring_roster_base_version") != live.get("recurring_roster_version"):
+        raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
     if repeat_monthly and row.get("recurring_base_version") != live.get("recurring_version"):
         raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
     current_revision = live["defaults_revision"] if scope == "defaults" else live["revision"]
@@ -1065,42 +1275,273 @@ async def _cycle_update(mongo, guild_id: int, cycle: str, update: dict):
     return await load_campaign(mongo, guild_id, cycle)
 
 
-async def set_paused(mongo, guild_id: int, paused: bool, cycle: str | None = None, user_id: int | None = None, *, expected_generation: str | None = None):
+def validate_roster_copy(candidate: dict) -> dict:
+    """Validate the intentionally small text/link-only post editor boundary."""
+    if not isinstance(candidate, dict) or set(candidate) != {
+        "title",
+        "body",
+        "buttons",
+    }:
+        raise ValueError("Only roster text and buttons can change")
+    if any(
+        not isinstance(candidate[field], str)
+        or not candidate[field].strip()
+        or len(candidate[field]) > 4000
+        for field in ("title", "body")
+    ):
+        raise ValueError("Check the roster text length")
+    buttons = candidate["buttons"]
+    if not isinstance(buttons, list) or len(buttons) > 5:
+        raise ValueError("Choose up to five link buttons")
+    cleaned = []
+    for button in buttons:
+        if (
+            not isinstance(button, dict)
+            or set(button) - {"label", "url", "emoji"}
+            or not {"label", "url"} <= set(button)
+        ):
+            raise ValueError("Check the link button fields")
+        label, url = button["label"], button["url"]
+        if (
+            not isinstance(label, str)
+            or not label.strip()
+            or len(label) > 80
+            or not isinstance(url, str)
+            or len(url) > 512
+        ):
+            raise ValueError("Check the link button label and URL")
+        try:
+            parsed = urlparse(url)
+            valid = (
+                parsed.scheme == "https"
+                and parsed.hostname
+                and not parsed.username
+                and not parsed.password
+                and not any(char.isspace() for char in url)
+            )
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ValueError("Link buttons must use HTTPS")
+        emoji = button.get("emoji")
+        if emoji is not None and (not isinstance(emoji, str) or len(emoji) > 64):
+            raise ValueError("Check the button emoji")
+        cleaned.append(
+            {"label": label, "url": url, **({"emoji": emoji} if emoji else {})}
+        )
+    return {"title": candidate["title"], "body": candidate["body"], "buttons": cleaned}
+
+
+async def save_updated_roster_variant(
+    mongo,
+    *,
+    guild_id: int,
+    cycle: str,
+    pool: str,
+    user_id: int,
+    candidate: dict,
+    expected_generation: str,
+    future_months: bool,
+):
+    """After a confirmed in-place edit, save only this pool's text/buttons.
+
+    One cycle-document CAS also records an optional field-scoped future copy.
+    This does not replace a general recurring campaign, change other messages,
+    reset delivery state, activate automation, or invoke a sender.
+    """
+    from utils.cwl_web_bridge import campaign_generation
+
+    if pool not in AUDIENCES or type(future_months) is not bool or int(user_id) < 1:
+        raise ValueError("Invalid roster post save scope")
+    candidate = validate_roster_copy(candidate)
+    loaded = await load_campaign(mongo, guild_id, cycle)
+    if campaign_generation(loaded) != expected_generation:
+        raise RuntimeError(
+            "Campaign changed; the updated post's saved copy was not overwritten"
+        )
+    reviewed = copy.deepcopy(loaded["campaign"])
+    reviewed["messages"]["roster"]["variants"][pool].update(copy.deepcopy(candidate))
+    validate_campaign(reviewed)
+    stamp = _utcnow()
+    fields = {
+        f"campaign.messages.roster.variants.{pool}.{key}": copy.deepcopy(value)
+        for key, value in candidate.items()
+    }
+    current = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, cycle)})
+    edits = dict(_roster_copy_edit_stamps(current))
+    base_campaign_missing = (
+        (current or {}).get("roster_copy_base_campaign_missing") is True
+        if edits
+        else not isinstance((current or {}).get("campaign"), dict)
+    )
+    edits[pool] = stamp
+    fields.update(
+        revision=loaded["revision"] + 1,
+        updated_at=stamp,
+        roster_copy_base_updated_at=_whole_template_updated_at(current),
+        roster_copy_base_recurring_identity=(
+            _recurring_template_identity(current)
+            if (current or {}).get("recurring_campaign")
+            else None
+        ),
+        roster_copy_base_revision=(
+            (current or {}).get("roster_copy_base_revision", loaded["revision"])
+            if _roster_copy_edit_stamps(current)
+            else loaded["revision"]
+        ),
+        roster_copy_edit_updated_at=edits,
+        roster_copy_edit_revision=loaded["revision"] + 1,
+        roster_copy_base_campaign_missing=base_campaign_missing,
+    )
+    if future_months:
+        fields[f"recurring_roster_copy.{pool}"] = copy.deepcopy(candidate)
+        fields[f"recurring_roster_copy_updated_at.{pool}"] = stamp
+        fields[f"recurring_roster_copy_base.{pool}"] = loaded.get(
+            "recurring_template_identity"
+        )
+    write = await mongo.bot_config.update_one(
+        {
+            "_id": cycle_id(guild_id, cycle),
+            "kind": "cwl_campaign_cycle",
+            "guild_id": int(guild_id),
+            "revision": loaded["revision"],
+        },
+        {
+            "$set": fields,
+            "$push": {
+                "actions": {
+                    "$each": [
+                        {
+                            "action": "roster_post_copy_saved",
+                            "pool": pool,
+                            "future_months": future_months,
+                            "at": stamp,
+                            "by": int(user_id),
+                        }
+                    ],
+                    "$slice": -HISTORY_LIMIT,
+                }
+            },
+        },
+    )
+    if getattr(write, "matched_count", 0) != 1:
+        raise RuntimeError(
+            "Campaign changed; the updated post's saved copy was not overwritten"
+        )
+    return {"campaign_saved": True, "recurring_saved": future_months}
+
+
+async def set_paused(
+    mongo,
+    guild_id: int,
+    paused: bool,
+    cycle: str | None = None,
+    user_id: int | None = None,
+    *,
+    expected_generation: str | None = None,
+):
     loaded = await load_campaign(mongo, guild_id, cycle)
     if expected_generation is not None:
         from utils.cwl_web_bridge import campaign_generation
+
         if campaign_generation(loaded) != expected_generation:
-            raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
+            raise RuntimeError(
+                "CWL settings changed. Reload the dashboard before saving."
+            )
     campaign = copy.deepcopy(loaded["campaign"])
     campaign["paused"] = bool(paused)
     now = _utcnow()
     old_revision = int(loaded["revision"])
+    current = (
+        await mongo.bot_config.find_one({"_id": cycle_id(guild_id, loaded["cycle"])})
+        or {}
+    )
     new_revision = old_revision + 1
-    update = {"$set": {"kind": "cwl_campaign_cycle", "guild_id": int(guild_id), "cycle": loaded["cycle"], "campaign": campaign, "activated": True, "revision": new_revision, "updated_at": now}, "$push": {
-        "actions": {"$each": [{"action": "paused" if paused else "resumed", "at": now, "by": user_id}], "$slice": -HISTORY_LIMIT},
-        "revisions": {"$each": [{"revision": new_revision, "at": now, "by": user_id, "action": "paused" if paused else "resumed", "campaign": copy.deepcopy(campaign)}], "$slice": -20},
-    }}
+    # Pause is operational state, never a new content-template save. Retain
+    # content clocks and field markers; a later ordinary Save invalidates this
+    # revision-bound identity even when its wall clock ties.
+    content_stamp = current.get("updated_at") or now
+    update = {
+        "$set": {
+            "kind": "cwl_campaign_cycle",
+            "guild_id": int(guild_id),
+            "cycle": loaded["cycle"],
+            "campaign": campaign,
+            "activated": True,
+            "revision": new_revision,
+            "updated_at": content_stamp,
+            "pause_edit_revision": new_revision,
+            "pause_base_revision": (
+                current.get("pause_base_revision", old_revision)
+                if current.get("pause_edit_revision") == old_revision
+                else old_revision
+            ),
+            "pause_recurring_identity": loaded.get("recurring_template_identity"),
+        },
+        "$push": {
+            "actions": {
+                "$each": [
+                    {
+                        "action": "paused" if paused else "resumed",
+                        "at": now,
+                        "by": user_id,
+                    }
+                ],
+                "$slice": -HISTORY_LIMIT,
+            },
+            "revisions": {
+                "$each": [
+                    {
+                        "revision": new_revision,
+                        "at": now,
+                        "by": user_id,
+                        "action": "paused" if paused else "resumed",
+                        "campaign": copy.deepcopy(campaign),
+                    }
+                ],
+                "$slice": -20,
+            },
+        },
+    }
+    if _roster_copy_edit_stamps(current):
+        update["$set"]["roster_copy_edit_revision"] = new_revision
     if loaded.get("recurring_version"):
-        source = await mongo.bot_config.find_one({"guild_id": int(guild_id), "recurring_updated_at": loaded["recurring_version"]})
+        source = await mongo.bot_config.find_one(
+            {
+                "guild_id": int(guild_id),
+                "recurring_updated_at": loaded["recurring_version"],
+            }
+        )
         recurring = copy.deepcopy(source["recurring_campaign"])
         recurring["paused"] = bool(paused)
-        update["$set"].update(recurring_campaign=recurring, recurring_updated_at=now)
+        update["$set"].update(
+            recurring_campaign=recurring,
+            recurring_updated_at=loaded["recurring_version"],
+            recurring_pause_updated_at=now,
+        )
     try:
         write = await mongo.bot_config.update_one(
             {"_id": cycle_id(guild_id, loaded["cycle"]), "revision": old_revision},
-            update, upsert=old_revision == 0,
+            update,
+            upsert=old_revision == 0,
         )
     except DuplicateKeyError as exc:
-        raise RuntimeError("CWL campaign changed while pause state was updating") from exc
+        raise RuntimeError(
+            "CWL campaign changed while pause state was updating"
+        ) from exc
     if not (
         getattr(write, "matched_count", 0)
         or getattr(write, "upserted_id", None) is not None
-        or (getattr(write, "matched_count", None) is None and getattr(write, "modified_count", 0))
+        or (
+            getattr(write, "matched_count", None) is None
+            and getattr(write, "modified_count", 0)
+        )
     ):
         raise RuntimeError("CWL campaign changed while pause state was updating")
     result = await load_campaign(mongo, guild_id, loaded["cycle"])
     try:
         from extensions.tasks import cwl_reminder
+
         if getattr(cwl_reminder, "mongo_client", None) is mongo:
             if loaded.get("recurring_version"):
                 await cwl_reminder._sync_all_campaigns()
@@ -1112,15 +1553,43 @@ async def set_paused(mongo, guild_id: int, paused: bool, cycle: str | None = Non
     return result
 
 
-async def skip_occurrence(mongo, guild_id: int, occurrence: str, cycle: str | None = None, user_id: int | None = None):
+async def skip_occurrence(
+    mongo,
+    guild_id: int,
+    occurrence: str,
+    cycle: str | None = None,
+    user_id: int | None = None,
+):
     loaded = await load_campaign(mongo, guild_id, cycle)
     valid = {item["id"] for item in loaded["schedule"]}
     if occurrence not in valid:
         raise ValueError("Unknown occurrence")
     now = _utcnow()
-    result = await _cycle_update(mongo, guild_id, loaded["cycle"], {"$set": {"activated": True}, "$addToSet": {"skipped": occurrence}, "$push": {"actions": {"$each": [{"action": "skipped", "occurrence_id": occurrence, "at": now, "by": user_id}], "$slice": -HISTORY_LIMIT}}})
+    result = await _cycle_update(
+        mongo,
+        guild_id,
+        loaded["cycle"],
+        {
+            "$set": {"activated": True},
+            "$addToSet": {"skipped": occurrence},
+            "$push": {
+                "actions": {
+                    "$each": [
+                        {
+                            "action": "skipped",
+                            "occurrence_id": occurrence,
+                            "at": now,
+                            "by": user_id,
+                        }
+                    ],
+                    "$slice": -HISTORY_LIMIT,
+                }
+            },
+        },
+    )
     try:
         from extensions.tasks import cwl_reminder
+
         if getattr(cwl_reminder, "mongo_client", None) is mongo:
             await cwl_reminder.sync_campaign_schedule(guild_id, loaded["cycle"])
     except Exception as exc:
