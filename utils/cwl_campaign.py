@@ -1185,6 +1185,120 @@ def _catchup_row_scope(row):
         raise ValueError("Invalid catch-up protocol")
 
 
+STAFF_SEND_BUSY_REASON = "Not sent: another send was running. Send again."
+
+
+def _staff_request_scope(row):
+    variants = row.get("variants")
+    request_id = row.get("staff_request_id")
+    if (
+        not isinstance(variants, list) or len(variants) != 1
+        or not isinstance(request_id, str)
+        or not re.fullmatch(r"[a-f0-9]{32}", request_id)
+        or row.get("kind") != "campaign"
+        or row.get("job_kind") not in {"manual", "retry"}
+        or row.get("status") not in {"scheduled", "ledger_pending"}
+        or not isinstance(row.get("message_id"), str)
+        or not isinstance(row.get("generation"), str)
+        or not isinstance(row.get("run_time"), str)
+        or row.get("failure_count", 0) != 0
+    ):
+        raise ValueError("Invalid queued staff request")
+    gid, cycle, message_key = row.get("guild_id"), row.get("cycle"), row.get("message_id")
+    _catchup_scope(gid, cycle, occurrence_id(cycle, message_key, variants[0]))
+    if row.get("_id") != f"cwl_campaign:{gid}:{cycle}:{message_key}:{variants[0]}":
+        raise ValueError("Queued staff request ownership changed")
+    return occurrence_id(cycle, message_key, variants[0])
+
+
+async def load_queued_staff_job(mongo, guild_id, cycle, message_key, variant, generation, request_id):
+    _catchup_scope(guild_id, cycle, occurrence_id(cycle, message_key, variant))
+    row = await mongo.cwl_pending_reminders.find_one({
+        "_id": f"cwl_campaign:{guild_id}:{cycle}:{message_key}:{variant}",
+        "kind": "campaign", "job_kind": {"$in": ["manual", "retry"]},
+        "generation": generation, "variants": [variant],
+        "staff_request_id": request_id,
+        "status": {"$in": ["scheduled", "ledger_pending"]},
+    })
+    if row is not None:
+        _staff_request_scope(row)
+    return row
+
+
+def is_staff_not_sent_receipt(row):
+    receipt = row.get("receipt")
+    variants = row.get("variants")
+    return (
+        row.get("status") == "ledger_pending"
+        and isinstance(receipt, dict)
+        and receipt.get("staff_request_id") == row.get("staff_request_id")
+        and receipt.get("status") == "failed"
+        and receipt.get("delivery_attempted") is False
+        and receipt.get("reason") == STAFF_SEND_BUSY_REASON
+        and isinstance(variants, list) and len(variants) == 1
+        and receipt.get("message_key") == row.get("message_id")
+        and receipt.get("variant") == variants[0]
+        and receipt.get("occurrence_id") == occurrence_id(
+            row.get("cycle"), row.get("message_id"), variants[0]
+        )
+    )
+
+
+async def record_staff_not_sent(mongo, row):
+    """Finish one known-no-POST staff outcome; never release another send."""
+    oid = _staff_request_scope(row)
+    gid, cycle, request_id = row["guild_id"], row["cycle"], row["staff_request_id"]
+    identity = {
+        "_id": row["_id"], "kind": "campaign", "job_kind": row["job_kind"],
+        "generation": row["generation"], "staff_request_id": request_id,
+        "run_time": row["run_time"], "variants": row["variants"],
+    }
+    if row["status"] == "scheduled":
+        receipt = {
+            "occurrence_id": oid, "message_key": row["message_id"],
+            "variant": row["variants"][0], "status": "failed",
+            "reason": STAFF_SEND_BUSY_REASON, "at": _utcnow(),
+            "staff_request_id": request_id, "delivery_attempted": False,
+        }
+        result = await mongo.cwl_pending_reminders.update_one(
+            {**identity, "status": "scheduled"},
+            {"$set": {"status": "ledger_pending", "receipt": receipt}},
+        )
+        if not getattr(result, "matched_count", 0):
+            return False
+    else:
+        if not is_staff_not_sent_receipt(row):
+            raise ValueError("Queued staff outcome needs review")
+        receipt = copy.deepcopy(row["receipt"])
+    recorded = False
+    try:
+        result = await mongo.bot_config.update_one(
+            {"_id": cycle_id(gid, cycle), "staff_not_sent_requests": {"$ne": request_id},
+             "sent_occurrences": {"$ne": oid}},
+            {
+                "$setOnInsert": {"kind": "cwl_campaign_cycle", "guild_id": int(gid), "cycle": cycle, "revision": 0},
+                "$push": {
+                    "deliveries": {"$each": [receipt], "$slice": -HISTORY_LIMIT},
+                    "staff_not_sent_requests": {"$each": [request_id], "$slice": -HISTORY_LIMIT},
+                },
+            },
+            upsert=True,
+        )
+        recorded = bool(getattr(result, "matched_count", 0) or getattr(result, "upserted_id", None))
+    except DuplicateKeyError:
+        pass
+    if not recorded:
+        current = await mongo.bot_config.find_one(
+            {"_id": cycle_id(gid, cycle)}, {"staff_not_sent_requests": 1, "sent_occurrences": 1}
+        ) or {}
+        if request_id not in current.get("staff_not_sent_requests", ()) and oid not in current.get("sent_occurrences", ()):
+            raise RuntimeError("Staff not-sent outcome was not recorded")
+    await mongo.cwl_pending_reminders.delete_one({
+        **identity, "status": "ledger_pending", "receipt.staff_request_id": request_id,
+    })
+    return True
+
+
 async def catchup_state(mongo, guild_id: int, cycle: str) -> dict:
     """Indexed, bounded state needed for a startup catch-up decision."""
     row = await mongo.bot_config.find_one(

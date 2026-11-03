@@ -397,8 +397,14 @@ def _add_campaign_job(
     generation: str,
     *,
     catchup_due_at: str | None = None,
+    staff_request_id: str | None = None,
 ) -> None:
-    options = {"kwargs": {"catchup_due_at": catchup_due_at}} if catchup_due_at else {}
+    kwargs = {}
+    if catchup_due_at:
+        kwargs["catchup_due_at"] = catchup_due_at
+    if staff_request_id:
+        kwargs["staff_request_id"] = staff_request_id
+    options = {"kwargs": kwargs} if kwargs else {}
     scheduler.add_job(
         send_campaign_message,
         trigger=DateTrigger(run_date=run_time, timezone=DEFAULT_TIMEZONE),
@@ -421,8 +427,13 @@ async def _persist_campaign_job(
     *,
     failure_count: int = 0,
     job_kind: str = "scheduled",
+    staff_request_id: str | None = None,
 ) -> None:
     now = pendulum.now("UTC").isoformat()
+    staff_fields = {"staff_request_id": staff_request_id} if staff_request_id else {}
+    obsolete = {"catchup": ""}
+    if not staff_request_id:
+        obsolete["staff_request_id"] = ""
     await mongo_client.cwl_pending_reminders.update_one(
         {"_id": job_id},
         {
@@ -439,9 +450,10 @@ async def _persist_campaign_job(
                 "job_kind": job_kind,
                 "status": "scheduled",
                 "updated_at": now,
+                **staff_fields,
             },
             "$setOnInsert": {"created_at": now},
-            "$unset": {"catchup": ""},
+            "$unset": obsolete,
         },
         upsert=True,
     )
@@ -633,10 +645,13 @@ async def _claim_campaign_occurrence(
     generation: str,
     *,
     return_claim: bool = False,
+    blocked_detail: dict | None = None,
 ) -> bool | dict:
     """Claim one delivery; optionally return its identity for guarded release."""
     loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
     if occurrence in loaded.get("uncertain_occurrences", []):
+        if blocked_detail is not None:
+            blocked_detail["busy"] = True
         return False
     if occurrence in loaded.get("skipped", []) or occurrence in set(
         loaded.get("sent_occurrences", [])
@@ -659,6 +674,8 @@ async def _claim_campaign_occurrence(
         try:
             claimed_at = pendulum.parse(existing["at"])
             if claimed_at > now.subtract(minutes=CAMPAIGN_CLAIM_MINUTES):
+                if blocked_detail is not None:
+                    blocked_detail["busy"] = True
                 return False
         except (KeyError, TypeError, ValueError):
             pass
@@ -696,6 +713,8 @@ async def _claim_campaign_occurrence(
     )
     if claimed and return_claim:
         return {"at": now.isoformat(), "generation": generation}
+    if not claimed and blocked_detail is not None:
+        blocked_detail["busy"] = True
     return claimed
 
 
@@ -990,12 +1009,25 @@ async def send_campaign_message(
     *,
     manual: bool = False,
     catchup_due_at: str | None = None,
+    staff_request_id: str | None = None,
 ) -> bool:
     """Deliver one configured message with per-audience retry/idempotency."""
     if not bot_instance or not mongo_client:
         return False
     if catchup_due_at is not None:
         return await _send_catchup_message(guild_id, cycle, message_id, variants, generation, catchup_due_at)
+    staff_row = None
+    if staff_request_id and message_id != "roster" and variants and len(variants) == 1:
+        staff_row = await cwl_campaign.load_queued_staff_job(
+            mongo_client, guild_id, cycle, message_id, variants[0], generation,
+            staff_request_id,
+        )
+        if staff_row is None:
+            return False
+        if staff_row.get("status") == "ledger_pending":
+            if cwl_campaign.is_staff_not_sent_receipt(staff_row):
+                await cwl_campaign.record_staff_not_sent(mongo_client, staff_row)
+            return False
     loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
     current_generation = _campaign_generation(loaded)
     if generation is not None and generation != current_generation:
@@ -1046,9 +1078,17 @@ async def send_campaign_message(
             )
             continue
         occurrence = cwl_campaign.occurrence_id(cycle, message_id, variant)
+        blocked_detail = {}
+        claim_options = {"blocked_detail": blocked_detail} if staff_row else {}
         if not await _claim_campaign_occurrence(
-            guild_id, cycle, occurrence, current_generation
+            guild_id, cycle, occurrence, current_generation, **claim_options
         ):
+            if staff_row and blocked_detail.get("busy"):
+                await cwl_campaign.record_staff_not_sent(mongo_client, staff_row)
+                job = scheduler.get_job(staff_row["_id"])
+                if job and (getattr(job, "kwargs", None) or {}).get("staff_request_id") == staff_request_id:
+                    scheduler.remove_job(staff_row["_id"])
+                return False
             continue
         channel_id = int(item["destination_channel_id"])
         discord_message_id = None
@@ -1457,6 +1497,7 @@ async def queue_campaign_retry(
             "This reminder is no longer scheduled or signups have closed."
         )
     job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
+    staff_request_id = uuid.uuid4().hex if message_id != "roster" else None
     await _persist_campaign_job(
         job_id,
         run_time,
@@ -1466,9 +1507,11 @@ async def queue_campaign_retry(
         [variant],
         generation,
         job_kind="retry",
+        staff_request_id=staff_request_id,
     )
     _add_campaign_job(
-        job_id, run_time, guild_id, cycle, message_id, [variant], generation
+        job_id, run_time, guild_id, cycle, message_id, [variant], generation,
+        staff_request_id=staff_request_id,
     )
 
 
@@ -1485,6 +1528,7 @@ async def queue_manual_campaign_occurrence(
     job_ids = []
     for variant in variants:
         job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
+        staff_request_id = uuid.uuid4().hex if message_id != "roster" else None
         await _persist_campaign_job(
             job_id,
             run_time,
@@ -1494,6 +1538,7 @@ async def queue_manual_campaign_occurrence(
             [variant],
             generation,
             job_kind="manual",
+            staff_request_id=staff_request_id,
         )
         _add_campaign_job(
             job_id,
@@ -1503,6 +1548,7 @@ async def queue_manual_campaign_occurrence(
             message_id,
             [variant],
             generation,
+            staff_request_id=staff_request_id,
         )
         job_ids.append(job_id)
     return ",".join(job_ids)
@@ -2040,6 +2086,12 @@ async def restore_pending_reminders():
                     reminder.get("receipt"), dict
                 ):
                     receipt = reminder["receipt"]
+                    if reminder.get("staff_request_id") and receipt.get("status") != "sent":
+                        if not cwl_campaign.is_staff_not_sent_receipt(reminder):
+                            raise ValueError("Queued staff outcome needs review")
+                        await cwl_campaign.record_staff_not_sent(mongo_client, reminder)
+                        restored_count += 1
+                        continue
                     if receipt.get("late") and message_id != "roster":
                         try:
                             await cwl_campaign.record_catchup_delivery(mongo_client, guild_id, cycle, receipt)
@@ -2105,6 +2157,13 @@ async def restore_pending_reminders():
                         {"_id": reminder_id}
                     )
                     continue
+                staff_request_id = None
+                if (
+                    message_id != "roster"
+                    and reminder.get("job_kind") in {"manual", "retry"}
+                    and not reminder.get("failure_count", 0)
+                ):
+                    staff_request_id = reminder.get("staff_request_id") or uuid.uuid4().hex
                 if run_time <= now:
                     if run_time < now.subtract(days=PENDING_EXPIRY_DAYS):
                         await mongo_client.cwl_pending_reminders.delete_one(
@@ -2123,6 +2182,13 @@ async def restore_pending_reminders():
                         generation,
                         failure_count=int(reminder.get("failure_count", 0)),
                         job_kind=reminder.get("job_kind", "scheduled"),
+                        staff_request_id=staff_request_id,
+                    )
+                elif staff_request_id and not reminder.get("staff_request_id"):
+                    await _persist_campaign_job(
+                        reminder_id, run_time, guild_id, cycle, message_id, variants,
+                        generation, failure_count=int(reminder.get("failure_count", 0)),
+                        job_kind=reminder["job_kind"], staff_request_id=staff_request_id,
                     )
                 _add_campaign_job(
                     reminder_id,
@@ -2132,6 +2198,7 @@ async def restore_pending_reminders():
                     message_id,
                     variants,
                     generation,
+                    staff_request_id=staff_request_id,
                 )
                 restored_count += 1
             except Exception as exc:

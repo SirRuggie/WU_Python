@@ -193,3 +193,76 @@ def test_real_mongo_combined_legacy_report_is_once_and_cleans_only_the_observed_
             await client.close()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("mode", ["duplicate", "uncertain", "lost_ack", "already_sent", "newer_request"])
+def test_real_mongo_staff_not_sent_is_one_owned_receipt_without_clearing_other_send(mode):
+    async def run():
+        client = AsyncMongoClient("mongodb://127.0.0.1:27171", serverSelectionTimeoutMS=2000, timeoutMS=5000)
+        db = client["catchup_144_test"]
+        prefix = "busy_" + uuid4().hex
+        config, pending = db[prefix + "_config"], db[prefix + "_pending"]
+        mongo = SimpleNamespace(bot_config=config, cwl_pending_reminders=pending)
+        gid = 644963518025826319
+        oid = campaign.occurrence_id(CYCLE, "signup", "main")
+        row = {
+            "_id": f"cwl_campaign:{gid}:{CYCLE}:signup:main", "kind": "campaign",
+            "guild_id": gid, "cycle": CYCLE, "message_id": "signup", "variants": ["main"],
+            "generation": "1:0", "job_kind": "manual", "status": "scheduled",
+            "run_time": "2026-11-20T12:00:02-05:00", "failure_count": 0,
+            "staff_request_id": "a" * 32,
+        }
+        core = {
+            "_id": campaign.cycle_id(gid, CYCLE), "campaign": {"paused": False},
+            "delivery_claims": {oid: {"at": "2026-11-20T17:00:00Z", "generation": "1:0"}},
+            "uncertain_occurrences": [oid] if mode == "uncertain" else [],
+        }
+        if mode == "already_sent":
+            core.update(sent_occurrences=[oid], deliveries=[{"occurrence_id": oid, "status": "sent"}])
+        replacement = {**row, "staff_request_id": "b" * 32} if mode == "newer_request" else row
+        try:
+            await config.insert_one(deepcopy(core))
+            await pending.insert_one(deepcopy(replacement))
+            if mode == "lost_ack":
+                class LostAck:
+                    async def update_one(self, query, update, **kwargs):
+                        result = await config.update_one(query, update, **kwargs)
+                        if "staff_not_sent_requests" in query:
+                            raise OSError("Fixture history write applied, acknowledgement lost")
+                        return result
+                    def __getattr__(self, name):
+                        return getattr(config, name)
+                with pytest.raises(OSError):
+                    await campaign.record_staff_not_sent(SimpleNamespace(bot_config=LostAck(), cwl_pending_reminders=pending), row)
+                terminal = await pending.find_one({"_id": row["_id"]})
+                assert campaign.is_staff_not_sent_receipt(terminal)
+                assert await campaign.record_staff_not_sent(mongo, terminal)
+            elif mode == "duplicate":
+                await asyncio.gather(
+                    campaign.record_staff_not_sent(mongo, deepcopy(row)),
+                    campaign.record_staff_not_sent(mongo, deepcopy(row)),
+                )
+            else:
+                await campaign.record_staff_not_sent(mongo, row)
+            current = await config.find_one({"_id": core["_id"]})
+            assert current["campaign"] == core["campaign"]
+            assert current["delivery_claims"] == core["delivery_claims"]
+            assert current["uncertain_occurrences"] == core["uncertain_occurrences"]
+            if mode == "newer_request":
+                assert await pending.find_one({"_id": row["_id"]}) == replacement
+                assert not current.get("deliveries")
+            else:
+                assert await pending.find_one({"_id": row["_id"]}) is None
+                assert len(current["deliveries"]) == 1
+                if mode == "already_sent":
+                    assert current["deliveries"][0]["status"] == "sent"
+                else:
+                    receipt = current["deliveries"][0]
+                    assert receipt["reason"] == "Not sent: another send was running. Send again."
+                    assert receipt["delivery_attempted"] is False
+        finally:
+            await config.drop()
+            await pending.drop()
+            await client.close()
+
+    asyncio.run(run())
