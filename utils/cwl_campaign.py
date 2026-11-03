@@ -1689,6 +1689,469 @@ async def record_delivery(mongo, guild_id: int, cycle: str, entry: dict):
     await mongo.bot_config.update_one({"_id": cycle_id(guild_id, cycle)}, update, upsert=True)
 
 
+def _catchup_scope(guild_id, cycle, occurrence):
+    parts = str(occurrence).split("|")
+    if (
+        not isinstance(guild_id, int) or isinstance(guild_id, bool) or guild_id <= 0
+        or not isinstance(cycle, str) or not _CYCLE_RE.fullmatch(cycle)
+        or len(parts) != 3 or parts[0] != cycle or parts[2] not in AUDIENCES
+        or parts[1] == "roster" or not re.fullmatch(r"[A-Za-z0-9:_-]{1,64}", parts[1])
+    ):
+        raise ValueError("Invalid catch-up scope")
+    return parts[1], parts[2]
+
+
+def _catchup_row_scope(row):
+    variants = row.get("variants")
+    if not isinstance(variants, list) or len(variants) != 1:
+        raise ValueError("Invalid catch-up audience")
+    gid, cycle, message_id = row.get("guild_id"), row.get("cycle"), row.get("message_id")
+    _catchup_scope(gid, cycle, occurrence_id(cycle, message_id, variants[0]))
+    if (
+        row.get("kind") != "campaign"
+        or row.get("job_kind", "scheduled") not in {"scheduled", "catchup"}
+        or row.get("status", "scheduled") != "scheduled"
+        or not isinstance(message_id, str)
+        or not isinstance(row.get("failure_count", 0), int)
+        or isinstance(row.get("failure_count", 0), bool)
+        or row.get("failure_count", 0) != 0
+        or row.get("_id") != f"cwl_campaign:{gid}:{cycle}:{message_id}:{variants[0]}"
+    ):
+        raise ValueError("Invalid persisted catch-up job")
+    if row.get("job_kind") == "catchup" and (
+        not isinstance(row.get("catchup"), dict)
+        or row["catchup"].get("protocol") != 1
+        or isinstance(row["catchup"].get("protocol"), bool)
+        or not isinstance(row["catchup"].get("original_due_at"), str)
+    ):
+        raise ValueError("Invalid catch-up protocol")
+
+
+STAFF_SEND_BUSY_REASON = "Not sent: another send was running. Send again."
+
+
+def _staff_request_scope(row):
+    variants = row.get("variants")
+    request_id = row.get("staff_request_id")
+    if (
+        not isinstance(variants, list) or len(variants) != 1
+        or not isinstance(request_id, str)
+        or not re.fullmatch(r"[a-f0-9]{32}", request_id)
+        or row.get("kind") != "campaign"
+        or row.get("job_kind") not in {"manual", "retry"}
+        or row.get("status") not in {"scheduled", "ledger_pending"}
+        or not isinstance(row.get("message_id"), str)
+        or not isinstance(row.get("generation"), str)
+        or not isinstance(row.get("run_time"), str)
+        or row.get("failure_count", 0) != 0
+    ):
+        raise ValueError("Invalid queued staff request")
+    gid, cycle, message_key = row.get("guild_id"), row.get("cycle"), row.get("message_id")
+    _catchup_scope(gid, cycle, occurrence_id(cycle, message_key, variants[0]))
+    if row.get("_id") != f"cwl_campaign:{gid}:{cycle}:{message_key}:{variants[0]}":
+        raise ValueError("Queued staff request ownership changed")
+    return occurrence_id(cycle, message_key, variants[0])
+
+
+async def load_queued_staff_job(mongo, guild_id, cycle, message_key, variant, generation, request_id):
+    _catchup_scope(guild_id, cycle, occurrence_id(cycle, message_key, variant))
+    row = await mongo.cwl_pending_reminders.find_one({
+        "_id": f"cwl_campaign:{guild_id}:{cycle}:{message_key}:{variant}",
+        "kind": "campaign", "job_kind": {"$in": ["manual", "retry"]},
+        "generation": generation, "variants": [variant],
+        "staff_request_id": request_id,
+        "status": {"$in": ["scheduled", "ledger_pending"]},
+    })
+    if row is not None:
+        _staff_request_scope(row)
+    return row
+
+
+def is_staff_not_sent_receipt(row):
+    receipt = row.get("receipt")
+    variants = row.get("variants")
+    return (
+        row.get("status") == "ledger_pending"
+        and isinstance(receipt, dict)
+        and receipt.get("staff_request_id") == row.get("staff_request_id")
+        and receipt.get("status") == "failed"
+        and receipt.get("delivery_attempted") is False
+        and receipt.get("reason") == STAFF_SEND_BUSY_REASON
+        and isinstance(variants, list) and len(variants) == 1
+        and receipt.get("message_key") == row.get("message_id")
+        and receipt.get("variant") == variants[0]
+        and receipt.get("occurrence_id") == occurrence_id(
+            row.get("cycle"), row.get("message_id"), variants[0]
+        )
+    )
+
+
+async def record_staff_not_sent(mongo, row):
+    """Finish one known-no-POST staff outcome; never release another send."""
+    oid = _staff_request_scope(row)
+    gid, cycle, request_id = row["guild_id"], row["cycle"], row["staff_request_id"]
+    identity = {
+        "_id": row["_id"], "kind": "campaign", "job_kind": row["job_kind"],
+        "generation": row["generation"], "staff_request_id": request_id,
+        "run_time": row["run_time"], "variants": row["variants"],
+    }
+    if row["status"] == "scheduled":
+        receipt = {
+            "occurrence_id": oid, "message_key": row["message_id"],
+            "variant": row["variants"][0], "status": "failed",
+            "reason": STAFF_SEND_BUSY_REASON, "at": _utcnow(),
+            "staff_request_id": request_id, "delivery_attempted": False,
+        }
+        result = await mongo.cwl_pending_reminders.update_one(
+            {**identity, "status": "scheduled"},
+            {"$set": {"status": "ledger_pending", "receipt": receipt}},
+        )
+        if not getattr(result, "matched_count", 0):
+            return False
+    else:
+        if not is_staff_not_sent_receipt(row):
+            raise ValueError("Queued staff outcome needs review")
+        receipt = copy.deepcopy(row["receipt"])
+    recorded = False
+    try:
+        result = await mongo.bot_config.update_one(
+            {"_id": cycle_id(gid, cycle), "staff_not_sent_requests": {"$ne": request_id},
+             "sent_occurrences": {"$ne": oid}},
+            {
+                "$setOnInsert": {"kind": "cwl_campaign_cycle", "guild_id": int(gid), "cycle": cycle, "revision": 0},
+                "$push": {
+                    "deliveries": {"$each": [receipt], "$slice": -HISTORY_LIMIT},
+                    "staff_not_sent_requests": {"$each": [request_id], "$slice": -HISTORY_LIMIT},
+                },
+            },
+            upsert=True,
+        )
+        recorded = bool(getattr(result, "matched_count", 0) or getattr(result, "upserted_id", None))
+    except DuplicateKeyError:
+        pass
+    if not recorded:
+        current = await mongo.bot_config.find_one(
+            {"_id": cycle_id(gid, cycle)}, {"staff_not_sent_requests": 1, "sent_occurrences": 1}
+        ) or {}
+        if request_id not in current.get("staff_not_sent_requests", ()) and oid not in current.get("sent_occurrences", ()):
+            raise RuntimeError("Staff not-sent outcome was not recorded")
+    await mongo.cwl_pending_reminders.delete_one({
+        **identity, "status": "ledger_pending", "receipt.staff_request_id": request_id,
+    })
+    return True
+
+
+async def catchup_state(mongo, guild_id: int, cycle: str) -> dict:
+    """Indexed, bounded state needed for a startup catch-up decision."""
+    row = await mongo.bot_config.find_one(
+        {"_id": cycle_id(guild_id, cycle)},
+        {"catchup_reported_occurrences": 1, "delivery_claims": 1, "uncertain_occurrences": 1, "sent_occurrences": 1},
+    ) or {}
+    return {
+        "reported": list(row.get("catchup_reported_occurrences", ())),
+        "claims": copy.deepcopy(row.get("delivery_claims", {})),
+        "uncertain": list(row.get("uncertain_occurrences", ())),
+        "sent": list(row.get("sent_occurrences", ())),
+    }
+
+
+async def record_legacy_catchup_skip(mongo, row: dict, original_due_at: str) -> bool:
+    """Report one combined legacy job without consuming either pool occurrence."""
+    if (
+        not isinstance(original_due_at, str)
+        or not re.search(r"(?:Z|[+-][0-9]{2}:[0-9]{2})$", original_due_at)
+        or pendulum.parse(original_due_at) != pendulum.parse(row.get("run_time"))
+    ):
+        raise ValueError("Legacy reminder time changed")
+    variants = row.get("variants")
+    if (
+        not isinstance(variants, list)
+        or len(variants) != 2
+        or any(not isinstance(value, str) for value in variants)
+        or set(variants) != set(AUDIENCES)
+    ):
+        raise ValueError("Invalid combined reminder audiences")
+    gid, cycle, message_key = row.get("guild_id"), row.get("cycle"), row.get("message_id")
+    base_id = f"cwl_campaign:{gid}:{cycle}:{message_key}"
+    _catchup_row_scope({
+        **row, "_id": f"{base_id}:{variants[0]}", "variants": [variants[0]],
+    })
+    if (
+        row.get("_id") not in {base_id, *(f"{base_id}:{value}" for value in variants)}
+        or row.get("kind") != "campaign"
+        or row.get("job_kind", "scheduled") != "scheduled"
+        or row.get("status", "scheduled") != "scheduled"
+    ):
+        raise ValueError("Invalid combined legacy reminder")
+    query = {
+        "_id": cycle_id(gid, cycle),
+        "catchup_legacy_reported_jobs": {"$ne": row["_id"]},
+    }
+    entry = {
+        "message_key": message_key,
+        "status": "skipped",
+        "reason": "Skipped: older reminder listed Main and Lazy together; review settings",
+        "at": _utcnow(),
+        "original_due_at": original_due_at,
+        "revision": row.get("generation"),
+    }
+    recorded = False
+    try:
+        result = await mongo.bot_config.update_one(
+            query,
+            {
+                "$setOnInsert": {
+                    "kind": "cwl_campaign_cycle", "guild_id": int(gid),
+                    "cycle": cycle, "revision": 0,
+                },
+                "$addToSet": {"catchup_legacy_reported_jobs": row["_id"]},
+                "$push": {"deliveries": {"$each": [entry], "$slice": -HISTORY_LIMIT}},
+            },
+            upsert=True,
+        )
+        recorded = bool(getattr(result, "matched_count", 0) or getattr(result, "upserted_id", None))
+    except DuplicateKeyError:
+        pass
+    if not recorded:
+        current = await mongo.bot_config.find_one(
+            {"_id": cycle_id(gid, cycle)}, {"catchup_legacy_reported_jobs": 1}
+        ) or {}
+        if row["_id"] not in current.get("catchup_legacy_reported_jobs", ()):
+            raise RuntimeError("Legacy reminder decision was not recorded")
+    await mongo.cwl_pending_reminders.delete_one({
+        "_id": row["_id"], "kind": "campaign", "variants": variants,
+        "run_time": row.get("run_time"),
+        "job_kind": row.get("job_kind", {"$exists": False}),
+        "status": row.get("status", {"$exists": False}),
+        "generation": row.get("generation", {"$exists": False}),
+    })
+    return recorded
+
+
+async def prepare_catchup_job(mongo, row: dict, due, now) -> bool:
+    """CAS one existing scheduled row; never derive or insert a missing job."""
+    _catchup_row_scope(row)
+    query = {
+        "_id": row["_id"],
+        "kind": "campaign",
+        "generation": row.get("generation"),
+        "run_time": row.get("run_time"),
+        "job_kind": row.get("job_kind", {"$exists": False}),
+        "status": row.get("status", {"$exists": False}),
+    }
+    result = await mongo.cwl_pending_reminders.update_one(
+        query,
+        {"$set": {
+            "job_kind": "catchup",
+            "status": "scheduled",
+            "run_time": now.isoformat(),
+            "catchup": {"protocol": 1, "original_due_at": due.isoformat()},
+            "updated_at": _utcnow(),
+        }},
+    )
+    return bool(getattr(result, "matched_count", 0))
+
+
+async def delete_catchup_job(mongo, row: dict) -> None:
+    """Delete only the observed job or confirmed receipt, never a replacement."""
+    recovering = row.get("status") == "ledger_pending"
+    if recovering:
+        receipt = row.get("receipt")
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("status") != "sent"
+            or receipt.get("late") is not True
+        ):
+            raise ValueError("Invalid late receipt recovery")
+        _catchup_row_scope({**row, "status": "scheduled"})
+    else:
+        _catchup_row_scope(row)
+    query = {
+        "_id": row["_id"], "kind": "campaign",
+        "generation": row.get("generation"),
+        "job_kind": row.get("job_kind", {"$exists": False}),
+        "status": row.get("status", {"$exists": False}),
+    }
+    if recovering:
+        query["receipt.message_id"] = row["receipt"].get("message_id")
+    if row.get("job_kind") == "catchup":
+        query["catchup.original_due_at"] = row["catchup"]["original_due_at"]
+    else:
+        query["run_time"] = row.get("run_time")
+    await mongo.cwl_pending_reminders.delete_one(query)
+
+
+async def record_catchup_decision(
+    mongo, guild_id: int, cycle: str, entry: dict
+) -> bool:
+    """One durable catch-up report; do not consume a future ordinary send."""
+    oid = entry["occurrence_id"]
+    message_key, variant = _catchup_scope(guild_id, cycle, oid)
+    if entry.get("message_key") != message_key or entry.get("variant") != variant:
+        raise ValueError("Catch-up receipt scope changed")
+    status = entry["status"]
+    if status not in {"skipped", "uncertain", "failed"}:
+        raise ValueError("Invalid catch-up decision")
+    query = {
+        "_id": cycle_id(guild_id, cycle),
+        "catchup_reported_occurrences": {"$ne": oid},
+        "sent_occurrences": {"$ne": oid},
+    }
+    if status != "uncertain":
+        query["uncertain_occurrences"] = {"$ne": oid}
+    item = copy.deepcopy(entry)
+    item.setdefault("at", _utcnow())
+    add = {"catchup_reported_occurrences": oid}
+    if status == "uncertain":
+        add["uncertain_occurrences"] = oid
+    try:
+        result = await mongo.bot_config.update_one(
+            query,
+            {
+                "$setOnInsert": {
+                    "kind": "cwl_campaign_cycle", "guild_id": int(guild_id),
+                    "cycle": cycle, "revision": 0,
+                },
+                "$addToSet": add,
+                "$push": {"deliveries": {"$each": [item], "$slice": -HISTORY_LIMIT}},
+            },
+            upsert=True,
+        )
+    except DuplicateKeyError:
+        return False
+    return bool(getattr(result, "matched_count", 0) or getattr(result, "upserted_id", None))
+
+
+async def begin_catchup_attempt(
+    mongo, *, guild_id: int, cycle: str, occurrence: str, generation: str,
+    job_id: str, original_due_at: str,
+) -> bool:
+    """Reserve uncertainty durably before entering Discord's POST boundary."""
+    message_key, variant = _catchup_scope(guild_id, cycle, occurrence)
+    if job_id != f"cwl_campaign:{guild_id}:{cycle}:{message_key}:{variant}":
+        raise ValueError("Catch-up job scope changed")
+    pending = await mongo.cwl_pending_reminders.find_one({
+        "_id": job_id, "kind": "campaign", "job_kind": "catchup",
+        "generation": generation, "catchup.original_due_at": original_due_at,
+        "catchup.protocol": 1, "status": "scheduled",
+    }, {"_id": 1})
+    if pending is None:
+        return False
+    key = occurrence.replace(".", "_")
+    result = await mongo.bot_config.update_one(
+        {
+            "_id": cycle_id(guild_id, cycle),
+            f"delivery_claims.{key}.generation": generation,
+            "sent_occurrences": {"$ne": occurrence},
+            "uncertain_occurrences": {"$ne": occurrence},
+            "skipped": {"$ne": occurrence},
+            "catchup_reported_occurrences": {"$ne": occurrence},
+        },
+        {"$addToSet": {"uncertain_occurrences": occurrence}},
+    )
+    return bool(getattr(result, "matched_count", 0))
+
+
+async def finish_catchup_attempt(mongo, guild_id: int, cycle: str, occurrence: str):
+    """Only a confirmed receipt (or known no-POST path) may clear this marker."""
+    _catchup_scope(guild_id, cycle, occurrence)
+    await mongo.bot_config.update_one(
+        {"_id": cycle_id(guild_id, cycle)},
+        {"$pull": {"uncertain_occurrences": occurrence}},
+    )
+
+
+async def release_catchup_preflight_claim(mongo, guild_id, cycle, occurrence, claim):
+    """New-protocol absence of an attempt marker proves POST was not entered."""
+    _catchup_scope(guild_id, cycle, occurrence)
+    key = occurrence.replace(".", "_")
+    result = await mongo.bot_config.update_one(
+        {
+            "_id": cycle_id(guild_id, cycle),
+            f"delivery_claims.{key}.at": claim.get("at"),
+            f"delivery_claims.{key}.generation": claim.get("generation"),
+            "uncertain_occurrences": {"$ne": occurrence},
+            "sent_occurrences": {"$ne": occurrence},
+        },
+        {"$unset": {f"delivery_claims.{key}": ""}},
+    )
+    return bool(getattr(result, "matched_count", 0))
+
+
+async def persist_catchup_receipt(mongo, row: dict, receipt: dict, error_type: str):
+    """A confirmed post owns its occurrence until its receipt is durable."""
+    _catchup_row_scope(row)
+    if receipt.get("occurrence_id") != occurrence_id(row["cycle"], row["message_id"], row["variants"][0]) or receipt.get("status") != "sent":
+        raise ValueError("Invalid confirmed catch-up receipt")
+    result = await mongo.cwl_pending_reminders.update_one(
+        {
+            "_id": row["_id"],
+            "kind": "campaign",
+            "job_kind": "catchup",
+            "status": "scheduled",
+            "generation": row["generation"],
+            "catchup.protocol": 1,
+            "catchup.original_due_at": row["catchup"]["original_due_at"],
+        },
+        {"$set": {
+            "kind": "campaign", "job_kind": "catchup", "status": "ledger_pending",
+            "guild_id": row["guild_id"], "cycle": row["cycle"],
+            "message_id": row["message_id"], "variants": list(row["variants"]),
+            "generation": row["generation"], "catchup": copy.deepcopy(row["catchup"]),
+            "receipt": copy.deepcopy(receipt), "last_error_type": error_type,
+            "updated_at": _utcnow(),
+        }},
+    )
+    if not getattr(result, "matched_count", 0):
+        raise RuntimeError("Catch-up receipt owner changed")
+
+
+async def record_catchup_delivery(mongo, guild_id, cycle, receipt):
+    """Idempotently persist one confirmed late receipt, including lost ACKs."""
+    oid = receipt["occurrence_id"]
+    message_key, variant = _catchup_scope(guild_id, cycle, oid)
+    if (
+        receipt.get("status") != "sent" or receipt.get("late") is not True
+        or receipt.get("message_key") != message_key or receipt.get("variant") != variant
+        or not isinstance(receipt.get("at"), str)
+    ):
+        raise ValueError("Invalid confirmed late receipt")
+    try:
+        result = await mongo.bot_config.update_one(
+            {"_id": cycle_id(guild_id, cycle), "sent_occurrences": {"$ne": oid}},
+            {
+                "$setOnInsert": {"kind": "cwl_campaign_cycle", "guild_id": guild_id, "cycle": cycle, "revision": 0},
+                "$addToSet": {"sent_occurrences": oid},
+                "$push": {"deliveries": {"$each": [copy.deepcopy(receipt)], "$slice": -HISTORY_LIMIT}},
+            },
+            upsert=True,
+        )
+        if getattr(result, "matched_count", 0) or getattr(result, "upserted_id", None):
+            return True
+    except DuplicateKeyError:
+        pass
+    current = await mongo.bot_config.find_one(
+        {"_id": cycle_id(guild_id, cycle)}, {"deliveries": 1}
+    ) or {}
+    if any(
+        item.get("occurrence_id") == oid and item.get("status") == "sent"
+        and item.get("message_id") == receipt.get("message_id")
+        for item in current.get("deliveries", ())
+    ):
+        return False
+    raise ValueError("Confirmed reminder receipt needs review")
+
+
+async def load_catchup_job(mongo, guild_id, cycle, message_key, variant, generation, due_at):
+    _catchup_scope(guild_id, cycle, occurrence_id(cycle, message_key, variant))
+    return await mongo.cwl_pending_reminders.find_one({
+        "_id": f"cwl_campaign:{guild_id}:{cycle}:{message_key}:{variant}",
+        "kind": "campaign", "job_kind": "catchup", "generation": generation,
+        "catchup.original_due_at": due_at, "catchup.protocol": 1,
+        "status": "scheduled",
+    })
+
+
 def roster_delivery_nonce(guild_id: int, occurrence: str, deliveries: list[dict]) -> str:
     """Keep retries stable, but give an explicitly reopened receipt a fresh nonce."""
     import hashlib

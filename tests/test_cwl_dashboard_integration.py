@@ -121,13 +121,19 @@ class MemoryCollection:
             target = target.get(part, {})
         target.pop(parts[-1], None)
 
-    async def find_one(self, query):
+    async def find_one(self, query, projection=None):
         if "_id" in query:
             document = self.documents.get(query["_id"])
-            return deepcopy(document) if self._matches(document, query) else None
+            result = deepcopy(document) if self._matches(document, query) else None
+            if result is not None and projection:
+                result = {key: value for key, value in result.items() if projection.get(key, key == "_id")}
+            return result
         for document in self.documents.values():
             if self._matches(document, query):
-                return deepcopy(document)
+                result = deepcopy(document)
+                if projection:
+                    result = {key: value for key, value in result.items() if projection.get(key, key == "_id")}
+                return result
         return None
 
     def find(self, query=None, projection=None):
