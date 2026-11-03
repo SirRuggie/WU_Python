@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, createRef } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import SignupWalkthrough from "./SignupWalkthrough";
@@ -99,4 +100,20 @@ it("shows one member season line with local close time, no internal Draft chip",
   } finally {
     await act(async () => root.unmount());
   }
+});
+
+it("can leave the closed-state wording to the page heading without losing the season", () => {
+  const html = renderToStaticMarkup(
+    <MemberSeasonLine
+      season={{
+        id: 1,
+        label: "November 2026",
+        status: "draft",
+        signup_open: false,
+      }}
+      hideClosedStatus
+    />,
+  );
+  expect(html).toContain("November 2026");
+  expect(html).not.toContain("Signups closed");
 });

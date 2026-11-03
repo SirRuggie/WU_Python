@@ -167,3 +167,15 @@
     height: 16px;
   }
 }
+
+.roster-header-view-label {
+  display: none;
+}
+@media (max-width: 650px) {
+  .roster-header-view-label {
+    display: inline;
+  }
+  .roster-header-details-label {
+    display: none;
+  }
+}

@@ -1001,6 +1001,15 @@ export default function RosterWorkspace({
       )}
       <RosterHeader
         refreshInToolbar={mode === "assign"}
+        viewLabel={
+          mode === "compare"
+            ? "Compare clans"
+            : mode === "rules"
+              ? "Hosting clans"
+              : mode === "weights"
+                ? `Missing weights · ${globalMissingWeight}`
+                : "Accounts & signups"
+        }
         seasonId={seasonId}
         seasons={seasons}
         roster={roster}

@@ -456,18 +456,33 @@ immediately. Undo reviews one exact person with the expected post-change role
 set, so a later concurrent edit cannot be overwritten. Keep the current run state
 visible in a disclosure summary even when its detailed results are collapsed.
 
-### Build roster density checkpoint (121; review pending)
+### Compact CWL pages (121)
 
-Build keeps its title and season on one row. The count/status summary opens the
-existing roster tools and signup controls; those components stay mounted, so
-closing the summary does not discard an editor or start another read. Signup
-errors, visibility warnings, notices and active editors keep their controls
-visible even when the summary is closed. Publication changes and missing clan
-sizes remain visible action notices.
+Build keeps its title and season on one row. Its count/status disclosure names
+the current view on phones, such as **Accounts & signups**. The existing view
+buttons, including **Missing weights · N**, appear when it opens. Wide layouts
+keep those views directly visible; the separate **Signup & status** disclosure
+opens staff signup controls, publication status and count-filter actions. At
+360 and 1440, both closed summaries remain 46 pixels high. Components stay mounted,
+so closing a disclosure does not discard an editor or start another read.
+Signup errors, visibility warnings, notices and active editors remain visible.
+Publication changes and missing clan sizes remain visible action notices.
 
-At phone widths, the existing Accounts/Compare/Hosting/Missing weights controls
-are reached through **Tools**. Pool choices, Filters, sort and Refresh remain
-visible buttons, with Filters/sort/Refresh on one row and at least 44-pixel touch
-targets. Wide layouts keep the workspace views and pool choices side by side.
-The heading and tools scroll away with the page. This checkpoint does not change
-Declaration, member signup pages, Finalize or Announcements.
+Pool choices, Filters, sort and Refresh remain direct buttons. Filters, sort and
+Refresh share a row, with at least 44-pixel touch targets. The heading and tools
+scroll away with the page. Finalize and Announcements use the same title/season
+row and omit the repeated CWL eyebrow.
+
+Declaration's compact overview is followed directly by its clan list. Pings is
+a closed, keyboard-operable disclosure after the list, with its last confirmed
+ping in the summary. Errors, active sends and open reviews remain visible.
+Checking counts say **Checking… 3 of 10 clans confirmed ready**, distinguishing
+confirmed partial results from a final readiness fraction. The existing ping
+settings/history read still runs; opening the disclosure does not fetch or send
+a preview.
+
+My signups has one account list: the editable saved list. The status summary
+retains totals, assignment links, dates and read-failure warnings without
+repeating account names. Clan-change guidance appears once and only while
+changes are allowed. The closed Sign up page leaves **Signups closed** to its
+heading and keeps the season name and existing destinations.

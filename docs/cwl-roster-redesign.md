@@ -1207,48 +1207,93 @@ Investigate expected navigation failures and reporter noise separately. PR120
 changes no API/telemetry handling; review 475's exact diagnostic-route test
 exception applies only to that batch, and all earlier red traces are retained.
 
-## 121 — Build roster checkpoint; wait for review
+## 121 — Less on top
 
-Base: current main `440c2204` plus accepted PR188 `177e2f3`, locally integrated as
+Base: main `440c2204` plus accepted PR188 `177e2f3`, locally integrated as
 `65043174`. The only integration conflict was this document's append: all main
-bytes and the exact accepted PR188 append were retained after independent review.
-No runtime adaptation was needed.
+bytes and the exact accepted PR188 append were retained after independent
+review. No runtime adaptation was needed. This branch remains stacked on PR188
+and needs current-main integration after that dependency lands.
 
-Build now puts title/season together and counts/publication/signup status in one
-summary. Tools opens the existing counts, staff signup controls and, on phones,
-workspace views. Pool, Filters, sort and Refresh remain directly available.
-Signup errors/visibility warnings and active editors stay visible; publication
-changes and missing clan sizes remain action notices. The header is not sticky.
-No API calls changed (13 call ASTs across the three affected runtime components
-match the integration base).
+Build's title/season row and compact summary reached the mandatory checkpoint;
+Claude reviewed the narrow/wide screenshots and approved continuing in 493.
+The requested label corrections are included: phones show the current view,
+for example **Accounts & signups ▾**, with **Missing weights · N** kept among
+the view buttons. At desktop width those views remain directly visible, and
+**Signup & status** accurately names the other disclosure's contents: staff
+signup controls, publication status and count-filter actions. Closed summary
+height stays 46 px at 360 and 1440. Filters, sort, Refresh and pool choices remain direct;
+headers scroll away rather than sticking.
 
-The isolated 26-, 65- and 125-account SQLite fixtures passed at 320, 360, 390 and
-1440. At 360×800 the actual first clan card starts at 301 px; at 1440×1000 the
-first player starts at 497 px, for all three counts. These are production-shaped
-fixture measurements: the fixture-only `dev_fixture` banner is excluded through
-an explicitly labelled fixture config flag. No production controls or styles are
-hidden. The ordinary banner-inclusive preview adds 59 px: first clan card 360 px at
-360×800 and first player 556 px at 1440×1000. Both coordinate sets and
-screenshots are retained separately. Actionable warning states can push content
-lower and are preserved rather than suppressed to meet the targets.
+Declaration puts its clan list immediately after the compact overview and its
+controls. Declaration pings is closed after the list, with **Last pinged …** in
+its summary. A test receipt is labelled as a no-ping test, not a real ping.
+Errors, active work and an open send review keep the section visible. Settings
+and history retain their existing mount-time read; opening the section performs
+no preview request. Checking counts explicitly show partial confirmed results,
+including **Checking… 3 of 10 clans confirmed ready**; incomplete settled data
+remains unavailable rather than a final ready fraction.
 
-Checks so far: 1,625 frontend tests in 272 files, TypeScript/build; 12 browser
-count/width cases covering keyboard Filters/sort/pool/summary/Compare/Back to
-accounts/season/Refresh, 44-pixel toolbar controls, no horizontal overflow, header
-scroll-away, zero non-GET requests after fixture login and unchanged fixture
-state. Six additional normal/banner/alert review-URL cases pass: hidden signup
-visibility, signup changes and missing clan size remain visible with Tools
-closed. Narrow/wide screenshots were visually inspected. An initial full frontend
-run retained one obsolete `.roster-header-actions` test selector failure; the
-same disabled-refresh assertion now uses its accessible name, and the final full
-run passes. Initial sandbox fixture startup and Chrome's long UNIX socket path
-failures are retained; the final fixture runs disconnected on loopback and
-Chrome temp files use a short alias to workspace-owned storage. A separate
-review-URL fixture check initially lost its synthetic login when restoring its
-SQLite seed; the setup now signs in again after that restore. Product source
-was unchanged, and the final six-case check passes.
+My signups keeps the editable saved list and removes the repeated names from
+the status summary, preserving its totals, assignment links, dates and errors.
+The clan-assignment warning appears once only while changes are allowed.
+Closed Sign up has one **Signups closed** heading; the season line keeps its
+name. Finalize and Announcements match the title/season row without the eyebrow.
+The accepted Next destinations and permission/dirty guards are unchanged.
 
-This is **PROGRESS**, not READY. Wait for Claude's mandatory Build checkpoint
-response before finishing Build or starting the other 121 pages. Later work,
-final red-team review and release remain held. This is local fixture evidence;
-no production provider call, write, role action or deployment was performed.
+### Validation and limits
+
+- Full frontend: 1,635 passed in 273 files; TypeScript and frontend build pass.
+- Seven genuine mutants killed: repeated saved list, closed-season change
+  guidance, repeated closed status, forced-open pings, test receipt called a
+  live ping, an in-progress final readiness fraction, and lost signup attention.
+  Original files were restored and their hashes checked.
+- 66 local browser scenarios: 12 Build count/width cases, 36 Declaration/Finalize/
+  Announcements cases, 12 open/closed member cases, two explicit partial-check
+  cases and four browser Back/refresh cases. The final disclosure affordance was
+  rechecked in all 12 Declaration cases. Widths 320/360/390/1440 and 26/65/125
+  accounts are covered. The partial fixture has 125 accounts across ten clans,
+  three confirmed ready and seven checking; browser time is paused to retain
+  that synthetic pending state.
+- Build's actual first clan card is at 301 px at 360×800, and its first player
+  is at 497 px at 1440×1000, for all three account counts. These are
+  **production-shaped local samples**, never live measurements. Only the
+  development fixture banner is excluded using an explicit fixture config
+  flag; no production control, style or permission is hidden. With the normal
+  fixture banner, the corresponding coordinates are 360 px and 556 px. Warning
+  states intentionally push content lower rather than being suppressed.
+- Keyboard checks cover Filters, sort, pool, view/status summaries, season,
+  Refresh, Compare/Accounts, ping disclosure and member selection. Browser Back
+  and refresh retain Build's pool and active filter; deep links render each
+  page. Narrow/wide screenshots were visually inspected. Filter/sort/Refresh
+  targets stay at least 44 px and layouts have no horizontal overflow.
+- Browser runs record zero non-GET requests after fixture login, zero page
+  errors and unchanged checked fixture state. Ping/bridge/extras GET responses
+  in the layout fixture are synthetic; no live send, role, Discord delivery or
+  provider behavior is claimed. All 33 API-call ASTs across the ten affected
+  runtime modules match the integration base; no API method, payload, polling,
+  authorization or delivery rule was changed.
+
+Earlier failures are retained honestly in `.local` logs: an obsolete refresh
+selector, the test-only missing SSR import, four old assertions expecting the
+intentionally removed duplicate list, and browser harness path/summary scoping
+and readiness errors. Those saved-page tests now use the actual summary plus
+saved-list composition, preserving member/pool, stale-response, read-failure
+and remaining-action checks. One intermediate restricted browser runner
+accidentally executed zero cases; explicit 12/4-case assertions were added and
+the final required matrices pass. The first sandbox fixture startup and long
+Chrome UNIX socket path failures remain recorded; final fixtures are isolated
+loopback servers and temp/cache storage belongs to this workspace.
+
+Completion review retained the existing closed-season, permission, unsaved-edit
+and stale-response guards. Publication regressions exercise Cancel and stale
+revisions; saved-signup tests retain missing-link/read-failure and old-response
+checks; ping regressions distinguish review from send and protect unknown
+locations. New regressions cover disclosure errors, partial counts, duplicate
+lists and attention visibility. Dynamic names remain React text; no HTML or
+mention construction changed. Browser tests are read-only and mocked delivery
+tests are not evidence of a real Discord delivery.
+
+Release remains held for owner approval. No production read/write, provider
+probe, role action, merge, tag, restart or activation was performed by this task.
+122 has not started.

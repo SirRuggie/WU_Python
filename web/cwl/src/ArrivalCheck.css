@@ -277,3 +277,35 @@
     margin: 0;
   }
 }
+.declaration-overview {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.declaration-last-checked {
+  color: var(--roster-text-muted);
+  font-size: 12px;
+}
+.declaration-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.declaration-toolbar .roster-ui-input > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 650px) {
+  .declaration-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .declaration-toolbar > .declaration-pools {
+    grid-column: 1 / -1;
+  }
+}

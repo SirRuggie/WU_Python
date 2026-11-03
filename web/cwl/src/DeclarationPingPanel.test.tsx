@@ -338,3 +338,75 @@ it("blocks live preview and replaces the zero label while locations are pending 
   );
   expect(button("Ping 0 missing").disabled).toBe(true);
 });
+
+it("starts closed, exposes the last confirmed ping in its summary and never previews on open", async () => {
+  mock.api.mockResolvedValue({
+    ...state,
+    history: [
+      {
+        token: "b".repeat(32),
+        actor_id: "owner",
+        state: "done",
+        created_at: 1780000000,
+        count: 26,
+        chunks: 1,
+        posted: [{ chunk: 0, message_id: "456789012345678901" }],
+        attempting: null,
+        channel: state.channel,
+      },
+    ],
+  });
+  await mount();
+  const disclosure = host.querySelector<HTMLDetailsElement>(
+    ".declaration-ping-panel",
+  )!;
+  expect(disclosure.open).toBe(false);
+  expect(disclosure.querySelector("summary")?.textContent).toContain(
+    "Last pinged",
+  );
+  await act(async () => {
+    disclosure.open = true;
+    disclosure.dispatchEvent(new Event("toggle"));
+  });
+  expect(disclosure.open).toBe(true);
+  expect(mock.api.mock.calls.some((call) => call[1] === "POST")).toBe(false);
+});
+
+it("keeps a load error discoverable instead of hiding it in a closed section", async () => {
+  mock.api.mockRejectedValue(new Error("Settings unavailable"));
+  await mount();
+  const disclosure = host.querySelector<HTMLDetailsElement>(
+    ".declaration-ping-panel",
+  )!;
+  expect(disclosure.open).toBe(true);
+  expect(host.querySelector("[role=alert]")?.textContent).toContain(
+    "Settings unavailable",
+  );
+});
+
+it("does not claim a test receipt pinged real members", async () => {
+  mock.api.mockResolvedValue({
+    ...state,
+    history: [
+      {
+        test: true,
+        token: "c".repeat(32),
+        actor_id: "owner",
+        state: "done",
+        created_at: 1780000000,
+        count: 26,
+        chunks: 0,
+        posted: [],
+        attempting: null,
+        channel: state.channel,
+      },
+    ],
+  });
+  await mount();
+  expect(host.querySelector("summary")?.textContent).toContain(
+    "Last no-ping test",
+  );
+  expect(host.querySelector("summary")?.textContent).not.toContain(
+    "Last pinged",
+  );
+});

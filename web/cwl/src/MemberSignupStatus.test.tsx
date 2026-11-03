@@ -290,3 +290,15 @@ it("zero signups uses only the grey signup action, and hides it when closed", as
   expect(host.querySelector("button")).toBeNull();
   expect(host.textContent).toContain("Signups are closed.");
 });
+
+it("keeps saved-view status and links without repeating the editable account list", async () => {
+  await render({ savedView: true });
+  expect(
+    host.querySelector(".member-signup-success h2")?.textContent,
+  ).toContain("You're signed up");
+  expect(host.querySelectorAll(".member-signup-success li")).toHaveLength(0);
+  await render({ savedView: false });
+  expect(host.querySelectorAll(".member-signup-success li")).toHaveLength(
+    signups.length,
+  );
+});

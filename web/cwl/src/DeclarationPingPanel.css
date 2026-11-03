@@ -41,3 +41,28 @@
     width: 100%;
   }
 }
+.declaration-ping-panel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  min-height: 44px;
+  gap: 4px 12px;
+  cursor: pointer;
+}
+.declaration-ping-panel > summary > span {
+  color: var(--roster-text-muted);
+  font-size: 12px;
+}
+.declaration-ping-body {
+  padding-top: 8px;
+}
+.declaration-ping-panel > summary > strong {
+  margin-right: auto;
+}
+.declaration-ping-chevron::before {
+  content: "▸";
+}
+.declaration-ping-panel[open] > summary .declaration-ping-chevron::before {
+  content: "▾";
+}

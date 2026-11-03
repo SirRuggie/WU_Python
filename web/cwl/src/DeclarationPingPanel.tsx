@@ -30,6 +30,7 @@ export default function DeclarationPingPanel({
   const [error, setError] = useState("");
   const [review, setReview] = useState<PingReview>();
   const [closing, setClosing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [receipt, setReceipt] = useState<PingReceipt>();
   const [clock, setClock] = useState(Date.now() / 1000);
   const receiptStatus = useRef<HTMLParagraphElement>(null);
@@ -218,191 +219,234 @@ export default function DeclarationPingPanel({
     .sort((a, b) => b.created_at - a.created_at)[0];
   const senderProfiles = useDiscordIdentities(last ? [last.actor_id] : []);
   return (
-    <section
+    <details
+      open={
+        expanded ||
+        busy ||
+        !!error ||
+        !!active ||
+        !!review ||
+        closing ||
+        !!state?.test_running
+      }
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
       className="declaration-ping-panel"
       aria-label={`${pool === "main" ? "Main" : "Lazy"} declaration pings`}
     >
-      <strong>Declaration pings</strong>
-      {!!state?.lineup_changes?.length && (
-        <div role="status">
-          <p>
-            Publish these changed {pool === "main" ? "Main" : "Lazy"}{" "}
-            assignments before pinging:
-          </p>
-          <ul>
-            {state.lineup_changes.map((row) => (
-              <li key={row.tag}>
-                {row.name} ({row.tag}): {row.published_clan || "Unplaced"} →{" "}
-                {row.draft_clan || "Unplaced"}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {!state && !error && <p role="status">Loading ping settings…</p>}
-      {error && (
-        <p role="alert">
-          {error}{" "}
-          <button disabled={busy} onClick={() => void load()}>
-            Reload latest settings
-          </button>
-        </p>
-      )}
-      {state?.can_send ? (
-        <>
-          <div className="declaration-ping-controls">
-            <ChannelCombobox
-              nameOnly
-              label="Ping channel"
-              channels={state.channels}
-              value={channel}
-              disabled={busy || !!active || state.test_running}
-              onChange={choose}
-            />
-            {edited && (
-              <>
-                <button
-                  disabled={busy || !!active || state.test_running || !!reason}
-                  onClick={() => void save()}
-                >
-                  Save channel
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() => choose(state.channel?.id || "")}
-                >
-                  Discard
-                </button>
-              </>
-            )}
-            <button
-              disabled={
-                busy ||
-                edited ||
-                !!active ||
-                state.test_running ||
-                !!reason ||
-                waiting > 0 ||
-                !!state.lineup_changes?.length ||
-                missing === 0 ||
-                !!locationStatus
-              }
-              onClick={() => void prepare("live")}
-            >
-              {locationStatus
-                ? locationStatus === "checking"
-                  ? "Checking locations…"
-                  : "Locations unavailable"
-                : busy
-                  ? "Checking…"
-                  : state.history.length
-                    ? "Send again"
-                    : `Ping ${missing} missing`}
-            </button>
-          </div>
-          {reason && <p>{reason}</p>}
-          {edited && <p>Save or discard the channel change before pinging.</p>}
-          {waiting > 0 && (
-            <p role="status">
-              Next ping available in {Math.ceil(waiting / 60)} min.
+      <summary
+        onClick={(event) => {
+          if (
+            busy ||
+            error ||
+            active ||
+            review ||
+            closing ||
+            state?.test_running
+          )
+            event.preventDefault();
+        }}
+      >
+        <span className="declaration-ping-chevron" aria-hidden="true" />
+        <strong>Declaration pings</strong>
+        <span>
+          {last
+            ? `${last.test ? "Last no-ping test" : last.state === "done" ? "Last pinged" : `Last delivery ${last.state}`} ${new Date(last.created_at * 1000).toLocaleString()}`
+            : state
+              ? "No pings yet"
+              : "Checking last ping…"}
+        </span>
+      </summary>
+      <div className="declaration-ping-body">
+        {!!state?.lineup_changes?.length && (
+          <div role="status">
+            <p>
+              Publish these changed {pool === "main" ? "Main" : "Lazy"}{" "}
+              assignments before pinging:
             </p>
-          )}
-          <details>
-            <summary>No-ping test</summary>
-            <button
-              disabled={
-                busy || !!active || state.test_running || !state.test_channel.id
-              }
-              onClick={() => void prepare("test")}
-            >
-              Send test
+            <ul>
+              {state.lineup_changes.map((row) => (
+                <li key={row.tag}>
+                  {row.name} ({row.tag}): {row.published_clan || "Unplaced"} →{" "}
+                  {row.draft_clan || "Unplaced"}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {!state && !error && <p role="status">Loading ping settings…</p>}
+        {error && (
+          <p role="alert">
+            {error}{" "}
+            <button disabled={busy} onClick={() => void load()}>
+              Reload latest settings
             </button>
-            {!state.test_channel.id && (
-              <small>
-                Set the shared Test channel in Announcements for a no-ping test.
-              </small>
-            )}
-          </details>
-        </>
-      ) : (
-        state && (
-          <p>
-            Posting channel:{" "}
-            {state.channel ? `#${state.channel.name}` : "Not set"} · Read-only
-            access
           </p>
-        )
-      )}
-      {(active?.state === "sending" || state?.test_running) && (
-        <p role="status">Sending reviewed chunks… You may leave this page.</p>
-      )}
-      {state?.can_send && active?.state === "uncertain" && (
-        <button disabled={busy} onClick={() => setClosing(true)}>
-          Close interrupted receipt
-        </button>
-      )}
-      {closing && (
-        <ConfirmDialog
-          heading="Close interrupted receipt?"
-          text="This sends nothing. Inspect the confirmed message IDs and the unconfirmed chunk in Discord. No chunk will be retried; a deliberate new review is required after cooldown."
-          confirmLabel="Close receipt"
-          onCancel={() => setClosing(false)}
-          onConfirm={() => {
-            setClosing(false);
-            void mutate(async () => {
-              await api(`${base}/close-interrupted`, "POST", {
-                token: active!.token,
-                confirm: true,
+        )}
+        {state?.can_send ? (
+          <>
+            <div className="declaration-ping-controls">
+              <ChannelCombobox
+                nameOnly
+                label="Ping channel"
+                channels={state.channels}
+                value={channel}
+                disabled={busy || !!active || state.test_running}
+                onChange={choose}
+              />
+              {edited && (
+                <>
+                  <button
+                    disabled={
+                      busy || !!active || state.test_running || !!reason
+                    }
+                    onClick={() => void save()}
+                  >
+                    Save channel
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => choose(state.channel?.id || "")}
+                  >
+                    Discard
+                  </button>
+                </>
+              )}
+              <button
+                disabled={
+                  busy ||
+                  edited ||
+                  !!active ||
+                  state.test_running ||
+                  !!reason ||
+                  waiting > 0 ||
+                  !!state.lineup_changes?.length ||
+                  missing === 0 ||
+                  !!locationStatus
+                }
+                onClick={() => void prepare("live")}
+              >
+                {locationStatus
+                  ? locationStatus === "checking"
+                    ? "Checking locations…"
+                    : "Locations unavailable"
+                  : busy
+                    ? "Checking…"
+                    : state.history.length
+                      ? "Send again"
+                      : `Ping ${missing} missing`}
+              </button>
+            </div>
+            {reason && <p>{reason}</p>}
+            {edited && (
+              <p>Save or discard the channel change before pinging.</p>
+            )}
+            {waiting > 0 && (
+              <p role="status">
+                Next ping available in {Math.ceil(waiting / 60)} min.
+              </p>
+            )}
+            <details>
+              <summary>No-ping test</summary>
+              <button
+                disabled={
+                  busy ||
+                  !!active ||
+                  state.test_running ||
+                  !state.test_channel.id
+                }
+                onClick={() => void prepare("test")}
+              >
+                Send test
+              </button>
+              {!state.test_channel.id && (
+                <small>
+                  Set the shared Test channel in Announcements for a no-ping
+                  test.
+                </small>
+              )}
+            </details>
+          </>
+        ) : (
+          state && (
+            <p>
+              Posting channel:{" "}
+              {state.channel ? `#${state.channel.name}` : "Not set"} · Read-only
+              access
+            </p>
+          )
+        )}
+        {(active?.state === "sending" || state?.test_running) && (
+          <p role="status">Sending reviewed chunks… You may leave this page.</p>
+        )}
+        {state?.can_send && active?.state === "uncertain" && (
+          <button disabled={busy} onClick={() => setClosing(true)}>
+            Close interrupted receipt
+          </button>
+        )}
+        {closing && (
+          <ConfirmDialog
+            heading="Close interrupted receipt?"
+            text="This sends nothing. Inspect the confirmed message IDs and the unconfirmed chunk in Discord. No chunk will be retried; a deliberate new review is required after cooldown."
+            confirmLabel="Close receipt"
+            onCancel={() => setClosing(false)}
+            onConfirm={() => {
+              setClosing(false);
+              void mutate(async () => {
+                await api(`${base}/close-interrupted`, "POST", {
+                  token: active!.token,
+                  confirm: true,
+                });
+                setReceipt(undefined);
+                await load();
               });
-              setReceipt(undefined);
-              await load();
-            });
-          }}
-        />
-      )}
-      {last && (
-        <p ref={receiptStatus} tabIndex={-1} role="status">
-          {last.test
-            ? "No-ping test " + last.state
-            : last.state === "done"
-              ? "Last pinged"
-              : "Delivery " + last.state}{" "}
-          by{" "}
-          <DiscordIdentity
-            userId={last.actor_id}
-            displayName={last.actor_name}
-            resolvedMember={senderProfiles.members[last.actor_id] || null}
-            resolving={senderProfiles.loading}
-            variant="compact"
-          />{" "}
-          at {new Date(last.created_at * 1000).toLocaleString()} · {last.count}{" "}
-          players · {last.posted.length}/{last.chunks} chunks confirmed
-          {last.attempting !== null
-            ? ` · chunk ${last.attempting + 1} unconfirmed`
-            : ""}
-          . {last.error}
-        </p>
-      )}
-      {last && last.posted.length > 0 && (
-        <details>
-          <summary>Posted message IDs</summary>
-          <ul>
-            {last.posted.map((p) => (
-              <li key={p.message_id}>
-                Chunk {p.chunk + 1}: {p.message_id}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-      {review && (
-        <DeclarationPingReview
-          review={review}
-          busy={busy}
-          onCancel={() => setReview(undefined)}
-          onConfirm={() => void send()}
-        />
-      )}
-    </section>
+            }}
+          />
+        )}
+        {last && (
+          <p ref={receiptStatus} tabIndex={-1} role="status">
+            {last.test
+              ? "No-ping test " + last.state
+              : last.state === "done"
+                ? "Last pinged"
+                : "Delivery " + last.state}{" "}
+            by{" "}
+            <DiscordIdentity
+              userId={last.actor_id}
+              displayName={last.actor_name}
+              resolvedMember={senderProfiles.members[last.actor_id] || null}
+              resolving={senderProfiles.loading}
+              variant="compact"
+            />{" "}
+            at {new Date(last.created_at * 1000).toLocaleString()} ·{" "}
+            {last.count} players · {last.posted.length}/{last.chunks} chunks
+            confirmed
+            {last.attempting !== null
+              ? ` · chunk ${last.attempting + 1} unconfirmed`
+              : ""}
+            . {last.error}
+          </p>
+        )}
+        {last && last.posted.length > 0 && (
+          <details>
+            <summary>Posted message IDs</summary>
+            <ul>
+              {last.posted.map((p) => (
+                <li key={p.message_id}>
+                  Chunk {p.chunk + 1}: {p.message_id}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+        {review && (
+          <DeclarationPingReview
+            review={review}
+            busy={busy}
+            onCancel={() => setReview(undefined)}
+            onConfirm={() => void send()}
+          />
+        )}
+      </div>
+    </details>
   );
 }

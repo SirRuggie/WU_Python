@@ -906,3 +906,68 @@ it("hides unavailable Finalize and Results destinations rather than showing disa
   await render();
   expect(host.querySelector(".cwl-next-cue")).toBeNull();
 });
+
+it("puts the clan list immediately after its compact overview and before pings", async () => {
+  await render();
+  const overview = host.querySelector(".declaration-overview")!;
+  expect(
+    overview.nextElementSibling?.classList.contains("declaration-clan"),
+  ).toBe(true);
+  const clans = [...host.querySelectorAll(".declaration-clan")];
+  expect(
+    clans
+      .at(-1)!
+      .compareDocumentPosition(host.querySelector("[data-ping-count]")!) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
+it("labels in-progress ready counts as partial rather than a final fraction", async () => {
+  state.value.checking = true;
+  await render();
+  const summary = host.querySelector(".declaration-summary")!;
+  expect(summary.textContent).toMatch(
+    /Checking…\s*\d+ of 2 clans confirmed ready/,
+  );
+  expect(summary.textContent).not.toMatch(/\d+ \/ 2 clans ready to declare/);
+  expect(host.querySelector(".declaration-pools")?.textContent).toContain(
+    "Checking…",
+  );
+});
+
+it("shows three confirmed ready clans out of ten while the remaining seven are checking", async () => {
+  const counts = [15, 15, 15, 12, 12, 12, 11, 11, 11, 11];
+  const accounts = counts.flatMap((count, clan) =>
+    Array.from({ length: count }, (_, index) => ({
+      tag: `#LOCAL${clan}X${index}`,
+      player_name: `Local ${clan}-${index}`,
+      town_hall: 18,
+      pool: "main",
+      hosting_pool: "main",
+      assigned_clan_tag: `#CLAN${clan}`,
+      assigned_clan_name: `Local clan ${clan}`,
+      user_id: "",
+      current_clan_tag: clan < 3 ? `#CLAN${clan}` : null,
+      current_clan_name: clan < 3 ? `Local clan ${clan}` : null,
+      current_clan_checked_at: clan < 3 ? new Date(now).toISOString() : null,
+      outside_family: false,
+    })),
+  );
+  state.value.data.arrival.accounts = accounts;
+  state.value.data.arrival.updating = true;
+  state.value.data.roster.clans = counts.map((_, clan) => ({
+    tag: `#CLAN${clan}`,
+    capacity: 15,
+  }));
+  state.value.records = Object.fromEntries(
+    accounts.map((account) => [account.tag, account]),
+  );
+  state.value.checking = true;
+  await render();
+  expect(host.querySelector(".declaration-summary")?.textContent).toMatch(
+    /Checking…\s*3 of 10 clans confirmed ready/,
+  );
+  expect(host.querySelector(".declaration-summary")?.textContent).not.toContain(
+    "3 / 10",
+  );
+});

@@ -55,6 +55,7 @@ type Props = {
   archived: boolean;
   refreshKey?: number;
   refreshInToolbar?: boolean;
+  viewLabel?: string;
   activeStatuses?: readonly string[];
   onSeasonChange: (id: string) => void;
   onRefresh: () => void;
@@ -79,6 +80,7 @@ export default function RosterHeader({
   archived,
   refreshKey = 0,
   refreshInToolbar = false,
+  viewLabel = "Accounts & signups",
   activeStatuses = [],
   onSeasonChange,
   onRefresh,
@@ -246,7 +248,11 @@ export default function RosterHeader({
                   : publicationStatus === "unpublished"
                     ? "Not published"
                     : "Checking publication…"}
-            <span> · Tools</span>
+            <span className="roster-header-view-label"> · {viewLabel}</span>
+            <span className="roster-header-details-label">
+              {" "}
+              · Signup &amp; status
+            </span>
           </span>
         </summary>
         <div className="roster-header-summary-content">

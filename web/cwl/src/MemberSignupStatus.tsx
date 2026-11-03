@@ -156,7 +156,7 @@ export default function MemberSignupStatus({
             )}
           </p>
         )}
-        {signups.length > 0 && (
+        {signups.length > 0 && !savedView && (
           <ul>
             {(partial ? waiting : signups).map((s) => (
               <li key={s.tag}>

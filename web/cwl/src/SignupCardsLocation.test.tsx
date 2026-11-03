@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import MemberAssignments from "./MemberAssignments";
 import SavedSignupStatus from "./SavedSignupStatus";
+import SavedSignups from "./SavedSignups";
+import { memberSignupsOpen } from "./memberSeason";
 import type { Season, Signup, Account } from "./api";
 const season = {
   id: 1,
@@ -22,6 +24,25 @@ const accounts = [
   { tag: "#B", name: "Beta" },
   { tag: "#C", name: "Reserve" },
 ] as Account[];
+// Exercise the actual saved-page composition: one status summary, one editable list.
+function SavedView(props: ComponentProps<typeof SavedSignupStatus>) {
+  return (
+    <>
+      <SavedSignupStatus {...props} />
+      <SavedSignups
+        signups={props.signups}
+        accounts={props.accounts || []}
+        editable={memberSignupsOpen(props.season)}
+        busy={false}
+        canMove={props.accounts !== null}
+        headingRef={{ current: null }}
+        onSave={async () => ({ saved: [], error: null })}
+        onDirty={() => {}}
+        onWithdraw={() => {}}
+      />
+    </>
+  );
+}
 let root: Root, host: HTMLDivElement;
 let published = false,
   partial = false,
@@ -103,14 +124,14 @@ it("preserves the empty assignment card", async () => {
   );
 });
 it.each([true, false])(
-  "saved summary lists every signup and gates remaining action, open=%s",
+  "saved page lists every signup once and gates remaining action, open=%s",
   async (open) => {
     published = true;
     partial = true;
     const remaining = vi.fn();
     await act(async () =>
       root.render(
-        <SavedSignupStatus
+        <SavedView
           signups={signups}
           accounts={accounts}
           season={{ ...season, signup_open: open }}
@@ -119,9 +140,14 @@ it.each([true, false])(
         />,
       ),
     );
-    expect(host.querySelector(".member-signup-success ul")?.textContent).toBe(
-      "Alpha · Main CWLBeta · Lazy CWL",
-    );
+    expect(host.querySelector(".member-signup-success ul")).toBeNull();
+    expect(
+      [
+        ...host.querySelectorAll(
+          ".saved-signup-card .signed-up-name > span:last-child",
+        ),
+      ].map((node) => node.textContent),
+    ).toEqual(["Alpha", "Beta"]);
     expect(host.textContent).toContain("✓ You're signed up · 2 of 3 accounts");
     expect(host.textContent).not.toContain("Change signups");
     expect(!!host.querySelector(".member-signup-remaining")).toBe(open);
@@ -137,7 +163,7 @@ it("published ready line navigates to My clan without a write", async () => {
   const navigate = vi.fn();
   await act(async () =>
     root.render(
-      <SavedSignupStatus
+      <SavedView
         signups={signups}
         accounts={accounts}
         season={season}
@@ -160,7 +186,7 @@ it("published ready line navigates to My clan without a write", async () => {
 it("does not advertise remaining totals while linked accounts are unavailable", async () => {
   await act(async () =>
     root.render(
-      <SavedSignupStatus
+      <SavedView
         signups={signups}
         accounts={null}
         season={season}
@@ -194,11 +220,9 @@ it("ignores a publication response after switching seasons", async () => {
     onRemaining: vi.fn(),
     onAssignments: vi.fn(),
   };
+  await act(async () => root.render(<SavedView {...props} season={season} />));
   await act(async () =>
-    root.render(<SavedSignupStatus {...props} season={season} />),
-  );
-  await act(async () =>
-    root.render(<SavedSignupStatus {...props} season={{ ...season, id: 2 }} />),
+    root.render(<SavedView {...props} season={{ ...season, id: 2 }} />),
   );
   await act(async () =>
     resolveOld(
@@ -214,7 +238,13 @@ it("ignores a publication response after switching seasons", async () => {
     ),
   );
   expect(host.querySelector('a[href="/assignments"]')).toBeNull();
-  expect(host.textContent).toContain("Alpha · Main CWL");
+  expect(
+    host.querySelector(".saved-signup-card .signed-up-name > span:last-child")
+      ?.textContent,
+  ).toBe("Alpha");
+  expect(host.querySelector(".saved-signup-card small")?.textContent).toContain(
+    "Main CWL",
+  );
 });
 
 it("keeps saved accounts and exposes a publication read failure without claiming published readiness", async () => {
@@ -230,7 +260,7 @@ it("keeps saved accounts and exposes a publication read failure without claiming
   );
   await act(async () =>
     root.render(
-      <SavedSignupStatus
+      <SavedView
         signups={signups}
         accounts={null}
         season={season}
@@ -240,7 +270,13 @@ it("keeps saved accounts and exposes a publication read failure without claiming
     ),
   );
   expect(host.textContent).toContain("Clan assignments could not be checked.");
-  expect(host.textContent).toContain("Alpha · Main CWL");
+  expect(
+    host.querySelector(".saved-signup-card .signed-up-name > span:last-child")
+      ?.textContent,
+  ).toBe("Alpha");
+  expect(host.querySelector(".saved-signup-card small")?.textContent).toContain(
+    "Main CWL",
+  );
   expect(host.textContent).not.toContain(
     "Your published clan assignments are ready",
   );
