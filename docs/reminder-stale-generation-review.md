@@ -74,9 +74,14 @@ fail genuine assertions. An owned real Mongo run passes 15 catch-up/storage
 checks, including twelve simultaneous same-due report attempts with one winner.
 The delta focused suite passes 140 cases; broader regressions pass 245 cases
 and three subtests. The unchanged war check passes 213 backend cases/one skip,
-35 frontend cases, TypeScript and build. No live delivery is claimed. The fresh
-full backend and exact-artifact boot for this delta remain pending at this freeze
-and are recorded separately when complete.
+35 frontend cases, TypeScript and build. The frozen rework passes 6,809 backend
+cases, 123 skips and 270 subtests in 592.46 seconds. Its exact artifact boots
+successfully with all 51 production route mappings on an owned Mongo URI, the
+real owner, retained SQLite copy, native pool ping and twelve bound module
+origins; config returns 200 and unauthenticated auth returns 401. External
+transport is blocked before application imports and Healthchecks values are
+empty. Owned Mongo, data and artifact export are removed afterward. These are
+isolated startup and fake-delivery checks, not live Discord delivery evidence.
 
 ## Original validation before review 156 (historical)
 
