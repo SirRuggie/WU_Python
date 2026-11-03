@@ -58,7 +58,7 @@ owner unless separately authorized. This batch supports roster posts only; the
 existing publishing service could support other campaign messages, but this UI,
 queue and routes do not expose them.
 
-Final evidence: 138 affected backend regressions pass, covering
+Original139 evidence (superseded by prompt146 below): 138 affected backend regressions pass, covering
 publishing/worker, HTTP authorization, scopes, receipts, sequence preservation,
 and current/future copy inheritance. The complete frontend suite passes 1497
 checks across 263 files; TypeScript and the main frontend build pass. Required
@@ -152,3 +152,92 @@ call; an unknown outcome requires checking the post, never an automatic retry.
 - Failure truth: deleted/foreign/stale/permission-denied targets never create replacements. Confirmed external edit plus saved-copy CAS failure reports Done and a visible saved-copy warning. Ordinary read failure retains the last authorized preview; auth denial clears protected content and requires a reload. Closed panels neither poll nor fetch preview content.
 - UI: 320/360/390/1440 review states, narrow/wide visual inspection, no horizontal overflow, 44px controls, Escape closure, named-channel confirmation and sticky actions. Existing ActionPanel history/focus handling is reused. Full frontend regression suite, TypeScript and build pass. Owned browser failure cases prove stale and denied edits stay at zero and saved-copy race makes exactly one fake edit plus warning.
 - Evidence limits: local real HTTP/SQLite/Mongo and actual publishing/worker code, persisted fake Discord, real Hikari message objects. No live Discord edit, delivery, permissions, mobile client behavior, production API timing or production writes were tested. The first real November edits belong to Ruggie. The feature needs a bot restart as well as backend/frontend release, all held for owner approval.
+
+
+## PR183 rework: prompt146
+
+Release remains held for the owner's preview. Backend source c4330d58 fixes
+pause/resume and other metadata writes so they do not supersede field-only future
+roster copy. The real Mongo reproducer retains Updated body across pause and
+resume. Pending updates expire atomically against claim at five minutes: the
+299.999-second case claims once, the 300-second and 23-hour cases claim zero and
+finish failed. Native galleries retain their exact positions, including before
+the title divider; incompatible skeletons refuse without an edit. Member404 is
+access changed. Failure before edit is Not updated; only a potentially applied
+edit is uncertain. Previews resolve role names through actual fetch_roles and do
+not show snowflake IDs.
+
+The UI uses the shared gold link style, disables Update unless has_changes is
+explicitly true, shows No changes for false and Preview again for missing data,
+preserves an unticked future-month choice across status refresh, and uses the
+requested short month/status wording. User-authored title/body text is not rewritten.
+
+Actual native REST review uncovered two default-encoding mismatches missed by
+the earlier builder-only fixture: REST separator SMALL spacing versus builder
+UNDEFINED, and absent REST emoji versus builder UNDEFINED. Frozen source6cb7ac83
+canonicalizes those semantic defaults only. Actual LARGE spacing and actual emoji
+changes remain distinct. The native worker regression failed before and passes
+after; the real local fixture now returns has_changes=false and its Update is
+disabled. Before evidence: nochange-native-diagnostic.log and
+native-regression-before.log. After: nochange-native-diagnostic-after.json,
+native-focused-final.log and no-changes/proof.json. The diagnostic's initial JSON
+was overwritten by the after run; the original before diff log and failing native
+regressions remain the before evidence.
+
+Final gates so far:1504 frontend tests/263files,20focusedfrontend,58focusedbackend,
+TypeScript and main build;13 genuine rework mutants (8 backend protocol/storage,
+3 UI,2 native-default). The required war-reminder check passes213backend/1skip and
+35frontend plus build. Exact6cb boot uses51configured production routes, production
+flags, native pool, real durability owner on owned Mongo/copiedSQLite, blocked
+external network, config200/auth401, sourcehash and complete fixture cleanup.
+The artifact/owned27169 were removed before the final full backend run.
+
+Actual browser evidence at360/1440: legible gold Openpost link, @CWLplayers rather
+than a role ID, no horizontal overflow or sub44px controls, Escape closure.
+Native no-change review at360 is disabled. Fake-Discord edit completes once and
+saves the requested current/future scope; stale and access-denied cases edit zero;
+saved-copy race edits once plus honest warning. No actual Discord edit or
+production write was tested. The gallery-stale-marker test initially contaminated
+the next fixture layout; removing only the harness's exact injected marker between
+cases corrected the harness. Initial failed logs remain.
+
+The first sandboxed full run was interrupted after3socket PermissionErrors and
+24passes. Fourteen identical HTTP cases pass with local-socket permissions. The
+pre-native-fix escalated full passes6397/99skip/267subtests in626.95s and is retained
+as pre-fix evidence. Final behavior source6cb7ac83 passes6400backend/99skip/267subtests in598.58seconds (.local/p146/full-be-final.log).
+The first boot attempt used a temporary war-build path already cleaned by its
+checker; it failed before app startup, cleaned Mongo/export, and is retained. The
+corrected retained-build boot passes.
+
+Persistent review: http://127.0.0.1:44501/ → Open local test session. Same owned
+SQLite/Mongo27165/messages are retained; no reseed. Current serverPID3501935 uses
+28ef backend; entrypost-update-preview-Dvi6sVHZ.js SHA256
+3516e6753c6ce8ba4dc6c3f91fe8fad5b39035f1adc030c586337e3cf404ead1.
+Earlier review assets are retained in .local/p146/previous-review-site. All flags
+are reset to ordinary operation; QA edits remain in the local sample.
+
+### Final response-copy delta and artifact proof
+
+After that full pass, revision28efdf55 changes exactly four response literals:
+three malformed-input400 messages and the stale-month409. The runtime byte/AST
+proof confirms only those string constants changed; validators, schema and
+control flow are identical to6cb. The focused followup passes79tests and3subtests,
+including real store rejection,400error+issue_reference schema and409error-only
+schema. An initial new test omitted the already-existing issue_reference field;
+its failed log is retained and the corrected test checks that existing schema.
+The full suite was not repeated solely for this four-literal copy delta, as
+explicitly directed by the coordinator; it remains a full behavior pass at6cb,
+with the final copy covered by focused checks and AST proof.
+
+A case-insensitive bounded audit of public errors/warnings in the feature's store,
+service, publishing, HTTP and bridge owners finds no prohibited UI vocabulary.
+API field names and user-authored post content retain their existing values.
+The exact28ef artifact boot passes51production routes/nativepool/realowner on
+ownedMongo/copiedSQLite/config200/auth401/blocked external I/O and cleanup. Source
+SHA256 is0196c09d0819578bfac3c9785a3ff0c2b72ea0df290e9575d8f2abc3a3ca5437.
+Temporary bootMongo27169 and archive export are removed; persistent reviewMongo
+27165 and all existing sample state remain. Before the final preview restart,
+its active-workflow count was zero. All metadata/evidence is under.local/p146.
+
+Release is held. Main integration must retain PR175's heartbeat behavior and
+PR177's new-default copy marker; this branch has not merged or activated them.
