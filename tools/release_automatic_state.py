@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 
@@ -298,8 +299,86 @@ def compare_mongo_snapshots(
     }
 
 
+SYNC_CLOCK_TABLE = "participation_sync_settings"
+SYNC_CLOCK_FIELDS = ("last_checked_at", "last_success_at")
+
+
+def _sync_clock(value):
+    require(
+        isinstance(value, str)
+        and re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)", value
+        ),
+        "Sync clock must be an ISO UTC string",
+    )
+    stamp = datetime.fromisoformat(value)
+    require(
+        stamp.tzinfo is not None and stamp.utcoffset().total_seconds() == 0,
+        "Sync clock must be aware UTC",
+    )
+    return stamp
+
+
+def _compare_sync_clocks(before, after, start, end):
+    def index(rows):
+        require(isinstance(rows, list), "Malformed sync settings rows")
+        result = {}
+        for row in rows:
+            require(
+                isinstance(row, dict)
+                and type(row.get("season_id")) is int
+                and row["season_id"] > 0
+                and all(field in row for field in SYNC_CLOCK_FIELDS),
+                "Sync settings identity or clocks missing",
+            )
+            require(row["season_id"] not in result, "Duplicate sync settings rows")
+            result[row["season_id"]] = row
+        return result
+
+    old, new = index(before), index(after)
+    require(old.keys() == new.keys(), "Sync settings rows added or removed")
+    evidence = []
+    for key, prior in old.items():
+        current = new[key]
+        require(prior.keys() == current.keys(), "Sync settings columns changed")
+        require(
+            all(
+                type(prior[field]) is type(current[field])
+                and json.dumps(prior[field], sort_keys=True, allow_nan=False)
+                == json.dumps(current[field], sort_keys=True, allow_nan=False)
+                for field in prior.keys() - set(SYNC_CLOCK_FIELDS)
+            ),
+            "Nonclock sync settings field changed",
+        )
+        changed = []
+        for field in SYNC_CLOCK_FIELDS:
+            p, q = prior[field], current[field]
+            if p is None and q is None:
+                continue
+            require(
+                p is not None and q is not None,
+                "Sync clock NULL transition is unproved",
+            )
+            previous, stamp = _sync_clock(p), _sync_clock(q)
+            require(
+                previous <= stamp <= end, "Sync clock moved backwards or beyond capture"
+            )
+            if p != q:
+                require(start <= stamp, "Sync clock outside capture interval")
+                changed.append(field)
+        if changed:
+            evidence.append(
+                {
+                    "table": SYNC_CLOCK_TABLE,
+                    "key": {"season_id": key},
+                    "fields": field_evidence(prior, current, changed),
+                }
+            )
+    return evidence
+
+
 def compare_sqlite_snapshots(before, after):
-    """Only four named timestamp columns vary; even receipted staff edits stop."""
+    """Only reviewed capture clocks vary; all neighbouring/staff fields stay strict."""
     require(before is not after, "Independent captures required")
     start, end = interval(before["started"], after["ended"])
     require(
@@ -319,6 +398,9 @@ def compare_sqlite_snapshots(before, after):
     require(before["proof"] == after["proof"], "Staff or publication proof changed")
     evidence = []
     for table, rows in a.items():
+        if table == SYNC_CLOCK_TABLE:
+            evidence.extend(_compare_sync_clocks(rows, b[table], start, end))
+            continue
         if table not in CAPTURE_FIELDS:
             require(rows == b[table], "Nonautomatic protected table changed: " + table)
             continue
@@ -356,7 +438,8 @@ def compare_sqlite_snapshots(before, after):
                     }
                 )
     counts = {
-        name: sum(r["table"] == name for r in evidence) for name in CAPTURE_FIELDS
+        name: sum(r["table"] == name for r in evidence)
+        for name in (*CAPTURE_FIELDS, SYNC_CLOCK_TABLE)
     }
     return {
         "automatic_changes": evidence,
