@@ -168,29 +168,6 @@
   .shell main:has(.arrival-check) {
     padding: 10px 12px;
   }
-  .page-head:has(+ .arrival-check) {
-    margin-bottom: 8px;
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 8px;
-  }
-  .page-head:has(+ .arrival-check) h1 {
-    font-size: 20px;
-    line-height: 24px;
-    margin: 0;
-  }
-  .page-head:has(+ .arrival-check) .eyebrow {
-    display: none;
-  }
-  .page-head:has(+ .arrival-check) label {
-    min-width: 118px;
-    font-size: 12px;
-  }
-  .page-head:has(+ .arrival-check) select {
-    min-height: 44px;
-    max-width: 140px;
-  }
   .declaration-clan-toggle {
     scroll-margin-top: 75px;
   }
@@ -213,13 +190,6 @@
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
-  }
-  .page-head:has(+ .arrival-check) {
-    margin-bottom: 4px;
-  }
-  .page-head:has(+ .arrival-check) h1 {
-    font-size: 18px;
-    line-height: 22px;
   }
 }
 
@@ -262,20 +232,6 @@
   padding-right: 54px;
 }
 @media (max-width: 767px) {
-  .shell .page-head:has(+ .arrival-check) {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-  }
-  .shell .page-head:has(+ .arrival-check) > div {
-    flex: 1;
-    min-width: 0;
-  }
-  .shell .page-head:has(+ .arrival-check) > label {
-    width: 120px;
-    min-width: 0;
-    margin: 0;
-  }
 }
 .declaration-overview {
   display: grid;
@@ -309,17 +265,6 @@
     grid-column: 1 / -1;
   }
 }
-.declaration-page-head > label {
-  flex: 0 0 152px;
-  max-width: 50%;
-  min-width: 0;
-}
-.declaration-page-head select {
-  width: 100%;
-  min-width: 0;
-  font-size: 12px;
-  padding-inline: 8px;
-}
 .declaration-ping-attention {
   display: flex;
   align-items: center;
@@ -333,4 +278,10 @@
   flex: 1 1 180px;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .shell main:has(.arrival-check) .cwl-page-header {
+    margin-inline: 3px;
+  }
 }

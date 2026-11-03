@@ -1,3 +1,4 @@
+import CwlPageHeader from "./CwlPageHeader";
 import CwlNextLink from "./CwlNextLink";
 import StaffSignupControls from "./StaffSignupControls";
 import { useEffect, useRef, useState } from "react";
@@ -122,8 +123,7 @@ export default function SeasonsPage({
   }
   return (
     <section className="roster-ui seasons-page">
-      <div className="page-head">
-        <h1>Seasons</h1>
+      <CwlPageHeader title={<h1>Seasons</h1>}>
         <RosterMenu
           label="Season"
           value={seasonId}
@@ -134,7 +134,7 @@ export default function SeasonsPage({
           }))}
           onValueChange={onSeasonChange}
         />
-      </div>
+      </CwlPageHeader>
       {error && (
         <p className="notice error" role="alert">
           {error}

@@ -1,3 +1,4 @@
+import "./rosterUi/tokens.css";
 import { useJourneyState, useJourneyPosition } from './journeyState'
 import TodoActivityStatus from './TodoActivityStatus'
 import { loadTasks } from './todoLoading'
@@ -82,7 +83,7 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab, 
   const filteredAccounts=accounts.filter(account=>`${account.name} ${account.tag} ${account.current_clan_name || ''}`.toLocaleLowerCase().includes(accountSearch.toLocaleLowerCase()))
   const selectedCount=selected===null ? accounts.length : accounts.filter(account=>selected.includes(account.tag)).length
   const unreadable=data?.views.private.rows.length || 0
-  return <div className="todo-workspace">
+  return <div className="todo-workspace roster-ui">
     <div className="page-head"><div><h1>Tasks</h1><p>Your accounts’ remaining attacks and personal progress. {onWars ? <button className="todo-wars-link" onClick={()=>onWars(tab === 'cwl' ? 'cwl' : 'war')}>View clan war scores →</button> : 'For whole-clan scores, open Wars.'}</p></div><button onClick={()=>setRefresh(value=>value+1)} disabled={loading}>↻ {loading ? 'Checking…' : 'Check now'}</button></div>
     <div className="todo-refresh"><span role="status"><span className={`status-dot ${data && !error && !gaps && !loading ? 'active' : ''}`} />{cached ? (error ? 'Showing saved data · refresh failed' : 'Showing saved data · checking for updates…') : loading ? 'Checking linked accounts and clan activity…' : error ? 'Refresh needs attention' : gaps ? 'Some activity could not be checked · try again shortly' : data ? `Last checked ${new Date(data.checked_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}` : 'Loading your activity…'}</span><button aria-pressed={paused} onClick={()=>setPaused(value=>!value)}>{paused ? '▶ Resume auto-refresh' : 'Ⅱ Pause auto-refresh'}</button></div>
     {error && <div className="notice error" role="alert"><div>{error}{data && <small>Showing your last update. It may be out of date.</small>}</div><button onClick={()=>setRefresh(value=>value+1)}>Retry</button></div>}

@@ -131,14 +131,12 @@ describe("roster header counts", () => {
   it("shows a compact month while retaining the full accessible season and menu label", () => {
     const html = render("all", "1", "November 2026");
     expect(html).toContain('aria-label="Season: November 2026"');
-    expect(html).toContain(
-      'class="roster-header-season-short" aria-hidden="true">Nov 2026</span>',
-    );
+    expect(html).not.toContain("roster-header-season-short");
     expect(html).toContain('class="roster-menu-current">November 2026</span>');
   });
-  it("keeps custom season names intact in the compact label", () => {
+  it("keeps custom season names intact in the shared label", () => {
     expect(render("all", "1", "Championship season")).toContain(
-      'class="roster-header-season-short" aria-hidden="true">Championship season</span>',
+      'class="roster-menu-current">Championship season</span>',
     );
   });
   it("scopes signed and unplaced to the chosen pool but keeps missing weight global", () => {
@@ -181,7 +179,7 @@ it("omits all-pools noise when the selected pool has the same missing-weight cou
 it("combines season, visible counts and status without an eyebrow or duplicate menu", () => {
   const html = render("all", "1", "November 2026");
   expect(html).not.toContain('class="eyebrow"');
-  expect(html).toContain('class="roster-header-title-row"');
+  expect(html).toMatch(/class="[^"]*roster-header-title-row/);
   expect(html).toContain('class="roster-header-summary"');
   expect(html).toContain("3 signups · 2 unplaced · 2 no weight");
   expect(html).toContain("Signups open");

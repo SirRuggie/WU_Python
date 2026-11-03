@@ -2,9 +2,6 @@
 .publication-workspace [hidden] {
   display: none !important;
 }
-.publication-workspace > .page-head h1 {
-  font-size: clamp(1.25rem, 2vw, 1.7rem);
-}
 .finalize-review {
   color: var(--roster-text);
   font-size: 13px;
@@ -328,41 +325,3 @@ body:has(.announcement-preview-dialog[open]) {
 }
 
 /* Match Build's title/season row without another heading above it. */
-.publication-workspace > .page-head {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 8px;
-}
-.publication-workspace > .page-head > div:first-child {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.publication-workspace > .page-head h1 {
-  margin: 0;
-  font-size: clamp(1.1rem, 2vw, 1.5rem);
-}
-.publication-workspace > .page-head > .roster-menu {
-  flex: 0 1 190px;
-  width: auto;
-  min-width: 0;
-  max-width: 45%;
-}
-.publication-workspace > .page-head .roster-menu-trigger {
-  min-height: 44px;
-  height: 44px;
-  padding: 4px 8px;
-}
-.publication-workspace > .page-head .roster-menu-label {
-  display: none;
-}
-@media (max-width: 650px) {
-  .publication-workspace > .page-head .roster-menu-current {
-    font-size: 12px;
-  }
-  .publication-workspace > .page-head .roster-menu-chevron {
-    flex: none;
-    width: 16px;
-    height: 16px;
-  }
-}

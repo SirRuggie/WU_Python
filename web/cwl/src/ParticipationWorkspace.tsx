@@ -1,3 +1,5 @@
+import CwlPageHeader from "./CwlPageHeader";
+import useConfirmDialog from "./useConfirmDialog";
 import CwlNextLink from "./CwlNextLink";
 import { exportMonthLabel } from "./exportPreview";
 import RosterMenu from "./rosterUi/Menu";
@@ -75,6 +77,9 @@ export default function ParticipationWorkspace({
   const editing = activeEditorTag !== null;
   const controlsLocked = editing || syncBusy || loading;
   const writesLocked = controlsLocked || !!error;
+  const { confirm, dialog: confirmation } = useConfirmDialog(
+    `${seasonId}:${controlsLocked}:${archived}:${error}`,
+  );
   useUnsavedWork(dirtyTags.size > 0 || syncDirty || syncBusy, reportDirty);
 
   const onDirty = useCallback(
@@ -139,23 +144,27 @@ export default function ParticipationWorkspace({
   }, [seasonId, load]);
   useEffect(() => setPage(0), [search, pool, clan, sort, seasonId]);
 
-  const changeSeason = (id: string) => {
+  const changeSeason = async (id: string) => {
     if (controlsLocked) return;
     if (
       (dirtyTags.size || syncDirty) &&
-      !window.confirm(
+      !(await confirm(
         `Discard unsaved participation changes and open another season?`,
-      )
+        "Discard and change season",
+      ))
     )
       return;
     setDirtyTags(new Set());
     onSeasonChange(id);
   };
-  const refreshList = () => {
+  const refreshList = async () => {
     if (controlsLocked) return;
     if (
       (dirtyTags.size || syncDirty) &&
-      !window.confirm("Discard unsaved participation changes and refresh?")
+      !(await confirm(
+        "Discard unsaved participation changes and refresh?",
+        "Discard and refresh",
+      ))
     )
       return;
     if (dirtyTags.size) {
@@ -184,9 +193,10 @@ export default function ParticipationWorkspace({
     if (
       cycleChanged &&
       dirtyTags.size &&
-      !window.confirm(
+      !(await confirm(
         `Changing the CWL month will discard unsaved result edits for ${dirtyTags.size} account${dirtyTags.size === 1 ? "" : "s"}. Continue?`,
-      )
+        "Change CWL month",
+      ))
     )
       return;
     syncPending.current = true;
@@ -413,27 +423,25 @@ export default function ParticipationWorkspace({
 
   return (
     <div className="participation-workspace">
-      <div className="page-head participation-page-head">
-        <div>
-          <p className="eyebrow">CWL</p>
-          <h1>Results &amp; participation</h1>
-        </div>
-        <label className="season-choice">
-          Season
-          <select
-            value={seasonId}
-            disabled={controlsLocked}
-            onChange={(event) => changeSeason(event.target.value)}
-          >
-            <option value="">Select a season</option>
-            {seasons.map((season) => (
-              <option key={season.id} value={String(season.id)}>
-                {season.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {confirmation}
+      <CwlPageHeader
+        className="participation-page-head"
+        title={<h1>Results &amp; participation</h1>}
+      >
+        <RosterMenu
+          label="Season"
+          value={seasonId}
+          disabled={controlsLocked}
+          onValueChange={changeSeason}
+          options={[
+            { value: "", label: "Select a season" },
+            ...seasons.map((season) => ({
+              value: String(season.id),
+              label: season.label,
+            })),
+          ]}
+        />
+      </CwlPageHeader>
       {!seasonId && <p>Select a season to view participation records.</p>}
       {error && (
         <div className="notice error" role="alert">

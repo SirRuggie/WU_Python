@@ -1,3 +1,5 @@
+import CwlPageHeader from "./CwlPageHeader";
+import RosterMenu from "./rosterUi/Menu";
 import { fetchReadWithRetry } from "./readRetry";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Season } from "./api";
@@ -337,27 +339,21 @@ export default function ExportWorkspace({
 
   return (
     <div className="export-workspace">
-      <div className="page-head export-page-head">
-        <div>
-          <h1>Exports</h1>
-        </div>
-        <label className="season-choice">
-          Season
-          <select
-            disabled={downloadBusy}
-            value={seasonId}
-            onChange={(event) => changeSeason(event.target.value)}
-          >
-            <option value="">Select a season</option>
-            {seasons.map((season) => (
-              <option value={String(season.id)} key={season.id}>
-                {exportMonthLabel(season.label)}
-                {season.status === "archived" ? " · Archived" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <CwlPageHeader className="export-page-head" title={<h1>Exports</h1>}>
+        <RosterMenu
+          label="Season"
+          value={seasonId}
+          disabled={downloadBusy}
+          onValueChange={changeSeason}
+          options={[
+            { value: "", label: "Select a season" },
+            ...seasons.map((season) => ({
+              value: String(season.id),
+              label: `${exportMonthLabel(season.label)}${season.status === "archived" ? " · Archived" : ""}`,
+            })),
+          ]}
+        />
+      </CwlPageHeader>
       {!seasonId && (
         <p className="export-empty">Select a season to review its data.</p>
       )}

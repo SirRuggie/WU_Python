@@ -1,3 +1,4 @@
+import useConfirmDialog from "./useConfirmDialog";
 import useSignupAction from "./useSignupAction";
 import { useEffect, useRef, useState } from "react";
 import { Plus, RotateCw, Settings2, X } from "lucide-react";
@@ -123,18 +124,22 @@ export default function StaffSignupControls({
     };
   }, [uid, season.id, reload]);
 
+  const { confirm, dialog: confirmation } = useConfirmDialog(
+    `${season.id}:${disabled}:${archived}:${working}:${uid}:${pool}:${selected.join(",")}:${loading}:${error}`,
+  );
   const matching = accounts.filter((account) =>
     [account.name, account.tag, account.current_clan_name].some((value) =>
       value?.toLowerCase().includes(search.trim().toLowerCase()),
     ),
   );
   const unsigned = matching.filter((account) => !account.signed_up_pool);
-  const canDiscard = () =>
+  const canDiscard = async () =>
     !working &&
     (!dirty ||
-      window.confirm(
+      (await confirm(
         "Discard this unfinished signup? Saved signups will stay unchanged.",
-      ));
+        "Discard signup",
+      )));
   const restoreAddFocus = () =>
     requestAnimationFrame(() =>
       addButton.current?.focus({ preventScroll: true }),
@@ -165,9 +170,10 @@ export default function StaffSignupControls({
     )
       return;
     if (
-      !window.confirm(
+      !(await confirm(
         `Add ${selected.length} accounts to ${pool === "main" ? "Main" : "Lazy"} CWL for the selected member?`,
-      )
+        "Add accounts",
+      ))
     )
       return;
     setBusy(true);
@@ -210,6 +216,7 @@ export default function StaffSignupControls({
       className="staff-signup-controls"
       aria-label="Staff signup controls"
     >
+      {confirmation}
       <div className="staff-signup-bar">
         <StatusPill
           tone={
@@ -325,9 +332,14 @@ export default function StaffSignupControls({
           busy={working || editorOpen}
           expandOnSearchFocus
           onClose={() => {
-            if (!canDiscard()) return false;
-            close();
-            return true;
+            if (!working && !dirty) {
+              close();
+              return true;
+            }
+            void canDiscard().then((allowed) => {
+              if (allowed) close();
+            });
+            return false;
           }}
         >
           <div className="staff-signup-form">
@@ -336,8 +348,8 @@ export default function StaffSignupControls({
               <Button
                 icon={X}
                 disabled={working}
-                onClick={() => {
-                  if (canDiscard()) close();
+                onClick={async () => {
+                  if (await canDiscard()) close();
                 }}
               >
                 Cancel
@@ -352,8 +364,8 @@ export default function StaffSignupControls({
                 type="button"
                 aria-pressed={mode === "tag"}
                 disabled={working}
-                onClick={() => {
-                  if (mode !== "tag" && canDiscard()) {
+                onClick={async () => {
+                  if (mode !== "tag" && (await canDiscard())) {
                     reset();
                     setOpen(true);
                     setMode("tag");
@@ -366,8 +378,8 @@ export default function StaffSignupControls({
                 type="button"
                 aria-pressed={mode === "member"}
                 disabled={working}
-                onClick={() => {
-                  if (mode !== "member" && canDiscard()) {
+                onClick={async () => {
+                  if (mode !== "member" && (await canDiscard())) {
                     reset();
                     setOpen(true);
                     setMode("member");
@@ -391,12 +403,13 @@ export default function StaffSignupControls({
                   <MemberPicker
                     label="Member for signup"
                     value={uid}
-                    onChange={(value) => {
+                    onChange={async (value) => {
                       if (
                         selected.length &&
-                        !window.confirm(
+                        !(await confirm(
                           "Change member and clear selected accounts?",
-                        )
+                          "Change member",
+                        ))
                       )
                         return;
                       setUid(String(value || ""));

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const pingCallbacks = vi.hoisted(() => ({ value: null as any }));
 const state = vi.hoisted(() => ({ value: null as any }));
 const extraState = vi.hoisted(() => ({
+  allowPingDirty: false,
   value: {
     data: undefined as any,
     loading: true,
@@ -17,9 +18,12 @@ vi.mock("./useDeclarationExtras", () => ({ default: () => extraState.value }));
 vi.mock("./DeclarationPingPanel", () => ({
   default: (props: any) => {
     pingCallbacks.value = props;
-    const { missing, locationStatus } = props;
+    const { missing, locationStatus, onDirty } = props;
     return (
     <div data-ping-count={missing}>
+      {extraState.allowPingDirty && (
+        <button onClick={() => onDirty?.(true)}>Edit local ping channel</button>
+      )}
       {locationStatus
         ? locationStatus === "checking"
           ? "Checking locations…"
@@ -68,6 +72,8 @@ function makeData() {
   };
 }
 beforeEach(() => {
+  extraState.allowPingDirty = false;
+  extraState.allowPingDirty = false;
   extraState.value = {
     data: undefined,
     loading: true,
@@ -1313,19 +1319,66 @@ it("integrates moved Ping callbacks and pool discard without clearing held fille
   expect(working).toHaveBeenLastCalledWith(true);
   expect(dirty).toHaveBeenLastCalledWith(true);
   await act(async () => pingCallbacks.value.onDirty(true));
-  Object.defineProperty(window, "confirm", { configurable: true, writable: true, value: vi.fn(() => false) });
-  const confirm = vi.mocked(window.confirm);
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
   const main = () => [...host.querySelectorAll<HTMLButtonElement>(".declaration-pools button")].find(b => b.textContent?.trim().startsWith("Main"))!;
+  const dialogButton = (label: string) => [...document.querySelectorAll<HTMLButtonElement>(".confirm-dialog button")].find(b => b.textContent?.trim() === label)!;
   await act(async () => main().click());
-  expect(confirm).toHaveBeenCalledOnce();
+  await act(async () => dialogButton("Cancel").click());
   expect(main().getAttribute("aria-pressed")).toBe("false");
   expect(dirty).toHaveBeenLastCalledWith(true);
-  confirm.mockReturnValue(true);
   await act(async () => main().click());
+  await act(async () => dialogButton("Discard channel change").click());
   expect(main().getAttribute("aria-pressed")).toBe("true");
   expect(dirty).toHaveBeenLastCalledWith(true);
   expect(working).toHaveBeenLastCalledWith(true);
   await act(async () => finish({ tag: "#X0", revision: 2, roster_filler: true, mark_revision: 1 }));
   expect(working).toHaveBeenLastCalledWith(false);
   expect(dirty).toHaveBeenLastCalledWith(false);
+});
+
+it("pool discard Cancel keeps the pool and confirmation changes it without a write", async () => {
+  extraState.allowPingDirty = true;
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  const transport = vi.spyOn(await import("./api"), "api");
+  await act(async () => root.render(<ArrivalCheck seasonId="1" />));
+  const button = (name: string, within: ParentNode = document) =>
+    [...within.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent?.trim() === name,
+    )!;
+  await act(async () => button("Edit local ping channel").click());
+  const pools = host.querySelector('[aria-label="CWL pool"]')!;
+  const lazy = [...pools.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent?.startsWith("Lazy"),
+  )!;
+  const main = [...pools.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent?.startsWith("Main"),
+  )!;
+  await act(async () => lazy.click());
+  expect(main.getAttribute("aria-pressed")).toBe("true");
+  await act(async () =>
+    button("Cancel", document.querySelector(".confirm-dialog")!).click(),
+  );
+  expect(main.getAttribute("aria-pressed")).toBe("true");
+  await act(async () => {
+    lazy.click();
+    lazy.click();
+  });
+  await act(async () => {
+    const confirm = button(
+      "Discard channel change",
+      document.querySelector(".confirm-dialog")!,
+    );
+    confirm.click();
+    confirm.click();
+  });
+  expect(lazy.getAttribute("aria-pressed")).toBe("true");
+  expect(
+    transport.mock.calls.filter((call) => call[1] && call[1] !== "GET"),
+  ).toEqual([]);
 });

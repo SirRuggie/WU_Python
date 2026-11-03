@@ -1,3 +1,4 @@
+import useConfirmDialog from './useConfirmDialog'
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import {
@@ -115,14 +116,18 @@ export default function MessagePublish({
     const timer = window.setInterval(() => void check(statusUrl), 2500)
     return () => window.clearInterval(timer)
   }, [statusUrl])
+  const { confirm, dialog: confirmation } = useConfirmDialog(
+    `${endpoint}:${page?.revision}:${statusUrl}:${dirty}:${busy}`,
+  )
   async function publish(action: PublishPage['actions'][number]) {
     if (sending.current || !page || dirty || busy || statusUrl) return
     const destination =
       action.id === 'update' ? page.existing_channel : page.posting_channel
     if (
-      !window.confirm(
+      !(await confirm(
         `${action.label} in ${destination || 'the saved Discord channel'}? This posts the saved message.`,
-      )
+        action.label,
+      ))
     )
       return
     sending.current = true
@@ -204,6 +209,7 @@ export default function MessagePublish({
   }
   return (
     <section className="manage-publish card" aria-label="Publish message">
+      {confirmation}
       <h3>Publish to Discord</h3>
       {loading && <p role="status">Loading publishing controls…</p>}
       {error && (
@@ -282,10 +288,10 @@ export default function MessagePublish({
                 </button>
                 <button
                   disabled={busy}
-                  onClick={() => {
+                  onClick={async () => {
                     if (
                       !channelDirty ||
-                      window.confirm('Discard the posting channel change?')
+                      await confirm('Discard the posting channel change?', 'Discard channel change')
                     )
                       setChannelEditor(null)
                   }}

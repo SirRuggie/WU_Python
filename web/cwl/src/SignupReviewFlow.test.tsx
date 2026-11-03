@@ -262,8 +262,8 @@ it("allows choosing a pool after an account-load error and shows the error on th
   }
 });
 
-it.each([false, true])(
-  "My signups remaining respects refused navigation (%s) without writes",
+it.each([false, true, "confirm"] as const)(
+  "My signups remaining respects the navigation decision (%s) without writes",
   async (refuse) => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     history.replaceState({}, "", "/my-signups");
@@ -369,8 +369,30 @@ it.each([false, true])(
           .querySelector<HTMLButtonElement>(".member-signup-remaining button")!
           .click(),
       );
-      if (refuse) {
-        expect(window.confirm).toHaveBeenCalled();
+      if (refuse === "confirm") {
+        expect(document.querySelectorAll(".confirm-dialog")).toHaveLength(1);
+        await act(async () =>
+          [
+            ...document.querySelectorAll<HTMLButtonElement>(
+              ".confirm-dialog button",
+            ),
+          ]
+            .find((b) => b.textContent === "Discard and continue")!
+            .click(),
+        );
+        expect(host.querySelector(".pool-choice-grid")).not.toBeNull();
+        expect(location.pathname).toBe("/signup");
+      } else if (refuse) {
+        expect(document.querySelectorAll(".confirm-dialog")).toHaveLength(1);
+        await act(async () =>
+          [
+            ...document.querySelectorAll<HTMLButtonElement>(
+              ".confirm-dialog button",
+            ),
+          ]
+            .find((b) => b.textContent === "Cancel")!
+            .click(),
+        );
         expect(location.pathname).toBe("/my-signups");
         expect(host.textContent).toContain("Not saved yet");
         await act(async () => button("Undo change").click());
