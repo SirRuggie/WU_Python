@@ -137,7 +137,7 @@ class PostUpdateStore:
         if not isinstance(nonce, str) or not re.fullmatch(r"[a-f0-9]{32}", nonce):
             raise ValueError("Invalid post-update review identity")
         if pool not in ("main", "lazy") or type(future_months) is not bool:
-            raise ValueError("Choose a roster pool and save scope")
+            raise ValueError("Choose Main or Lazy and which months")
         if (
             type(guild_id) is not int
             or guild_id < 1
@@ -148,13 +148,13 @@ class PostUpdateStore:
         if not isinstance(cycle, str) or not re.fullmatch(
             r"[0-9]{4}-(0[1-9]|1[0-2])", cycle
         ):
-            raise ValueError("Choose the campaign month")
+            raise ValueError("Choose the month")
         if (
             not re.fullmatch(r"[0-9]{1,18}", str(season_id))
             or not isinstance(generation, str)
             or not 1 <= len(generation) <= 256
         ):
-            raise ValueError("Invalid season or campaign generation")
+            raise ValueError("Invalid season or saved settings")
         if not isinstance(draft_id, str) or not 1 <= len(draft_id) <= 256:
             raise ValueError("An owned draft is required")
         if not isinstance(candidate, dict) or set(candidate) != {

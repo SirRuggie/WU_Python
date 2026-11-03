@@ -98,7 +98,7 @@ async def _owned(mongo, actor, sid, cycle, pool, nonce):
     except PostUpdateConflict as exc:
         raise web.HTTPNotFound(text="Post review unavailable") from exc
     if row["cycle"] != cycle:
-        raise web.HTTPConflict(text="Campaign month changed. Open a new preview.")
+        raise web.HTTPConflict(text="Month changed. Open a new preview.")
     return row
 
 

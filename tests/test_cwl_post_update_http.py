@@ -324,3 +324,49 @@ class PostUpdateHTTPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 self.mongo.bot_config.documents[row["_id"]]["status"], "previewing"
             )
+
+
+    async def test_validation_errors_keep_400_error_schema_and_plain_copy(self):
+        original = PostUpdateStore.create
+        cases = [
+            ({"future_months": 1}, "Choose Main or Lazy and which months"),
+            ({"cycle": "2026-13"}, "Choose the month"),
+            ({"generation": ""}, "Invalid season or saved settings"),
+        ]
+        for changes, message in cases:
+            with self.subTest(changes=changes):
+                async def invalid_input(store, **values):
+                    return await original(store, **dict(values, **changes))
+
+                # Exercise the real store validation through the HTTP adapter;
+                # other validated request fields and authorization stay intact.
+                with patch.object(PostUpdateStore, "create", new=invalid_input):
+                    response = await self.call(
+                        "POST", self.route, self.owner, json=await self.body()
+                    )
+                self.assertEqual(response.status, 400)
+                payload = await response.json()
+                self.assertEqual(set(payload), {"error", "issue_reference"})
+                self.assertEqual(payload["error"], message)
+                self.assertRegex(payload["issue_reference"], r"^[0-9a-f]{12}$")
+                self.assertFalse(
+                    any(
+                        row.get("kind") == KIND
+                        for row in self.mongo.bot_config.documents.values()
+                    )
+                )
+
+    async def test_changed_month_keeps_409_error_schema_with_plain_copy(self):
+        row = await self.queued()
+        before = copy.deepcopy(self.mongo.bot_config.documents[row["_id"]])
+        with self.app["store"].tx() as db:
+            db.execute(
+                "UPDATE manage_campaign_bindings SET cycle='2026-11' WHERE season_id=?",
+                (self.sid,),
+            )
+        response = await self.call("GET", self.route + "/" + "a" * 32, self.owner)
+        self.assertEqual(response.status, 409)
+        self.assertEqual(
+            await response.json(), {"error": "Month changed. Open a new preview."}
+        )
+        self.assertEqual(self.mongo.bot_config.documents[row["_id"]], before)

@@ -290,3 +290,26 @@ def test_queued_update_has_atomic_five_minute_start_deadline(
             ] == "updating"
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "changes,message",
+    [
+        ({"pool": "other"}, "Choose Main or Lazy and which months"),
+        ({"future_months": 1}, "Choose Main or Lazy and which months"),
+        ({"cycle": "2026-13"}, "Choose the month"),
+        ({"season_id": "invalid"}, "Invalid season or saved settings"),
+        ({"generation": ""}, "Invalid season or saved settings"),
+        ({"generation": []}, "Invalid season or saved settings"),
+    ],
+)
+def test_malformed_review_fields_keep_rejection_without_technical_copy(changes, message):
+    async def run():
+        store = fixture()
+        with pytest.raises(ValueError) as raised:
+            await create(store, **changes)
+        assert str(raised.value) == message
+        assert store.collection.documents == {}
+        assert store.collection.indexes == []
+
+    asyncio.run(run())
