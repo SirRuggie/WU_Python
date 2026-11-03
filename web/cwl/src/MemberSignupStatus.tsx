@@ -106,9 +106,11 @@ export default function MemberSignupStatus({
     waiting.length > 0 &&
     waiting.length < signups.length &&
     !savedView;
-  const dateLines = memberDateLines(season, published, now).map((line) =>
-    savedView ? line.replace(/^Signups closed · you\'ll/, "You\'ll") : line,
-  );
+  const dateLines = publicationLoading
+    ? []
+    : memberDateLines(season, published, now).map((line) =>
+        savedView ? line.replace(/^Signups closed · you\'ll/, "You\'ll") : line,
+      );
   const signupDeadlineLine = signupCloseLine(season, now);
   const checkingAccounts =
     accountsLoading || (savedView && accounts === null && !accountsUnavailable);
@@ -127,7 +129,7 @@ export default function MemberSignupStatus({
       >
         <h2>
           {publicationLoading
-            ? "Checking clan assignments…"
+            ? "Your saved signups"
             : signups.length
               ? partial
                 ? "✓ You're signed up · Waiting for a clan"
@@ -137,7 +139,7 @@ export default function MemberSignupStatus({
         {signups.length > 0 && (
           <p>
             {publicationLoading ? (
-              "Checking saved clan assignments."
+              "Checking clan assignments…"
             ) : publicationUnavailable ? (
               <>
                 Clan assignments could not be checked.{" "}
@@ -213,7 +215,7 @@ export default function MemberSignupStatus({
         >
           <h2>
             {checkingAccounts ? (
-              "Checking linked accounts…"
+              "Linked accounts"
             ) : accountsUnavailable ? (
               "Linked accounts are unavailable"
             ) : !remaining.length ? (
@@ -226,9 +228,11 @@ export default function MemberSignupStatus({
               </>
             )}
           </h2>
-          {signupDeadlineLine && (
-            <p className="member-signup-date">{signupDeadlineLine}</p>
-          )}
+          {signupDeadlineLine &&
+            !publicationLoading &&
+            !dateLines.some((line) => line.startsWith("Signups close ")) && (
+              <p className="member-signup-date">{signupDeadlineLine}</p>
+            )}
           {!checkingAccounts && !accountsUnavailable && remaining.length > 0 ? (
             <button onClick={onRemaining}>
               Sign up {remaining.length} more account
@@ -240,7 +244,7 @@ export default function MemberSignupStatus({
               role={checkingAccounts ? "status" : undefined}
             >
               {checkingAccounts
-                ? "Checking your linked accounts."
+                ? "Checking linked accounts…"
                 : accountsUnavailable
                   ? "Refresh saved signups to check account links."
                   : "No other linked accounts need a signup."}

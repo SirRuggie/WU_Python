@@ -1,7 +1,8 @@
 # Frontend speed: local results after accepted 122
 
-The five member pages meet the local compressed cold-load LCP target after this
-batch. My signups' CLS improves from .15685 to .01399. Build remains a staff-only
+On measured runtime85c8570b, the five member pages meet the local compressed
+cold-load LCP target. The current153 review delta is described below and is not
+presented as a new performance measurement. My signups' CLS improves from .15685 to .01399. Build remains a staff-only
 miss: LCP 5.144 s and menu proxy 203.7 ms, versus targets 2.5 s / 200 ms. No entry split,
 whole-list memoization, virtualization or polling redesign was added. Release is
 held for review; these are local measurements, not production or CrUX results.
@@ -10,7 +11,8 @@ held for review; these are local measurements, not production or CrUX results.
 
 Each table uses three runs/page, 18 runs total, all retained with no retries or
 exclusions. Before source is accepted ae89a104; after runtime source is 85c8570b.
-Documentation-only followups do not change that runtime. All six pages remain in
+The current153 delta changes that runtime; its conditional no-rerun assessment
+below explicitly distinguishes the recorded table from the review candidate. All six pages remain in
 the table, including Assignments' narrow margin under 2.5 s.
 
 | Page | LCP before→after ms | Tap proxy before→after ms | CLS before→after |
@@ -69,7 +71,9 @@ campaign completion are retained but excluded from those tail summaries.
 
 - Five named pages use one visibility-aware scheduler. Hidden tabs remove their
   periodic timers; visible return catches up. A 32 ms settling window coalesces
-  neighboring focus/visibility/interval tasks. Existing 30 s / 2.5 s / 3 s cadences,
+  neighboring visibility/interval tasks, with focus opted in only for Assignments,
+  which already subscribed before123. A catch-up resets the next interval so a
+  near-boundary tick cannot repeat it. Existing 30 s / 2.5 s / 3 s cadences,
   page-owned errors, stale-source protection and in-flight guards remain.
   Declaration's countdown recomputes from wall-clock time on return. Backend sends
   continue independently; visible send/restore status keeps updating, hidden UI
@@ -140,7 +144,8 @@ not counts of all attempted internet requests or proof of remote-image latency.
 
 ## Validation, limits and provenance
 
-1699 frontend tests / 289 files,typecheck/build pass; 52 four-width cases at
+The measured85 predecessor passed1699 frontend tests / 289 files,typecheck/build;
+52 four-width cases at
 320/360/390/1440 with 26/65/125 accounts; 30 narrow/wide page/dialog cases; 12 targeted
 status cases; two separately served review-preview smokes. Layout/served checks
 record zero non-GET requests after fixture login and zero page errors. Semantic
@@ -160,7 +165,12 @@ remain unchanged. Mocked fixtures do not prove live Discord delivery.
 
 Runtime source 85c8570b builds index-Brk8WtDH.js SHA256
 4bbd003088a0fde2cd2add1c78a4a91c29e77425194bc11bbc5f2802af7bf2d6.
-New separate staff/member previews are 32817/44381; old121/122 previews stay intact.
+Current153 previews remain32817/44381, updated atomically without restart/data
+reset; old assets are retained. They serve index-Bnhs67Qq.js SHA256
+e3d08ff7626fe8150caa58d0f6eb603b1d2817fb3ae7b525df23fc5b45ccb9a7.
+The previous measured Brk8WtDH asset remains available. Old121/122 previews stay
+intact. Member review URL is /my-signups?p123=production-shape, using the backend's
+current season instead of an invalid hardcoded season6.
 All measurement/profile Mongo/servers/Chrome were stopped after preserving data;
 only those two SQLite review previews remain. Evidence is workspace-local under
 .local/frontend-speed-after-122/.local: raw/compressed/after-results and summaries,
@@ -168,3 +178,74 @@ network traces,module graph,CPU profiles,geometry screenshots/status matrix,
 mutant logs and ready evidence. Stacked on accepted 192/ae89; later main integration
 must preserve accepted 185's filler queue and stop on behavior conflicts. No merge,
 production read/write,notification,backend change or activation occurred.
+
+
+## Review153 delta
+
+The first new regression reproduced the exact false past-placement line through
+SavedSignupStatus while its publication read remained pending. Date lines are now
+suppressed until that read completes. The same loading component keeps one plain
+checking label for each read, and an open season shows its signup deadline once.
+Closed-season actions and401/403/error behavior remain unchanged.
+
+Only Assignments opts into focus refresh, preserving original subscriptions;
+Home,History,MessagePublish and Declaration catch up on visibility instead. The
+original85 scheduler added focus-triggered reads to those four pages outside the
+measured scenario; endpoint-call AST equality never established equal request
+frequency. Catch-up now resets cadence. The exact focus50ms-before-tick regression
+proves one request, not two. A real hidden-minute cooldown test kills the genuine
+setClock(c=>c+1) mutant: return recomputes wall time and cannot extend the deadline.
+Previous/current/next carousel slides remain eager; farther slides remain unmounted
+until near, rather than gaining new fetches.
+
+Per153's conditional, no additional18-run campaign was run. The retained timed
+runner never explicitly cycles window focus or visibility. Native browser events
+were not logged, so absence of every automatic event is not claimed. Recorded
+interaction ends reach at most9585ms, before the30s member interval. Traces show
+only expected initial reads, not an additional focus/tick refresh. Source and
+actual request sequences therefore support no items2/3 request delta in that
+recorded scenario; this is not a historical native-event log. Carousel lives on Finalize, outside the six measured initial pages.
+The table is explicitly measured85, not a new153 LCP/CLS claim; changed loading/date
+text can change geometry in cases with dates. Pending/past/closed layouts and their
+focused attribution are recorded separately. No unchanged153 CLS is asserted.
+
+Current delta gates:1705 frontend tests/290files,typecheck/build; focused loading,
+subscription/boundary/countdown/carousel cases; two served narrow/wide preview
+smokes. The initial full run's sole failure required a duplicated deadline in two
+cards; it was replaced by a single-deadline assertion while retaining the action,
+closed-season,visibility and account-name checks. Initial fixture-layout failures
+and route-cleanup diagnostics are preserved separately from product evidence.
+
+Reviewer501 independently reported four of its six mutants killed. Codex's prior
+six were a different named set; this delta has six separately named, genuine
+assertion kills: false pending date,new focus subscription,old tick retained,
+countdown increment,duplicated checking label and adjacent lazy slides. Source
+bytes were restored exactly. These sets are not conflated.
+
+Release follows ACCEPT and the authorized queue after192, with other holds/gates
+intact. No release,production access,member split or main merge is part of this
+review delta.
+
+The delta browser check passes six controlled cases at360/1440, each with pending,
+assignments-known and settled snapshots: past/published/open, past/unpublished/
+closed, and future/open. Actual SavedSignupStatus is used, with fixture-only GET
+response states. No false past-placement claim/date is shown pending; a known
+unpublished closed season shows the legitimate not-ready line only after the read.
+The open deadline is shown once. All18 snapshots have no overflow/clipping; final
+runs record zero non-GETs,page errors,pre-cleanup route errors or cleanup notes.
+Narrow pending/closed and wide settled/open screens were visually reviewed.
+
+Correct information can add geometry: at360, summary heights are314→349px for
+past/published/open,158→193px for past/unpublished/closed, and314→405px for future/
+open; at1440 they are260→295,131→166 and260→330px. These focused traces do not claim
+unchanged current CLS. Earlier private layout attempts targeted nonexistent
+fixture season6 (actual response contains only1), had pending-route cleanup races,
+and incorrectly required an account-summary in the closed branch. Those failures
+are retained. The final helper records errors and validates the preserved closed
+policy; no application behavior was changed to satisfy those fixture mistakes.
+
+Current endpoint-call AST proof still has60 calls/22 owners; that proof concerns
+endpoint/argument structure, not equal event-driven frequency. Both193 served
+hashes and retained old assets are verified separately. Existing121/122 preview
+assets/data remain untouched. All temporary delta layout processes/Chrome are
+stopped; only the two existing193 review previews stay running.

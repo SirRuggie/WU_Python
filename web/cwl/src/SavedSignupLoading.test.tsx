@@ -111,3 +111,53 @@ it.each([401, 403])(
     expect(host.textContent).not.toContain("private detail");
   },
 );
+it("does not claim clans are late or show date lines before publication is known", async () => {
+  mock.api.mockImplementation(() => new Promise(() => {}));
+  const past = {
+    ...season,
+    signup_open: false,
+    signup_deadline: "2020-01-01T00:00:00Z",
+    placements_by: "2020-01-02T00:00:00Z",
+  } as Season;
+  await act(async () =>
+    root.render(
+      <SavedSignupStatus {...props} season={past} accounts={accounts} />,
+    ),
+  );
+  expect(host.textContent).toContain("Checking clan assignments…");
+  expect(host.textContent).not.toContain(
+    "Clans are not ready yet. Check back soon.",
+  );
+  expect(host.querySelector(".member-signup-date")).toBeNull();
+});
+it("shows each pending check once and one signup close line after the read", async () => {
+  let resolve!: (value: unknown) => void;
+  mock.api.mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const dated = {
+    ...season,
+    signup_deadline: "2099-10-29T00:00:00Z",
+    placements_by: "2099-11-01T00:00:00Z",
+  } as Season;
+  await act(async () =>
+    root.render(
+      <SavedSignupStatus {...props} season={dated} accountsLoading />,
+    ),
+  );
+  expect(host.textContent?.match(/Checking clan assignments…/g)).toHaveLength(
+    1,
+  );
+  expect(host.textContent?.match(/Checking linked accounts…/g)).toHaveLength(1);
+  expect(host.textContent).not.toContain("Signups close");
+  await act(async () => resolve({ published: null, accounts: [] }));
+  await act(async () =>
+    root.render(
+      <SavedSignupStatus {...props} season={dated} accounts={accounts} />,
+    ),
+  );
+  expect(host.textContent?.match(/Signups close /g)).toHaveLength(1);
+});

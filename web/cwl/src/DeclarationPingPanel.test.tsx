@@ -481,18 +481,28 @@ it("suspends active-send status offscreen and coalesces return signals into one 
   let hidden = false;
   vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
   const active = {
-    token: review.token, actor_id: "owner", state: "sending",
-    created_at: 1, count: 26, chunks: 1, posted: [], attempting: null,
+    token: review.token,
+    actor_id: "owner",
+    state: "sending",
+    created_at: 1,
+    count: 26,
+    chunks: 1,
+    posted: [],
+    attempting: null,
     channel: state.channel,
   };
   mock.api.mockResolvedValue({ ...state, active });
   try {
-    await act(async () => root.render(
-      <DeclarationPingPanel seasonId="1" pool="lazy" missing={26} />,
-    ));
+    await act(async () =>
+      root.render(
+        <DeclarationPingPanel seasonId="1" pool="lazy" missing={26} />,
+      ),
+    );
     expect(mock.api).toHaveBeenCalledTimes(1);
     hidden = true;
-    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    await act(async () =>
+      document.dispatchEvent(new Event("visibilitychange")),
+    );
     await act(async () => vi.advanceTimersByTimeAsync(12000));
     expect(mock.api).toHaveBeenCalledTimes(1);
     hidden = false;
@@ -502,11 +512,51 @@ it("suspends active-send status offscreen and coalesces return signals into one 
       await vi.advanceTimersByTimeAsync(32);
     });
     expect(mock.api).toHaveBeenCalledTimes(2);
-    mock.api.mockResolvedValue({ ...state, history: [{ ...active, state: "done" }] });
+    mock.api.mockResolvedValue({
+      ...state,
+      history: [{ ...active, state: "done" }],
+    });
     await act(async () => vi.advanceTimersByTimeAsync(3032));
     expect(mock.api).toHaveBeenCalledTimes(3);
     await act(async () => vi.advanceTimersByTimeAsync(9000));
     expect(mock.api).toHaveBeenCalledTimes(3);
-    expect(mock.api.mock.calls.every(call => call[1] === "GET")).toBe(true);
-  } finally { vi.useRealTimers(); }
+    expect(mock.api.mock.calls.every((call) => call[1] === "GET")).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("recomputes cooldown from wall time after a hidden minute without extending its deadline", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-03T12:00:00Z"));
+  let hidden = false;
+  vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  mock.api.mockResolvedValue({
+    ...state,
+    cooldown_until: Date.now() / 1000 + 90,
+  });
+  try {
+    await act(async () =>
+      root.render(
+        <DeclarationPingPanel seasonId="1" pool="lazy" missing={26} />,
+      ),
+    );
+    expect(host.textContent).toContain("Next ping available in 2 min.");
+    hidden = true;
+    await act(async () =>
+      document.dispatchEvent(new Event("visibilitychange")),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(60000));
+    expect(mock.api).toHaveBeenCalledTimes(1);
+    hidden = false;
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(32);
+    });
+    expect(host.textContent).toContain("Next ping available in 1 min.");
+    await act(async () => vi.advanceTimersByTimeAsync(30032));
+    expect(host.textContent).not.toContain("Next ping available in");
+    expect(mock.api.mock.calls.every((call) => call[1] === "GET")).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
 });

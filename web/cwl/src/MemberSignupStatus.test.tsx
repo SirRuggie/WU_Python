@@ -104,10 +104,9 @@ it("shows a red action card without remaining account names only while signups a
   expect(card.textContent).toContain("Sign up 44 more accounts ›");
   expect(card.textContent).not.toContain("Reserve");
   expect(card.querySelector("svg[aria-hidden=true]")).not.toBeNull();
-  expect(card.querySelector(".member-signup-date")?.textContent).toBe(
-    host.querySelector(".member-signup-success .member-signup-date")
-      ?.textContent,
-  );
+  expect(card.querySelector(".member-signup-date")).toBeNull();
+  expect(host.querySelector(".member-signup-success .member-signup-date")?.textContent).toContain("Signups close");
+  expect(host.textContent?.match(/Signups close /g)).toHaveLength(1);
   await click("Sign up 44 more accounts ›");
   expect(callbacks.onRemaining).toHaveBeenCalledOnce();
 

@@ -2,23 +2,33 @@
 export function visibleRefresh(
   refresh: () => unknown | Promise<unknown>,
   intervalMs: number,
+  { focus = false }: { focus?: boolean } = {},
 ) {
   let disposed = false;
   let pending = false;
   let interval: ReturnType<typeof setInterval> | undefined;
   let burst: ReturnType<typeof setTimeout> | undefined;
+  let catchUpQueued = false;
   const stop = () => {
     if (interval !== undefined) clearInterval(interval);
     if (burst !== undefined) clearTimeout(burst);
     interval = undefined;
     burst = undefined;
   };
-  const request = () => {
-    if (disposed || document.hidden || pending || burst !== undefined) return;
+  const request = (catchUp = false) => {
+    if (disposed || document.hidden || pending) return;
+    catchUpQueued ||= catchUp;
+    if (burst !== undefined) return;
     // Neighboring focus/visibility/interval browser tasks share one short burst.
     burst = setTimeout(() => {
       burst = undefined;
       if (disposed || document.hidden || pending) return;
+      if (catchUpQueued) {
+        if (interval !== undefined) clearInterval(interval);
+        interval = undefined;
+        start();
+      }
+      catchUpQueued = false;
       pending = true;
       const done = () => {
         pending = false;
@@ -34,22 +44,23 @@ export function visibleRefresh(
   };
   const start = () => {
     if (!disposed && !document.hidden && interval === undefined)
-      interval = setInterval(request, intervalMs);
+      interval = setInterval(() => request(), intervalMs);
   };
   const visible = () => {
     if (document.hidden) stop();
     else {
       start();
-      request();
+      request(true);
     }
   };
+  const onFocus = () => request(true);
   start();
   document.addEventListener("visibilitychange", visible);
-  window.addEventListener("focus", request);
+  if (focus) window.addEventListener("focus", onFocus);
   return () => {
     disposed = true;
     stop();
     document.removeEventListener("visibilitychange", visible);
-    window.removeEventListener("focus", request);
+    if (focus) window.removeEventListener("focus", onFocus);
   };
 }

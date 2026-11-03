@@ -23,7 +23,7 @@ it("keeps the existing visible cadence and performs no initial duplicate read", 
 });
 it("removes periodic work while hidden and catches up once on return", async () => {
   const read = vi.fn();
-  dispose = visibleRefresh(read, 3000);
+  dispose = visibleRefresh(read, 3000, { focus: true });
   hidden = true;
   document.dispatchEvent(new Event("visibilitychange"));
   expect(vi.getTimerCount()).toBe(0);
@@ -37,7 +37,7 @@ it("removes periodic work while hidden and catches up once on return", async () 
 });
 it("coalesces focus, visibility and an interval due in the same burst", async () => {
   const read = vi.fn();
-  dispose = visibleRefresh(read, 3000);
+  dispose = visibleRefresh(read, 3000, { focus: true });
   await vi.advanceTimersByTimeAsync(2990);
   window.dispatchEvent(new Event("focus"));
   document.dispatchEvent(new Event("visibilitychange"));
@@ -52,7 +52,7 @@ it("does not overlap a pending read and resumes after completion", async () => {
         resolve = done;
       }),
   );
-  dispose = visibleRefresh(read, 3000);
+  dispose = visibleRefresh(read, 3000, { focus: true });
   await vi.advanceTimersByTimeAsync(3032);
   expect(read).toHaveBeenCalledTimes(1);
   window.dispatchEvent(new Event("focus"));
@@ -65,7 +65,7 @@ it("does not overlap a pending read and resumes after completion", async () => {
 });
 it("cleans pending catch-up and listeners on scope disposal", async () => {
   const read = vi.fn();
-  dispose = visibleRefresh(read, 3000);
+  dispose = visibleRefresh(read, 3000, { focus: true });
   window.dispatchEvent(new Event("focus"));
   dispose();
   window.dispatchEvent(new Event("focus"));
@@ -82,7 +82,7 @@ it("does not start a timer when created hidden", async () => {
 });
 it("drops a queued burst if the tab hides before it runs", async () => {
   const read = vi.fn();
-  dispose = visibleRefresh(read, 3000);
+  dispose = visibleRefresh(read, 3000, { focus: true });
   window.dispatchEvent(new Event("focus"));
   hidden = true;
   document.dispatchEvent(new Event("visibilitychange"));
@@ -94,7 +94,7 @@ it("releases its in-flight guard after an owner-handled failed read", async () =
     .fn()
     .mockRejectedValueOnce(new Error("checked by page"))
     .mockResolvedValue(undefined);
-  dispose = visibleRefresh(read, 3000);
+  dispose = visibleRefresh(read, 3000, { focus: true });
   await vi.advanceTimersByTimeAsync(3032);
   expect(read).toHaveBeenCalledTimes(1);
   await vi.advanceTimersByTimeAsync(3000);
@@ -105,11 +105,34 @@ it("removes the exact global listener registrations on disposal", () => {
   const removeFocus = vi.spyOn(window, "removeEventListener");
   const addVisibility = vi.spyOn(document, "addEventListener");
   const removeVisibility = vi.spyOn(document, "removeEventListener");
-  dispose = visibleRefresh(vi.fn(), 3000);
-  const focus = addFocus.mock.calls.find(call => call[0] === "focus")![1];
-  const visibility = addVisibility.mock.calls.find(call => call[0] === "visibilitychange")![1];
+  dispose = visibleRefresh(vi.fn(), 3000, { focus: true });
+  const focus = addFocus.mock.calls.find((call) => call[0] === "focus")![1];
+  const visibility = addVisibility.mock.calls.find(
+    (call) => call[0] === "visibilitychange",
+  )![1];
   dispose();
   expect(removeFocus).toHaveBeenCalledWith("focus", focus);
   expect(removeVisibility).toHaveBeenCalledWith("visibilitychange", visibility);
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("does not subscribe to new focus refreshes by default", async () => {
+  const read = vi.fn();
+  dispose = visibleRefresh(read, 3000);
+  window.dispatchEvent(new Event("focus"));
+  await vi.advanceTimersByTimeAsync(100);
+  expect(read).not.toHaveBeenCalled();
+  document.dispatchEvent(new Event("visibilitychange"));
+  await vi.advanceTimersByTimeAsync(32);
+  expect(read).toHaveBeenCalledTimes(1);
+});
+it("resets cadence when a catch-up runs 50ms before the old tick", async () => {
+  const read = vi.fn();
+  dispose = visibleRefresh(read, 3000, { focus: true });
+  await vi.advanceTimersByTimeAsync(2950);
+  window.dispatchEvent(new Event("focus"));
+  await vi.advanceTimersByTimeAsync(82);
+  expect(read).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(2982);
+  expect(read).toHaveBeenCalledTimes(2);
 });

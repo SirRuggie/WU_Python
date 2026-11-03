@@ -181,7 +181,7 @@ export default function RosterImageCarousel({
                     <img
                       src={src}
                       {...rosterImageDimensions(clan.count, page)}
-                      loading={at === index && page === 0 ? "eager" : "lazy"}
+                      loading={Math.abs(at - index) <= 1 ? "eager" : "lazy"}
                       alt={`${clan.name} finalized roster, page ${page + 1}`}
                       className="clan-roster-image"
                       onLoad={() =>

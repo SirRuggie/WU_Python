@@ -89,7 +89,7 @@ export default function MemberAssignments({
     };
   }, [seasonId, load]);
   useEffect(() => {
-    return visibleRefresh(() => load(true), 30000);
+    return visibleRefresh(() => load(true), 30000, { focus: true });
   }, [load]);
   const season = seasons.find((item) => String(item.id) === seasonId);
   const groups = groupAssignments(data?.accounts || []);
