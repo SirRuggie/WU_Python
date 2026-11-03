@@ -1,3 +1,7 @@
+import "./rosterUi/tokens.css";
+import CwlPageHeader from "./CwlPageHeader";
+import useConfirmDialog from "./useConfirmDialog";
+import { exportMonthLabel } from "./exportPreview";
 import RosterMenu from "./rosterUi/Menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDashboardPermission } from "./DashboardPermissions";
@@ -198,6 +202,9 @@ export default function BonusWorkspace({
   const working = useRef(false);
   const activeSeason = useRef(seasonId);
   activeSeason.current = seasonId;
+  const { confirm, dialog: confirmation } = useConfirmDialog(
+    `${seasonId}:${canManage}:${data?.revision}:${busy}:${lookingUp}`,
+  );
   const path = `/seasons/${encodeURIComponent(seasonId)}/bonus-raffle`;
   const archived = data?.season_status !== "draft";
   const policyDirty =
@@ -392,14 +399,17 @@ export default function BonusWorkspace({
       }
     }
   };
-  const canDiscard = () =>
+  const canDiscard = async () =>
     (!unsaved && !cancelReason) ||
-    window.confirm("Discard unsaved bonus edits?");
-  const canLeaveEditor = () =>
+    (await confirm("Discard unsaved bonus edits?", "Discard bonus edits"));
+  const canLeaveEditor = async () =>
     (!reviewDirty && !(candidateOpen && (candidateTag || candidateReason))) ||
-    window.confirm("Discard unsaved candidate edits?");
-  const refresh = () => {
-    if (!working.current && !lookupPending.current && canDiscard()) {
+    (await confirm(
+      "Discard unsaved candidate edits?",
+      "Discard candidate edits",
+    ));
+  const refresh = async () => {
+    if (!working.current && !lookupPending.current && (await canDiscard())) {
       resetContext();
       void load();
     }
@@ -508,35 +518,30 @@ export default function BonusWorkspace({
   };
 
   return (
-    <div className="bonus-workspace">
-      <div className="page-head bonus-page-head">
-        <div>
-          <p className="eyebrow">CWL · Results &amp; bonuses</p>
-          <h1>Bonus winners</h1>
-        </div>
-        <label className="season-choice">
-          Season
-          <select
-            value={seasonId}
-            disabled={busy || lookingUp}
-            onChange={(event) => {
-              if (canDiscard()) onSeasonChange(event.target.value);
-            }}
-          >
-            <option value="">Select a season</option>
-            {seasons.map((season) => (
-              <option key={season.id} value={season.id}>
-                {season.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+    <div className="bonus-workspace roster-ui">
+      {confirmation}
+      <CwlPageHeader className="bonus-page-head" title={<h1>Bonus medals</h1>}>
+        <RosterMenu
+          label="Season"
+          value={seasonId}
+          disabled={busy || lookingUp}
+          onValueChange={async (id) => {
+            if (await canDiscard()) onSeasonChange(id);
+          }}
+          options={[
+            { value: "", label: "Select a season" },
+            ...seasons.map((season) => ({
+              value: String(season.id),
+              label: season.label,
+            })),
+          ]}
+        />
+      </CwlPageHeader>
       <CwlPoolTabs
         value={pool}
         disabled={busy || lookingUp}
-        onChange={(next) => {
-          if (canDiscard()) {
+        onChange={async (next) => {
+          if (await canDiscard()) {
             setPool(next);
             resetContext(data, next);
           }
@@ -556,7 +561,9 @@ export default function BonusWorkspace({
       {data && (
         <>
           <div className="bonus-context">
-            <strong>{data.cycle || "CWL month not set"}</strong>
+            <strong>
+              {data.cycle ? exportMonthLabel(data.cycle) : "CWL month not set"}
+            </strong>
             <span>
               {data.sync.last_checked_at
                 ? `Clash checked ${new Date(data.sync.last_checked_at).toLocaleString()}`
@@ -584,7 +591,12 @@ export default function BonusWorkspace({
                 <a
                   href={`/cwl/results?season=${encodeURIComponent(seasonId)}`}
                   onClick={(event) => {
-                    if (!canDiscard()) event.preventDefault();
+                    if (!unsaved && !cancelReason) return;
+                    event.preventDefault();
+                    const href = event.currentTarget.href;
+                    void canDiscard().then((allowed) => {
+                      if (allowed) window.location.assign(href);
+                    });
                   }}
                 >
                   Participation
@@ -618,8 +630,8 @@ export default function BonusWorkspace({
               label="Hosting clan"
               value={clanTag}
               disabled={busy || lookingUp}
-              onValueChange={(value) => {
-                if (canDiscard()) {
+              onValueChange={async (value) => {
+                if (await canDiscard()) {
                   setClanTag(value);
                   resetContext();
                 }
@@ -890,8 +902,8 @@ export default function BonusWorkspace({
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => {
-                            if (canLeaveEditor()) closeCandidate();
+                          onClick={async () => {
+                            if (await canLeaveEditor()) closeCandidate();
                           }}
                         >
                           Cancel
@@ -953,8 +965,8 @@ export default function BonusWorkspace({
                   )}
                   <AccountList
                     accounts={clanAccounts}
-                    onReview={(account, opener) => {
-                      if (canLeaveEditor()) {
+                    onReview={async (account, opener) => {
+                      if (await canLeaveEditor()) {
                         setCandidateOpen(false);
                         setCandidateTag("");
                         setCandidateReason("");
@@ -974,16 +986,17 @@ export default function BonusWorkspace({
                       account={reviewAccount}
                       busy={busy}
                       onDirty={setReviewDirty}
-                      onCancel={() => {
-                        if (canLeaveEditor()) closeReview();
+                      onCancel={async () => {
+                        if (await canLeaveEditor()) closeReview();
                       }}
                       onRemove={
                         reviewAccount.manual_candidate
                           ? async () => {
                               if (
-                                !window.confirm(
+                                !(await confirm(
                                   `Remove ${reviewAccount.player_name} from this bonus candidate pool? The CWL signup and roster will stay unchanged.`,
-                                )
+                                  "Remove candidate",
+                                ))
                               )
                                 return;
                               if (
@@ -1217,7 +1230,7 @@ export default function BonusWorkspace({
               <div className="bonus-section-heading">
                 <div>
                   <h2 ref={drawHeading} tabIndex={-1}>
-                    {draw.snapshot.clan_name} · Bonus winners
+                    {draw.snapshot.clan_name} · Bonus medals
                   </h2>
                   <p>
                     Saved {new Date(draw.created_at).toLocaleString()} ·{" "}
@@ -1348,7 +1361,7 @@ export default function BonusWorkspace({
                   {item.player_name} · {item.clan_name || item.clan_tag}
                 </strong>
                 <small>
-                  {item.tag} · {item.cycle} ·{" "}
+                  {item.tag} · {exportMonthLabel(item.cycle)} ·{" "}
                   {item.voided_at ? "Voided" : "Approved"} ·{" "}
                   {new Date(item.confirmed_at).toLocaleString()}
                 </small>

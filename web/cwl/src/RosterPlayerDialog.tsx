@@ -285,14 +285,14 @@ export default function RosterPlayerDialog({
               ? `Assigned: ${currentHost.name}`
               : account.assigned_clan_tag
                 ? `Assigned: ${account.assigned_clan_tag}`
-                : "Not assigned"}
+                : "Unplaced"}
             {account.kept ? " · Locked" : ""}
           </p>
           <PlayerClanStatus
             showAssigned={false}
             status={playerClanStatus(
               account.assigned_clan_tag,
-              currentHost?.name || account.assigned_clan_tag || "Not assigned",
+              currentHost?.name || account.assigned_clan_tag || "Unplaced",
               locationCache.current[account.tag] || {},
               now,
             )}
@@ -474,7 +474,7 @@ export default function RosterPlayerDialog({
             }
             text={
               review === "unassign"
-                ? `${account.player_name} will be unassigned from ${currentHost?.name || account.assigned_clan_tag}. Their signup and saved weight stay. The placement lock is cleared. Publish again to update the published roster.`
+                ? `${account.player_name} will be unplaced. Their assignment to ${currentHost?.name || account.assigned_clan_tag} will be cleared. Their signup and saved weight stay. The placement lock is cleared. Publish again to update the published roster.`
                 : review === "remove"
                   ? `Remove ${account.player_name} from this season’s signup and working roster? Saved weights stay. Publish again to update the published roster.${account.kept ? " This account has a locked placement." : ""}`
                   : `${account.player_name}: switching signup type clears the working placement and lock and is visible to members. Published rosters stay unchanged until republished. Main CWL eligibility is checked before saving.${account.kept ? " This account has a locked placement." : ""}`

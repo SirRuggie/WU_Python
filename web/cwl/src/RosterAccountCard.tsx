@@ -146,7 +146,7 @@ export default function RosterAccountCard({
               !!account.auto_placement_note)) && (
             <small className="roster-player-note">
               {account.kept
-                ? "Held unassigned · unlock in Details to auto-place"
+                ? "Kept unplaced · unlock in Details to auto-place"
                 : account.auto_placement_note}
             </small>
           )}

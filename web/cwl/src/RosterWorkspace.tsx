@@ -1,3 +1,5 @@
+import { RefreshCw } from "lucide-react";
+import CwlNextLink from "./CwlNextLink";
 import { retainRosterFwa } from "./roster";
 import ConfirmDialog from "./ConfirmDialog";
 import useStaffDetailsPage from "./useStaffDetailsPage";
@@ -248,6 +250,7 @@ export default function RosterWorkspace({
   const [playerDirty, setPlayerDirty] = useState(false);
   const [signupDirty, setSignupDirty] = useState(false);
   const [signupBusy, setSignupBusy] = useState(false);
+  const [signupAttention, setSignupAttention] = useState(false);
   const [signupReviewOpen, setSignupReviewOpen] = useState(false);
   const [signupOpen, setSignupOpen] = useState(false);
   const working = busy || signupBusy || hostingBusy;
@@ -741,7 +744,7 @@ export default function RosterWorkspace({
         await afterWrite(
           destination
             ? "Accounts assigned. Placements locked."
-            : "Accounts unassigned. Signups kept.",
+            : "Accounts unplaced. Signups kept.",
           true,
         );
       return true;
@@ -863,10 +866,17 @@ export default function RosterWorkspace({
   const globalMissingWeight = releaseResult?.globalMissingWeightCount ?? 0;
 
   const clanName = (tag: string | null) =>
-    roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
+    roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unplaced";
 
   useEffect(() => closeRosterActionMenus(), [seasonId, poolFilter, mode]);
 
+  const refreshRoster = () => {
+    mayLeaveEditor(() => {
+      void refresh().catch((error) =>
+        setFeedback({ kind: "error", text: errorText(error) }),
+      );
+    });
+  };
   return (
     <div
       className={`roster-workspace roster-ui${mode === "assign" ? " roster-workspace-assign" : ""}`}
@@ -990,6 +1000,16 @@ export default function RosterWorkspace({
         />
       )}
       <RosterHeader
+        refreshInToolbar={mode === "assign"}
+        viewLabel={
+          mode === "compare"
+            ? "Compare clans"
+            : mode === "rules"
+              ? "Hosting clans"
+              : mode === "weights"
+                ? `Missing weights · ${globalMissingWeight}`
+                : "Accounts & signups"
+        }
         seasonId={seasonId}
         seasons={seasons}
         roster={roster}
@@ -1009,13 +1029,7 @@ export default function RosterWorkspace({
         onSeasonChange={(value) => {
           mayLeaveEditor(() => onSeasonChange(value));
         }}
-        onRefresh={() => {
-          mayLeaveEditor(() => {
-            void refresh().catch((error) =>
-              setFeedback({ kind: "error", text: errorText(error) }),
-            );
-          });
-        }}
+        onRefresh={refreshRoster}
         onAutoPlace={(trigger) => {
           if (mode !== "assign") {
             mayLeaveEditor(() => {
@@ -1112,10 +1126,12 @@ export default function RosterWorkspace({
           if (mode !== "assign") mayLeaveEditor(action);
           else action();
         }}
+        signupAttention={signupAttention}
         signupControls={
           season &&
           (canSignups || canSettings) && (
             <StaffSignupControls
+              onAttentionChange={setSignupAttention}
               key={`${seasonId}:${discardToken}`}
               disabled={
                 busy ||
@@ -1181,81 +1197,83 @@ export default function RosterWorkspace({
       {metadataNotice && <p role="status">{metadataNotice}</p>}
       {roster && (
         <>
-          {canRoster && (
-            <div
-              ref={tabFades.ref}
-              className="roster-workflow-nav has-horizontal-fades"
-              data-fade-left={tabFades.left}
-              data-fade-right={tabFades.right}
-              role="group"
-              aria-label="Roster workspace views"
-            >
-              {(
-                [
-                  { id: "assign", label: "Accounts & signups" },
-                  { id: "compare", label: "Compare clans" },
-                  { id: "rules", label: "Hosting clans" },
-                  {
-                    id: "weights",
-                    label: `Missing weights · ${globalMissingWeight}`,
-                  },
-                ] as const
-              ).map((item) => (
-                <Button
-                  key={item.id}
-                  disabled={uiLocked && !working}
-                  aria-pressed={mode === item.id}
-                  className={mode === item.id ? "active" : ""}
-                  onClick={() => {
-                    if (item.id === mode) return;
-                    const action = () => {
-                      setMode(item.id);
-                      setSelectedTags([]);
-                    };
-                    mayLeaveEditor(action);
-                  }}
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </div>
-          )}
-          {mode === "assign" ? (
-            <div
-              className="roster-list-pool-tabs workflow-tabs"
-              role="group"
-              aria-label="CWL account pool"
-            >
-              {(["all", "main", "lazy"] as const).map((pool) => (
-                <Button
-                  key={pool}
-                  aria-pressed={releasePreferences.pool === pool}
-                  disabled={uiLocked}
-                  onClick={() =>
-                    setReleasePreferences((current) => ({ ...current, pool }))
-                  }
-                >
-                  {pool === "all"
-                    ? "All accounts"
-                    : pool === "main"
-                      ? "Main CWL"
-                      : "Lazy CWL"}
-                </Button>
-              ))}
-            </div>
-          ) : mode === "weights" ? null : (
-            <CwlPoolTabs
-              value={poolFilter}
-              disabled={uiLocked && !working}
-              onChange={(pool) => {
-                mayLeaveEditor(() => {
-                  setPoolFilter(pool);
-                  closePanel();
-                  setEditingTag(null);
-                });
-              }}
-            />
-          )}
+          <div className="roster-workspace-navigation">
+            {canRoster && (
+              <div
+                ref={tabFades.ref}
+                className="roster-workflow-nav has-horizontal-fades"
+                data-fade-left={tabFades.left}
+                data-fade-right={tabFades.right}
+                role="group"
+                aria-label="Roster workspace views"
+              >
+                {(
+                  [
+                    { id: "assign", label: "Accounts & signups" },
+                    { id: "compare", label: "Compare clans" },
+                    { id: "rules", label: "Hosting clans" },
+                    {
+                      id: "weights",
+                      label: `Missing weights · ${globalMissingWeight}`,
+                    },
+                  ] as const
+                ).map((item) => (
+                  <Button
+                    key={item.id}
+                    disabled={uiLocked && !working}
+                    aria-pressed={mode === item.id}
+                    className={mode === item.id ? "active" : ""}
+                    onClick={() => {
+                      if (item.id === mode) return;
+                      const action = () => {
+                        setMode(item.id);
+                        setSelectedTags([]);
+                      };
+                      mayLeaveEditor(action);
+                    }}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            {mode === "assign" ? (
+              <div
+                className="roster-list-pool-tabs workflow-tabs"
+                role="group"
+                aria-label="CWL account pool"
+              >
+                {(["all", "main", "lazy"] as const).map((pool) => (
+                  <Button
+                    key={pool}
+                    aria-pressed={releasePreferences.pool === pool}
+                    disabled={uiLocked}
+                    onClick={() =>
+                      setReleasePreferences((current) => ({ ...current, pool }))
+                    }
+                  >
+                    {pool === "all"
+                      ? "All accounts"
+                      : pool === "main"
+                        ? "Main CWL"
+                        : "Lazy CWL"}
+                  </Button>
+                ))}
+              </div>
+            ) : mode === "weights" ? null : (
+              <CwlPoolTabs
+                value={poolFilter}
+                disabled={uiLocked && !working}
+                onChange={(pool) => {
+                  mayLeaveEditor(() => {
+                    setPoolFilter(pool);
+                    closePanel();
+                    setEditingTag(null);
+                  });
+                }}
+              />
+            )}
+          </div>
           <div hidden={mode !== "assign"}>
             <RosterClanChips
               key={seasonId}
@@ -1424,7 +1442,7 @@ export default function RosterWorkspace({
                   label={
                     rosterSortOptions.find(
                       ([value]) => value === releasePreferences.sort,
-                    )?.[1] || "Unassigned first"
+                    )?.[1] || "Unplaced first"
                   }
                   grouped={groupByDiscord}
                   aria-expanded={sortOpen}
@@ -1470,6 +1488,12 @@ export default function RosterWorkspace({
                     </div>
                   </ActionPanel>
                 )}
+                <Button
+                  icon={RefreshCw}
+                  label="Refresh roster"
+                  disabled={uiLocked}
+                  onClick={refreshRoster}
+                />
               </RosterFilters>
               <div
                 className="roster-list-heading"
@@ -1624,15 +1648,34 @@ export default function RosterWorkspace({
           )}
         </>
       )}
-      {canPublish && (
-        <button
-          className="cwl-next-cue"
-          disabled={uiLocked || !onReviewPublication}
-          onClick={onReviewPublication}
-        >
-          Next: Finalize roster ›
-        </button>
-      )}
+      {canPublish &&
+        mode === "assign" &&
+        roster &&
+        (roster.accounts.some((account) => !account.assigned_clan_tag) ? (
+          <p className="inline-reason">
+            {
+              roster.accounts.filter((account) => !account.assigned_clan_tag)
+                .length
+            }{" "}
+            account
+            {roster.accounts.filter((account) => !account.assigned_clan_tag)
+              .length === 1
+              ? ""
+              : "s"}{" "}
+            unplaced. Place{" "}
+            {roster.accounts.filter((account) => !account.assigned_clan_tag)
+              .length === 1
+              ? "it"
+              : "them"}{" "}
+            before Finalize roster.
+          </p>
+        ) : (
+          <CwlNextLink
+            label="Finalize roster"
+            disabled={uiLocked}
+            onNext={onReviewPublication}
+          />
+        ))}
       <div
         className="roster-selection-spacer"
         style={{

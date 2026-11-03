@@ -46,7 +46,7 @@ const shots = process.env.WU_LAYOUT_SCREENSHOTS;
       await page.locator(".roster-player-card").first().waitFor();
       const capacity = page.locator(".roster-capacity-alert");
       assert.equal(await capacity.count(), 1);
-      assert.match(await capacity.innerText(), /2 clans have no capacity set/);
+      assert.match(await capacity.innerText(), /2 clans have no clan size set/);
       const rules = before.current.rules.filter(
         (r) => r.pool && r.capacity !== 15 && r.capacity !== 30,
       );

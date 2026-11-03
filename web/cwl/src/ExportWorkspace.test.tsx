@@ -117,7 +117,9 @@ it("uses the four plain dataset names and formats only preview values", async ()
     "Results history",
     "Bonus medals history",
   ]);
-  expect(select("Season").selectedOptions[0].text).toBe("November 2026");
+  expect(host.querySelector(".roster-menu-current")?.textContent).toBe(
+    "November 2026",
+  );
   expect(host.textContent).toContain("179k");
   expect(host.textContent).toContain("November 2026");
   expect(host.textContent).toContain(

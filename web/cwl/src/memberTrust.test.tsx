@@ -126,17 +126,17 @@ it("keeps the clan list through failed refresh and recovers; denied access clear
   expect(host.textContent).toContain("May change");
   expect(host.textContent).toContain("Waiting player");
   failure = new Error("upstream secret unavailable");
-  await act(async () => window.dispatchEvent(new Event("focus")));
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).toContain("Couldn't refresh. Showing last update.");
   expect(host.textContent).toContain("Elsewhere");
   expect(host.textContent).not.toContain("upstream secret");
   failure = null;
-  await act(async () => window.dispatchEvent(new Event("focus")));
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).not.toContain("Couldn't refresh");
   failure = new ApiError("Access changed", 403);
-  await act(async () => window.dispatchEvent(new Event("focus")));
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).not.toContain("Elsewhere");
 });
@@ -237,14 +237,14 @@ it("loads seasons on first hidden mount and refreshes on visibility, not while h
   expect(host.textContent).toContain("November");
   expect(host.textContent).not.toContain("No CWL season available");
   const before = reads();
-  await act(async () => window.dispatchEvent(new Event("focus")));
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(reads()).toBe(before);
   Object.defineProperty(document, "hidden", {
     configurable: true,
     value: false,
   });
-  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(reads()).toBeGreaterThan(before);
 });
@@ -284,17 +284,25 @@ it("retains Home account and signup data through refresh failure, then recovers 
     />,
   );
   expect(host.textContent).toContain("Retained player");
+  expect(host.textContent).not.toContain("War weight");
+  expect(host.textContent).not.toContain("Auto-refresh every 30 seconds");
+  expect(
+    [...host.querySelectorAll("button")].some(
+      (button) => button.textContent === "Pause",
+    ),
+  ).toBe(false);
+  expect(host.querySelector(".eyebrow")).toBeNull();
   failure = new Error("unavailable");
-  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).toContain("Retained player");
   expect(host.textContent).toContain("Couldn't refresh. Showing last update.");
   failure = null;
-  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).not.toContain("Couldn't refresh");
   failure = new ApiError("Sign in again", 401);
-  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).not.toContain("Retained player");
 });
@@ -321,13 +329,13 @@ it("keeps the known Home season after a failed focus refresh and recovers", asyn
   });
   await render(<App />);
   fail = true;
-  await act(async () => window.dispatchEvent(new Event("focus")));
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).toContain("November");
   expect(host.textContent).toContain("Couldn't refresh. Showing last update.");
   expect(host.textContent).not.toContain("private upstream");
   fail = false;
-  await act(async () => window.dispatchEvent(new Event("focus")));
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).not.toContain("Couldn't refresh");
 });
@@ -375,7 +383,7 @@ it("clears assignments when a later season read loses permission", async () => {
   await render(<App />);
   expect(host.textContent).toContain("Elsewhere");
   denied = true;
-  await act(async () => window.dispatchEvent(new Event("focus")));
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).not.toContain("Elsewhere");
   expect(host.textContent).not.toContain("Waiting player");
@@ -393,7 +401,7 @@ it("keeps an unknown arrival blank and labels May change on its actual clan row"
     "May change",
   );
   mocks.api.mockResolvedValue({ ...assignment, draft_changed: false });
-  await act(async () => window.dispatchEvent(new Event("focus")));
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.querySelector(".member-clan-head h2")?.textContent).not.toContain(
     "May change",
@@ -443,7 +451,7 @@ it("runs Home initial account/context loading while hidden, but skips its hidden
   );
   expect(mocks.accounts).toHaveBeenCalledOnce();
   expect(host.textContent).toContain("Hidden-owned player");
-  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(mocks.accounts).toHaveBeenCalledOnce();
 });
@@ -477,7 +485,7 @@ it("refreshes App seasons once on visibilitychange without Home masking a missin
     configurable: true,
     value: false,
   });
-  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(reads()).toBe(before + 1);
 });
@@ -660,7 +668,7 @@ it("keeps a known signup season warning small while an explicit stale signup rem
   });
   await render(<App />);
   seasonReadFails = true;
-  await act(async () => window.dispatchEvent(new Event("focus")));
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.querySelector(".member-refresh-note")?.getAttribute("role")).toBe(
     "status",

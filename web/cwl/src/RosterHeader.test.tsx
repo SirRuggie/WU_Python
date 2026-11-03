@@ -107,10 +107,10 @@ describe("roster header counts", () => {
       ],
     } as RosterSnapshot;
     const html = render("all", "1", "June", [], testRoster, () => {});
-    expect(html).toContain("Funnies has no capacity set");
+    expect(html).toContain("Funnies has no clan size set");
     expect(html).toContain("Set in Hosting clans ›");
-    expect(html).not.toContain("Ready has no capacity set");
-    expect(html).not.toContain("Old has no capacity set");
+    expect(html).not.toContain("Ready has no clan size set");
+    expect(html).not.toContain("Old has no clan size set");
     expect(html.indexOf("signup-activity")).toBeLessThan(
       html.indexOf("roster-capacity-alert"),
     );
@@ -131,30 +131,59 @@ describe("roster header counts", () => {
   it("shows a compact month while retaining the full accessible season and menu label", () => {
     const html = render("all", "1", "November 2026");
     expect(html).toContain('aria-label="Season: November 2026"');
-    expect(html).toContain(
-      'class="roster-header-season-short" aria-hidden="true">Nov 2026</span>',
-    );
+    expect(html).not.toContain("roster-header-season-short");
     expect(html).toContain('class="roster-menu-current">November 2026</span>');
   });
-  it("keeps custom season names intact in the compact label", () => {
+  it("keeps custom season names intact in the shared label", () => {
     expect(render("all", "1", "Championship season")).toContain(
-      'class="roster-header-season-short" aria-hidden="true">Championship season</span>',
+      'class="roster-menu-current">Championship season</span>',
     );
   });
   it("scopes signed and unplaced to the chosen pool but keeps missing weight global", () => {
-    expect(render("main")).toContain("<strong>2</strong> signed");
+    expect(render("main")).toContain("<strong>2</strong> signups");
     expect(render("main")).toContain("<strong>1</strong> unplaced");
     expect(render("main")).toContain(
       "<strong>2</strong> no weight (all pools)",
     );
-    expect(render("lazy")).toContain("<strong>1</strong> signed");
+    expect(render("lazy")).toContain("<strong>1</strong> signup");
     expect(render("lazy")).toContain("<strong>1</strong> unplaced");
     expect(render("lazy")).toContain(
       "<strong>2</strong> no weight (all pools)",
     );
-    expect(render("all")).toContain("<strong>3</strong> signed");
+    expect(render("all")).toContain("<strong>3</strong> signups");
     expect(render("all")).toContain("<strong>2</strong> unplaced");
     expect(render("all")).toContain("<strong>2</strong> no weight");
     expect(render("all")).not.toContain("(all pools)");
   });
+});
+
+it("omits all-pools noise when the selected pool has the same missing-weight count", () => {
+  const samePool = {
+    ...roster,
+    accounts: [
+      account("#A", "main", null, null),
+      account("#B", "lazy", null, 100000),
+    ],
+  };
+  expect(render("main", "1", "November 2026", [], samePool)).toContain(
+    "<strong>1</strong> no weight",
+  );
+  expect(render("main", "1", "November 2026", [], samePool)).not.toContain(
+    "(all pools)",
+  );
+  expect(render("lazy", "1", "November 2026", [], samePool)).toContain(
+    "<strong>1</strong> no weight (all pools)",
+  );
+});
+
+it("combines season, visible counts and status without an eyebrow or duplicate menu", () => {
+  const html = render("all", "1", "November 2026");
+  expect(html).not.toContain('class="eyebrow"');
+  expect(html).toMatch(/class="[^"]*roster-header-title-row/);
+  expect(html).toContain('class="roster-header-summary"');
+  expect(html).toContain("3 signups · 2 unplaced · 2 no weight");
+  expect(html).toContain("Signups open");
+  expect(html).toContain('aria-label="Working roster counts"');
+  expect(html).toContain('aria-label="Refresh roster"');
+  expect(html).not.toContain("More roster actions");
 });

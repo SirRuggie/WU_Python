@@ -30,7 +30,7 @@ describe('Home attention states', () => {
   it('requires a complete empty read before suggesting account linking', () => {
     expect(homeAttentionState(false, '', false, 0)).toBeNull()
     expect(homeAttentionState(false, '', true, 0)).toBeNull()
-    expect(homeAttentionState(true, '', true, 0)).toMatchObject({ kind: 'empty', actionLabel: 'Link accounts' })
+    expect(homeAttentionState(true, '', true, 0)).toMatchObject({ kind: 'empty', actionLabel: 'Link an account' })
     expect(homeAttentionState(true, '', true, 2)).toBeNull()
   })
 

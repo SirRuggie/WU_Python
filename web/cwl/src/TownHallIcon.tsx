@@ -24,6 +24,6 @@ export default function TownHallIcon({ level }: { level: number | null | undefin
   const id = level == null ? undefined : townHallEmoji[level]
   const label = level == null ? 'Town Hall unknown' : `Town Hall ${level}`
   return id && failedId !== id
-    ? <img className="town-hall-icon" src={`https://cdn.discordapp.com/emojis/${id}.png?size=64`} alt={label} title={label} width={32} height={32} onError={() => setFailedId(id)} />
+    ? <img className="town-hall-icon" src={`https://cdn.discordapp.com/emojis/${id}.png?size=64`} alt={label} title={label} width={32} height={32} loading="lazy" onError={() => setFailedId(id)} />
     : <span className="town-hall-fallback" title={label}>TH {level ?? '—'}</span>
 }

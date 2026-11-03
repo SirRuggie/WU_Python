@@ -1,3 +1,4 @@
+import { visibleRefresh } from "./visibleRefresh";
 import { memberSignupsOpen } from "./memberSeason";
 import MemberSignupStatus, { signupHeading } from "./MemberSignupStatus";
 import { useJourneyState, useJourneyPosition } from "./journeyState";
@@ -61,7 +62,7 @@ export function homeAttentionState(
       kind: "empty" as const,
       title: "No linked accounts found",
       detail: "Link your Clash accounts in Discord, then check again here.",
-      actionLabel: "Link accounts",
+      actionLabel: "Link an account",
     };
   return null;
 }
@@ -95,7 +96,7 @@ export function homeNextStep(
     };
   if (!accountCount)
     return {
-      title: "Link your accounts to get started",
+      title: "Link an account",
       detail: "Link your Clash accounts in Discord, then refresh this page.",
       destination: "help" as const,
     };
@@ -361,17 +362,14 @@ export default function DashboardHome(props: Props) {
       }
     };
     void load();
-    const tick = () => {
-      if (!paused) void load();
-    };
-    const timer = window.setInterval(tick, 30000);
-    document.addEventListener("visibilitychange", tick);
-    window.addEventListener("online", tick);
+    const tick = () => { if (!paused) return load(); };
+    const stopRefresh = visibleRefresh(tick, 30000);
+    const online = () => { if (!document.hidden) void tick(); };
+    window.addEventListener("online", online);
     return () => {
       cancelled = true;
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", tick);
-      window.removeEventListener("online", tick);
+      stopRefresh();
+      window.removeEventListener("online", online);
     };
   }, [seasonId, seasonsKnown, refreshKey, paused]);
   const rows = useMemo(
@@ -509,7 +507,6 @@ export default function DashboardHome(props: Props) {
     <div className="dashboard-home">
       <div className="page-head">
         <div>
-          <p className="eyebrow">Your Warriors United home</p>
           <h1>Hey, {session.user.display_name || session.user.username}</h1>
           <p>Your accounts, your clans, and what to do next.</p>
         </div>
@@ -536,15 +533,21 @@ export default function DashboardHome(props: Props) {
                   : "Loading your accounts…"}
         </span>
         <div>
-          <small>
-            {paused ? "Auto-refresh paused" : "Auto-refresh every 30 seconds"}
-          </small>
-          <button
-            onClick={() => setPaused((value) => !value)}
-            aria-pressed={paused}
-          >
-            {paused ? "Resume" : "Pause"}
-          </button>
+          {session.can_edit && (
+            <>
+              <small>
+                {paused
+                  ? "Auto-refresh paused"
+                  : "Auto-refresh every 30 seconds"}
+              </small>
+              <button
+                onClick={() => setPaused((value) => !value)}
+                aria-pressed={paused}
+              >
+                {paused ? "Resume" : "Pause"}
+              </button>
+            </>
+          )}
           <button
             disabled={refreshing}
             onClick={refreshDashboard}
@@ -587,9 +590,6 @@ export default function DashboardHome(props: Props) {
               <DashboardIcon name="war" />
             </div>
             <div className="hub-next-copy">
-              <p className="eyebrow">
-                CWL · {season?.label || "Season coming soon"}
-              </p>
               <h2 id="hub-next-title">{nextStep.title}</h2>
               <p>{nextStep.detail}</p>
             </div>
@@ -603,7 +603,7 @@ export default function DashboardHome(props: Props) {
                 className="primary"
                 onClick={() => onNavigate("assignments")}
               >
-                My assignments →
+                My clan assignments →
               </button>
             )}
           </section>
@@ -699,15 +699,15 @@ export default function DashboardHome(props: Props) {
               </p>
             </div>
             <button onClick={() => onNavigate("assignments")}>
-              My assignments ↗
+              My clan assignments ↗
             </button>
           </div>
           <div className="hub-toolbar">
             <label>
-              Find an account or clan
+              Find a player or clan
               <input
                 type="search"
-                placeholder="Name, player tag or clan…"
+                placeholder="Find a player or clan"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
@@ -831,12 +831,14 @@ export default function DashboardHome(props: Props) {
                               <span>
                                 <strong>{row.name}</strong>
                                 <small>{row.tag}</small>
-                                <small title="Saved clan weight, staff override, or FWA Stats fallback">
-                                  War weight:{" "}
-                                  {row.war_weight == null
-                                    ? "Not Available"
-                                    : weightText(row.war_weight)}
-                                </small>
+                                {session.can_edit && (
+                                  <small title="Saved clan weight, staff override, or FWA Stats fallback">
+                                    War weight:{" "}
+                                    {row.war_weight == null
+                                      ? "Not Available"
+                                      : weightText(row.war_weight)}
+                                  </small>
+                                )}
                               </span>
                             </label>
                             <div className="hub-account-status">
@@ -883,7 +885,7 @@ export default function DashboardHome(props: Props) {
                                   }
                                 >
                                   {row.assignment?.assigned_clan_tag
-                                    ? "View clan"
+                                    ? "My clan assignments"
                                     : "Manage signup"}{" "}
                                   →
                                 </button>
@@ -952,11 +954,7 @@ export default function DashboardHome(props: Props) {
       )}
       <div className="hub-bottom">
         <details className="hub-help" id="home-account-help">
-          <summary>
-            {complete && !rows.length
-              ? "How to link accounts"
-              : "Missing an account?"}
-          </summary>
+          <summary>Link an account</summary>
           <AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} />
           <p>
             Already signed-up accounts can be moved or withdrawn in My signups.

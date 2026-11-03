@@ -44,7 +44,9 @@ const data = {
 };
 async function selectCurrent(host: HTMLElement) {
   await act(async () =>
-    host.querySelector<HTMLButtonElement>(".roster-menu-trigger")!.click(),
+    [...host.querySelectorAll<HTMLButtonElement>(".roster-menu-trigger")]
+      .find((button) => button.textContent?.includes("Hosting clan"))!
+      .click(),
   );
   const item = document.querySelector<HTMLElement>(
     '[role="menuitem"][aria-label*="selected"]',
@@ -95,6 +97,9 @@ for (const workspace of ["Bonus", "Participation"]) {
       );
       let input: HTMLInputElement | null = null;
       if (workspace === "Bonus") {
+        expect(host.querySelector(".bonus-context > strong")?.textContent).toBe(
+          "November 2026",
+        );
         await act(async () =>
           host
             .querySelector<HTMLInputElement>(

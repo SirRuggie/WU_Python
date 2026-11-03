@@ -475,6 +475,8 @@ export default function ImageCollection({
                     aria-label={`Open ${item.name}`}
                   >
                     <img
+                      width={300}
+                      height={150}
                       loading="lazy"
                       src={item.url}
                       alt={item.name}

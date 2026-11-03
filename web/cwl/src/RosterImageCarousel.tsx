@@ -1,3 +1,4 @@
+import { rosterImageDimensions } from "./rosterImageDimensions";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "./rosterUi/primitives";
@@ -179,6 +180,8 @@ export default function RosterImageCarousel({
                   <div key={key}>
                     <img
                       src={src}
+                      {...rosterImageDimensions(clan.count, page)}
+                      loading={Math.abs(at - index) <= 1 ? "eager" : "lazy"}
                       alt={`${clan.name} finalized roster, page ${page + 1}`}
                       className="clan-roster-image"
                       onLoad={() =>

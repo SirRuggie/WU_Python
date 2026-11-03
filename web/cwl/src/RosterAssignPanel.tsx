@@ -235,7 +235,7 @@ export default function RosterAssignPanel({
                   const reason = currentlyFull
                     ? "Full"
                     : projectedOverCapacity
-                      ? "Over capacity"
+                      ? "Over clan size"
                       : unchanged
                         ? "Already assigned"
                         : null;
@@ -275,7 +275,7 @@ export default function RosterAssignPanel({
                             </span>
                           )}
                           {clan.capacity === null && (
-                            <span>Default capacity</span>
+                            <span>Default clan size</span>
                           )}
                           {reason && (
                             <span className="roster-assign-warning">
@@ -287,7 +287,7 @@ export default function RosterAssignPanel({
                           className={projectedCapacity.barClass}
                           value={projectedCount}
                           max={clan.effective_capacity}
-                          label={`${clan.name} projected capacity`}
+                          label={`${clan.name} projected clan size`}
                           valueText={`${projectedCount} of ${clan.effective_capacity}`}
                         />
                         <ChevronRight

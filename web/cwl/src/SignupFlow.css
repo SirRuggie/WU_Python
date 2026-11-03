@@ -214,16 +214,7 @@
     align-items: flex-start;
     gap: 8px;
   }
-  .member-signup-head {
-    margin-bottom: 12px;
-  }
-  .member-signup-head .eyebrow {
-    margin-bottom: 3px;
-  }
-  .member-signup-head h1 {
-    margin-bottom: 4px;
-  }
-  .member-signup-head p {
+  .member-signup-head + .cwl-page-description {
     font-size: 13px;
   }
   .signup-flow .section-heading {
