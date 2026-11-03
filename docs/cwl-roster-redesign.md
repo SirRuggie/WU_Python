@@ -1190,3 +1190,15 @@ notification, destination, selection, save, permission or delivery policy change
 are part of 119. Short strip labels are the 320-width exception, with full
 accessible names. See the kept-term/scope checklist in
 [cwl-plain-words-review.md](cwl-plain-words-review.md).
+
+
+### Later — browser error-report noise observed during 120
+
+The isolated navigation matrix sometimes emitted `POST /api/cwl/issues/browser`
+with kind `network_error` while every domain-write count stayed zero. Passive
+traces observed `TypeError: Failed to fetch`; rejected GETs also occur on the
+accepted 147 baseline. A GET cut off by navigation is suspected, but the cause of
+these diagnostic posts is **unproven**: their payload omits the original error.
+Investigate expected navigation failures and reporter noise separately. PR120
+changes no API/telemetry handling; review 475's exact diagnostic-route test
+exception applies only to that batch, and all earlier red traces are retained.

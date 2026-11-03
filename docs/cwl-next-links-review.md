@@ -103,3 +103,31 @@ Evidence: `.local/p120-full-fe-after147.log`, `.local/p120-build-after147.log`,
 `.local/p120-baseline-comparison.json` and `.local/p120-build-layout.log`.
 This is a concrete review checkpoint pending judgment of the instrumentation
 limit, not READY or permission to change API behavior or release.
+
+### Final review gate — 475 exception
+
+Review 475 accepts one narrowly scoped exception for this PR only. After explicit
+fixture login, the final checker records every navigation non-GET. It rejects
+all of them except the exact `POST /api/cwl/issues/browser` diagnostic route;
+there is no prefix, other-method or domain-write exemption. All raw requests
+remain in the report, and each viewport run prints its diagnostic count and
+`kind`. No API/error-reporting implementation changed.
+
+The final complete 18-case matrix passes this approved gate: at 360 px it records
+one diagnostic POST of kind `network_error`; at 1440 px it records zero. Every
+other navigation non-GET count is zero, fixture domain state is unchanged and
+both runs have zero page errors. Six additional Build/Return cases retain the
+original all-POST assertion and pass with zero POSTs. The old red results above
+remain failures under the original criterion; the exception does not explain or
+hide them. The rejected-fetch/noise cause remains unproven and is listed under
+Later in the redesign notes.
+
+All other gates remain satisfied: 1,592 frontend tests/271 files, TypeScript,
+production build, all Publish explanations and preserved publication gates,
+asserted missing-explanation mutant, nine-file API/link argument comparison,
+normal Back/refresh and narrow/wide geometry/screenshots. Final evidence:
+`.local/p120-navigation-approved475-final.log`, `.local/p120-layout/results.json`,
+`.local/p120-build-layout.log` and `.local/p120-ready-evidence.json`.
+No full backend suite was repeated for this frontend-only batch. Live sends,
+production writes and full assistive-technology coverage remain untested.
+Release remains held.
