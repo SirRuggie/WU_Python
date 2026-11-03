@@ -33,7 +33,7 @@ export default function ParticipationHistory({ seasonId, onAccessDenied }: { sea
       {data && !data.accounts.length && <p>No saved results yet.</p>}
       {data?.accounts.map(account => <div className="participation-history-row" key={account.tag}>
         <strong>{account.player_name}</strong>
-        <span>{account.tag} · {account.pool === 'main' ? 'Main CWL' : 'Lazy CWL'} · {account.assigned_clan_name || account.assigned_clan_tag || 'Unassigned'}</span>
+        <span>{account.tag} · {account.pool === 'main' ? 'Main CWL' : 'Lazy CWL'} · {account.assigned_clan_name || account.assigned_clan_tag || 'Unplaced'}</span>
         <span>Attacks {account.attacks ?? 'Not available'} · Stars {account.stars ?? 'Not available'}</span>
         {account.notes && <p>{account.notes}</p>}
       </div>)}

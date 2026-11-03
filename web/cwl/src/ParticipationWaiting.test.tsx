@@ -87,6 +87,12 @@ it.each([
       });
       const text = host.textContent || "";
       expect(
+        host.querySelector(".participation-capture")?.textContent,
+      ).toContain("November 2026");
+      expect(
+        host.querySelector(".participation-capture")?.textContent,
+      ).not.toContain("2026-11");
+      expect(
         text.includes("incomplete, stale or unavailable source results."),
       ).toBe(incomplete);
       if (status === "waiting") {

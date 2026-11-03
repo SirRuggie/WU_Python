@@ -424,11 +424,11 @@ export default function StaffSignupControls({
                       ) : (
                         <>
                           <Input
-                            label="Find an account"
+                            label="Find a player or clan"
                             type="search"
                             value={search}
                             onChange={(event) => setSearch(event.target.value)}
-                            placeholder="Account name, tag or clan"
+                            placeholder="Find a player or clan"
                           />
                           <div className="staff-signup-list-tools">
                             <label className="check-label">

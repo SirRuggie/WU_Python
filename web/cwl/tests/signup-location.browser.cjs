@@ -90,7 +90,7 @@ fs.mkdirSync(out, { recursive: true });
         } else {
           await page
             .getByText(
-              season === 4 ? "Published clan assignments" : "Not published yet",
+              season === 4 ? "Clan assignments" : "Waiting for a clan",
               { exact: true },
             )
             .waitFor();
@@ -113,14 +113,20 @@ fs.mkdirSync(out, { recursive: true });
               const title = await page
                 .locator(".member-status-line strong")
                 .boundingBox();
-              const version = await page
-                .locator(".member-status-line p")
+              assert.equal(
+                await page.locator(".member-status-line p").count(),
+                0,
+                "Member version detail stays removed",
+              );
+              const refresh = await page
+                .locator(".member-status-line")
+                .getByRole("button", { name: "Refresh", exact: true })
                 .boundingBox();
               assert(
                 Math.abs(
-                  title.y + title.height / 2 - (version.y + version.height / 2),
+                  title.y + title.height / 2 - (refresh.y + refresh.height / 2),
                 ) < 3,
-                "Desktop title and version must be inline",
+                "Desktop title and Refresh must be inline",
               );
             }
             results.push({ width, openClan: box });
@@ -156,7 +162,7 @@ fs.mkdirSync(out, { recursive: true });
       await page.route("**/my-assignments", waitingRoute);
       await page.goto(base + "/assignments");
       await page
-        .getByText("Published · your accounts are waiting for a clan", {
+        .getByText("Waiting for a clan", {
           exact: true,
         })
         .waitFor();

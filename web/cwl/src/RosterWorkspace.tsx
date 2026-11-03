@@ -741,7 +741,7 @@ export default function RosterWorkspace({
         await afterWrite(
           destination
             ? "Accounts assigned. Placements locked."
-            : "Accounts unassigned. Signups kept.",
+            : "Accounts unplaced. Signups kept.",
           true,
         );
       return true;
@@ -863,7 +863,7 @@ export default function RosterWorkspace({
   const globalMissingWeight = releaseResult?.globalMissingWeightCount ?? 0;
 
   const clanName = (tag: string | null) =>
-    roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
+    roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unplaced";
 
   useEffect(() => closeRosterActionMenus(), [seasonId, poolFilter, mode]);
 
@@ -1424,7 +1424,7 @@ export default function RosterWorkspace({
                   label={
                     rosterSortOptions.find(
                       ([value]) => value === releasePreferences.sort,
-                    )?.[1] || "Unassigned first"
+                    )?.[1] || "Unplaced first"
                   }
                   grouped={groupByDiscord}
                   aria-expanded={sortOpen}

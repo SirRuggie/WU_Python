@@ -173,7 +173,7 @@ it("partly placed lists only waiting names and does not invent totals when links
     published: true,
     signups: [{ ...signups[0], assigned_clan_tag: "#P2222222" }, signups[1]],
   });
-  expect(host.textContent).toContain("waiting for your clan");
+  expect(host.textContent).toContain("Waiting for a clan");
   expect(host.querySelector("ul")?.textContent).toBe("Ace · Lazy CWL");
   await render({ accounts: null });
   expect(host.textContent).toContain("You're signed up · 2 accounts");
@@ -196,7 +196,7 @@ it("local dates, minute-only countdown, late and null guidance", async () => {
   ).toContain("in 18 h");
   expect(
     memberDateLines(closed, false, Date.parse("2026-11-01T00:00:00Z")),
-  ).toEqual(["Taking a little longer than usual · check back soon"]);
+  ).toEqual(["Clans are not ready yet. Check back soon."]);
   expect(
     memberDateLines({ ...season, placements_by: null }, false, now),
   ).toEqual([]);
