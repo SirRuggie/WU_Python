@@ -58,16 +58,48 @@ remain in local logs. No production data, provider calls, live messages, role
 changes or notification tests are used. Real assistive-technology coverage and
 live delivery remain outside these local checks.
 
-### Paused checkpoint before review
+### Post-147 validation checkpoint — not READY
 
-Paused for higher-priority 147 rework of dependency119. Current source passed
-1,571 frontend tests/270 files with two workers, TypeScript/build, API AST audit
-and the missing-Publish-reason assertion mutant. An earlier parallel full run
-hit one unrelated five-second quick-select timeout; its focused rerun and the
-complete bounded-worker run passed without changing a timeout or excluding tests.
-The browser run is unfinished: six narrow Next routes reached their screenshot
-and navigation checks, but Back from the refreshed Bonus destination was attempted
-before its loading/dirty state settled. Diagnose and complete the entire 360/1440
-matrix on resume; this checkpoint is not READY. Existing harness failures and
-fixture-only read overlays are retained in `.local/p120-*` evidence. Integrate
-accepted147 changes before final validation and review.
+Accepted dependency 147 (`93a5b179`) merged without conflicts. The combined
+frontend passes 1,592 tests in 271 files (94.48 seconds), TypeScript and build.
+A nine-file syntax/argument audit against 147 preserves API calls and existing
+link destinations, including the two newly added pure helpers. The prior
+missing-Publish-reason mutant remains applicable: its publication source and
+tests are byte-identical after this dependency merge. The original successful
+Publish setter remains separate from navigation-only callbacks.
+
+All 18 functional browser cases at 360/1440 reached their Next, refresh and Back
+assertions, with no page errors or campaign/signup/profile/role mutations. Six
+additional Build/Return cases pass the strict all-POST assertion: unplaced
+reason/no Next, clear Build one 44 px cue, Back, no cue on Compare, and no Return
+cue. Narrow Build and wide Finalize screenshots were visually reviewed.
+
+**The full 18-case zero-POST gate has not passed.** Initial and subsequently
+more-settled navigation matrices recorded one or two
+`POST /api/cwl/issues/browser` requests, whose payload is only
+`{kind: "network_error"}`. These are retained failures, not a telemetry whitelist.
+They occur around Announcements; no domain mutation is observed. Passive
+pass-through fetch tracing records `TypeError: Failed to fetch`, not the earlier
+hypothesized `AbortError`. Transport cancellation remains an inference, not a
+confirmed explanation of the original payload. Waiting for network-idle both
+before and after navigation did not eliminate every telemetry request. No claim
+is made that settled or rapid navigation universally emits zero POSTs.
+
+A bounded independent comparison served exact accepted-147 and combined-120
+assets from separate synthetic fixtures. Eight runs (two sources × settled or
+unsettled × two repeats) exercised Finalize/Announcements, refresh/Back and
+Declaration transitions. Both versions had rejected fetches (147: one to four;
+120: three to four per run), zero POSTs, zero domain mutations and zero page
+errors. This establishes pre-existing rejected-fetch behavior; its narrower
+sequence did not reproduce or attribute the full-matrix telemetry POSTs.
+The temporary baseline fixture was stopped gracefully; existing previews and
+all original traces remain. Application API/telemetry handling is unchanged.
+
+Evidence: `.local/p120-full-fe-after147.log`, `.local/p120-build-after147.log`,
+`.local/p120-api-proof-147.json`, `.local/p120-navigation-after147.log`,
+`.local/p120-navigation-fully-settled.log`,
+`.local/p120-layout/settled-with-telemetry-results.json`,
+`.local/p120-layout/fetch-failure-matrix-results.json`,
+`.local/p120-baseline-comparison.json` and `.local/p120-build-layout.log`.
+This is a concrete review checkpoint pending judgment of the instrumentation
+limit, not READY or permission to change API behavior or release.
