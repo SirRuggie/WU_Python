@@ -69,7 +69,7 @@ export default function DeclarationClan({
           </span>
           <span>
             {!group.tag
-              ? `${group.accounts.length} awaiting placement`
+              ? `${group.accounts.length} unplaced`
               : locationStatus
                 ? locationStatus === "checking"
                   ? "Checking locations…"
@@ -79,7 +79,7 @@ export default function DeclarationClan({
           {group.tag && !locationStatus && (
             <small>
               {group.capacity === null
-                ? "War size not set"
+                ? "Clan size not set"
                 : ready || needed === 0
                   ? `${group.capacity}v${group.capacity}`
                   : `needs ${needed} for ${group.capacity}v${group.capacity}`}

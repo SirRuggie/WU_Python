@@ -26,9 +26,21 @@ if (!existsSync(python)) {
 
 function spawnFixture(interpreter, args, options) {
   const selectedPort = Number(args.at(-1));
-  const probe = spawnSync(interpreter, ["-I", "-c", "import socket,sys; s=socket.socket(); s.bind(('127.0.0.1',int(sys.argv[1]))); s.close()", String(selectedPort)], {encoding:"utf8"});
-  if (probe.status !== 0) throw new Error(`Fixture port ${selectedPort} is occupied; refusing to contact another server`);
-  return spawn(interpreter,args,options);
+  const probe = spawnSync(
+    interpreter,
+    [
+      "-I",
+      "-c",
+      "import socket,sys; s=socket.socket(); s.bind(('127.0.0.1',int(sys.argv[1]))); s.close()",
+      String(selectedPort),
+    ],
+    { encoding: "utf8" },
+  );
+  if (probe.status !== 0)
+    throw new Error(
+      `Fixture port ${selectedPort} is occupied; refusing to contact another server`,
+    );
+  return spawn(interpreter, args, options);
 }
 
 const server = spawnFixture(
@@ -215,18 +227,23 @@ server.stdout.on("data", (chunk) => {
             }
             if (!ready)
               throw new Error("Readability fixture startup timed out");
-            const code = await new Promise((resolve) => {
-              const child = spawn(
-                process.execPath,
-                [
-                  path.join(__dirname, "roster-readability.browser.cjs"),
-                  String(readabilityPort),
-                ],
-                { stdio: "inherit", env: process.env },
-              );
-              child.on("exit", resolve);
-            });
-            if (code) process.exitCode = code;
+            for (const script of [
+              "roster-readability.browser.cjs",
+              "cwl-step-status.browser.cjs",
+            ]) {
+              const code = await new Promise((resolve) => {
+                const child = spawn(
+                  process.execPath,
+                  [path.join(__dirname, script), String(readabilityPort)],
+                  { stdio: "inherit", env: process.env },
+                );
+                child.on("exit", resolve);
+              });
+              if (code) {
+                process.exitCode = code;
+                break;
+              }
+            }
           } finally {
             readabilityServer.kill();
           }

@@ -19,7 +19,7 @@ export function playerClanStatus(
   const sameClan =
     !!assignedTag && sameLocationClan(location, assignedTag, assignedName);
   const inClan = !!(currentClanKnown && sameClan);
-  const name = assignedTag ? assignedName : "Not assigned";
+  const name = assignedTag ? assignedName : "Unplaced";
   const current =
     location.current_clan_name ||
     location.current_clan_tag ||

@@ -1,3 +1,4 @@
+import CwlNextLink from "./CwlNextLink";
 import { api } from "./api";
 import RosterUndoToast from "./RosterUndoToast";
 import type { FillerSaveResult } from "./RosterFillerCheckbox";
@@ -20,10 +21,14 @@ import "./ArrivalCheck.css";
 
 export default function ArrivalCheck({
   seasonId,
+  onFinalize,
+  onResults,
   onDirty = () => {},
   onWorking = () => {},
 }: {
   seasonId: string;
+  onFinalize?: () => void;
+  onResults?: () => void;
   onDirty?: (dirty: boolean) => void;
   onWorking?: (working: boolean) => void;
 }) {
@@ -262,11 +267,14 @@ export default function ArrivalCheck({
         <p>
           {data.publication.last_publication?.withdrawn_at
             ? hiddenPublicationStatus(data.publication.last_publication)
-            : "Publish the roster first"}{" "}
-          ·{" "}
-          <a href={`/cwl/publish?season=${seasonId}&step=review`}>
-            Finalize roster ›
-          </a>
+            : null}{" "}
+          {onFinalize ? (
+            <button type="button" className="text-link" onClick={onFinalize}>
+              Finalize roster first ›
+            </button>
+          ) : (
+            <span>No roster is currently published for members.</span>
+          )}
         </p>
       )}
       {data && published && context && (
@@ -343,8 +351,7 @@ export default function ArrivalCheck({
           )}
           {helpOpen && (
             <p className="declaration-help">
-              Ready = enough players in their clan for its war size, checked in
-              the last 5 minutes.
+              Ready = clan is full, checked in the last 5 minutes.
             </p>
           )}
           {data.arrival.publication_outdated && (
@@ -508,6 +515,9 @@ export default function ArrivalCheck({
           onUndo={() => void undoMark()}
           onDismiss={() => setMarkUndo(null)}
         />
+      )}
+      {data && published && (
+        <CwlNextLink label="Results" onNext={onResults} disabled={checking} />
       )}
     </section>
   );

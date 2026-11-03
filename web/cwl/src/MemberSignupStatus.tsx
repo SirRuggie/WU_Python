@@ -43,8 +43,7 @@ export function memberDateLines(
   const deadline = Date.parse(season.signup_deadline),
     placement = Date.parse(season.placements_by);
   if (!Number.isFinite(deadline) || !Number.isFinite(placement)) return [];
-  if (placement < now)
-    return ["Taking a little longer than usual · check back soon"];
+  if (placement < now) return ["Clans are not ready yet. Check back soon."];
   if (memberSignupsOpen(season))
     return [
       signupCloseLine(season, now)!,
@@ -113,7 +112,7 @@ export default function MemberSignupStatus({
         <h2>
           {signups.length
             ? partial
-              ? "✓ You're signed up · waiting for your clan"
+              ? "✓ You're signed up · Waiting for a clan"
               : signupHeading(signups.length, total)
             : "You haven't signed up any accounts yet."}
         </h2>
@@ -131,7 +130,7 @@ export default function MemberSignupStatus({
                     }
                   }}
                 >
-                  My clan ›
+                  My clan assignments ›
                 </a>
               </>
             ) : published ? (

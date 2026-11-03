@@ -39,37 +39,74 @@ fs.mkdirSync(output, { recursive: true });
           : route.abort(),
       );
       await page.request.post(origin + "/qa/member-timezones", {
-        data: { denied: false, conflict: false },
+        data: { reset: true, denied: false, conflict: false },
       });
       await page.goto(origin + "/server/member-timezones");
       await page
         .getByRole("button", { name: "Open local test session" })
         .click();
       await page
-        .getByRole("heading", { name: "Member time zones", exact: true })
+        .getByRole("heading", { name: "Members", exact: true })
         .waitFor();
       await page
-        .getByRole("button", { name: "Edit Ada Champion", exact: true })
-        .waitFor();
-      const scope = page.locator(".member-timezones");
-      assert.equal(await page.locator(".mt-member-row").count(), 25);
-      await page.getByText("1447 of 1447 members", { exact: false }).waitFor();
+        .getByRole("button", { name: "Open person: Ada Champion", exact: true })
+        .waitFor()
+        .catch(async (error) => {
+          console.error(
+            JSON.stringify({
+              width,
+              rowNames: await page
+                .locator(".members-person-open")
+                .evaluateAll((nodes) =>
+                  nodes.map((node) => node.getAttribute("aria-label")),
+                ),
+              alerts: await page.getByRole("alert").allTextContents(),
+            }),
+          );
+          throw error;
+        });
+      const scope = page.locator(".members-workspace");
+      assert.equal(await page.locator(".members-person").count(), 25);
+      await page.getByText("Showing 1-25 of 1,411", { exact: true }).waitFor();
+      // Unified Members hides bots by default; explicitly retain the old all-member total check.
+      await page.locator(".members-more-filters summary").click();
+      await page.getByRole("checkbox", { name: "Bots", exact: true }).check();
+      await page.getByText("Showing 1-25 of 1,448", { exact: true }).waitFor();
+      await page.getByRole("checkbox", { name: "Bots", exact: true }).uncheck();
+      await page.locator(".members-more-filters summary").click();
+      assert.equal(new URL(page.url()).pathname, "/server/members");
       const compact = await page
-        .locator(".mt-member-row")
+        .locator(".members-person")
         .first()
         .evaluate((e) => ({
           height: e.getBoundingClientRect().height,
-          rows: document.querySelectorAll(".mt-member-row").length,
+          rows: document.querySelectorAll(".members-person").length,
           actionsAbove:
-            document.querySelector(".mt-top-actions").getBoundingClientRect()
+            document.querySelector(".members-filters").getBoundingClientRect()
               .top < e.getBoundingClientRect().top,
         }));
       assert(
-        compact.height >= 70 && compact.height <= 90 && compact.actionsAbove,
+        compact.height >= 44 && compact.actionsAbove,
         JSON.stringify(compact),
       );
-      for (const state of ["Saved", "From nickname", "Unknown", "Missing"])
-        assert((await scope.textContent()).includes(state));
+      // The accepted rich directory retired source chips; preserve each fixture's
+      // current zone/flag output rather than expecting removed table controls.
+      const zoneOutputs = await scope
+        .locator(".members-person-zone")
+        .allTextContents();
+      assert(zoneOutputs.some((text) => text.includes("GMT-5")));
+      assert(zoneOutputs.some((text) => text.includes("NZT")));
+      // Cedar is Unknown by nickname, but has a saved profile; saved GMT-5 wins.
+      assert(
+        (
+          await scope
+            .locator(".members-person")
+            .filter({ hasText: "Cedar" })
+            .textContent()
+        ).includes("GMT-5"),
+      );
+      assert(zoneOutputs.some((text) => text.includes("No time zone")));
+      assert(zoneOutputs.some((text) => text.includes("Needs flag")));
       assert(!writes.some((r) => r.path.endsWith("/preview")));
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({
@@ -77,7 +114,10 @@ fs.mkdirSync(output, { recursive: true });
         fullPage: false,
       });
       await page
-        .getByRole("button", { name: "Edit Ada Champion", exact: true })
+        .getByRole("button", { name: "Open person: Ada Champion", exact: true })
+        .click();
+      await page
+        .getByRole("button", { name: "Edit time zone and flag", exact: true })
         .click();
       const country = page.getByLabel("Country", { exact: true });
       const zone = page.getByLabel("Time zone", { exact: true });
@@ -132,19 +172,30 @@ fs.mkdirSync(output, { recursive: true });
         .getByRole("button", { name: "Save profile", exact: true })
         .click();
       await page
-        .getByRole("button", { name: "Edit Ada Champion", exact: true })
+        .getByRole("button", { name: "Edit time zone and flag", exact: true })
         .waitFor();
+      await page
+        .getByRole("button", { name: "Back to members", exact: true })
+        .click();
+      await page.waitForFunction(() =>
+        document.activeElement?.matches(".members-person-open"),
+      );
       assert.equal(
         await page.evaluate(() =>
-          document.activeElement?.getAttribute("data-member-id"),
+          document.activeElement
+            ?.closest(".members-person")
+            ?.getAttribute("data-member-id"),
         ),
         "123456789012345670",
       );
       await page
-        .getByRole("button", { name: "Review nicknames", exact: true })
+        .getByRole("button", { name: "Actions for Members", exact: true })
         .click();
       await page
-        .getByRole("heading", { name: "Review nicknames", exact: true })
+        .getByRole("menuitem", { name: "Fix nicknames", exact: true })
+        .click();
+      await page
+        .getByRole("heading", { name: "Fix nicknames", exact: true })
         .waitFor();
       const review = scope.locator('[aria-label="Nickname review"]');
       assert.equal(await review.locator(".mt-list li").count(), 25);
@@ -154,7 +205,7 @@ fs.mkdirSync(output, { recursive: true });
       const counts = chips.map((text) => Number(text.match(/(\d+)$/)[1]));
       assert.equal(
         counts.reduce((a, b) => a + b, 0),
-        1410,
+        1411,
         "bots excluded from review counts",
       );
       await review.getByRole("button", { name: /^Check name/ }).click();
@@ -205,16 +256,16 @@ fs.mkdirSync(output, { recursive: true });
       await review.getByRole("button", { name: /^Will change/ }).click();
       await review.locator("input[type=checkbox]").nth(0).check();
       await review.locator("input[type=checkbox]").nth(1).check();
+      assert(
+        !writes.some((r) => r.path.endsWith("/confirm")),
+        "No confirm before explicit Rename",
+      );
       await review
         .getByRole("button", { name: "Rename 2", exact: true })
         .click();
-      await page
-        .getByRole("heading", { name: /Renaming/ })
-        .waitFor();
+      await page.getByRole("heading", { name: /Renaming/ }).waitFor();
       await page.getByRole("button", { name: "Stop run", exact: true }).click();
-      await page
-        .getByRole("heading", { name: /Stopped\./ })
-        .waitFor();
+      await page.getByRole("heading", { name: /Stopped\./ }).waitFor();
       assert(!(await scope.textContent()).includes("700731132936978456"));
       await page.getByRole("button", { name: /^Check manually/ }).click();
       await page.screenshot({
@@ -225,9 +276,14 @@ fs.mkdirSync(output, { recursive: true });
         .getByRole("button", { name: "Back to members", exact: true })
         .click();
       await page
-        .getByLabel("Search members", { exact: true })
+        .getByRole("searchbox", { name: "Find a person", exact: true })
         .fill("Server owner");
-      await page.getByRole("button", { name: /Edit Server owner/ }).click();
+      await page
+        .getByRole("button", { name: /Open person: Server owner/ })
+        .click();
+      await page
+        .getByRole("button", { name: "Edit time zone and flag", exact: true })
+        .click();
       await page
         .locator(".mt-editor")
         .getByText("The server owner cannot be changed by this tool.", {
@@ -236,6 +292,9 @@ fs.mkdirSync(output, { recursive: true });
         .waitFor();
       await page.screenshot({ path: `${output}/${width}-owner-guard.png` });
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Back to members", exact: true })
+        .click();
       const geometry = await scope.evaluate((node) => ({
         overflow: document.documentElement.scrollWidth > innerWidth,
         small: [...node.querySelectorAll("button,select,summary")]

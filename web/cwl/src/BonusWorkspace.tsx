@@ -1,3 +1,4 @@
+import { exportMonthLabel } from "./exportPreview";
 import RosterMenu from "./rosterUi/Menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDashboardPermission } from "./DashboardPermissions";
@@ -511,8 +512,8 @@ export default function BonusWorkspace({
     <div className="bonus-workspace">
       <div className="page-head bonus-page-head">
         <div>
-          <p className="eyebrow">CWL · Results &amp; bonuses</p>
-          <h1>Bonus winners</h1>
+          <p className="eyebrow">CWL</p>
+          <h1>Bonus medals</h1>
         </div>
         <label className="season-choice">
           Season
@@ -556,7 +557,9 @@ export default function BonusWorkspace({
       {data && (
         <>
           <div className="bonus-context">
-            <strong>{data.cycle || "CWL month not set"}</strong>
+            <strong>
+              {data.cycle ? exportMonthLabel(data.cycle) : "CWL month not set"}
+            </strong>
             <span>
               {data.sync.last_checked_at
                 ? `Clash checked ${new Date(data.sync.last_checked_at).toLocaleString()}`
@@ -1217,7 +1220,7 @@ export default function BonusWorkspace({
               <div className="bonus-section-heading">
                 <div>
                   <h2 ref={drawHeading} tabIndex={-1}>
-                    {draw.snapshot.clan_name} · Bonus winners
+                    {draw.snapshot.clan_name} · Bonus medals
                   </h2>
                   <p>
                     Saved {new Date(draw.created_at).toLocaleString()} ·{" "}
@@ -1348,7 +1351,7 @@ export default function BonusWorkspace({
                   {item.player_name} · {item.clan_name || item.clan_tag}
                 </strong>
                 <small>
-                  {item.tag} · {item.cycle} ·{" "}
+                  {item.tag} · {exportMonthLabel(item.cycle)} ·{" "}
                   {item.voided_at ? "Voided" : "Approved"} ·{" "}
                   {new Date(item.confirmed_at).toLocaleString()}
                 </small>
