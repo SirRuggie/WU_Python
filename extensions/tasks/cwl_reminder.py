@@ -34,6 +34,9 @@ from utils.constants import (
 
 loader = lightbulb.Loader()
 _campaign_catchup_active: set[str] = set()
+# Tokens describe every still-live local send, across in-process restarts.
+# Do not clear this on lifecycle events: an old POST may still complete.
+_campaign_send_activity: dict[tuple, set[object]] = {}
 
 # Configuration
 CWL_CHANNEL_ID = 1072714594625257502
@@ -490,7 +493,9 @@ async def _finish_catchup_decision(row, due, status, reason):
             recorded = await cwl_campaign.record_catchup_decision(
                 mongo_client, int(row["guild_id"]), row["cycle"], entry
             )
-        elif oid not in state["reported"] and oid not in state["sent"]:
+        elif (oid not in state["reported"]
+              and cwl_campaign.catchup_report_key(entry) not in state["reported"]
+              and oid not in state["sent"]):
             print("[CWL Reminder] ALERT campaign_catchup_decision_unavailable action=review delivery history")
             return
     if recorded:
@@ -498,32 +503,57 @@ async def _finish_catchup_decision(row, due, status, reason):
             f"[CWL Reminder] ALERT campaign_catchup cycle={row['cycle']} "
             f"message={row['message_id']} variant={variant} status={status} reason={reason}"
         )
-    await cwl_campaign.delete_catchup_job(mongo_client, row)
+    retired_retry = type(row.get("failure_count")) is int and row["failure_count"] > 0
+    await cwl_campaign.delete_catchup_job(mongo_client, row, retired_retry=retired_retry)
     _remove_catchup_scheduler_job(row)
 
 
-async def _restore_scheduled_catchups(rows, now, *, tagged_only=False, loaded=None):
+def _campaign_retry_snapshot(row):
+    return type(row.get("failure_count")) is int and row["failure_count"] > 0
+
+
+async def _restore_scheduled_catchups(
+    rows, now, *, tagged_only=False, loaded=None, stale_generation=None
+):
     """Decide persisted jobs before restore/sync can replace their original due time."""
     groups = {}
     handled = set()
     kept = {}
     for row in rows:
         try:
-            if not catchup_policy.scheduled_candidate(row):
+            stale_retry = (
+                stale_generation is not None
+                and row.get("kind") == "campaign"
+                and row.get("job_kind", "scheduled") in {"scheduled", "retry"}
+                and row.get("message_id") != "roster"
+                and row.get("status", "scheduled") == "scheduled"
+                and row.get("generation") != stale_generation
+                and type(row.get("failure_count")) is int
+                and row["failure_count"] > 0
+            )
+            if not stale_retry and not catchup_policy.scheduled_candidate(row):
                 continue
             combined_legacy = (
                 row.get("job_kind", "scheduled") == "scheduled"
                 and isinstance(row.get("variants"), list)
                 and len(row["variants"]) > 1
             )
+            stale_ordinary = (
+                stale_generation is not None
+                and row.get("job_kind", "scheduled") == "scheduled"
+                and row.get("generation") != stale_generation
+                and not combined_legacy
+            )
             if (
                 tagged_only
                 and row.get("job_kind") != catchup_policy.CATCHUP_JOB_KIND
                 and not combined_legacy
+                and not stale_ordinary
+                and not stale_retry
             ):
                 continue
             due = catchup_policy.original_due(row)
-            if due > now:
+            if due > now and not stale_retry:
                 continue
             variants = row.get("variants")
             if isinstance(variants, list) and len(variants) > 1:
@@ -547,9 +577,6 @@ async def _restore_scheduled_catchups(rows, now, *, tagged_only=False, loaded=No
             ):
                 raise ValueError("Invalid persisted catch-up scope")
             handled.add(row["_id"])
-            if row["_id"] in _campaign_catchup_active:
-                kept[row["_id"]] = row
-                continue
             groups.setdefault((gid, cycle), []).append((row, due, variants[0]))
         except (KeyError, TypeError, ValueError):
             if row.get("kind") == "campaign" and row.get("job_kind", "scheduled") in {"scheduled", catchup_policy.CATCHUP_JOB_KIND}:
@@ -562,12 +589,18 @@ async def _restore_scheduled_catchups(rows, now, *, tagged_only=False, loaded=No
             current = await cwl_campaign.load_campaign(mongo_client, gid, cycle)
         generation = _campaign_generation(current)
         state = await cwl_campaign.catchup_state(mongo_client, gid, cycle)
-        completed = catchup_policy.handled_occurrences(current, state)
         eligible = {}
         for row, due, variant in candidates:
+            # load_campaign/catchup_state yielded: a manual or scheduled owner
+            # may have entered meanwhile. Do not report against its live POST.
+            if row["_id"] in _campaign_catchup_active or _campaign_row_active(row):
+                kept[row["_id"]] = row
+                continue
             oid = cwl_campaign.occurrence_id(cycle, row["message_id"], variant)
-            if oid in completed:
-                await cwl_campaign.delete_catchup_job(mongo_client, row)
+            if oid in catchup_policy.handled_occurrences(current, state, due=due):
+                await cwl_campaign.delete_catchup_job(
+                    mongo_client, row, retired_retry=_campaign_retry_snapshot(row)
+                )
                 _remove_catchup_scheduler_job(row)
                 continue
             claim_key = oid.replace(".", "_")
@@ -903,7 +936,7 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
     oid = cwl_campaign.occurrence_id(cycle, message_id, variant)
     loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
     state = await cwl_campaign.catchup_state(mongo_client, guild_id, cycle)
-    if oid in catchup_policy.handled_occurrences(loaded, state):
+    if oid in catchup_policy.handled_occurrences(loaded, state, due=due):
         await cwl_campaign.delete_catchup_job(mongo_client, row)
         _remove_catchup_scheduler_job(row)
         return False
@@ -995,6 +1028,35 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
     return True
 
 
+def _register_campaign_activity(guild_id, cycle, message_id, variants):
+    registry = _campaign_send_activity
+    token = object()
+    keys = [(int(guild_id), cycle, message_id, variant)
+            for variant in (variants or cwl_campaign.AUDIENCES)]
+    for key in keys:
+        registry.setdefault(key, set()).add(token)
+    return registry, token, keys
+
+
+def _release_campaign_activity(activity):
+    if activity is None:
+        return
+    registry, token, keys = activity
+    for key in keys:
+        owners = registry.get(key)
+        if owners is not None:
+            owners.discard(token)
+            if not owners and registry.get(key) is owners:
+                registry.pop(key, None)
+
+
+def _campaign_row_active(row):
+    return any(_campaign_send_activity.get((
+        int(row["guild_id"]), row["cycle"],
+        row["message_id"], variant,
+    )) for variant in row.get("variants", ()))
+
+
 async def send_campaign_message(
     guild_id: int,
     cycle: str,
@@ -1005,6 +1067,30 @@ async def send_campaign_message(
     manual: bool = False,
     catchup_due_at: str | None = None,
     staff_request_id: str | None = None,
+) -> bool:
+    """Track every local owner of shared claims without changing claim policy."""
+    activity = _register_campaign_activity(guild_id, cycle, message_id, variants)
+    try:
+        return await _deliver_campaign_message(
+            guild_id, cycle, message_id, variants, generation, manual=manual,
+            catchup_due_at=catchup_due_at, staff_request_id=staff_request_id,
+            _activity=activity,
+        )
+    finally:
+        _release_campaign_activity(activity)
+
+
+async def _deliver_campaign_message(
+    guild_id: int,
+    cycle: str,
+    message_id: str,
+    variants: list[str] | None = None,
+    generation: str | None = None,
+    *,
+    manual: bool = False,
+    catchup_due_at: str | None = None,
+    staff_request_id: str | None = None,
+    _activity=None,
 ) -> bool:
     """Deliver one configured message with per-audience retry/idempotency."""
     if not bot_instance or not mongo_client:
@@ -1026,6 +1112,9 @@ async def send_campaign_message(
     loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
     current_generation = _campaign_generation(loaded)
     if generation is not None and generation != current_generation:
+        # No POST can occur on this path. Release only this invocation token
+        # before deciding its old scheduled row; another owner stays visible.
+        _release_campaign_activity(_activity)
         # A stale job must never send copy from a superseded campaign.
         await sync_campaign_schedule(guild_id, cycle)
         return False
@@ -1390,7 +1479,8 @@ async def _install_campaign_schedule(guild_id: int, cycle: str) -> None:
         and row.get("cycle") == cycle
     }
     recovered, retained = await _restore_scheduled_catchups(
-        list(scoped.values()), pendulum.now(DEFAULT_TIMEZONE), tagged_only=True, loaded=loaded
+        list(scoped.values()), pendulum.now(DEFAULT_TIMEZONE), tagged_only=True,
+        loaded=loaded, stale_generation=generation
     )
     scoped = {
         key: retained.get(key, row)
@@ -1400,7 +1490,7 @@ async def _install_campaign_schedule(guild_id: int, cycle: str) -> None:
     desired = {
         job_id: row
         for job_id, row in scoped.items()
-        if row.get("status") == "ledger_pending"
+        if job_id in retained or row.get("status") == "ledger_pending"
         or (
             (
                 row.get("job_kind") in {"manual", "retry", catchup_policy.CATCHUP_JOB_KIND}
@@ -1412,7 +1502,7 @@ async def _install_campaign_schedule(guild_id: int, cycle: str) -> None:
     desired = {
         key: row
         for key, row in desired.items()
-        if row.get("status") == "ledger_pending"
+        if key in retained or row.get("status") == "ledger_pending"
         or not _sequence_delivery_blocked(
             loaded, row.get("message_id", ""), pendulum.now(DEFAULT_TIMEZONE)
         )
@@ -1443,7 +1533,8 @@ async def _install_campaign_schedule(guild_id: int, cycle: str) -> None:
             # A confirmed post awaiting ledger persistence, or an active retry,
             # owns its occurrence until it completes.
             if (
-                existing.get("status") == "ledger_pending"
+                (job_id in retained and _campaign_row_active(existing))
+                or existing.get("status") == "ledger_pending"
                 or int(existing.get("failure_count", 0)) > 0
             ):
                 desired[job_id] = existing

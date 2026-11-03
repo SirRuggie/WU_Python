@@ -73,18 +73,32 @@ def exclusion_reason(loaded, row, variant, generation, now):
     return None
 
 
-def handled_occurrences(loaded, state):
-    """Any receipt, including failure/uncertainty, excludes automatic catch-up."""
-    return (
+def handled_occurrences(loaded, state, *, due=None):
+    """Sent/unknown outcomes are occurrence-wide; a known skip is due-specific."""
+    handled = (
         set(loaded.get("sent_occurrences", ()))
         | set(loaded.get("skipped", ()))
         | set(state.get("reported", ()))
-        | {
-            row["occurrence_id"]
-            for row in loaded.get("deliveries", ())
-            if row.get("occurrence_id")
-        }
     )
+    if due is not None:
+        suffix = "|due:" + due.in_timezone("UTC").isoformat()
+        for report in state.get("reported", ()):
+            if isinstance(report, str) and report.endswith(suffix):
+                handled.add(report[:-len(suffix)])
+    for row in loaded.get("deliveries", ()):
+        oid = row.get("occurrence_id")
+        if not oid:
+            continue
+        if row.get("catchup_scope") == "due" and row.get("status") == "skipped":
+            if due is not None and campaign.catchup_report_key(row) == campaign.catchup_report_key(
+                {"occurrence_id": oid, "status": "skipped", "original_due_at": due.isoformat()}
+            ):
+                handled.add(oid)
+        else:
+            # Old unscoped reports and every uncertain/failed/sent outcome
+            # retain their conservative occurrence-wide semantics.
+            handled.add(oid)
+    return handled
 
 
 def late_receipt(due, now):

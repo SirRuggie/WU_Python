@@ -95,6 +95,12 @@ class MemoryCollection:
             elif isinstance(expected, dict) and "$in" in expected:
                 if actual is missing or actual not in expected["$in"]:
                     return False
+            elif isinstance(expected, dict) and "$nin" in expected:
+                if actual is not missing and (
+                    any(value in actual for value in expected["$nin"])
+                    if isinstance(actual, list) else actual in expected["$nin"]
+                ):
+                    return False
             elif isinstance(expected, dict) and "$ne" in expected:
                 if actual is not missing and (
                     expected["$ne"] in actual if isinstance(actual, list)
