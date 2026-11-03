@@ -12,7 +12,9 @@ with an old generation to the existing PR189 recovery decision. It retains the
 generation fence: a settings change is conservatively recorded as
 `Skipped: settings changed`, matching restart behavior. It never substitutes new
 copy or a new generation into an old callback. Current-generation ordinary
-callbacks, manual jobs, retries and roster sends retain their scheduling rules.
+callbacks, manual jobs and roster sends retain their scheduling rules. A retry
+from an old generation is retired with a visible settings-changed skip; it is
+never sent with the new generation, even if its retry time is still ahead.
 PR189's six-hour eligibility, claims, ledger, uncertainty and snapshot-bound
 history/deletion remain the storage owner. An old scheduled skip does not consume
 a later ordinary occurrence whose time was moved into the future.
@@ -33,10 +35,51 @@ interleavings exercise both sides of the roster metadata read, marked/unmarked
 copy, missing/receipt-only cycle rows and current-only/future-month saves. They
 compare subsequent defaults and opposite-pool saves with a valid serial-operation
 reference, pinning current/future text, unrelated fields and delivery receipts.
-They preserve the existing behavior, so campaign storage and its CAS are unchanged.
+They preserve the existing roster-copy materialization behavior, so that save
+path and its CAS are unchanged. The catch-up report ledger changes below.
 This is evidence for this window, not a general distributed-concurrency proof.
 
-## Validation
+## Due-specific skip reports (review 156)
+
+Review found that an initial skip consumed the whole occurrence in the catch-up
+ledger. A move from noon to 13:00 therefore installed normally but vanished if the
+bot restarted at 13:05, or if another save made that second callback stale. Both
+cases were reproduced as genuine failing tests before this correction.
+
+The existing campaign storage owner now records a skipped due time as an
+occurrence plus a canonical UTC due-time key in the existing
+`catchup_reported_occurrences` array. Its history entry carries `catchup_scope:
+"due"`. The same due time is atomically deduplicated; a different time can send
+late under the existing six-hour policy or receive its own visible skip. Receipt
+history pruning does not forget a reported due time. A move back to an already
+skipped original time retains that report without adding a duplicate or sending
+it again. Sent, failed and uncertain outcomes keep their occurrence-wide fence.
+Legacy unscoped receipt markers remain conservative; no backfill or inference
+from missing history changes old state. No collection or schema migration is
+needed, and saved copy is unaffected.
+
+Retiring an old-generation retry uses the existing snapshot deletion owner, with
+an explicit validated retry snapshot and failure count in its delete condition.
+A replacement generation, due time, count, status or job kind survives. This does
+not make retries eligible for catch-up sending. A manual POST held across a move
+and then failing leaves a recoverable old snapshot; the next sync installs the
+moved job. The redundant activity check before awaited state reads was removed;
+the check after those reads covers both catch-up and local send owners.
+
+Current delta checks include the A/B regressions, moving back, equivalent UTC
+keys, history pruning, concurrent duplicate reports, legacy/unknown outcome
+fences, retired retry replacement snapshots and failed manual-owner repair.
+Twelve in-memory mutants (seven activity/fence and five due-report/retry cases)
+fail genuine assertions. An owned real Mongo run passes 15 catch-up/storage
+checks, including twelve simultaneous same-due report attempts with one winner.
+The delta focused suite passes 140 cases; broader regressions pass 245 cases
+and three subtests. The unchanged war check passes 213 backend cases/one skip,
+35 frontend cases, TypeScript and build. No live delivery is claimed. The fresh
+full backend and exact-artifact boot for this delta remain pending at this freeze
+and are recorded separately when complete.
+
+## Original validation before review 156 (historical)
+
 
 The focused recovery/race suite passes 119 cases. The broader unchanged PR177,
 PR183 and PR189 regressions pass 224 cases and three subtests, including isolated

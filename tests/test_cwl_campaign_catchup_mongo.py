@@ -266,3 +266,17 @@ def test_real_mongo_staff_not_sent_is_one_owned_receipt_without_clearing_other_s
             await client.close()
 
     asyncio.run(run())
+
+
+def test_due_scoped_reports_are_atomic_on_real_mongo():
+    from test_cwl_campaign_due_report_storage import check_atomic_due_reports
+    async def run():
+        client = AsyncMongoClient('mongodb://127.0.0.1:27171', serverSelectionTimeoutMS=2000, timeoutMS=5000)
+        db = client['catchup_156_' + uuid4().hex]
+        mongo = SimpleNamespace(bot_config=db.config)
+        try:
+            await check_atomic_due_reports(mongo)
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+    asyncio.run(run())

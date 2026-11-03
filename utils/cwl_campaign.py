@@ -1952,7 +1952,7 @@ async def prepare_catchup_job(mongo, row: dict, due, now) -> bool:
     return bool(getattr(result, "matched_count", 0))
 
 
-async def delete_catchup_job(mongo, row: dict) -> None:
+async def delete_catchup_job(mongo, row: dict, *, retired_retry=False) -> None:
     """Delete only the observed job or confirmed receipt, never a replacement."""
     recovering = row.get("status") == "ledger_pending"
     if recovering:
@@ -1964,6 +1964,12 @@ async def delete_catchup_job(mongo, row: dict) -> None:
         ):
             raise ValueError("Invalid late receipt recovery")
         _catchup_row_scope({**row, "status": "scheduled"})
+    elif retired_retry:
+        if (row.get("job_kind", "scheduled") not in {"scheduled", "retry"}
+                or type(row.get("failure_count")) is not int
+                or row["failure_count"] <= 0):
+            raise ValueError("Invalid retired retry snapshot")
+        _catchup_row_scope({**row, "job_kind": "scheduled", "failure_count": 0})
     else:
         _catchup_row_scope(row)
     query = {
@@ -1972,6 +1978,8 @@ async def delete_catchup_job(mongo, row: dict) -> None:
         "job_kind": row.get("job_kind", {"$exists": False}),
         "status": row.get("status", {"$exists": False}),
     }
+    if retired_retry:
+        query["failure_count"] = row["failure_count"]
     if recovering:
         query["receipt.message_id"] = row["receipt"].get("message_id")
     if row.get("job_kind") == "catchup":
@@ -1979,6 +1987,18 @@ async def delete_catchup_job(mongo, row: dict) -> None:
     else:
         query["run_time"] = row.get("run_time")
     await mongo.cwl_pending_reminders.delete_one(query)
+
+
+def catchup_report_key(entry: dict) -> str:
+    """A non-send skip consumes its scheduled due time, never a moved send."""
+    oid = entry["occurrence_id"]
+    if entry.get("status") != "skipped":
+        return oid
+    raw = entry.get("original_due_at")
+    if not isinstance(raw, str) or not re.search(r"(?:Z|[+-][0-9]{2}:[0-9]{2})$", raw):
+        raise ValueError("Skipped catch-up needs an aware original due time")
+    due = pendulum.parse(raw).in_timezone("UTC").isoformat()
+    return oid + "|due:" + due
 
 
 async def record_catchup_decision(
@@ -1992,16 +2012,19 @@ async def record_catchup_decision(
     status = entry["status"]
     if status not in {"skipped", "uncertain", "failed"}:
         raise ValueError("Invalid catch-up decision")
+    report_key = catchup_report_key(entry)
     query = {
         "_id": cycle_id(guild_id, cycle),
-        "catchup_reported_occurrences": {"$ne": oid},
+        "catchup_reported_occurrences": {"$nin": [oid, report_key]},
         "sent_occurrences": {"$ne": oid},
     }
     if status != "uncertain":
         query["uncertain_occurrences"] = {"$ne": oid}
     item = copy.deepcopy(entry)
     item.setdefault("at", _utcnow())
-    add = {"catchup_reported_occurrences": oid}
+    if status == "skipped":
+        item["catchup_scope"] = "due"
+    add = {"catchup_reported_occurrences": report_key}
     if status == "uncertain":
         add["uncertain_occurrences"] = oid
     try:

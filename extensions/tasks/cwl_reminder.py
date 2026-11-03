@@ -493,7 +493,9 @@ async def _finish_catchup_decision(row, due, status, reason):
             recorded = await cwl_campaign.record_catchup_decision(
                 mongo_client, int(row["guild_id"]), row["cycle"], entry
             )
-        elif oid not in state["reported"] and oid not in state["sent"]:
+        elif (oid not in state["reported"]
+              and cwl_campaign.catchup_report_key(entry) not in state["reported"]
+              and oid not in state["sent"]):
             print("[CWL Reminder] ALERT campaign_catchup_decision_unavailable action=review delivery history")
             return
     if recorded:
@@ -501,8 +503,13 @@ async def _finish_catchup_decision(row, due, status, reason):
             f"[CWL Reminder] ALERT campaign_catchup cycle={row['cycle']} "
             f"message={row['message_id']} variant={variant} status={status} reason={reason}"
         )
-    await cwl_campaign.delete_catchup_job(mongo_client, row)
+    retired_retry = type(row.get("failure_count")) is int and row["failure_count"] > 0
+    await cwl_campaign.delete_catchup_job(mongo_client, row, retired_retry=retired_retry)
     _remove_catchup_scheduler_job(row)
+
+
+def _campaign_retry_snapshot(row):
+    return type(row.get("failure_count")) is int and row["failure_count"] > 0
 
 
 async def _restore_scheduled_catchups(
@@ -514,7 +521,17 @@ async def _restore_scheduled_catchups(
     kept = {}
     for row in rows:
         try:
-            if not catchup_policy.scheduled_candidate(row):
+            stale_retry = (
+                stale_generation is not None
+                and row.get("kind") == "campaign"
+                and row.get("job_kind", "scheduled") in {"scheduled", "retry"}
+                and row.get("message_id") != "roster"
+                and row.get("status", "scheduled") == "scheduled"
+                and row.get("generation") != stale_generation
+                and type(row.get("failure_count")) is int
+                and row["failure_count"] > 0
+            )
+            if not stale_retry and not catchup_policy.scheduled_candidate(row):
                 continue
             combined_legacy = (
                 row.get("job_kind", "scheduled") == "scheduled"
@@ -532,10 +549,11 @@ async def _restore_scheduled_catchups(
                 and row.get("job_kind") != catchup_policy.CATCHUP_JOB_KIND
                 and not combined_legacy
                 and not stale_ordinary
+                and not stale_retry
             ):
                 continue
             due = catchup_policy.original_due(row)
-            if due > now:
+            if due > now and not stale_retry:
                 continue
             variants = row.get("variants")
             if isinstance(variants, list) and len(variants) > 1:
@@ -559,9 +577,6 @@ async def _restore_scheduled_catchups(
             ):
                 raise ValueError("Invalid persisted catch-up scope")
             handled.add(row["_id"])
-            if row["_id"] in _campaign_catchup_active or _campaign_row_active(row):
-                kept[row["_id"]] = row
-                continue
             groups.setdefault((gid, cycle), []).append((row, due, variants[0]))
         except (KeyError, TypeError, ValueError):
             if row.get("kind") == "campaign" and row.get("job_kind", "scheduled") in {"scheduled", catchup_policy.CATCHUP_JOB_KIND}:
@@ -574,17 +589,18 @@ async def _restore_scheduled_catchups(
             current = await cwl_campaign.load_campaign(mongo_client, gid, cycle)
         generation = _campaign_generation(current)
         state = await cwl_campaign.catchup_state(mongo_client, gid, cycle)
-        completed = catchup_policy.handled_occurrences(current, state)
         eligible = {}
         for row, due, variant in candidates:
             # load_campaign/catchup_state yielded: a manual or scheduled owner
             # may have entered meanwhile. Do not report against its live POST.
-            if _campaign_row_active(row):
+            if row["_id"] in _campaign_catchup_active or _campaign_row_active(row):
                 kept[row["_id"]] = row
                 continue
             oid = cwl_campaign.occurrence_id(cycle, row["message_id"], variant)
-            if oid in completed:
-                await cwl_campaign.delete_catchup_job(mongo_client, row)
+            if oid in catchup_policy.handled_occurrences(current, state, due=due):
+                await cwl_campaign.delete_catchup_job(
+                    mongo_client, row, retired_retry=_campaign_retry_snapshot(row)
+                )
                 _remove_catchup_scheduler_job(row)
                 continue
             claim_key = oid.replace(".", "_")
@@ -920,7 +936,7 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
     oid = cwl_campaign.occurrence_id(cycle, message_id, variant)
     loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
     state = await cwl_campaign.catchup_state(mongo_client, guild_id, cycle)
-    if oid in catchup_policy.handled_occurrences(loaded, state):
+    if oid in catchup_policy.handled_occurrences(loaded, state, due=due):
         await cwl_campaign.delete_catchup_job(mongo_client, row)
         _remove_catchup_scheduler_job(row)
         return False
