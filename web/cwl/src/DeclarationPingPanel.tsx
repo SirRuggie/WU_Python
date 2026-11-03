@@ -1,12 +1,14 @@
 import DiscordIdentity from "./DiscordIdentity";
 import useDiscordIdentities from "./useDiscordIdentities";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import ChannelCombobox from "./ChannelCombobox";
 import ConfirmDialog from "./ConfirmDialog";
 import DeclarationPingReview from "./DeclarationPingReview";
 import type { PingReceipt, PingReview, PingState } from "./declarationPings";
 import "./DeclarationPingPanel.css";
+
+export type PingAttention = { message: string; reveal: () => void };
 
 export default function DeclarationPingPanel({
   seasonId,
@@ -15,6 +17,7 @@ export default function DeclarationPingPanel({
   locationStatus,
   onDirty = () => {},
   onWorking = () => {},
+  onAttentionChange,
 }: {
   seasonId: string;
   pool: "main" | "lazy";
@@ -22,6 +25,7 @@ export default function DeclarationPingPanel({
   locationStatus?: "checking" | "unavailable";
   onDirty?: (dirty: boolean) => void;
   onWorking?: (working: boolean) => void;
+  onAttentionChange?: (attention: PingAttention | null) => void;
 }) {
   const base = `/seasons/${seasonId}/declaration-pings/${pool}`;
   const [state, setState] = useState<PingState>();
@@ -34,6 +38,7 @@ export default function DeclarationPingPanel({
   const [receipt, setReceipt] = useState<PingReceipt>();
   const [clock, setClock] = useState(Date.now() / 1000);
   const receiptStatus = useRef<HTMLParagraphElement>(null);
+  const errorStatus = useRef<HTMLParagraphElement>(null);
   const generation = useRef(0),
     readSequence = useRef(0),
     locked = useRef(false),
@@ -217,6 +222,27 @@ export default function DeclarationPingPanel({
   const last = [receipt, state?.active, state?.history[0]]
     .filter((r): r is PingReceipt => !!r)
     .sort((a, b) => b.created_at - a.created_at)[0];
+  const uncertain = receipt?.state === "uncertain";
+  const attentionMessage =
+    error ||
+    (active?.state === "uncertain" || uncertain
+      ? active?.error ||
+        receipt?.error ||
+        "Ping delivery is uncertain. Check confirmed chunks before further action."
+      : "");
+  const revealAttention = useCallback(() => {
+    const target = errorStatus.current || receiptStatus.current;
+    target?.scrollIntoView({ block: "center" });
+    target?.focus({ preventScroll: true });
+  }, []);
+  useEffect(() => {
+    onAttentionChange?.(
+      attentionMessage
+        ? { message: attentionMessage, reveal: revealAttention }
+        : null,
+    );
+    return () => onAttentionChange?.(null);
+  }, [attentionMessage, revealAttention, onAttentionChange]);
   const senderProfiles = useDiscordIdentities(last ? [last.actor_id] : []);
   return (
     <details
@@ -225,6 +251,7 @@ export default function DeclarationPingPanel({
         busy ||
         !!error ||
         !!active ||
+        uncertain ||
         !!review ||
         closing ||
         !!state?.test_running
@@ -239,6 +266,7 @@ export default function DeclarationPingPanel({
             busy ||
             error ||
             active ||
+            uncertain ||
             review ||
             closing ||
             state?.test_running
@@ -249,11 +277,13 @@ export default function DeclarationPingPanel({
         <span className="declaration-ping-chevron" aria-hidden="true" />
         <strong>Declaration pings</strong>
         <span>
-          {last
-            ? `${last.test ? "Last no-ping test" : last.state === "done" ? "Last pinged" : `Last delivery ${last.state}`} ${new Date(last.created_at * 1000).toLocaleString()}`
-            : state
-              ? "No pings yet"
-              : "Checking last ping…"}
+          {error
+            ? "Ping settings unavailable"
+            : last
+              ? `${last.test ? "Last no-ping test" : last.state === "done" ? "Last pinged" : `Last delivery ${last.state}`} ${new Date(last.created_at * 1000).toLocaleString()}`
+              : state
+                ? "No pings yet"
+                : "Checking last ping…"}
         </span>
       </summary>
       <div className="declaration-ping-body">
@@ -275,7 +305,7 @@ export default function DeclarationPingPanel({
         )}
         {!state && !error && <p role="status">Loading ping settings…</p>}
         {error && (
-          <p role="alert">
+          <p ref={errorStatus} tabIndex={-1} role="alert">
             {error}{" "}
             <button disabled={busy} onClick={() => void load()}>
               Reload latest settings

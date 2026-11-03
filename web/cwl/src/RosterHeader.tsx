@@ -235,9 +235,9 @@ export default function RosterHeader({
               ? `${accounts.length} signups · ${unplaced} unplaced · ${missingWeight} no weight${pool !== "all" && missingWeight !== poolMissingWeight ? " (all pools)" : ""}`
               : "Loading roster…"}
           </span>
-          <span className="roster-header-status">
+          <span className="roster-header-status" role="status">
             {selectedSeasonLabel &&
-              `${seasons.find((season) => String(season.id) === seasonId)?.signup_open ? "Signups open" : "Signups closed"} · `}
+              `${archived ? "Archived" : seasons.find((season) => String(season.id) === seasonId)?.signup_open ? "Signups open" : "Signups closed"} · `}
 
             {publicationStatus === "current"
               ? `Published v${publication?.draft?.published?.version}`
@@ -256,11 +256,6 @@ export default function RosterHeader({
           </span>
         </summary>
         <div className="roster-header-summary-content">
-          {publicationStatus === "unavailable" && (
-            <Button onClick={() => setPublicationAttempt((value) => value + 1)}>
-              Retry status
-            </Button>
-          )}
           {seasonId &&
             publicationStatus === "current" &&
             publication?.draft && (
@@ -336,9 +331,19 @@ export default function RosterHeader({
           />
         ) : (
           <div className="publication-awareness" role="status">
-            {publicationStatus === "unavailable"
-              ? "Publication status unavailable"
-              : "Checking publication…"}
+            <span className="publication-awareness-status">
+              {publicationStatus === "unavailable"
+                ? "Publication status unavailable"
+                : "Checking publication…"}
+            </span>
+            {publicationStatus === "unavailable" && (
+              <Button
+                disabled={uiLocked}
+                onClick={() => setPublicationAttempt((value) => value + 1)}
+              >
+                Retry status
+              </Button>
+            )}
           </div>
         ))}
       {seasonId && canSignups && (

@@ -410,3 +410,69 @@ it("does not claim a test receipt pinged real members", async () => {
     "Last pinged",
   );
 });
+
+it("forces an active uncertain receipt open and exposes its attention target", async () => {
+  mock.api.mockResolvedValue({
+    ...state,
+    active: {
+      token: "d".repeat(32),
+      actor_id: "owner",
+      state: "uncertain",
+      error: "May have been accepted",
+      created_at: 1780000000,
+      count: 26,
+      chunks: 1,
+      posted: [],
+      attempting: 0,
+      channel: state.channel,
+    },
+  });
+  const attention = vi.fn();
+  await act(async () =>
+    root.render(
+      <DeclarationPingPanel
+        seasonId="1"
+        pool="lazy"
+        missing={26}
+        onAttentionChange={attention}
+      />,
+    ),
+  );
+  await flush();
+  expect(
+    host.querySelector<HTMLDetailsElement>(".declaration-ping-panel")?.open,
+  ).toBe(true);
+  const detail = attention.mock.calls.at(-1)![0];
+  expect(detail.message).toContain("May have been accepted");
+  await act(async () => detail.reveal());
+  expect(document.activeElement).toBe(
+    host.querySelector('[tabindex="-1"][role="status"]'),
+  );
+  expect(mock.api.mock.calls.some((call) => call[1] === "POST")).toBe(false);
+});
+
+it("stops the checking caption after settings fail and reveals the focused error", async () => {
+  mock.api.mockRejectedValue(new Error("Settings unavailable"));
+  const attention = vi.fn();
+  await act(async () =>
+    root.render(
+      <DeclarationPingPanel
+        seasonId="1"
+        pool="lazy"
+        missing={26}
+        onAttentionChange={attention}
+      />,
+    ),
+  );
+  await flush();
+  expect(host.querySelector("summary")?.textContent).not.toContain(
+    "Checking last ping",
+  );
+  expect(host.querySelector("summary")?.textContent).toContain(
+    "Ping settings unavailable",
+  );
+  const detail = attention.mock.calls.at(-1)![0];
+  expect(detail.message).toBe("Settings unavailable");
+  await act(async () => detail.reveal());
+  expect(document.activeElement).toBe(host.querySelector('[role="alert"]'));
+});

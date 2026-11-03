@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, type ComponentProps } from "react";
+import { api as sourceApi } from "./api";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import RosterHeader from "./RosterHeader";
@@ -61,6 +62,7 @@ async function renderHeader(
   roster: RosterSnapshot,
   uiLocked = false,
   navigationDisabled?: boolean,
+  extra: Partial<ComponentProps<typeof RosterHeader>> = {},
 ) {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div");
@@ -89,6 +91,7 @@ async function renderHeader(
         onFillSignupSpot={() => false}
         onSignupDetails={() => false}
         onCapacitySettings={onCapacitySettings}
+        {...extra}
       />,
     ),
   );
@@ -160,4 +163,56 @@ it("allows navigation guards to handle season and settings while other controls 
   await act(async () => (capacity as HTMLButtonElement).click());
   expect(view.onCapacitySettings).toHaveBeenCalledExactlyOnceWith("#04");
   view.cleanup();
+});
+
+it("keeps publication Retry next to the visible failed-status alert without opening details", async () => {
+  vi.mocked(sourceApi).mockRejectedValueOnce(new Error("Read failed"));
+  const view = await renderHeader(rosterWithAssignments([]));
+  try {
+    const retry = [...view.host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Retry status",
+    )!;
+    expect(retry).toBeDefined();
+    expect(retry.closest("details")).toBeNull();
+    expect(retry.closest(".publication-awareness")?.textContent).toContain(
+      "Publication status unavailable",
+    );
+    vi.mocked(sourceApi).mockResolvedValueOnce({
+      draft_revision: 1,
+      draft_changed: false,
+      published: { version: 2, published_at: "2026-11-03T00:00:00Z" },
+      last_publication: null,
+      preview: { accounts: [], clans: [] },
+    });
+    await act(async () => retry.click());
+    expect(
+      view.host.querySelector(".roster-header-status")?.textContent,
+    ).toContain("Published v2");
+    expect(
+      [...view.host.querySelectorAll("button")].some(
+        (button) => button.textContent === "Retry status",
+      ),
+    ).toBe(false);
+  } finally {
+    view.cleanup();
+  }
+});
+
+it("announces Archived instead of closed signups in the restored status region", async () => {
+  const view = await renderHeader(rosterWithAssignments([]), false, false, {
+    archived: true,
+    seasons: [
+      { id: 1, label: "November", status: "archived", signup_open: false },
+    ],
+  });
+  try {
+    const status = view.host.querySelector(
+      '.roster-header-status[role="status"]',
+    );
+    expect(status).not.toBeNull();
+    expect(status?.textContent).toContain("Archived");
+    expect(status?.textContent).not.toContain("Signups closed");
+  } finally {
+    view.cleanup();
+  }
 });

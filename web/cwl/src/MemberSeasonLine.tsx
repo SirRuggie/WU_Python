@@ -21,7 +21,7 @@ export default function MemberSeasonLine({
   return (
     <p className="member-season-line">
       <strong>{season.label}</strong>
-      {open ? " · Open" : hideClosedStatus ? "" : " · Signups closed"}
+      {open ? " · Signups open" : hideClosedStatus ? "" : " · Signups closed"}
       {open && date ? ` · closes ${date}` : ""}
     </p>
   );

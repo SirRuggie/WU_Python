@@ -486,3 +486,12 @@ retains totals, assignment links, dates and read-failure warnings without
 repeating account names. Clan-change guidance appears once and only while
 changes are allowed. The closed Sign up page leaves **Signups closed** to its
 heading and keeps the season name and existing destinations.
+
+
+151 regression checks keep recovery actions next to visible failures, preserve
+role=status on compact current status, and avoid repeating a uniform unavailable
+result in every row. A distinct row result stays visible. Forced-open ping errors
+have a summary action that scrolls and focuses the existing error; they do not
+add a send or retry path. The checked-in four-width local layout command is
+`npm run test:less-on-top-layout`; its isolated fixtures exercise 26/65/125-account
+Build layouts and member/declaration failure states without production traffic.

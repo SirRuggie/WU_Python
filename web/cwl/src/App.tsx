@@ -16,7 +16,7 @@ import { loadAccountDisplay, mergeAccountProgress } from './accountDisplay'
 import { DashboardPermissions } from './DashboardPermissions'
 import FwaSignupDialog from './FwaSignupDialog'
 import {saveSignupMoves, type SignupMove} from './signupMoves'
-import {withdrawInOrder} from './signupWithdrawal'
+import {withdrawInOrder, withdrawConfirmation} from './signupWithdrawal'
 import SavedSignups from './SavedSignups'
 import SavedSignupStatus from './SavedSignupStatus'
 import AttentionSummary from './AttentionSummary'
@@ -800,8 +800,7 @@ function App() {
   }
   const withdraw = async (rows: Signup[]) => {
     if (!seasonId || pending || loadingData || !rows.length) return
-    const names = rows.map(row => `${row.player_name || row.tag} (${row.tag})`).join('\n')
-    if (!window.confirm(`Withdraw ${rows.length} ${rows.length === 1 ? 'account' : 'accounts'} from this season's CWL signup?\n\n${names}`)) return
+    if (!window.confirm(withdrawConfirmation(rows))) return
     const withdrawnSeason = seasonId
     let removed = new Set<string>()
     setPending(true)
@@ -1114,7 +1113,7 @@ function App() {
         {
           view === "declaration" && session.can_edit && (
             <>
-              <div className="page-head">
+              <div className="page-head declaration-page-head">
                 <div>
                   <p className="eyebrow">CWL</p>
                   <h1>Declaration check</h1>

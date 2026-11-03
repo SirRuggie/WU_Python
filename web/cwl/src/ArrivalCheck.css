@@ -309,3 +309,28 @@
     grid-column: 1 / -1;
   }
 }
+.declaration-page-head > label {
+  flex: 0 0 152px;
+  max-width: 50%;
+  min-width: 0;
+}
+.declaration-page-head select {
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+  padding-inline: 8px;
+}
+.declaration-ping-attention {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 6px 10px;
+  border-left: 4px solid var(--roster-danger);
+  color: var(--roster-danger);
+}
+.declaration-ping-attention > span {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

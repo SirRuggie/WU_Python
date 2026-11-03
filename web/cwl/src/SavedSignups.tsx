@@ -1,3 +1,4 @@
+import { signupPlacementNotice } from "./signupWithdrawal";
 import PoolChangeDialog from "./PoolChangeDialog";
 import { poolChangeDecision } from "./signupMoves";
 import FwaSignupDialog from "./FwaSignupDialog";
@@ -102,6 +103,7 @@ export default function SavedSignups({
       ),
     );
   };
+  const placementNotice = signupPlacementNotice(signups);
   const missingAccounts = signups.filter(
     (row) => !accounts.some((account) => account.tag === row.tag),
   );
@@ -243,11 +245,8 @@ export default function SavedSignups({
           ]}
         />
       )}
-      {editable && signups.some((signup) => signup.has_staff_placement) && (
-        <p className="inline-reason">
-          Changing pools or withdrawing will clear the clan assignment and alert
-          staff.
-        </p>
+      {editable && placementNotice && (
+        <p className="inline-reason">{placementNotice}</p>
       )}
       <div className="registered-grid">
         {signups.map((signup) => (

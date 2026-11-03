@@ -74,7 +74,7 @@ it("shows one member season line with local close time, no internal Draft chip",
   try {
     await act(async () => root.render(<MemberSeasonLine season={season} />));
     expect(host.textContent).toBe(
-      `November 2026 · Open · closes ${new Date(season.signup_deadline!).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`,
+      `November 2026 · Signups open · closes ${new Date(season.signup_deadline!).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`,
     );
     expect(host.textContent?.toLowerCase()).not.toContain("draft");
     await act(async () =>
@@ -82,7 +82,7 @@ it("shows one member season line with local close time, no internal Draft chip",
         <MemberSeasonLine season={{ ...season, signup_deadline: null }} />,
       ),
     );
-    expect(host.textContent).toBe("November 2026 · Open");
+    expect(host.textContent).toBe("November 2026 · Signups open");
     await act(async () =>
       root.render(
         <MemberSeasonLine

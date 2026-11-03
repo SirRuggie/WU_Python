@@ -1297,3 +1297,54 @@ tests are not evidence of a real Discord delivery.
 Release remains held for owner approval. No production read/write, provider
 probe, role action, merge, tag, restart or activation was performed by this task.
 122 has not started.
+
+## 151 review corrections
+
+The first unchanged-artifact reproduction confirmed that a publication read
+failure displayed its alert while Retry remained inaccessible inside the closed
+status disclosure. Retry status now sits beside the visible alert. Archived
+seasons say Archived, and the compact roster status again exposes role=status.
+
+Declaration keeps the complete month visible at 360 px. A uniform unavailable
+location result appears once in the summary; rows retain distinct known results.
+Failed ping settings stop the Checking caption and add a summary-level View error
+action that scrolls and focuses the existing error. Uncertain receipts remain
+open. These changes preserve read guards and all send rules.
+
+The apparent “No campaign · Open” wording came from synthetic season 6 in
+`tests/fixtures/tour_deadline.py`, not a real campaign-state field. The new local
+sample has a truthful, unique season label and says Signups open. Closed saved
+signups show Signups closed once. Placement guidance and withdrawal confirmation
+name the affected accounts; the browser confirmation check cancels withdrawal.
+
+Validation: 1,643 frontend tests across 274 files, TypeScript and Vite build pass.
+Ten genuine assertion-killed mutants cover toolbar Refresh, visibility-only
+attention, uncertain receipts, visible Retry, Archived, status semantics, failed
+settings captions, unavailable deduplication, placement names and closed labels.
+All originals were hash-verified after restoration. The initial malformed Retry
+mutant was rejected and is not counted. API-call ASTs remain identical to f415055
+for all 33 calls across the twelve reviewed runtime modules.
+
+The checked-in `npm run test:less-on-top-layout` command builds and starts owned
+SQLite/MemoryMongo loopback fixtures, then runs 52 asserted scenarios at
+320/360/390/1440, including Build account counts 26/65/125, failure visibility,
+month fit, pool keyboard use, uncertain receipts and member states. Final output
+records zero non-GET requests after login and zero page errors. Its runner cleans
+up only its own fixtures and stores artifacts in workspace .local. The local
+production-shaped sample excludes only the development banner; it is not a live
+measurement. Narrow and wide screenshots were visually reviewed.
+
+Earlier failed runs remain recorded: an alert text locator included the adjacent
+button, and a synthetic season label collided with an existing unique label. The
+fixture now checks setup responses and uses a unique label. Earlier obsolete
+pool/Open assertions and the removed unused location message were corrected;
+the final full suite passes. The previous 121 browser matrix remains historical
+evidence and is not represented as rerun by this 52-case command.
+
+Both existing review previews retain their ports and processes, with old assets
+preserved and the reviewed frontend updated in place. No production action or
+real notification was performed. Release remains held for owner preview and
+review; 122 has not started.
+
+Four additional existing-preview Back/refresh checks pass at all four widths,
+retaining pool/filter state with zero non-GET requests and zero page errors.

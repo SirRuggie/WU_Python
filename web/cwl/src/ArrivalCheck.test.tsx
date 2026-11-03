@@ -134,7 +134,7 @@ it("filters extra-member clans without changing the pool-wide ping count", async
   };
   await render();
   const lazy = [...host.querySelectorAll("button")].find((b) =>
-    b.textContent?.startsWith("Lazy ·"),
+    b.textContent?.match(/^Lazy(?: ·|$)/),
   )!;
   await act(async () => lazy.click());
   expect(toggles()).toHaveLength(2);
@@ -400,7 +400,7 @@ it("uses only the selected pool for Ping availability while another pool is stil
     "Ping 1 missing",
   );
   const lazy = [...host.querySelectorAll("button")].find((b) =>
-    b.textContent?.startsWith("Lazy ·"),
+    b.textContent?.match(/^Lazy(?: ·|$)/),
   )!;
   await act(async () => lazy.click());
   expect(host.querySelector("[data-ping-count]")?.textContent).toBe(
@@ -970,4 +970,36 @@ it("shows three confirmed ready clans out of ten while the remaining seven are c
   expect(host.querySelector(".declaration-summary")?.textContent).not.toContain(
     "3 / 10",
   );
+});
+
+it("states unavailable locations once and keeps only differing clan readiness labels", async () => {
+  const accounts = state.value.data.arrival.accounts;
+  state.value.records = Object.fromEntries(
+    accounts.map((account: any) => [
+      account.tag,
+      {
+        ...account,
+        current_clan_tag: null,
+        current_clan_checked_at: null,
+        current_clan_status: "unavailable",
+      },
+    ]),
+  );
+  state.value.data.arrival.updating = false;
+  await render();
+  const text = [
+    ...host.querySelectorAll(
+      ".declaration-summary,.declaration-pools,.declaration-clan-toggle",
+    ),
+  ]
+    .map((node) => node.textContent)
+    .join(" ");
+  expect(text.match(/Locations unavailable/g)).toHaveLength(1);
+  expect(host.querySelectorAll(".declaration-clan")).toHaveLength(2);
+  expect(host.querySelector(".declaration-clan-toggle")?.textContent).toContain(
+    "Amber",
+  );
+  expect(
+    host.querySelector(".declaration-clan-toggle")?.textContent,
+  ).not.toContain("Not ready");
 });

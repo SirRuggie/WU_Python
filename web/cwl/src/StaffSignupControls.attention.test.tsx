@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 const status = vi.hoisted(() => ({
   hiddenOpen: false,
   error: "",
   notice: "",
-  visibilityCheck: null,
+  visibilityCheck: null as ReactNode,
   busy: false,
   dialog: null,
   begin: vi.fn(),
@@ -42,6 +42,12 @@ it("reports hidden signups, errors and busy work so a closed summary cannot hide
   try {
     await render();
     expect(attention).toHaveBeenLastCalledWith(false);
+    status.visibilityCheck = <p>Couldn't check signup visibility</p>;
+    await render();
+    expect(attention).toHaveBeenLastCalledWith(true);
+    status.visibilityCheck = null;
+    await render();
+    expect(attention).toHaveBeenLastCalledWith(false);
     status.hiddenOpen = true;
     await render();
     expect(attention).toHaveBeenLastCalledWith(true);
@@ -59,6 +65,11 @@ it("reports hidden signups, errors and busy work so a closed summary cannot hide
   } finally {
     await act(async () => root.unmount());
     host.remove();
-    Object.assign(status, { hiddenOpen: false, error: "", busy: false });
+    Object.assign(status, {
+      hiddenOpen: false,
+      error: "",
+      visibilityCheck: null,
+      busy: false,
+    });
   }
 });

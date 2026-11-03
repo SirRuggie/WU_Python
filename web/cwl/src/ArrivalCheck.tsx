@@ -9,7 +9,9 @@ import useDeclarationData from "./useDeclarationData";
 import { declarationSnapshot } from "./declarationData";
 import { declarationGroups } from "./declarationGroups";
 import DeclarationClan from "./DeclarationClan";
-import DeclarationPingPanel from "./DeclarationPingPanel";
+import DeclarationPingPanel, {
+  type PingAttention,
+} from "./DeclarationPingPanel";
 import useDeclarationExtras from "./useDeclarationExtras";
 import DeclarationExtras from "./DeclarationExtras";
 import useStaffDetailsPage from "./useStaffDetailsPage";
@@ -46,6 +48,9 @@ export default function ArrivalCheck({
   const [undoError, setUndoError] = useState("");
   const [pool, setPool] = useCwlPool();
   const [helpOpen, setHelpOpen] = useState(false);
+  const [pingAttention, setPingAttention] = useState<PingAttention | null>(
+    null,
+  );
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
   const [activeClan, setActiveClan] = useState("");
@@ -231,10 +236,6 @@ export default function ArrivalCheck({
         ? ("checking" as const)
         : ("unavailable" as const)
       : undefined;
-  const locationsMessage =
-    checking || data?.arrival.updating
-      ? "Checking locations…"
-      : "Locations unavailable";
   const unknownHosts = hosts.some((g) => !!locationStatus(g));
   const extraOnlyHosts =
     extras.data?.clans.filter((c) => !groups.some((g) => g.tag === c.tag)) ||
@@ -342,7 +343,7 @@ export default function ArrivalCheck({
                 {checkedAt
                   ? `Last checked ${comparisonAge(checkedAt, now)}`
                   : unknownHosts
-                    ? locationsMessage
+                    ? "No completed location checks"
                     : "No location checks yet"}
               </span>
             </p>
@@ -366,6 +367,12 @@ export default function ArrivalCheck({
               <p className="declaration-help">
                 Checking published version {data.arrival.version} · the draft
                 has changes members can't see yet
+              </p>
+            )}
+            {pingAttention && (
+              <p className="declaration-ping-attention" role="status">
+                <span>Declaration pings: {pingAttention.message}</span>
+                <Button onClick={pingAttention.reveal}>View error ›</Button>
               </p>
             )}
             <div className="declaration-toolbar">
@@ -393,10 +400,10 @@ export default function ArrivalCheck({
                       setActiveClan("");
                     }}
                   >
-                    {p === "main" ? "Main" : "Lazy"} ·{" "}
+                    {p === "main" ? "Main" : "Lazy"}
                     {checking || data.arrival.updating ? (
                       <>
-                        Checking…{" "}
+                        {" · "}Checking…{" "}
                         {
                           hosts.filter(
                             (g) =>
@@ -409,10 +416,9 @@ export default function ArrivalCheck({
                       </>
                     ) : hosts.some(
                         (g) => g.pool === p && !!locationStatus(g),
-                      ) ? (
-                      locationsMessage
-                    ) : (
+                      ) ? null : (
                       <>
+                        {" · "}
                         {
                           hosts.filter((g) => g.pool === p && g.readiness.ready)
                             .length
@@ -452,6 +458,9 @@ export default function ArrivalCheck({
               records={records}
               now={now}
               locationStatus={locationStatus(group)}
+              suppressUnavailableLabel={
+                unknownHosts && !checking && !data.arrival.updating
+              }
               search={needle}
               extra={extras.data?.clans.find((c) => c.tag === group.tag)}
               extraLoading={extras.loading}
@@ -530,6 +539,7 @@ export default function ArrivalCheck({
             key={`${seasonId}:${pool}`}
             seasonId={seasonId}
             pool={pool}
+            onAttentionChange={setPingAttention}
             missing={poolGroups.reduce((n, g) => n + g.missingCount, 0)}
             locationStatus={
               poolGroups.some((g) => !!locationStatus(g))

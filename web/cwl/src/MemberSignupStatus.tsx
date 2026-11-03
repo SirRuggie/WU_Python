@@ -100,7 +100,9 @@ export default function MemberSignupStatus({
     waiting.length > 0 &&
     waiting.length < signups.length &&
     !savedView;
-  const dateLines = memberDateLines(season, published, now);
+  const dateLines = memberDateLines(season, published, now).map((line) =>
+    savedView ? line.replace(/^Signups closed · you\'ll/, "You\'ll") : line,
+  );
   const signupDeadlineLine = signupCloseLine(season, now);
   return (
     <div className="member-signup-summary">
