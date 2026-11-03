@@ -1,3 +1,4 @@
+import useConfirmDialog from "./useConfirmDialog";
 import CwlNextLink from "./CwlNextLink";
 import { api } from "./api";
 import RosterUndoToast from "./RosterUndoToast";
@@ -48,6 +49,7 @@ export default function ArrivalCheck({
   const [undoError, setUndoError] = useState("");
   const [pool, setPool] = useCwlPool();
   const [helpOpen, setHelpOpen] = useState(false);
+  const { confirm, dialog: confirmation } = useConfirmDialog(seasonId);
   const [pingAttention, setPingAttention] = useState<PingAttention | null>(
     null,
   );
@@ -255,6 +257,7 @@ export default function ArrivalCheck({
       className="arrival-check roster-ui"
       aria-label="Declaration readiness"
     >
+      {confirmation}
       {error && (
         <p role="alert">
           {error}
@@ -385,13 +388,14 @@ export default function ArrivalCheck({
                   <Button
                     key={p}
                     aria-pressed={pool === p}
-                    onClick={() => {
+                    onClick={async () => {
                       if (pingWorking.current) return;
                       if (
                         pingDirty.current &&
-                        !window.confirm(
+                        !(await confirm(
                           "Discard the unsaved ping channel change?",
-                        )
+                          "Discard channel change",
+                        ))
                       )
                         return;
                       pingDirty.current = false;

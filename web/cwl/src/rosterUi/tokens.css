@@ -1,4 +1,14 @@
 .roster-ui {
+  --roster-font-small: 12px;
+  --roster-font-body: 14px;
+  --roster-font-title: 24px;
+  --roster-font-title-small: 20px;
+  --roster-space-1: 4px;
+  --roster-space-2: 8px;
+  --roster-space-3: 12px;
+  --roster-space-4: 16px;
+  --roster-shadow-soft: 0 3px 12px rgb(0 0 0 / 27%);
+  --roster-shadow-panel: 0 12px 32px rgb(0 0 0 / 30%);
   --roster-radius-control: 10px;
   --roster-radius-card: 14px;
   --roster-radius-panel: 20px;
@@ -30,5 +40,8 @@
   --roster-danger: #e98585;
   --roster-success: #79c89b;
   --roster-warning: #efc867;
+  --roster-attention-surface: #30291c;
+  --roster-attention-border: #786435;
+  --roster-selection-surface: #493f24;
   --roster-focus: #f5d66e;
 }

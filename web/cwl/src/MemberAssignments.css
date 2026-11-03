@@ -5,11 +5,11 @@
   gap: 18px;
   padding: 15px 18px;
   margin-bottom: 18px;
-  border-color: #8c712d;
+  border-color: var(--roster-attention-border);
 }
 .member-assignments .member-compact-status.is-provisional {
-  background: #262116;
-  border-color: #786435;
+  background: var(--roster-attention-surface);
+  border-color: var(--roster-attention-border);
 }
 .member-compact-status > div {
   min-width: 0;
@@ -23,15 +23,15 @@
 }
 .member-compact-status p {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: var(--roster-font-small);
 }
 .member-compact-status button {
   flex: none;
 }
 .member-assignment-count {
-  font-size: 12px;
+  font-size: var(--roster-font-small);
   margin: 0 0 14px;
-  color: #c5c4c1;
+  color: var(--roster-text-muted);
 }
 .member-clan-jumps {
   display: flex;
@@ -43,11 +43,11 @@
   display: inline-flex;
   align-items: center;
   padding: 7px 10px;
-  border: 1px solid #4a412c;
+  border: 1px solid var(--roster-attention-border);
   border-radius: 8px;
-  color: #efd48e;
+  color: var(--roster-gold);
   text-decoration: none;
-  font-size: 12px;
+  font-size: var(--roster-font-small);
 }
 .member-clan-list {
   display: grid;
@@ -65,7 +65,7 @@
   justify-content: space-between;
   gap: 14px;
   padding: 17px 18px;
-  border-bottom: 1px solid #37373b;
+  border-bottom: 1px solid var(--roster-border-subtle);
 }
 .member-clan-head > div {
   min-width: 0;
@@ -81,7 +81,7 @@
 }
 .member-clan-head .button {
   flex: none;
-  font-size: 12px;
+  font-size: var(--roster-font-small);
   white-space: normal;
   text-align: center;
 }
@@ -92,10 +92,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--roster-space-3);
   min-width: 0;
   padding: 10px 0;
-  border-bottom: 1px solid #303035;
+  border-bottom: 1px solid var(--roster-surface-soft);
 }
 .member-clan-row:last-child {
   border-bottom: 0;
@@ -109,23 +109,23 @@
   overflow-wrap: anywhere;
 }
 .member-clan-row small {
-  font-size: 12px;
+  font-size: var(--roster-font-small);
 }
 .member-clan-row > span {
   flex: none;
-  color: #d9c68d;
-  font-size: 12px;
+  color: var(--roster-gold);
+  font-size: var(--roster-font-small);
 }
 .member-awaiting-card .member-clan-head {
-  background: #292216;
+  background: var(--roster-attention-surface);
 }
 .member-awaiting-card .member-clan-head h2 {
-  color: #efd391;
+  color: var(--roster-gold);
 }
 .member-awaiting-note {
-  font-size: 12px;
+  font-size: var(--roster-font-small);
   margin: 10px 18px 0;
-  color: #c8b792;
+  color: var(--roster-warning);
 }
 @media (max-width: 650px) {
   .member-assignments .member-compact-status {
@@ -186,33 +186,33 @@
   min-width: 0;
 }
 .member-status-line strong {
-  font-size: 12px;
+  font-size: var(--roster-font-small);
   white-space: nowrap;
 }
 .member-status-line button {
   min-height: 36px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--roster-font-small);
 }
 .member-status-badge {
-  background: #3e3420;
-  color: #f2d892;
+  background: var(--roster-attention-border);
+  color: var(--roster-gold);
   white-space: nowrap;
 }
 .member-compact-status:not(.is-provisional) .member-status-badge {
-  background: #365b43;
-  color: #b9e8cc;
+  background: var(--roster-card-success);
+  color: var(--roster-success);
 }
 .member-compact-status details {
   margin-top: 5px;
 }
 .member-compact-status summary {
-  color: #c9c5ba;
-  font-size: 12px;
+  color: var(--roster-text-muted);
+  font-size: var(--roster-font-small);
   cursor: pointer;
 }
 .member-compact-status details p {
-  font-size: 12px;
+  font-size: var(--roster-font-small);
   margin: 6px 0 0;
 }
 .member-assignments .member-assignment-count {
@@ -278,8 +278,12 @@
   justify-content: space-between;
   gap: 24px;
   padding: 20px;
-  background: linear-gradient(110deg, #17263c, #171719 80%);
-  border-bottom: 1px solid #526783;
+  background: linear-gradient(
+    110deg,
+    var(--roster-surface-raised),
+    var(--roster-surface) 80%
+  );
+  border-bottom: 1px solid var(--roster-border);
   border-radius: 16px 16px 0 0;
 }
 .member-assignments .member-clan-head a.member-open-clan {
@@ -292,27 +296,27 @@
   max-width: 100%;
   margin: 0;
   padding: 11px 16px;
-  border: 2px solid #83b4ff;
+  border: 2px solid var(--roster-gold);
   border-radius: 12px;
-  background: #1749a0;
-  color: #fff;
+  background: var(--roster-selection-surface);
+  color: var(--roster-text);
   font-size: 15px;
   font-weight: 700;
   line-height: 1.35;
   text-align: left;
-  box-shadow: 0 3px 12px #0004;
+  box-shadow: var(--roster-shadow-soft);
   text-decoration: none;
 }
 .member-assignments .member-clan-head a.member-open-clan:hover {
-  background: #103578;
-  border-color: #b9d5ff;
-  color: #fff;
+  background: var(--roster-selection-surface);
+  border-color: var(--roster-gold);
+  color: var(--roster-text);
 }
 .member-assignments .member-clan-head a.member-open-clan:focus-visible {
-  outline: 3px solid #fff;
+  outline: 3px solid var(--roster-text);
   outline-offset: 4px;
-  background: #103578;
-  color: #fff;
+  background: var(--roster-selection-surface);
+  color: var(--roster-text);
 }
 .member-open-arrow {
   width: 20px;
@@ -324,7 +328,7 @@
   .member-assignments .member-clan-head a.member-open-clan {
     width: auto;
     min-width: 0;
-    font-size: 14px;
+    font-size: var(--roster-font-body);
     padding: 10px 12px;
     gap: 8px;
     white-space: nowrap;
@@ -334,7 +338,7 @@
     .member-clan-head {
     flex-direction: row;
     align-items: center;
-    gap: 12px;
+    gap: var(--roster-space-3);
     padding: 16px 14px;
   }
 }
@@ -362,12 +366,12 @@
 }
 
 .member-unpublished-status a {
-  color: #f2d892;
+  color: var(--roster-gold);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .member-unpublished-status a:focus-visible {
-  outline: 2px solid #f2d892;
+  outline: 2px solid var(--roster-gold);
   outline-offset: 4px;
 }
 @media (max-width: 650px) {

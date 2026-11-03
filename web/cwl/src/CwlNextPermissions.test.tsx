@@ -67,6 +67,12 @@ afterEach(async () => {
 });
 async function mount(path: string, permissions: string[]) {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
   history.replaceState({}, "", path);
   sessionStorage.clear();
   localStorage.clear();
@@ -127,12 +133,6 @@ it.each(["next", "sidebar"])(
       "cwl_settings",
       "cwl_roster",
     ]);
-    Object.defineProperty(window, "confirm", {
-      configurable: true,
-      writable: true,
-      value: () => true,
-    });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     await act(async () => button("Edit pool role")!.click());
     await settle();
     const destination =
@@ -141,12 +141,28 @@ it.each(["next", "sidebar"])(
         : button("Build roster", ".sidebar button")!;
     await act(async () => destination.click());
     await settle();
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(document.querySelectorAll(".confirm-dialog")).toHaveLength(1);
+    await act(async () =>
+      [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          ".confirm-dialog button",
+        ),
+      ]
+        .find((b) => b.textContent === "Cancel")!
+        .click(),
+    );
     expect(location.pathname).toBe("/cwl/settings");
-    confirm.mockClear().mockReturnValue(true);
     await act(async () => destination.click());
+    await act(async () =>
+      [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          ".confirm-dialog button",
+        ),
+      ]
+        .find((b) => b.textContent === "Discard and continue")!
+        .click(),
+    );
     await settle();
-    expect(confirm).toHaveBeenCalledOnce();
     expect(location.pathname).toBe("/cwl/roster");
     expect(host.querySelector('[data-testid="roster-mode"]')?.textContent).toBe(
       '"assign"',

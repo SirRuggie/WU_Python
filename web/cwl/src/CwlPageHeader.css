@@ -1,0 +1,52 @@
+.cwl-page-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--roster-space-3);
+  margin-bottom: var(--roster-space-4);
+}
+.cwl-page-header-title {
+  flex: 1;
+  min-width: 0;
+}
+.cwl-page-header h1 {
+  margin: 0;
+  font-size: var(--roster-font-title);
+}
+.cwl-page-header > .roster-menu {
+  flex: 0 1 200px;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .cwl-page-header {
+    flex-wrap: nowrap;
+    gap: var(--roster-space-2);
+  }
+  .cwl-page-header h1 {
+    font-size: var(--roster-font-title-small);
+  }
+  .cwl-page-header > .roster-menu {
+    flex: 0 0 152px;
+    max-width: 50%;
+  }
+}
+.cwl-page-header .roster-menu-trigger {
+  min-height: var(--roster-height-control-comfortable);
+  padding: var(--roster-space-2);
+  gap: var(--roster-space-2);
+}
+.cwl-page-header .roster-menu-current {
+  font-size: var(--roster-font-small);
+}
+.cwl-page-header .roster-menu-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+/* The app's narrow page-head stack must not split this shared title/season row. */
+.shell .page-head.cwl-page-header {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+}

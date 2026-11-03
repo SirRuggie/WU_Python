@@ -94,7 +94,14 @@ async function stop(child) {
       member = await fixture("member");
     const child = spawn(
       process.execPath,
-      [path.join(__dirname, "less-on-top.browser.cjs")],
+      [
+        path.join(
+          __dirname,
+          process.env.WU_LAYOUT_SUITE === "same-look"
+            ? "same-look.browser.cjs"
+            : "less-on-top.browser.cjs",
+        ),
+      ],
       {
         cwd: root,
         env: {
@@ -104,6 +111,7 @@ async function stop(child) {
           WU_LESS_STAFF_URL: staff,
           WU_LESS_MEMBER_URL: member,
           WU_LAYOUT_OUTPUT: output,
+          WU_LAYOUT_PHASE: process.env.WU_LAYOUT_PHASE || "candidate",
         },
         stdio: "inherit",
       },

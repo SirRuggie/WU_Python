@@ -181,7 +181,7 @@ it("omits all-pools noise when the selected pool has the same missing-weight cou
 it("combines season, visible counts and status without an eyebrow or duplicate menu", () => {
   const html = render("all", "1", "November 2026");
   expect(html).not.toContain('class="eyebrow"');
-  expect(html).toContain('class="roster-header-title-row"');
+  expect(html).toMatch(/class="[^"]*roster-header-title-row/);
   expect(html).toContain('class="roster-header-summary"');
   expect(html).toContain("3 signups · 2 unplaced · 2 no weight");
   expect(html).toContain("Signups open");

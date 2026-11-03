@@ -179,3 +179,7 @@
     display: none;
   }
 }
+
+.roster-header .cwl-page-header {
+  margin-bottom: 0;
+}

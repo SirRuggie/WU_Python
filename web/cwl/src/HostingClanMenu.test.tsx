@@ -44,7 +44,9 @@ const data = {
 };
 async function selectCurrent(host: HTMLElement) {
   await act(async () =>
-    host.querySelector<HTMLButtonElement>(".roster-menu-trigger")!.click(),
+    [...host.querySelectorAll<HTMLButtonElement>(".roster-menu-trigger")]
+      .find((button) => button.textContent?.includes("Hosting clan"))!
+      .click(),
   );
   const item = document.querySelector<HTMLElement>(
     '[role="menuitem"][aria-label*="selected"]',

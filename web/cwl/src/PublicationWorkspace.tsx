@@ -1,3 +1,4 @@
+import CwlPageHeader from "./CwlPageHeader";
 import { publicationBlockingReason } from "./publicationBlockingReason";
 import CwlNextLink from "./CwlNextLink";
 import { clanCapacity } from "./rosterCapacity";
@@ -442,12 +443,9 @@ export default function PublicationWorkspace({
         />
       )}
 
-      <div className="page-head">
-        <div>
-          <h1 ref={pageHeading} tabIndex={-1}>
-            {step === "announce" ? "Announcements" : "Finalize roster"}
-          </h1>
-        </div>
+      <CwlPageHeader title={<h1 ref={pageHeading} tabIndex={-1}>
+        {step === "announce" ? "Announcements" : "Finalize roster"}
+      </h1>}>
         <RosterMenu
           label="Season"
           value={seasonId}
@@ -462,7 +460,7 @@ export default function PublicationWorkspace({
             })),
           ]}
         />
-      </div>
+      </CwlPageHeader>
       {!seasonId && (
         <div className="card empty">
           <p>Select a season to review its working roster.</p>

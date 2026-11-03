@@ -495,3 +495,91 @@ have a summary action that scrolls and focuses the existing error; they do not
 add a send or retry path. The checked-in four-width local layout command is
 `npm run test:less-on-top-layout`; its isolated fixtures exercise 26/65/125-account
 Build layouts and member/declaration failure states without production traffic.
+
+## 122: shared CWL controls and theme
+
+CWL write and discard decisions use the existing ConfirmDialog. The small
+useConfirmDialog adapter supplies an awaited decision for existing action owners;
+it does not own API calls or retries. Cancel, Escape, unmount, a changed season,
+changed document/permissions or a newly locked scope resolves to Cancel. A second
+opener cannot replace a decision. Each mutation retains its existing pending,
+revision, authorization and uncertain-outcome rules. Browser unload protection
+remains browser-owned. Native confirmations still present in App concern access
+or other management pages, outside this CWL pass.
+
+Results, Bonus, Exports and Declaration use RosterMenu for seasons; Signup
+reminders joins the existing Build/Finalize/Seasons picker pattern. Existing
+selection callbacks, empty choices, disabled states and URL/history ownership are
+retained. CwlPageHeader supplies one compact title/season/action row and preserves
+publication focus targets. Member pages reuse its title hierarchy without adding
+a season selector. Results' long title may wrap inside its column on a phone.
+The global phone page-head stack is explicitly overridden for this shared row.
+
+TodoWorkspace and ClanFilters replace navy values with the roster surface,
+border, text, gold, success and attention tokens. Bonus and member assignments
+reuse matching tokens. Font, spacing and shadow tokens are added and used only in
+touched surfaces. ClanFilters' FilterPicker remains an existing dormant export:
+current Compare imports its matching helpers, not that control. No new filter was
+introduced just to demonstrate its CSS. FWA and pool-change dialogs retain their
+wording and ordinary GIF display; reduced-motion users get the same explanation
+and controls without the animated image.
+
+Safety review exercises actual Results reset/discard, staff add/discard, Bonus
+candidate removal/discard, publishing and member withdrawal: Cancel has zero
+writes, double activation confirms one write, document/permission changes cancel,
+and closing during an accepted request does not replay it. The shared adapter's
+tests were written first and failed before implementation. Additional integration
+regressions retain navigation continuation, exact account names, request identity
+and season callback behavior. Four valid no-confirm mutants in Results, staff
+signup, Bonus removal and publishing are assertion-killed with source hashes
+restored. An initial sandbox subprocess produced no test output and is not counted.
+
+Checked-in local layout commands are `npm run test:less-on-top-layout` and
+`npm run test:same-look-layout`. The former retains the 52-case
+320/360/390/1440 and 26/65/125-account matrix. The latter captures 13 changed
+pages at 360 and 1440 plus actual FWA/pool dialogs, verifies the computed shared
+header row, and checks reduced-motion behavior. Before images use the exact
+accepted 20b9e580 artifact; candidate images use this branch. Both phases use new
+owned loopback SQLite/MemoryMongo fixtures. Settled Tasks, reminder and linked
+account GET responses are explicitly synthetic. Page loading/clock differences
+are not evidence of a changed domain result. No domain writes or page errors were
+recorded in either screenshot phase. Narrow/wide images were visually reviewed.
+
+Earlier diagnostic failures remain in workspace .local: the first full test run
+used the repository rather than web/cwl working directory, old native-select and
+native-confirm browser assertions needed migration, and the before harness used
+a nonexistent assignments URL and a wrong account-card selector. The publication
+recovery fixture initially enabled successful background reads before clicking
+Retry; it now keeps failure pinned until the actual click. Visual review also
+caught a global display:block rule defeating the first row override; computed
+flex-row/overlap assertions now guard it. Assertions were retained against the
+new controls rather than dropped.
+
+No API method, body, polling policy, grant or selection permission was changed.
+Semantic API-call ASTs (ignoring quote formatting) match accepted 20b9e580 for all
+53 calls across nineteen reviewed runtime modules. Mocked publishing checks are
+not proof of live Discord delivery. This is not a full assistive-technology audit.
+
+This branch starts at exact accepted 121/151 commit 20b9e580, not a main merge.
+Accepted predecessor 185's background filler queue is not in that source base.
+Later integration must preserve that queue and stop for review on any behavior
+conflict; it must not overwrite its changes. Existing 121 staff/member previews
+remain untouched. Release is held for owner approval and 123 implementation has
+not started.
+
+122 completion evidence: 1,667 frontend tests across 282 files, TypeScript and
+production-format Vite build pass. The final four-width suite passes all 52
+scenarios; the same-look comparison passes 30 before and 30 after scenarios
+(26 page states and four dialog states each). All screenshot runs record zero
+non-GET requests after local login and zero page errors. Computed header display
+and title/picker vertical overlap are asserted, not inferred from screenshots.
+The actual two new review previews also pass a login/render/served-hash smoke.
+
+Adversarial review checked that dynamic season/account names remain React text,
+no new external URL or mention construction was added, no modal opens a write by
+itself, pending/uncertain writes are not replayed, Cancel retains edits and
+selection, and changed authority/document scopes abandon pending decisions.
+Existing partial/unavailable location, visibility-check failure, forced-open ping
+error, archived/read-only and member closed-season regressions remain in the
+four-width suite. Data/storage/provider authorization remains with existing
+owners; browser sample checks do not establish production delivery or freshness.

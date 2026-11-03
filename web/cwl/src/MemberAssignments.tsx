@@ -1,3 +1,5 @@
+import CwlPageHeader from "./CwlPageHeader";
+import "./rosterUi/tokens.css";
 import "./MemberRefreshNote.css";
 import { memberSignupsOpen } from "./memberSeason";
 import {
@@ -115,17 +117,19 @@ export default function MemberAssignments({
     </ul>
   );
   return (
-    <div className="member-assignments">
-      <div className="page-head">
-        <div>
-          <h1>My clan assignments</h1>
-          <p>Your accounts, grouped by assigned clan.</p>
-        </div>
-        <p className="season-choice">
-          {seasons.find((item) => String(item.id) === seasonId)?.label ||
-            "No CWL season available"}
-        </p>
-      </div>
+    <div className="member-assignments roster-ui">
+      <CwlPageHeader
+        title={
+          <>
+            <h1>My clan assignments</h1>
+            <p>Your accounts, grouped by assigned clan.</p>
+            <p className="season-choice">
+              {seasons.find((item) => String(item.id) === seasonId)?.label ||
+                "No CWL season available"}
+            </p>
+          </>
+        }
+      />
       {!seasonId && (
         <div className="card empty">
           <p>Staff will make your CWL season available here.</p>

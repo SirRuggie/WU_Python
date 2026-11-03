@@ -1,3 +1,4 @@
+import CwlPageHeader from "./CwlPageHeader";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, WandSparkles } from "lucide-react";
 import { api, ApiError, type Pool, type Season } from "./api";
@@ -194,10 +195,14 @@ export default function RosterHeader({
 
   return (
     <header className="roster-header roster-ui" aria-label="Roster overview">
-      <div className="roster-header-title-row">
-        <h1 data-roster-heading tabIndex={-1}>
-          Build roster
-        </h1>
+      <CwlPageHeader
+        className="roster-header-title-row"
+        title={
+          <h1 data-roster-heading tabIndex={-1}>
+            Build roster
+          </h1>
+        }
+      >
         <div className="roster-header-season">
           <RosterMenu
             label="Season"
@@ -227,7 +232,7 @@ export default function RosterHeader({
             onClick={onRefresh}
           />
         )}
-      </div>
+      </CwlPageHeader>
       <details ref={summary} className="roster-header-summary">
         <summary>
           <span>

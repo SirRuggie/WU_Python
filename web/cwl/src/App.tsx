@@ -1,3 +1,6 @@
+import CwlPageHeader from "./CwlPageHeader"
+import useConfirmDialog from "./useConfirmDialog"
+import RosterMenu from "./rosterUi/Menu"
 import CwlNextLink from "./CwlNextLink";
 import "./MemberRefreshNote.css"
 import { memberSignupsOpen } from "./memberSeason"
@@ -323,7 +326,7 @@ function App() {
   const existing = signups
   const activeCompletion = completion?.seasonId === seasonId ? completion : null
   const setDraft = (next: Draft) => { if (!pool) return; setDrafts(current => ({ ...current, [pool]: next })); setReview(false); setNotice(null) }
-  const choosePool = (next: Pool) => {
+  const choosePool = async (next: Pool) => {
     if (returnToReview) {
       const { retained, removed } = reviewPoolSelection(draft, next, accounts, signups);
       setPool(next);
@@ -335,7 +338,7 @@ function App() {
       setReturnToReview(false);
       return;
     }
-    if (pool && next !== pool && Object.keys(draft).length && !window.confirm('Change CWL pool and clear your unsubmitted selections? Saved signups stay unchanged.')) return;
+    if (pool && next !== pool && Object.keys(draft).length && !(await confirmCwl('Change CWL pool and clear your unsubmitted selections? Saved signups stay unchanged.', 'Change CWL pool'))) return;
     setSignupStep(2);
     setPoolRemoved([]);
     if (pool === next) return;
@@ -381,6 +384,11 @@ function App() {
   const replayRosterHistoryTarget = useRef<number | null>(null)
   const rosterEditFocus = useRef<HTMLElement | null>(null)
   const navigation = useRef<DashboardHistory | null>(null)
+  const { confirm: confirmCwl, dialog: cwlConfirmation } = useConfirmDialog(`${view}:${seasonId}:${session?.user.id}:${session?.can_edit}:${session?.dashboard_permissions?.join(",")}`)
+  const deferCwlLeave = (text: string, action?: () => void) => {
+    void confirmCwl(text, "Discard and continue").then(confirmed => { if (confirmed) action?.() })
+    return false
+  }
   const signupDirty = Object.values(drafts).some(draft => Object.keys(draft).length > 0)
   useEffect(() => {
     if (tourActive || view !== 'signup' || (!signupDirty && !pending)) return
@@ -412,17 +420,17 @@ function App() {
       }
     }
     if (view === 'staff' && rosterBusy) return false
-    if (view === 'staff' && cwlDirty) return window.confirm('Leave Seasons? Unsaved changes will be discarded.')
+    if (view === 'staff' && cwlDirty) return deferCwlLeave('Leave Seasons? Unsaved changes will be discarded.', action)
     if (view === 'signup' && (pending || signupBusy.current)) return false
-    if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
-    if (['participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
+    if (view === 'signup' && (signupDirty || savedSignupDirty)) return deferCwlLeave('Leave without submitting your CWL selections? Your saved signups will stay unchanged.', action)
+    if (['participation', 'bonuses'].includes(view) && cwlDirty) return deferCwlLeave('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.', action)
     if (view === 'access' && cwlDirty) return window.confirm('Discard unsaved access changes?')
     if (view === 'declaration' && rosterBusy) return false
-    if (view === 'declaration' && cwlDirty) return window.confirm('Discard the unsaved ping channel change?')
+    if (view === 'declaration' && cwlDirty) return deferCwlLeave('Discard the unsaved ping channel change?', action)
     if (view === 'publication' && publicationBusy) return false
-    if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving publication or announcement changes?')
+    if (view === 'publication' && publicationDirty) return deferCwlLeave('Leave without saving publication or announcement changes?', action)
     if ((isManagementArea(view) || ['member-timezones','manage','text-commands','clan-management','moderation','member-activity'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
-    if (view === 'reminders' && reminderDirty) return window.confirm('Leave without saving your reminder changes?')
+    if (view === 'reminders' && reminderDirty) return deferCwlLeave('Leave without saving your reminder changes?', action)
     return true
   }
   const allowedView = (next: View): View => {
@@ -524,11 +532,14 @@ function App() {
     if (!canLeave(proceed)) return
     proceed()
   }
-  const changeSignupPanel = (panel: 'register'|'saved') => {
-    if (navigation.current?.pending || pending || (panel !== signupPanel && !canLeave())) return false
-    if (panel !== signupPanel) navigation.current?.write({view:'signup', season:'', signupPanel:panel}, true)
-    setSignupPanel(panel); setReview(false); setCompletion(null)
-    return true
+  const changeSignupPanel = (panel: 'register'|'saved', after?: () => void) => {
+    if (navigation.current?.pending || pending) return false
+    const proceed = () => {
+      if (panel !== signupPanel) navigation.current?.write({view:'signup', season:'', signupPanel:panel}, true)
+      setSignupPanel(panel); setReview(false); setCompletion(null); after?.()
+    }
+    if (panel !== signupPanel && !canLeave(proceed)) return false
+    proceed(); return true
   }
   const tourBackPending = useRef(false);
   const navigationState = useRef({ canLeave, allowedView, currentIndex: activityVisit });
@@ -800,7 +811,7 @@ function App() {
   }
   const withdraw = async (rows: Signup[]) => {
     if (!seasonId || pending || loadingData || !rows.length) return
-    if (!window.confirm(withdrawConfirmation(rows))) return
+    if (!(await confirmCwl(withdrawConfirmation(rows), "Withdraw accounts"))) return
     const withdrawnSeason = seasonId
     let removed = new Set<string>()
     setPending(true)
@@ -824,8 +835,8 @@ function App() {
     }
   }
   if (authState === 'loading') return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
-  const retrySignupRead = () => {
-    if (signupPanel === 'saved' && savedSignupDirty && !window.confirm('Refresh CWL data and discard pending pool changes?')) return
+  const retrySignupRead = async () => {
+    if (signupPanel === 'saved' && savedSignupDirty && !(await confirmCwl('Refresh CWL data and discard pending pool changes?', 'Discard and refresh'))) return
     setSavedSignupsLoaded(false)
     void loadSignup()
   }
@@ -835,6 +846,7 @@ function App() {
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 
   return <DashboardPermissions.Provider value={{owner: session.is_owner, permissions: session.dashboard_permissions || []}}><div className={`shell${tourActive ? ' tour-active' : ''}`}>
+    {cwlConfirmation}
     {pendingStrikeLeave && (
       <ConfirmDialog
         key={pendingStrikeLeave.working ? 'working' : 'dirty'}
@@ -1028,7 +1040,7 @@ function App() {
         {isManagementArea(view) && view !== 'members-settings' && <ServerManagement key={view} area={view} onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {(view === 'members-settings' || view === 'member-timezones') && <MembersPage onDirty={setManageDirty} initialMember={entryAccount} onInitialConsumed={() => setEntryAccount(null)} />}
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
-        {view === 'reminders' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Signup reminders</h1></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!reminderDirty || window.confirm('Discard unsaved reminder edits and change season?')) setSeasonId(event.target.value) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Choose a season to manage its reminders.</p>}{seasonId && <CwlNextLink label="Build roster" onNext={allowedView("roster") === "roster" ? () => navigateSidebar("roster") : undefined} disabled={rosterBusy} />}</>}
+        {view === 'reminders' && session.can_edit && <><CwlPageHeader title={<h1>Signup reminders</h1>}><RosterMenu label="Season" value={seasonId} onValueChange={async next => { if (!reminderDirty || await confirmCwl('Discard unsaved reminder edits and change season?', 'Discard and change season')) setSeasonId(next) }} options={[{value: '', label: 'Select season'}, ...seasons.map(item => ({value: String(item.id), label: item.label}))]} /></CwlPageHeader>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Choose a season to manage its reminders.</p>}{seasonId && <CwlNextLink label="Build roster" onNext={allowedView("roster") === "roster" ? () => navigateSidebar("roster") : undefined} disabled={rosterBusy} />}</>}
         {view === 'search' && <DashboardSearch key={session.user.id} session={session} includeFamily={session.can_edit} query={searchQuery} onQuery={value => { setSearchQuery(value); setSearchPage(0) }} kind={searchKind} onKind={value => { setSearchKind(value); setSearchPage(0) }} page={searchPage} onPage={setSearchPage} onTasks={tag => changeView('todo', tag)} />}
         {view === 'todo' && <TodoWorkspace key={`${session.user.id}:${activitySearch}:${activityKind || "default"}`} userId={session.user.id} initialSearch={activitySearch} initialTab={activityKind} onWars={kind => changeView('wars', '', kind)} />}
         {view === 'wars' && <WarsWorkspace key={`${session.user.id}:${activityVisit}:${activityKind || "default"}`} userId={session.user.id} visit={activityVisit} initialType={activityKind === 'cwl' ? 'cwl' : 'regular'} canEdit={session.can_edit} onTasks={(tag,kind) => changeView('todo', tag,kind)} />}
@@ -1041,7 +1053,7 @@ function App() {
           setPool(nextPool); setSignupPanel('register'); setSignupStep(2); setReview(false); setCompletion(null); changeView('signup')
         }} />}
         {view === 'signup' && <>
-          <div className="page-head member-signup-head"><div><h1>{signupPanel === 'saved' ? 'My signups' : 'Sign up'}</h1><p>{signupPanel === 'saved' ? 'Your saved CWL signups for this season.' : activeCompletion ? "Your season signup is saved." : season && !memberSignupsOpen(season) ? "View your saved signups and CWL clans." : "Sign up your accounts for CWL. Staff will choose your CWL clans."}</p></div></div>
+          <CwlPageHeader className="member-signup-head" title={<> <h1>{signupPanel === 'saved' ? 'My signups' : 'Sign up'}</h1><p>{signupPanel === 'saved' ? 'Your saved CWL signups for this season.' : activeCompletion ? "Your season signup is saved." : season && !memberSignupsOpen(season) ? "View your saved signups and CWL clans." : "Sign up your accounts for CWL. Staff will choose your CWL clans."}</p> </>} />
           {((seasonError && !seasonsKnown) || (!activeCompletion && (dataError || accountError))) && <AttentionSummary urgent items={[
             ...(seasonError && !seasonsKnown ? [{ title: 'CWL season availability could not be checked', detail: 'The season list may be out of date. Retry before choosing a season.', technicalDetail: seasonError, action: { label: 'Retry seasons', onClick: () => void loadSeasons(), disabled: seasonsLoading } }] : []),
             ...(!activeCompletion && dataError ? [{ title: accountError ? 'Signup and account data could not be checked' : 'Saved CWL signups could not be checked', detail: accountError ? 'Saved signups and linked accounts remain unavailable until this check succeeds.' : 'Signup and saved-account changes remain unavailable until this check succeeds.', technicalDetail: [dataError, accountError].filter(Boolean).join(' · '), action: { label: 'Retry CWL data', onClick: retrySignupRead, disabled: loadingData || pending } }] : !activeCompletion && accountError ? [{ title: 'Linked accounts are unavailable', detail: 'Account selections and pool changes are paused until links can be checked.', technicalDetail: accountError, action: { label: 'Retry CWL data', onClick: retrySignupRead, disabled: loadingData || pending } }] : []),
@@ -1096,11 +1108,11 @@ function App() {
                   signups={existing}
                   accounts={loadingData || accountError ? null : accounts}
                   season={season}
-                  onRemaining={() => { if (changeSignupPanel('register')) { setSignupStep(1); setPool(null) } }}
+                  onRemaining={() => changeSignupPanel('register', () => { setSignupStep(1); setPool(null) })}
                   onAssignments={() => changeView('assignments')}
                 />}
                 <SavedSignups key={seasonId} signups={existing} accounts={accounts} editable={memberSignupsOpen(season)} busy={pending || loadingData} canMove={!loadingData && !accountError} headingRef={registeredHeadingRef} onDirty={setSavedSignupDirty} onSave={saveSavedSignups} onWithdraw={rows => void withdraw(rows)} onRefreshAccounts={retrySignupRead}/>
-                {!existing.length && <div className="card empty"><p>No signed-up accounts for this season.</p>{memberSignupsOpen(season) && <button onClick={() => {changeSignupPanel('register');setSignupStep(1)}}>Choose accounts</button>}</div>}
+                {!existing.length && <div className="card empty"><p>No signed-up accounts for this season.</p>{memberSignupsOpen(season) && <button onClick={() => changeSignupPanel('register', () => setSignupStep(1))}>Choose accounts</button>}</div>}
                 <button disabled={pending || loadingData} onClick={retrySignupRead}>Refresh saved signups</button>
               </>}
             </section>}
@@ -1113,34 +1125,17 @@ function App() {
         {
           view === "declaration" && session.can_edit && (
             <>
-              <div className="page-head declaration-page-head">
-                <div>
-                  <p className="eyebrow">CWL</p>
-                  <h1>Declaration check</h1>
-                </div>
-                <label>
-                  Season
-                  <select
-                    value={seasonId}
-                    onChange={(e) => {
-                      if (canLeave()) {
-                        if (e.target.value !== seasonId)
-                          navigation.current?.write(
-                            { view: "declaration", season: e.target.value },
-                            false,
-                          );
-                        setSeasonId(e.target.value);
-                      }
-                    }}
-                  >
-                    {seasons.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+              <CwlPageHeader className="declaration-page-head" title={<h1>Declaration check</h1>}>
+                <RosterMenu label="Season" value={seasonId}
+                  options={seasons.map(item => ({value: String(item.id), label: item.label}))}
+                  onValueChange={id => {
+                    const proceed = () => {
+                      if (id !== seasonId) navigation.current?.write({view: "declaration", season: id}, false);
+                      setSeasonId(id);
+                    };
+                    if (canLeave(proceed)) proceed();
+                  }} />
+              </CwlPageHeader>
               {seasonId && (
                 <ArrivalCheck
                   key={seasonId}
@@ -1170,12 +1165,12 @@ function App() {
               }}
               seasonId={seasonId}
               seasons={seasons}
-              onSeasonChange={(id) => {
+              onSeasonChange={async (id) => {
                 if (
                   !publicationBusy &&
                   (!publicationDirty ||
-                    window.confirm(
-                      "Discard unsaved publication or announcement changes?",
+                    await confirmCwl(
+                      "Discard unsaved publication or announcement changes?", "Discard and change season",
                     ))
                 ) {
                   if (id !== seasonId)
@@ -1234,7 +1229,7 @@ function App() {
           onRefresh={loadSeasons}
           onBusy={setRosterBusy}
           onDirty={setCwlDirty}
-          onSeasonChange={id => { if (canLeave()) setSeasonId(id) }}
+          onSeasonChange={id => { const proceed = () => setSeasonId(id); if (canLeave(proceed)) proceed() }}
           onClans={allowedView('roster') === 'roster' ? () => navigateSidebar('roster') : undefined}
         />}
         {session.access_warning && <div className="notice error" role="alert">{session.access_warning}</div>}

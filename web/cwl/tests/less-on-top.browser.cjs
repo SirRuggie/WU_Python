@@ -78,6 +78,7 @@ const ping = {
     });
     const mode = {
       publicationFailure: false,
+      publicationRetryClick: false,
       visibilityFailure: false,
       seasonsReads: 0,
       pingFailure: false,
@@ -101,8 +102,14 @@ const ping = {
           mode.visibilityFailure
         )
           return fail();
-        if (url.pathname.endsWith("/publication") && mode.publicationFailure)
-          return fail();
+        if (url.pathname.endsWith("/publication") && mode.publicationFailure) {
+          const clicked =
+            mode.publicationRetryClick &&
+            (await page.evaluate(
+              () => window.__qaPublicationRetryClicked === true,
+            ));
+          if (!clicked) return fail();
+        }
         if (/\/declaration-pings\/(main|lazy)$/.test(url.pathname))
           return mode.pingFailure
             ? fail()
@@ -304,8 +311,19 @@ const ping = {
             false,
           );
           await shot(page, "publication-failure", width);
-          mode.publicationFailure = false;
+          mode.publicationRetryClick = true;
+          await retry.evaluate((button) =>
+            button.addEventListener(
+              "click",
+              () => {
+                window.__qaPublicationRetryClicked = true;
+              },
+              { capture: true, once: true },
+            ),
+          );
           await retry.click();
+          mode.publicationFailure = false;
+          mode.publicationRetryClick = false;
           await page.waitForFunction(() =>
             document
               .querySelector(".roster-header-status")
@@ -332,22 +350,23 @@ const ping = {
             once.join(" ").match(/Locations unavailable/g)?.length,
             1,
           );
-          const season = page.locator(".declaration-page-head select");
-          const fit = await season.evaluate((select) => {
-            const css = getComputedStyle(select),
-              canvas = document.createElement("canvas"),
-              ctx = canvas.getContext("2d");
-            ctx.font = css.font;
+          const season = page.locator(
+            ".declaration-page-head .roster-menu-current",
+          );
+          const fit = await season.evaluate((label) => {
+            const bounds = label.getBoundingClientRect();
             return {
-              text: ctx.measureText(select.selectedOptions[0].text).width,
-              room:
-                select.clientWidth -
-                parseFloat(css.paddingLeft) -
-                parseFloat(css.paddingRight) -
-                20,
+              text: label.textContent,
+              width: bounds.width,
+              scroll: label.scrollWidth,
+              visible: bounds.left >= 0 && bounds.right <= innerWidth,
             };
           });
-          assert(fit.text <= fit.room, JSON.stringify({ width, fit }));
+          assert(fit.text.includes("November"), JSON.stringify({ width, fit }));
+          assert(
+            fit.visible && fit.scroll <= fit.width + 1,
+            JSON.stringify({ width, fit }),
+          );
           const disclosure = page.locator(".declaration-ping-panel");
           assert.equal(await disclosure.getAttribute("open"), null);
           await disclosure
@@ -474,16 +493,14 @@ const ping = {
       assert.equal(await guidance.count(), 1);
       for (const name of names)
         assert((await guidance.innerText()).includes(name));
-      let confirm;
-      page.once("dialog", async (dialog) => {
-        confirm = dialog.message();
-        await dialog.dismiss();
-      });
       await page
         .locator(".saved-signup-card")
         .first()
         .getByRole("button", { name: "Withdraw signup", exact: true })
         .click();
+      const confirmation = page.locator(".confirm-dialog");
+      await confirmation.waitFor({ state: "visible" });
+      const confirm = await confirmation.innerText();
       assert(
         confirm.includes(
           "Clan assignments will be cleared for: " + names[0] + ".",
@@ -494,6 +511,9 @@ const ping = {
           "Clan assignments will be cleared for: " + names[1] + ".",
         ),
       );
+      await confirmation
+        .getByRole("button", { name: "Cancel", exact: true })
+        .click();
       await noOverflow(page);
       await shot(page, "my-signups", width);
       cases.push({ kind: "my-signups-open-withdraw-cancel", width });

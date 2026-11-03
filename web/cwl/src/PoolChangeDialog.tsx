@@ -1,3 +1,4 @@
+import "./rosterUi/tokens.css";
 import type { Pool, Signup } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
 import animation from "./assets/confirm-pool-change.gif";
@@ -31,7 +32,7 @@ export default function PoolChangeDialog({
       onCancel={onCancel}
       onConfirm={onConfirm}
     >
-      <div className="pool-change-content">
+      <div className="pool-change-content roster-ui">
         <p className="pool-change-direction">
           <strong>{from}</strong>
           <span aria-label="to">→</span>
