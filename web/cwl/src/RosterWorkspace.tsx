@@ -1639,7 +1639,12 @@ export default function RosterWorkspace({
               .length === 1
               ? ""
               : "s"}{" "}
-            unplaced. Place them before Finalize roster.
+            unplaced. Place{" "}
+            {roster.accounts.filter((account) => !account.assigned_clan_tag)
+              .length === 1
+              ? "it"
+              : "them"}{" "}
+            before Finalize roster.
           </p>
         ) : (
           <CwlNextLink

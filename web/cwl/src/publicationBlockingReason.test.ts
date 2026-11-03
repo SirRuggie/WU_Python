@@ -27,7 +27,10 @@ it.each([
     { instructionsLength: 2001 },
     "Joining instructions must be 2,000 characters or fewer.",
   ],
-  [{ changesReady: false }, "Review the roster changes before publishing."],
+  [
+    { changesReady: false },
+    "Refresh the draft to load the latest roster changes.",
+  ],
   [{ accounts: 0 }, "No signed-up accounts are in this roster yet."],
   [{ unplaced: 2 }, "Acknowledge the unplaced accounts before publishing."],
 ] as const)("explains blocked Publish gate %j", (change, text) =>
@@ -39,4 +42,13 @@ it("reports the first failure and clears when the existing checks pass", () => {
   ).toBe("You do not have permission to publish this roster.");
   expect(reason(ready)).toBe("");
   expect(reason({ ...ready, unplaced: 2, acknowledged: true })).toBe("");
+});
+
+it("leaves the comparison loading status to explain pending reads, and asks Refresh after failure", () => {
+  expect(
+    reason({ ...ready, changesReady: false, comparisonStatus: "loading" }),
+  ).toBe("");
+  expect(
+    reason({ ...ready, changesReady: false, comparisonStatus: "error" }),
+  ).toBe("Refresh the draft to load the latest roster changes.");
 });

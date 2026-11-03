@@ -8,6 +8,7 @@ export function publicationBlockingReason(state: {
   archived: boolean;
   instructionsLength: number;
   changesReady: boolean;
+  comparisonStatus?: "loading" | "ready" | "error";
   accounts: number;
   unplaced: number;
   acknowledged: boolean;
@@ -25,7 +26,9 @@ export function publicationBlockingReason(state: {
   if (state.instructionsLength > 2000)
     return "Joining instructions must be 2,000 characters or fewer.";
   if (!state.changesReady)
-    return "Review the roster changes before publishing.";
+    return state.comparisonStatus === "loading"
+      ? ""
+      : "Refresh the draft to load the latest roster changes.";
   if (!state.accounts) return "No signed-up accounts are in this roster yet.";
   if (state.unplaced > 0 && !state.acknowledged)
     return "Acknowledge the unplaced accounts before publishing.";

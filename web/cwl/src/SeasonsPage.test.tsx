@@ -30,7 +30,6 @@ it("keeps signup writes on Build roster and offers one read-only Next destinatio
   const render = (canBuild = true) => (
     <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
       <SeasonsPage
-        userId="12"
         seasonId="1"
         seasons={[season]}
         memberSeason={{ season_id: 1, revision: 1 }}
@@ -59,6 +58,121 @@ it("keeps signup writes on Build roster and offers one read-only Next destinatio
     expect(host.querySelector(".cwl-next-cue")).toBeNull();
     expect(host.textContent).toContain("Create season");
     expect(api.mock.calls.every((call) => call[1] === undefined)).toBe(true);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it.each([false, true])(
+  "settings-only staff retain shared signup window controls when Build is unavailable: open=%s",
+  async (signupOpen) => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const season = {
+      id: 1,
+      label: "November",
+      status: "draft",
+      signup_open: signupOpen,
+    } as Season;
+    api.mockResolvedValue({
+      seasons: [season],
+      member_season: { season_id: 1, revision: 1 },
+    });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () =>
+        root.render(
+          <DashboardPermissions.Provider
+            value={{ owner: false, permissions: ["cwl_settings"] }}
+          >
+            <SeasonsPage
+              seasonId="1"
+              seasons={[season]}
+              memberSeason={{ season_id: 1, revision: 1 }}
+              onSeasonChange={() => {}}
+              onRefresh={async () => {}}
+              onBusy={() => {}}
+            />
+          </DashboardPermissions.Provider>,
+        ),
+      );
+      const settings = host.querySelector<HTMLButtonElement>(
+        'button[aria-label="Signup window settings"]',
+      );
+      expect(settings).not.toBeNull();
+      await act(async () => settings!.click());
+      expect(document.body.textContent).toContain(
+        signupOpen ? "Close signups" : "Open signups",
+      );
+      expect(host.querySelector(".cwl-next-cue")).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  },
+);
+
+it("reports a real pool-role draft as dirty without saving it", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const season = {
+    id: 1,
+    label: "November",
+    status: "draft",
+    signup_open: false,
+  } as Season;
+  api.mockImplementation(async (path: string) =>
+    path.startsWith("/pool-roles")
+      ? {
+          pools: ["main", "lazy"].map((pool) => ({
+            pool,
+            role_id: null,
+            revision: 0,
+            member_basis: "fixture",
+            member_count: 0,
+            progress: {},
+            failure: null,
+          })),
+          roles: [{ id: "123456789012345678", name: "CWL players" }],
+        }
+      : { seasons: [season], member_season: { season_id: 1, revision: 1 } },
+  );
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const dirty = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        <DashboardPermissions.Provider
+          value={{ owner: false, permissions: ["cwl_settings", "cwl_roster"] }}
+        >
+          <SeasonsPage
+            seasonId="1"
+            seasons={[season]}
+            memberSeason={{ season_id: 1, revision: 1 }}
+            onSeasonChange={() => {}}
+            onRefresh={async () => {}}
+            onBusy={() => {}}
+            onDirty={dirty}
+            onClans={() => {}}
+          />
+        </DashboardPermissions.Provider>,
+      ),
+    );
+    const main = [...host.querySelectorAll<HTMLSelectElement>("select")].find(
+      (select) => select.parentElement?.textContent?.startsWith("Main role"),
+    )!;
+    expect(main).toBeDefined();
+    await act(async () => {
+      main.value = "123456789012345678";
+      main.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(dirty).toHaveBeenLastCalledWith(true);
+    expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
+      true,
+    );
   } finally {
     await act(async () => root.unmount());
     host.remove();

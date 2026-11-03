@@ -165,8 +165,10 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
 });
-const render = async () =>
-  act(async () => root.render(<ArrivalCheck seasonId="1" />));
+const render = async (onFinalize?: () => void) =>
+  act(async () =>
+    root.render(<ArrivalCheck seasonId="1" onFinalize={onFinalize} />),
+  );
 const toggles = () => [
   ...host.querySelectorAll<HTMLButtonElement>(".declaration-clan-toggle"),
 ];
@@ -219,7 +221,7 @@ it.each(["hidden", "never"])(
         published_at: new Date(now).toISOString(),
         withdrawn_at: new Date(now).toISOString(),
       };
-    await render();
+    await render(vi.fn());
     expect(host.textContent).toContain(
       kind === "hidden"
         ? "Hidden from members · last published version 2"
@@ -890,4 +892,17 @@ it("uses guarded in-app Finalize and one read-only Next to Results", async () =>
   await act(async () => button.click());
   expect(finalize).toHaveBeenCalledOnce();
   expect(host.querySelector("a")).toBeNull();
+});
+
+it("hides unavailable Finalize and Results destinations rather than showing disabled links", async () => {
+  state.value.data.publication.published = null;
+  state.value.data.arrival.publication_available = false;
+  await render();
+  expect(host.textContent).not.toContain("Finalize roster first ›");
+  expect(host.textContent).toContain(
+    "No roster is currently published for members.",
+  );
+  state.value.data = makeData();
+  await render();
+  expect(host.querySelector(".cwl-next-cue")).toBeNull();
 });

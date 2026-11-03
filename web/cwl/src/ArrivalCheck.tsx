@@ -268,14 +268,13 @@ export default function ArrivalCheck({
           {data.publication.last_publication?.withdrawn_at
             ? hiddenPublicationStatus(data.publication.last_publication)
             : null}{" "}
-          <button
-            type="button"
-            className="text-link"
-            onClick={onFinalize}
-            disabled={!onFinalize}
-          >
-            Finalize roster first ›
-          </button>
+          {onFinalize ? (
+            <button type="button" className="text-link" onClick={onFinalize}>
+              Finalize roster first ›
+            </button>
+          ) : (
+            <span>No roster is currently published for members.</span>
+          )}
         </p>
       )}
       {data && published && context && (

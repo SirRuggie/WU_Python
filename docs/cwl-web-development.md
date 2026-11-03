@@ -1274,6 +1274,14 @@ refresh, no horizontal overflow. Deployment preserved prior static assets and
 saved the prior frontend/backend mirror. Public root/current build, unauthenticated
 staff protection, and Discord authorization redirect verified after deployment.
 
+### Signup controls location update (2026-11-02)
+
+Build roster is now the home for the shared signup window controls. Seasons
+links there for staff who can open Build; staff with only `cwl_settings` retain
+the same `StaffSignupControls` on Seasons so their existing open/close permission
+is preserved. The obsolete Hosting clans moved notice and preference were
+removed. No signup endpoint or server permission changed.
+
 ### Prominent signup controls and staff adds (2026-10-15)
 
 Staff with CWL access now see a season-labelled status/action bar at the top of

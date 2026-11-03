@@ -1,4 +1,5 @@
 import CwlNextLink from "./CwlNextLink";
+import StaffSignupControls from "./StaffSignupControls";
 import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import "./SeasonsPage.css";
@@ -16,7 +17,6 @@ import {
 import { useDashboardPermission } from "./DashboardPermissions";
 
 type Props = {
-  userId: string;
   seasonId: string;
   seasons: Season[];
   memberSeason: SeasonState["member_season"];
@@ -48,7 +48,14 @@ export default function SeasonsPage({
   const [notice, setNotice] = useState("");
   const pending = useRef(false);
   const [roleBusy, setRoleBusy] = useState(false);
-  const working = busy || roleBusy;
+  const [signupBusy, setSignupBusy] = useState(false);
+  const [roleDirty, setRoleDirty] = useState(false);
+  const [signupDirty, setSignupDirty] = useState(false);
+  const working = busy || roleBusy || signupBusy;
+  useEffect(() => {
+    onDirty?.(roleDirty || signupDirty || !!label.trim());
+    return () => onDirty?.(false);
+  }, [roleDirty, signupDirty, label, onDirty]);
   useEffect(() => {
     onBusy(working);
     return () => onBusy(false);
@@ -209,7 +216,16 @@ export default function SeasonsPage({
           disabled={working || !allowed}
         />
       )}
-      <CwlPoolRoles onBusy={setRoleBusy} onDirty={onDirty} />
+      {season && allowed && !onClans && (
+        <StaffSignupControls
+          season={season}
+          onChanged={async () => onRefresh()}
+          onBusy={setSignupBusy}
+          onDirty={setSignupDirty}
+          disabled={busy || roleBusy}
+        />
+      )}
+      <CwlPoolRoles onBusy={setRoleBusy} onDirty={setRoleDirty} />
       <CwlNextLink
         label="Build roster"
         onNext={onClans}

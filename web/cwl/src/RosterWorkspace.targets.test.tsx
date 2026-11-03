@@ -148,7 +148,7 @@ it.each(["assign", "compare", "rules"])(
       expect(host.textContent).not.toContain("Next: Finalize roster");
       if (mode === "assign")
         expect(host.textContent).toContain(
-          "1 account unplaced. Place them before Finalize roster.",
+          "1 account unplaced. Place it before Finalize roster.",
         );
       else
         expect(host.textContent).not.toContain(

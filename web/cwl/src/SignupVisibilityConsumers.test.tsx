@@ -52,7 +52,6 @@ it.each(["staff", "seasons"])(
               />
             ) : (
               <SeasonsPage
-                userId="1"
                 seasonId="1"
                 seasons={[season]}
                 memberSeason={{ season_id: 1, revision: 1 }}

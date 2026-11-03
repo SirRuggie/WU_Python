@@ -8,7 +8,9 @@ import { RefreshCw, Send, EyeOff } from "lucide-react";
 import { Button } from "./rosterUi/primitives";
 import JoiningInstructionsEditor from "./JoiningInstructionsEditor";
 import { capacityWarnings, finalizeStatus } from "./publicationStatus";
-import PublicationChanges from "./PublicationChanges";
+import PublicationChanges, {
+  type ComparisonStatus,
+} from "./PublicationChanges";
 import ConfirmDialog from "./ConfirmDialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type Season } from "./api";
@@ -55,11 +57,14 @@ export default function PublicationWorkspace({
   onDeclaration,
 }: Props) {
   const canManage = useDashboardPermission("cwl_publish");
+  const canAnnounce = useDashboardPermission("cwl_send");
   const publicationCallback = useRef(onPublication);
   publicationCallback.current = onPublication;
 
   const [imagesOpen, setImagesOpen] = useState(false);
   const [changesReady, setChangesReady] = useState(false);
+  const [comparisonStatus, setComparisonStatus] =
+    useState<ComparisonStatus>("loading");
   const [confirmRevision, setConfirmRevision] = useState<number | null>(null);
   const [hideTarget, setHideTarget] = useState<{
     revision: number;
@@ -211,6 +216,7 @@ export default function PublicationWorkspace({
     archived,
     instructionsLength: instructions.length,
     changesReady,
+    comparisonStatus,
     accounts: draft?.preview.accounts.length ?? 0,
     unplaced: draft?.preview.unassigned_count ?? 0,
     acknowledged,
@@ -507,6 +513,7 @@ export default function PublicationWorkspace({
                 draft={draft}
                 archived={archived}
                 onReady={setChangesReady}
+                onStatus={setComparisonStatus}
               />
             )}
             {instructionsDirty && (
@@ -719,7 +726,11 @@ export default function PublicationWorkspace({
         <div>
           <ManageBridgeWorkspace
             publication={draft ?? undefined}
-            onFinalize={() => (onNavigateStep ?? onStepChange)("review")}
+            onFinalize={
+              canManage
+                ? () => (onNavigateStep ?? onStepChange)("review")
+                : undefined
+            }
             onDeclaration={onDeclaration}
             onDirty={setAnnouncementDirty}
             onBusy={setAnnouncementBusy}
@@ -744,7 +755,7 @@ export default function PublicationWorkspace({
           </details>
         </div>
       )}
-      {step === "review" && draft?.published && (
+      {step === "review" && draft?.published && canAnnounce && (
         <CwlNextLink
           label="Announcements"
           disabled={locked || loading || instructionsDirty}

@@ -26,17 +26,20 @@ and history. The Finalize Next callback uses the existing history-pushing helper
 so refresh and Back retain Finalize instead of replacing it with Announcements.
 The automatic successful-Publish step callback stays separate so a pending
 operation does not block its own completion. Destination permissions remain authoritative; unavailable targets
-do not receive a usable Next callback. Unsaved edits retain existing leave
-confirmation, and a changed joining instruction disables the Finalize Next cue
-until the edit is resolved. No cue saves, publishes, sends, marks or changes a
+do not receive a usable Next callback. The tested Next/sidebar paths protect unsaved edits: review 149 adds the
+previously missing Seasons pool-role dirty check, with one confirmation before
+leaving. This is not a claim that every workspace historically had that guard.
+A changed joining instruction disables the Finalize Next cue until resolved. No cue saves, publishes, sends, marks or changes a
 season. Empty/loading/failed protected reads do not synthesize successful state.
 
 ## Single signup control location
 
-Opening/closing signups stays in `StaffSignupControls` on Build roster. Seasons
-keeps season creation and member-season visibility but removes its duplicate
-signup mutation/dialog/visibility-reader hook. Its Next link leads to Accounts &
-signups on Build, where the existing controls and permission checks remain.
+Build roster is the primary home for `StaffSignupControls`. Staff who can open
+Build get a Seasons Next link to Accounts & signups. Staff with only
+`cwl_settings`, who cannot open Build, retain that same shared component on
+Seasons; they keep their existing open/close permission. There is no second
+signup implementation or server permission change. Seasons also keeps season
+creation and member-season visibility.
 The obsolete per-user Hosting clans moved notice and storage preference are
 removed; Hosting clans remains a Build roster tab.
 
@@ -46,8 +49,10 @@ The Publish button's existing boolean gates and submission guard are unchanged.
 A nearby accessible reason reports the first failed condition in that same order:
 missing draft, permission, current operation/edit, refresh, read error, archived
 season, joining instructions over 2,000 characters, changes not ready, no accounts,
-or unacknowledged unplaced accounts. Existing archived/status explanations remain
-visible; the adjacent reason uses distinct wording. No warning is mistaken for a
+or unacknowledged unplaced accounts. A pending comparison keeps its existing
+Loading changes status; a failed comparison asks for Refresh draft, rather than
+claiming the staff member has not reviewed it. Existing archived/status
+explanations remain visible; the adjacent reason uses distinct wording. No warning is mistaken for a
 new prohibition, and the unplaced acknowledgement still permits publication.
 
 ## Validation and limits
@@ -131,3 +136,54 @@ normal Back/refresh and narrow/wide geometry/screenshots. Final evidence:
 No full backend suite was repeated for this frontend-only batch. Live sends,
 production writes and full assistive-technology coverage remain untested.
 Release remains held.
+
+## Review 149 delta checkpoint
+
+The reviewed c638ec3 source had five reproduced failures: settings-only staff
+could not reach open/close controls; publish-only staff saw the Announcements
+Next cue; Declaration treated another publication step's grant as Finalize
+permission; and dirty Seasons role edits left through Next or the sidebar
+without confirmation. The runtime was changed only after those red assertions.
+The initial happy-DOM confirm mock was corrected before reproducing both real
+dirty-navigation failures; all logs remain.
+
+The shared signup control fallback preserves settings-only users, while Build
+remains home for everyone who can open it. Finalize checks `cwl_send` before
+showing Announcements; Declaration and manual publication navigation check the
+exact `cwl_publish`/`cwl_send` step using the existing navigation permission
+filter. Unavailable actions are hidden, with neutral unpublished status retained.
+Seasons and Reminders both use the existing guarded Accounts-tab navigation
+helper. Seasons aggregates role/signup dirty and busy state; Next and sidebar
+ask exactly once and retain the role draft when cancelled.
+
+Comparison loading/error explanations now match the actual read state; all
+original Publish boolean gates remain. A rendered seven-case test compares the
+real Publish button with its helper explanation. Singular unplaced accounts use
+it, the unused Seasons userId prop and hosting-notice CSS are removed, and the
+location update is dated in the web development notes.
+
+Requested checks currently pass: full frontend 1,621 tests/272 files (100.15s),
+TypeScript/build, 16 targeted assertion mutants, and seven-file API/link argument
+comparison. Chrome covers the owner chain's 27 cases and 15 limited-permission
+cases at 320/360/1440. Every non-GET except the exact 475 diagnostic route is
+absent; owner runs print diagnostic counts 0/1/0 (one network_error at 360), and
+all 15 limited-permission cases print zero. Domain state is unchanged, no page
+errors or overflow occurred. Real unsaved pool-role selection shows four correct
+native confirmations per width: Next dismiss/accept and sidebar dismiss/accept,
+with draft preservation and Accounts-tab restoration. Narrow/wide fallback and
+neutral unpublished-state images were visually reviewed. These are synthetic
+UI-grant overlays, not evidence of changed server authorization or live writes.
+
+Initial browser failures were fixture-selector mismatches: native role labels
+include option text, the mobile trigger is Open menu, and the CWL group is
+collapsed. Their logs remain; no app behavior or assertions were changed for
+those corrections.
+
+One adjacent pre-existing automatic-Publish behavior was identified during the
+completion review: the original successful-Publish callback still calls the
+Announcements setter even without cwl_send. Manual Next is fixed; the separate
+automatic setter was deliberately retained in 120. Actual-source AST execution
+with a fake successful API confirms it. No server permission bypass or live
+operation is claimed. Scope judgment is pending in question 967 before changing that behavior
+or declaring the final 149 delta READY. No adjacent automatic-setter fix or
+deferral is assumed by this checkpoint.
