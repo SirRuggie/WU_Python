@@ -1,3 +1,5 @@
+import CwlNextLink from "./CwlNextLink";
+import StaffSignupControls from "./StaffSignupControls";
 import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import "./SeasonsPage.css";
@@ -7,7 +9,6 @@ import RosterMenu from "./rosterUi/Menu";
 import ConfirmDialog from "./ConfirmDialog";
 import CwlPoolRoles from "./CwlPoolRoles";
 import MemberSeasonSettings from "./MemberSeasonSettings";
-import useSignupAction from "./useSignupAction";
 import {
   createSeasonConfirmation,
   createdSeasonMessage,
@@ -16,18 +17,16 @@ import {
 import { useDashboardPermission } from "./DashboardPermissions";
 
 type Props = {
-  userId: string;
   seasonId: string;
   seasons: Season[];
   memberSeason: SeasonState["member_season"];
   onSeasonChange: (id: string) => void;
   onRefresh: () => Promise<void>;
-  onClans: () => void;
+  onClans?: () => void;
   onBusy: (value: boolean) => void;
   onDirty?: (value: boolean) => void;
 };
 export default function SeasonsPage({
-  userId,
   seasonId,
   seasons,
   memberSeason,
@@ -39,7 +38,8 @@ export default function SeasonsPage({
 }: Props) {
   const allowed = useDashboardPermission("cwl_settings");
   const season = seasons.find((item) => String(item.id) === seasonId);
-  const signup = useSignupAction(season, onRefresh);
+  const hiddenOpen =
+    !!season?.signup_open && memberSeason.season_id !== season?.id;
   const [label, setLabel] = useState("");
   const [createLabel, setCreateLabel] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<"show" | "hide" | null>(null);
@@ -47,16 +47,15 @@ export default function SeasonsPage({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const pending = useRef(false);
-  const key = `wu-hosting-clans-moved:${userId}`;
-  const [dismissed, setDismissed] = useState(() => {
-    try {
-      return localStorage.getItem(key) === "1";
-    } catch {
-      return false;
-    }
-  });
   const [roleBusy, setRoleBusy] = useState(false);
-  const working = busy || signup.busy || roleBusy;
+  const [signupBusy, setSignupBusy] = useState(false);
+  const [roleDirty, setRoleDirty] = useState(false);
+  const [signupDirty, setSignupDirty] = useState(false);
+  const working = busy || roleBusy || signupBusy;
+  useEffect(() => {
+    onDirty?.(roleDirty || signupDirty || !!label.trim());
+    return () => onDirty?.(false);
+  }, [roleDirty, signupDirty, label, onDirty]);
   useEffect(() => {
     onBusy(working);
     return () => onBusy(false);
@@ -136,34 +135,14 @@ export default function SeasonsPage({
           onValueChange={onSeasonChange}
         />
       </div>
-      {!dismissed && (
-        <div className="notice season-hosting-note">
-          <button onClick={onClans}>
-            Hosting clans moved to Build roster → Hosting clans ›
-          </button>
-          <button
-            aria-label="Dismiss hosting clans note"
-            onClick={() => {
-              setDismissed(true);
-              try {
-                localStorage.setItem(key, "1");
-              } catch {
-                /* Optional preference. */
-              }
-            }}
-          >
-            ×
-          </button>
-        </div>
-      )}
-      {(error || signup.error) && (
+      {error && (
         <p className="notice error" role="alert">
-          {error || signup.error}
+          {error}
         </p>
       )}
-      {(notice || signup.notice) && (
+      {notice && (
         <p className="notice success" role="status">
-          {notice || signup.notice}
+          {notice}
         </p>
       )}
       <div className="card">
@@ -177,33 +156,11 @@ export default function SeasonsPage({
         {season && (
           <div className="staff-row">
             <StatusPill
-              tone={
-                signup.hiddenOpen || !season.signup_open ? "warning" : "success"
-              }
+              tone={hiddenOpen || !season.signup_open ? "warning" : "success"}
             >
               {season.signup_open ? "Signups open" : "Signups closed"}
-              {signup.hiddenOpen && " · not visible to members"}
+              {hiddenOpen && " · not visible to members"}
             </StatusPill>
-            {allowed && season.status !== "archived" && (
-              <>
-                {signup.hiddenOpen && (
-                  <Button
-                    disabled={working}
-                    onClick={() => void signup.begin("fix")}
-                  >
-                    Fix ›
-                  </Button>
-                )}
-                <Button
-                  disabled={working}
-                  onClick={() =>
-                    void signup.begin(season.signup_open ? "close" : "open")
-                  }
-                >
-                  {season.signup_open ? "Close signups" : "Open signups"}
-                </Button>
-              </>
-            )}
           </div>
         )}
       </div>
@@ -259,9 +216,21 @@ export default function SeasonsPage({
           disabled={working || !allowed}
         />
       )}
-      <CwlPoolRoles onBusy={setRoleBusy} onDirty={onDirty} />
-      {signup.visibilityCheck}
-      {signup.dialog}
+      {season && allowed && !onClans && (
+        <StaffSignupControls
+          season={season}
+          onChanged={async () => onRefresh()}
+          onBusy={setSignupBusy}
+          onDirty={setSignupDirty}
+          disabled={busy || roleBusy}
+        />
+      )}
+      <CwlPoolRoles onBusy={setRoleBusy} onDirty={setRoleDirty} />
+      <CwlNextLink
+        label="Build roster"
+        onNext={onClans}
+        disabled={working || !seasonId}
+      />
     </section>
   );
 }

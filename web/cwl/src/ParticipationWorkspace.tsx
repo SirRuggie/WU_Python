@@ -1,3 +1,5 @@
+import CwlNextLink from "./CwlNextLink";
+import { exportMonthLabel } from "./exportPreview";
 import RosterMenu from "./rosterUi/Menu";
 import "./ParticipationWorkspace.css";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
@@ -20,6 +22,7 @@ type Props = {
   seasonId: string;
   seasons: Season[];
   onDirty?: (dirty: boolean) => void;
+  onBonus?: () => void;
   onSeasonChange: (id: string) => void;
 };
 
@@ -34,6 +37,7 @@ export default function ParticipationWorkspace({
   seasons,
   onSeasonChange,
   onDirty: reportDirty,
+  onBonus,
 }: Props) {
   const [data, setData] = useState<ParticipationData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -411,7 +415,7 @@ export default function ParticipationWorkspace({
     <div className="participation-workspace">
       <div className="page-head participation-page-head">
         <div>
-          <p className="eyebrow">CWL · Results</p>
+          <p className="eyebrow">CWL</p>
           <h1>Results &amp; participation</h1>
         </div>
         <label className="season-choice">
@@ -468,9 +472,11 @@ export default function ParticipationWorkspace({
                     : "Automatic capture off"}
                 </strong>
                 <span>
-                  {data.sync?.cycle || "CWL month not set"} ·{" "}
-                  {syncStatusLabel(data.sync?.status, data.sync?.cycle)} · Last
-                  checked{" "}
+                  {data.sync?.cycle
+                    ? exportMonthLabel(data.sync.cycle)
+                    : "CWL month not set"}{" "}
+                  · {syncStatusLabel(data.sync?.status, data.sync?.cycle)} ·
+                  Last checked{" "}
                   {data.sync?.last_checked_at
                     ? dateText(data.sync.last_checked_at)
                     : "never"}
@@ -627,13 +633,13 @@ export default function ParticipationWorkspace({
           />
           <div className="participation-toolbar">
             <label>
-              Find a player
+              Find a player or clan
               <input
                 type="search"
                 value={search}
                 disabled={controlsLocked}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Name, tag or clan"
+                placeholder="Find a player or clan"
               />
             </label>
             <RosterMenu
@@ -744,6 +750,13 @@ export default function ParticipationWorkspace({
             }}
           />
         </>
+      )}
+      {seasonId && (
+        <CwlNextLink
+          label="Bonus medals"
+          onNext={onBonus}
+          disabled={controlsLocked}
+        />
       )}
     </div>
   );

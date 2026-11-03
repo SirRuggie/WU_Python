@@ -173,7 +173,7 @@ it("partly placed lists only waiting names and does not invent totals when links
     published: true,
     signups: [{ ...signups[0], assigned_clan_tag: "#P2222222" }, signups[1]],
   });
-  expect(host.textContent).toContain("waiting for your clan");
+  expect(host.textContent).toContain("Waiting for a clan");
   expect(host.querySelector("ul")?.textContent).toBe("Ace · Lazy CWL");
   await render({ accounts: null });
   expect(host.textContent).toContain("You're signed up · 2 accounts");
@@ -196,7 +196,7 @@ it("local dates, minute-only countdown, late and null guidance", async () => {
   ).toContain("in 18 h");
   expect(
     memberDateLines(closed, false, Date.parse("2026-11-01T00:00:00Z")),
-  ).toEqual(["Taking a little longer than usual · check back soon"]);
+  ).toEqual(["Clans are not ready yet. Check back soon."]);
   expect(
     memberDateLines({ ...season, placements_by: null }, false, now),
   ).toEqual([]);
@@ -289,4 +289,24 @@ it("zero signups uses only the grey signup action, and hides it when closed", as
   expect(host.querySelector(".member-signup-remaining")).toBeNull();
   expect(host.querySelector("button")).toBeNull();
   expect(host.textContent).toContain("Signups are closed.");
+});
+
+it("keeps saved-view status and links without repeating the editable account list", async () => {
+  await render({ savedView: true });
+  expect(
+    host.querySelector(".member-signup-success h2")?.textContent,
+  ).toContain("You're signed up");
+  expect(host.querySelectorAll(".member-signup-success li")).toHaveLength(0);
+  await render({ savedView: false });
+  expect(host.querySelectorAll(".member-signup-success li")).toHaveLength(
+    signups.length,
+  );
+});
+
+it("leaves the saved-page closed label to the season line while retaining the placement date", async () => {
+  await render({ savedView: true, season: { ...season, signup_open: false } });
+  expect(
+    host.querySelector(".member-signup-summary")?.textContent,
+  ).not.toContain("Signups closed");
+  expect(host.textContent).toContain("You'll see your clan by");
 });

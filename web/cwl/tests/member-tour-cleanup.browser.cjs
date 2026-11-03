@@ -156,7 +156,9 @@ const base = `http://127.0.0.1:${port}`;
           );
           assert.match(
             await page
-              .locator(".signup-flow .section-heading .eyebrow")
+              .locator(
+                '.signup-flow .cwl-pool-tabs button[aria-pressed="true"]',
+              )
               .innerText(),
             /Main/i,
           );

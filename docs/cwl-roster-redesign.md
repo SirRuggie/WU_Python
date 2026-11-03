@@ -1169,3 +1169,182 @@ after. All preserved review previews remain untouched.
 ## Discord member links and new default copy (127)
 
 Discord member messages share **My clan assignments**, **My tasks** and **Wars** destinations. New CWL default copy is explicitly versioned; saved, partial, legacy and custom campaigns retain their prior normalization without a production rewrite. The native Discord editor supports text and buttons; web signup buttons remain locked. The read-only comparison from November 2 at 16:14 UTC is historical evidence, not a current production claim. See [Discord dashboard links review](discord-dashboard-links-review.md) for the message inventory, new-default provenance, local checks and limits.
+
+
+### Audit 119: one name for each thing
+
+Frontend presentation only: use My clan assignments, Waiting for a clan on
+member views, Unplaced on staff views, Bonus medals, Clan size, Hosting clans,
+Signup reminders, and the complete workflow destination names. Existing staff
+CWL eyebrows say CWL; member-page eyebrows are removed. Display cycle values in
+Results and Bonus as month/year using the existing presentation formatter;
+month inputs, API arguments and persisted values retain their original forms.
+
+Home's ordinary members no longer see staff weight values or the refresh-period
+copy/pause control; background refresh and the visible manual Refresh action are
+unchanged. Member assignments omit publication-version detail. Linking help has
+one label where it exists; empty assignments still follow review 137, item 6's
+Signup-only policy, with no added account read or inference of missing links.
+
+Owner 378 supplies the exact Main/Lazy rules and protects the FWA line verbatim.
+All tour narrative is protected; only the repeated numbering bug is fixed across
+its 13 cards and counter/ARIA total. Existing eight decorative progress groups
+retain their original layout and stage advances. No Discord text, layout CSS, API route/payload,
+notification, destination, selection, save, permission or delivery policy changes
+are part of 119. Short strip labels are the 320-width exception, with full
+accessible names. See the kept-term/scope checklist in
+[cwl-plain-words-review.md](cwl-plain-words-review.md).
+
+
+### Later — browser error-report noise observed during 120
+
+The isolated navigation matrix sometimes emitted `POST /api/cwl/issues/browser`
+with kind `network_error` while every domain-write count stayed zero. Passive
+traces observed `TypeError: Failed to fetch`; rejected GETs also occur on the
+accepted 147 baseline. A GET cut off by navigation is suspected, but the cause of
+these diagnostic posts is **unproven**: their payload omits the original error.
+Investigate expected navigation failures and reporter noise separately. PR120
+changes no API/telemetry handling; review 475's exact diagnostic-route test
+exception applies only to that batch, and all earlier red traces are retained.
+
+## 121 — Less on top
+
+Base: main `440c2204` plus accepted PR188 `177e2f3`, locally integrated as
+`65043174`. The only integration conflict was this document's append: all main
+bytes and the exact accepted PR188 append were retained after independent
+review. No runtime adaptation was needed. This branch remains stacked on PR188
+and needs current-main integration after that dependency lands.
+
+Build's title/season row and compact summary reached the mandatory checkpoint;
+Claude reviewed the narrow/wide screenshots and approved continuing in 493.
+The requested label corrections are included: phones show the current view,
+for example **Accounts & signups ▾**, with **Missing weights · N** kept among
+the view buttons. At desktop width those views remain directly visible, and
+**Signup & status** accurately names the other disclosure's contents: staff
+signup controls, publication status and count-filter actions. Closed summary
+height stays 46 px at 360 and 1440. Filters, sort, Refresh and pool choices remain direct;
+headers scroll away rather than sticking.
+
+Declaration puts its clan list immediately after the compact overview and its
+controls. Declaration pings is closed after the list, with **Last pinged …** in
+its summary. A test receipt is labelled as a no-ping test, not a real ping.
+Errors, active work and an open send review keep the section visible. Settings
+and history retain their existing mount-time read; opening the section performs
+no preview request. Checking counts explicitly show partial confirmed results,
+including **Checking… 3 of 10 clans confirmed ready**; incomplete settled data
+remains unavailable rather than a final ready fraction.
+
+My signups keeps the editable saved list and removes the repeated names from
+the status summary, preserving its totals, assignment links, dates and errors.
+The clan-assignment warning appears once only while changes are allowed.
+Closed Sign up has one **Signups closed** heading; the season line keeps its
+name. Finalize and Announcements match the title/season row without the eyebrow.
+The accepted Next destinations and permission/dirty guards are unchanged.
+
+### Validation and limits
+
+- Full frontend: 1,635 passed in 273 files; TypeScript and frontend build pass.
+- Seven genuine mutants killed: repeated saved list, closed-season change
+  guidance, repeated closed status, forced-open pings, test receipt called a
+  live ping, an in-progress final readiness fraction, and lost signup attention.
+  Original files were restored and their hashes checked.
+- 66 local browser scenarios: 12 Build count/width cases, 36 Declaration/Finalize/
+  Announcements cases, 12 open/closed member cases, two explicit partial-check
+  cases and four browser Back/refresh cases. The final disclosure affordance was
+  rechecked in all 12 Declaration cases. Widths 320/360/390/1440 and 26/65/125
+  accounts are covered. The partial fixture has 125 accounts across ten clans,
+  three confirmed ready and seven checking; browser time is paused to retain
+  that synthetic pending state.
+- Build's actual first clan card is at 301 px at 360×800, and its first player
+  is at 497 px at 1440×1000, for all three account counts. These are
+  **production-shaped local samples**, never live measurements. Only the
+  development fixture banner is excluded using an explicit fixture config
+  flag; no production control, style or permission is hidden. With the normal
+  fixture banner, the corresponding coordinates are 360 px and 556 px. Warning
+  states intentionally push content lower rather than being suppressed.
+- Keyboard checks cover Filters, sort, pool, view/status summaries, season,
+  Refresh, Compare/Accounts, ping disclosure and member selection. Browser Back
+  and refresh retain Build's pool and active filter; deep links render each
+  page. Narrow/wide screenshots were visually inspected. Filter/sort/Refresh
+  targets stay at least 44 px and layouts have no horizontal overflow.
+- Browser runs record zero non-GET requests after fixture login, zero page
+  errors and unchanged checked fixture state. Ping/bridge/extras GET responses
+  in the layout fixture are synthetic; no live send, role, Discord delivery or
+  provider behavior is claimed. All 33 API-call ASTs across the ten affected
+  runtime modules match the integration base; no API method, payload, polling,
+  authorization or delivery rule was changed.
+
+Earlier failures are retained honestly in `.local` logs: an obsolete refresh
+selector, the test-only missing SSR import, four old assertions expecting the
+intentionally removed duplicate list, and browser harness path/summary scoping
+and readiness errors. Those saved-page tests now use the actual summary plus
+saved-list composition, preserving member/pool, stale-response, read-failure
+and remaining-action checks. One intermediate restricted browser runner
+accidentally executed zero cases; explicit 12/4-case assertions were added and
+the final required matrices pass. The first sandbox fixture startup and long
+Chrome UNIX socket path failures remain recorded; final fixtures are isolated
+loopback servers and temp/cache storage belongs to this workspace.
+
+Completion review retained the existing closed-season, permission, unsaved-edit
+and stale-response guards. Publication regressions exercise Cancel and stale
+revisions; saved-signup tests retain missing-link/read-failure and old-response
+checks; ping regressions distinguish review from send and protect unknown
+locations. New regressions cover disclosure errors, partial counts, duplicate
+lists and attention visibility. Dynamic names remain React text; no HTML or
+mention construction changed. Browser tests are read-only and mocked delivery
+tests are not evidence of a real Discord delivery.
+
+Release remains held for owner approval. No production read/write, provider
+probe, role action, merge, tag, restart or activation was performed by this task.
+122 has not started.
+
+## 151 review corrections
+
+The first unchanged-artifact reproduction confirmed that a publication read
+failure displayed its alert while Retry remained inaccessible inside the closed
+status disclosure. Retry status now sits beside the visible alert. Archived
+seasons say Archived, and the compact roster status again exposes role=status.
+
+Declaration keeps the complete month visible at 360 px. A uniform unavailable
+location result appears once in the summary; rows retain distinct known results.
+Failed ping settings stop the Checking caption and add a summary-level View error
+action that scrolls and focuses the existing error. Uncertain receipts remain
+open. These changes preserve read guards and all send rules.
+
+The apparent “No campaign · Open” wording came from synthetic season 6 in
+`tests/fixtures/tour_deadline.py`, not a real campaign-state field. The new local
+sample has a truthful, unique season label and says Signups open. Closed saved
+signups show Signups closed once. Placement guidance and withdrawal confirmation
+name the affected accounts; the browser confirmation check cancels withdrawal.
+
+Validation: 1,643 frontend tests across 274 files, TypeScript and Vite build pass.
+Ten genuine assertion-killed mutants cover toolbar Refresh, visibility-only
+attention, uncertain receipts, visible Retry, Archived, status semantics, failed
+settings captions, unavailable deduplication, placement names and closed labels.
+All originals were hash-verified after restoration. The initial malformed Retry
+mutant was rejected and is not counted. API-call ASTs remain identical to f415055
+for all 33 calls across the twelve reviewed runtime modules.
+
+The checked-in `npm run test:less-on-top-layout` command builds and starts owned
+SQLite/MemoryMongo loopback fixtures, then runs 52 asserted scenarios at
+320/360/390/1440, including Build account counts 26/65/125, failure visibility,
+month fit, pool keyboard use, uncertain receipts and member states. Final output
+records zero non-GET requests after login and zero page errors. Its runner cleans
+up only its own fixtures and stores artifacts in workspace .local. The local
+production-shaped sample excludes only the development banner; it is not a live
+measurement. Narrow and wide screenshots were visually reviewed.
+
+Earlier failed runs remain recorded: an alert text locator included the adjacent
+button, and a synthetic season label collided with an existing unique label. The
+fixture now checks setup responses and uses a unique label. Earlier obsolete
+pool/Open assertions and the removed unused location message were corrected;
+the final full suite passes. The previous 121 browser matrix remains historical
+evidence and is not represented as rerun by this 52-case command.
+
+Both existing review previews retain their ports and processes, with old assets
+preserved and the reviewed frontend updated in place. No production action or
+real notification was performed. Release remains held for owner preview and
+review; 122 has not started.
+
+Four additional existing-preview Back/refresh checks pass at all four widths,
+retaining pool/filter state with zero non-GET requests and zero page errors.
