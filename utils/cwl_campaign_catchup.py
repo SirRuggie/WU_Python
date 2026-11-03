@@ -15,7 +15,12 @@ CATCHUP_JOB_KIND = "catchup"
 def original_due(row):
     if row.get("job_kind") == CATCHUP_JOB_KIND:
         context = row.get("catchup")
-        if not isinstance(context, dict) or context.get("protocol") != 1 or not context.get("original_due_at"):
+        if (
+            not isinstance(context, dict)
+            or context.get("protocol") != 1
+            or isinstance(context.get("protocol"), bool)
+            or not context.get("original_due_at")
+        ):
             raise ValueError("Original catch-up time is missing")
         value = context["original_due_at"]
     else:
@@ -36,7 +41,7 @@ def scheduled_candidate(row):
     if not candidate:
         return False
     failures = row.get("failure_count", 0)
-    if type(failures) is not int:
+    if not isinstance(failures, int) or isinstance(failures, bool):
         raise ValueError("Invalid scheduled failure count")
     return failures == 0
 

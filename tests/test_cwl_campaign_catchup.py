@@ -475,3 +475,160 @@ def test_idle_future_ack_does_not_fetch_catchup_state(runtime, monkeypatch):
         state.assert_not_awaited()
 
     asyncio.run(run())
+
+
+def test_bson_snowflake_guild_roundtrip_is_not_rejected_as_invalid(runtime):
+    from bson import BSON
+
+    async def run():
+        guild_id = 644963518025826319  # Fictional, snowflake-sized local fixture.
+        document = runtime.mongo.bot_config.documents.pop(campaign.defaults_id(GUILD))
+        document.update(_id=campaign.defaults_id(guild_id), guild_id=guild_id)
+        document["campaign"]["messages"]["signup"]["schedule"] = {
+            "mode": "monthly", "day": 20, "hour": 11, "minute": 59,
+        }
+        runtime.mongo.bot_config.documents[document["_id"]] = BSON.encode(document).decode()
+        runtime.rest.guild_id = guild_id
+        loaded = await campaign.load_campaign(runtime.mongo, guild_id, CYCLE)
+        job_id = native._campaign_job_id(guild_id, CYCLE, "signup", "main")
+        await native._persist_campaign_job(
+            job_id, runtime.clock[0].subtract(minutes=1), guild_id, CYCLE,
+            "signup", ["main"], native._campaign_generation(loaded),
+        )
+        row = runtime.mongo.cwl_pending_reminders.documents[job_id]
+        runtime.mongo.cwl_pending_reminders.documents[job_id] = BSON.encode(row).decode()
+        assert isinstance(runtime.mongo.cwl_pending_reminders.documents[job_id]["guild_id"], int)
+        await native._reconcile_cwl_startup()
+        runtime.clock[0] = runtime.clock[0].add(seconds=6)
+        job = runtime.scheduler.get_job(job_id)
+        if job:
+            await job.function(*job.args, **(getattr(job, "kwargs", None) or {}))
+        assert len(runtime.rest.sent) == 1
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("extra_microseconds, expected_sends", [(0, 1), (1, 0)])
+def test_six_hour_boundary_is_inclusive_at_dispatch(runtime, extra_microseconds, expected_sends):
+    async def run():
+        job_id, _, _ = await persist_due(runtime, minutes=360)
+        await native._reconcile_cwl_startup()
+        job = runtime.scheduler.get_job(job_id)
+        assert job is not None
+        runtime.clock[0] = runtime.clock[0].add(microseconds=extra_microseconds)
+        await job.function(*job.args, **(getattr(job, "kwargs", None) or {}))
+        assert len(runtime.rest.sent) == expected_sends
+        if not expected_sends:
+            loaded = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+            assert any("too late" in item.get("reason", "").lower() for item in loaded["deliveries"])
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("claim", [{}, None, "malformed"])
+def test_existing_malformed_claim_fails_closed(runtime, claim):
+    async def run():
+        await persist_due(runtime, minutes=1)
+        oid = campaign.occurrence_id(CYCLE, "signup", "main")
+        runtime.mongo.bot_config.documents[campaign.cycle_id(GUILD, CYCLE)] = {
+            "_id": campaign.cycle_id(GUILD, CYCLE),
+            "delivery_claims": {oid: claim},
+        }
+        await native._reconcile_cwl_startup()
+        await run_current_due_jobs(runtime)
+        assert runtime.rest.sent == []
+        loaded = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+        assert any(item.get("status") == "uncertain" for item in loaded["deliveries"])
+
+    asyncio.run(run())
+
+
+def test_lost_attempt_ack_never_enters_sender_or_replays(runtime, monkeypatch):
+    async def run():
+        await persist_due(runtime, minutes=1)
+        original = campaign.begin_catchup_attempt
+        async def applied_then_lost(*args, **kwargs):
+            assert await original(*args, **kwargs)
+            raise OSError("Fixture lost database acknowledgement")
+        monkeypatch.setattr(campaign, "begin_catchup_attempt", applied_then_lost)
+        await native._reconcile_cwl_startup()
+        await run_current_due_jobs(runtime)
+        assert runtime.rest.sent == []
+        runtime.clock[0] = runtime.clock[0].add(minutes=16)
+        await native._reconcile_cwl_startup()
+        await run_current_due_jobs(runtime)
+        assert runtime.rest.sent == []
+        loaded = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+        assert len(loaded["deliveries"]) == 1
+        assert loaded["deliveries"][0]["status"] == "uncertain"
+
+    asyncio.run(run())
+
+
+def test_lost_confirmed_receipt_ack_recovers_without_duplicate_history(runtime, monkeypatch):
+    async def run():
+        await persist_due(runtime, minutes=1)
+        original = campaign.record_catchup_delivery
+        async def applied_then_lost(*args, **kwargs):
+            await original(*args, **kwargs)
+            raise OSError("Fixture lost receipt acknowledgement")
+        monkeypatch.setattr(campaign, "record_catchup_delivery", applied_then_lost)
+        await native._reconcile_cwl_startup()
+        await run_current_due_jobs(runtime)
+        assert len(runtime.rest.sent) == 1
+        monkeypatch.setattr(campaign, "record_catchup_delivery", original)
+        runtime.clock[0] = runtime.clock[0].add(minutes=16)
+        await native._reconcile_cwl_startup()
+        await run_current_due_jobs(runtime)
+        loaded = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+        assert len(runtime.rest.sent) == 1
+        assert len(loaded["deliveries"]) == 1
+        assert loaded["deliveries"][0]["status"] == "sent"
+        assert not loaded["uncertain_occurrences"]
+
+    asyncio.run(run())
+
+
+def test_accepted_result_without_message_id_is_uncertain_and_not_replayed(runtime):
+    async def run():
+        await persist_due(runtime, minutes=1)
+        original = runtime.rest.create_message
+        async def accepted_without_id(*args, **kwargs):
+            await original(*args, **kwargs)
+            return SimpleNamespace(id=None)
+        runtime.rest.create_message = accepted_without_id
+        await native._reconcile_cwl_startup()
+        await run_current_due_jobs(runtime)
+        runtime.clock[0] = runtime.clock[0].add(minutes=16)
+        await native._reconcile_cwl_startup()
+        await run_current_due_jobs(runtime)
+        assert len(runtime.rest.sent) == 1
+        loaded = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+        assert loaded["deliveries"][0]["status"] == "uncertain"
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("guild_id", [True, "22", 22.0, 0, -1])
+def test_storage_scope_rejects_non_native_guild_identifiers(guild_id):
+    with pytest.raises(ValueError, match="scope"):
+        campaign._catchup_scope(guild_id, CYCLE, campaign.occurrence_id(CYCLE, "signup", "main"))
+
+
+@pytest.mark.parametrize("changes", [
+    {"message_id": "roster"}, {"variants": ["main", "lazy"]},
+    {"variants": ["outside"]}, {"kind": "other"}, {"job_kind": "manual"},
+    {"status": "ledger_pending"}, {"failure_count": True}, {"failure_count": 1},
+    {"_id": "someone-else"},
+    {"job_kind": "catchup", "catchup": {"protocol": True, "original_due_at": "2026-11-20T11:00:00-05:00"}},
+])
+def test_storage_refuses_forged_or_non_scheduled_pending_rows(runtime, changes):
+    async def run():
+        job_id, _, _ = await persist_due(runtime, minutes=1)
+        row = deepcopy(runtime.mongo.cwl_pending_reminders.documents[job_id])
+        row.update(changes)
+        with pytest.raises(ValueError):
+            campaign._catchup_row_scope(row)
+        assert runtime.rest.sent == []
+
+    asyncio.run(run())

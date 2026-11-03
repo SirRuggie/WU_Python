@@ -4,6 +4,7 @@ import SignupReminderOverview, {
   targetCwlMonth,
 } from "./reminders/SignupReminderOverview";
 import SignupDateField from "./reminders/SignupDateField";
+import ReminderDeliveryHistory from "./reminders/ReminderDeliveryHistory";
 import ConfirmDialog from "./ConfirmDialog";
 import { useReminderLookup } from "./useReminderLookups";
 import DiscordPreview, { type PreviewPart } from "./DiscordMessagePreview";
@@ -1014,37 +1015,7 @@ export default function ReminderWorkspace({
                   <p>
                     Refresh to check delivery. This page does not send messages.
                   </p>
-                  {state.history?.length ? (
-                    state.history.slice(0, 30).map((entry, index) => (
-                      <div className="reminder-history-row" key={index}>
-                        <strong>
-                          {String(
-                            entry.message_id ||
-                              entry.message_key ||
-                              entry.action ||
-                              entry.status ||
-                              "Reminder activity",
-                          )}
-                        </strong>
-                        <span>
-                          {String(entry.variant || entry.pool || "")}{" "}
-                          {String(entry.status || "")}
-                        </span>
-                        <small>
-                          {shortReminderTime(
-                            String(
-                              entry.at ||
-                                entry.sent_at ||
-                                entry.updated_at ||
-                                "",
-                            ),
-                          )}
-                        </small>
-                      </div>
-                    ))
-                  ) : (
-                    <p>No recorded delivery activity for this CWL month.</p>
-                  )}
+                  <ReminderDeliveryHistory history={state.history} />
                 </div>
               )}
               {tab !== "history" && (tab !== "overview" || dirty) && (

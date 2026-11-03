@@ -1150,7 +1150,7 @@ async def record_delivery(mongo, guild_id: int, cycle: str, entry: dict):
 def _catchup_scope(guild_id, cycle, occurrence):
     parts = str(occurrence).split("|")
     if (
-        type(guild_id) is not int or guild_id <= 0
+        not isinstance(guild_id, int) or isinstance(guild_id, bool) or guild_id <= 0
         or not isinstance(cycle, str) or not _CYCLE_RE.fullmatch(cycle)
         or len(parts) != 3 or parts[0] != cycle or parts[2] not in AUDIENCES
         or parts[1] == "roster" or not re.fullmatch(r"[A-Za-z0-9:_-]{1,64}", parts[1])
@@ -1169,12 +1169,17 @@ def _catchup_row_scope(row):
         row.get("kind") != "campaign"
         or row.get("job_kind", "scheduled") not in {"scheduled", "catchup"}
         or row.get("status", "scheduled") != "scheduled"
+        or not isinstance(message_id, str)
+        or not isinstance(row.get("failure_count", 0), int)
+        or isinstance(row.get("failure_count", 0), bool)
+        or row.get("failure_count", 0) != 0
         or row.get("_id") != f"cwl_campaign:{gid}:{cycle}:{message_id}:{variants[0]}"
     ):
         raise ValueError("Invalid persisted catch-up job")
     if row.get("job_kind") == "catchup" and (
         not isinstance(row.get("catchup"), dict)
         or row["catchup"].get("protocol") != 1
+        or isinstance(row["catchup"].get("protocol"), bool)
         or not isinstance(row["catchup"].get("original_due_at"), str)
     ):
         raise ValueError("Invalid catch-up protocol")
@@ -1284,7 +1289,7 @@ async def begin_catchup_attempt(
     pending = await mongo.cwl_pending_reminders.find_one({
         "_id": job_id, "kind": "campaign", "job_kind": "catchup",
         "generation": generation, "catchup.original_due_at": original_due_at,
-        "catchup.protocol": 1,
+        "catchup.protocol": 1, "status": "scheduled",
     }, {"_id": 1})
     if pending is None:
         return False
@@ -1390,6 +1395,7 @@ async def load_catchup_job(mongo, guild_id, cycle, message_key, variant, generat
         "_id": f"cwl_campaign:{guild_id}:{cycle}:{message_key}:{variant}",
         "kind": "campaign", "job_kind": "catchup", "generation": generation,
         "catchup.original_due_at": due_at, "catchup.protocol": 1,
+        "status": "scheduled",
     })
 
 
