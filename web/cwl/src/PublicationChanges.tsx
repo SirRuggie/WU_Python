@@ -7,15 +7,18 @@ import {
   type PublishedAccount,
 } from "./publicationAwareness";
 import "./publicationAwareness.css";
+export type ComparisonStatus = "loading" | "ready" | "error";
 export default function PublicationChanges({
   seasonId,
   draft,
   onReady,
+  onStatus,
   archived = false,
 }: {
   seasonId: string;
   draft: PublicationDraft;
   onReady: (ready: boolean) => void;
+  onStatus?: (status: ComparisonStatus) => void;
   archived?: boolean;
 }) {
   const [result, setResult] = useState<ReturnType<
@@ -29,9 +32,11 @@ export default function PublicationChanges({
     setExpanded(false);
     setError("");
     onReady(false);
+    onStatus?.("loading");
     if (!draft.published) {
       setResult(publicationChanges(draft, []));
       onReady(true);
+      onStatus?.("ready");
       return;
     }
     void api<{
@@ -48,19 +53,22 @@ export default function PublicationChanges({
           );
         setResult(publicationChanges(draft, snapshot.rows));
         onReady(true);
+        onStatus?.("ready");
       })
       .catch((cause) => {
-        if (active)
+        if (active) {
+          onStatus?.("error");
           setError(
             cause instanceof Error
               ? cause.message
               : "Couldn't load placement changes.",
           );
+        }
       });
     return () => {
       active = false;
     };
-  }, [seasonId, draft, onReady]);
+  }, [seasonId, draft, onReady, onStatus]);
   return (
     <section
       className="publication-change-list"

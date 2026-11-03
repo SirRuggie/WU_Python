@@ -1,3 +1,4 @@
+import CwlNextLink from "./CwlNextLink";
 import "./MemberRefreshNote.css"
 import { memberSignupsOpen } from "./memberSeason"
 import DashboardStorageStatus from './DashboardStorageStatus'
@@ -411,6 +412,7 @@ function App() {
       }
     }
     if (view === 'staff' && rosterBusy) return false
+    if (view === 'staff' && cwlDirty) return window.confirm('Leave Seasons? Unsaved changes will be discarded.')
     if (view === 'signup' && (pending || signupBusy.current)) return false
     if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
     if (['participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
@@ -429,6 +431,9 @@ function App() {
       || (next === 'manage' && session.is_owner)
       || (next === 'member-activity' && visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === 'moderation'))) ? next : 'home'
   }
+  const canOpenPublication = (step: 'review' | 'announce') => !!session &&
+    visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || [])
+      .some(section => section.items.some(item => item.view === 'publication' && item.step === step))
   const acceptRoute = (next: View) => { if (next !== 'signup') { setDrafts({ main: {}, lazy: {} }) }; setView(next); setMenuOpen(false); setNotice(null) }
   const [searchQuery, setSearchQuery] = useState('')
   const [searchKind, setSearchKind] = useState<'all' | 'player' | 'clan'>('all')
@@ -495,7 +500,7 @@ function App() {
     return () => window.removeEventListener('keydown', shortcut)
   })
   const openPublication = (step: 'review' | 'announce') => {
-    if (navigation.current?.pending || (view === 'publication' && publicationStep === step)) return
+    if (navigation.current?.pending || !canOpenPublication(step) || (view === 'publication' && publicationStep === step)) return
     const proceed = () => {
       navigation.current?.write({view: 'publication', season: seasonId, step}, true)
       setActivityVisit(window.history.state?.wuDashboardIndex || 0)
@@ -1024,7 +1029,7 @@ function App() {
         {isManagementArea(view) && view !== 'members-settings' && <ServerManagement key={view} area={view} onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {(view === 'members-settings' || view === 'member-timezones') && <MembersPage onDirty={setManageDirty} initialMember={entryAccount} onInitialConsumed={() => setEntryAccount(null)} />}
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
-        {view === 'reminders' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Signup reminders</h1></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!reminderDirty || window.confirm('Discard unsaved reminder edits and change season?')) setSeasonId(event.target.value) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Choose a season to manage its reminders.</p>}</>}
+        {view === 'reminders' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Signup reminders</h1></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!reminderDirty || window.confirm('Discard unsaved reminder edits and change season?')) setSeasonId(event.target.value) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Choose a season to manage its reminders.</p>}{seasonId && <CwlNextLink label="Build roster" onNext={allowedView("roster") === "roster" ? () => navigateSidebar("roster") : undefined} disabled={rosterBusy} />}</>}
         {view === 'search' && <DashboardSearch key={session.user.id} session={session} includeFamily={session.can_edit} query={searchQuery} onQuery={value => { setSearchQuery(value); setSearchPage(0) }} kind={searchKind} onKind={value => { setSearchKind(value); setSearchPage(0) }} page={searchPage} onPage={setSearchPage} onTasks={tag => changeView('todo', tag)} />}
         {view === 'todo' && <TodoWorkspace key={`${session.user.id}:${activitySearch}:${activityKind || "default"}`} userId={session.user.id} initialSearch={activitySearch} initialTab={activityKind} onWars={kind => changeView('wars', '', kind)} />}
         {view === 'wars' && <WarsWorkspace key={`${session.user.id}:${activityVisit}:${activityKind || "default"}`} userId={session.user.id} visit={activityVisit} initialType={activityKind === 'cwl' ? 'cwl' : 'regular'} canEdit={session.can_edit} onTasks={(tag,kind) => changeView('todo', tag,kind)} />}
@@ -1141,6 +1146,8 @@ function App() {
                 <ArrivalCheck
                   key={seasonId}
                   seasonId={seasonId}
+                  onFinalize={canOpenPublication("review") ? () => openPublication("review") : undefined}
+                  onResults={allowedView("participation") === "participation" ? () => changeView("participation") : undefined}
                   onDirty={setCwlDirty}
                   onWorking={setRosterBusy}
                 />
@@ -1157,6 +1164,7 @@ function App() {
               onDirty={setPublicationDirty}
               step={publicationStep}
               onStepChange={setPublicationStep}
+              onNavigateStep={openPublication}
               onFix={(filter) => {
                 setRosterReadiness(filter);
                 changeView("roster");
@@ -1182,7 +1190,7 @@ function App() {
             />
           )
         }
-        {view === 'participation' && session.can_edit && <ParticipationWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'participation' && session.can_edit && <ParticipationWorkspace onBonus={allowedView("bonuses") === "bonuses" ? () => changeView("bonuses") : undefined} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === "roster" && session.can_edit && (
           <RosterWorkspace
@@ -1221,7 +1229,6 @@ function App() {
         )}
         {view === 'staff' && session.can_edit && <SeasonsPage
           key={session.user.id}
-          userId={session.user.id}
           seasonId={seasonId}
           seasons={seasons}
           memberSeason={memberSeason}
@@ -1229,11 +1236,7 @@ function App() {
           onBusy={setRosterBusy}
           onDirty={setCwlDirty}
           onSeasonChange={id => { if (canLeave()) setSeasonId(id) }}
-          onClans={() => {
-            if (!canLeave() || allowedView('roster') !== 'roster') return
-            try { sessionStorage.setItem(`wu-roster-${staffSeasonId}-mode`, JSON.stringify('rules')) } catch { /* Optional preference. */ }
-            changeView('roster')
-          }}
+          onClans={allowedView('roster') === 'roster' ? () => navigateSidebar('roster') : undefined}
         />}
         {session.access_warning && <div className="notice error" role="alert">{session.access_warning}</div>}
         {view === 'issues' && session.is_owner && <DashboardIssues />}

@@ -1,3 +1,4 @@
+import CwlNextLink from "./CwlNextLink";
 import { exportMonthLabel } from "./exportPreview";
 import RosterMenu from "./rosterUi/Menu";
 import "./ParticipationWorkspace.css";
@@ -21,6 +22,7 @@ type Props = {
   seasonId: string;
   seasons: Season[];
   onDirty?: (dirty: boolean) => void;
+  onBonus?: () => void;
   onSeasonChange: (id: string) => void;
 };
 
@@ -35,6 +37,7 @@ export default function ParticipationWorkspace({
   seasons,
   onSeasonChange,
   onDirty: reportDirty,
+  onBonus,
 }: Props) {
   const [data, setData] = useState<ParticipationData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -747,6 +750,13 @@ export default function ParticipationWorkspace({
             }}
           />
         </>
+      )}
+      {seasonId && (
+        <CwlNextLink
+          label="Bonus medals"
+          onNext={onBonus}
+          disabled={controlsLocked}
+        />
       )}
     </div>
   );
