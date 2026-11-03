@@ -77,7 +77,7 @@ describe("roster account card", () => {
     ).not.toBeNull();
     expect(
       host.querySelector(".roster-player-placement")?.textContent,
-    ).toContain("Not assigned· location not checked yet");
+    ).toContain("Unplaced· location not checked yet");
     host.innerHTML = render({
       account: {
         ...account,
@@ -98,7 +98,7 @@ describe("roster account card", () => {
     expect(html).not.toContain("<Alpha & Beta>");
     expect(html).toContain('aria-label="Select &lt;Alpha &amp; Beta&gt;"');
     expect(html).toContain("No weight");
-    expect(html).toContain("Held unassigned");
+    expect(html).toContain("Kept unplaced");
     expect(html).toContain("location not checked yet");
     expect(html).not.toContain("Unavailable");
     expect(html).toContain("Main CWL");
@@ -117,7 +117,7 @@ describe("roster account card", () => {
     expect(html).toContain("Now in Old clan · 2h 0m ago");
     expect(html).not.toContain("location not checked yet");
     expect(html).toContain(
-      'role="note" aria-label="Assigned clan: Not assigned. Now in Old clan',
+      'role="note" aria-label="Assigned clan: Unplaced. Now in Old clan',
     );
     expect(html).not.toContain("→");
   });
@@ -141,7 +141,7 @@ describe("roster account card", () => {
       }),
     ).toContain("Needs review");
   });
-  it("omits duplicate Not assigned notes but preserves real notes and Held", () => {
+  it("omits duplicate Unplaced notes but preserves real notes and Held", () => {
     const host = document.createElement("div");
     host.innerHTML = render({
       account: {
@@ -152,7 +152,7 @@ describe("roster account card", () => {
     });
     expect(host.querySelector(".roster-player-note")).toBeNull();
     expect(host.querySelector(".roster-player-sr-only")?.textContent).toContain(
-      "Assigned clan: Not assigned.",
+      "Assigned clan: Unplaced.",
     );
     host.innerHTML = render({
       account: { ...account, kept: false, auto_placement_note: "Needs review" },
@@ -160,7 +160,7 @@ describe("roster account card", () => {
     expect(host.querySelector(".roster-player-note")?.textContent).toBe(
       "Needs review",
     );
-    expect(render()).toContain("Held unassigned");
+    expect(render()).toContain("Kept unplaced");
   });
   it("keeps the full location in a title and ellipsizes only the current clan", () => {
     const html = render({
@@ -282,7 +282,7 @@ it("prioritizes a long assigned name on one line with complete title and accessi
 it.each([
   ["#A", "Home", true, "HomeIn clan· 4m ago", "is-in-clan"],
   ["#B", "Elsewhere", true, "Home Elsewhere · 4m ago", "is-elsewhere"],
-  [null, null, false, "Not assigned in no clan · 4m ago", "is-unassigned"],
+  [null, null, false, "Unplaced in no clan · 4m ago", "is-unassigned"],
 ] as const)(
   "renders the location state %s",
   (tag, name, assigned, text, state) => {

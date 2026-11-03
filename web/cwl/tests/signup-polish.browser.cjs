@@ -100,11 +100,18 @@ const base = `http://127.0.0.1:${port}`;
         const bar = document
           .querySelector(".signup-flow .submit-bar")
           .getBoundingClientRect();
-        return name.top >= 0 && name.bottom <= Math.min(innerHeight, bar.top);
+        return {
+          pass: name.top >= 0 && name.bottom <= Math.min(innerHeight, bar.top),
+          nameTop: name.top,
+          nameBottom: name.bottom,
+          barTop: bar.top,
+          viewport: innerHeight,
+        };
       });
       assert(
-        unobscured,
-        "first account name must be visible above the sticky bar",
+        unobscured.pass,
+        "first account name must be visible above the sticky bar: " +
+          JSON.stringify(unobscured),
       );
       await page.locator(".account-select input").first().check();
       await page.locator(".submit-bar .primary").click();
@@ -193,6 +200,11 @@ const base = `http://127.0.0.1:${port}`;
         await page
           .locator(".account-menu-popover")
           .waitFor({ state: "hidden" });
+        await page.waitForFunction(
+          () => document.activeElement?.matches(".account-menu-avatar-trigger"),
+          undefined,
+          { timeout: 5000 },
+        );
         assert(
           await page
             .locator(".account-menu-avatar-trigger")

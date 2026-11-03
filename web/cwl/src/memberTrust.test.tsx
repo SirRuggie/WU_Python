@@ -284,6 +284,14 @@ it("retains Home account and signup data through refresh failure, then recovers 
     />,
   );
   expect(host.textContent).toContain("Retained player");
+  expect(host.textContent).not.toContain("War weight");
+  expect(host.textContent).not.toContain("Auto-refresh every 30 seconds");
+  expect(
+    [...host.querySelectorAll("button")].some(
+      (button) => button.textContent === "Pause",
+    ),
+  ).toBe(false);
+  expect(host.querySelector(".eyebrow")).toBeNull();
   failure = new Error("unavailable");
   await act(async () => document.dispatchEvent(new Event("visibilitychange")));
   await flush();

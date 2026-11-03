@@ -30,7 +30,7 @@ export function publicationChanges(
   );
   const lines: { tag: string; name: string; text: string }[] = [];
   const name = (tag: string | null | undefined, saved?: string | null) =>
-    saved || (tag ? clans.get(tag) || tag : "Unassigned");
+    saved || (tag ? clans.get(tag) || tag : "Unplaced");
   for (const account of current.values()) {
     const old = before.get(account.tag);
     const changes: string[] = [];

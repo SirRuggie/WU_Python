@@ -1,3 +1,4 @@
+import "./rosterUi/tokens.css";
 import { useRef } from 'react'
 import './ClanFilters.css'
 
@@ -15,7 +16,7 @@ type FilterProps = {
 
 export function FilterPicker({ label, options, selected, onChange, disabled = false }: FilterProps) {
   const summary = useRef<HTMLElement>(null)
-  return <details className="filter-picker" onKeyDown={event => {
+  return <details className="filter-picker roster-ui" onKeyDown={event => {
     if (event.key === 'Escape' && event.currentTarget.open) {
       event.preventDefault()
       event.stopPropagation()

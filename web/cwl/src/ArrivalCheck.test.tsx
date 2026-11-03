@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ value: null as any }));
 const extraState = vi.hoisted(() => ({
+  allowPingDirty: false,
   value: { data: undefined as any, loading: true, error: "", refresh: vi.fn() },
 }));
 vi.mock("./useDeclarationData", () => ({ default: () => state.value }));
@@ -12,11 +13,16 @@ vi.mock("./DeclarationPingPanel", () => ({
   default: ({
     missing,
     locationStatus,
+    onDirty,
   }: {
     missing: number;
     locationStatus?: string;
+    onDirty?: (dirty: boolean) => void;
   }) => (
     <div data-ping-count={missing}>
+      {extraState.allowPingDirty && (
+        <button onClick={() => onDirty?.(true)}>Edit local ping channel</button>
+      )}
       {locationStatus
         ? locationStatus === "checking"
           ? "Checking locations…"
@@ -64,6 +70,7 @@ function makeData() {
   };
 }
 beforeEach(() => {
+  extraState.allowPingDirty = false;
   extraState.value = {
     data: undefined,
     loading: true,
@@ -134,7 +141,7 @@ it("filters extra-member clans without changing the pool-wide ping count", async
   };
   await render();
   const lazy = [...host.querySelectorAll("button")].find((b) =>
-    b.textContent?.startsWith("Lazy ·"),
+    b.textContent?.match(/^Lazy(?: ·|$)/),
   )!;
   await act(async () => lazy.click());
   expect(toggles()).toHaveLength(2);
@@ -165,8 +172,10 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
 });
-const render = async () =>
-  act(async () => root.render(<ArrivalCheck seasonId="1" />));
+const render = async (onFinalize?: () => void) =>
+  act(async () =>
+    root.render(<ArrivalCheck seasonId="1" onFinalize={onFinalize} />),
+  );
 const toggles = () => [
   ...host.querySelectorAll<HTMLButtonElement>(".declaration-clan-toggle"),
 ];
@@ -219,16 +228,18 @@ it.each(["hidden", "never"])(
         published_at: new Date(now).toISOString(),
         withdrawn_at: new Date(now).toISOString(),
       };
-    await render();
+    await render(vi.fn());
     expect(host.textContent).toContain(
       kind === "hidden"
         ? "Hidden from members · last published version 2"
-        : "Publish the roster first",
+        : "Finalize roster first ›",
     );
     expect(host.querySelectorAll(".declaration-clan")).toHaveLength(0);
-    expect(host.querySelector("a")?.getAttribute("href")).toContain(
-      "step=review",
+    const finalize = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Finalize roster first ›",
     );
+    expect(finalize).toBeDefined();
+    expect(host.querySelector("a")).toBeNull();
   },
 );
 it("draft changed remains ready; names open read-only snapshot Details with clan order", async () => {
@@ -307,7 +318,7 @@ it("excludes awaiting placement from late totals and gives it a neutral section"
     "0 players not in their clan",
   );
   expect(host.querySelector(".is-unassigned")?.textContent).toContain(
-    "Awaiting placement",
+    "Unplaced",
   );
   expect(host.querySelector(".is-unassigned")?.className).not.toContain(
     "is-not-ready",
@@ -315,13 +326,13 @@ it("excludes awaiting placement from late totals and gives it a neutral section"
 });
 it("keeps readiness help collapsed until explicitly opened", async () => {
   await render();
-  expect(host.textContent).not.toContain("Ready = enough");
+  expect(host.textContent).not.toContain("Ready = clan is full");
   await act(async () =>
     host
       .querySelector<HTMLButtonElement>('[aria-label="About readiness"]')!
       .click(),
   );
-  expect(host.textContent).toContain("Ready = enough");
+  expect(host.textContent).toContain("Ready = clan is full");
 });
 
 it("does not turn pending locations into zero ping or in-clan counts, then shows loaded results", async () => {
@@ -396,7 +407,7 @@ it("uses only the selected pool for Ping availability while another pool is stil
     "Ping 1 missing",
   );
   const lazy = [...host.querySelectorAll("button")].find((b) =>
-    b.textContent?.startsWith("Lazy ·"),
+    b.textContent?.match(/^Lazy(?: ·|$)/),
   )!;
   await act(async () => lazy.click());
   expect(host.querySelector("[data-ping-count]")?.textContent).toBe(
@@ -859,4 +870,189 @@ it("includes unpublished-only clans in both extras filters and the separate top-
   expect(
     host.querySelector("[data-ping-count]")?.getAttribute("data-ping-count"),
   ).toBe(ping);
+});
+
+it("uses guarded in-app Finalize and one read-only Next to Results", async () => {
+  const finalize = vi.fn(),
+    results = vi.fn();
+  await act(async () =>
+    root.render(
+      <ArrivalCheck seasonId="1" onFinalize={finalize} onResults={results} />,
+    ),
+  );
+  expect(host.querySelectorAll(".cwl-next-cue")).toHaveLength(1);
+  await act(async () =>
+    (host.querySelector(".cwl-next-cue") as HTMLButtonElement).click(),
+  );
+  expect(results).toHaveBeenCalledOnce();
+  state.value.data.publication.published = null;
+  state.value.data.arrival.publication_available = false;
+  await act(async () =>
+    root.render(
+      <ArrivalCheck seasonId="1" onFinalize={finalize} onResults={results} />,
+    ),
+  );
+  expect(host.querySelector(".cwl-next-cue")).toBeNull();
+  const button = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "Finalize roster first ›",
+  )!;
+  await act(async () => button.click());
+  expect(finalize).toHaveBeenCalledOnce();
+  expect(host.querySelector("a")).toBeNull();
+});
+
+it("hides unavailable Finalize and Results destinations rather than showing disabled links", async () => {
+  state.value.data.publication.published = null;
+  state.value.data.arrival.publication_available = false;
+  await render();
+  expect(host.textContent).not.toContain("Finalize roster first ›");
+  expect(host.textContent).toContain(
+    "No roster is currently published for members.",
+  );
+  state.value.data = makeData();
+  await render();
+  expect(host.querySelector(".cwl-next-cue")).toBeNull();
+});
+
+it("puts the clan list immediately after its compact overview and before pings", async () => {
+  await render();
+  const overview = host.querySelector(".declaration-overview")!;
+  expect(
+    overview.nextElementSibling?.classList.contains("declaration-clan"),
+  ).toBe(true);
+  const clans = [...host.querySelectorAll(".declaration-clan")];
+  expect(
+    clans
+      .at(-1)!
+      .compareDocumentPosition(host.querySelector("[data-ping-count]")!) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
+it("labels in-progress ready counts as partial rather than a final fraction", async () => {
+  state.value.checking = true;
+  await render();
+  const summary = host.querySelector(".declaration-summary")!;
+  expect(summary.textContent).toMatch(
+    /Checking…\s*\d+ of 2 clans confirmed ready/,
+  );
+  expect(summary.textContent).not.toMatch(/\d+ \/ 2 clans ready to declare/);
+  expect(host.querySelector(".declaration-pools")?.textContent).toContain(
+    "Checking…",
+  );
+});
+
+it("shows three confirmed ready clans out of ten while the remaining seven are checking", async () => {
+  const counts = [15, 15, 15, 12, 12, 12, 11, 11, 11, 11];
+  const accounts = counts.flatMap((count, clan) =>
+    Array.from({ length: count }, (_, index) => ({
+      tag: `#LOCAL${clan}X${index}`,
+      player_name: `Local ${clan}-${index}`,
+      town_hall: 18,
+      pool: "main",
+      hosting_pool: "main",
+      assigned_clan_tag: `#CLAN${clan}`,
+      assigned_clan_name: `Local clan ${clan}`,
+      user_id: "",
+      current_clan_tag: clan < 3 ? `#CLAN${clan}` : null,
+      current_clan_name: clan < 3 ? `Local clan ${clan}` : null,
+      current_clan_checked_at: clan < 3 ? new Date(now).toISOString() : null,
+      outside_family: false,
+    })),
+  );
+  state.value.data.arrival.accounts = accounts;
+  state.value.data.arrival.updating = true;
+  state.value.data.roster.clans = counts.map((_, clan) => ({
+    tag: `#CLAN${clan}`,
+    capacity: 15,
+  }));
+  state.value.records = Object.fromEntries(
+    accounts.map((account) => [account.tag, account]),
+  );
+  state.value.checking = true;
+  await render();
+  expect(host.querySelector(".declaration-summary")?.textContent).toMatch(
+    /Checking…\s*3 of 10 clans confirmed ready/,
+  );
+  expect(host.querySelector(".declaration-summary")?.textContent).not.toContain(
+    "3 / 10",
+  );
+});
+
+it("states unavailable locations once and keeps only differing clan readiness labels", async () => {
+  const accounts = state.value.data.arrival.accounts;
+  state.value.records = Object.fromEntries(
+    accounts.map((account: any) => [
+      account.tag,
+      {
+        ...account,
+        current_clan_tag: null,
+        current_clan_checked_at: null,
+        current_clan_status: "unavailable",
+      },
+    ]),
+  );
+  state.value.data.arrival.updating = false;
+  await render();
+  const text = [
+    ...host.querySelectorAll(
+      ".declaration-summary,.declaration-pools,.declaration-clan-toggle",
+    ),
+  ]
+    .map((node) => node.textContent)
+    .join(" ");
+  expect(text.match(/Locations unavailable/g)).toHaveLength(1);
+  expect(host.querySelectorAll(".declaration-clan")).toHaveLength(2);
+  expect(host.querySelector(".declaration-clan-toggle")?.textContent).toContain(
+    "Amber",
+  );
+  expect(
+    host.querySelector(".declaration-clan-toggle")?.textContent,
+  ).not.toContain("Not ready");
+});
+
+it("pool discard Cancel keeps the pool and confirmation changes it without a write", async () => {
+  extraState.allowPingDirty = true;
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  const transport = vi.spyOn(await import("./api"), "api");
+  await act(async () => root.render(<ArrivalCheck seasonId="1" />));
+  const button = (name: string, within: ParentNode = document) =>
+    [...within.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent?.trim() === name,
+    )!;
+  await act(async () => button("Edit local ping channel").click());
+  const pools = host.querySelector('[aria-label="CWL pool"]')!;
+  const lazy = [...pools.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent?.startsWith("Lazy"),
+  )!;
+  const main = [...pools.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent?.startsWith("Main"),
+  )!;
+  await act(async () => lazy.click());
+  expect(main.getAttribute("aria-pressed")).toBe("true");
+  await act(async () =>
+    button("Cancel", document.querySelector(".confirm-dialog")!).click(),
+  );
+  expect(main.getAttribute("aria-pressed")).toBe("true");
+  await act(async () => {
+    lazy.click();
+    lazy.click();
+  });
+  await act(async () => {
+    const confirm = button(
+      "Discard channel change",
+      document.querySelector(".confirm-dialog")!,
+    );
+    confirm.click();
+    confirm.click();
+  });
+  expect(lazy.getAttribute("aria-pressed")).toBe("true");
+  expect(
+    transport.mock.calls.filter((call) => call[1] && call[1] !== "GET"),
+  ).toEqual([]);
 });

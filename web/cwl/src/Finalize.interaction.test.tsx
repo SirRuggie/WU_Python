@@ -394,8 +394,8 @@ it("each check chip passes its exact navigation target, with singular labels", a
   await render();
   for (const [label, target] of [
     ["1 missing weight ›", "missing_weight"],
-    ["1 account awaiting placement ›", "unassigned"],
-    ["1 clan over capacity · +1 ›", "over_capacity"],
+    ["1 account unplaced ›", "unassigned"],
+    ["1 clan over clan size · +1 ›", "over_capacity"],
   ]) {
     await act(async () => button(label).click());
     expect(navigate).toHaveBeenLastCalledWith(target);
