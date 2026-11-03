@@ -476,3 +476,37 @@ it("stops the checking caption after settings fail and reveals the focused error
   await act(async () => detail.reveal());
   expect(document.activeElement).toBe(host.querySelector('[role="alert"]'));
 });
+it("suspends active-send status offscreen and coalesces return signals into one catch-up", async () => {
+  vi.useFakeTimers();
+  let hidden = false;
+  vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  const active = {
+    token: review.token, actor_id: "owner", state: "sending",
+    created_at: 1, count: 26, chunks: 1, posted: [], attempting: null,
+    channel: state.channel,
+  };
+  mock.api.mockResolvedValue({ ...state, active });
+  try {
+    await act(async () => root.render(
+      <DeclarationPingPanel seasonId="1" pool="lazy" missing={26} />,
+    ));
+    expect(mock.api).toHaveBeenCalledTimes(1);
+    hidden = true;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    await act(async () => vi.advanceTimersByTimeAsync(12000));
+    expect(mock.api).toHaveBeenCalledTimes(1);
+    hidden = false;
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("focus"));
+      await vi.advanceTimersByTimeAsync(32);
+    });
+    expect(mock.api).toHaveBeenCalledTimes(2);
+    mock.api.mockResolvedValue({ ...state, history: [{ ...active, state: "done" }] });
+    await act(async () => vi.advanceTimersByTimeAsync(3032));
+    expect(mock.api).toHaveBeenCalledTimes(3);
+    await act(async () => vi.advanceTimersByTimeAsync(9000));
+    expect(mock.api).toHaveBeenCalledTimes(3);
+    expect(mock.api.mock.calls.every(call => call[1] === "GET")).toBe(true);
+  } finally { vi.useRealTimers(); }
+});

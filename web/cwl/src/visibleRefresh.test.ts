@@ -100,3 +100,16 @@ it("releases its in-flight guard after an owner-handled failed read", async () =
   await vi.advanceTimersByTimeAsync(3000);
   expect(read).toHaveBeenCalledTimes(2);
 });
+it("removes the exact global listener registrations on disposal", () => {
+  const addFocus = vi.spyOn(window, "addEventListener");
+  const removeFocus = vi.spyOn(window, "removeEventListener");
+  const addVisibility = vi.spyOn(document, "addEventListener");
+  const removeVisibility = vi.spyOn(document, "removeEventListener");
+  dispose = visibleRefresh(vi.fn(), 3000);
+  const focus = addFocus.mock.calls.find(call => call[0] === "focus")![1];
+  const visibility = addVisibility.mock.calls.find(call => call[0] === "visibilitychange")![1];
+  dispose();
+  expect(removeFocus).toHaveBeenCalledWith("focus", focus);
+  expect(removeVisibility).toHaveBeenCalledWith("visibilitychange", visibility);
+  expect(vi.getTimerCount()).toBe(0);
+});

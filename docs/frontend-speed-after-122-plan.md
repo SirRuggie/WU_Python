@@ -216,3 +216,17 @@ asset sizes; intentional eager-current-art expectations were then updated.
 No rendering/skeleton/memoization fix, entry split, final after campaign or READY
 claim is included in this checkpoint. Item5 next obtains component attribution and
 concrete geometry proposals for ROOT review before changing rendering.
+
+Additional checkpoint: actual Declaration active-send regression proves12s hidden
+performs no checks, return focus+visibility performs one GET catch-up, visible
+cadence continues, and done stops checking; no sends are exercised. Three genuine
+mutants (hidden timer retained, burst not coalesced, listener leaked) are assertion
+killed with exact source restoration. The first listener mutant survived and led
+to an explicit exact-listener cleanup assertion; its initial log is retained.
+Known22px Discord emoji and existing gallery300×150 presentation-slot attributes
+are added without changing responsive CSS/object-fit or claiming intrinsic media
+sizes. Latest focused image/send/scheduler group:34 tests pass. These late tests
+and two presentation-attribute additions follow the1688-test full checkpoint;
+final full/build/layout/after measurements remain pending. Exact-source-map CPU
+profile identifies repeated formatter construction and drawer layout reads; the
+proposed pure formatter reuse still awaits ROOT review before rendering edits.
