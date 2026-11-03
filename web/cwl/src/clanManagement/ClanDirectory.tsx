@@ -104,7 +104,7 @@ export default function ClanDirectory<T extends Row>({
                   onClick={() => onSelect(row)}
                 >
                   {row.logo && (
-                    <img src={row.logo} alt="" width={36} height={36} />
+                    <img src={row.logo} alt="" width={36} height={36} loading="lazy" />
                   )}
                   <span>
                     <strong>{row.name}</strong>

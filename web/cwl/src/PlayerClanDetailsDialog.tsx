@@ -171,7 +171,7 @@ export default function PlayerClanDetailsDialog(props: PlayerClanDetailsProps) {
           {player ? (
             <TownHallIcon level={player.town_hall} />
           ) : badgeUrl ? (
-            <img src={badgeUrl} alt="" referrerPolicy="no-referrer" />
+            <img src={badgeUrl} alt="" width={40} height={40} referrerPolicy="no-referrer" />
           ) : (
             <DashboardIcon name="shield" />
           )}

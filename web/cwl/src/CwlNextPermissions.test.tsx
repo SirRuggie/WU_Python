@@ -240,7 +240,7 @@ it("Reminders Next opens Accounts even when the last Build tab was Compare", asy
 
 
 it("parent Results Next cannot leave Declaration while filler queue is held", async () => {
-  const { button, settle, host } = await mount("/cwl/readiness?season=1", ["cwl_roster", "cwl_results"]);
+  const { button, settle } = await mount("/cwl/readiness?season=1", ["cwl_roster", "cwl_results"]);
   expect(button("Results fixture")).toBeDefined();
   await act(async () => button("Hold filler queue")!.click());
   await act(async () => button("Results fixture")!.click());

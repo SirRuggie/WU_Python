@@ -1103,10 +1103,12 @@ function App() {
             </div>}
             {signupPanel === 'saved' && <section className="registered">
               {!savedSignupsLoaded && !dataError ? <p role="status">Loading saved signups…</p> : dataError ? null : <>
-                {loadingData && <p role="status">Checking linked accounts…</p>}
+                {loadingData && !existing.length && <p role="status">Checking linked accounts…</p>}
                 {existing.length > 0 && <SavedSignupStatus
                   signups={existing}
                   accounts={loadingData || accountError ? null : accounts}
+                  accountsLoading={loadingData}
+                  accountsUnavailable={!!accountError}
                   season={season}
                   onRemaining={() => changeSignupPanel('register', () => { setSignupStep(1); setPool(null) })}
                   onAssignments={() => changeView('assignments')}

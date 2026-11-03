@@ -45,7 +45,7 @@ it("shows art and a large title only on the current step, with compact inactive 
       expect(image.getAttribute("src")).toBe(
         `/assets/tour/${["villager-52545", "villager-52538", "villager-52543"][stage - 1]}.webp`,
       );
-      expect(image.getAttribute("loading")).toBe("lazy");
+      expect(image.getAttribute("loading")).toBe("eager");
       expect(host.querySelector(".current [aria-current=step]")).not.toBeNull();
       expect(
         host.querySelectorAll("li:not(.current) .walkthrough-summary"),

@@ -1,3 +1,4 @@
+import { visibleRefresh } from "./visibleRefresh";
 import DiscordIdentity from "./DiscordIdentity";
 import useDiscordIdentities from "./useDiscordIdentities";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -106,7 +107,7 @@ export default function DeclarationPingPanel({
     if (active?.state !== "sending" && !state?.test_running) return;
     let stopped = false,
       pending = false;
-    const timer = setInterval(async () => {
+    const stopRefresh = visibleRefresh(async () => {
       if (stopped || pending || document.hidden || locked.current) return;
       pending = true;
       try {
@@ -135,13 +136,12 @@ export default function DeclarationPingPanel({
     }, 3000);
     return () => {
       stopped = true;
-      clearInterval(timer);
+      stopRefresh();
     };
   }, [base, active?.token, active?.state, state?.test_running, receipt?.state]);
   useEffect(() => {
     if (!waiting) return;
-    const timer = setInterval(() => setClock(Date.now() / 1000), 1000);
-    return () => clearInterval(timer);
+    return visibleRefresh(() => setClock(Date.now() / 1000), 1000);
   }, [waiting > 0]);
   const edited = channel !== (state?.channel?.id || "");
   const chosen = state?.channels.find((c) => c.id === channel);
