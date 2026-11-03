@@ -230,3 +230,45 @@ and two presentation-attribute additions follow the1688-test full checkpoint;
 final full/build/layout/after measurements remain pending. Exact-source-map CPU
 profile identifies repeated formatter construction and drawer layout reads; the
 proposed pure formatter reuse still awaits ROOT review before rendering edits.
+
+## Approved 499/500 source freeze before after-measurement
+
+SavedSignupStatus now renders the same real summary component during assignment
+and account reads. Pending labels say checking, unknown counts are not invented,
+and no signup action appears until accounts are known. The settled all-signed-up
+case keeps a truthful account-summary section. Existing closed-season policy and
+401/403 clearing remain; unavailable assignments/links stay visible. Only actual
+heading, paragraph and action/status slots have responsive min-block sizing;
+content can grow, with no fixed total height or clipping. The separate checking
+paragraph is removed when the real summary owns that state.
+
+At390px, controlled pending-assignment→pending-account→complete states now all have
+summary314px and account-list y804.421875. Before, the list moved555.015625→661.21875
+→777.421875. The larger settled account-summary heading slot is intentional.
+Twelve320/1440 cases cover remaining/all-signed-up/closed/403/404 and text-inflation
+stress without overflow, clipping, writes or page errors. Text inflation is not
+claimed as a calibrated browser-zoom test. Narrow/wide settled screens were viewed.
+The trace retains one large recent-input/style/layout event whose source is not
+proven; no post-phase non-recent-input shift is recorded. Identical actual DOM
+positions, rather than omission of that event, establish the targeted success
+transition. The final natural after-table must still establish page CLS; fixture
+banner motion is not presented as production behavior.
+
+Shaka500's sole Build change reuses one fixed-options Intl.NumberFormat. Null,
+nonfinite, zero, .05/.95 rounding, negative and large-value outputs are equivalent.
+A constructor spy delegates the real native constructor, so the genuine per-card
+construction mutant fails an assertion rather than a mock TypeError. No whole-list
+memoization, virtualization, polling redesign or entry split was added.
+
+Additional known images use the existing deterministic roster-renderer geometry
+and already-returned per-clan counts:1000px wide,390+70×rows high,15rows per page.
+Malformed/absent pages do not receive invented dimensions. Current primary image
+stays eager and offscreen pages lazy. Arbitrary uploaded/remote media without
+intrinsic metadata remain an explicit limitation; fixing those requires metadata
+or a separately reviewed presentation slot, not guessed natural ratios.
+
+Frozen runtime gates:1699 frontend tests/289files,typecheck/build;52 four-width
+cases and30 narrow/wide page/dialog cases, with zero non-GET requests/page errors;
+12 targeted status cases; six genuine timer/status/formatter mutants. Initial
+failures and invalid mutant attempts remain in local logs; none are counted as
+passing evidence. Final compressed18-run after-table is pending; release held.

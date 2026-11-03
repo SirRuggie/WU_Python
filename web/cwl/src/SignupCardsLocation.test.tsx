@@ -196,7 +196,11 @@ it("does not advertise remaining totals while linked accounts are unavailable", 
     ),
   );
   expect(host.textContent).toContain("You're signed up · 2 accounts");
-  expect(host.querySelector(".member-signup-remaining")).toBeNull();
+  const pending = host.querySelector(".member-signup-remaining");
+  expect(pending?.textContent).toContain("Checking linked accounts…");
+  expect(pending?.querySelector("button")).toBeNull();
+  expect(pending?.textContent).not.toMatch(/\d+ accounts? not signed up/);
+  expect(pending?.textContent).not.toContain("All linked accounts are signed up");
 });
 it("ignores a publication response after switching seasons", async () => {
   let resolveOld!: (response: Response) => void;

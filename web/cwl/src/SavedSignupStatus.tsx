@@ -6,12 +6,16 @@ import MemberSignupStatus from "./MemberSignupStatus";
 export default function SavedSignupStatus({
   signups,
   accounts,
+  accountsLoading = false,
+  accountsUnavailable = false,
   season,
   onRemaining,
   onAssignments,
 }: {
   signups: Signup[];
   accounts: Account[] | null;
+  accountsLoading?: boolean;
+  accountsUnavailable?: boolean;
   season: Season;
   onRemaining: () => void;
   onAssignments: () => void;
@@ -52,8 +56,6 @@ export default function SavedSignupStatus({
       active = false;
     };
   }, [season.id, requestKey]);
-  if (loading || loadedKey !== requestKey)
-    return <p role="status">Checking clan assignments…</p>;
   if (denied)
     return (
       <p role="alert">Your account access changed. Refresh or sign in again.</p>
@@ -67,6 +69,9 @@ export default function SavedSignupStatus({
   return (
     <MemberSignupStatus
       savedView
+      publicationLoading={loading || loadedKey !== requestKey}
+      accountsLoading={accountsLoading}
+      accountsUnavailable={accountsUnavailable}
       publicationUnavailable={unavailable}
       signups={rows}
       accounts={accounts}

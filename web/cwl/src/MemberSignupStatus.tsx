@@ -70,6 +70,9 @@ export default function MemberSignupStatus({
   onRefresh,
   savedView = false,
   publicationUnavailable = false,
+  publicationLoading = false,
+  accountsLoading = false,
+  accountsUnavailable = false,
   onAssignments,
 }: {
   signups: Signed[];
@@ -81,6 +84,9 @@ export default function MemberSignupStatus({
   onRefresh?: () => void;
   savedView?: boolean;
   publicationUnavailable?: boolean;
+  publicationLoading?: boolean;
+  accountsLoading?: boolean;
+  accountsUnavailable?: boolean;
   onAssignments?: () => void;
 }) {
   const [now, setNow] = useState(Date.now);
@@ -104,23 +110,35 @@ export default function MemberSignupStatus({
     savedView ? line.replace(/^Signups closed · you\'ll/, "You\'ll") : line,
   );
   const signupDeadlineLine = signupCloseLine(season, now);
+  const checkingAccounts =
+    accountsLoading || (savedView && accounts === null && !accountsUnavailable);
   return (
-    <div className="member-signup-summary">
+    <div
+      className={`member-signup-summary${savedView ? " saved-view-summary" : ""}`}
+    >
       <section
         className={
-          signups.length ? "member-signup-success" : "member-signup-empty"
+          publicationLoading
+            ? "member-signup-empty"
+            : signups.length
+              ? "member-signup-success"
+              : "member-signup-empty"
         }
       >
         <h2>
-          {signups.length
-            ? partial
-              ? "✓ You're signed up · Waiting for a clan"
-              : signupHeading(signups.length, total)
-            : "You haven't signed up any accounts yet."}
+          {publicationLoading
+            ? "Checking clan assignments…"
+            : signups.length
+              ? partial
+                ? "✓ You're signed up · Waiting for a clan"
+                : signupHeading(signups.length, total)
+              : "You haven't signed up any accounts yet."}
         </h2>
         {signups.length > 0 && (
           <p>
-            {publicationUnavailable ? (
+            {publicationLoading ? (
+              "Checking saved clan assignments."
+            ) : publicationUnavailable ? (
               <>
                 Clan assignments could not be checked.{" "}
                 <a
@@ -188,20 +206,46 @@ export default function MemberSignupStatus({
           </button>
         )}
       </section>
-      {open && signups.length > 0 && remaining.length > 0 && (
-        <section className="member-signup-remaining">
+      {open && signups.length > 0 && (savedView || remaining.length > 0) && (
+        <section
+          className={`member-signup-remaining${savedView && (checkingAccounts || accountsUnavailable || !remaining.length) ? " account-summary-neutral" : ""}`}
+          aria-busy={checkingAccounts || undefined}
+        >
           <h2>
-            <TriangleAlert aria-hidden="true" size={22} />
-            {remaining.length} account{remaining.length === 1 ? "" : "s"} not
-            signed up yet
+            {checkingAccounts ? (
+              "Checking linked accounts…"
+            ) : accountsUnavailable ? (
+              "Linked accounts are unavailable"
+            ) : !remaining.length ? (
+              "All linked accounts are signed up"
+            ) : (
+              <>
+                <TriangleAlert aria-hidden="true" size={22} />
+                {remaining.length} account{remaining.length === 1 ? "" : "s"}{" "}
+                not signed up yet
+              </>
+            )}
           </h2>
           {signupDeadlineLine && (
             <p className="member-signup-date">{signupDeadlineLine}</p>
           )}
-          <button onClick={onRemaining}>
-            Sign up {remaining.length} more account
-            {remaining.length === 1 ? "" : "s"} ›
-          </button>
+          {!checkingAccounts && !accountsUnavailable && remaining.length > 0 ? (
+            <button onClick={onRemaining}>
+              Sign up {remaining.length} more account
+              {remaining.length === 1 ? "" : "s"} ›
+            </button>
+          ) : (
+            <p
+              className="account-summary-state"
+              role={checkingAccounts ? "status" : undefined}
+            >
+              {checkingAccounts
+                ? "Checking your linked accounts."
+                : accountsUnavailable
+                  ? "Refresh saved signups to check account links."
+                  : "No other linked accounts need a signup."}
+            </p>
+          )}
         </section>
       )}
     </div>
