@@ -444,7 +444,6 @@ export default function PublicationWorkspace({
 
       <div className="page-head">
         <div>
-          <p className="eyebrow">CWL</p>
           <h1 ref={pageHeading} tabIndex={-1}>
             {step === "announce" ? "Announcements" : "Finalize roster"}
           </h1>

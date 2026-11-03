@@ -177,3 +177,15 @@ it("omits all-pools noise when the selected pool has the same missing-weight cou
     "<strong>1</strong> no weight (all pools)",
   );
 });
+
+it("combines season, visible counts and status without an eyebrow or duplicate menu", () => {
+  const html = render("all", "1", "November 2026");
+  expect(html).not.toContain('class="eyebrow"');
+  expect(html).toContain('class="roster-header-title-row"');
+  expect(html).toContain('class="roster-header-summary"');
+  expect(html).toContain("3 signups · 2 unplaced · 2 no weight");
+  expect(html).toContain("Signups open");
+  expect(html).toContain('aria-label="Working roster counts"');
+  expect(html).toContain('aria-label="Refresh roster"');
+  expect(html).not.toContain("More roster actions");
+});

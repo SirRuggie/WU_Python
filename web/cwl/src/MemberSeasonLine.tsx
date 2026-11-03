@@ -1,7 +1,13 @@
 import { memberSignupsOpen } from "./memberSeason";
 import type { Season } from "./api";
 
-export default function MemberSeasonLine({ season }: { season: Season }) {
+export default function MemberSeasonLine({
+  season,
+  hideClosedStatus = false,
+}: {
+  season: Season;
+  hideClosedStatus?: boolean;
+}) {
   const close = Date.parse(season.signup_deadline || "");
   const open = memberSignupsOpen(season);
   const date = Number.isFinite(close)
@@ -14,7 +20,8 @@ export default function MemberSeasonLine({ season }: { season: Season }) {
     : null;
   return (
     <p className="member-season-line">
-      <strong>{season.label}</strong> · {open ? "Open" : "Signups closed"}
+      <strong>{season.label}</strong>
+      {open ? " · Signups open" : hideClosedStatus ? "" : " · Signups closed"}
       {open && date ? ` · closes ${date}` : ""}
     </p>
   );

@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+const pingCallbacks = vi.hoisted(() => ({ value: null as any }));
 const state = vi.hoisted(() => ({ value: null as any }));
 const extraState = vi.hoisted(() => ({
   value: {
@@ -14,13 +15,10 @@ const extraState = vi.hoisted(() => ({
 vi.mock("./useDeclarationData", () => ({ default: () => state.value }));
 vi.mock("./useDeclarationExtras", () => ({ default: () => extraState.value }));
 vi.mock("./DeclarationPingPanel", () => ({
-  default: ({
-    missing,
-    locationStatus,
-  }: {
-    missing: number;
-    locationStatus?: string;
-  }) => (
+  default: (props: any) => {
+    pingCallbacks.value = props;
+    const { missing, locationStatus } = props;
+    return (
     <div data-ping-count={missing}>
       {locationStatus
         ? locationStatus === "checking"
@@ -28,7 +26,8 @@ vi.mock("./DeclarationPingPanel", () => ({
           : "Locations unavailable"
         : `Ping ${missing} missing`}
     </div>
-  ),
+    );
+  },
 }));
 import ArrivalCheck from "./ArrivalCheck";
 import { staffDetailsEvent } from "./staffDetailsRequest";
@@ -139,7 +138,7 @@ it("filters extra-member clans without changing the pool-wide ping count", async
   };
   await render();
   const lazy = [...host.querySelectorAll("button")].find((b) =>
-    b.textContent?.startsWith("Lazy ·"),
+    b.textContent?.match(/^Lazy(?: ·|$)/),
   )!;
   await act(async () => lazy.click());
   expect(toggles()).toHaveLength(2);
@@ -405,7 +404,7 @@ it("uses only the selected pool for Ping availability while another pool is stil
     "Ping 1 missing",
   );
   const lazy = [...host.querySelectorAll("button")].find((b) =>
-    b.textContent?.startsWith("Lazy ·"),
+    b.textContent?.match(/^Lazy(?: ·|$)/),
   )!;
   await act(async () => lazy.click());
   expect(host.querySelector("[data-ping-count]")?.textContent).toBe(
@@ -1197,4 +1196,136 @@ it("148 unmount clears page guards and late save cannot turn them back on", asyn
   expect(working).toHaveBeenLastCalledWith(false);
   expect(dirty).toHaveBeenLastCalledWith(false);
   expect(page.transport).toHaveBeenCalledTimes(1);
+});
+
+it("puts the clan list immediately after its compact overview and before pings", async () => {
+  await render();
+  const overview = host.querySelector(".declaration-overview")!;
+  expect(
+    overview.nextElementSibling?.classList.contains("declaration-clan"),
+  ).toBe(true);
+  const clans = [...host.querySelectorAll(".declaration-clan")];
+  expect(
+    clans
+      .at(-1)!
+      .compareDocumentPosition(host.querySelector("[data-ping-count]")!) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
+it("labels in-progress ready counts as partial rather than a final fraction", async () => {
+  state.value.checking = true;
+  await render();
+  const summary = host.querySelector(".declaration-summary")!;
+  expect(summary.textContent).toMatch(
+    /Checking…\s*\d+ of 2 clans confirmed ready/,
+  );
+  expect(summary.textContent).not.toMatch(/\d+ \/ 2 clans ready to declare/);
+  expect(host.querySelector(".declaration-pools")?.textContent).toContain(
+    "Checking…",
+  );
+});
+
+it("shows three confirmed ready clans out of ten while the remaining seven are checking", async () => {
+  const counts = [15, 15, 15, 12, 12, 12, 11, 11, 11, 11];
+  const accounts = counts.flatMap((count, clan) =>
+    Array.from({ length: count }, (_, index) => ({
+      tag: `#LOCAL${clan}X${index}`,
+      player_name: `Local ${clan}-${index}`,
+      town_hall: 18,
+      pool: "main",
+      hosting_pool: "main",
+      assigned_clan_tag: `#CLAN${clan}`,
+      assigned_clan_name: `Local clan ${clan}`,
+      user_id: "",
+      current_clan_tag: clan < 3 ? `#CLAN${clan}` : null,
+      current_clan_name: clan < 3 ? `Local clan ${clan}` : null,
+      current_clan_checked_at: clan < 3 ? new Date(now).toISOString() : null,
+      outside_family: false,
+    })),
+  );
+  state.value.data.arrival.accounts = accounts;
+  state.value.data.arrival.updating = true;
+  state.value.data.roster.clans = counts.map((_, clan) => ({
+    tag: `#CLAN${clan}`,
+    capacity: 15,
+  }));
+  state.value.records = Object.fromEntries(
+    accounts.map((account) => [account.tag, account]),
+  );
+  state.value.checking = true;
+  await render();
+  expect(host.querySelector(".declaration-summary")?.textContent).toMatch(
+    /Checking…\s*3 of 10 clans confirmed ready/,
+  );
+  expect(host.querySelector(".declaration-summary")?.textContent).not.toContain(
+    "3 / 10",
+  );
+});
+
+it("states unavailable locations once and keeps only differing clan readiness labels", async () => {
+  const accounts = state.value.data.arrival.accounts;
+  state.value.records = Object.fromEntries(
+    accounts.map((account: any) => [
+      account.tag,
+      {
+        ...account,
+        current_clan_tag: null,
+        current_clan_checked_at: null,
+        current_clan_status: "unavailable",
+      },
+    ]),
+  );
+  state.value.data.arrival.updating = false;
+  await render();
+  const text = [
+    ...host.querySelectorAll(
+      ".declaration-summary,.declaration-pools,.declaration-clan-toggle",
+    ),
+  ]
+    .map((node) => node.textContent)
+    .join(" ");
+  expect(text.match(/Locations unavailable/g)).toHaveLength(1);
+  expect(host.querySelectorAll(".declaration-clan")).toHaveLength(2);
+  expect(host.querySelector(".declaration-clan-toggle")?.textContent).toContain(
+    "Amber",
+  );
+  expect(
+    host.querySelector(".declaration-clan-toggle")?.textContent,
+  ).not.toContain("Not ready");
+});
+
+
+it("integrates moved Ping callbacks and pool discard without clearing held filler guards", async () => {
+  let finish!: (saved: any) => void;
+  const working = vi.fn(), dirty = vi.fn();
+  const page = await queue148Page(
+    () => new Promise(resolve => { finish = resolve; }),
+    { onWorking: working, onDirty: dirty },
+  );
+  await act(async () => page.box(0).click());
+  expect(working).toHaveBeenLastCalledWith(true);
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  await act(async () => {
+    pingCallbacks.value.onWorking(false);
+    pingCallbacks.value.onDirty(false);
+  });
+  expect(working).toHaveBeenLastCalledWith(true);
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  await act(async () => pingCallbacks.value.onDirty(true));
+  Object.defineProperty(window, "confirm", { configurable: true, writable: true, value: vi.fn(() => false) });
+  const confirm = vi.mocked(window.confirm);
+  const main = () => [...host.querySelectorAll<HTMLButtonElement>(".declaration-pools button")].find(b => b.textContent?.trim().startsWith("Main"))!;
+  await act(async () => main().click());
+  expect(confirm).toHaveBeenCalledOnce();
+  expect(main().getAttribute("aria-pressed")).toBe("false");
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  confirm.mockReturnValue(true);
+  await act(async () => main().click());
+  expect(main().getAttribute("aria-pressed")).toBe("true");
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  expect(working).toHaveBeenLastCalledWith(true);
+  await act(async () => finish({ tag: "#X0", revision: 2, roster_filler: true, mark_revision: 1 }));
+  expect(working).toHaveBeenLastCalledWith(false);
+  expect(dirty).toHaveBeenLastCalledWith(false);
 });

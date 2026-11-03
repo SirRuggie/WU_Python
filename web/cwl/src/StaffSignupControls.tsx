@@ -21,6 +21,7 @@ type Props = {
   onBusy: (busy: boolean) => void;
   onOpenChange?: (open: boolean) => void;
   disabled?: boolean;
+  onAttentionChange?: (attention: boolean) => void;
 };
 
 export default function StaffSignupControls({
@@ -30,6 +31,7 @@ export default function StaffSignupControls({
   onBusy,
   onOpenChange,
   disabled = false,
+  onAttentionChange,
 }: Props) {
   const canSignups = useDashboardPermission("cwl_signups");
   const signup = useSignupAction(season, () => onChanged(false));
@@ -60,6 +62,21 @@ export default function StaffSignupControls({
   const addButton = useRef<HTMLButtonElement>(null);
   const settingsButton = useRef<HTMLButtonElement>(null);
 
+  const attention = !!(
+    signup.hiddenOpen ||
+    signup.error ||
+    signup.notice ||
+    signup.visibilityCheck ||
+    error ||
+    notice ||
+    open ||
+    settingsOpen ||
+    working
+  );
+  useEffect(() => {
+    onAttentionChange?.(attention);
+    return () => onAttentionChange?.(false);
+  }, [attention, onAttentionChange]);
   useUnsavedWork(dirty || working, onDirty);
   useEffect(() => {
     onOpenChange?.(open || settingsOpen);

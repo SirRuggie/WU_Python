@@ -338,3 +338,141 @@ it("blocks live preview and replaces the zero label while locations are pending 
   );
   expect(button("Ping 0 missing").disabled).toBe(true);
 });
+
+it("starts closed, exposes the last confirmed ping in its summary and never previews on open", async () => {
+  mock.api.mockResolvedValue({
+    ...state,
+    history: [
+      {
+        token: "b".repeat(32),
+        actor_id: "owner",
+        state: "done",
+        created_at: 1780000000,
+        count: 26,
+        chunks: 1,
+        posted: [{ chunk: 0, message_id: "456789012345678901" }],
+        attempting: null,
+        channel: state.channel,
+      },
+    ],
+  });
+  await mount();
+  const disclosure = host.querySelector<HTMLDetailsElement>(
+    ".declaration-ping-panel",
+  )!;
+  expect(disclosure.open).toBe(false);
+  expect(disclosure.querySelector("summary")?.textContent).toContain(
+    "Last pinged",
+  );
+  await act(async () => {
+    disclosure.open = true;
+    disclosure.dispatchEvent(new Event("toggle"));
+  });
+  expect(disclosure.open).toBe(true);
+  expect(mock.api.mock.calls.some((call) => call[1] === "POST")).toBe(false);
+});
+
+it("keeps a load error discoverable instead of hiding it in a closed section", async () => {
+  mock.api.mockRejectedValue(new Error("Settings unavailable"));
+  await mount();
+  const disclosure = host.querySelector<HTMLDetailsElement>(
+    ".declaration-ping-panel",
+  )!;
+  expect(disclosure.open).toBe(true);
+  expect(host.querySelector("[role=alert]")?.textContent).toContain(
+    "Settings unavailable",
+  );
+});
+
+it("does not claim a test receipt pinged real members", async () => {
+  mock.api.mockResolvedValue({
+    ...state,
+    history: [
+      {
+        test: true,
+        token: "c".repeat(32),
+        actor_id: "owner",
+        state: "done",
+        created_at: 1780000000,
+        count: 26,
+        chunks: 0,
+        posted: [],
+        attempting: null,
+        channel: state.channel,
+      },
+    ],
+  });
+  await mount();
+  expect(host.querySelector("summary")?.textContent).toContain(
+    "Last no-ping test",
+  );
+  expect(host.querySelector("summary")?.textContent).not.toContain(
+    "Last pinged",
+  );
+});
+
+it("forces an active uncertain receipt open and exposes its attention target", async () => {
+  mock.api.mockResolvedValue({
+    ...state,
+    active: {
+      token: "d".repeat(32),
+      actor_id: "owner",
+      state: "uncertain",
+      error: "May have been accepted",
+      created_at: 1780000000,
+      count: 26,
+      chunks: 1,
+      posted: [],
+      attempting: 0,
+      channel: state.channel,
+    },
+  });
+  const attention = vi.fn();
+  await act(async () =>
+    root.render(
+      <DeclarationPingPanel
+        seasonId="1"
+        pool="lazy"
+        missing={26}
+        onAttentionChange={attention}
+      />,
+    ),
+  );
+  await flush();
+  expect(
+    host.querySelector<HTMLDetailsElement>(".declaration-ping-panel")?.open,
+  ).toBe(true);
+  const detail = attention.mock.calls.at(-1)![0];
+  expect(detail.message).toContain("May have been accepted");
+  await act(async () => detail.reveal());
+  expect(document.activeElement).toBe(
+    host.querySelector('[tabindex="-1"][role="status"]'),
+  );
+  expect(mock.api.mock.calls.some((call) => call[1] === "POST")).toBe(false);
+});
+
+it("stops the checking caption after settings fail and reveals the focused error", async () => {
+  mock.api.mockRejectedValue(new Error("Settings unavailable"));
+  const attention = vi.fn();
+  await act(async () =>
+    root.render(
+      <DeclarationPingPanel
+        seasonId="1"
+        pool="lazy"
+        missing={26}
+        onAttentionChange={attention}
+      />,
+    ),
+  );
+  await flush();
+  expect(host.querySelector("summary")?.textContent).not.toContain(
+    "Checking last ping",
+  );
+  expect(host.querySelector("summary")?.textContent).toContain(
+    "Ping settings unavailable",
+  );
+  const detail = attention.mock.calls.at(-1)![0];
+  expect(detail.message).toBe("Settings unavailable");
+  await act(async () => detail.reveal());
+  expect(document.activeElement).toBe(host.querySelector('[role="alert"]'));
+});

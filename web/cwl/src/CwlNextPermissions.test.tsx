@@ -31,12 +31,18 @@ vi.mock("./ArrivalCheck", () => ({
   default: ({
     onFinalize,
     onResults,
+    onWorking,
+    onDirty,
   }: {
     onFinalize?: () => void;
     onResults?: () => void;
+    onWorking?: (value: boolean) => void;
+    onDirty?: (value: boolean) => void;
   }) => (
     <>
       <h1>Declaration fixture</h1>
+      <button onClick={() => { onWorking?.(true); onDirty?.(true); }}>Hold filler queue</button>
+      <button onClick={() => { onWorking?.(false); onDirty?.(false); }}>Finish filler queue</button>
       {onFinalize && <button onClick={onFinalize}>Finalize fixture</button>}
       {onResults && <button onClick={onResults}>Results fixture</button>}
     </>
@@ -214,4 +220,20 @@ it("Reminders Next opens Accounts even when the last Build tab was Compare", asy
   expect(host.querySelector('[data-testid="roster-mode"]')?.textContent).toBe(
     '"assign"',
   );
+});
+
+
+it("parent Results Next cannot leave Declaration while filler queue is held", async () => {
+  const { button, settle, host } = await mount("/cwl/readiness?season=1", ["cwl_roster", "cwl_results"]);
+  expect(button("Results fixture")).toBeDefined();
+  await act(async () => button("Hold filler queue")!.click());
+  await act(async () => button("Results fixture")!.click());
+  await settle();
+  expect(location.pathname).toBe("/cwl/readiness");
+  await act(async () => button("Results fixture")!.click());
+  expect(location.pathname).toBe("/cwl/readiness");
+  await act(async () => button("Finish filler queue")!.click());
+  await act(async () => button("Results fixture")!.click());
+  await settle();
+  expect(location.pathname).toBe("/cwl/results");
 });

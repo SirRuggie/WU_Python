@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MoreHorizontal, RefreshCw, WandSparkles } from "lucide-react";
+import { RefreshCw, WandSparkles } from "lucide-react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import { draftPublicationStatus, type PublicationDraft } from "./publication";
 import type { RosterSnapshot } from "./roster";
@@ -42,6 +42,7 @@ type Props = {
   onFillSignupSpot: (item: SignupChange) => boolean;
   onSignupDetails: (tag: string) => boolean;
   signupControls?: import("react").ReactNode;
+  signupAttention?: boolean;
   seasonId: string;
   seasons: Season[];
   roster: RosterSnapshot | null;
@@ -53,6 +54,8 @@ type Props = {
   navigationDisabled?: boolean;
   archived: boolean;
   refreshKey?: number;
+  refreshInToolbar?: boolean;
+  viewLabel?: string;
   activeStatuses?: readonly string[];
   onSeasonChange: (id: string) => void;
   onRefresh: () => void;
@@ -76,6 +79,8 @@ export default function RosterHeader({
   navigationDisabled = uiLocked,
   archived,
   refreshKey = 0,
+  refreshInToolbar = false,
+  viewLabel = "Accounts & signups",
   activeStatuses = [],
   onSeasonChange,
   onRefresh,
@@ -84,6 +89,7 @@ export default function RosterHeader({
   onStatusFilter,
   onAccessError,
   signupControls,
+  signupAttention = false,
   onFillSignupSpot,
   onSignupDetails,
   onPublication,
@@ -96,9 +102,8 @@ export default function RosterHeader({
     draft?: PublicationDraft;
   } | null>(null);
   const [publicationAttempt, setPublicationAttempt] = useState(0);
-  const actions = useRef<HTMLDetailsElement>(null);
+  const summary = useRef<HTMLDetailsElement>(null);
   const workingFades = useHorizontalFades<HTMLDivElement>();
-  const actionsTrigger = useRef<HTMLElement>(null);
   const request = useRef(0);
   const onAccessErrorRef = useRef(onAccessError);
   onAccessErrorRef.current = onAccessError;
@@ -186,104 +191,135 @@ export default function RosterHeader({
         clan.capacity !== 15 &&
         clan.capacity !== 30,
     ) ?? [];
-  useEffect(() => {
-    if (uiLocked) actions.current?.removeAttribute("open");
-  }, [uiLocked]);
 
   return (
     <header className="roster-header roster-ui" aria-label="Roster overview">
       <div className="roster-header-title-row">
-        <div className="roster-header-title">
-          <p className="eyebrow">CWL</p>
-          <h1 data-roster-heading tabIndex={-1}>
-            Build roster
-          </h1>
+        <h1 data-roster-heading tabIndex={-1}>
+          Build roster
+        </h1>
+        <div className="roster-header-season">
+          <RosterMenu
+            label="Season"
+            value={seasonId}
+            aria-label={`Season: ${selectedSeasonLabel || "Select a season"}`}
+            disabled={navigationDisabled}
+            onValueChange={onSeasonChange}
+            options={[
+              { value: "", label: "Select a season" },
+              ...seasons.map((season) => ({
+                value: String(season.id),
+                label: season.label,
+              })),
+            ]}
+          />
+          <span className="roster-header-season-short" aria-hidden="true">
+            {selectedSeasonLabel
+              ? compactSeasonLabel(selectedSeasonLabel)
+              : "Season"}
+          </span>
         </div>
-        <div className="roster-header-title-actions">
+        {!refreshInToolbar && (
+          <Button
+            icon={RefreshCw}
+            label="Refresh roster"
+            disabled={uiLocked}
+            onClick={onRefresh}
+          />
+        )}
+      </div>
+      <details ref={summary} className="roster-header-summary">
+        <summary>
+          <span>
+            {roster
+              ? `${accounts.length} signups · ${unplaced} unplaced · ${missingWeight} no weight${pool !== "all" && missingWeight !== poolMissingWeight ? " (all pools)" : ""}`
+              : "Loading roster…"}
+          </span>
+          <span className="roster-header-status" role="status">
+            {selectedSeasonLabel &&
+              `${archived ? "Archived" : seasons.find((season) => String(season.id) === seasonId)?.signup_open ? "Signups open" : "Signups closed"} · `}
+
+            {publicationStatus === "current"
+              ? `Published v${publication?.draft?.published?.version}`
+              : publicationStatus === "changed"
+                ? "Unpublished changes"
+                : publicationStatus === "unavailable"
+                  ? "Status unavailable"
+                  : publicationStatus === "unpublished"
+                    ? "Not published"
+                    : "Checking publication…"}
+            <span className="roster-header-view-label"> · {viewLabel}</span>
+            <span className="roster-header-details-label">
+              {" "}
+              · Signup &amp; status
+            </span>
+          </span>
+        </summary>
+        <div className="roster-header-summary-content">
+          {seasonId &&
+            publicationStatus === "current" &&
+            publication?.draft && (
+              <PublicationAwarenessBanner
+                published={publication.draft.published}
+                lastPublication={publication.draft.last_publication}
+                changed={publication.draft.draft_changed}
+                canPublish={canPublish}
+                onReview={onFinalize}
+                disabled={uiLocked}
+              />
+            )}
           {roster && (
-            <details
-              ref={actions}
-              className="roster-header-more"
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  actions.current?.removeAttribute("open");
-                  actionsTrigger.current?.focus();
-                }
-              }}
+            <div
+              ref={workingFades.ref}
+              className="roster-header-working has-horizontal-fades"
+              data-fade-left={workingFades.left}
+              data-fade-right={workingFades.right}
+              aria-label="Working roster counts"
             >
-              <summary
-                ref={actionsTrigger}
-                aria-label="More roster actions"
-                aria-disabled={uiLocked}
-                onClick={(event) => {
-                  if (uiLocked) event.preventDefault();
-                }}
-                onKeyDown={(event) => {
-                  if (uiLocked && (event.key === "Enter" || event.key === " "))
-                    event.preventDefault();
-                }}
-              >
-                <MoreHorizontal aria-hidden="true" />
-              </summary>
-              <div className="roster-header-actions">
+              <Button onClick={() => onStatusFilter("all")} disabled={uiLocked}>
+                <strong>{accounts.length}</strong> signup
+                {accounts.length === 1 ? "" : "s"}
+              </Button>
+              <div className="roster-header-unplaced">
                 <Button
-                  icon={RefreshCw}
+                  aria-pressed={activeStatuses.includes("unassigned")}
+                  onClick={() => onStatusFilter("unassigned")}
                   disabled={uiLocked}
-                  onClick={() => {
-                    actions.current?.removeAttribute("open");
-                    onRefresh();
-                  }}
                 >
-                  Refresh roster
+                  <strong>{unplaced}</strong> unplaced
                 </Button>
                 {canAutoPlace && (
                   <Button
                     icon={WandSparkles}
                     disabled={uiLocked}
-                    onClick={() => {
-                      actions.current?.removeAttribute("open");
-                      if (actionsTrigger.current)
-                        onAutoPlace(actionsTrigger.current);
-                    }}
+                    onClick={(event) => onAutoPlace(event.currentTarget)}
                   >
-                    Auto-place unplaced
+                    Auto-place
                   </Button>
                 )}
               </div>
-            </details>
-          )}
+              <Button
+                aria-pressed={activeStatuses.includes("missing_weight")}
+                onClick={() => onStatusFilter("missing_weight")}
+                disabled={uiLocked}
+              >
+                <strong>{missingWeight}</strong> no weight
+                {pool !== "all" && missingWeight !== poolMissingWeight
+                  ? " (all pools)"
+                  : ""}
+              </Button>
+            </div>
+          )}{" "}
         </div>
-      </div>
-      <div className="roster-header-publication" role="status">
-        <RosterMenu
-          label="Season"
-          value={seasonId}
-          aria-label={`Season: ${selectedSeasonLabel || "Select a season"}`}
-          disabled={navigationDisabled}
-          onValueChange={onSeasonChange}
-          options={[
-            { value: "", label: "Select a season" },
-            ...seasons.map((season) => ({
-              value: String(season.id),
-              label: season.label,
-            })),
-          ]}
-        />
-        <span className="roster-header-season-short" aria-hidden="true">
-          {selectedSeasonLabel
-            ? compactSeasonLabel(selectedSeasonLabel)
-            : "Season"}
-        </span>
-        {publicationStatus === "unavailable" && (
-          <Button onClick={() => setPublicationAttempt((value) => value + 1)}>
-            Retry status
-          </Button>
-        )}
-      </div>
+      </details>
       {signupControls && (
-        <div className="roster-header-signups">{signupControls}</div>
+        <div className="roster-header-signups" data-attention={signupAttention}>
+          {signupControls}
+        </div>
       )}
+
       {seasonId &&
+        publicationStatus !== "current" &&
         (publication?.seasonId === seasonId && publication.draft ? (
           <PublicationAwarenessBanner
             published={publication.draft.published}
@@ -295,9 +331,19 @@ export default function RosterHeader({
           />
         ) : (
           <div className="publication-awareness" role="status">
-            {publicationStatus === "unavailable"
-              ? "Publication status unavailable"
-              : "Checking publication…"}
+            <span className="publication-awareness-status">
+              {publicationStatus === "unavailable"
+                ? "Publication status unavailable"
+                : "Checking publication…"}
+            </span>
+            {publicationStatus === "unavailable" && (
+              <Button
+                disabled={uiLocked}
+                onClick={() => setPublicationAttempt((value) => value + 1)}
+              >
+                Retry status
+              </Button>
+            )}
           </div>
         ))}
       {seasonId && canSignups && (
@@ -334,48 +380,6 @@ export default function RosterHeader({
               Set in Hosting clans ›
             </button>
           )}
-        </div>
-      )}
-      {roster && (
-        <div
-          ref={workingFades.ref}
-          className="roster-header-working has-horizontal-fades"
-          data-fade-left={workingFades.left}
-          data-fade-right={workingFades.right}
-          aria-label="Working roster counts"
-        >
-          <Button onClick={() => onStatusFilter("all")} disabled={uiLocked}>
-            <strong>{accounts.length}</strong> signup
-            {accounts.length === 1 ? "" : "s"}
-          </Button>
-          <div className="roster-header-unplaced">
-            <Button
-              aria-pressed={activeStatuses.includes("unassigned")}
-              onClick={() => onStatusFilter("unassigned")}
-              disabled={uiLocked}
-            >
-              <strong>{unplaced}</strong> unplaced
-            </Button>
-            {canAutoPlace && (
-              <Button
-                icon={WandSparkles}
-                disabled={uiLocked}
-                onClick={(event) => onAutoPlace(event.currentTarget)}
-              >
-                Auto-place
-              </Button>
-            )}
-          </div>
-          <Button
-            aria-pressed={activeStatuses.includes("missing_weight")}
-            onClick={() => onStatusFilter("missing_weight")}
-            disabled={uiLocked}
-          >
-            <strong>{missingWeight}</strong> no weight
-            {pool !== "all" && missingWeight !== poolMissingWeight
-              ? " (all pools)"
-              : ""}
-          </Button>
         </div>
       )}
     </header>

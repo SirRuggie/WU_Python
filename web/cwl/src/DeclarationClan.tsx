@@ -23,6 +23,7 @@ export default function DeclarationClan({
   extraLoading = false,
   extraError = "",
   locationStatus,
+  suppressUnavailableLabel = false,
 }: {
   markControl?: DeclarationMarkControl;
   group: ReturnType<typeof declarationGroups>[number];
@@ -36,6 +37,7 @@ export default function DeclarationClan({
   extraLoading?: boolean;
   extraError?: string;
   locationStatus?: "checking" | "unavailable";
+  suppressUnavailableLabel?: boolean;
 }) {
   const [copied, setCopied] = useState("");
   const [fallback, setFallback] = useState<string | null>(null);
@@ -67,15 +69,19 @@ export default function DeclarationClan({
           <span>
             <span aria-hidden="true">{open ? "▾" : "›"}</span> {group.name}
           </span>
-          <span>
-            {!group.tag
-              ? `${group.accounts.length} unplaced`
-              : locationStatus
-                ? locationStatus === "checking"
-                  ? "Checking locations…"
-                  : "Locations unavailable"
-                : `${ready ? "Ready" : "Not ready"} · ${arrivedCount}/${group.capacity ?? "—"} in clan`}
-          </span>
+          {!(suppressUnavailableLabel && locationStatus === "unavailable") && (
+            <>
+              <span>
+                {!group.tag
+                  ? `${group.accounts.length} unplaced`
+                  : locationStatus
+                    ? locationStatus === "checking"
+                      ? "Checking locations…"
+                      : "Locations unavailable"
+                    : `${ready ? "Ready" : "Not ready"} · ${arrivedCount}/${group.capacity ?? "—"} in clan`}
+              </span>
+            </>
+          )}
           {group.tag && !locationStatus && (
             <small>
               {group.capacity === null
