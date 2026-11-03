@@ -47,50 +47,50 @@ def test_mismatch_header():
 def test_win_body_after_header():
     container = WarMessageTemplates.win_message(OPPONENT, "Author", ROLE)[0]
     body = container.components[2:]
-    assert len(body) == 9
+    assert len(body) == 10
     combined = "\n".join(
         c.content for c in body if isinstance(c, Text)
     )
     assert "First attack" in combined
     assert "Goal: 150 Stars" in combined
     assert "**Option 3:** Check last war's stats. If someone skipped their attack, their base is fair game for" in combined
-    assert body[-1].content == "-# 📣 *War declaration by Author*"
+    assert body[-2].content == "-# 📣 *War declaration by Author*"
 
 
 def test_lose_body_after_header():
     container = WarMessageTemplates.lose_message(OPPONENT, "Author", ROLE)[0]
     body = container.components[2:]
-    assert len(body) == 9
+    assert len(body) == 10
     combined = "\n".join(
         c.content for c in body if isinstance(c, Text)
     )
     assert "First attack" in combined
     assert "Goal: 100 Stars" in combined
-    assert body[-1].content == "-# 📣 *War declaration by Author*"
+    assert body[-2].content == "-# 📣 *War declaration by Author*"
 
 
 def test_blacklisted_body_after_header():
     container = WarMessageTemplates.blacklisted_message(OPPONENT, "Author", ROLE, FWA_ROLE)[0]
     body = container.components[3:]
-    assert len(body) == 19
+    assert len(body) == 20
     combined = "\n".join(
         c.content for c in body if isinstance(c, Text)
     )
     assert "Enemy Intel" in combined
     assert "FWA POINT OBJECTIVES" in combined
-    assert body[-1].content == "-# 📣 *War declaration by Author*"
+    assert body[-2].content == "-# 📣 *War declaration by Author*"
 
 
 def test_mismatch_body_after_header():
     container = WarMessageTemplates.mismatch_message(OPPONENT, "Author", ROLE)[0]
     body = container.components[2:]
-    assert len(body) == 7
+    assert len(body) == 8
     combined = "\n".join(
         c.content for c in body if isinstance(c, Text)
     )
     assert "Attacking is optional" in combined
     assert "Do not change your War Base." in combined
-    assert body[-1].content == "-# 📣 *War declaration by Author*"
+    assert body[-2].content == "-# 📣 *War declaration by Author*"
 
 
 def test_opponent_backticks_are_stripped():

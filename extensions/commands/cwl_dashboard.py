@@ -369,14 +369,7 @@ async def _save_timing(ctx: Any, mongo: MongoClient, draft: dict, campaign: dict
 
 async def _saved_defaults_campaign(mongo: MongoClient, guild_id: int) -> dict:
     """Match the defaults-draft baseline without importing a future override."""
-    saved = await mongo.bot_config.find_one({"_id": cwl_campaign.defaults_id(guild_id)})
-    if saved and isinstance(saved.get("campaign"), dict):
-        return cwl_campaign._deep_merge(cwl_campaign.default_campaign(), saved["campaign"])
-    if guild_id == cwl_campaign.LEGACY_WU_GUILD_ID:
-        legacy_collection = getattr(mongo, "cwl_reminder", None)
-        legacy = await legacy_collection.find_one({"_id": "schedule"}) if legacy_collection is not None else None
-        return cwl_campaign.campaign_from_legacy(legacy)
-    return cwl_campaign.default_campaign()
+    return await cwl_campaign.load_defaults_campaign(mongo, guild_id)
 
 
 def _button(custom_id: str, label: str, *, style: hikari.ButtonStyle = hikari.ButtonStyle.SECONDARY) -> hikari.impl.MessageActionRowBuilder:

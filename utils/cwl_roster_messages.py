@@ -25,9 +25,9 @@ def clan_image_message(name: str, tag: str, *, test: bool = False) -> dict:
 
 def closing_message(*, test: bool = False) -> dict:
     return {
-        'content': "Can't find your name? Check My assignments.",
+        'content': "Can't find your name? Check My clan assignments.",
         'allowed_mentions': {'parse': [], 'roles': []} if test else {'parse': []},
-        'components': link_button('My assignments', ASSIGNMENTS_URL),
+        'components': link_button('My clan assignments', ASSIGNMENTS_URL),
     }
 
 

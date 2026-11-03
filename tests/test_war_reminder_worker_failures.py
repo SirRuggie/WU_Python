@@ -62,6 +62,8 @@ def test_concurrent_workers_only_one_claim_sends(setup):
     asyncio.run(run())
     assert bot.rest.create_message.await_count == 1
     assert len(store.receipts) == 1
+    links = bot.rest.create_message.await_args.kwargs["components"][0].components
+    assert [(link.label, link.url) for link in links] == [("My tasks", "https://dash.warriorsunited.cc/tasks"), ("Wars", "https://dash.warriorsunited.cc/wars")]
 
 
 def test_uncertain_send_is_never_replayed(setup):

@@ -1,5 +1,7 @@
 """War reminder settings, selection, and standard Discord message rendering."""
 from datetime import datetime, timedelta, timezone
+from utils.dashboard_urls import TASKS_URL, WARS_URL
+
 import re
 
 GUILD_ID = 644963518025826315
@@ -137,7 +139,11 @@ def messages(war, config, event, owners=None, *, test=False, tester=None, sample
             text, users = candidate, users+mentions
     pages.append((text, users))
     return [dict(content=header+'\n\n'+text+'\n\n'+footer,
-                 allowed_mentions=dict(parse=[], users=users, roles=[], replied_user=False))
+                 allowed_mentions=dict(parse=[], users=users, roles=[], replied_user=False),
+                 components=[{"type": 1, "components": [
+                     {"type": 2, "style": 5, "label": "My tasks", "url": TASKS_URL},
+                     {"type": 2, "style": 5, "label": "Wars", "url": WARS_URL},
+                 ]}])
             for text, users in pages]
 
 

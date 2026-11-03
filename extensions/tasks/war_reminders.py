@@ -18,6 +18,13 @@ FETCH_CONCURRENCY = 4
 _task = None
 
 
+def _link_row(spec):
+    row = hikari.impl.MessageActionRowBuilder()
+    for button in spec['components']:
+        row.add_link_button(button['url'], label=button['label'])
+    return row
+
+
 async def send_occurrence(store, bot, config, war, event, owners):
     clan_tag = config['_id']
     key = occurrence_key(clan_tag, war['start'], event)
@@ -44,6 +51,7 @@ async def send_occurrence(store, bot, config, war, event, owners):
                 int(config['channel_id']), content=payload['content'],
                 mentions_everyone=False, role_mentions=False,
                 user_mentions=[int(uid) for uid in payload['allowed_mentions']['users']],
+                components=[_link_row(row) for row in payload.get('components', [])],
             )
             urls.append(f"https://discord.com/channels/{reminders.GUILD_ID}/{config['channel_id']}/{sent.id}")
             # Preserve partial progress even if the process stops between parts.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from utils.dashboard_urls import ASSIGNMENTS_URL
 import hashlib
 import json
 import re
@@ -110,7 +111,7 @@ def messages(groups, *, test=False):
     components. A full clan can exceed a message; its mention tokens never split.
     """
     total = sum(len(g["accounts"]) for g in groups)
-    footer = f"Total missing: {total}"
+    footer = f"Players not yet in their clan: {total}"
     chunks, lines, recipients, clans = [], [], set(), {}
 
     def flush():
@@ -126,8 +127,9 @@ def messages(groups, *, test=False):
                 "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag="
                 + quote(tag, safe=""),
             }
-            for tag, g in list(clans.items())[:30]
+            for tag, g in list(clans.items())[:29]
         ]
+        buttons.append({"type": 2, "style": 5, "label": "My clan assignments", "url": ASSIGNMENTS_URL})
         for start in range(0, len(buttons), 5):
             children.append({"type": 1, "components": buttons[start : start + 5]})
         chunks.append(
@@ -160,12 +162,12 @@ def messages(groups, *, test=False):
             full = "\n".join([TITLE, *lines, candidate, footer])
             labels = dict(clans)
             labels[group["tag"]] = group
-            units = text_units(full) + sum(
+            units = text_units(full) + text_units("My clan assignments") + sum(
                 text_units(button_label(g["name"])) for g in labels.values()
             )
             if (
                 units > 3800
-                or len(labels) > 30
+                or len(labels) > 29
                 or (
                     uid is not None and uid not in recipients and len(recipients) >= 100
                 )

@@ -5,7 +5,9 @@ from urllib.parse import quote
 from .permissions import require_dashboard_role
 
 ROLE_ID = 993015846442127420
-BASE = "https://dash.warriorsunited.cc/clans"
+from utils.dashboard_urls import CLANS_URL
+
+BASE = CLANS_URL
 FIELDS = (
     ("name", "Name"), ("type", "Clan type"), ("th_requirements", "Minimum Town Hall"),
     ("leader_id", "Leader"), ("leader_role_id", "Leader role"), ("role_id", "Clan role"),

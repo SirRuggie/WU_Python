@@ -27,5 +27,5 @@ def test_test_payloads_match_production_except_explicit_no_ping_policy():
         assert {k:v for k,v in test.items() if k != 'allowed_mentions'} == {
             k:v for k,v in production.items() if k != 'allowed_mentions'}
         assert 'TEST' not in str(test)
-    assert closing_message()['content'] == "Can't find your name? Check My assignments."
+    assert closing_message()['content'] == "Can't find your name? Check My clan assignments."
     assert closing_message()['components'][0]['components'][0]['url'] == ASSIGNMENTS_URL

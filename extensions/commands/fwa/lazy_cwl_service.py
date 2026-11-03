@@ -12,6 +12,8 @@ here; a later brief calls start()/stop() from StartedEvent/StoppingEvent.
 
 from __future__ import annotations
 
+from utils.dashboard_urls import ASSIGNMENTS_URL, TASKS_URL, WARS_URL
+
 from utils.return_schedule import window_end, before_start
 
 import logging
@@ -394,7 +396,7 @@ async def _send_reminder_message(doc: dict, away: list[dict], *, expected_channe
                 Text(content="**Players to return:**"),
                 Text(content="\n".join(chunk_lines)),
                 Separator(),
-                Text(content=f"**Total missing:** {len(away)}/{len(doc.get('players', []))} players"),
+                Text(content=f"**Players not yet in their clan:** {len(away)}/{len(doc.get('players', []))} players"),
                 Separator(),
                 ActionRow(components=[LinkButton(
                     url=f"https://link.clashofclans.com/en?action=OpenClanProfile&tag={quote(clan_tag, safe='')}",
@@ -414,6 +416,7 @@ async def _send_reminder_message(doc: dict, away: list[dict], *, expected_channe
                     label=f"Open {doc['clan_name']} in-Game",
                 )]),
             ]
+        lines.append(ActionRow().add_link_button(ASSIGNMENTS_URL, label="My clan assignments").add_link_button(TASKS_URL, label="My tasks").add_link_button(WARS_URL, label="Wars"))
         await bot_instance.rest.create_message(
             channel=channel,
             components=[Container(accent_color=GOLD_ACCENT, components=lines)],

@@ -393,7 +393,7 @@ def test_fwa_reminder_preserves_clan_link_player_tags_and_workflow(monkeypatch):
     assert components[5].content == "**Workflow: Join CWL Clan ⇨ Attack ⇨ Return to FWA Clan (15-30min tops)**"
     assert components[7].content == "**Players to return:**"
     assert components[8].content == "**Two** · `#P2` · <@123456789>"
-    assert components[10].content == "**Total missing:** 1/2 players"
+    assert components[10].content == "**Players not yet in their clan:** 1/2 players"
     assert components[12].components[0].label == "Open Alpha in-Game"
     assert components[12].components[0].url == (
         "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23ABC"
@@ -427,7 +427,7 @@ def test_reminder_message_splits_large_roster_and_whitelists_mentions(monkeypatc
         assert "@\u200beveryone" in recipient_text
         assert len(recipient_text) <= 3000
         assert len(components) <= 40
-        assert components[10].content == "**Total missing:** 50/50 players"
+        assert components[10].content == "**Players not yet in their clan:** 50/50 players"
         assert components[12].components[0].url.endswith("tag=%23ABC")
         assert all(isinstance(user_id, int) for user_id in message["user_mentions"])
     assert len(rows) == 50
