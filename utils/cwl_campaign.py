@@ -8,9 +8,11 @@ tests, and the reminder task all use the same stored representation.
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
 import hikari
@@ -679,6 +681,136 @@ async def load_defaults_campaign(mongo, guild_id: int) -> dict:
     return default_campaign(new_copy=not bool(saved or existing_cycle))
 
 
+def _roster_copy_edit_stamps(row: dict | None) -> dict[str, str]:
+    """Field-only metadata is active only at the revision that wrote it.
+
+    Ordinary full-template writes increment revision, so even a clock tie cannot
+    misclassify them as another field-only write or revive stale pool overrides.
+    """
+    row = row or {}
+    marker = row.get("roster_copy_edit_revision")
+    if type(marker) is not int or marker != row.get("revision"):
+        return {}
+    stamps = row.get("roster_copy_edit_updated_at") or {}
+    if not isinstance(stamps, dict) or any(
+        pool not in AUDIENCES or not isinstance(stamp, str)
+        for pool, stamp in stamps.items()
+    ):
+        raise ValueError("Saved roster field edit metadata is invalid")
+    if not stamps or row.get("updated_at") != max(stamps.values()):
+        return {}
+    return stamps
+
+
+def _whole_template_updated_at(row: dict | None) -> str:
+    """One cutoff for whole recurring selection and per-pool inheritance."""
+    row = row or {}
+    field = (
+        "roster_copy_base_updated_at" if _roster_copy_edit_stamps(row) else "updated_at"
+    )
+    return str(row.get(field) or "")
+
+
+def _recurring_template_identity(row: dict | None) -> str | None:
+    """Distinguish field-after-whole clock ties from later whole-template saves."""
+    if not row:
+        return None
+    if row.get("pause_edit_revision") == row.get("revision") and row.get(
+        "pause_recurring_identity"
+    ):
+        return row["pause_recurring_identity"]
+    if _roster_copy_edit_stamps(row) and row.get("roster_copy_base_recurring_identity"):
+        return row["roster_copy_base_recurring_identity"]
+    revision = row.get("revision", 0)
+    if row.get("pause_edit_revision") == revision:
+        revision = row.get("pause_base_revision", revision)
+    if _roster_copy_edit_stamps(row):
+        revision = row.get("roster_copy_base_revision", revision)
+    value = [
+        row.get("_id"),
+        row.get("recurring_updated_at"),
+        revision,
+        row.get("recurring_campaign"),
+    ]
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _apply_recurring_roster_copy(
+    campaign: dict, rows: list[dict], current: dict | None, recurring: dict | None
+) -> str | None:
+    """Apply only newer per-pool text/buttons, never a whole future template."""
+    current = current or {}
+    edits = _roster_copy_edit_stamps(current)
+    global_stamp = _whole_template_updated_at(current)
+    versions = {}
+    for pool in AUDIENCES:
+        cutoff = max(
+            global_stamp,
+            str(edits.get(pool) or ""),
+            str((recurring or {}).get("recurring_updated_at") or ""),
+        )
+        # Preserve this cycle's explicit field edit even when its unrelated
+        # fields still inherit a newer whole recurring template.
+        if pool in edits and edits[pool] >= str(
+            (recurring or {}).get("recurring_updated_at") or ""
+        ):
+            local = current["campaign"]["messages"]["roster"]["variants"][pool]
+            campaign["messages"]["roster"]["variants"][pool].update(
+                validate_roster_copy(
+                    {
+                        key: copy.deepcopy(local[key])
+                        for key in ("title", "body", "buttons")
+                    }
+                )
+            )
+        candidates = []
+        for row in rows:
+            values = row.get("recurring_roster_copy") or {}
+            stamps = row.get("recurring_roster_copy_updated_at") or {}
+            if not isinstance(values, dict) or not isinstance(stamps, dict):
+                raise ValueError("Saved recurring roster copy is invalid")
+            if pool not in values:
+                continue
+            value, stamp = values[pool], stamps.get(pool)
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"title", "body", "buttons"}
+                or not isinstance(stamp, str)
+            ):
+                raise ValueError("Saved recurring roster copy is invalid")
+            try:
+                parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    raise ValueError
+                stamp = parsed.astimezone(timezone.utc).isoformat()
+            except ValueError as exc:
+                raise ValueError("Saved recurring roster version is invalid") from exc
+            # A field save may follow a whole save in the same clock tick.
+            # Its recorded source identity proves that order; a later whole
+            # save changes revision and invalidates this tie exception.
+            tied_after_whole = (
+                stamp
+                == cutoff
+                == str((recurring or {}).get("recurring_updated_at") or "")
+                and stamp > max(global_stamp, str(edits.get(pool) or ""))
+                and (row.get("recurring_roster_copy_base") or {}).get(pool)
+                == _recurring_template_identity(recurring)
+            )
+            if stamp > cutoff or tied_after_whole:
+                candidates.append((stamp, str(row["_id"]), value))
+        if candidates:
+            stamp, source, value = max(candidates, key=lambda item: item[:2])
+            campaign["messages"]["roster"]["variants"][pool].update(
+                copy.deepcopy(value)
+            )
+            versions[pool] = {"version": stamp, "source": source, "copy": value}
+    return (
+        hashlib.sha256(json.dumps(versions, sort_keys=True).encode()).hexdigest()[:24]
+        if versions
+        else None
+    )
+
+
 async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None) -> dict:
     guild_id = int(guild_id)
     saved = await mongo.bot_config.find_one({"_id": defaults_id(guild_id)})
@@ -691,16 +823,41 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
     selected_cycle = cycle or cycle_key(now, base.get("timezone", DEFAULT_TIMEZONE))
     row = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, selected_cycle)})
     override = copy.deepcopy(row.get("campaign")) if row else None
-    recurring_rows = await mongo.bot_config.find({
-        "kind": "cwl_campaign_cycle", "guild_id": guild_id,
-        "recurring_campaign": {"$exists": True},
-    }).to_list(length=None)
-    recurring_rows = [item for item in recurring_rows if item.get("cycle", "") <= selected_cycle]
-    recurring = max(recurring_rows, key=lambda item: item.get("recurring_updated_at", ""), default=None)
+    recurring_rows = await mongo.bot_config.find(
+        {
+            "kind": "cwl_campaign_cycle",
+            "guild_id": guild_id,
+            "$or": [
+                {"recurring_campaign": {"$exists": True}},
+                {"recurring_roster_copy": {"$exists": True}},
+            ],
+        }
+    ).to_list(length=None)
+    recurring_rows = [
+        item for item in recurring_rows if item.get("cycle", "") <= selected_cycle
+    ]
+    recurring = max(
+        (
+            item
+            for item in recurring_rows
+            if isinstance(item.get("recurring_campaign"), dict)
+        ),
+        key=lambda item: (
+            item.get("recurring_updated_at", ""),
+            item.get("recurring_pause_updated_at", ""),
+        ),
+        default=None,
+    )
+    using_recurring_override = False
     if recurring and recurring["_id"] != (row or {}).get("_id"):
-        if recurring.get("recurring_updated_at", "") >= (row or {}).get("updated_at", ""):
+        if recurring.get("recurring_updated_at", "") >= _whole_template_updated_at(row):
             override = copy.deepcopy(recurring["recurring_campaign"])
-    if isinstance(override, dict):
+            using_recurring_override = True
+    if isinstance(override, dict) and not (
+        _roster_copy_edit_stamps(row)
+        and row.get("roster_copy_base_campaign_missing") is True
+        and not using_recurring_override
+    ):
         # Older saved cycle snapshots predate the sequence feature. They keep
         # their individual schedules when future defaults adopt a sequence.
         override.setdefault("reminder_sequence", {"enabled": False})
@@ -715,17 +872,41 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
     # Full cycle snapshots are independent of future monthly defaults,
     # including newly provisioned sequence templates and sequence settings.
     campaign = _deep_merge(_saved_copy_baseline(override) if isinstance(override, dict) and "schema_version" in override else base, override)
-    if isinstance(override, dict) and not _uses_new_default_copy(override):
+    if (
+        isinstance(override, dict)
+        and not _uses_new_default_copy(override)
+        and not (
+            _roster_copy_edit_stamps(row)
+            and row.get("roster_copy_base_campaign_missing") is True
+            and not using_recurring_override
+        )
+    ):
         campaign.pop(DEFAULT_COPY_FIELD, None)
+    if recurring and recurring.get(
+        "recurring_pause_updated_at", ""
+    ) > _whole_template_updated_at(row):
+        campaign["paused"] = bool(recurring["recurring_campaign"].get("paused", False))
     if row is None:
         # Carry only destinations forward, not old messages, dates or delivery state.
         candidates = previous + ([saved] if saved and isinstance(saved.get("campaign"), dict) else [])
         for pool in ("main", "lazy"):
-            for source in sorted(candidates, key=lambda item: str(item.get("updated_at", "")), reverse=True):
-                channel = source["campaign"].get("messages", {}).get("roster", {}).get("variants", {}).get(pool, {}).get("destination_channel_id")
+            for source in sorted(
+                candidates,
+                key=lambda item: str(item.get("updated_at", "")),
+                reverse=True,
+            ):
+                channel = (
+                    source["campaign"]
+                    .get("messages", {})
+                    .get("roster", {})
+                    .get("variants", {})
+                    .get(pool, {})
+                    .get("destination_channel_id")
+                )
                 if channel:
                     campaign["messages"]["roster"]["variants"][pool]["destination_channel_id"] = channel
                     break
+    roster_copy_version = _apply_recurring_roster_copy(campaign, recurring_rows, row, recurring)
     campaign = normalize_signup_entry(campaign)
     validate_campaign(campaign)
     deliveries = copy.deepcopy((row or {}).get("deliveries", []))
@@ -738,6 +919,8 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
         "defaults_revision": int((saved or {}).get("revision", 0)),
         "activated": bool((row or {}).get("activated") or (saved or {}).get("activated") or recurring),
         "recurring_version": (recurring or {}).get("recurring_updated_at"),
+        "recurring_template_identity": _recurring_template_identity(recurring),
+        **({"recurring_roster_version": roster_copy_version} if roster_copy_version else {}),
         "campaign": campaign,
         "deliveries": deliveries,
         "sent_occurrences": sent_occurrences,
@@ -749,9 +932,11 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
     return result
 
 
-async def new_draft(mongo, guild_id: int, user_id: int, cycle: str | None = None, scope: str = "cycle") -> dict:
+async def new_draft(mongo, guild_id: int, user_id: int, cycle: str | None = None, scope: str = "cycle", *, purpose: str | None = None) -> dict:
     if scope not in {"cycle", "defaults"}:
         raise ValueError("scope must be cycle or defaults")
+    if purpose not in (None, "post_update"):
+        raise ValueError("Invalid campaign draft purpose")
     loaded = await load_campaign(mongo, guild_id, cycle)
     campaign = loaded["campaign"]
     if scope == "defaults":
@@ -760,12 +945,14 @@ async def new_draft(mongo, guild_id: int, user_id: int, cycle: str | None = None
     token = uuid.uuid4().hex
     draft = {
         "_id": draft_id(guild_id, token), "token": token, "kind": "cwl_campaign_draft",
+        **({"purpose": purpose, "expires_at": datetime.now(timezone.utc) + timedelta(days=1)} if purpose else {}),
         "guild_id": int(guild_id), "user_id": int(user_id), "cycle": loaded["cycle"],
         "scope": scope,
         "base_revision": loaded["defaults_revision"] if scope == "defaults" else loaded["revision"],
         "cycle_base_revision": loaded["revision"],
         "defaults_base_revision": loaded["defaults_revision"],
         "recurring_base_version": loaded.get("recurring_version"),
+        "recurring_roster_base_version": loaded.get("recurring_roster_version"),
         "campaign": copy.deepcopy(campaign), "created_at": now, "updated_at": now,
         "saved_campaign": copy.deepcopy(campaign),
     }
@@ -776,7 +963,28 @@ async def new_draft(mongo, guild_id: int, user_id: int, cycle: str | None = None
 async def load_draft(mongo, draft: str) -> dict | None:
     query = {"_id": draft} if str(draft).startswith("cwl:draft:") else {"kind": "cwl_campaign_draft", "token": str(draft)}
     row = await mongo.bot_config.find_one(query)
-    return row if row and row.get("kind") == "cwl_campaign_draft" else None
+    if row and row.get("kind") == "cwl_campaign_draft":
+        if row.get("purpose") == "post_update":
+            expiry = row.get("expires_at")
+            if not isinstance(expiry, datetime):
+                return None
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry <= datetime.now(timezone.utc):
+                return None
+        return row
+    return None
+
+
+async def discard_draft(mongo, draft: str, user_id: int) -> bool:
+    """Discard only an owned scratch draft, never a saved campaign."""
+    row = await load_draft(mongo, draft)
+    if row is None:
+        return False
+    if int(row["user_id"]) != int(user_id):
+        raise PermissionError("This draft belongs to another editor")
+    result = await mongo.bot_config.delete_one({"_id": row["_id"], "kind": "cwl_campaign_draft", "user_id": row["user_id"]})
+    return getattr(result, "deleted_count", 0) == 1
 
 
 async def find_draft(
@@ -784,7 +992,7 @@ async def find_draft(
 ) -> dict | None:
     """Return the editor's most recently updated resumable draft."""
     query = {
-        "kind": "cwl_campaign_draft", "guild_id": int(guild_id),
+        "kind": "cwl_campaign_draft", "purpose": {"$ne": "post_update"}, "guild_id": int(guild_id),
         "user_id": int(user_id),
     }
     if cycle is not None:
@@ -928,6 +1136,8 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
         from utils.cwl_web_bridge import campaign_generation
         if campaign_generation(live) != expected_generation:
             raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
+    if scope == "cycle" and row.get("recurring_roster_base_version") != live.get("recurring_roster_version"):
+        raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
     if repeat_monthly and row.get("recurring_base_version") != live.get("recurring_version"):
         raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
     current_revision = live["defaults_revision"] if scope == "defaults" else live["revision"]
@@ -1065,42 +1275,273 @@ async def _cycle_update(mongo, guild_id: int, cycle: str, update: dict):
     return await load_campaign(mongo, guild_id, cycle)
 
 
-async def set_paused(mongo, guild_id: int, paused: bool, cycle: str | None = None, user_id: int | None = None, *, expected_generation: str | None = None):
+def validate_roster_copy(candidate: dict) -> dict:
+    """Validate the intentionally small text/link-only post editor boundary."""
+    if not isinstance(candidate, dict) or set(candidate) != {
+        "title",
+        "body",
+        "buttons",
+    }:
+        raise ValueError("Only roster text and buttons can change")
+    if any(
+        not isinstance(candidate[field], str)
+        or not candidate[field].strip()
+        or len(candidate[field]) > 4000
+        for field in ("title", "body")
+    ):
+        raise ValueError("Check the roster text length")
+    buttons = candidate["buttons"]
+    if not isinstance(buttons, list) or len(buttons) > 5:
+        raise ValueError("Choose up to five link buttons")
+    cleaned = []
+    for button in buttons:
+        if (
+            not isinstance(button, dict)
+            or set(button) - {"label", "url", "emoji"}
+            or not {"label", "url"} <= set(button)
+        ):
+            raise ValueError("Check the link button fields")
+        label, url = button["label"], button["url"]
+        if (
+            not isinstance(label, str)
+            or not label.strip()
+            or len(label) > 80
+            or not isinstance(url, str)
+            or len(url) > 512
+        ):
+            raise ValueError("Check the link button label and URL")
+        try:
+            parsed = urlparse(url)
+            valid = (
+                parsed.scheme == "https"
+                and parsed.hostname
+                and not parsed.username
+                and not parsed.password
+                and not any(char.isspace() for char in url)
+            )
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ValueError("Link buttons must use HTTPS")
+        emoji = button.get("emoji")
+        if emoji is not None and (not isinstance(emoji, str) or len(emoji) > 64):
+            raise ValueError("Check the button emoji")
+        cleaned.append(
+            {"label": label, "url": url, **({"emoji": emoji} if emoji else {})}
+        )
+    return {"title": candidate["title"], "body": candidate["body"], "buttons": cleaned}
+
+
+async def save_updated_roster_variant(
+    mongo,
+    *,
+    guild_id: int,
+    cycle: str,
+    pool: str,
+    user_id: int,
+    candidate: dict,
+    expected_generation: str,
+    future_months: bool,
+):
+    """After a confirmed in-place edit, save only this pool's text/buttons.
+
+    One cycle-document CAS also records an optional field-scoped future copy.
+    This does not replace a general recurring campaign, change other messages,
+    reset delivery state, activate automation, or invoke a sender.
+    """
+    from utils.cwl_web_bridge import campaign_generation
+
+    if pool not in AUDIENCES or type(future_months) is not bool or int(user_id) < 1:
+        raise ValueError("Invalid roster post save scope")
+    candidate = validate_roster_copy(candidate)
+    loaded = await load_campaign(mongo, guild_id, cycle)
+    if campaign_generation(loaded) != expected_generation:
+        raise RuntimeError(
+            "Campaign changed; the updated post's saved copy was not overwritten"
+        )
+    reviewed = copy.deepcopy(loaded["campaign"])
+    reviewed["messages"]["roster"]["variants"][pool].update(copy.deepcopy(candidate))
+    validate_campaign(reviewed)
+    stamp = _utcnow()
+    fields = {
+        f"campaign.messages.roster.variants.{pool}.{key}": copy.deepcopy(value)
+        for key, value in candidate.items()
+    }
+    current = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, cycle)})
+    edits = dict(_roster_copy_edit_stamps(current))
+    base_campaign_missing = (
+        (current or {}).get("roster_copy_base_campaign_missing") is True
+        if edits
+        else not isinstance((current or {}).get("campaign"), dict)
+    )
+    edits[pool] = stamp
+    fields.update(
+        revision=loaded["revision"] + 1,
+        updated_at=stamp,
+        roster_copy_base_updated_at=_whole_template_updated_at(current),
+        roster_copy_base_recurring_identity=(
+            _recurring_template_identity(current)
+            if (current or {}).get("recurring_campaign")
+            else None
+        ),
+        roster_copy_base_revision=(
+            (current or {}).get("roster_copy_base_revision", loaded["revision"])
+            if _roster_copy_edit_stamps(current)
+            else loaded["revision"]
+        ),
+        roster_copy_edit_updated_at=edits,
+        roster_copy_edit_revision=loaded["revision"] + 1,
+        roster_copy_base_campaign_missing=base_campaign_missing,
+    )
+    if future_months:
+        fields[f"recurring_roster_copy.{pool}"] = copy.deepcopy(candidate)
+        fields[f"recurring_roster_copy_updated_at.{pool}"] = stamp
+        fields[f"recurring_roster_copy_base.{pool}"] = loaded.get(
+            "recurring_template_identity"
+        )
+    write = await mongo.bot_config.update_one(
+        {
+            "_id": cycle_id(guild_id, cycle),
+            "kind": "cwl_campaign_cycle",
+            "guild_id": int(guild_id),
+            "revision": loaded["revision"],
+        },
+        {
+            "$set": fields,
+            "$push": {
+                "actions": {
+                    "$each": [
+                        {
+                            "action": "roster_post_copy_saved",
+                            "pool": pool,
+                            "future_months": future_months,
+                            "at": stamp,
+                            "by": int(user_id),
+                        }
+                    ],
+                    "$slice": -HISTORY_LIMIT,
+                }
+            },
+        },
+    )
+    if getattr(write, "matched_count", 0) != 1:
+        raise RuntimeError(
+            "Campaign changed; the updated post's saved copy was not overwritten"
+        )
+    return {"campaign_saved": True, "recurring_saved": future_months}
+
+
+async def set_paused(
+    mongo,
+    guild_id: int,
+    paused: bool,
+    cycle: str | None = None,
+    user_id: int | None = None,
+    *,
+    expected_generation: str | None = None,
+):
     loaded = await load_campaign(mongo, guild_id, cycle)
     if expected_generation is not None:
         from utils.cwl_web_bridge import campaign_generation
+
         if campaign_generation(loaded) != expected_generation:
-            raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
+            raise RuntimeError(
+                "CWL settings changed. Reload the dashboard before saving."
+            )
     campaign = copy.deepcopy(loaded["campaign"])
     campaign["paused"] = bool(paused)
     now = _utcnow()
     old_revision = int(loaded["revision"])
+    current = (
+        await mongo.bot_config.find_one({"_id": cycle_id(guild_id, loaded["cycle"])})
+        or {}
+    )
     new_revision = old_revision + 1
-    update = {"$set": {"kind": "cwl_campaign_cycle", "guild_id": int(guild_id), "cycle": loaded["cycle"], "campaign": campaign, "activated": True, "revision": new_revision, "updated_at": now}, "$push": {
-        "actions": {"$each": [{"action": "paused" if paused else "resumed", "at": now, "by": user_id}], "$slice": -HISTORY_LIMIT},
-        "revisions": {"$each": [{"revision": new_revision, "at": now, "by": user_id, "action": "paused" if paused else "resumed", "campaign": copy.deepcopy(campaign)}], "$slice": -20},
-    }}
+    # Pause is operational state, never a new content-template save. Retain
+    # content clocks and field markers; a later ordinary Save invalidates this
+    # revision-bound identity even when its wall clock ties.
+    content_stamp = current.get("updated_at") or now
+    update = {
+        "$set": {
+            "kind": "cwl_campaign_cycle",
+            "guild_id": int(guild_id),
+            "cycle": loaded["cycle"],
+            "campaign": campaign,
+            "activated": True,
+            "revision": new_revision,
+            "updated_at": content_stamp,
+            "pause_edit_revision": new_revision,
+            "pause_base_revision": (
+                current.get("pause_base_revision", old_revision)
+                if current.get("pause_edit_revision") == old_revision
+                else old_revision
+            ),
+            "pause_recurring_identity": loaded.get("recurring_template_identity"),
+        },
+        "$push": {
+            "actions": {
+                "$each": [
+                    {
+                        "action": "paused" if paused else "resumed",
+                        "at": now,
+                        "by": user_id,
+                    }
+                ],
+                "$slice": -HISTORY_LIMIT,
+            },
+            "revisions": {
+                "$each": [
+                    {
+                        "revision": new_revision,
+                        "at": now,
+                        "by": user_id,
+                        "action": "paused" if paused else "resumed",
+                        "campaign": copy.deepcopy(campaign),
+                    }
+                ],
+                "$slice": -20,
+            },
+        },
+    }
+    if _roster_copy_edit_stamps(current):
+        update["$set"]["roster_copy_edit_revision"] = new_revision
     if loaded.get("recurring_version"):
-        source = await mongo.bot_config.find_one({"guild_id": int(guild_id), "recurring_updated_at": loaded["recurring_version"]})
+        source = await mongo.bot_config.find_one(
+            {
+                "guild_id": int(guild_id),
+                "recurring_updated_at": loaded["recurring_version"],
+            }
+        )
         recurring = copy.deepcopy(source["recurring_campaign"])
         recurring["paused"] = bool(paused)
-        update["$set"].update(recurring_campaign=recurring, recurring_updated_at=now)
+        update["$set"].update(
+            recurring_campaign=recurring,
+            recurring_updated_at=loaded["recurring_version"],
+            recurring_pause_updated_at=now,
+        )
     try:
         write = await mongo.bot_config.update_one(
             {"_id": cycle_id(guild_id, loaded["cycle"]), "revision": old_revision},
-            update, upsert=old_revision == 0,
+            update,
+            upsert=old_revision == 0,
         )
     except DuplicateKeyError as exc:
-        raise RuntimeError("CWL campaign changed while pause state was updating") from exc
+        raise RuntimeError(
+            "CWL campaign changed while pause state was updating"
+        ) from exc
     if not (
         getattr(write, "matched_count", 0)
         or getattr(write, "upserted_id", None) is not None
-        or (getattr(write, "matched_count", None) is None and getattr(write, "modified_count", 0))
+        or (
+            getattr(write, "matched_count", None) is None
+            and getattr(write, "modified_count", 0)
+        )
     ):
         raise RuntimeError("CWL campaign changed while pause state was updating")
     result = await load_campaign(mongo, guild_id, loaded["cycle"])
     try:
         from extensions.tasks import cwl_reminder
+
         if getattr(cwl_reminder, "mongo_client", None) is mongo:
             if loaded.get("recurring_version"):
                 await cwl_reminder._sync_all_campaigns()
@@ -1112,15 +1553,43 @@ async def set_paused(mongo, guild_id: int, paused: bool, cycle: str | None = Non
     return result
 
 
-async def skip_occurrence(mongo, guild_id: int, occurrence: str, cycle: str | None = None, user_id: int | None = None):
+async def skip_occurrence(
+    mongo,
+    guild_id: int,
+    occurrence: str,
+    cycle: str | None = None,
+    user_id: int | None = None,
+):
     loaded = await load_campaign(mongo, guild_id, cycle)
     valid = {item["id"] for item in loaded["schedule"]}
     if occurrence not in valid:
         raise ValueError("Unknown occurrence")
     now = _utcnow()
-    result = await _cycle_update(mongo, guild_id, loaded["cycle"], {"$set": {"activated": True}, "$addToSet": {"skipped": occurrence}, "$push": {"actions": {"$each": [{"action": "skipped", "occurrence_id": occurrence, "at": now, "by": user_id}], "$slice": -HISTORY_LIMIT}}})
+    result = await _cycle_update(
+        mongo,
+        guild_id,
+        loaded["cycle"],
+        {
+            "$set": {"activated": True},
+            "$addToSet": {"skipped": occurrence},
+            "$push": {
+                "actions": {
+                    "$each": [
+                        {
+                            "action": "skipped",
+                            "occurrence_id": occurrence,
+                            "at": now,
+                            "by": user_id,
+                        }
+                    ],
+                    "$slice": -HISTORY_LIMIT,
+                }
+            },
+        },
+    )
     try:
         from extensions.tasks import cwl_reminder
+
         if getattr(cwl_reminder, "mongo_client", None) is mongo:
             await cwl_reminder.sync_campaign_schedule(guild_id, loaded["cycle"])
     except Exception as exc:
@@ -1218,6 +1687,469 @@ async def record_delivery(mongo, guild_id: int, cycle: str, entry: dict):
     if item.get("status") == "sent" and item.get("occurrence_id"):
         update["$addToSet"] = {"sent_occurrences": item["occurrence_id"]}
     await mongo.bot_config.update_one({"_id": cycle_id(guild_id, cycle)}, update, upsert=True)
+
+
+def _catchup_scope(guild_id, cycle, occurrence):
+    parts = str(occurrence).split("|")
+    if (
+        not isinstance(guild_id, int) or isinstance(guild_id, bool) or guild_id <= 0
+        or not isinstance(cycle, str) or not _CYCLE_RE.fullmatch(cycle)
+        or len(parts) != 3 or parts[0] != cycle or parts[2] not in AUDIENCES
+        or parts[1] == "roster" or not re.fullmatch(r"[A-Za-z0-9:_-]{1,64}", parts[1])
+    ):
+        raise ValueError("Invalid catch-up scope")
+    return parts[1], parts[2]
+
+
+def _catchup_row_scope(row):
+    variants = row.get("variants")
+    if not isinstance(variants, list) or len(variants) != 1:
+        raise ValueError("Invalid catch-up audience")
+    gid, cycle, message_id = row.get("guild_id"), row.get("cycle"), row.get("message_id")
+    _catchup_scope(gid, cycle, occurrence_id(cycle, message_id, variants[0]))
+    if (
+        row.get("kind") != "campaign"
+        or row.get("job_kind", "scheduled") not in {"scheduled", "catchup"}
+        or row.get("status", "scheduled") != "scheduled"
+        or not isinstance(message_id, str)
+        or not isinstance(row.get("failure_count", 0), int)
+        or isinstance(row.get("failure_count", 0), bool)
+        or row.get("failure_count", 0) != 0
+        or row.get("_id") != f"cwl_campaign:{gid}:{cycle}:{message_id}:{variants[0]}"
+    ):
+        raise ValueError("Invalid persisted catch-up job")
+    if row.get("job_kind") == "catchup" and (
+        not isinstance(row.get("catchup"), dict)
+        or row["catchup"].get("protocol") != 1
+        or isinstance(row["catchup"].get("protocol"), bool)
+        or not isinstance(row["catchup"].get("original_due_at"), str)
+    ):
+        raise ValueError("Invalid catch-up protocol")
+
+
+STAFF_SEND_BUSY_REASON = "Not sent: another send was running. Send again."
+
+
+def _staff_request_scope(row):
+    variants = row.get("variants")
+    request_id = row.get("staff_request_id")
+    if (
+        not isinstance(variants, list) or len(variants) != 1
+        or not isinstance(request_id, str)
+        or not re.fullmatch(r"[a-f0-9]{32}", request_id)
+        or row.get("kind") != "campaign"
+        or row.get("job_kind") not in {"manual", "retry"}
+        or row.get("status") not in {"scheduled", "ledger_pending"}
+        or not isinstance(row.get("message_id"), str)
+        or not isinstance(row.get("generation"), str)
+        or not isinstance(row.get("run_time"), str)
+        or row.get("failure_count", 0) != 0
+    ):
+        raise ValueError("Invalid queued staff request")
+    gid, cycle, message_key = row.get("guild_id"), row.get("cycle"), row.get("message_id")
+    _catchup_scope(gid, cycle, occurrence_id(cycle, message_key, variants[0]))
+    if row.get("_id") != f"cwl_campaign:{gid}:{cycle}:{message_key}:{variants[0]}":
+        raise ValueError("Queued staff request ownership changed")
+    return occurrence_id(cycle, message_key, variants[0])
+
+
+async def load_queued_staff_job(mongo, guild_id, cycle, message_key, variant, generation, request_id):
+    _catchup_scope(guild_id, cycle, occurrence_id(cycle, message_key, variant))
+    row = await mongo.cwl_pending_reminders.find_one({
+        "_id": f"cwl_campaign:{guild_id}:{cycle}:{message_key}:{variant}",
+        "kind": "campaign", "job_kind": {"$in": ["manual", "retry"]},
+        "generation": generation, "variants": [variant],
+        "staff_request_id": request_id,
+        "status": {"$in": ["scheduled", "ledger_pending"]},
+    })
+    if row is not None:
+        _staff_request_scope(row)
+    return row
+
+
+def is_staff_not_sent_receipt(row):
+    receipt = row.get("receipt")
+    variants = row.get("variants")
+    return (
+        row.get("status") == "ledger_pending"
+        and isinstance(receipt, dict)
+        and receipt.get("staff_request_id") == row.get("staff_request_id")
+        and receipt.get("status") == "failed"
+        and receipt.get("delivery_attempted") is False
+        and receipt.get("reason") == STAFF_SEND_BUSY_REASON
+        and isinstance(variants, list) and len(variants) == 1
+        and receipt.get("message_key") == row.get("message_id")
+        and receipt.get("variant") == variants[0]
+        and receipt.get("occurrence_id") == occurrence_id(
+            row.get("cycle"), row.get("message_id"), variants[0]
+        )
+    )
+
+
+async def record_staff_not_sent(mongo, row):
+    """Finish one known-no-POST staff outcome; never release another send."""
+    oid = _staff_request_scope(row)
+    gid, cycle, request_id = row["guild_id"], row["cycle"], row["staff_request_id"]
+    identity = {
+        "_id": row["_id"], "kind": "campaign", "job_kind": row["job_kind"],
+        "generation": row["generation"], "staff_request_id": request_id,
+        "run_time": row["run_time"], "variants": row["variants"],
+    }
+    if row["status"] == "scheduled":
+        receipt = {
+            "occurrence_id": oid, "message_key": row["message_id"],
+            "variant": row["variants"][0], "status": "failed",
+            "reason": STAFF_SEND_BUSY_REASON, "at": _utcnow(),
+            "staff_request_id": request_id, "delivery_attempted": False,
+        }
+        result = await mongo.cwl_pending_reminders.update_one(
+            {**identity, "status": "scheduled"},
+            {"$set": {"status": "ledger_pending", "receipt": receipt}},
+        )
+        if not getattr(result, "matched_count", 0):
+            return False
+    else:
+        if not is_staff_not_sent_receipt(row):
+            raise ValueError("Queued staff outcome needs review")
+        receipt = copy.deepcopy(row["receipt"])
+    recorded = False
+    try:
+        result = await mongo.bot_config.update_one(
+            {"_id": cycle_id(gid, cycle), "staff_not_sent_requests": {"$ne": request_id},
+             "sent_occurrences": {"$ne": oid}},
+            {
+                "$setOnInsert": {"kind": "cwl_campaign_cycle", "guild_id": int(gid), "cycle": cycle, "revision": 0},
+                "$push": {
+                    "deliveries": {"$each": [receipt], "$slice": -HISTORY_LIMIT},
+                    "staff_not_sent_requests": {"$each": [request_id], "$slice": -HISTORY_LIMIT},
+                },
+            },
+            upsert=True,
+        )
+        recorded = bool(getattr(result, "matched_count", 0) or getattr(result, "upserted_id", None))
+    except DuplicateKeyError:
+        pass
+    if not recorded:
+        current = await mongo.bot_config.find_one(
+            {"_id": cycle_id(gid, cycle)}, {"staff_not_sent_requests": 1, "sent_occurrences": 1}
+        ) or {}
+        if request_id not in current.get("staff_not_sent_requests", ()) and oid not in current.get("sent_occurrences", ()):
+            raise RuntimeError("Staff not-sent outcome was not recorded")
+    await mongo.cwl_pending_reminders.delete_one({
+        **identity, "status": "ledger_pending", "receipt.staff_request_id": request_id,
+    })
+    return True
+
+
+async def catchup_state(mongo, guild_id: int, cycle: str) -> dict:
+    """Indexed, bounded state needed for a startup catch-up decision."""
+    row = await mongo.bot_config.find_one(
+        {"_id": cycle_id(guild_id, cycle)},
+        {"catchup_reported_occurrences": 1, "delivery_claims": 1, "uncertain_occurrences": 1, "sent_occurrences": 1},
+    ) or {}
+    return {
+        "reported": list(row.get("catchup_reported_occurrences", ())),
+        "claims": copy.deepcopy(row.get("delivery_claims", {})),
+        "uncertain": list(row.get("uncertain_occurrences", ())),
+        "sent": list(row.get("sent_occurrences", ())),
+    }
+
+
+async def record_legacy_catchup_skip(mongo, row: dict, original_due_at: str) -> bool:
+    """Report one combined legacy job without consuming either pool occurrence."""
+    if (
+        not isinstance(original_due_at, str)
+        or not re.search(r"(?:Z|[+-][0-9]{2}:[0-9]{2})$", original_due_at)
+        or pendulum.parse(original_due_at) != pendulum.parse(row.get("run_time"))
+    ):
+        raise ValueError("Legacy reminder time changed")
+    variants = row.get("variants")
+    if (
+        not isinstance(variants, list)
+        or len(variants) != 2
+        or any(not isinstance(value, str) for value in variants)
+        or set(variants) != set(AUDIENCES)
+    ):
+        raise ValueError("Invalid combined reminder audiences")
+    gid, cycle, message_key = row.get("guild_id"), row.get("cycle"), row.get("message_id")
+    base_id = f"cwl_campaign:{gid}:{cycle}:{message_key}"
+    _catchup_row_scope({
+        **row, "_id": f"{base_id}:{variants[0]}", "variants": [variants[0]],
+    })
+    if (
+        row.get("_id") not in {base_id, *(f"{base_id}:{value}" for value in variants)}
+        or row.get("kind") != "campaign"
+        or row.get("job_kind", "scheduled") != "scheduled"
+        or row.get("status", "scheduled") != "scheduled"
+    ):
+        raise ValueError("Invalid combined legacy reminder")
+    query = {
+        "_id": cycle_id(gid, cycle),
+        "catchup_legacy_reported_jobs": {"$ne": row["_id"]},
+    }
+    entry = {
+        "message_key": message_key,
+        "status": "skipped",
+        "reason": "Skipped: older reminder listed Main and Lazy together; review settings",
+        "at": _utcnow(),
+        "original_due_at": original_due_at,
+        "revision": row.get("generation"),
+    }
+    recorded = False
+    try:
+        result = await mongo.bot_config.update_one(
+            query,
+            {
+                "$setOnInsert": {
+                    "kind": "cwl_campaign_cycle", "guild_id": int(gid),
+                    "cycle": cycle, "revision": 0,
+                },
+                "$addToSet": {"catchup_legacy_reported_jobs": row["_id"]},
+                "$push": {"deliveries": {"$each": [entry], "$slice": -HISTORY_LIMIT}},
+            },
+            upsert=True,
+        )
+        recorded = bool(getattr(result, "matched_count", 0) or getattr(result, "upserted_id", None))
+    except DuplicateKeyError:
+        pass
+    if not recorded:
+        current = await mongo.bot_config.find_one(
+            {"_id": cycle_id(gid, cycle)}, {"catchup_legacy_reported_jobs": 1}
+        ) or {}
+        if row["_id"] not in current.get("catchup_legacy_reported_jobs", ()):
+            raise RuntimeError("Legacy reminder decision was not recorded")
+    await mongo.cwl_pending_reminders.delete_one({
+        "_id": row["_id"], "kind": "campaign", "variants": variants,
+        "run_time": row.get("run_time"),
+        "job_kind": row.get("job_kind", {"$exists": False}),
+        "status": row.get("status", {"$exists": False}),
+        "generation": row.get("generation", {"$exists": False}),
+    })
+    return recorded
+
+
+async def prepare_catchup_job(mongo, row: dict, due, now) -> bool:
+    """CAS one existing scheduled row; never derive or insert a missing job."""
+    _catchup_row_scope(row)
+    query = {
+        "_id": row["_id"],
+        "kind": "campaign",
+        "generation": row.get("generation"),
+        "run_time": row.get("run_time"),
+        "job_kind": row.get("job_kind", {"$exists": False}),
+        "status": row.get("status", {"$exists": False}),
+    }
+    result = await mongo.cwl_pending_reminders.update_one(
+        query,
+        {"$set": {
+            "job_kind": "catchup",
+            "status": "scheduled",
+            "run_time": now.isoformat(),
+            "catchup": {"protocol": 1, "original_due_at": due.isoformat()},
+            "updated_at": _utcnow(),
+        }},
+    )
+    return bool(getattr(result, "matched_count", 0))
+
+
+async def delete_catchup_job(mongo, row: dict) -> None:
+    """Delete only the observed job or confirmed receipt, never a replacement."""
+    recovering = row.get("status") == "ledger_pending"
+    if recovering:
+        receipt = row.get("receipt")
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("status") != "sent"
+            or receipt.get("late") is not True
+        ):
+            raise ValueError("Invalid late receipt recovery")
+        _catchup_row_scope({**row, "status": "scheduled"})
+    else:
+        _catchup_row_scope(row)
+    query = {
+        "_id": row["_id"], "kind": "campaign",
+        "generation": row.get("generation"),
+        "job_kind": row.get("job_kind", {"$exists": False}),
+        "status": row.get("status", {"$exists": False}),
+    }
+    if recovering:
+        query["receipt.message_id"] = row["receipt"].get("message_id")
+    if row.get("job_kind") == "catchup":
+        query["catchup.original_due_at"] = row["catchup"]["original_due_at"]
+    else:
+        query["run_time"] = row.get("run_time")
+    await mongo.cwl_pending_reminders.delete_one(query)
+
+
+async def record_catchup_decision(
+    mongo, guild_id: int, cycle: str, entry: dict
+) -> bool:
+    """One durable catch-up report; do not consume a future ordinary send."""
+    oid = entry["occurrence_id"]
+    message_key, variant = _catchup_scope(guild_id, cycle, oid)
+    if entry.get("message_key") != message_key or entry.get("variant") != variant:
+        raise ValueError("Catch-up receipt scope changed")
+    status = entry["status"]
+    if status not in {"skipped", "uncertain", "failed"}:
+        raise ValueError("Invalid catch-up decision")
+    query = {
+        "_id": cycle_id(guild_id, cycle),
+        "catchup_reported_occurrences": {"$ne": oid},
+        "sent_occurrences": {"$ne": oid},
+    }
+    if status != "uncertain":
+        query["uncertain_occurrences"] = {"$ne": oid}
+    item = copy.deepcopy(entry)
+    item.setdefault("at", _utcnow())
+    add = {"catchup_reported_occurrences": oid}
+    if status == "uncertain":
+        add["uncertain_occurrences"] = oid
+    try:
+        result = await mongo.bot_config.update_one(
+            query,
+            {
+                "$setOnInsert": {
+                    "kind": "cwl_campaign_cycle", "guild_id": int(guild_id),
+                    "cycle": cycle, "revision": 0,
+                },
+                "$addToSet": add,
+                "$push": {"deliveries": {"$each": [item], "$slice": -HISTORY_LIMIT}},
+            },
+            upsert=True,
+        )
+    except DuplicateKeyError:
+        return False
+    return bool(getattr(result, "matched_count", 0) or getattr(result, "upserted_id", None))
+
+
+async def begin_catchup_attempt(
+    mongo, *, guild_id: int, cycle: str, occurrence: str, generation: str,
+    job_id: str, original_due_at: str,
+) -> bool:
+    """Reserve uncertainty durably before entering Discord's POST boundary."""
+    message_key, variant = _catchup_scope(guild_id, cycle, occurrence)
+    if job_id != f"cwl_campaign:{guild_id}:{cycle}:{message_key}:{variant}":
+        raise ValueError("Catch-up job scope changed")
+    pending = await mongo.cwl_pending_reminders.find_one({
+        "_id": job_id, "kind": "campaign", "job_kind": "catchup",
+        "generation": generation, "catchup.original_due_at": original_due_at,
+        "catchup.protocol": 1, "status": "scheduled",
+    }, {"_id": 1})
+    if pending is None:
+        return False
+    key = occurrence.replace(".", "_")
+    result = await mongo.bot_config.update_one(
+        {
+            "_id": cycle_id(guild_id, cycle),
+            f"delivery_claims.{key}.generation": generation,
+            "sent_occurrences": {"$ne": occurrence},
+            "uncertain_occurrences": {"$ne": occurrence},
+            "skipped": {"$ne": occurrence},
+            "catchup_reported_occurrences": {"$ne": occurrence},
+        },
+        {"$addToSet": {"uncertain_occurrences": occurrence}},
+    )
+    return bool(getattr(result, "matched_count", 0))
+
+
+async def finish_catchup_attempt(mongo, guild_id: int, cycle: str, occurrence: str):
+    """Only a confirmed receipt (or known no-POST path) may clear this marker."""
+    _catchup_scope(guild_id, cycle, occurrence)
+    await mongo.bot_config.update_one(
+        {"_id": cycle_id(guild_id, cycle)},
+        {"$pull": {"uncertain_occurrences": occurrence}},
+    )
+
+
+async def release_catchup_preflight_claim(mongo, guild_id, cycle, occurrence, claim):
+    """New-protocol absence of an attempt marker proves POST was not entered."""
+    _catchup_scope(guild_id, cycle, occurrence)
+    key = occurrence.replace(".", "_")
+    result = await mongo.bot_config.update_one(
+        {
+            "_id": cycle_id(guild_id, cycle),
+            f"delivery_claims.{key}.at": claim.get("at"),
+            f"delivery_claims.{key}.generation": claim.get("generation"),
+            "uncertain_occurrences": {"$ne": occurrence},
+            "sent_occurrences": {"$ne": occurrence},
+        },
+        {"$unset": {f"delivery_claims.{key}": ""}},
+    )
+    return bool(getattr(result, "matched_count", 0))
+
+
+async def persist_catchup_receipt(mongo, row: dict, receipt: dict, error_type: str):
+    """A confirmed post owns its occurrence until its receipt is durable."""
+    _catchup_row_scope(row)
+    if receipt.get("occurrence_id") != occurrence_id(row["cycle"], row["message_id"], row["variants"][0]) or receipt.get("status") != "sent":
+        raise ValueError("Invalid confirmed catch-up receipt")
+    result = await mongo.cwl_pending_reminders.update_one(
+        {
+            "_id": row["_id"],
+            "kind": "campaign",
+            "job_kind": "catchup",
+            "status": "scheduled",
+            "generation": row["generation"],
+            "catchup.protocol": 1,
+            "catchup.original_due_at": row["catchup"]["original_due_at"],
+        },
+        {"$set": {
+            "kind": "campaign", "job_kind": "catchup", "status": "ledger_pending",
+            "guild_id": row["guild_id"], "cycle": row["cycle"],
+            "message_id": row["message_id"], "variants": list(row["variants"]),
+            "generation": row["generation"], "catchup": copy.deepcopy(row["catchup"]),
+            "receipt": copy.deepcopy(receipt), "last_error_type": error_type,
+            "updated_at": _utcnow(),
+        }},
+    )
+    if not getattr(result, "matched_count", 0):
+        raise RuntimeError("Catch-up receipt owner changed")
+
+
+async def record_catchup_delivery(mongo, guild_id, cycle, receipt):
+    """Idempotently persist one confirmed late receipt, including lost ACKs."""
+    oid = receipt["occurrence_id"]
+    message_key, variant = _catchup_scope(guild_id, cycle, oid)
+    if (
+        receipt.get("status") != "sent" or receipt.get("late") is not True
+        or receipt.get("message_key") != message_key or receipt.get("variant") != variant
+        or not isinstance(receipt.get("at"), str)
+    ):
+        raise ValueError("Invalid confirmed late receipt")
+    try:
+        result = await mongo.bot_config.update_one(
+            {"_id": cycle_id(guild_id, cycle), "sent_occurrences": {"$ne": oid}},
+            {
+                "$setOnInsert": {"kind": "cwl_campaign_cycle", "guild_id": guild_id, "cycle": cycle, "revision": 0},
+                "$addToSet": {"sent_occurrences": oid},
+                "$push": {"deliveries": {"$each": [copy.deepcopy(receipt)], "$slice": -HISTORY_LIMIT}},
+            },
+            upsert=True,
+        )
+        if getattr(result, "matched_count", 0) or getattr(result, "upserted_id", None):
+            return True
+    except DuplicateKeyError:
+        pass
+    current = await mongo.bot_config.find_one(
+        {"_id": cycle_id(guild_id, cycle)}, {"deliveries": 1}
+    ) or {}
+    if any(
+        item.get("occurrence_id") == oid and item.get("status") == "sent"
+        and item.get("message_id") == receipt.get("message_id")
+        for item in current.get("deliveries", ())
+    ):
+        return False
+    raise ValueError("Confirmed reminder receipt needs review")
+
+
+async def load_catchup_job(mongo, guild_id, cycle, message_key, variant, generation, due_at):
+    _catchup_scope(guild_id, cycle, occurrence_id(cycle, message_key, variant))
+    return await mongo.cwl_pending_reminders.find_one({
+        "_id": f"cwl_campaign:{guild_id}:{cycle}:{message_key}:{variant}",
+        "kind": "campaign", "job_kind": "catchup", "generation": generation,
+        "catchup.original_due_at": due_at, "catchup.protocol": 1,
+        "status": "scheduled",
+    })
 
 
 def roster_delivery_nonce(guild_id: int, occurrence: str, deliveries: list[dict]) -> str:

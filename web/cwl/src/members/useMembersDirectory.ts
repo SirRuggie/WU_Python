@@ -8,6 +8,11 @@ export type MembersDirectory = Omit<Directory, "members"> & {
   members: DirectoryMember[];
   roles: RoleChoice[];
   manageable_roles: RoleChoice[];
+  directory_cache?: {
+    cached: boolean;
+    checked_at: string;
+    max_age_seconds: number;
+  };
 };
 const discordId = (value: unknown) =>
   typeof value === "string" && /^[1-9][0-9]{14,21}$/.test(value);
@@ -30,7 +35,7 @@ export default function useMembersDirectory(
     controller.current?.abort();
     setData(null);
   }
-  async function load() {
+  async function load(force = true) {
     if (!enabled) return;
     const version = ++generation.current;
     controller.current?.abort();
@@ -41,7 +46,7 @@ export default function useMembersDirectory(
     const timer = window.setTimeout(() => abort.abort(), 45000);
     try {
       const next = await api<MembersDirectory>(
-        "/manage/members/overview",
+        "/manage/members/overview" + (force ? "?refresh=1" : ""),
         "GET",
         undefined,
         { signal: abort.signal },
@@ -49,6 +54,13 @@ export default function useMembersDirectory(
       if (!alive.current || version !== generation.current) return;
       if (
         !next ||
+        (next.directory_cache !== undefined &&
+          (!next.directory_cache ||
+            typeof next.directory_cache.cached !== "boolean" ||
+            typeof next.directory_cache.checked_at !== "string" ||
+            !Number.isFinite(Date.parse(next.directory_cache.checked_at)) ||
+            !Number.isFinite(next.directory_cache.max_age_seconds) ||
+            next.directory_cache.max_age_seconds <= 0)) ||
         !Array.isArray(next.members) ||
         next.members.length > 10000 ||
         next.members.some(
@@ -133,7 +145,7 @@ export default function useMembersDirectory(
   }
   useEffect(() => {
     alive.current = true;
-    if (enabled) void load();
+    if (enabled) void load(false);
     else {
       setData(null);
       setLoading(false);

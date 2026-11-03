@@ -1363,3 +1363,16 @@ season menu retained the subsequently picked season. This may predate the shared
 picker change; that attribution is unproven. Investigate with a bounded baseline
 comparison in a separately approved change. No history/selection fix is bundled
 into122/152.
+### Update-post review corrections (146)
+
+Only an actual whole-template save supersedes a saved future-month roster copy;
+pause/resume and other metadata updates preserve it. Pending edits expire after
+five minutes unless atomically claimed. Expiry says “Not updated. Preview again.”;
+only a possibly applied Discord edit is uncertain. Native galleries retain their
+original positions or the edit is refused. Role previews resolve names without
+showing IDs. The backend compares native observed/proposed payloads and exposes
+`has_changes`; the UI refuses Update unless it is explicitly true. Refresh status
+preserves the staff member's future-month checkbox choice. Open post uses the
+shared link style, with short month/status copy. This review uses fake Discord and
+owned databases; it does not establish live delivery. Release remains held for the
+owner's preview approval. Final gate evidence is recorded in the PR review notes.

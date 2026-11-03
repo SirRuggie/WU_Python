@@ -298,6 +298,14 @@ export default function MembersPage({
               Math.min((currentPage + 1) * 25, rows.length),
               rows.length,
             )}
+            {directory.loading ? (
+              <span role="status"> · Updating member list…</span>
+            ) : data.directory_cache?.cached ? (
+              <span className="small" title="Refresh for latest">
+                {" "}
+                · Recent member list
+              </span>
+            ) : null}
           </p>
           {unknown && <p role="alert">{t.selectedLeft}</p>}
           <MemberBulkBar

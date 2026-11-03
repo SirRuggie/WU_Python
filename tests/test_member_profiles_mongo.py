@@ -324,10 +324,18 @@ def test_real_standardize_selection_restart_pacing_and_bounded_receipts():
             await restarted.prune()
             assert (
                 await db.bot_config.count_documents(
-                    {"kind": KIND, "state": "done"}
+                    {
+                        "kind": KIND,
+                        "state": "done",
+                        "_id": {"$in": ["old:" + str(index) for index in range(25)]},
+                    }
                 )
                 == 20
             )
+            # The separately scoped guild1 parent and its uncertain child are
+            # safety receipts, not one of the 25 unscoped legacy history rows.
+            assert await db.bot_config.find_one({"_id": parent["_id"]})
+            assert (await db.bot_config.find_one({"_id": child["_id"]}))["status"] == "uncertain"
             assert not await db.bot_config.find_one({"parent_id": "old:24"})
             replacement = await runs.preview(
                 actor_id=ACTOR, guild_id=1, rows=[other]

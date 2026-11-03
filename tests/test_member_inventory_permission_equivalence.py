@@ -9,6 +9,7 @@ import json
 import hikari
 import pytest
 from extensions.warrior import core
+from utils.role_hierarchy import RolePositions
 from cwl_web import member_timezones as routes
 from cwl_web import manage_roles
 
@@ -38,6 +39,7 @@ def test_membership_lookup_matches_legacy_for_mixed_roles_owners_and_admins():
     roles = [
         S(id=1000 + i, position=i // 2, permissions=(1 << (i % 40))) for i in range(245)
     ]
+    indexed = RolePositions(roles)
     for count in (0, 1, 5, 25, 100, 220, 245):
         for owner in (False, True):
             for _ in range(20):
@@ -47,6 +49,7 @@ def test_membership_lookup_matches_legacy_for_mixed_roles_owners_and_admins():
                     member, roles, 7 if owner else 8
                 ) == legacy_permissions(member, roles, 7 if owner else 8)
                 assert core.top(member, roles) == legacy_top(member, roles)
+                assert core.top(member, indexed) == legacy_top(member, roles)
 
 
 @pytest.mark.parametrize("actor_case", ["ordinary", "admin", "owner", "no_roles"])
@@ -148,3 +151,11 @@ def test_complete_inventory_rows_and_role_editability_unchanged(
         assert str(gid + 1002) not in {r["id"] for r in optimized["manageable_roles"]}
 
     asyncio.run(run())
+
+
+def test_role_index_preserves_duplicate_unknown_and_negative_position_rules():
+    roles = [S(id=1, position=-2), S(id=1, position=-1), S(id=2, position=0)]
+    index = RolePositions(roles)
+    for ids in [(), (1,), (1, 1), (1, 999), (1, 2), (999,)]:
+        member = S(role_ids=ids)
+        assert core.top(member, index) == legacy_top(member, roles)

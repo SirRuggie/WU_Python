@@ -179,6 +179,9 @@ async def confirm(request):
             )
         except (ValueError, TypeError) as error:
             raise web.HTTPConflict(text=str(error)) from error
+    from .member_directory_cache import invalidate
+
+    invalidate(getattr(request, "app", {}))
     return web.json_response(dict(run_id=run["_id"], state=run["state"]))
 
 
@@ -212,6 +215,9 @@ async def status(request):
             )
         except ValueError as error:
             raise web.HTTPNotFound(text=str(error)) from error
+    from .member_directory_cache import observe_run
+
+    observe_run(getattr(request, "app", {}), run, children)
     known = {row["_id"]: row for row in children}
     rows = []
     for index, item in enumerate(run["items"]):

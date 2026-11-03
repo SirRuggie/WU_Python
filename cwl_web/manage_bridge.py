@@ -258,7 +258,7 @@ async def send(request):
 
 
 def routes():
-    from . import manage_reminders, roster_sequence_tests, announcement_recovery, announcement_settings
+    from . import manage_reminders, roster_sequence_tests, announcement_recovery, announcement_settings, announcement_post_updates
     from .roster_sequence_review import resume as resume_sequence, recover as recover_sequence, repair_closing, assume_announcement
     return [web.get(API + '/seasons/{season_id}/manage-bridge', status),
             web.post(API + '/seasons/{season_id}/manage-bridge/bind', bind),
@@ -273,7 +273,7 @@ def routes():
             web.put(API + '/manage/announcement-test-channel', announcement_settings.save),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/test-full', roster_sequence_tests.prepare),
             web.get(API + '/seasons/{season_id}/manage-bridge/{pool}/test-full/{request_id}', roster_sequence_tests.status),
-            web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/test', test_announcement)] + manage_reminders.routes()
+            web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/test', test_announcement)] + manage_reminders.routes() + announcement_post_updates.routes()
 
 async def test_announcement(request):
     """Preview only: no role pings, campaign edits, or production delivery claims."""

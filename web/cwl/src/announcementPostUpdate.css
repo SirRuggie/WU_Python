@@ -1,0 +1,66 @@
+.announcement-post-copy {
+  display: grid;
+  gap: 1rem;
+}
+.announcement-post-copy label {
+  display: grid;
+  gap: 0.35rem;
+}
+.announcement-post-copy input,
+.announcement-post-copy textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+}
+.announcement-post-copy fieldset {
+  min-width: 0;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+}
+.announcement-post-copy button {
+  min-height: 44px;
+}
+.announcement-post-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-block: 1rem;
+  overflow-wrap: anywhere;
+}
+.announcement-post-future {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+}
+.announcement-post-future input {
+  width: 20px;
+  height: 20px;
+}
+@media (max-width: 700px) {
+  .announcement-post-comparison {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.announcement-post-footer {
+  display: grid;
+  gap: 0.4rem;
+  width: 100%;
+}
+.announcement-post-footer button {
+  min-height: 44px;
+  width: 100%;
+}
+
+.announcement-post-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-inline-end: 0.75rem;
+}
+
+.announcement-post-panel {
+  --action-panel-width: 60rem;
+}
