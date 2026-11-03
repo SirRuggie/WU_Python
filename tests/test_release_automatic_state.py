@@ -195,7 +195,8 @@ def test_only_four_named_capture_timestamps_pass_with_exact_counts():
     before, after = sql_fixture()
     report = compare_sqlite_snapshots(before, after)
     assert report["changed_rows"] == 4 and report["table_counts"] == {
-        k: 1 for k in CAPTURE_FIELDS
+        **{k: 1 for k in CAPTURE_FIELDS},
+        "participation_sync_settings": 0,
     }
     assert {r["fields"][0]["column"] for r in report["automatic_changes"]} == {
         "checked_at",
