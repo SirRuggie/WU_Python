@@ -1,3 +1,4 @@
+import useConfirmDialog from "./useConfirmDialog";
 import { useEffect, useId, useRef, useState } from "react";
 import DiscordIdentity from "./DiscordIdentity";
 import useDiscordIdentities from "./useDiscordIdentities";
@@ -52,6 +53,9 @@ export default function ParticipationRecord({
   onReset,
   onDirty,
 }: Props) {
+  const { confirm, dialog: confirmation } = useConfirmDialog(
+    `${account.tag}:${account.revision}:${publicationVersion}:${readonly}:${locked}:${open}`,
+  );
   const titleId = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
@@ -132,11 +136,14 @@ export default function ParticipationRecord({
     });
     setError("");
   };
-  const closeEditor = () => {
+  const closeEditor = async () => {
     if (busy) return;
     if (
       changed &&
-      !window.confirm(`Discard unsaved results for ${account.player_name}?`)
+      !(await confirm(
+        `Discard unsaved results for ${account.player_name}?`,
+        "Discard results",
+      ))
     )
       return;
     if (changed) useLatest();
@@ -200,9 +207,10 @@ export default function ParticipationRecord({
       ? " These source results are partial and may change."
       : "";
     if (
-      !window.confirm(
+      !(await confirm(
         `Replace manual attack and star overrides for ${account.player_name} with synced values? Staff notes stay saved.${partial}`,
-      )
+        "Use synced results",
+      ))
     )
       return;
     pending.current = true;
@@ -231,13 +239,14 @@ export default function ParticipationRecord({
     <article
       className={`participation-row${account.roster_changed ? " participation-row-changed" : ""}`}
     >
+      {confirmation}
       <div className="participation-identity">
         <strong>{account.player_name}</strong>
         <small>
           {account.tag} · TH {account.town_hall ?? "—"} ·{" "}
           {account.assigned_clan_name ||
             account.assigned_clan_tag ||
-            "Awaiting placement"}
+            "Unplaced"}
         </small>
       </div>
       <div className="participation-values">
@@ -308,15 +317,8 @@ export default function ParticipationRecord({
           }
         }}
         onCancel={(event) => {
-          if (
-            busy ||
-            (changed &&
-              !window.confirm(
-                `Discard unsaved results for ${account.player_name}?`,
-              ))
-          )
-            event.preventDefault();
-          else if (changed) useLatest();
+          event.preventDefault();
+          void closeEditor();
         }}
         onClose={() => {
           onClose();
@@ -335,7 +337,7 @@ export default function ParticipationRecord({
               {account.pool === "main" ? "Main CWL" : "Lazy CWL"} ·{" "}
               {account.assigned_clan_name ||
                 account.assigned_clan_tag ||
-                "Unassigned"}
+                "Unplaced"}
             </small>
           </div>
           <button type="button" disabled={busy} onClick={closeEditor}>
@@ -367,7 +369,7 @@ export default function ParticipationRecord({
               ·{" "}
               {account.previous_results.assigned_clan_name ||
                 account.previous_results.assigned_clan_tag ||
-                "Unassigned"}{" "}
+                "Unplaced"}{" "}
               · {account.previous_results.attacks ?? "—"} attacks ·{" "}
               {account.previous_results.stars ?? "—"} stars
             </p>

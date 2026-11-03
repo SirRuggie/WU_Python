@@ -1,3 +1,4 @@
+import { visibleRefresh } from "./visibleRefresh";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import ConfirmDialog from "./ConfirmDialog";
@@ -112,8 +113,7 @@ export default function ChangeHistory({
   }
   useEffect(() => {
     if (!pending) return;
-    const timer = window.setInterval(() => void check(), 2500);
-    return () => window.clearInterval(timer);
+    return visibleRefresh(check, 2500);
   }, [pending]);
   async function restore(side: "before" | "after") {
     const entry = entries.find((row) => row.id === selected);

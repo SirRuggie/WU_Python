@@ -61,6 +61,8 @@ it("shows only confirmed checks and per-clan counts across multiple clans", asyn
   expect(host.textContent).toContain("1 of 4 in clan");
   expect(host.textContent).toContain("All 1 in clan");
   expect(host.querySelectorAll(".member-clan-row")).toHaveLength(5);
+  expect(host.textContent).not.toContain("Version 1");
+  expect(host.textContent).not.toContain("Published");
   expect(vi.mocked(api)).toHaveBeenCalledTimes(1);
 });
 it("renders unavailable location accounts without a false check", async () => {
@@ -124,7 +126,7 @@ it("updates checks through the existing refresh without adding row requests", as
     );
     expect(host.querySelector('[aria-label="In clan"]')).toBeNull();
     expect(api).toHaveBeenCalledTimes(1);
-    await act(async () => vi.advanceTimersByTime(30000));
+    await act(async () => vi.advanceTimersByTimeAsync(30032));
     expect(host.querySelector('[aria-label="In clan"]')).not.toBeNull();
     expect(api).toHaveBeenCalledTimes(2);
   } finally {
@@ -175,12 +177,12 @@ it("keeps verified checks across cache expiry and clears them only after a newer
     expect(host.querySelector('[aria-label="In clan"]')).not.toBeNull();
     expect(host.textContent).toContain("All 1 in clan");
     vi.mocked(api).mockResolvedValue(result(null, undefined, "unavailable"));
-    await act(async () => vi.advanceTimersByTime(30000));
+    await act(async () => vi.advanceTimersByTimeAsync(30032));
     expect(host.textContent).toContain("All 1 in clan");
     vi.mocked(api).mockResolvedValue(
       result("#ELSE", new Date(start + 180001).toISOString()),
     );
-    await act(async () => vi.advanceTimersByTime(30000));
+    await act(async () => vi.advanceTimersByTimeAsync(30032));
     expect(host.querySelector('[aria-label="In clan"]')).toBeNull();
     expect(host.textContent).toContain("0 of 1 in clan");
   } finally {

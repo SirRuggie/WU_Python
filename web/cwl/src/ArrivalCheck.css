@@ -168,29 +168,6 @@
   .shell main:has(.arrival-check) {
     padding: 10px 12px;
   }
-  .page-head:has(+ .arrival-check) {
-    margin-bottom: 8px;
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 8px;
-  }
-  .page-head:has(+ .arrival-check) h1 {
-    font-size: 20px;
-    line-height: 24px;
-    margin: 0;
-  }
-  .page-head:has(+ .arrival-check) .eyebrow {
-    display: none;
-  }
-  .page-head:has(+ .arrival-check) label {
-    min-width: 118px;
-    font-size: 12px;
-  }
-  .page-head:has(+ .arrival-check) select {
-    min-height: 44px;
-    max-width: 140px;
-  }
   .declaration-clan-toggle {
     scroll-margin-top: 75px;
   }
@@ -213,13 +190,6 @@
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
-  }
-  .page-head:has(+ .arrival-check) {
-    margin-bottom: 4px;
-  }
-  .page-head:has(+ .arrival-check) h1 {
-    font-size: 18px;
-    line-height: 22px;
   }
 }
 
@@ -262,18 +232,56 @@
   padding-right: 54px;
 }
 @media (max-width: 767px) {
-  .shell .page-head:has(+ .arrival-check) {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
+}
+.declaration-overview {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.declaration-last-checked {
+  color: var(--roster-text-muted);
+  font-size: 12px;
+}
+.declaration-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.declaration-toolbar .roster-ui-input > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 650px) {
+  .declaration-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
-  .shell .page-head:has(+ .arrival-check) > div {
-    flex: 1;
-    min-width: 0;
+  .declaration-toolbar > .declaration-pools {
+    grid-column: 1 / -1;
   }
-  .shell .page-head:has(+ .arrival-check) > label {
-    width: 120px;
-    min-width: 0;
-    margin: 0;
+}
+.declaration-ping-attention {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 6px 10px;
+  border-left: 4px solid var(--roster-danger);
+  color: var(--roster-danger);
+}
+.declaration-ping-attention > span {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .shell main:has(.arrival-check) .cwl-page-header {
+    margin-inline: 3px;
   }
 }

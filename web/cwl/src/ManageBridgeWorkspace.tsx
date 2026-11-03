@@ -1,3 +1,4 @@
+import CwlNextLink from "./CwlNextLink";
 import AnnouncementDeletedRecovery from "./AnnouncementDeletedRecovery";
 import AnnouncementFullTest from "./AnnouncementFullTest";
 import AnnouncementSequenceStatus from "./AnnouncementSequenceStatus";
@@ -878,13 +879,11 @@ export default function ManageBridgeWorkspace({
         pools.some(
           (pool) => bridge?.pools[pool].delivery?.status === "sent",
         ) && (
-          <button
-            className="cwl-next-cue"
+          <CwlNextLink
+            label="Declaration check"
             disabled={busy}
-            onClick={onDeclaration}
-          >
-            Next: Declaration check ›
-          </button>
+            onNext={onDeclaration}
+          />
         )}
       {sendReview && bridge && (
         <AnnouncementSendReview

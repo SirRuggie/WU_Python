@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, createRef } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import SignupWalkthrough from "./SignupWalkthrough";
@@ -44,7 +45,7 @@ it("shows art and a large title only on the current step, with compact inactive 
       expect(image.getAttribute("src")).toBe(
         `/assets/tour/${["villager-52545", "villager-52538", "villager-52543"][stage - 1]}.webp`,
       );
-      expect(image.getAttribute("loading")).toBe("lazy");
+      expect(image.getAttribute("loading")).toBe("eager");
       expect(host.querySelector(".current [aria-current=step]")).not.toBeNull();
       expect(
         host.querySelectorAll("li:not(.current) .walkthrough-summary"),
@@ -73,7 +74,7 @@ it("shows one member season line with local close time, no internal Draft chip",
   try {
     await act(async () => root.render(<MemberSeasonLine season={season} />));
     expect(host.textContent).toBe(
-      `November 2026 · Open · closes ${new Date(season.signup_deadline!).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`,
+      `November 2026 · Signups open · closes ${new Date(season.signup_deadline!).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`,
     );
     expect(host.textContent?.toLowerCase()).not.toContain("draft");
     await act(async () =>
@@ -81,7 +82,7 @@ it("shows one member season line with local close time, no internal Draft chip",
         <MemberSeasonLine season={{ ...season, signup_deadline: null }} />,
       ),
     );
-    expect(host.textContent).toBe("November 2026 · Open");
+    expect(host.textContent).toBe("November 2026 · Signups open");
     await act(async () =>
       root.render(
         <MemberSeasonLine
@@ -99,4 +100,20 @@ it("shows one member season line with local close time, no internal Draft chip",
   } finally {
     await act(async () => root.unmount());
   }
+});
+
+it("can leave the closed-state wording to the page heading without losing the season", () => {
+  const html = renderToStaticMarkup(
+    <MemberSeasonLine
+      season={{
+        id: 1,
+        label: "November 2026",
+        status: "draft",
+        signup_open: false,
+      }}
+      hideClosedStatus
+    />,
+  );
+  expect(html).toContain("November 2026");
+  expect(html).not.toContain("Signups closed");
 });

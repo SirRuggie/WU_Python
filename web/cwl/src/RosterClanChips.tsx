@@ -163,7 +163,7 @@ export default function RosterClanChips({
                   ? `, ${summary.knownWeightCount} of ${summary.assignedCount} weighed`
                   : "";
                 const statusLabel = over
-                  ? ", over capacity"
+                  ? ", over clan size"
                   : full
                     ? ", full"
                     : "";
@@ -204,7 +204,7 @@ export default function RosterClanChips({
                         <ProgressBar
                           value={summary.assignedCount}
                           max={summary.capacity}
-                          label={`${summary.clan.name} capacity`}
+                          label={`${summary.clan.name} clan size`}
                           valueText={`${summary.assignedCount} of ${summary.capacity} assigned`}
                         />
                       )}

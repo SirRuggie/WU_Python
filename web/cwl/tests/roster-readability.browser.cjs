@@ -351,14 +351,14 @@ async function checkFades(page, selector) {
       .getByRole("button", { name: "Set in Hosting clans" });
     await missingCapacity.waitFor();
     assert.equal(
-      await phone.getByText(/has no capacity set/i).count(),
+      await phone.getByText(/has no clan size set/i).count(),
       1,
       "capacity warning should appear once above the cards",
     );
     assert.equal(
       await phone
         .locator(".roster-player-card")
-        .filter({ hasText: /no capacity set/i })
+        .filter({ hasText: /no clan size set/i })
         .count(),
       0,
       "capacity warning remains duplicated in a player card",

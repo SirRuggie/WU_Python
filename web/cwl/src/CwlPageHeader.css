@@ -1,0 +1,74 @@
+/* One title/season row, including when older page styles load after this file. */
+.cwl-page-header,
+.shell .page-head.cwl-page-header {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--roster-space-3);
+  height: var(--roster-height-control);
+  min-height: var(--roster-height-control);
+  margin-bottom: var(--roster-space-4);
+}
+.cwl-page-header-title {
+  flex: 1;
+  min-width: 0;
+}
+.cwl-page-header .cwl-page-header-title > h1,
+.shell .cwl-page-header .cwl-page-header-title > h1 {
+  margin: 0;
+  font-size: var(--roster-font-title);
+  line-height: 1.1;
+}
+.cwl-page-header > .roster-menu,
+.cwl-page-header > .roster-header-season,
+.cwl-page-header > .cwl-page-header-season {
+  flex: 0 0 200px;
+  min-width: 0;
+}
+.cwl-page-header .roster-menu-trigger {
+  min-height: var(--roster-height-control);
+  height: var(--roster-height-control);
+  padding: var(--roster-space-1) var(--roster-space-2);
+  gap: var(--roster-space-2);
+}
+.cwl-page-header .roster-menu-label {
+  font-size: var(--roster-font-small);
+  line-height: 1;
+}
+.cwl-page-header .roster-menu-current {
+  font-size: var(--roster-font-small);
+  line-height: 1.2;
+}
+.cwl-page-header .roster-menu-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.cwl-page-header > .cwl-page-header-season {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: var(--roster-height-control);
+  margin: 0;
+  color: var(--roster-text-muted);
+  font-size: var(--roster-font-small);
+  line-height: 1.2;
+}
+.cwl-page-description {
+  margin: 0 0 var(--roster-space-4);
+}
+@media (max-width: 650px) {
+  .shell .page-head.cwl-page-header {
+    gap: var(--roster-space-2);
+  }
+  .shell .cwl-page-header .cwl-page-header-title > h1 {
+    font-size: var(--roster-font-title-small);
+  }
+  .cwl-page-header > .roster-menu,
+  .cwl-page-header > .roster-header-season,
+  .cwl-page-header > .cwl-page-header-season {
+    flex-basis: 152px;
+    max-width: 50%;
+  }
+}

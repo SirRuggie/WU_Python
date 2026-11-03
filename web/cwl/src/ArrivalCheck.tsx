@@ -1,14 +1,19 @@
+import useConfirmDialog from "./useConfirmDialog";
+import CwlNextLink from "./CwlNextLink";
+import useFillerMarkQueue from "./useFillerMarkQueue";
 import { api } from "./api";
 import RosterUndoToast from "./RosterUndoToast";
 import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import { useDashboardPermission } from "./DashboardPermissions";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import useDeclarationData from "./useDeclarationData";
 import { declarationSnapshot } from "./declarationData";
 import { declarationGroups } from "./declarationGroups";
 import DeclarationClan from "./DeclarationClan";
-import DeclarationPingPanel from "./DeclarationPingPanel";
+import DeclarationPingPanel, {
+  type PingAttention,
+} from "./DeclarationPingPanel";
 import useDeclarationExtras from "./useDeclarationExtras";
 import DeclarationExtras from "./DeclarationExtras";
 import useStaffDetailsPage from "./useStaffDetailsPage";
@@ -20,18 +25,32 @@ import "./ArrivalCheck.css";
 
 export default function ArrivalCheck({
   seasonId,
+  onFinalize,
+  onResults,
   onDirty = () => {},
   onWorking = () => {},
 }: {
   seasonId: string;
+  onFinalize?: () => void;
+  onResults?: () => void;
   onDirty?: (dirty: boolean) => void;
   onWorking?: (working: boolean) => void;
 }) {
   const canMarkRosterFiller = useDashboardPermission("cwl_roster");
   const pingDirty = useRef(false);
   const pingWorking = useRef(false);
-  const { data, error, refresh, records, now, checkedAt, checking } =
-    useDeclarationData(seasonId);
+  const {
+    data,
+    error,
+    refresh,
+    records,
+    now,
+    checkedAt,
+    checking,
+    refreshResult,
+  } = useDeclarationData(seasonId);
+  const fillerQueue = useFillerMarkQueue(seasonId);
+  const fillerWorking = fillerQueue.working;
   const undoPending = useRef(false);
   const [localMarks, setLocalMarks] = useState<
     Record<string, FillerSaveResult>
@@ -39,8 +58,13 @@ export default function ArrivalCheck({
   const [markUndo, setMarkUndo] = useState<FillerSaveResult | null>(null);
   const [undoBusy, setUndoBusy] = useState(false);
   const [undoError, setUndoError] = useState("");
+  const [explicitRefreshing, setExplicitRefreshing] = useState(false);
   const [pool, setPool] = useCwlPool();
   const [helpOpen, setHelpOpen] = useState(false);
+  const { confirm, dialog: confirmation } = useConfirmDialog(seasonId);
+  const [pingAttention, setPingAttention] = useState<PingAttention | null>(
+    null,
+  );
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
   const [activeClan, setActiveClan] = useState("");
@@ -105,37 +129,158 @@ export default function ArrivalCheck({
       refresh();
       return;
     }
+    fillerQueue.acceptExternal(saved);
     setMarkUndo(saved.undo ? saved : null);
     setUndoError("");
     setLocalMarks((current) => ({ ...current, [saved.tag!]: saved }));
     extras.applyMark?.(saved);
   }
+  fillerQueue.syncRevision(
+    Math.max(
+      data?.roster.revision || 0,
+      extras.data?.revision || 0,
+      ...Object.values(localMarks).map((mark) => mark.revision),
+    ),
+  );
+  const fillerDisabled =
+    !data ||
+    !canMarkRosterFiller ||
+    !!data.arrival.season_archived ||
+    explicitRefreshing ||
+    undoBusy ||
+    pingWorking.current;
+  useLayoutEffect(
+    () => fillerQueue.setDisabled(fillerDisabled),
+    [fillerQueue, fillerDisabled],
+  );
+  fillerQueue.configure(
+    (saved) => {
+      const last = saved[saved.length - 1];
+      setMarkUndo(last?.undo ? last : null);
+      setUndoError("");
+      setLocalMarks((current) => ({
+        ...current,
+        ...Object.fromEntries(saved.map((mark) => [mark.tag!, mark])),
+      }));
+      extras.applyMarks?.(saved);
+    },
+    () => {
+      refresh();
+      extras.refresh();
+    },
+  );
+  const markRefresh = useRef<{ rosterId: number; extrasId: number } | null>(
+    null,
+  );
+  function refreshMembers() {
+    if (fillerQueue.working || explicitRefreshing) return;
+    setExplicitRefreshing(true);
+    markRefresh.current = { rosterId: refresh(), extrasId: extras.refresh() };
+  }
+  useEffect(() => {
+    const requested = markRefresh.current;
+    if (requested) {
+      const rosterResult =
+        refreshResult?.id === requested.rosterId ? refreshResult : null;
+      const extrasResult =
+        extras.refreshResult?.id === requested.extrasId
+          ? extras.refreshResult
+          : null;
+      if (
+        rosterResult?.status === "failed" ||
+        extrasResult?.status === "failed"
+      ) {
+        // This explicit attempt failed. A later background poll is not a new
+        // Refresh and must never silently clear a halted mutation queue.
+        markRefresh.current = null;
+        setExplicitRefreshing(false);
+      } else if (
+        rosterResult?.status === "success" &&
+        extrasResult?.status === "success" &&
+        !checking &&
+        !extras.loading
+      ) {
+        markRefresh.current = null;
+        setExplicitRefreshing(false);
+        if (data && extras.data && !error && !extras.error)
+          fillerQueue.refreshed(
+            Math.max(data.roster.revision, extras.data.revision || 0),
+          );
+      }
+    }
+    fillerQueue.observeRows([
+      ...(extras.data?.clans
+        .flatMap((clan) => [
+          ...(clan.extras || []),
+          ...(clan.fillers || []),
+          ...(clan.low_th || []),
+          ...(clan.unpublished || []),
+        ])
+        .map((row) => ({
+          tag: row.tag,
+          name: row.name,
+          value: !!row.roster_filler,
+          markRevision: row.roster_filler_revision || 0,
+        })) || []),
+      ...(data?.roster.accounts.map((row) => ({
+        tag: row.tag,
+        name: row.player_name,
+        value: !!row.roster_filler,
+        markRevision: row.roster_filler_revision || 0,
+      })) || []),
+    ]);
+  }, [
+    data,
+    extras.data,
+    checking,
+    extras.loading,
+    refreshResult,
+    extras.refreshResult,
+    error,
+    extras.error,
+    fillerQueue,
+    fillerWorking,
+  ]);
+  useEffect(() => {
+    onWorking(fillerWorking || pingWorking.current);
+    onDirty(fillerWorking || pingDirty.current);
+  }, [fillerWorking, onWorking, onDirty]);
+  useEffect(
+    () => () => {
+      onWorking(false);
+      onDirty(false);
+    },
+    [],
+  );
   const markControl =
     data &&
     canMarkRosterFiller &&
     !data.arrival.season_archived &&
     !pingWorking.current
       ? {
+          queue: fillerQueue,
           seasonId,
           revision: Math.max(
             data.roster.revision,
             extras.data?.revision || 0,
             ...Object.values(localMarks).map((m) => m.revision),
           ),
-          disabled: checking || extras.loading || undoBusy,
+          disabled: explicitRefreshing || undoBusy,
           onChanged: applySavedMark,
         }
       : undefined;
   async function undoMark() {
-    if (!markUndo?.undo || undoPending.current) return;
+    if (!markUndo?.undo || undoPending.current || fillerQueue.working) return;
     undoPending.current = true;
+    fillerQueue.setWriteBusy(true);
+    fillerQueue.clearUndo();
     setUndoBusy(true);
     setUndoError("");
     try {
       const restored = await api<FillerSaveResult>(
         `/seasons/${encodeURIComponent(seasonId)}/roster/undo`,
         "POST",
-        { revision: markUndo.revision, undo_id: markUndo.undo.id },
+        { revision: fillerQueue.latestRevision, undo_id: markUndo.undo.id },
       );
       setMarkUndo(null);
       applySavedMark(restored);
@@ -146,6 +291,7 @@ export default function ArrivalCheck({
       );
     } finally {
       undoPending.current = false;
+      fillerQueue.setWriteBusy(false);
       setUndoBusy(false);
     }
   }
@@ -178,6 +324,8 @@ export default function ArrivalCheck({
       });
   }
   useEffect(() => {
+    markRefresh.current = null;
+    setExplicitRefreshing(false);
     setLocalMarks({});
     setMarkUndo(null);
     setUndoError("");
@@ -216,6 +364,8 @@ export default function ArrivalCheck({
     viewOnly: "declaration",
     archived: !!data?.arrival.season_archived,
     onFillerChanged: applySavedMark,
+    fillerQueue,
+    onChanged: refreshMembers,
     publishedSnapshot: context,
     order: ordered.map((a) => a.tag),
   });
@@ -226,10 +376,6 @@ export default function ArrivalCheck({
         ? ("checking" as const)
         : ("unavailable" as const)
       : undefined;
-  const locationsMessage =
-    checking || data?.arrival.updating
-      ? "Checking locations…"
-      : "Locations unavailable";
   const unknownHosts = hosts.some((g) => !!locationStatus(g));
   const extraOnlyHosts =
     extras.data?.clans.filter((c) => !groups.some((g) => g.tag === c.tag)) ||
@@ -249,6 +395,25 @@ export default function ArrivalCheck({
       className="arrival-check roster-ui"
       aria-label="Declaration readiness"
     >
+      {confirmation}
+      {fillerQueue.notSaved.length > 0 && (
+        <section aria-label="Filler marks not saved">
+          <p role="alert">
+            {fillerQueue.notSaved.length} not saved. Refresh and tick{" "}
+            {fillerQueue.notSaved.length === 1 ? "it" : "them"} again.
+          </p>
+          {fillerQueue.unknownOutcome && (
+            <p>
+              A save may have reached the server. Refresh to learn its outcome.
+            </p>
+          )}
+          <ul>
+            {fillerQueue.notSaved.map((row) => (
+              <li key={row.tag}>{row.name}</li>
+            ))}
+          </ul>
+        </section>
+      )}
       {error && (
         <p role="alert">
           {error}
@@ -262,158 +427,224 @@ export default function ArrivalCheck({
         <p>
           {data.publication.last_publication?.withdrawn_at
             ? hiddenPublicationStatus(data.publication.last_publication)
-            : "Publish the roster first"}{" "}
-          ·{" "}
-          <a href={`/cwl/publish?season=${seasonId}&step=review`}>
-            Finalize roster ›
-          </a>
+            : null}{" "}
+          {onFinalize ? (
+            <button type="button" className="text-link" onClick={onFinalize}>
+              Finalize roster first ›
+            </button>
+          ) : (
+            <span>No roster is currently published for members.</span>
+          )}
         </p>
       )}
       {data && published && context && (
         <>
-          <p className="declaration-summary" role="status">
-            <strong>
-              {unknownHosts ? (
-                locationsMessage
-              ) : (
-                <>
-                  {hosts.filter((g) => g.readiness.ready).length} /{" "}
-                  {hosts.length} clans ready to declare
-                </>
-              )}
-            </strong>{" "}
-            {!unknownHosts && (
-              <>
-                {" "}
-                · {hosts.reduce((n, g) => n + g.late.length, 0)} players not in
-                their clan
-              </>
-            )}
-            {" · "}
-            {extras.error
-              ? "Couldn't check clan members"
-              : extras.loading || !extras.data
-                ? "Checking clan members…"
-                : `${extras.data.clans.reduce((n, c) => n + (c.count || 0), 0)} ${failedExtras ? "confirmed " : ""}not on roster`}
-            {!!extras.data?.clans.some((c) => (c.unpublished_count || 0) > 0) &&
-              ` · ${extras.data.clans.reduce((n, c) => n + (c.unpublished_count || 0), 0)} ${failedExtras ? "confirmed " : ""}not published yet`}
-            {failedExtras > 0 &&
-              ` · ${failedExtras} ${failedExtras === 1 ? "clan" : "clans"} couldn't be checked`}
-            <button
-              type="button"
-              className="declaration-info"
-              aria-label="About readiness"
-              aria-expanded={helpOpen}
-              onClick={() => setHelpOpen(!helpOpen)}
-            >
-              ⓘ
-            </button>
-          </p>
-          <div className="declaration-refresh">
-            <span>
-              {checkedAt
-                ? `Last checked ${comparisonAge(checkedAt, now)}`
-                : unknownHosts
-                  ? locationsMessage
-                  : "No location checks yet"}
-            </span>
-            <Button
-              icon={RefreshCw}
-              disabled={extras.loading}
-              onClick={() => {
-                refresh();
-                extras.refresh();
-              }}
-            >
-              {checking || extras.loading ? "Checking…" : "Refresh"}
-            </Button>
-          </div>
-          <p className="declaration-extras-status">
-            Not-on-roster checks cover Lazy hosting clans only.
-          </p>
-          {pool === "lazy" && (
-            <label className="declaration-extras-filter">
-              <input
-                type="checkbox"
-                checked={onlyExtras}
-                onChange={(e) => setOnlyExtras(e.target.checked)}
-              />
-              Clans with not-on-roster players
-            </label>
-          )}
-          {helpOpen && (
-            <p className="declaration-help">
-              Ready = enough players in their clan for its war size, checked in
-              the last 5 minutes.
-            </p>
-          )}
-          {data.arrival.publication_outdated && (
-            <p className="declaration-help">
-              Checking published version {data.arrival.version} · the draft has
-              changes members can't see yet
-            </p>
-          )}
-          <div className="declaration-pools" role="group" aria-label="CWL pool">
-            {(["main", "lazy"] as const).map((p) => (
-              <Button
-                key={p}
-                aria-pressed={pool === p}
-                onClick={() => {
-                  if (pingWorking.current) return;
-                  if (
-                    pingDirty.current &&
-                    !window.confirm("Discard the unsaved ping channel change?")
-                  )
-                    return;
-                  pingDirty.current = false;
-                  onDirty(false);
-                  setPool(p);
-                  setActiveClan("");
-                }}
-              >
-                {p === "main" ? "Main" : "Lazy"} ·{" "}
-                {hosts.some((g) => g.pool === p && !!locationStatus(g)) ? (
-                  locationsMessage
-                ) : (
+          <div className="declaration-overview">
+            <p className="declaration-summary" role="status">
+              <strong>
+                {checking || data.arrival.updating ? (
+                  <>
+                    Checking…{" "}
+                    {
+                      hosts.filter(
+                        (g) => !locationStatus(g) && g.readiness.ready,
+                      ).length
+                    }{" "}
+                    of {hosts.length} clans confirmed ready
+                  </>
+                ) : unknownHosts ? (
                   <>
                     {
-                      hosts.filter((g) => g.pool === p && g.readiness.ready)
-                        .length
-                    }
-                    /{hosts.filter((g) => g.pool === p).length} ready
+                      hosts.filter(
+                        (g) => !locationStatus(g) && g.readiness.ready,
+                      ).length
+                    }{" "}
+                    of {hosts.length} clans confirmed ready · Locations
+                    unavailable
+                  </>
+                ) : (
+                  <>
+                    {hosts.filter((g) => g.readiness.ready).length} /{" "}
+                    {hosts.length} clans ready to declare
                   </>
                 )}
-              </Button>
-            ))}
+              </strong>{" "}
+              {!unknownHosts && (
+                <>
+                  {" "}
+                  · {hosts.reduce((n, g) => n + g.late.length, 0)} players not
+                  in their clan
+                </>
+              )}
+              {" · "}
+              {extras.error
+                ? "Couldn't check clan members"
+                : extras.loading || !extras.data
+                  ? "Checking clan members…"
+                  : `${extras.data.clans.reduce((n, c) => n + (c.count || 0), 0)} ${failedExtras ? "confirmed " : ""}not on roster`}
+              {!!extras.data?.clans.some(
+                (c) => (c.unpublished_count || 0) > 0,
+              ) &&
+                ` · ${extras.data.clans.reduce((n, c) => n + (c.unpublished_count || 0), 0)} ${failedExtras ? "confirmed " : ""}not published yet`}
+              {failedExtras > 0 &&
+                ` · ${failedExtras} ${failedExtras === 1 ? "clan" : "clans"} couldn't be checked`}
+              <button
+                type="button"
+                className="declaration-info"
+                aria-label="About readiness"
+                aria-expanded={helpOpen}
+                onClick={() => setHelpOpen(!helpOpen)}
+              >
+                ⓘ
+              </button>
+              {" · "}
+              <span className="declaration-last-checked">
+                {checkedAt
+                  ? `Last checked ${comparisonAge(checkedAt, now)}`
+                  : unknownHosts
+                    ? "No completed location checks"
+                    : "No location checks yet"}
+              </span>
+            </p>
+            {pool === "lazy" && (
+              <label className="declaration-extras-filter">
+                <input
+                  type="checkbox"
+                  checked={onlyExtras}
+                  onChange={(e) => setOnlyExtras(e.target.checked)}
+                />
+                Clans with not-on-roster players
+              </label>
+            )}
+            {helpOpen && (
+              <p className="declaration-help">
+                Ready = clan is full, checked in the last 5 minutes.
+                Not-on-roster checks cover Lazy hosting clans only.
+              </p>
+            )}
+            {data.arrival.publication_outdated && (
+              <p className="declaration-help">
+                Checking published version {data.arrival.version} · the draft
+                has changes members can't see yet
+              </p>
+            )}
+            {pingAttention && (
+              <p className="declaration-ping-attention" role="status">
+                <span>Declaration pings: {pingAttention.message}</span>
+                <Button onClick={pingAttention.reveal}>View error ›</Button>
+              </p>
+            )}
+            <div className="declaration-toolbar">
+              <div
+                className="declaration-pools"
+                role="group"
+                aria-label="CWL pool"
+              >
+                {(["main", "lazy"] as const).map((p) => (
+                  <Button
+                    key={p}
+                    aria-pressed={pool === p}
+                    onClick={async () => {
+                      if (pingWorking.current) return;
+                      if (
+                        pingDirty.current &&
+                        !(await confirm(
+                          "Discard the unsaved ping channel change?",
+                          "Discard channel change",
+                        ))
+                      )
+                        return;
+                      pingDirty.current = false;
+                      onDirty(fillerQueue.working);
+                      setPool(p);
+                      setActiveClan("");
+                    }}
+                  >
+                    {p === "main" ? "Main" : "Lazy"}
+                    {checking || data.arrival.updating ? (
+                      <>
+                        {" · "}Checking…{" "}
+                        {
+                          hosts.filter(
+                            (g) =>
+                              g.pool === p &&
+                              !locationStatus(g) &&
+                              g.readiness.ready,
+                          ).length
+                        }{" "}
+                        of {hosts.filter((g) => g.pool === p).length}
+                      </>
+                    ) : hosts.some(
+                        (g) => g.pool === p && !!locationStatus(g),
+                      ) ? null : (
+                      <>
+                        {" · "}
+                        {
+                          hosts.filter((g) => g.pool === p && g.readiness.ready)
+                            .length
+                        }
+                        /{hosts.filter((g) => g.pool === p).length} ready
+                      </>
+                    )}
+                  </Button>
+                ))}
+              </div>
+              <Input
+                label="Find a player or clan"
+                type="search"
+                placeholder="Player name, tag or clan"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <div className="declaration-refresh">
+                <Button
+                  icon={RefreshCw}
+                  disabled={explicitRefreshing || fillerWorking}
+                  onClick={() => {
+                    refreshMembers();
+                  }}
+                >
+                  {explicitRefreshing
+                    ? "Refreshing…"
+                    : checking || extras.loading
+                      ? "Checking…"
+                      : "Refresh"}
+                </Button>
+              </div>
+            </div>
           </div>
-          <DeclarationPingPanel
-            key={`${seasonId}:${pool}`}
-            seasonId={seasonId}
-            pool={pool}
-            missing={poolGroups.reduce((n, g) => n + g.missingCount, 0)}
-            locationStatus={
-              poolGroups.some((g) => !!locationStatus(g))
-                ? checking || data?.arrival.updating
-                  ? "checking"
-                  : "unavailable"
-                : undefined
-            }
-            onWorking={(working) => {
-              pingWorking.current = working;
-              onWorking(working);
-            }}
-            onDirty={(dirty) => {
-              pingDirty.current = dirty;
-              onDirty(dirty);
-            }}
-          />
-          <Input
-            label="Find a player or clan"
-            type="search"
-            placeholder="Player name, tag or clan"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          {visible.map((group) => (
+            <DeclarationClan
+              markControl={markControl}
+              key={group.key}
+              group={group}
+              records={records}
+              now={now}
+              locationStatus={locationStatus(group)}
+              suppressUnavailableLabel={
+                unknownHosts && !checking && !data.arrival.updating
+              }
+              search={needle}
+              extra={extras.data?.clans.find((c) => c.tag === group.tag)}
+              extraLoading={extras.loading}
+              extraError={extras.error}
+              request={{
+                seasonId,
+                viewOnly: "declaration",
+                publishedSnapshot: context,
+                archived: !!data.arrival.season_archived,
+                onFillerChanged: applySavedMark,
+                fillerQueue,
+                onChanged: refreshMembers,
+              }}
+              open={expanded.includes(group.key)}
+              onToggle={() => {
+                if (expanded.includes(group.key))
+                  setExpanded((old) => old.filter((k) => k !== group.key));
+                else openClan(group.key);
+              }}
+            />
+          ))}
           {pool === "lazy" &&
             extraOnlyHosts
               .filter(
@@ -465,49 +696,52 @@ export default function ArrivalCheck({
                 ),
               ),
             ) && <p>No matching players or clans.</p>}
-          {visible.map((group) => (
-            <DeclarationClan
-              markControl={markControl}
-              key={group.key}
-              group={group}
-              records={records}
-              now={now}
-              locationStatus={locationStatus(group)}
-              search={needle}
-              extra={extras.data?.clans.find((c) => c.tag === group.tag)}
-              extraLoading={extras.loading}
-              extraError={extras.error}
-              request={{
-                seasonId,
-                viewOnly: "declaration",
-                publishedSnapshot: context,
-                archived: !!data.arrival.season_archived,
-                onFillerChanged: applySavedMark,
-                onChanged: () => {
-                  refresh();
-                },
-              }}
-              open={expanded.includes(group.key)}
-              onToggle={() => {
-                if (expanded.includes(group.key))
-                  setExpanded((old) => old.filter((k) => k !== group.key));
-                else openClan(group.key);
-              }}
-            />
-          ))}
+
+          <DeclarationPingPanel
+            key={`${seasonId}:${pool}`}
+            seasonId={seasonId}
+            pool={pool}
+            onAttentionChange={setPingAttention}
+            missing={poolGroups.reduce((n, g) => n + g.missingCount, 0)}
+            locationStatus={
+              poolGroups.some((g) => !!locationStatus(g))
+                ? checking || data?.arrival.updating
+                  ? "checking"
+                  : "unavailable"
+                : undefined
+            }
+            onWorking={(working) => {
+              pingWorking.current = working;
+              onWorking(working || fillerQueue.working);
+            }}
+            onDirty={(dirty) => {
+              pingDirty.current = dirty;
+              onDirty(dirty || fillerQueue.working);
+            }}
+          />
         </>
       )}
       {undoError && <p role="alert">{undoError}</p>}
       {markUndo?.undo && (
         <RosterUndoToast
+          disabled={fillerWorking}
           state={
             undoBusy
-              ? { status: "pending", label: markUndo.undo.label }
-              : { status: "available", label: markUndo.undo.label }
+              ? {
+                  status: "pending",
+                  label: `${markUndo.undo.label}${markUndo.tag && fillerQueue.row(markUndo.tag)?.name ? ` · ${fillerQueue.row(markUndo.tag)!.name}` : ""}`,
+                }
+              : {
+                  status: "available",
+                  label: `${markUndo.undo.label}${markUndo.tag && fillerQueue.row(markUndo.tag)?.name ? ` · ${fillerQueue.row(markUndo.tag)!.name}` : ""}`,
+                }
           }
           onUndo={() => void undoMark()}
           onDismiss={() => setMarkUndo(null)}
         />
+      )}
+      {data && published && (
+        <CwlNextLink label="Results" onNext={onResults} disabled={checking} />
       )}
     </section>
   );

@@ -25,9 +25,9 @@ type Props = {
 
 const statusLabels: Record<RosterReleaseStatus, string> = {
   assigned: "Assigned",
-  unassigned: "Unassigned",
+  unassigned: "Unplaced",
   missing_weight: "Missing weight",
-  over_capacity: "Over capacity",
+  over_capacity: "Over clan size",
   locked: "Locked placement",
   outside_family: "Outside family",
   filler: "Filler",

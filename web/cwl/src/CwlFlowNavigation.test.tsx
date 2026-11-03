@@ -13,7 +13,18 @@ vi.mock("./RosterWorkspace", () => ({
   ),
 }));
 vi.mock("./PublicationWorkspace", () => ({
-  default: () => <p>Publication body</p>,
+  default: ({
+    onNavigateStep,
+  }: {
+    onNavigateStep?: (step: "review" | "announce") => void;
+  }) => (
+    <>
+      <p>Publication body</p>
+      <button onClick={() => onNavigateStep?.("announce")}>
+        Next: Announcements ›
+      </button>
+    </>
+  ),
 }));
 vi.mock("./SeasonsPage", () => ({ default: () => <p>Seasons body</p> }));
 it("sidebar Build resets to Accounts and topbar names follow each CWL destination", async () => {
@@ -73,6 +84,16 @@ it("sidebar Build resets to Accounts and topbar names follow each CWL destinatio
       await settle();
       expect(host.querySelector(".topbar strong")?.textContent).toBe(label);
     }
+    await act(async () => nav("Finalize roster").click());
+    await settle();
+    const previousIndex = history.state.wuDashboardIndex;
+    const next = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Next: Announcements ›",
+    )!;
+    await act(async () => next.click());
+    await settle();
+    expect(location.search).toContain("step=announce");
+    expect(history.state.wuDashboardIndex).toBe(previousIndex + 1);
     expect(
       [...host.querySelectorAll(".sidebar button")].some(
         (button) => button.textContent?.trim() === "Results",

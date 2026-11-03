@@ -207,7 +207,7 @@ it("requires both setup fields and preserves stale edits", async () => {
     ),
   );
   expect(document.body.textContent).toContain(
-    "Clan settings changed elsewhere",
+    "Hosting clans changed elsewhere",
   );
   expect(button("Set up clan").disabled).toBe(true);
 });

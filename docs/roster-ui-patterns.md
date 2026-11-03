@@ -1,10 +1,47 @@
 # Roster UI patterns
 
+## CWL names and plain words (audit 119)
+
+| Thing | Visible name |
+| --- | --- |
+| Member clan destination | My clan assignments |
+| Member without a clan assignment | Waiting for a clan |
+| Staff account without a placement | Unplaced |
+| Bonus page and navigation | Bonus medals |
+| 15/30-player limit and progress labels | Clan size |
+| Hide the member roster | Hide roster; Roster hidden. |
+| Campaign message/reminder workspace | Signup reminders |
+| Staff workflow destinations | Build roster; Finalize roster; Announcements |
+| CWL clan configuration | Hosting clans |
+| Existing staff CWL page eyebrow | CWL |
+| Member page eyebrows | None |
+| Existing account-linking help control | Link an account |
+| Search that actually matches players and clans | Find a player or clan |
+
+At 320 px, the existing strip may retain My clan / Build / Finalize / Announce;
+accessible names use the full destination names. Other headings and navigation
+use the full names. Staff counts say signups; no-weight counts add `(all pools)`
+only when that global count differs from the current pool's count. API filter
+keys, CSS class names and stored capacity/status fields are not renamed.
+
+Main: `Main: play at full strength. No hero upgrades.`
+Lazy: `Lazy: relaxed CWL. You can upgrade during the event.`
+The FWA line remains exactly `If you’re in FWA… it’s Lazy Way or No Way!!!`.
+Tour titles and narrative stay unchanged; its 13 actual cards use sequential
+card ordinals and a matching total rather than repeated 5s. The original eight
+decorative progress groups retain their layout and stage advances through an
+explicit `progressGroup`; these are not thirteen individually numbered dots.
+
+The later review 137, item 6 governs empty My clan assignments: without a known
+empty linked-account result, offer Signup for CWL alone. Do not add a linking
+helper or fetch accounts merely to satisfy the older119 label request. Existing
+linking controls elsewhere share the canonical label.
+
 ## Member signup confirmation
 
 Home and My signups share a green confirmation naming signed accounts and pools. My signups lists every saved account and uses the account cards below for changes; My clan assignments uses a compact unpublished status or the published clan list. When some accounts are signed up, remaining linked accounts appear in a separate red card below the green confirmation without account names. Zero signups keep the grey signup action. Closed signups remove mutation-navigation links, not read-only navigation. Partial published assignments retain their clan cards; hidden publications use unpublished wording.
 
-Optional campaign guidance uses local dates and minute-updated relative time, or a muted taking-longer line. Missing guidance never hides saved signups. The member strip reuses the staff pattern: Sign up / My signups / My clan. My CWL starts expanded and remembers collapse.
+Optional campaign guidance uses local dates and minute-updated relative time, or the muted `Clans are not ready yet. Check back soon.` line. Missing guidance never hides saved signups. The member strip reuses the staff pattern: Sign up / My signups / My clan. My CWL starts expanded and remembers collapse.
 
 The roster page's UI system. Source of truth for tokens and states: `web/cwl/src/rosterUi/primitives.css`. Scope: roster page only (other dashboard pages adopt these later, by decision, not by drift).
 
@@ -418,3 +455,163 @@ If a role run completes before its first status read, refresh the directory
 immediately. Undo reviews one exact person with the expected post-change role
 set, so a later concurrent edit cannot be overwritten. Keep the current run state
 visible in a disclosure summary even when its detailed results are collapsed.
+
+### Compact CWL pages (121)
+
+Build keeps its title and season on one row. Its count/status disclosure names
+the current view on phones, such as **Accounts & signups**. The existing view
+buttons, including **Missing weights · N**, appear when it opens. Wide layouts
+keep those views directly visible; the separate **Signup & status** disclosure
+opens staff signup controls, publication status and count-filter actions. At
+360 and 1440, both closed summaries remain 46 pixels high. Components stay mounted,
+so closing a disclosure does not discard an editor or start another read.
+Signup errors, visibility warnings, notices and active editors remain visible.
+Publication changes and missing clan sizes remain visible action notices.
+
+Pool choices, Filters, sort and Refresh remain direct buttons. Filters, sort and
+Refresh share a row, with at least 44-pixel touch targets. The heading and tools
+scroll away with the page. Finalize and Announcements use the same title/season
+row and omit the repeated CWL eyebrow.
+
+Declaration's compact overview is followed directly by its clan list. Pings is
+a closed, keyboard-operable disclosure after the list, with its last confirmed
+ping in the summary. Errors, active sends and open reviews remain visible.
+Checking counts say **Checking… 3 of 10 clans confirmed ready**, distinguishing
+confirmed partial results from a final readiness fraction. The existing ping
+settings/history read still runs; opening the disclosure does not fetch or send
+a preview.
+
+My signups has one account list: the editable saved list. The status summary
+retains totals, assignment links, dates and read-failure warnings without
+repeating account names. Clan-change guidance appears once and only while
+changes are allowed. The closed Sign up page leaves **Signups closed** to its
+heading and keeps the season name and existing destinations.
+
+
+151 regression checks keep recovery actions next to visible failures, preserve
+role=status on compact current status, and avoid repeating a uniform unavailable
+result in every row. A distinct row result stays visible. Forced-open ping errors
+have a summary action that scrolls and focuses the existing error; they do not
+add a send or retry path. The checked-in four-width local layout command is
+`npm run test:less-on-top-layout`; its isolated fixtures exercise 26/65/125-account
+Build layouts and member/declaration failure states without production traffic.
+
+## 122: shared CWL controls and theme
+
+CWL write and discard decisions use the existing ConfirmDialog. The small
+useConfirmDialog adapter supplies an awaited decision for existing action owners;
+it does not own API calls or retries. Cancel, Escape, unmount, a changed season,
+changed document/permissions or a newly locked scope resolves to Cancel. A second
+opener cannot replace a decision. Each mutation retains its existing pending,
+revision, authorization and uncertain-outcome rules. Browser unload protection
+remains browser-owned. Native confirmations still present in App concern access
+or other management pages, outside this CWL pass.
+
+Results, Bonus, Exports and Declaration use RosterMenu for seasons; Signup
+reminders joins the existing Build/Finalize/Seasons picker pattern. Existing
+selection callbacks, empty choices, disabled states and URL/history ownership are
+retained. CwlPageHeader supplies one compact title/season/action row and preserves
+publication focus targets. Member pages reuse its title hierarchy without adding
+a season selector. Results' long title may wrap inside its column on a phone.
+The global phone page-head stack is explicitly overridden for this shared row.
+
+TodoWorkspace and ClanFilters replace navy values with the roster surface,
+border, text, gold, success and attention tokens. Bonus and member assignments
+reuse matching tokens. Font, spacing and shadow tokens are added and used only in
+touched surfaces. ClanFilters' FilterPicker remains an existing dormant export:
+current Compare imports its matching helpers, not that control. No new filter was
+introduced just to demonstrate its CSS. FWA and pool-change dialogs retain their
+wording and ordinary GIF display; reduced-motion users get the same explanation
+and controls without the animated image.
+
+Safety review exercises actual Results reset/discard, staff add/discard, Bonus
+candidate removal/discard, publishing and member withdrawal: Cancel has zero
+writes, double activation confirms one write, document/permission changes cancel,
+and closing during an accepted request does not replay it. The shared adapter's
+tests were written first and failed before implementation. Additional integration
+regressions retain navigation continuation, exact account names, request identity
+and season callback behavior. Four valid no-confirm mutants in Results, staff
+signup, Bonus removal and publishing are assertion-killed with source hashes
+restored. An initial sandbox subprocess produced no test output and is not counted.
+
+Checked-in local layout commands are `npm run test:less-on-top-layout` and
+`npm run test:same-look-layout`. The former retains the 52-case
+320/360/390/1440 and 26/65/125-account matrix. The latter captures 13 changed
+pages at 360 and 1440 plus actual FWA/pool dialogs, verifies the computed shared
+header row, and checks reduced-motion behavior. Before images use the exact
+accepted 20b9e580 artifact; candidate images use this branch. Both phases use new
+owned loopback SQLite/MemoryMongo fixtures. Settled Tasks, reminder and linked
+account GET responses are explicitly synthetic. Page loading/clock differences
+are not evidence of a changed domain result. No domain writes or page errors were
+recorded in either screenshot phase. Narrow/wide images were visually reviewed.
+
+Earlier diagnostic failures remain in workspace .local: the first full test run
+used the repository rather than web/cwl working directory, old native-select and
+native-confirm browser assertions needed migration, and the before harness used
+a nonexistent assignments URL and a wrong account-card selector. The publication
+recovery fixture initially enabled successful background reads before clicking
+Retry; it now keeps failure pinned until the actual click. Visual review also
+caught a global display:block rule defeating the first row override; computed
+flex-row/overlap assertions now guard it. Assertions were retained against the
+new controls rather than dropped.
+
+No API method, body, polling policy, grant or selection permission was changed.
+Semantic API-call ASTs (ignoring quote formatting) match accepted 20b9e580 for all
+53 calls across nineteen reviewed runtime modules. Mocked publishing checks are
+not proof of live Discord delivery. This is not a full assistive-technology audit.
+
+This branch starts at exact accepted 121/151 commit 20b9e580, not a main merge.
+Accepted predecessor 185's background filler queue is not in that source base.
+Later integration must preserve that queue and stop for review on any behavior
+conflict; it must not overwrite its changes. Existing 121 staff/member previews
+remain untouched. Release is held for owner approval and 123 implementation has
+not started.
+
+122 completion evidence: 1,667 frontend tests across 282 files, TypeScript and
+production-format Vite build pass. The final four-width suite passes all 52
+scenarios; the same-look comparison passes 30 before and 30 after scenarios
+(26 page states and four dialog states each). All screenshot runs record zero
+non-GET requests after local login and zero page errors. Computed header display
+and title/picker vertical overlap are asserted, not inferred from screenshots.
+The actual two new review previews also pass a login/render/served-hash smoke.
+
+Adversarial review checked that dynamic season/account names remain React text,
+no new external URL or mention construction was added, no modal opens a write by
+itself, pending/uncertain writes are not replayed, Cancel retains edits and
+selection, and changed authority/document scopes abandon pending decisions.
+Existing partial/unavailable location, visibility-check failure, forced-open ping
+error, archived/read-only and member closed-season regressions remain in the
+four-width suite. Data/storage/provider authorization remains with existing
+owners; browser sample checks do not establish production delivery or freshness.
+
+### Review 152 corrections
+
+The first regression exercises the actual ParticipationWorkspace month-change
+handler and its POST to participation/sync-settings: Cancel makes zero writes,
+Confirm makes one, and a double click still makes one. The child editor supplies
+its existing dirty-change contract in this isolated test; this is not live editor
+or Discord evidence. Removing the confirmation produces an assertion failure.
+Actual ArrivalCheck and App pool-change tests likewise retain drafts on Cancel,
+clear them on Confirm, and make no writes.
+
+All CWL headers now share a 44px title row, 20px phone/24px wide title, and a
+152px phone/200px wide season field, including read-only My assignments. At 360px
+all ten season fields span x193–345; at 1440px they span x1212–1412. Obsolete
+page-specific header rules were removed. The accepted Build height targets remain
+covered. Clean staff Signup Back closes synchronously without restoring an extra
+history marker. Withdraw uses the existing danger dialog style. The danger text
+token now passes 4.5:1 on the selected surface (the old token measured 4.039:1);
+seven semantic text/surface pairs are checked. MessagePublish retains its dialog
+change with only 10 added/four removed lines against the accepted predecessor;
+formatting-only changes were reverted.
+
+Validation: 57 focused tests, 1,680 frontend tests across 286 files, typecheck and
+Vite build pass. Six genuine assertion-killed mutants cover the month guard,
+both pool guards, clean Back, withdrawal danger style and contrast. The semantic
+API comparison retains all 53 calls in 19 modules. The four-width suite passes
+52 scenarios at 320/360/390/1440; the page/dialog comparison passes 30 before and
+30 after cases at 360/1440, with zero non-GET requests and page errors. Narrow
+and wide before/after headers were visually reviewed. The separately documented
+Declaration Back URL/menu mismatch remains unproven and unchanged. No production
+operation or task 123 implementation occurred. Release remains held; later
+integration must preserve the accepted background filler queue predecessor.

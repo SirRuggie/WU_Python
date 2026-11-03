@@ -1,3 +1,5 @@
+import type { FillerMarkQueue } from "./fillerMarkQueue";
+import { useFillerQueueVersion } from "./useFillerMarkQueue";
 import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import RosterFillerCheckbox from "./RosterFillerCheckbox";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -27,6 +29,7 @@ import "./PlayerCard.css";
 import "./RosterPlayerDialog.css";
 
 type Props = {
+  fillerQueue?: FillerMarkQueue;
   seasonId?: string;
   onFillerChanged?: (saved?: FillerSaveResult) => Promise<void>;
   previous?: () => void;
@@ -75,6 +78,7 @@ export const detailsDate = (value?: string | null) =>
     : "Not recorded";
 
 export default function RosterPlayerDialog({
+  fillerQueue,
   seasonId,
   onFillerChanged,
   account,
@@ -97,6 +101,7 @@ export default function RosterPlayerDialog({
   viewOnly,
   publicationNote,
 }: Props) {
+  useFillerQueueVersion(fillerQueue);
   const [now] = useLocationNow();
   const locationCache = useRef<LocationRecords>({});
   locationCache.current = mergeComparisonLocations(locationCache.current, [
@@ -246,6 +251,7 @@ export default function RosterPlayerDialog({
         </header>
         {seasonId && roster && rosterPermission && !archived && (
           <RosterFillerCheckbox
+            queue={fillerQueue}
             seasonId={seasonId}
             tag={account.tag}
             name={account.player_name}
@@ -285,14 +291,14 @@ export default function RosterPlayerDialog({
               ? `Assigned: ${currentHost.name}`
               : account.assigned_clan_tag
                 ? `Assigned: ${account.assigned_clan_tag}`
-                : "Not assigned"}
+                : "Unplaced"}
             {account.kept ? " · Locked" : ""}
           </p>
           <PlayerClanStatus
             showAssigned={false}
             status={playerClanStatus(
               account.assigned_clan_tag,
-              currentHost?.name || account.assigned_clan_tag || "Not assigned",
+              currentHost?.name || account.assigned_clan_tag || "Unplaced",
               locationCache.current[account.tag] || {},
               now,
             )}
@@ -428,9 +434,10 @@ export default function RosterPlayerDialog({
         {(localError || error)?.includes("Changed by someone else") &&
           onReload && (
             <Button
-              disabled={busy}
+              disabled={busy || fillerQueue?.working}
               onClick={() =>
                 void run(async () => {
+                  if (fillerQueue?.working) return false;
                   await onReload();
                   return true;
                 })
@@ -474,7 +481,7 @@ export default function RosterPlayerDialog({
             }
             text={
               review === "unassign"
-                ? `${account.player_name} will be unassigned from ${currentHost?.name || account.assigned_clan_tag}. Their signup and saved weight stay. The placement lock is cleared. Publish again to update the published roster.`
+                ? `${account.player_name} will be unplaced. Their assignment to ${currentHost?.name || account.assigned_clan_tag} will be cleared. Their signup and saved weight stay. The placement lock is cleared. Publish again to update the published roster.`
                 : review === "remove"
                   ? `Remove ${account.player_name} from this season’s signup and working roster? Saved weights stay. Publish again to update the published roster.${account.kept ? " This account has a locked placement." : ""}`
                   : `${account.player_name}: switching signup type clears the working placement and lock and is visible to members. Published rosters stay unchanged until republished. Main CWL eligibility is checked before saving.${account.kept ? " This account has a locked placement." : ""}`

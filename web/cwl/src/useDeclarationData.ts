@@ -26,6 +26,11 @@ export default function useDeclarationData(season: string) {
   const [records, setRecords] = useState<LocationRecords>({});
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
+  const explicitRead = useRef(0);
+  const [refreshResult, setRefreshResult] = useState<{
+    id: number;
+    status: "pending" | "success" | "failed";
+  } | null>(null);
   const newest = Math.max(
     ...Object.values(records)
       .map((r) => Date.parse(r.current_clan_checked_at || ""))
@@ -42,6 +47,7 @@ export default function useDeclarationData(season: string) {
     const path = `/api/cwl/seasons/${encodeURIComponent(season)}`;
     const checks = createComparisonChecks(
       async (force, signal) => {
+        const refreshId = force ? explicitRead.current : 0;
         try {
           const [arrival, roster, publication] = await Promise.all([
             readArrival(
@@ -80,8 +86,23 @@ export default function useDeclarationData(season: string) {
             Number.isFinite(Date.parse(a.current_clan_checked_at || "")),
           );
           setNow(Date.now());
+          if (refreshId)
+            setRefreshResult((current) =>
+              current?.id === refreshId
+                ? { id: refreshId, status: "success" }
+                : current,
+            );
           return !!arrival.updating;
         } catch (cause) {
+          if (
+            refreshId &&
+            (!signal.aborted || signal.reason?.name === "TimeoutError")
+          )
+            setRefreshResult((current) =>
+              current?.id === refreshId
+                ? { id: refreshId, status: "failed" }
+                : current,
+            );
           if (!signal.aborted || signal.reason?.name === "TimeoutError")
             setError(
               hasResults
@@ -114,6 +135,12 @@ export default function useDeclarationData(season: string) {
     checking,
     checkedAt,
     now,
-    refresh: () => runner.current?.refresh(),
+    refreshResult,
+    refresh: () => {
+      const id = ++explicitRead.current;
+      setRefreshResult({ id, status: "pending" });
+      runner.current?.refresh();
+      return id;
+    },
   };
 }

@@ -1,3 +1,6 @@
+import CwlPageHeader from "./CwlPageHeader";
+import { publicationBlockingReason } from "./publicationBlockingReason";
+import CwlNextLink from "./CwlNextLink";
 import { clanCapacity } from "./rosterCapacity";
 import useStaffDetailsPage from "./useStaffDetailsPage";
 import RosterMenu from "./rosterUi/Menu";
@@ -6,7 +9,9 @@ import { RefreshCw, Send, EyeOff } from "lucide-react";
 import { Button } from "./rosterUi/primitives";
 import JoiningInstructionsEditor from "./JoiningInstructionsEditor";
 import { capacityWarnings, finalizeStatus } from "./publicationStatus";
-import PublicationChanges from "./PublicationChanges";
+import PublicationChanges, {
+  type ComparisonStatus,
+} from "./PublicationChanges";
 import ConfirmDialog from "./ConfirmDialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type Season } from "./api";
@@ -29,6 +34,7 @@ type Props = {
   onFix: (filter: ReadinessFilter) => void;
   step: Step;
   onStepChange: (step: Step) => void;
+  onNavigateStep?: (step: Step) => void;
   onDirty?: (dirty: boolean) => void;
   onBusy?: (busy: boolean) => void;
 };
@@ -45,17 +51,23 @@ export default function PublicationWorkspace({
   onFix,
   step,
   onStepChange,
+  onNavigateStep,
   onDirty,
   onBusy,
   onPublication,
   onDeclaration,
 }: Props) {
   const canManage = useDashboardPermission("cwl_publish");
+  const canAnnounce = useDashboardPermission("cwl_send");
+  const canAnnounceNow = useRef(canAnnounce);
+  canAnnounceNow.current = canAnnounce;
   const publicationCallback = useRef(onPublication);
   publicationCallback.current = onPublication;
 
   const [imagesOpen, setImagesOpen] = useState(false);
   const [changesReady, setChangesReady] = useState(false);
+  const [comparisonStatus, setComparisonStatus] =
+    useState<ComparisonStatus>("loading");
   const [confirmRevision, setConfirmRevision] = useState<number | null>(null);
   const [hideTarget, setHideTarget] = useState<{
     revision: number;
@@ -187,16 +199,31 @@ export default function PublicationWorkspace({
   const hasWarnings = checks.some((check) => check.accounts.length > 0);
   const canPublish = Boolean(
     draft &&
-    canManage &&
-    !locked &&
-    !loading &&
-    !error &&
-    !archived &&
-    instructions.length <= 2000 &&
-    changesReady &&
-    draft.preview.accounts.length &&
-    (draft.preview.unassigned_count === 0 || acknowledged),
+      canManage &&
+      !locked &&
+      !loading &&
+      !error &&
+      !archived &&
+      instructions.length <= 2000 &&
+      changesReady &&
+      draft.preview.accounts.length &&
+      (draft.preview.unassigned_count === 0 || acknowledged),
   );
+
+  const publishReason = publicationBlockingReason({
+    hasDraft: !!draft,
+    canManage,
+    locked,
+    loading,
+    hasError: !!error,
+    archived,
+    instructionsLength: instructions.length,
+    changesReady,
+    comparisonStatus,
+    accounts: draft?.preview.accounts.length ?? 0,
+    unplaced: draft?.preview.unassigned_count ?? 0,
+    acknowledged,
+  });
 
   async function publish() {
     if (!draft || !seasonId || !canPublish || mutationPending.current) return;
@@ -235,7 +262,7 @@ export default function PublicationWorkspace({
       setAcknowledged(false);
       setInstructionsBaseline(instructions);
       instructionsDirtyRef.current = false;
-      onStepChange("announce");
+      if (canAnnounceNow.current) onStepChange("announce");
       setSuccess(
         `Version ${result.published.version} published. Members can now view these assignments.`,
       );
@@ -290,7 +317,7 @@ export default function PublicationWorkspace({
       );
       if (currentSeason.current !== sid) return;
       setSuccess(
-        "Publication withdrawn. Members will see assignments only after you publish again.",
+        "Roster hidden. Members will see assignments only after you publish again.",
       );
       await load();
     } catch (cause) {
@@ -325,7 +352,7 @@ export default function PublicationWorkspace({
     const key = account.assigned_clan_tag || "unassigned";
     const name = account.assigned_clan_tag
       ? clanNames.get(account.assigned_clan_tag) || account.assigned_clan_tag
-      : "Awaiting placement";
+      : "Unplaced";
     const group = rosterGroups.get(key) || { name, accounts: [] };
     group.accounts.push(account);
     rosterGroups.set(key, group);
@@ -397,7 +424,7 @@ export default function PublicationWorkspace({
               : `Publish version ${draft.next_version}?`
           }
           confirmLabel="Publish roster"
-          text={`Publish the current draft for Main and Lazy? ${draft.preview.accounts.length} account${draft.preview.accounts.length === 1 ? "" : "s"}: ${draft.preview.assigned_count} assigned and ${draft.preview.unassigned_count} awaiting placement. Members will see these assignments. No Discord message is sent.`}
+          text={`Publish the current draft for Main and Lazy? ${draft.preview.accounts.length} account${draft.preview.accounts.length === 1 ? "" : "s"}: ${draft.preview.assigned_count} assigned and ${draft.preview.unassigned_count} unplaced. Members will see these assignments. No Discord message is sent.`}
           onCancel={() => setConfirmRevision(null)}
           onConfirm={() => void publish()}
           disabled={!canPublish}
@@ -416,13 +443,9 @@ export default function PublicationWorkspace({
         />
       )}
 
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">Staff · CWL</p>
-          <h1 ref={pageHeading} tabIndex={-1}>
-            {step === "announce" ? "Announcements" : "Finalize roster"}
-          </h1>
-        </div>
+      <CwlPageHeader title={<h1 ref={pageHeading} tabIndex={-1}>
+        {step === "announce" ? "Announcements" : "Finalize roster"}
+      </h1>}>
         <RosterMenu
           label="Season"
           value={seasonId}
@@ -437,7 +460,7 @@ export default function PublicationWorkspace({
             })),
           ]}
         />
-      </div>
+      </CwlPageHeader>
       {!seasonId && (
         <div className="card empty">
           <p>Select a season to review its working roster.</p>
@@ -454,11 +477,6 @@ export default function PublicationWorkspace({
       {success && (
         <div className="notice success" role="status">
           {success}
-          {draft?.published && step !== "announce" && (
-            <button type="button" onClick={() => onStepChange("announce")}>
-              Next: Announcements ›
-            </button>
-          )}
         </div>
       )}
       {loading && !draft && <p role="status">Loading publication preview…</p>}
@@ -494,6 +512,7 @@ export default function PublicationWorkspace({
                 draft={draft}
                 archived={archived}
                 onReady={setChangesReady}
+                onStatus={setComparisonStatus}
               />
             )}
             {instructionsDirty && (
@@ -522,7 +541,7 @@ export default function PublicationWorkspace({
                       {check.accounts.length}{" "}
                       {check.filter === "missing_weight"
                         ? `missing weight${check.accounts.length === 1 ? "" : "s"}`
-                        : `account${check.accounts.length === 1 ? "" : "s"} awaiting placement`}{" "}
+                        : `account${check.accounts.length === 1 ? "" : "s"} unplaced`}{" "}
                       ›
                     </Button>
                   ))}
@@ -533,7 +552,7 @@ export default function PublicationWorkspace({
                     onClick={() => onFix("over_capacity")}
                   >
                     {overCapacity.clans} clan
-                    {overCapacity.clans === 1 ? "" : "s"} over capacity · +
+                    {overCapacity.clans === 1 ? "" : "s"} over clan size · +
                     {overCapacity.players} ›
                   </Button>
                 )}
@@ -564,20 +583,22 @@ export default function PublicationWorkspace({
                     {draft.preview.unassigned_count === 1
                       ? " is"
                       : "s are"}{" "}
-                    still awaiting placement and will appear that way to
-                    members.
+                    still unplaced and will appear that way to members.
                   </span>
                 </label>
               )}
-              {!draft.preview.accounts.length && (
-                <p className="inline-reason">
-                  No signed-up accounts are in this roster yet.
+              {publishReason && (
+                <p className="inline-reason" id="publish-blocked-reason">
+                  {publishReason}
                 </p>
               )}
               <Button
                 variant="primary"
                 icon={Send}
                 disabled={!canPublish}
+                aria-describedby={
+                  publishReason ? "publish-blocked-reason" : undefined
+                }
                 onClick={() => setConfirmRevision(draft.draft_revision)}
               >
                 {busy
@@ -594,13 +615,13 @@ export default function PublicationWorkspace({
               </summary>
               <div className="publication-preview-filters">
                 <label>
-                  Find an account or clan
+                  Find a player or clan
                   <input
                     type="search"
                     value={rosterSearch}
                     disabled={locked || loading}
                     onChange={(event) => setRosterSearch(event.target.value)}
-                    placeholder="Name, tag, pool, or clan"
+                    placeholder="Find a player or clan"
                   />
                 </label>
               </div>
@@ -704,7 +725,11 @@ export default function PublicationWorkspace({
         <div>
           <ManageBridgeWorkspace
             publication={draft ?? undefined}
-            onFinalize={() => onStepChange("review")}
+            onFinalize={
+              canManage
+                ? () => (onNavigateStep ?? onStepChange)("review")
+                : undefined
+            }
             onDeclaration={onDeclaration}
             onDirty={setAnnouncementDirty}
             onBusy={setAnnouncementBusy}
@@ -728,6 +753,13 @@ export default function PublicationWorkspace({
             )}
           </details>
         </div>
+      )}
+      {step === "review" && draft?.published && canAnnounce && (
+        <CwlNextLink
+          label="Announcements"
+          disabled={locked || loading || instructionsDirty}
+          onNext={() => (onNavigateStep ?? onStepChange)("announce")}
+        />
       )}
     </div>
   );

@@ -104,3 +104,62 @@ it("Build Next cue calls Finalize and is hidden without publish permission", asy
     host.remove();
   }
 });
+
+it.each(["assign", "compare", "rules"])(
+  "Build Next only appears in Accounts & signups with no unplaced accounts: %s",
+  async (mode) => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    sessionStorage.clear();
+    localStorage.clear();
+    sessionStorage.setItem("wu-roster-1-mode", JSON.stringify(mode));
+    api.mockResolvedValue({
+      revision: 1,
+      accounts: [
+        {
+          tag: "#P",
+          player_name: "Player",
+          user_id: "1",
+          pool: "main",
+          assigned_clan_tag: null,
+          effective_weight: 170000,
+        },
+      ],
+      clans: [],
+      metadata_updating: false,
+    });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () =>
+        root.render(
+          <DashboardPermissions.Provider
+            value={{ owner: true, permissions: [] }}
+          >
+            <RosterWorkspace
+              seasonId="1"
+              seasons={[]}
+              onSeasonChange={() => {}}
+              onReviewPublication={() => {}}
+            />
+          </DashboardPermissions.Provider>,
+        ),
+      );
+      expect(host.textContent).not.toContain("Next: Finalize roster");
+      if (mode === "assign")
+        expect(host.textContent).toContain(
+          "1 account unplaced. Place it before Finalize roster.",
+        );
+      else
+        expect(host.textContent).not.toContain(
+          "Place them before Finalize roster.",
+        );
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      sessionStorage.clear();
+      localStorage.clear();
+      api.mockReset();
+    }
+  },
+);

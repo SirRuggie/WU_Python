@@ -2,9 +2,6 @@
 .publication-workspace [hidden] {
   display: none !important;
 }
-.publication-workspace > .page-head h1 {
-  font-size: clamp(1.25rem, 2vw, 1.7rem);
-}
 .finalize-review {
   color: var(--roster-text);
   font-size: 13px;
@@ -233,10 +230,20 @@
 .finalize-review .publication-group summary .publication-clan-meta {
   color: var(--roster-text-muted);
 }
-@media(max-width:700px){
-  .publication-steps{display:grid;grid-template-columns:1fr 1fr}
-  .publication-steps button{padding:8px;font-size:12px}
-  .publication-group summary{align-items:start;flex-wrap:wrap;gap:3px 8px}
+@media (max-width: 700px) {
+  .publication-steps {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .publication-steps button {
+    padding: 8px;
+    font-size: 12px;
+  }
+  .publication-group summary {
+    align-items: start;
+    flex-wrap: wrap;
+    gap: 3px 8px;
+  }
   .publication-group summary > span {
     width: 100%;
     text-align: left;
@@ -244,11 +251,77 @@
   }
 }
 
-.readiness-checks{margin:18px 0}.readiness-filter{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:15px 0}.readiness-filter label{flex:1;min-width:180px}@media(max-width:650px){.readiness-checks .staff-row{align-items:start;flex-wrap:wrap}.readiness-checks .staff-row button{white-space:normal;text-align:left}}
-.announcement-preview-dialog{width:min(980px,calc(100vw - 32px));max-height:90dvh;padding:0;border:1px solid #6e5d31;border-radius:16px;background:#171719;color:#f5f4f0;overflow:auto}
-.announcement-preview-dialog::backdrop{background:#000b}
-.announcement-preview-dialog>header{position:sticky;top:0;z-index:2;background:#211e17;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid #4b4433}
-.announcement-preview-dialog h2{margin:0;font-size:19px}
-.announcement-preview-body{padding:24px;overflow-wrap:anywhere}
-body:has(.announcement-preview-dialog[open]){overflow:hidden}
-@media(max-width:600px){.announcement-preview-dialog{width:calc(100vw - 16px);max-height:95dvh}.announcement-preview-body{padding:12px}.announcement-preview-dialog>header{padding:12px}}
+.readiness-checks {
+  margin: 18px 0;
+}
+.readiness-filter {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 15px 0;
+}
+.readiness-filter label {
+  flex: 1;
+  min-width: 180px;
+}
+@media (max-width: 650px) {
+  .readiness-checks .staff-row {
+    align-items: start;
+    flex-wrap: wrap;
+  }
+  .readiness-checks .staff-row button {
+    white-space: normal;
+    text-align: left;
+  }
+}
+.announcement-preview-dialog {
+  width: min(980px, calc(100vw - 32px));
+  max-height: 90dvh;
+  padding: 0;
+  border: 1px solid #6e5d31;
+  border-radius: 16px;
+  background: #171719;
+  color: #f5f4f0;
+  overflow: auto;
+}
+.announcement-preview-dialog::backdrop {
+  background: #000b;
+}
+.announcement-preview-dialog > header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #211e17;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #4b4433;
+}
+.announcement-preview-dialog h2 {
+  margin: 0;
+  font-size: 19px;
+}
+.announcement-preview-body {
+  padding: 24px;
+  overflow-wrap: anywhere;
+}
+body:has(.announcement-preview-dialog[open]) {
+  overflow: hidden;
+}
+@media (max-width: 600px) {
+  .announcement-preview-dialog {
+    width: calc(100vw - 16px);
+    max-height: 95dvh;
+  }
+  .announcement-preview-body {
+    padding: 12px;
+  }
+  .announcement-preview-dialog > header {
+    padding: 12px;
+  }
+}
+
+/* Match Build's title/season row without another heading above it. */

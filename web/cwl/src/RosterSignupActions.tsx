@@ -57,7 +57,7 @@ export function RosterSignupReview({
     (account) => !!account.assigned_clan_tag,
   ).length;
   const hostName = (tag: string | null) =>
-    clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
+    clans.find((clan) => clan.tag === tag)?.name || tag || "Unplaced";
   const reviewActions = (
     <div className="roster-signup-review-actions">
       <Button disabled={busy} onClick={onCancel}>
@@ -110,7 +110,7 @@ export function RosterSignupReview({
               {hiddenTags.includes(account.tag) ? " · Not visible in list" : ""}
               {account.assigned_clan_tag
                 ? ` · Assigned to ${hostName(account.assigned_clan_tag)}`
-                : " · unassigned"}
+                : " · unplaced"}
             </small>
           </li>
         ))}

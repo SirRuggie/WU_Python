@@ -1,3 +1,4 @@
+import { rosterImageDimensions } from "./rosterImageDimensions";
 import { DISCORD_GUILD_ID } from "./discordGuild";
 import { useEffect, useRef, useState } from "react";
 import { api, type Pool } from "./api";
@@ -517,7 +518,7 @@ function ImagePages({
 }: {
   season: string;
   version: number;
-  clan: { name: string; tag: string; pages: number };
+  clan: { name: string; tag: string; pages: number; count: number };
 }) {
   return (
     <>
@@ -526,7 +527,8 @@ function ImagePages({
         return (
           <div key={i}>
             <img
-              loading="lazy"
+              loading={i === 0 ? "eager" : "lazy"}
+              {...rosterImageDimensions(clan.count, i)}
               src={src}
               alt={`${clan.name} roster page ${i + 1}`}
             />
