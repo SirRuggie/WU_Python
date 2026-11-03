@@ -118,18 +118,15 @@ export default function MemberAssignments({
   );
   return (
     <div className="member-assignments roster-ui">
-      <CwlPageHeader
-        title={
-          <>
-            <h1>My clan assignments</h1>
-            <p>Your accounts, grouped by assigned clan.</p>
-            <p className="season-choice">
-              {seasons.find((item) => String(item.id) === seasonId)?.label ||
-                "No CWL season available"}
-            </p>
-          </>
-        }
-      />
+      <CwlPageHeader title={<h1>My clan assignments</h1>}>
+        <p className="cwl-page-header-season" aria-label="Season">
+          {seasons.find((item) => String(item.id) === seasonId)?.label ||
+            "No CWL season available"}
+        </p>
+      </CwlPageHeader>
+      <p className="cwl-page-description">
+        Your accounts, grouped by assigned clan.
+      </p>
       {!seasonId && (
         <div className="card empty">
           <p>Staff will make your CWL season available here.</p>

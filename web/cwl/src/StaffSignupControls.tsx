@@ -332,6 +332,10 @@ export default function StaffSignupControls({
           busy={working || editorOpen}
           expandOnSearchFocus
           onClose={() => {
+            if (!working && !dirty) {
+              close();
+              return true;
+            }
             void canDiscard().then((allowed) => {
               if (allowed) close();
             });

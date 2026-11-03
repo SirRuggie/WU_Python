@@ -157,14 +157,7 @@
 .workspace main:has(> .member-assignments) .member-nav-tabs {
   margin-bottom: 13px;
 }
-.member-assignments .page-head {
-  margin-bottom: 13px;
-}
-.member-assignments .page-head h1 {
-  font-size: clamp(26px, 3vw, 32px);
-  margin-bottom: 3px;
-}
-.member-assignments .page-head p {
+.member-assignments > .cwl-page-description {
   font-size: 13px;
   line-height: 1.35;
 }
@@ -233,12 +226,6 @@
   }
   .workspace main:has(> .member-assignments) .member-nav-tabs {
     margin-bottom: 10px;
-  }
-  .member-assignments .page-head {
-    margin-bottom: 9px;
-  }
-  .member-assignments .page-head .season-choice {
-    margin-top: 10px;
   }
   .member-assignments .member-compact-status {
     padding: 9px 11px;

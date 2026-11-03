@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ value: null as any }));
 const extraState = vi.hoisted(() => ({
+  allowPingDirty: false,
   value: { data: undefined as any, loading: true, error: "", refresh: vi.fn() },
 }));
 vi.mock("./useDeclarationData", () => ({ default: () => state.value }));
@@ -12,11 +13,16 @@ vi.mock("./DeclarationPingPanel", () => ({
   default: ({
     missing,
     locationStatus,
+    onDirty,
   }: {
     missing: number;
     locationStatus?: string;
+    onDirty?: (dirty: boolean) => void;
   }) => (
     <div data-ping-count={missing}>
+      {extraState.allowPingDirty && (
+        <button onClick={() => onDirty?.(true)}>Edit local ping channel</button>
+      )}
       {locationStatus
         ? locationStatus === "checking"
           ? "Checking locations…"
@@ -64,6 +70,7 @@ function makeData() {
   };
 }
 beforeEach(() => {
+  extraState.allowPingDirty = false;
   extraState.value = {
     data: undefined,
     loading: true,
@@ -1002,4 +1009,50 @@ it("states unavailable locations once and keeps only differing clan readiness la
   expect(
     host.querySelector(".declaration-clan-toggle")?.textContent,
   ).not.toContain("Not ready");
+});
+
+it("pool discard Cancel keeps the pool and confirmation changes it without a write", async () => {
+  extraState.allowPingDirty = true;
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  const transport = vi.spyOn(await import("./api"), "api");
+  await act(async () => root.render(<ArrivalCheck seasonId="1" />));
+  const button = (name: string, within: ParentNode = document) =>
+    [...within.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent?.trim() === name,
+    )!;
+  await act(async () => button("Edit local ping channel").click());
+  const pools = host.querySelector('[aria-label="CWL pool"]')!;
+  const lazy = [...pools.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent?.startsWith("Lazy"),
+  )!;
+  const main = [...pools.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent?.startsWith("Main"),
+  )!;
+  await act(async () => lazy.click());
+  expect(main.getAttribute("aria-pressed")).toBe("true");
+  await act(async () =>
+    button("Cancel", document.querySelector(".confirm-dialog")!).click(),
+  );
+  expect(main.getAttribute("aria-pressed")).toBe("true");
+  await act(async () => {
+    lazy.click();
+    lazy.click();
+  });
+  await act(async () => {
+    const confirm = button(
+      "Discard channel change",
+      document.querySelector(".confirm-dialog")!,
+    );
+    confirm.click();
+    confirm.click();
+  });
+  expect(lazy.getAttribute("aria-pressed")).toBe("true");
+  expect(
+    transport.mock.calls.filter((call) => call[1] && call[1] !== "GET"),
+  ).toEqual([]);
 });

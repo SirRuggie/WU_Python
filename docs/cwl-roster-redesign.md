@@ -1348,3 +1348,11 @@ review; 122 has not started.
 
 Four additional existing-preview Back/refresh checks pass at all four widths,
 retaining pool/filter state with zero non-GET requests and zero page errors.
+
+### Later: Declaration history selection
+
+During PR192 review, Declaration Back restored `?season=1` in the URL while the
+season menu retained the subsequently picked season. This may predate the shared
+picker change; that attribution is unproven. Investigate with a bounded baseline
+comparison in a separately approved change. No history/selection fix is bundled
+into122/152.

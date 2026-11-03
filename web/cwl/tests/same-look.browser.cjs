@@ -195,23 +195,51 @@ const pages = [
         const metrics = await page.evaluate(() => ({
           overflow: document.documentElement.scrollWidth > innerWidth,
           headers: document.querySelectorAll("h1").length,
+          headerHeight:
+            document.querySelector(".cwl-page-header")?.getBoundingClientRect()
+              .height ?? null,
           fonts: [...document.querySelectorAll(".cwl-page-header h1")].map(
             (e) => getComputedStyle(e).fontSize,
           ),
           headerRow: (() => {
             const header = document.querySelector(".cwl-page-header"),
-              menu = header?.querySelector(".roster-menu");
+              menu = header?.querySelector(
+                ".roster-menu, .cwl-page-header-season",
+              );
             if (!menu) return null;
             const title = header.querySelector("h1").getBoundingClientRect(),
               control = menu.getBoundingClientRect();
             return {
               display: getComputedStyle(header).display,
               overlap: title.top < control.bottom && control.top < title.bottom,
+              height: header.getBoundingClientRect().height,
+              seasonLeft: control.left,
+              seasonWidth: control.width,
+              seasonFont: getComputedStyle(
+                menu.querySelector(".roster-menu-current") || menu,
+              ).fontSize,
+              seasonRight: control.right,
+              headerRight: header.getBoundingClientRect().right,
             };
           })(),
         }));
         assert(!metrics.overflow, JSON.stringify({ name, width, metrics }));
         assert.equal(metrics.headers, 1);
+        if (
+          (process.env.WU_LAYOUT_PHASE || "candidate") !== "before" &&
+          metrics.headerHeight !== null
+        )
+          assert(
+            Math.abs(metrics.headerHeight - 44) < 1,
+            JSON.stringify({ name, width, metrics }),
+          );
+        if ((process.env.WU_LAYOUT_PHASE || "candidate") !== "before")
+          for (const font of metrics.fonts)
+            assert.equal(
+              font,
+              width === 360 ? "20px" : "24px",
+              JSON.stringify({ name, width, metrics }),
+            );
         if (
           (process.env.WU_LAYOUT_PHASE || "candidate") !== "before" &&
           metrics.headerRow
@@ -223,6 +251,27 @@ const pages = [
           );
           assert(
             metrics.headerRow.overlap,
+            JSON.stringify({ name, width, metrics }),
+          );
+          assert(
+            Math.abs(metrics.headerRow.height - 44) < 1,
+            JSON.stringify({ name, width, metrics }),
+          );
+          assert(
+            Math.abs(
+              metrics.headerRow.seasonRight - metrics.headerRow.headerRight,
+            ) < 1,
+            JSON.stringify({ name, width, metrics }),
+          );
+          assert(
+            Math.abs(
+              metrics.headerRow.seasonWidth - (width === 360 ? 152 : 200),
+            ) < 1,
+            JSON.stringify({ name, width, metrics }),
+          );
+          assert.equal(
+            metrics.headerRow.seasonFont,
+            "12px",
             JSON.stringify({ name, width, metrics }),
           );
         }
@@ -287,6 +336,17 @@ const pages = [
         await context.close();
       }
     assert.equal(cases.length, 30);
+    if ((process.env.WU_LAYOUT_PHASE || "candidate") !== "before")
+      for (const width of [360, 1440]) {
+        const positions = cases
+          .filter((item) => item.width === width && item.headerRow)
+          .map((item) => item.headerRow.seasonRight);
+        assert(positions.length >= 10);
+        assert(
+          Math.max(...positions) - Math.min(...positions) < 1,
+          JSON.stringify({ width, positions }),
+        );
+      }
     assert.deepEqual(writes, []);
     assert.deepEqual(errors, []);
     fs.writeFileSync(

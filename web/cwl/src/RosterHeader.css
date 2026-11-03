@@ -10,27 +10,9 @@
   gap: 8px;
   min-width: 0;
 }
-.roster-header-title-row h1 {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-  font-size: clamp(1.1rem, 2vw, 1.5rem);
-}
 .roster-header-season {
   position: relative;
-  flex: 0 1 190px;
   min-width: 0;
-}
-.roster-header-season .roster-menu-trigger {
-  min-height: 44px;
-  height: 44px;
-  padding: 4px 8px;
-}
-.roster-header-season .roster-menu-trigger-copy > small {
-  display: none;
-}
-.roster-header-season-short {
-  display: none;
 }
 .roster-header-summary {
   min-width: 0;
@@ -112,33 +94,7 @@
   color: inherit;
   cursor: pointer;
 }
-@media (max-width: 650px) {
-  .roster-header-season {
-    flex: 0 0 110px;
-  }
-  .roster-header-season .roster-menu-trigger-copy {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-  .roster-header-season-short {
-    position: absolute;
-    inset: 0 24px 0 8px;
-    display: flex;
-    align-items: center;
-    font-size: 12px;
-    pointer-events: none;
-  }
-}
 @media (min-width: 1100px) {
-  .roster-header {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
-    column-gap: 12px;
-  }
   .roster-header > .publication-awareness,
   .roster-header > .signup-activity {
     grid-column: 1 / -1;
@@ -156,17 +112,6 @@
 .roster-header-signups .staff-signup-controls {
   margin-bottom: 0;
 }
-.roster-header-season .roster-menu-label {
-  display: none;
-}
-@media (max-width: 650px) {
-  .roster-header-season .roster-menu-chevron {
-    position: absolute;
-    right: 8px;
-    width: 16px;
-    height: 16px;
-  }
-}
 
 .roster-header-view-label {
   display: none;
@@ -180,6 +125,25 @@
   }
 }
 
-.roster-header .cwl-page-header {
+.shell .roster-header .page-head.cwl-page-header {
   margin-bottom: 0;
+}
+
+@media (min-width: 1100px) {
+  .roster-header-title-row {
+    grid-area: 1 / 1;
+  }
+  .roster-header-title-row .cwl-page-header-title {
+    flex: 0 0 220px;
+    margin-right: auto;
+  }
+  .roster-header > .roster-header-summary {
+    grid-area: 1 / 1;
+    margin-inline: 232px 212px;
+    align-self: center;
+  }
+  .roster-header:has(.roster-header-title-row > .roster-ui-button)
+    > .roster-header-summary {
+    margin-right: 268px;
+  }
 }

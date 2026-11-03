@@ -811,7 +811,7 @@ function App() {
   }
   const withdraw = async (rows: Signup[]) => {
     if (!seasonId || pending || loadingData || !rows.length) return
-    if (!(await confirmCwl(withdrawConfirmation(rows), "Withdraw accounts"))) return
+    if (!(await confirmCwl(withdrawConfirmation(rows), "Withdraw accounts", {danger: true}))) return
     const withdrawnSeason = seasonId
     let removed = new Set<string>()
     setPending(true)
@@ -1053,7 +1053,7 @@ function App() {
           setPool(nextPool); setSignupPanel('register'); setSignupStep(2); setReview(false); setCompletion(null); changeView('signup')
         }} />}
         {view === 'signup' && <>
-          <CwlPageHeader className="member-signup-head" title={<> <h1>{signupPanel === 'saved' ? 'My signups' : 'Sign up'}</h1><p>{signupPanel === 'saved' ? 'Your saved CWL signups for this season.' : activeCompletion ? "Your season signup is saved." : season && !memberSignupsOpen(season) ? "View your saved signups and CWL clans." : "Sign up your accounts for CWL. Staff will choose your CWL clans."}</p> </>} />
+          <CwlPageHeader className="member-signup-head" title={<h1>{signupPanel === 'saved' ? 'My signups' : 'Sign up'}</h1>} /><p className="cwl-page-description">{signupPanel === 'saved' ? 'Your saved CWL signups for this season.' : activeCompletion ? "Your season signup is saved." : season && !memberSignupsOpen(season) ? "View your saved signups and CWL clans." : "Sign up your accounts for CWL. Staff will choose your CWL clans."}</p>
           {((seasonError && !seasonsKnown) || (!activeCompletion && (dataError || accountError))) && <AttentionSummary urgent items={[
             ...(seasonError && !seasonsKnown ? [{ title: 'CWL season availability could not be checked', detail: 'The season list may be out of date. Retry before choosing a season.', technicalDetail: seasonError, action: { label: 'Retry seasons', onClick: () => void loadSeasons(), disabled: seasonsLoading } }] : []),
             ...(!activeCompletion && dataError ? [{ title: accountError ? 'Signup and account data could not be checked' : 'Saved CWL signups could not be checked', detail: accountError ? 'Saved signups and linked accounts remain unavailable until this check succeeds.' : 'Signup and saved-account changes remain unavailable until this check succeeds.', technicalDetail: [dataError, accountError].filter(Boolean).join(' · '), action: { label: 'Retry CWL data', onClick: retrySignupRead, disabled: loadingData || pending } }] : !activeCompletion && accountError ? [{ title: 'Linked accounts are unavailable', detail: 'Account selections and pool changes are paused until links can be checked.', technicalDetail: accountError, action: { label: 'Retry CWL data', onClick: retrySignupRead, disabled: loadingData || pending } }] : []),

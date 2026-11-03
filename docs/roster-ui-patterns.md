@@ -583,3 +583,35 @@ Existing partial/unavailable location, visibility-check failure, forced-open pin
 error, archived/read-only and member closed-season regressions remain in the
 four-width suite. Data/storage/provider authorization remains with existing
 owners; browser sample checks do not establish production delivery or freshness.
+
+### Review 152 corrections
+
+The first regression exercises the actual ParticipationWorkspace month-change
+handler and its POST to participation/sync-settings: Cancel makes zero writes,
+Confirm makes one, and a double click still makes one. The child editor supplies
+its existing dirty-change contract in this isolated test; this is not live editor
+or Discord evidence. Removing the confirmation produces an assertion failure.
+Actual ArrivalCheck and App pool-change tests likewise retain drafts on Cancel,
+clear them on Confirm, and make no writes.
+
+All CWL headers now share a 44px title row, 20px phone/24px wide title, and a
+152px phone/200px wide season field, including read-only My assignments. At 360px
+all ten season fields span x193–345; at 1440px they span x1212–1412. Obsolete
+page-specific header rules were removed. The accepted Build height targets remain
+covered. Clean staff Signup Back closes synchronously without restoring an extra
+history marker. Withdraw uses the existing danger dialog style. The danger text
+token now passes 4.5:1 on the selected surface (the old token measured 4.039:1);
+seven semantic text/surface pairs are checked. MessagePublish retains its dialog
+change with only 10 added/four removed lines against the accepted predecessor;
+formatting-only changes were reverted.
+
+Validation: 57 focused tests, 1,680 frontend tests across 286 files, typecheck and
+Vite build pass. Six genuine assertion-killed mutants cover the month guard,
+both pool guards, clean Back, withdrawal danger style and contrast. The semantic
+API comparison retains all 53 calls in 19 modules. The four-width suite passes
+52 scenarios at 320/360/390/1440; the page/dialog comparison passes 30 before and
+30 after cases at 360/1440, with zero non-GET requests and page errors. Narrow
+and wide before/after headers were visually reviewed. The separately documented
+Declaration Back URL/menu mismatch remains unproven and unchanged. No production
+operation or task 123 implementation occurred. Release remains held; later
+integration must preserve the accepted background filler queue predecessor.

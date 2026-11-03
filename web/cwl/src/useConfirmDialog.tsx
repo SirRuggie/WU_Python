@@ -4,6 +4,7 @@ import ConfirmDialog from "./ConfirmDialog";
 type Request = {
   text: string;
   label: string;
+  danger: boolean;
   resolve: (confirmed: boolean) => void;
 };
 
@@ -23,10 +24,14 @@ export default function useConfirmDialog(scope?: string) {
     };
   }, [scope]);
   const confirm = useCallback(
-    (text: string, label: string): Promise<boolean> => {
+    (
+      text: string,
+      label: string,
+      options: { danger?: boolean } = {},
+    ): Promise<boolean> => {
       if (!mounted.current || pending.current) return Promise.resolve(false);
       return new Promise((resolve) => {
-        const next = { text, label, resolve };
+        const next = { text, label, danger: !!options.danger, resolve };
         pending.current = next;
         setRequest(next);
       });
@@ -46,6 +51,7 @@ export default function useConfirmDialog(scope?: string) {
       <ConfirmDialog
         text={request.text}
         confirmLabel={request.label}
+        danger={request.danger}
         onCancel={() => settle(false)}
         onConfirm={() => settle(true)}
       />

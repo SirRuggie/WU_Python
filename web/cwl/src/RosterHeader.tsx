@@ -15,30 +15,6 @@ import "./horizontalFades.css";
 
 type StatusFilter = "all" | "unassigned" | "missing_weight";
 
-const monthNames = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-function compactSeasonLabel(label: string): string {
-  const match = /^(\S+)\s+(\d{4})$/.exec(label.trim());
-  if (!match) return label;
-  const month = monthNames.find(
-    (name) => name.toLowerCase() === match[1].toLowerCase(),
-  );
-  return month ? `${month.slice(0, 3)} ${match[2]}` : label;
-}
-
 type Props = {
   onFillSignupSpot: (item: SignupChange) => boolean;
   onSignupDetails: (tag: string) => boolean;
@@ -203,6 +179,14 @@ export default function RosterHeader({
           </h1>
         }
       >
+        {!refreshInToolbar && (
+          <Button
+            icon={RefreshCw}
+            label="Refresh roster"
+            disabled={uiLocked}
+            onClick={onRefresh}
+          />
+        )}
         <div className="roster-header-season">
           <RosterMenu
             label="Season"
@@ -218,20 +202,7 @@ export default function RosterHeader({
               })),
             ]}
           />
-          <span className="roster-header-season-short" aria-hidden="true">
-            {selectedSeasonLabel
-              ? compactSeasonLabel(selectedSeasonLabel)
-              : "Season"}
-          </span>
         </div>
-        {!refreshInToolbar && (
-          <Button
-            icon={RefreshCw}
-            label="Refresh roster"
-            disabled={uiLocked}
-            onClick={onRefresh}
-          />
-        )}
       </CwlPageHeader>
       <details ref={summary} className="roster-header-summary">
         <summary>

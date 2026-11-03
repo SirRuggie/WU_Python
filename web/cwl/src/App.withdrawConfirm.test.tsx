@@ -47,45 +47,43 @@ beforeEach(async () => {
     () => {},
   );
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-  api
-    .mockReset()
-    .mockImplementation(async (path: string, method?: string) =>
-      method === "DELETE"
-        ? {}
-        : path === "/auth/me"
+  api.mockReset().mockImplementation(async (path: string, method?: string) =>
+    method === "DELETE"
+      ? {}
+      : path === "/auth/me"
+        ? {
+            authenticated: true,
+            user: { id: "1", username: "Local fixture" },
+            is_owner: false,
+            can_edit: false,
+            csrf_token: "fixture",
+            dashboard_permissions: [],
+          }
+        : path === "/seasons"
           ? {
-              authenticated: true,
-              user: { id: "1", username: "Local fixture" },
-              is_owner: false,
-              can_edit: false,
-              csrf_token: "fixture",
-              dashboard_permissions: [],
+              seasons: [
+                {
+                  id: 1,
+                  label: "November",
+                  status: "draft",
+                  signup_open: true,
+                },
+              ],
+              member_season: { season_id: 1, revision: 1 },
             }
-          : path === "/seasons"
-            ? {
-                seasons: [
-                  {
-                    id: 1,
-                    label: "November",
-                    status: "draft",
-                    signup_open: true,
-                  },
-                ],
-                member_season: { season_id: 1, revision: 1 },
-              }
-            : path === "/config"
-              ? { dev_fixture: true }
-              : path.startsWith("/linked-accounts")
-                ? {
-                    accounts: [{ tag: "#PYY", name: "Fixture", town_hall: 18 }],
-                    updating: false,
-                  }
-                : path.endsWith("/signups")
-                  ? { signups: rows }
-                  : path.endsWith("/my-assignments")
-                    ? { published: null, accounts: [] }
-                    : {},
-    );
+          : path === "/config"
+            ? { dev_fixture: true }
+            : path.startsWith("/linked-accounts")
+              ? {
+                  accounts: [{ tag: "#PYY", name: "Fixture", town_hall: 18 }],
+                  updating: false,
+                }
+              : path.endsWith("/signups")
+                ? { signups: rows }
+                : path.endsWith("/my-assignments")
+                  ? { published: null, accounts: [] }
+                  : {},
+  );
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -104,6 +102,12 @@ afterEach(async () => {
 it("withdraw Cancel writes zero and double confirmation deletes each requested account once", async () => {
   await act(async () => button("Withdraw fixture accounts").click());
   expect(writes()).toHaveLength(0);
+  expect(
+    button(
+      "Withdraw accounts",
+      document.querySelector(".confirm-dialog")!,
+    ).classList.contains("confirm-danger"),
+  ).toBe(true);
   expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
     "Clan assignments will be cleared for: Fixture.",
   );
