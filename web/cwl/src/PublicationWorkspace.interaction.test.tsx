@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import PublicationWorkspace from "./PublicationWorkspace";
@@ -433,6 +433,157 @@ it.each([
       expect(
         host.querySelector("#publish-blocked-reason")?.textContent || "",
       ).toBe(reason);
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  },
+);
+
+it.each([
+  [false, false],
+  [true, false],
+  [true, true],
+] as const)(
+  "successful Publish stays in an authorized step: canAnnounce=%s revokeDuringPublish=%s",
+  async (canAnnounce, revokeDuringPublish) => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    HTMLDialogElement.prototype.showModal = function () {
+      this.setAttribute("open", "");
+    };
+    HTMLDialogElement.prototype.close = function () {
+      this.removeAttribute("open");
+    };
+    const account = {
+      tag: "#P",
+      player_name: "Player",
+      user_id: "1",
+      pool: "main",
+      town_hall: 18,
+      assigned_clan_tag: "#A",
+      effective_weight: 170000,
+    };
+    const published = {
+      version: 1,
+      revision: 7,
+      joining_instructions: "",
+      published_at: "2026-11-03T03:00:00Z",
+    };
+    let draft = {
+      next_version: 1,
+      draft_revision: 7,
+      draft_changed: true,
+      last_publication: null as typeof published | null,
+      published: null as typeof published | null,
+      preview: {
+        accounts: [account],
+        clans: [
+          { tag: "#A", name: "Clan A", pool: "main", effective_capacity: 15 },
+        ],
+        assigned_count: 1,
+        unassigned_count: 0,
+      },
+    };
+    let finishPublish: (() => void) | undefined;
+    let revokeSend: (() => void) | undefined;
+    api.mockClear();
+    api.mockImplementation(async (path: string, method?: string) => {
+      if (method === "POST") {
+        draft = {
+          ...draft,
+          next_version: 2,
+          draft_revision: 8,
+          draft_changed: false,
+          published,
+          last_publication: published,
+        };
+        return revokeDuringPublish
+          ? new Promise((resolve) => {
+              finishPublish = () => resolve({ published });
+            })
+          : { published };
+      }
+      if (path.includes("export-preview"))
+        return { rows: [account], summary: { published_version: 1 } };
+      return draft;
+    });
+    const changed = vi.fn(),
+      manualNavigation = vi.fn();
+    function Harness() {
+      const [step, setStep] = useState<"review" | "announce">("review");
+      const [canSend, setCanSend] = useState(canAnnounce);
+      revokeSend = () => setCanSend(false);
+      return (
+        <DashboardPermissions.Provider
+          value={{
+            owner: false,
+            permissions: canSend
+              ? ["cwl_publish", "cwl_send"]
+              : ["cwl_publish"],
+          }}
+        >
+          <PublicationWorkspace
+            seasonId="1"
+            seasons={[]}
+            onSeasonChange={() => {}}
+            onFix={() => {}}
+            step={step}
+            onStepChange={(next) => {
+              changed(next);
+              setStep(next);
+            }}
+            onNavigateStep={manualNavigation}
+          />
+        </DashboardPermissions.Provider>
+      );
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Harness />));
+      const publish = [
+        ...host.querySelectorAll<HTMLButtonElement>("button"),
+      ].find((button) => button.textContent?.trim() === "Publish roster")!;
+      expect(publish.disabled).toBe(false);
+      await act(async () => publish.click());
+      const confirm = [
+        ...document.querySelectorAll<HTMLButtonElement>("dialog button"),
+      ].find((button) => button.textContent?.trim() === "Publish roster")!;
+      expect(confirm).toBeDefined();
+      await act(async () => confirm.click());
+      if (revokeDuringPublish) {
+        expect(finishPublish).toBeDefined();
+        await act(async () => revokeSend!());
+        await act(async () => finishPublish!());
+      }
+      const mayAnnounce = canAnnounce && !revokeDuringPublish;
+      expect(host.querySelector("h1")?.textContent).toBe(
+        mayAnnounce ? "Announcements" : "Finalize roster",
+      );
+      expect(host.textContent).toContain(
+        "Version 1 published. Members can now view these assignments.",
+      );
+      if (mayAnnounce)
+        expect(changed).toHaveBeenCalledExactlyOnceWith("announce");
+      else {
+        expect(changed).not.toHaveBeenCalled();
+        expect(host.querySelector(".publication-summary")?.textContent).toMatch(
+          /version 1/i,
+        );
+      }
+      expect(manualNavigation).not.toHaveBeenCalled();
+      expect(api.mock.calls.filter((call) => call[1] === "POST")).toEqual([
+        [
+          "/seasons/1/publication",
+          "POST",
+          {
+            revision: 7,
+            acknowledge_unassigned: false,
+            joining_instructions: "",
+          },
+        ],
+      ]);
     } finally {
       await act(async () => root.unmount());
       host.remove();

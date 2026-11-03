@@ -58,6 +58,8 @@ export default function PublicationWorkspace({
 }: Props) {
   const canManage = useDashboardPermission("cwl_publish");
   const canAnnounce = useDashboardPermission("cwl_send");
+  const canAnnounceNow = useRef(canAnnounce);
+  canAnnounceNow.current = canAnnounce;
   const publicationCallback = useRef(onPublication);
   publicationCallback.current = onPublication;
 
@@ -259,7 +261,7 @@ export default function PublicationWorkspace({
       setAcknowledged(false);
       setInstructionsBaseline(instructions);
       instructionsDirtyRef.current = false;
-      onStepChange("announce");
+      if (canAnnounceNow.current) onStepChange("announce");
       setSuccess(
         `Version ${result.published.version} published. Members can now view these assignments.`,
       );

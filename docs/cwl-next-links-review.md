@@ -24,8 +24,9 @@ snapshot. Results leads to Bonus medals. Bonus ends the chain.
 Navigation uses existing guarded application callbacks, selected-season context
 and history. The Finalize Next callback uses the existing history-pushing helper,
 so refresh and Back retain Finalize instead of replacing it with Announcements.
-The automatic successful-Publish step callback stays separate so a pending
-operation does not block its own completion. Destination permissions remain authoritative; unavailable targets
+The automatic successful-Publish setter stays separate from navigation guards.
+It advances only if the latest send grant still permits Announcements; otherwise
+the user stays on Finalize with the new published state. Destination permissions remain authoritative; unavailable targets
 do not receive a usable Next callback. The tested Next/sidebar paths protect unsaved edits: review 149 adds the
 previously missing Seasons pool-role dirty check, with one confirmation before
 leaving. This is not a claim that every workspace historically had that guard.
@@ -180,10 +181,45 @@ collapsed. Their logs remain; no app behavior or assertions were changed for
 those corrections.
 
 One adjacent pre-existing automatic-Publish behavior was identified during the
-completion review: the original successful-Publish callback still calls the
-Announcements setter even without cwl_send. Manual Next is fixed; the separate
-automatic setter was deliberately retained in 120. Actual-source AST execution
-with a fake successful API confirms it. No server permission bypass or live
-operation is claimed. Scope judgment is pending in question 967 before changing that behavior
-or declaring the final 149 delta READY. No adjacent automatic-setter fix or
-deferral is assumed by this checkpoint.
+completion review: the original callback entered Announcements without cwl_send.
+Actual-source AST execution with a fake successful API confirmed it. Question
+967 was resolved by review 483, which approved correcting the same destination
+permission bug; the final behavior and checks follow below.
+
+### Review 483 completion — READY for delta review
+
+Successful Publish now advances through the original automatic setter only when
+the current send grant permits Announcements. Publisher-only users remain on
+Finalize with the published version and success message. The grant is read from
+a current-context ref at completion, so a role revoked while the Publish response
+is pending cannot advance into the hidden step. No extra authorization read,
+Publish retry, HTTP argument or server permission was added.
+
+Three actual component success regressions cover publisher-only, sender, and
+sender revoked during the pending response. Each performs exactly one mocked
+Publish POST, preserves the published result and checks the visible step. The
+original sender path uses its existing setter; it does not invoke the manual
+navigation callback. The original static bug and the stale captured-grant case
+were each reproduced before correction. Both guard-removal mutants fail genuine
+assertions, in addition to the 16 prior targeted 149 mutants. The full frontend
+passes 1,624 tests/272 files (96.26s), 79 affected tests pass, and TypeScript/build
+passes (5.98s). API/link arguments across seven runtime files and the original
+Publish eligibility/submission guard remain unchanged under AST comparison.
+
+The initial 149 layout matrix covered 27 owner-chain and 15 limited-permission
+cases at 320/360/1440. On the final 483 compiled artifact, six additional Chrome
+cases perform an intercepted in-memory Publish: both users at each width,
+correct destination, published state, refresh and no overflow/page errors. Each
+records exactly one intercepted POST and no other non-GET or diagnostic posts;
+server fixture state stays unchanged. Narrow publisher-only and wide sender
+results were visually reviewed. These are mocked success checks, not a live
+publish or notification-delivery claim.
+
+Final evidence: `.local/p149-ready-evidence.json`,
+`.local/p149-483-affected-final.log`, `.local/p149-483-full-fe.log`,
+`.local/p149-483-build.log`, `.local/p149-483-mutants.json`,
+`.local/p149-publish-success-layout/results.json`,
+`.local/p149-483-api-proof.log` and `.local/p149-483-publish-invariants.log`.
+The narrowly approved 475 diagnostic exception and earlier red results remain
+as documented; no error-reporter implementation changed. Release remains held,
+and current-main integration after the accepted 119 dependency is still required.
