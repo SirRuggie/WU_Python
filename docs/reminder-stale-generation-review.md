@@ -52,11 +52,29 @@ change. A changed/disabled/paused/too-old due job has history; a moved future jo
 and a concurrently replaced persisted/scheduler job remain usable without a
 second old-due report. Current-generation sends retain their pre-existing path.
 
-Full backend, the required war-reminder check and production-shaped boot are still
-pending before READY. No frontend source, routes, permissions, storage schema or
-production configuration changes. All sends are fake; these tests do not prove
-Discord acceptance or live delivery. No notification, provider probe, forced job,
-production database operation or deployment is performed by this local work.
+The frozen full backend passes 6,788 cases with 122 skips and 270 subtests in
+582.41 seconds. The required war-reminder check passes 213 backend cases/one skip,
+35 frontend cases, TypeScript and build. The exact frozen artifact boots with all
+51 production route mappings on a new owned Mongo URI, the real durability owner,
+a retained SQLite copy and production flags. Its native async pool ping succeeds;
+config returns 200 and unauthenticated auth returns 401. Twelve module origins,
+including the changed reminder task and its source hash, bind to that artifact.
+DNS, connect and datagrams are guarded before app imports, and Healthchecks values
+are disabled. Owned Mongo, temporary data and the export are removed afterward.
+
+Frontend source equals the deployed PR195 frontend; the boot borrows its immutable
+assets read-only. No new full frontend or layout campaign is claimed for this
+backend-only change. Routes, permissions, storage schema and production
+configuration do not change. All sends are fake: no live Discord acceptance or
+delivery is proven. Fresh operational gates and reviewer acceptance remain
+required before deployment.
+
+Two earlier full runs failed due to the private test guard: it removed an explicit
+empty Mongo URI sentinel, then blocked offline numeric-IP parsing. Shaka530/531
+reviewed the corrections; 22 unchanged targeted checks pass, followed by the clean
+full run. Product assertions and timeouts were not weakened. Failed runs and guard
+proposals remain in local evidence. The earliest child guard blocked connections
+but did not block DNS, so DNS attempts cannot be ruled out for that failed attempt.
 
 The original red reproduction, the invalid literal future-copy oracle and its
 serial-reference correction, and an overly strict current-generation row-retention
