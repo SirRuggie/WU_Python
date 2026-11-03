@@ -455,3 +455,19 @@ If a role run completes before its first status read, refresh the directory
 immediately. Undo reviews one exact person with the expected post-change role
 set, so a later concurrent edit cannot be overwritten. Keep the current run state
 visible in a disclosure summary even when its detailed results are collapsed.
+
+### Build roster density checkpoint (121; review pending)
+
+Build keeps its title and season on one row. The count/status summary opens the
+existing roster tools and signup controls; those components stay mounted, so
+closing the summary does not discard an editor or start another read. Signup
+errors, visibility warnings, notices and active editors keep their controls
+visible even when the summary is closed. Publication changes and missing clan
+sizes remain visible action notices.
+
+At phone widths, the existing Accounts/Compare/Hosting/Missing weights controls
+are reached through **Tools**. Pool choices, Filters, sort and Refresh remain
+visible buttons, with Filters/sort/Refresh on one row and at least 44-pixel touch
+targets. Wide layouts keep the workspace views and pool choices side by side.
+The heading and tools scroll away with the page. This checkpoint does not change
+Declaration, member signup pages, Finalize or Announcements.

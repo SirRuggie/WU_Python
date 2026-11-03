@@ -1206,3 +1206,49 @@ these diagnostic posts is **unproven**: their payload omits the original error.
 Investigate expected navigation failures and reporter noise separately. PR120
 changes no API/telemetry handling; review 475's exact diagnostic-route test
 exception applies only to that batch, and all earlier red traces are retained.
+
+## 121 — Build roster checkpoint; wait for review
+
+Base: current main `440c2204` plus accepted PR188 `177e2f3`, locally integrated as
+`65043174`. The only integration conflict was this document's append: all main
+bytes and the exact accepted PR188 append were retained after independent review.
+No runtime adaptation was needed.
+
+Build now puts title/season together and counts/publication/signup status in one
+summary. Tools opens the existing counts, staff signup controls and, on phones,
+workspace views. Pool, Filters, sort and Refresh remain directly available.
+Signup errors/visibility warnings and active editors stay visible; publication
+changes and missing clan sizes remain action notices. The header is not sticky.
+No API calls changed (13 call ASTs across the three affected runtime components
+match the integration base).
+
+The isolated 26-, 65- and 125-account SQLite fixtures passed at 320, 360, 390 and
+1440. At 360×800 the actual first clan card starts at 301 px; at 1440×1000 the
+first player starts at 497 px, for all three counts. These are production-shaped
+fixture measurements: the fixture-only `dev_fixture` banner is excluded through
+an explicitly labelled fixture config flag. No production controls or styles are
+hidden. The ordinary banner-inclusive preview adds 59 px: first clan card 360 px at
+360×800 and first player 556 px at 1440×1000. Both coordinate sets and
+screenshots are retained separately. Actionable warning states can push content
+lower and are preserved rather than suppressed to meet the targets.
+
+Checks so far: 1,625 frontend tests in 272 files, TypeScript/build; 12 browser
+count/width cases covering keyboard Filters/sort/pool/summary/Compare/Back to
+accounts/season/Refresh, 44-pixel toolbar controls, no horizontal overflow, header
+scroll-away, zero non-GET requests after fixture login and unchanged fixture
+state. Six additional normal/banner/alert review-URL cases pass: hidden signup
+visibility, signup changes and missing clan size remain visible with Tools
+closed. Narrow/wide screenshots were visually inspected. An initial full frontend
+run retained one obsolete `.roster-header-actions` test selector failure; the
+same disabled-refresh assertion now uses its accessible name, and the final full
+run passes. Initial sandbox fixture startup and Chrome's long UNIX socket path
+failures are retained; the final fixture runs disconnected on loopback and
+Chrome temp files use a short alias to workspace-owned storage. A separate
+review-URL fixture check initially lost its synthetic login when restoring its
+SQLite seed; the setup now signs in again after that restore. Product source
+was unchanged, and the final six-case check passes.
+
+This is **PROGRESS**, not READY. Wait for Claude's mandatory Build checkpoint
+response before finishing Build or starting the other 121 pages. Later work,
+final red-team review and release remain held. This is local fixture evidence;
+no production provider call, write, role action or deployment was performed.
