@@ -138,3 +138,54 @@ package resolution; a temporary owned dependency link fixed resolution and the
 exact-entry build passed. No measured run failed. New fixturePID4191575 and owned
 Mongo4191577 were gracefully stopped after measurement; data/evidence retained.
 All prior121/122 review previews and assets were left unchanged.
+
+## Review498: compressed transport baseline
+
+The original raw transport is a useful local diagnostic but overstates member
+cold-load latency relative to compressed production. Shaka reported a production
+brotli response/immutable cache HIT; this task made no production request. The
+same18-run profile was repeated once with test-server-only precompressed brotli
+static assets. Node's built-in brotli was available although the Python package
+was absent. Exact decoded asset bytes/hash are unchanged. Dynamic JSON remains
+unchanged/uncompressed, so this isolates static transport and is not a replica of
+production's whole transport stack. All18 Chrome traces confirm entry
+Content-Encoding br,140268bodybytes/140690wirebytes, against raw515251wirebytes.
+No measured runs failed, were excluded or retried. Zero page errors; the same
+expected fixture auth401/prank404 observations and external-abort counting limit
+remain. Original raw results are retained independently.
+
+| Page | Brotli LCP ms | Tap proxy ms | CLS | Issued requests | Wire bytes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Sign-in | 1692 | 757.0 | .01648 | 6 | 156743 |
+| Home | 2168 | 58.1 | .00278 | 17 | 176210 |
+| Sign up | 1808 | 44.8 | .05024 | 10 | 176577 |
+| My signups | 2140 | 40.9 | .15685 | 11 | 162014 |
+| My clan assignments | 2424 | 57.4 | .00887 | 13 | 166074 |
+| Build roster125 | 5092 | 227.1 | .04309 | 46 | 751958 |
+
+All five member pages now pass LCP≤2500ms; only Build misses. My signups CLS and
+Build menu proxy still miss. Sign-in's fixture-login-to-Home proxy is not a pure
+button-handler measurement. Returning members may reuse production's immutable
+cached entry; this experiment deliberately retains disabled cold cache as the
+worst case. No precise production correction is inferred from this local change.
+Root kept other agent heavy work paused; ordinary jobs continued. A lightweight
+/proc CPU/load observer covers only the latter portion of this campaign and does
+not identify every scheduled-job overlap.
+
+Decision: entry splitting remains HELD pending Shaka review of these numbers;
+no item4 implementation, even for Build. Approved items1/2/3/5 may proceed, first
+attributing My signups shifts and profiling Build's initial requests/menu before
+rendering changes. Compressed evidence uses baseline-br-* files alongside the raw
+baseline. No application source or deployed transport setting changed.
+
+Item5 diagnostic (one separate local run per affected page, not pooled with the
+18-run medians): layout-shift source geometry shows My signups' fixture banner
+arrival moves the header/step strip down59px (.01391); later grid/status content
+moves106.2px (.05932) and summary/grid content moves again (.07996). This points
+to asynchronous status/account geometry, not an established image-only cause.
+The fixture banner contribution must not be presented as production CLS.
+Build's menu click timeline contains176.7ms EventDispatch, nested174.8ms
+RunMicrotasks/173.7ms FunctionCall, with EventTiming click216ms. This is evidence
+of synchronous update work during the click, not a network wait; component-level
+attribution is still needed before a rendering fix. Timelines are retained as
+diagnostic-*-trace.json, separate from performance medians.
