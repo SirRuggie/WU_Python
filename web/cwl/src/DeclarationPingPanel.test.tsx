@@ -241,7 +241,7 @@ it("shows exact changed pool accounts before allowing a ping", async () => {
   });
   await mount();
   expect(host.textContent).toContain("Changed player (#PYY)");
-  expect(host.textContent).toContain("#PQQ → unassigned");
+  expect(host.textContent).toContain("#PQQ → Unplaced");
   expect(button("Ping 26 missing").disabled).toBe(true);
   expect(host.textContent).not.toContain("the reviewed list finishes");
 });

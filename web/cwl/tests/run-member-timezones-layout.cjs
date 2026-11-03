@@ -25,7 +25,7 @@ async function free() {
       python,
       [
         "-I",
-        path.join(__dirname, "fixtures/member_timezone_dashboard.py"),
+        path.join(__dirname, "fixtures/members_dashboard.py"),
         path.join(web, "dist"),
         String(port),
       ],
@@ -54,17 +54,32 @@ async function free() {
         reject(new Error(`Fixture exited${code}`));
       });
     });
-    await new Promise((resolve, reject) => {
-      const child = spawn(
-        process.execPath,
-        [path.join(__dirname, "member-timezones.browser.cjs"), String(port)],
-        { cwd: web, env: process.env, stdio: "inherit" },
-      );
-      child.once("error", reject);
-      child.once("exit", (code) =>
-        code === 0 ? resolve() : reject(new Error(`Browser exited${code}`)),
-      );
-    });
+    for (const script of [
+      "members-page.browser.cjs",
+      "members-keyboard.browser.cjs",
+      "members-bulk.browser.cjs",
+      "member-timezones.browser.cjs",
+    ]) {
+      await new Promise((resolve, reject) => {
+        const child = spawn(
+          process.execPath,
+          [path.join(__dirname, script), String(port)],
+          {
+            cwd: web,
+            env: {
+              ...process.env,
+              WU_MEMBERS_PREVIEW_PORT: String(port),
+              WU_MEMBERS_EVIDENCE_DIR: process.env.WU_MEMBER_ZONE_OUTPUT,
+            },
+            stdio: "inherit",
+          },
+        );
+        child.once("error", reject);
+        child.once("exit", (code) =>
+          code === 0 ? resolve() : reject(new Error(`Browser exited${code}`)),
+        );
+      });
+    }
   } finally {
     if (fixture) {
       fixture.kill();

@@ -51,6 +51,13 @@ export default function CwlStepStrip({
   const signups = useDashboardPermission("cwl_signups");
   const publish = useDashboardPermission("cwl_publish");
   const send = useDashboardPermission("cwl_send");
+  const publicationStatus =
+    draft?.draft_changed ||
+    (!draft?.published && (draft?.preview.assigned_count ?? 0) > 0)
+      ? "Unpublished changes"
+      : draft?.published
+        ? "Published and current"
+        : "";
   return (
     <nav className="cwl-step-strip roster-ui" aria-label="CWL workflow">
       {(roster || signups) && (
@@ -64,7 +71,7 @@ export default function CwlStepStrip({
       )}
       {publish && (
         <button
-          aria-label="Finalize roster"
+          aria-label={`Finalize roster${publicationStatus ? ` · ${publicationStatus}` : ""}`}
           aria-current={step === "review" ? "step" : undefined}
           onClick={onFinalize}
         >

@@ -61,9 +61,7 @@ const base = `http://127.0.0.1:${port}`;
       if (width === 360) {
         await page.request.get(base + "/qa/scenario?season=4");
         await page.goto(base + "/assignments");
-        await page
-          .getByText("Published clan assignments", { exact: true })
-          .waitFor();
+        await page.getByText("Clan assignments", { exact: true }).waitFor();
         assert.equal(
           await page
             .getByRole("button", { name: "Refresh", exact: true })

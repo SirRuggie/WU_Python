@@ -54,7 +54,8 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
     const reads = await page.evaluate(() => window.__trackingReads);
     assert.equal(reads.length, 3, JSON.stringify(reads));
     fs.writeFileSync(
-      "/tmp/p65-tracking-browser-cadence.json",
+      process.env.WU_TRACKING_CADENCE_OUTPUT ||
+        "/tmp/p65-tracking-browser-cadence.json",
       JSON.stringify(
         { visible, reads, hiddenSeconds: 35, focusBursts: 40 },
         null,

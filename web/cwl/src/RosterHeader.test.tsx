@@ -147,7 +147,7 @@ describe("roster header counts", () => {
     expect(render("main")).toContain(
       "<strong>2</strong> no weight (all pools)",
     );
-    expect(render("lazy")).toContain("<strong>1</strong> signups");
+    expect(render("lazy")).toContain("<strong>1</strong> signup");
     expect(render("lazy")).toContain("<strong>1</strong> unplaced");
     expect(render("lazy")).toContain(
       "<strong>2</strong> no weight (all pools)",

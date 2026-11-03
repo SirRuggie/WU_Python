@@ -232,8 +232,8 @@ export default function DeclarationPingPanel({
           <ul>
             {state.lineup_changes.map((row) => (
               <li key={row.tag}>
-                {row.name} ({row.tag}): {row.published_clan || "unassigned"} →{" "}
-                {row.draft_clan || "unassigned"}
+                {row.name} ({row.tag}): {row.published_clan || "Unplaced"} →{" "}
+                {row.draft_clan || "Unplaced"}
               </li>
             ))}
           </ul>

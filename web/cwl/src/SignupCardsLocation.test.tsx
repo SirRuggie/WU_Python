@@ -147,9 +147,7 @@ it("published ready line navigates to My clan without a write", async () => {
     ),
   );
   const link = host.querySelector<HTMLAnchorElement>('a[href="/assignments"]')!;
-  expect(link.textContent).toBe(
-    "My clan assignments ›",
-  );
+  expect(link.textContent).toBe("My clan assignments ›");
   await act(async () => link.click());
   expect(navigate).toHaveBeenCalledOnce();
   expect(
@@ -254,7 +252,10 @@ it("distinguishes a publication with no placements for this member", async () =>
   await act(async () =>
     root.render(<MemberAssignments seasonId="1" seasons={[season]} />),
   );
-  expect(host.textContent).toContain("Waiting for a clan");
+  expect(host.querySelectorAll(".member-unpublished-status")).toHaveLength(1);
+  expect(host.querySelectorAll("h2")).toHaveLength(1);
+  expect(host.querySelector("h2")?.textContent).toBe("Waiting for a clan");
+  expect(host.querySelector(".member-unpublished-status li")).not.toBeNull();
   expect(host.textContent).not.toContain("Not published yet");
   expect(host.textContent).not.toContain("You'll see your clan by");
   expect(host.textContent).toContain("2 accounts signed up");
