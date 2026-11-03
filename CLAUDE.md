@@ -30,6 +30,8 @@ coordinator, restore databases for a code rollback, or reverse approved data
 corrections. The older entries below are historical snapshots, not the current
 standby targets.
 
+Rollback from the currently running `e4f9574` itself remains bot `343d961`, backend `e91982d` and frontend `c55c7f0`; the standby above is for subsequent releases.
+
 ## Historical deployed snapshot (Claude smoke 131)
 
 `no-war-strikes-1`: frontend, backend and bot at `73eda11a1e883b711bc40494f023b4d87efd5a6b`.
