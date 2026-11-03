@@ -11,7 +11,26 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - **Record.** `docs/cwl-roster-redesign.md` is the decision record. Every Codex prompt carries its exact update (decisions, status, Later list).
 - No `sed -i` / `awk` / `perl -pi`. Commit only what Ruggie or a Ruggie-approved prompt asks for. Conventional Commits. No Co-Authored-By or Claude-Session trailers.
 
-## Latest deployed release (Claude smoke 131)
+## Verified standby release (Shaka smoke 466)
+
+`signup-reminders-ack-1`, commit
+`e4f9574ca6243fa4a6c3bf33c70acfb662c0f61f`, is the verified frontend,
+backend **and bot** standby for the next approved release. It passed read-only
+smoke on November 2, 2026 (local time). See
+[`docs/signup-reminders-ack-1-release.md`](docs/signup-reminders-ack-1-release.md)
+for the actual runtime, hashes, backups and testing limits.
+
+The bot rollback target is that same full commit, not the older bot snapshots
+below. A bot rollback requires a newly scoped, reviewed coordinator with actual
+runtime verification, the full 210-second inactive lease drain, import/readiness
+checks and the recorded war-fetch gap. A bare reset/restart is insufficient.
+Backend and immutable frontend targets are also that same commit; preserve their
+retained artifacts and verify served hashes. Never rerun a completed activation
+coordinator, restore databases for a code rollback, or reverse approved data
+corrections. The older entries below are historical snapshots, not the current
+standby targets.
+
+## Historical deployed snapshot (Claude smoke 131)
 
 `no-war-strikes-1`: frontend, backend and bot at `73eda11a1e883b711bc40494f023b4d87efd5a6b`.
 Read-only smoke passed. Previous dashboard code: `cb0052dc93cc30b127e2cbe5006a06c149c43671`;
