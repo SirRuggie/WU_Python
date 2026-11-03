@@ -1,274 +1,170 @@
-# Frontend speed after accepted 122: baseline and proposed work
+# Frontend speed: local results after accepted 122
 
-This is a local baseline and a proposal for review, not an implementation or
-release. Exact source ae89a10449fc880885c0b446019a97247f232ea2; the instrumented
-build reproduces accepted entry index-B6heIuwp.js, SHA256
-3873351b21b2732bf6350b6ee07cf8a439525d4e8b6d3144a09866111e0a7550.
-The entry is now 514,774 bytes; the prompt's 503 kB description is historical.
+The five member pages meet the local compressed cold-load LCP target after this
+batch. My signups' CLS improves from .15685 to .01399. Build remains a staff-only
+miss: LCP 5.144 s and menu proxy 203.7 ms, versus targets 2.5 s / 200 ms. No entry split,
+whole-list memoization, virtualization or polling redesign was added. Release is
+held for review; these are local measurements, not production or CrUX results.
 
-## Profile and results
+## Same-profile before and after
 
-Three runs per page, all 18 retained without retries/exclusions. Installed Chrome
-156 headless, 390×844 CSS pixels, DPR1, mobile/touch, CDP CPU slowdown4×,
-150ms latency, 1.6Mbps download/750kbps upload. Each run starts a fresh Chrome
-process/context, disables/clears HTTP cache and blocks service workers. Only the
-existing dismissed-tour preference is preseeded: this measures a returning user,
-not first-visit onboarding. Fixture session seeding precedes timed navigation.
-Four newly owned SQLite/Mongo fixtures use fake providers and block external
-backend connections. Their backend remains warm. Staff has 125 saved accounts;
-members have three linked accounts, two saved signups, or four published accounts.
-These are local lab numbers, not production, CrUX, real OAuth or a physical phone.
-Root held other agent builds/tests during the measured window; ordinary services
-and scheduled jobs were not changed. Host CPU/backup overlap was not independently
-sampled, so the shared-host limitation remains.
+Each table uses three runs/page, 18 runs total, all retained with no retries or
+exclusions. Before source is accepted ae89a104; after runtime source is 85c8570b.
+Documentation-only followups do not change that runtime. All six pages remain in
+the table, including Assignments' narrow margin under 2.5 s.
 
-LCP is the last buffered entry before the tap, after readiness plus four seconds.
-CLS is the maximum valid session-window sum excluding recent input. The common
-menu tap proxy measures trusted pointerdown through two animation frames after
-the menu becomes visible. Sign-in instead measures fixture login to painted Home;
-its asynchronous network work makes it a different interaction. EventTiming was
-retained, but these few lab interactions are not field INP.
+| Page | LCP before→after ms | Tap proxy before→after ms | CLS before→after |
+| --- | ---: | ---: | ---: |
+| Sign-in | 1692→1688 | 757.0→912.8 | .01648→.01648 |
+| Home | 2168→2208 | 58.1→57.9 | .00278→.00278 |
+| Sign up | 1808→1832 | 44.8→42.8 | .05024→.05024 |
+| My signups | 2140→2152 | 40.9→42.9 | .15685→.01399 |
+| My clan assignments | 2424→2440 | 57.4→56.7 | .00887→.00887 |
+| Build roster125 | 5092→5144 | 227.1→203.7 | .04309→.04309 |
 
-| Page | Median LCP ms | Tap proxy ms | CLS | Issued requests | Wire bytes |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Sign-in | 3888 | 964.6 | .01648 | 6 | 597318 |
-| Home | 4460 | 59.1 | .00278 | 17 | 648257 |
-| Sign up | 4044 | 43.9 | .05024 | 10 | 617152 |
-| My signups | 4356 | 42.4 | .15685 | 11 | 602589 |
-| My clan assignments | 4660 | 55.3 | .00887 | 13 | 618519 |
-| Build roster125 | 7908 | 230.8 | .04309 | 46 | 1381710 |
+Sign-in's proxy includes fixture login and painting Home, not just a button
+handler or real Discord OAuth. It still misses 200 ms and is a different action
+from the other five pages' menu opening. Build's 203.7 ms is a near miss, not PASS;
+there is no further rendering proposal or silent extra campaign. The source
+profile before the approved formatter fix attributed 29.3 ms self time to repeated
+Intl.NumberFormat construction and 57.6 ms to the mobile drawer's layout-reading
+ancestor; profile/injected-test overhead prevents treating those as exact causal
+subtractions. The measured menu median decreases 23.4 ms, without a promise that
+all rendering cost is isolated. Build's remaining 46 requests / 752522 wire bytes and
+5.144s LCP are retained honestly for review.
 
-All six miss LCP≤2500ms; Build and fixture sign-in miss the 200ms proxy target;
-My signups misses CLS≤.1. The initial Build view renders its existing first50
-cards, not all125 simultaneously. There were zero page errors or runner failures.
-Expected signed-out auth401 occurred three times; owner-only prank/state404 also
-occurred three times in this fixture. Favicon requests had no loadingFinished
-record by capture and contribute no encoded-byte count. Counts are issued
-same-origin requests; bytes sum completed CDP encodedDataLength including headers.
-External images/fonts/connections were blocked consistently; the runner did not
-count every externally aborted request, so these totals are not total attempted
-internet requests and do not prove remote-image performance.
+### Environment and transport
 
-The local server sent no Content-Encoding for entry/CSS. Entry transfer was
-515251bytes including headers, approximately3.14s under this network profile.
-Offline gzip estimate164744bytes is not observed wire compression. No production
-compression or backend policy change is proposed in this frontend-only batch.
+Installed Chrome 156 headless;390×844 CSS pixels, DPR 1,mobile/touch; CDP CPU 4×,
+150ms latency, 1.6 Mbps download / 750 kbps upload. Fresh browser/context per run,
+disabled/cleared HTTP cache, service workers blocked. Only the existing dismissed
+member-tour preference is preseeded: returning-user pages, not first-visit tour.
+Fixture session seeding precedes timed navigation. Four fresh, isolated SQLite/
+owned-Mongo fixtures provide three linked accounts, two saved signups, four
+published accounts or 125 saved staff accounts. Build naturally renders its first 50
+cards. Backend caches stay warm; fake providers and a network guard prevent
+external backend/Discord access. External browser resources are blocked as before.
 
-## Entry composition and repeated requests
+Static assets alone use test-server brotli, with identical quality 11 compression
+before/after; dynamic JSON stays unchanged/uncompressed. Actual Chrome responses
+confirm Content-Encoding br on all 18 entry loads. Before entry 514774 decoded bytes,
+140268body/140690wirebytes; after140782body/141204wirebytes. These are different
+assets from Shaka's production observation, not a production transport replica.
+Returning production members may reuse its immutable cached entry; this lab
+intentionally keeps cold disabled cache. No production request/change was made.
 
-The exact-build graph contains396 entry modules. Pre-minification rendered lengths
-are diagnostic attribution, not additive minified/transfer bytes: react-dom561402,
-react-aria449080, application272358, react-aria-components49999,
-lucide-react45277, react-stately44036, React20318. Largest application modules are
-App105154, MemberTour17108, SidebarNavigation13991, SavedSignups13305,
-strikeActivityFilters12535 and dashboardHistory6921. Members receive this entry,
-including staff navigation/filter helpers and eagerly imported RosterMenu's Aria
-menu dependency even when that page never opens such a menu. Most substantial
-staff destinations (Roster, Members, Strikes, Server management, etc.) already have
-lazy boundaries; they are not all bundled into the entry. Build loads its roster
-and shared chunks plus the owner-only prank chunk; that owner path is not evidence
-that ordinary members load staff destination chunks.
+LCP is the last buffered entry before the tap after readiness+4s. CLS uses maximum
+session-window sums excluding recent input. The trusted-pointerdown→two animation
+frames after visible menu proxy approximates painted state, not hardware latency
+or field INP. EventTiming is retained without claiming a field percentile.
 
-All three traces per page show the same repeated paths:
+Root held other agent builds/tests during each measured window. Ordinary services
+and scheduled backups/monitoring were left untouched. Partial /proc samples within
+the campaign tails show aggregate host CPU busy 10.41% before / 10.30% after; load1
+ranges 1.19–2.0 and .5–1.52. Sampling starts after campaign launch and does not
+identify every job overlap or establish full CPU comparability. Samples after
+campaign completion are retained but excluded from those tail summaries.
 
-- Home: /api/cwl/seasons twice. App loads seasons; Home's refresh load also requests
-  seasons. They are separate consumers, not an observed focus/timer race.
-- My signups: linked-accounts?background=1 twice. The first returns a smaller
-  pending snapshot, followed by an updated snapshot. Preserve freshness semantics;
-  identical path does not establish a redundant response.
-- Build: seasons, roster?background=1 and publication each twice. Roster's existing
-  metadata-completion polling explains a second roster request; publication is
-  also fetched through existing publication-awareness paths. Do not blindly remove
-  them or change bounded metadata polling in this batch.
-- Sign-in, Signup and Assignments: no repeated same-origin navigation path in the
-  captured window. This short trace does not establish absence of later timer races.
+## What changed
 
-## Proposed implementation order — awaits review
+- Five named pages use one visibility-aware scheduler. Hidden tabs remove their
+  periodic timers; visible return catches up. A 32 ms settling window coalesces
+  neighboring focus/visibility/interval tasks. Existing 30 s / 2.5 s / 3 s cadences,
+  page-owned errors, stale-source protection and in-flight guards remain.
+  Declaration's countdown recomputes from wall-clock time on return. Backend sends
+  continue independently; visible send/restore status keeps updating, hidden UI
+  catches up without replaying a write. No new polling/data/authority cache.
+- SavedSignupStatus renders the same real summary component while assignments and
+  links load. Unknown counts/actions are not invented; pending labels say checking.
+  The settled all-signed-up case retains a truthful account-summary section.
+  Closed-season policy, visible unavailable states and401 / 403 clearing remain.
+  Only real heading/paragraph/action slots have responsive minimum block sizes;
+  content grows without clipping or fixed total heights. The duplicate checking
+  paragraph is removed when the component owns its loading state.
+- Shaka 500's narrow Build fix reuses one fixed-options Intl.NumberFormat. Null,
+  nonfinite,zero,.05/.95 rounding,negative and large outputs are equivalent.
+- Known artwork dimensions are verified from resized WebP files; existing layout
+  artAspect values stay unchanged. Current tour/walkthrough imagery remains eager;
+  offscreen badges/rows/pages use lazy loading. Known 40 px badges, square BaseBank
+  and gallery presentation slots receive dimensions without altering object-fit.
+  Roster PNG dimensions derive from the existing renderer and already-returned
+  counts: 1000 px wide,390+70×rows high, 15 rows/page. Malformed/absent pages do not get
+  invented dimensions. Arbitrary variable-aspect uploads/Discord media lacking
+  metadata remain a limitation; no guessed natural ratios or new metadata API.
+  Current main/modal imagery is not delayed solely to satisfy a lazy flag.
 
-1. Add one small visibility-aware refresh scheduler used by the five named pages.
-   Hidden tabs clear their intervals; visible return coalesces focus/visibility/
-   timer signals into one check, retaining existing in-flight guards, stale-source
-   protection and error handling. No new intervals or global data/authority cache.
-   Existing visible send/restore jobs keep their current2.5/3s status updates;
-   hidden tabs need no UI polling because delivery runs on the backend, and return
-   performs one immediate catch-up. Declaration's countdown pauses while hidden,
-   recomputes from Date.now on return, and does not extend its deadline. Home30s
-   and Assignments30s retain their visible cadence. Check shell's existing60s
-   access/seasons listeners for the same burst, preserving permission refresh.
-2. Add regression tests for hidden/no request, visible immediate catch-up, three
-   simultaneous signals→one request, pending request suppression, unmount/stale
-   scope, and running send/restore success/failure/uncertain behavior. Trace Home's
-   duplicate seasons consumers separately; share an in-flight request only where
-   identity/parameters and freshness intent are identical, never a durable cache.
-3. Images: AST audit finds17 sites missing at least one width/height/loading
-   attribute. Supply correct existing slot dimensions or known source aspect ratio
-   for badges, previews, cards and tour art; retain responsive CSS. Lazy-load
-   offscreen gallery/rows only. Keep the brand and currently visible primary/modal
-   image eager; do not lazily delay LCP content. Unknown source dimensions require
-   explicit metadata/slot review, not fabricated natural sizes. Add geometry tests.
-4. Since LCP misses, split by demand, not arbitrary vendor files: move the existing
-   signup/SavedSignups/tour UI behind page/activation boundaries; put staff-only
-   season-picker/management helpers behind staff destinations. Remove RosterMenu's
-   eager import from the shell where only unopened staff controls need it, retaining
-   the same approved RosterMenu/Aria behavior when opened. Preserve the eager
-   request owner in StaffDetailsHost and its event registration semantics. Keep
-   authentication, route ownership and confirmation authority in existing owners.
-   Plain manualChunks would not prevent eager Aria preload and is insufficient.
-   First verify graph/network that member Home no longer transfers unused staff
-   helpers; do not promise a precise byte saving before that build.
-5. Investigate My signups' .15685 CLS with layout-shift source attribution and a
-   stable same-size loading region before making a focused fix. Current capture
-   lacks attribution, so no image/loading cause is claimed. Profile Build's230.8ms
-   menu proxy before changing rendering; no backend/polling/virtualization redesign.
+### Loading geometry attribution
 
-After approval: important timer/burst/permission/cancel regressions first, same
-18-run profile before/after (no selective reruns), full frontend/typecheck/build,
-320/360/390/1440 layout and keyboard/confirmation review, running status catches up
-on return, network/API/permission equivalence and genuine regressions/mutants.
-Release remains held for Ruggie; no runtime edits, production reads, new polling,
-backend change, send or deployment occurred in this baseline task.
+At 390 px, baseline account-list y moved555.015625→661.21875→777.421875 as assignments
+and accounts settled. Candidate states all have summary 314 px/list y 804.421875.
+The larger settled account-heading slot is intentional. Twelve 320/1440 cases cover
+remaining/all-signed-up/closed/403/404 and text-inflation stress with no overflow,
+clipping,writes or page errors. Text inflation is not calibrated browser zoom.
+Narrow/wide screenshots were visually reviewed.
 
-## Evidence and cleanup
+The controlled trace retains one large recent-input/style/layout event whose
+source is unproven; it is not discarded or described as zero total shifts. No
+post-phase non-recent-input shift is recorded, and actual DOM positions stay
+identical through all three states. The separate natural18-run campaign confirms
+CLS.01399. The fixture banner's earlier  .01391 contribution is not a production
+CLS claim. Failures/errors may still change geometry to make information visible.
 
-Evidence lives in .local/frontend-speed-after-122/.local: baseline-results.json,
-baseline-summary.json, baseline-network-analysis.json, module-graph.json,
-module-composition.json, images-audit.json, measurement plan and raw logs. Six-page
-unthrottled smoke passed. Initial module-report build failed missing worktree
-package resolution; a temporary owned dependency link fixed resolution and the
-exact-entry build passed. No measured run failed. New fixturePID4191575 and owned
-Mongo4191577 were gracefully stopped after measurement; data/evidence retained.
-All prior121/122 review previews and assets were left unchanged.
+## Entry contents and repeated requests
 
-## Review498: compressed transport baseline
+The historical raw-server baseline was retained, but it overstated member load
+relative to compression: raw entry transfer515251bytes/~3.14s. It is not pooled
+with the compressed table. Exact before-entry graph has 396 modules. Diagnostic
+pre-minification rendered lengths, not additive wire sizes: react-dom 561402,
+react-aria 449080,application 272358,react-aria-components 49999,lucide 45277,
+react-stately 44036. App,MemberTour,SavedSignups,navigation/filter helpers and eager
+RosterMenu/Aria are in the shell; most substantial staff destinations already have
+lazy boundaries. Members do not load all staff destination chunks. Per 499, member
+entry splitting is not authorized or implemented.
 
-The original raw transport is a useful local diagnostic but overstates member
-cold-load latency relative to compressed production. Shaka reported a production
-brotli response/immutable cache HIT; this task made no production request. The
-same18-run profile was repeated once with test-server-only precompressed brotli
-static assets. Node's built-in brotli was available although the Python package
-was absent. Exact decoded asset bytes/hash are unchanged. Dynamic JSON remains
-unchanged/uncompressed, so this isolates static transport and is not a replica of
-production's whole transport stack. All18 Chrome traces confirm entry
-Content-Encoding br,140268bodybytes/140690wirebytes, against raw515251wirebytes.
-No measured runs failed, were excluded or retried. Zero page errors; the same
-expected fixture auth401/prank404 observations and external-abort counting limit
-remain. Original raw results are retained independently.
+After issued-request/complete-wire-byte medians: sign-in 6/157345,Home 18/177523,
+Signup 10/177179,My signups 11/162616,Assignments 14/167313,Build 46/752522. Home and
+Assignments each add one shared visibleRefresh JS chunk, not another API read.
+Home still requests seasons twice through separate App/Home consumers. My signups
+still has a pending then complete linked-account read. Build retains metadata
+completion's second roster/publication reads. These are not blindly removed or
+called duplicate identical responses. No request paths repeat on sign-in,Signup
+or Assignments within the measured navigation window; this does not establish
+absence of every later race.
 
-| Page | Brotli LCP ms | Tap proxy ms | CLS | Issued requests | Wire bytes |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Sign-in | 1692 | 757.0 | .01648 | 6 | 156743 |
-| Home | 2168 | 58.1 | .00278 | 17 | 176210 |
-| Sign up | 1808 | 44.8 | .05024 | 10 | 176577 |
-| My signups | 2140 | 40.9 | .15685 | 11 | 162014 |
-| My clan assignments | 2424 | 57.4 | .00887 | 13 | 166074 |
-| Build roster125 | 5092 | 227.1 | .04309 | 46 | 751958 |
+All18 runs in each compressed campaign have zero page errors/runner failures.
+Expected signed-out auth401 and fixture owner prank/state404 occur three times
+per campaign. Favicon can lack loadingFinished at capture and contributes no
+completed bytes. Totals count same-origin issued requests/CDP completed encoded
+bytes including headers. Every external abort was not instrumented, so these are
+not counts of all attempted internet requests or proof of remote-image latency.
 
-All five member pages now pass LCP≤2500ms; only Build misses. My signups CLS and
-Build menu proxy still miss. Sign-in's fixture-login-to-Home proxy is not a pure
-button-handler measurement. Returning members may reuse production's immutable
-cached entry; this experiment deliberately retains disabled cold cache as the
-worst case. No precise production correction is inferred from this local change.
-Root kept other agent heavy work paused; ordinary jobs continued. A lightweight
-/proc CPU/load observer covers only the latter portion of this campaign and does
-not identify every scheduled-job overlap.
+## Validation, limits and provenance
 
-Decision: entry splitting remains HELD pending Shaka review of these numbers;
-no item4 implementation, even for Build. Approved items1/2/3/5 may proceed, first
-attributing My signups shifts and profiling Build's initial requests/menu before
-rendering changes. Compressed evidence uses baseline-br-* files alongside the raw
-baseline. No application source or deployed transport setting changed.
+1699 frontend tests / 289 files,typecheck/build pass; 52 four-width cases at
+320/360/390/1440 with 26/65/125 accounts; 30 narrow/wide page/dialog cases; 12 targeted
+status cases; two separately served review-preview smokes. Layout/served checks
+record zero non-GET requests after fixture login and zero page errors. Semantic
+API AST proof retains 60 calls in 22 owners against ae89a104. Nine scheduler tests
+and an actual active-send panel regression prove hidden suspension, one catch-up,
+visible completion and no sends. Six genuine assertion-killed mutants cover hidden
+timers,burst coalescing,listener cleanup,pending publication,unknown account state
+and repeated formatter construction, with exact source restoration.
 
-Item5 diagnostic (one separate local run per affected page, not pooled with the
-18-run medians): layout-shift source geometry shows My signups' fixture banner
-arrival moves the header/step strip down59px (.01391); later grid/status content
-moves106.2px (.05932) and summary/grid content moves again (.07996). This points
-to asynchronous status/account geometry, not an established image-only cause.
-The fixture banner contribution must not be presented as production CLS.
-Build's menu click timeline contains176.7ms EventDispatch, nested174.8ms
-RunMicrotasks/173.7ms FunctionCall, with EventTiming click216ms. This is evidence
-of synchronous update work during the click, not a network wait; component-level
-attribution is still needed before a rendering fix. Timelines are retained as
-diagnostic-*-trace.json, separate from performance medians.
+Initial failures, the listener mutant survivor, invalid textual mutant attempt
+and native-constructor spy TypeError remain in local logs; only assertion kills
+are counted. Test waits were updated for 32 ms without dropping error/403/401 or
+other behavior assertions. No full backend suite was needed for this frontend-only
+batch. Authorization,URLs,selection,mention/external rendering,write/cancel scope,
+partial/unknown data and stale responses were reviewed; storage/provider owners
+remain unchanged. Mocked fixtures do not prove live Discord delivery.
 
-## Approved implementation checkpoint (not READY)
-
-The five named pages now use a shared visibility-aware scheduler: hidden tabs
-remove periodic timers; visible return catches up; a32ms settling window coalesces
-neighboring focus/visibility/interval tasks. Existing cadences and page-owned
-in-flight/error/stale-source handling remain. Declaration countdown recomputes
-from wall-clock time on return. Eight scheduler regressions cover hidden start,
-hidden cancellation, coalescing, pending reads, cleanup and failure recovery.
-
-Known image work uses actual resized WebP dimensions verified offline, leaving
-existing tour layout artAspect values unchanged. Currently displayed tour and
-walkthrough art is eager; offscreen Town Hall/directory badges are lazy. The
-existing40px clan badge and square BaseBank presentation slot have dimensions.
-Variable-aspect remote galleries/uploads/Discord media still need correct
-metadata or an approved fixed presentation slot; no guessed natural ratios or
-new metadata API have been introduced. This gap remains for completion review.
-
-Current checkpoint:1688 frontend tests/287files,typecheck/build pass;33 refresh
-regressions and48 tour/panel cases pass. Initial full run retained four failures
-from assertions reading before the new32ms coalescing window; only waits were
-updated, retaining all failure/recovery/403/401 assertions. Earlier missing
-villager dimension metadata caused four focused failures, corrected with actual
-asset sizes; intentional eager-current-art expectations were then updated.
-No rendering/skeleton/memoization fix, entry split, final after campaign or READY
-claim is included in this checkpoint. Item5 next obtains component attribution and
-concrete geometry proposals for ROOT review before changing rendering.
-
-Additional checkpoint: actual Declaration active-send regression proves12s hidden
-performs no checks, return focus+visibility performs one GET catch-up, visible
-cadence continues, and done stops checking; no sends are exercised. Three genuine
-mutants (hidden timer retained, burst not coalesced, listener leaked) are assertion
-killed with exact source restoration. The first listener mutant survived and led
-to an explicit exact-listener cleanup assertion; its initial log is retained.
-Known22px Discord emoji and existing gallery300×150 presentation-slot attributes
-are added without changing responsive CSS/object-fit or claiming intrinsic media
-sizes. Latest focused image/send/scheduler group:34 tests pass. These late tests
-and two presentation-attribute additions follow the1688-test full checkpoint;
-final full/build/layout/after measurements remain pending. Exact-source-map CPU
-profile identifies repeated formatter construction and drawer layout reads; the
-proposed pure formatter reuse still awaits ROOT review before rendering edits.
-
-## Approved 499/500 source freeze before after-measurement
-
-SavedSignupStatus now renders the same real summary component during assignment
-and account reads. Pending labels say checking, unknown counts are not invented,
-and no signup action appears until accounts are known. The settled all-signed-up
-case keeps a truthful account-summary section. Existing closed-season policy and
-401/403 clearing remain; unavailable assignments/links stay visible. Only actual
-heading, paragraph and action/status slots have responsive min-block sizing;
-content can grow, with no fixed total height or clipping. The separate checking
-paragraph is removed when the real summary owns that state.
-
-At390px, controlled pending-assignment→pending-account→complete states now all have
-summary314px and account-list y804.421875. Before, the list moved555.015625→661.21875
-→777.421875. The larger settled account-summary heading slot is intentional.
-Twelve320/1440 cases cover remaining/all-signed-up/closed/403/404 and text-inflation
-stress without overflow, clipping, writes or page errors. Text inflation is not
-claimed as a calibrated browser-zoom test. Narrow/wide settled screens were viewed.
-The trace retains one large recent-input/style/layout event whose source is not
-proven; no post-phase non-recent-input shift is recorded. Identical actual DOM
-positions, rather than omission of that event, establish the targeted success
-transition. The final natural after-table must still establish page CLS; fixture
-banner motion is not presented as production behavior.
-
-Shaka500's sole Build change reuses one fixed-options Intl.NumberFormat. Null,
-nonfinite, zero, .05/.95 rounding, negative and large-value outputs are equivalent.
-A constructor spy delegates the real native constructor, so the genuine per-card
-construction mutant fails an assertion rather than a mock TypeError. No whole-list
-memoization, virtualization, polling redesign or entry split was added.
-
-Additional known images use the existing deterministic roster-renderer geometry
-and already-returned per-clan counts:1000px wide,390+70×rows high,15rows per page.
-Malformed/absent pages do not receive invented dimensions. Current primary image
-stays eager and offscreen pages lazy. Arbitrary uploaded/remote media without
-intrinsic metadata remain an explicit limitation; fixing those requires metadata
-or a separately reviewed presentation slot, not guessed natural ratios.
-
-Frozen runtime gates:1699 frontend tests/289files,typecheck/build;52 four-width
-cases and30 narrow/wide page/dialog cases, with zero non-GET requests/page errors;
-12 targeted status cases; six genuine timer/status/formatter mutants. Initial
-failures and invalid mutant attempts remain in local logs; none are counted as
-passing evidence. Final compressed18-run after-table is pending; release held.
+Runtime source 85c8570b builds index-Brk8WtDH.js SHA256
+4bbd003088a0fde2cd2add1c78a4a91c29e77425194bc11bbc5f2802af7bf2d6.
+New separate staff/member previews are 32817/44381; old121/122 previews stay intact.
+All measurement/profile Mongo/servers/Chrome were stopped after preserving data;
+only those two SQLite review previews remain. Evidence is workspace-local under
+.local/frontend-speed-after-122/.local: raw/compressed/after-results and summaries,
+network traces,module graph,CPU profiles,geometry screenshots/status matrix,
+mutant logs and ready evidence. Stacked on accepted 192/ae89; later main integration
+must preserve accepted 185's filler queue and stop on behavior conflicts. No merge,
+production read/write,notification,backend change or activation occurred.
