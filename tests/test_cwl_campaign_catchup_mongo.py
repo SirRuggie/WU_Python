@@ -41,6 +41,8 @@ def test_native_snowflake_restart_and_crash_use_real_mongo(runtime, monkeypatch,
                 "mode": "monthly", "day": 20, "hour": 11, "minute": 59,
             }
             await mongo.bot_config.insert_one(document)
+            sentinel = {"_id": "unrelated-fixture", "kind": "other", "value": [1, 2, 3]}
+            await mongo.bot_config.insert_one(deepcopy(sentinel))
             monkeypatch.setattr(native, "mongo_client", mongo)
             runtime.rest.guild_id = guild_id
             loaded = await campaign.load_campaign(mongo, guild_id, CYCLE)
@@ -80,6 +82,13 @@ def test_native_snowflake_restart_and_crash_use_real_mongo(runtime, monkeypatch,
             assert len(final["deliveries"]) == 1
             assert final["deliveries"][0]["status"] == ("uncertain" if mode == "crash" else "sent")
             assert await mongo.cwl_pending_reminders.find_one({"_id": job_id}) is None
+            assert await mongo.bot_config.find_one({"_id": sentinel["_id"]}) == sentinel
+            explanation = await db.command({
+                "explain": {"find": mongo.bot_config.name, "filter": {"_id": campaign.cycle_id(guild_id, CYCLE)}},
+                "verbosity": "executionStats",
+            })
+            assert "_id_" in str(explanation["queryPlanner"]["winningPlan"])
+            assert explanation["executionStats"]["totalDocsExamined"] <= 1
         finally:
             for collection in collections:
                 await collection.drop()
