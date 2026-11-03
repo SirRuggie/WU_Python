@@ -23,6 +23,7 @@ from hikari.impl import (
 
 from utils.mongo import MongoClient
 from utils import cwl_campaign, cwl_web_bridge
+from utils import cwl_campaign_catchup as catchup_policy
 from utils.startup_reconciler import StartupReconciler
 from utils.constants import (
     GOLDENROD_ACCENT,
@@ -32,6 +33,7 @@ from utils.constants import (
 )
 
 loader = lightbulb.Loader()
+_campaign_catchup_active: set[str] = set()
 
 # Configuration
 CWL_CHANNEL_ID = 1072714594625257502
@@ -393,13 +395,17 @@ def _add_campaign_job(
     message_id: str,
     variants: list[str],
     generation: str,
+    *,
+    catchup_due_at: str | None = None,
 ) -> None:
+    options = {"kwargs": {"catchup_due_at": catchup_due_at}} if catchup_due_at else {}
     scheduler.add_job(
         send_campaign_message,
         trigger=DateTrigger(run_date=run_time, timezone=DEFAULT_TIMEZONE),
         id=job_id,
         args=[guild_id, cycle, message_id, variants, generation],
         replace_existing=True,
+        **options,
         **JOB_OPTIONS,
     )
 
@@ -435,9 +441,137 @@ async def _persist_campaign_job(
                 "updated_at": now,
             },
             "$setOnInsert": {"created_at": now},
+            "$unset": {"catchup": ""},
         },
         upsert=True,
     )
+
+
+def _remove_catchup_scheduler_job(row):
+    job = scheduler.get_job(row["_id"])
+    if not job or list(getattr(job, "args", ()))[-1:] != [row.get("generation")]:
+        return
+    original = (row.get("catchup") or {}).get("original_due_at")
+    if original:
+        if (getattr(job, "kwargs", None) or {}).get("catchup_due_at") != original:
+            return
+    elif getattr(getattr(job, "trigger", None), "run_date", None) != pendulum.parse(row["run_time"]):
+        return
+    scheduler.remove_job(row["_id"])
+
+
+async def _finish_catchup_decision(row, due, status, reason):
+    variant = row["variants"][0]
+    oid = cwl_campaign.occurrence_id(row["cycle"], row["message_id"], variant)
+    entry = {
+            "occurrence_id": oid, "message_key": row["message_id"],
+            "variant": variant, "status": status, "reason": reason,
+            "revision": row.get("generation"),
+            **catchup_policy.late_receipt(due, pendulum.now(DEFAULT_TIMEZONE)),
+        }
+    recorded = await cwl_campaign.record_catchup_decision(
+        mongo_client, int(row["guild_id"]), row["cycle"], entry,
+    )
+    if not recorded:
+        state = await cwl_campaign.catchup_state(mongo_client, int(row["guild_id"]), row["cycle"])
+        if oid in state["uncertain"] and oid not in state["reported"] and oid not in state["sent"]:
+            status, reason = "uncertain", "Not sure it sent. Check Discord."
+            entry.update(status=status, reason=reason)
+            recorded = await cwl_campaign.record_catchup_decision(
+                mongo_client, int(row["guild_id"]), row["cycle"], entry
+            )
+        elif oid not in state["reported"] and oid not in state["sent"]:
+            print("[CWL Reminder] ALERT campaign_catchup_decision_unavailable action=review delivery history")
+            return
+    if recorded:
+        print(
+            f"[CWL Reminder] ALERT campaign_catchup cycle={row['cycle']} "
+            f"message={row['message_id']} variant={variant} status={status} reason={reason}"
+        )
+    await cwl_campaign.delete_catchup_job(mongo_client, row)
+    _remove_catchup_scheduler_job(row)
+
+
+async def _restore_scheduled_catchups(rows, now, *, tagged_only=False, loaded=None):
+    """Decide persisted jobs before restore/sync can replace their original due time."""
+    groups = {}
+    handled = set()
+    kept = {}
+    for row in rows:
+        try:
+            if not catchup_policy.scheduled_candidate(row):
+                continue
+            if tagged_only and row.get("job_kind") != catchup_policy.CATCHUP_JOB_KIND:
+                continue
+            due = catchup_policy.original_due(row)
+            if due > now:
+                continue
+            variants = row.get("variants")
+            gid, cycle, message_id = int(row["guild_id"]), row["cycle"], row["message_id"]
+            if (
+                not isinstance(variants, list) or len(variants) != 1
+                or variants[0] not in cwl_campaign.AUDIENCES
+                or type(row["guild_id"]) is not int or gid <= 0
+                or not re.fullmatch(r"[0-9]{4}-(?:0[1-9]|1[0-2])", str(cycle))
+                or not re.fullmatch(r"[A-Za-z0-9:_-]{1,64}", str(message_id))
+                or row.get("status", "scheduled") != "scheduled"
+                or row["_id"] != _campaign_job_id(gid, cycle, message_id, variants[0])
+            ):
+                raise ValueError("Invalid persisted catch-up scope")
+            handled.add(row["_id"])
+            if row["_id"] in _campaign_catchup_active:
+                kept[row["_id"]] = row
+                continue
+            groups.setdefault((gid, cycle), []).append((row, due, variants[0]))
+        except (KeyError, TypeError, ValueError):
+            if row.get("kind") == "campaign" and row.get("job_kind", "scheduled") in {"scheduled", catchup_policy.CATCHUP_JOB_KIND}:
+                handled.add(row.get("_id"))
+                print("[CWL Reminder] ALERT campaign_catchup_invalid action=review persisted schedule")
+    for (gid, cycle), candidates in groups.items():
+        current = loaded if loaded and loaded["guild_id"] == gid and loaded["cycle"] == cycle else await cwl_campaign.load_campaign(mongo_client, gid, cycle)
+        generation = _campaign_generation(current)
+        state = await cwl_campaign.catchup_state(mongo_client, gid, cycle)
+        completed = catchup_policy.handled_occurrences(current, state)
+        eligible = {}
+        for row, due, variant in candidates:
+            oid = cwl_campaign.occurrence_id(cycle, row["message_id"], variant)
+            if oid in completed:
+                await cwl_campaign.delete_catchup_job(mongo_client, row)
+                _remove_catchup_scheduler_job(row)
+                continue
+            claim = state["claims"].get(oid.replace(".", "_"))
+            if (
+                claim and oid not in state["uncertain"]
+                and row.get("job_kind") == catchup_policy.CATCHUP_JOB_KIND
+                and (row.get("catchup") or {}).get("protocol") == 1
+                and claim.get("generation") == row.get("generation")
+            ):
+                if not await cwl_campaign.release_catchup_preflight_claim(mongo_client, gid, cycle, oid, claim):
+                    continue
+                claim = None
+            if oid in state["uncertain"] or claim:
+                await _finish_catchup_decision(row, due, "uncertain", "Not sure it sent. Check Discord.")
+                continue
+            reason = catchup_policy.exclusion_reason(current, row, variant, generation, now)
+            if reason:
+                await _finish_catchup_decision(row, due, "skipped", reason)
+                continue
+            eligible.setdefault(variant, []).append((row, due))
+        for variant, choices in eligible.items():
+            choices.sort(key=lambda item: (item[1], item[0]["message_id"], item[0]["_id"]), reverse=True)
+            newest, due = choices[0]
+            for older, original in choices[1:]:
+                await _finish_catchup_decision(older, original, "skipped", "Skipped: newer reminder kept")
+            if _sequence_spacing_blocked(current, newest["message_id"], variant, now):
+                await _finish_catchup_decision(newest, due, "skipped", "Skipped: too close to another send")
+                continue
+            if newest.get("job_kind") != catchup_policy.CATCHUP_JOB_KIND or not scheduler.get_job(newest["_id"]):
+                if not await cwl_campaign.prepare_catchup_job(mongo_client, newest, due, now):
+                    continue
+                newest = {**newest, "job_kind": catchup_policy.CATCHUP_JOB_KIND, "run_time": now.isoformat(), "catchup": {"protocol": 1, "original_due_at": due.isoformat()}}
+                _add_campaign_job(newest["_id"], now, gid, cycle, newest["message_id"], [variant], generation, catchup_due_at=due.isoformat())
+            kept[newest["_id"]] = newest
+    return handled, kept
 
 
 async def _release_campaign_claim(
@@ -681,6 +815,112 @@ def _sequence_spacing_blocked(loaded, message_id, variant, now):
     return False
 
 
+async def _send_catchup_message(guild_id, cycle, message_id, variants, generation, due_at):
+    if not variants or len(variants) != 1:
+        return False
+    job_id = _campaign_job_id(guild_id, cycle, message_id, variants[0])
+    if job_id in _campaign_catchup_active:
+        return False
+    _campaign_catchup_active.add(job_id)
+    try:
+        return await _deliver_catchup_message(guild_id, cycle, message_id, variants, generation, due_at)
+    finally:
+        _campaign_catchup_active.discard(job_id)
+
+
+async def _deliver_catchup_message(guild_id, cycle, message_id, variants, generation, due_at):
+    if not variants or len(variants) != 1 or variants[0] not in cwl_campaign.AUDIENCES or message_id == "roster":
+        return False
+    variant = variants[0]
+    job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
+    row = await cwl_campaign.load_catchup_job(
+        mongo_client, guild_id, cycle, message_id, variant, generation, due_at
+    )
+    if row is None:
+        return False
+    due = catchup_policy.original_due(row)
+    oid = cwl_campaign.occurrence_id(cycle, message_id, variant)
+    loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
+    state = await cwl_campaign.catchup_state(mongo_client, guild_id, cycle)
+    if oid in catchup_policy.handled_occurrences(loaded, state):
+        await cwl_campaign.delete_catchup_job(mongo_client, row)
+        _remove_catchup_scheduler_job(row)
+        return False
+    reason = catchup_policy.exclusion_reason(loaded, row, variant, _campaign_generation(loaded), pendulum.now(DEFAULT_TIMEZONE))
+    if reason is None and _sequence_spacing_blocked(loaded, message_id, variant, pendulum.now(DEFAULT_TIMEZONE)):
+        reason = "Skipped: too close to another send"
+    if reason:
+        await _finish_catchup_decision(row, due, "skipped", reason)
+        return False
+    if not await _claim_campaign_occurrence(guild_id, cycle, oid, generation):
+        return False
+    attempted = False
+    try:
+        item = loaded["campaign"]["messages"][message_id]["variants"][variant]
+        channel_id = int(item["destination_channel_id"])
+        if not await _campaign_channel_belongs_to_guild(channel_id, guild_id):
+            raise ValueError("Configured destination is outside the campaign guild")
+        components = await cwl_campaign.render_message(
+            {"campaign": loaded["campaign"], "deadline": loaded["deadline"]},
+            message_id, variant, preview=False,
+        )
+        # Network preparation can await. Recheck the original generation and
+        # all policy immediately before reserving the POST boundary.
+        fresh = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
+        reason = catchup_policy.exclusion_reason(fresh, row, variant, _campaign_generation(fresh), pendulum.now(DEFAULT_TIMEZONE))
+        if reason is None and _sequence_spacing_blocked(fresh, message_id, variant, pendulum.now(DEFAULT_TIMEZONE)):
+            reason = "Skipped: too close to another send"
+        if reason:
+            await _release_campaign_claim(guild_id, cycle, oid)
+            await _finish_catchup_decision(row, due, "skipped", reason)
+            return False
+        if not await cwl_campaign.begin_catchup_attempt(
+            mongo_client, guild_id=guild_id, cycle=cycle, occurrence=oid,
+            generation=generation, job_id=job_id, original_due_at=due_at,
+        ):
+            return False
+        attempted = True
+        result = await bot_instance.rest.create_message(
+            channel=channel_id, components=components,
+            role_mentions=item.get("role_ids", []), user_mentions=False,
+            mentions_everyone=False,
+            nonce=cwl_campaign.roster_delivery_nonce(guild_id, oid, loaded.get("deliveries", [])),
+        )
+    except Exception as exc:
+        if attempted:
+            await _finish_catchup_decision(row, due, "uncertain", "Not sure it sent. Check Discord.")
+        else:
+            await _release_campaign_claim(guild_id, cycle, oid)
+            await _finish_catchup_decision(row, due, "failed", "Not sent: delivery unavailable")
+        return False
+    message_id_value = getattr(result, "id", None)
+    if not isinstance(message_id_value, int) or isinstance(message_id_value, bool) or message_id_value <= 0:
+        await _finish_catchup_decision(row, due, "uncertain", "Not sure it sent. Check Discord.")
+        return False
+    receipt = {
+        "occurrence_id": oid, "message_key": message_id, "variant": variant,
+        "at": pendulum.now("UTC").isoformat(),
+        "status": "sent", "channel_id": channel_id,
+        "message_id": int(message_id_value) if message_id_value is not None else None,
+        "message_url": f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id_value}" if message_id_value is not None else None,
+        "revision": generation,
+        **catchup_policy.late_receipt(due, pendulum.now(DEFAULT_TIMEZONE)),
+    }
+    try:
+        await cwl_campaign.record_catchup_delivery(mongo_client, guild_id, cycle, receipt)
+    except Exception as exc:
+        try:
+            await cwl_campaign.persist_catchup_receipt(mongo_client, row, receipt, type(exc).__name__)
+        except Exception:
+            print("[CWL Reminder] ALERT campaign_catchup_receipt_unavailable action=check Discord before retrying")
+        return True
+    await cwl_campaign.finish_catchup_attempt(mongo_client, guild_id, cycle, oid)
+    await _release_campaign_claim(guild_id, cycle, oid)
+    await cwl_campaign.delete_catchup_job(mongo_client, row)
+    _remove_catchup_scheduler_job(row)
+    return True
+
+
 async def send_campaign_message(
     guild_id: int,
     cycle: str,
@@ -689,10 +929,13 @@ async def send_campaign_message(
     generation: str | None = None,
     *,
     manual: bool = False,
+    catchup_due_at: str | None = None,
 ) -> bool:
     """Deliver one configured message with per-audience retry/idempotency."""
     if not bot_instance or not mongo_client:
         return False
+    if catchup_due_at is not None:
+        return await _send_catchup_message(guild_id, cycle, message_id, variants, generation, catchup_due_at)
     loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
     current_generation = _campaign_generation(loaded)
     if generation is not None and generation != current_generation:
@@ -1051,13 +1294,21 @@ async def _install_campaign_schedule(guild_id: int, cycle: str) -> None:
         and int(row.get("guild_id", 0)) == int(guild_id)
         and row.get("cycle") == cycle
     }
+    recovered, retained = await _restore_scheduled_catchups(
+        list(scoped.values()), pendulum.now(DEFAULT_TIMEZONE), tagged_only=True, loaded=loaded
+    )
+    scoped = {
+        key: retained.get(key, row)
+        for key, row in scoped.items()
+        if key not in recovered or key in retained
+    }
     desired = {
         job_id: row
         for job_id, row in scoped.items()
         if row.get("status") == "ledger_pending"
         or (
             (
-                row.get("job_kind") in {"manual", "retry"}
+                row.get("job_kind") in {"manual", "retry", catchup_policy.CATCHUP_JOB_KIND}
                 or int(row.get("failure_count", 0)) > 0
             )
             and row.get("generation") == generation
@@ -1713,8 +1964,11 @@ async def restore_pending_reminders():
     restored_count = 0
     expired_count = 0
     failed_count = 0
+    catchup_ids, _ = await _restore_scheduled_catchups(pending_reminders, now)
     for reminder in pending_reminders:
         reminder_id = reminder.get("_id")
+        if reminder_id in catchup_ids:
+            continue
         run_time_str = reminder.get("run_time")
 
         if reminder.get("kind") == "campaign":
@@ -1726,12 +1980,17 @@ async def restore_pending_reminders():
                     reminder.get("receipt"), dict
                 ):
                     receipt = reminder["receipt"]
-                    await cwl_campaign.record_delivery(
-                        mongo_client,
-                        guild_id,
-                        cycle,
-                        receipt,
-                    )
+                    if receipt.get("late") and message_id != "roster":
+                        try:
+                            await cwl_campaign.record_catchup_delivery(mongo_client, guild_id, cycle, receipt)
+                        except Exception:
+                            print("[CWL Reminder] ALERT campaign_catchup_receipt_unavailable action=review delivery history")
+                            raise
+                        await cwl_campaign.finish_catchup_attempt(
+                            mongo_client, guild_id, cycle, receipt["occurrence_id"]
+                        )
+                    else:
+                        await cwl_campaign.record_delivery(mongo_client, guild_id, cycle, receipt)
                     await _release_campaign_claim(
                         guild_id,
                         cycle,
