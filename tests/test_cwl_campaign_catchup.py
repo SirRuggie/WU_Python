@@ -632,3 +632,104 @@ def test_storage_refuses_forged_or_non_scheduled_pending_rows(runtime, changes):
         assert runtime.rest.sent == []
 
     asyncio.run(run())
+
+
+def test_legacy_missing_status_is_normalized_when_existing_job_is_tagged(runtime):
+    async def run():
+        job_id, _, _ = await persist_due(runtime, minutes=1)
+        runtime.mongo.cwl_pending_reminders.documents[job_id].pop("status", None)
+        await native._reconcile_cwl_startup()
+        assert runtime.mongo.cwl_pending_reminders.documents.get(job_id, {}).get("status") == "scheduled"
+        await run_current_due_jobs(runtime)
+        assert len(runtime.rest.sent) == 1
+
+    asyncio.run(run())
+
+
+def test_lost_ledger_cannot_overwrite_a_new_manual_job(runtime, monkeypatch):
+    async def run():
+        job_id, _, _ = await persist_due(runtime, minutes=1)
+        await native._reconcile_cwl_startup()
+        replacement = None
+        async def replace_before_failure(*args, **kwargs):
+            nonlocal replacement
+            await native._persist_campaign_job(
+                job_id, runtime.clock[0].add(days=1), GUILD, CYCLE,
+                "signup", ["main"], "new-generation", job_kind="manual",
+            )
+            replacement = deepcopy(runtime.mongo.cwl_pending_reminders.documents[job_id])
+            raise OSError("Fixture ledger failure after concurrent replacement")
+        monkeypatch.setattr(campaign, "record_catchup_delivery", replace_before_failure)
+        await run_current_due_jobs(runtime)
+        assert len(runtime.rest.sent) == 1
+        assert runtime.mongo.cwl_pending_reminders.documents[job_id] == replacement
+        loaded = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+        assert loaded["deliveries"][0]["status"] == "uncertain"
+        assert campaign.occurrence_id(CYCLE, "signup", "main") in loaded["uncertain_occurrences"]
+
+    asyncio.run(run())
+
+
+def test_stale_callback_cannot_delete_a_confirmed_pending_receipt(runtime):
+    async def run():
+        job_id, _, _ = await persist_due(runtime, minutes=1)
+        await native._reconcile_cwl_startup()
+        old = deepcopy(runtime.mongo.cwl_pending_reminders.documents[job_id])
+        pending = {**old, "status": "ledger_pending", "receipt": {
+            "occurrence_id": campaign.occurrence_id(CYCLE, "signup", "main"),
+            "status": "sent", "message_id": 123, "late": True,
+        }}
+        runtime.mongo.cwl_pending_reminders.documents[job_id] = deepcopy(pending)
+        await campaign.delete_catchup_job(runtime.mongo, old)
+        assert runtime.mongo.cwl_pending_reminders.documents.get(job_id) == pending
+
+    asyncio.run(run())
+
+
+def test_native_receipt_recovery_does_not_delete_concurrent_replacement(runtime, monkeypatch):
+    async def run():
+        job_id, due, _ = await persist_due(runtime, minutes=1)
+        await native._reconcile_cwl_startup()
+        row = deepcopy(runtime.mongo.cwl_pending_reminders.documents[job_id])
+        receipt = {
+            "occurrence_id": campaign.occurrence_id(CYCLE, "signup", "main"),
+            "message_key": "signup", "variant": "main", "status": "sent",
+            "message_id": 123, "late": True,
+            "at": runtime.clock[0].in_timezone("UTC").isoformat(),
+            "original_due_at": due.isoformat(),
+        }
+        await campaign.persist_catchup_receipt(runtime.mongo, row, receipt, "OSError")
+        replacement = None
+        original = campaign.record_catchup_delivery
+        async def replace_while_recording(*args, **kwargs):
+            nonlocal replacement
+            await native._persist_campaign_job(
+                job_id, runtime.clock[0].add(days=1), GUILD, CYCLE,
+                "signup", ["main"], "new-generation", job_kind="manual",
+            )
+            replacement = deepcopy(runtime.mongo.cwl_pending_reminders.documents[job_id])
+            return await original(*args, **kwargs)
+        monkeypatch.setattr(campaign, "record_catchup_delivery", replace_while_recording)
+        await native.restore_pending_reminders()
+        assert runtime.rest.sent == []
+        assert runtime.mongo.cwl_pending_reminders.documents[job_id] == replacement
+        loaded = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+        assert loaded["deliveries"][0]["status"] == "sent"
+
+    asyncio.run(run())
+
+
+def test_receipt_recovery_delete_matches_the_observed_message_id(runtime):
+    async def run():
+        job_id, _, _ = await persist_due(runtime, minutes=1)
+        await native._reconcile_cwl_startup()
+        row = deepcopy(runtime.mongo.cwl_pending_reminders.documents[job_id])
+        observed = {**row, "status": "ledger_pending", "receipt": {
+            "status": "sent", "late": True, "message_id": 123,
+        }}
+        newer = {**observed, "receipt": {**observed["receipt"], "message_id": 124}}
+        runtime.mongo.cwl_pending_reminders.documents[job_id] = deepcopy(newer)
+        await campaign.delete_catchup_job(runtime.mongo, observed)
+        assert runtime.mongo.cwl_pending_reminders.documents.get(job_id) == newer
+
+    asyncio.run(run())

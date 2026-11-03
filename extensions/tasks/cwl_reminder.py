@@ -586,6 +586,7 @@ async def _restore_scheduled_catchups(rows, now, *, tagged_only=False, loaded=No
                 newest = {
                     **newest,
                     "job_kind": catchup_policy.CATCHUP_JOB_KIND,
+                    "status": "scheduled",
                     "run_time": now.isoformat(),
                     "catchup": {"protocol": 1, "original_due_at": due.isoformat()},
                 }
@@ -936,6 +937,9 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
             await cwl_campaign.persist_catchup_receipt(mongo_client, row, receipt, type(exc).__name__)
         except Exception:
             print("[CWL Reminder] ALERT campaign_catchup_receipt_unavailable action=check Discord before retrying")
+            await _finish_catchup_decision(
+                row, due, "uncertain", "Not sure it sent. Check Discord."
+            )
         return True
     await cwl_campaign.finish_catchup_attempt(mongo_client, guild_id, cycle, oid)
     await _release_campaign_claim(guild_id, cycle, oid)
@@ -2019,9 +2023,12 @@ async def restore_pending_reminders():
                         cycle,
                         receipt["occurrence_id"],
                     )
-                    await mongo_client.cwl_pending_reminders.delete_one(
-                        {"_id": reminder_id}
-                    )
+                    if receipt.get("late") and message_id != "roster":
+                        await cwl_campaign.delete_catchup_job(mongo_client, reminder)
+                    else:
+                        await mongo_client.cwl_pending_reminders.delete_one(
+                            {"_id": reminder_id}
+                        )
                     restored_count += 1
                     continue
                 variants = [

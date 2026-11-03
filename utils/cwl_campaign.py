@@ -1214,6 +1214,7 @@ async def prepare_catchup_job(mongo, row: dict, due, now) -> bool:
         query,
         {"$set": {
             "job_kind": "catchup",
+            "status": "scheduled",
             "run_time": now.isoformat(),
             "catchup": {"protocol": 1, "original_due_at": due.isoformat()},
             "updated_at": _utcnow(),
@@ -1223,13 +1224,27 @@ async def prepare_catchup_job(mongo, row: dict, due, now) -> bool:
 
 
 async def delete_catchup_job(mongo, row: dict) -> None:
-    """Do not delete a newer scheduled/manual/retry row reusing the same id."""
-    _catchup_row_scope(row)
+    """Delete only the observed job or confirmed receipt, never a replacement."""
+    recovering = row.get("status") == "ledger_pending"
+    if recovering:
+        receipt = row.get("receipt")
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("status") != "sent"
+            or receipt.get("late") is not True
+        ):
+            raise ValueError("Invalid late receipt recovery")
+        _catchup_row_scope({**row, "status": "scheduled"})
+    else:
+        _catchup_row_scope(row)
     query = {
         "_id": row["_id"], "kind": "campaign",
         "generation": row.get("generation"),
         "job_kind": row.get("job_kind", {"$exists": False}),
+        "status": row.get("status", {"$exists": False}),
     }
+    if recovering:
+        query["receipt.message_id"] = row["receipt"].get("message_id")
     if row.get("job_kind") == "catchup":
         query["catchup.original_due_at"] = row["catchup"]["original_due_at"]
     else:
@@ -1339,8 +1354,16 @@ async def persist_catchup_receipt(mongo, row: dict, receipt: dict, error_type: s
     _catchup_row_scope(row)
     if receipt.get("occurrence_id") != occurrence_id(row["cycle"], row["message_id"], row["variants"][0]) or receipt.get("status") != "sent":
         raise ValueError("Invalid confirmed catch-up receipt")
-    await mongo.cwl_pending_reminders.update_one(
-        {"_id": row["_id"]},
+    result = await mongo.cwl_pending_reminders.update_one(
+        {
+            "_id": row["_id"],
+            "kind": "campaign",
+            "job_kind": "catchup",
+            "status": "scheduled",
+            "generation": row["generation"],
+            "catchup.protocol": 1,
+            "catchup.original_due_at": row["catchup"]["original_due_at"],
+        },
         {"$set": {
             "kind": "campaign", "job_kind": "catchup", "status": "ledger_pending",
             "guild_id": row["guild_id"], "cycle": row["cycle"],
@@ -1349,8 +1372,9 @@ async def persist_catchup_receipt(mongo, row: dict, receipt: dict, error_type: s
             "receipt": copy.deepcopy(receipt), "last_error_type": error_type,
             "updated_at": _utcnow(),
         }},
-        upsert=True,
     )
+    if not getattr(result, "matched_count", 0):
+        raise RuntimeError("Catch-up receipt owner changed")
 
 
 async def record_catchup_delivery(mongo, guild_id, cycle, receipt):

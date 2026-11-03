@@ -95,3 +95,41 @@ def test_native_snowflake_restart_and_crash_use_real_mongo(runtime, monkeypatch,
             await client.close()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("boundary", ["fallback", "scheduled_cleanup", "recovery_cleanup", "different_receipt"])
+def test_real_mongo_receipt_ownership_cas_preserves_replacements(boundary):
+    async def run():
+        client = AsyncMongoClient("mongodb://127.0.0.1:27171", serverSelectionTimeoutMS=2000, timeoutMS=5000)
+        collection = client["catchup_144_test"]["owner_" + uuid4().hex]
+        mongo = SimpleNamespace(cwl_pending_reminders=collection)
+        job_id = "cwl_campaign:644963518025826319:2026-11:signup:main"
+        old = {
+            "_id": job_id, "kind": "campaign", "job_kind": "catchup",
+            "status": "scheduled", "guild_id": 644963518025826319,
+            "cycle": CYCLE, "message_id": "signup", "variants": ["main"],
+            "generation": "old", "catchup": {"protocol": 1, "original_due_at": "2026-11-20T11:59:00-05:00"},
+        }
+        receipt = {"occurrence_id": campaign.occurrence_id(CYCLE, "signup", "main"),
+                   "status": "sent", "late": True, "message_id": 123}
+        pending = {**old, "status": "ledger_pending", "receipt": receipt}
+        replacement = {**old, "job_kind": "manual", "generation": "new"}
+        replacement.pop("catchup")
+        if boundary == "scheduled_cleanup":
+            replacement = deepcopy(pending)
+        elif boundary == "different_receipt":
+            replacement = {**pending, "receipt": {**receipt, "message_id": 124}}
+        try:
+            await collection.insert_one(deepcopy(replacement))
+            if boundary == "fallback":
+                with pytest.raises(RuntimeError, match="owner changed"):
+                    await campaign.persist_catchup_receipt(mongo, old, receipt, "OSError")
+            else:
+                observed = old if boundary == "scheduled_cleanup" else pending
+                await campaign.delete_catchup_job(mongo, observed)
+            assert await collection.find_one({"_id": job_id}) == replacement
+        finally:
+            await collection.drop()
+            await client.close()
+
+    asyncio.run(run())
