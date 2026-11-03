@@ -83,3 +83,10 @@ it("retains useful detail without inventing a scheduled timestamp", () => {
     }),
   ).toEqual({ reason: "Not sure it sent. Check Discord." });
 });
+
+it("does not prepend a second skipped label to legacy spacing history", () => {
+  const reason = "Skipped an overdue reminder to preserve the minimum spacing.";
+  expect(
+    reminderHistoryStatus({ status: "skipped", variant: "lazy", reason }),
+  ).toBe(`Lazy · ${reason}`);
+});

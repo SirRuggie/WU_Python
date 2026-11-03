@@ -133,3 +133,63 @@ def test_real_mongo_receipt_ownership_cas_preserves_replacements(boundary):
             await client.close()
 
     asyncio.run(run())
+
+
+def test_real_mongo_preflight_release_preserves_a_later_worker_and_uncertainty():
+    async def run():
+        client = AsyncMongoClient("mongodb://127.0.0.1:27171", serverSelectionTimeoutMS=2000, timeoutMS=5000)
+        collection = client["catchup_144_test"]["claim_" + uuid4().hex]
+        mongo = SimpleNamespace(bot_config=collection)
+        guild_id = 644963518025826319
+        oid = campaign.occurrence_id(CYCLE, "signup", "main")
+        old = {"at": "2026-11-20T16:00:00Z", "generation": "same"}
+        later = {"at": "2026-11-20T16:16:00Z", "generation": "same"}
+        document = {"_id": campaign.cycle_id(guild_id, CYCLE), "delivery_claims": {oid: later}, "uncertain_occurrences": [oid]}
+        try:
+            await collection.insert_one(deepcopy(document))
+            assert not await campaign.release_catchup_preflight_claim(mongo, guild_id, CYCLE, oid, old)
+            assert not await campaign.release_catchup_preflight_claim(mongo, guild_id, CYCLE, oid, later)
+            assert await collection.find_one({"_id": document["_id"]}) == document
+            await collection.update_one({"_id": document["_id"]}, {"$pull": {"uncertain_occurrences": oid}})
+            assert not await campaign.release_catchup_preflight_claim(mongo, guild_id, CYCLE, oid, old)
+            assert await campaign.release_catchup_preflight_claim(mongo, guild_id, CYCLE, oid, later)
+            assert not (await collection.find_one({"_id": document["_id"]}))["delivery_claims"]
+        finally:
+            await collection.drop()
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_real_mongo_combined_legacy_report_is_once_and_cleans_only_the_observed_row():
+    async def run():
+        client = AsyncMongoClient("mongodb://127.0.0.1:27171", serverSelectionTimeoutMS=2000, timeoutMS=5000)
+        db = client["catchup_144_test"]
+        prefix = "legacy_" + uuid4().hex
+        config, pending = db[prefix + "_config"], db[prefix + "_pending"]
+        mongo = SimpleNamespace(bot_config=config, cwl_pending_reminders=pending)
+        guild_id = 644963518025826319
+        row = {
+            "_id": f"cwl_campaign:{guild_id}:{CYCLE}:signup", "kind": "campaign",
+            "guild_id": guild_id, "cycle": CYCLE, "message_id": "signup",
+            "variants": ["main", "lazy"], "run_time": "2026-11-20T11:59:00-05:00",
+            "job_kind": "scheduled", "status": "scheduled", "generation": "old",
+        }
+        replacement = {**row, "variants": ["main"], "job_kind": "manual", "generation": "new"}
+        try:
+            await pending.insert_one(deepcopy(replacement))
+            assert await campaign.record_legacy_catchup_skip(mongo, row, row["run_time"])
+            assert await pending.find_one({"_id": row["_id"]}) == replacement
+            await pending.replace_one({"_id": row["_id"]}, deepcopy(row))
+            assert not await campaign.record_legacy_catchup_skip(mongo, row, row["run_time"])
+            assert await pending.find_one({"_id": row["_id"]}) is None
+            state = await config.find_one({"_id": campaign.cycle_id(guild_id, CYCLE)})
+            assert len(state["deliveries"]) == 1
+            assert "occurrence_id" not in state["deliveries"][0]
+            assert not state.get("catchup_reported_occurrences") and not state.get("skipped")
+        finally:
+            await config.drop()
+            await pending.drop()
+            await client.close()
+
+    asyncio.run(run())

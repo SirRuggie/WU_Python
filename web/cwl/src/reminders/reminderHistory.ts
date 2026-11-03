@@ -49,7 +49,7 @@ export function reminderHistoryStatus(entry: Entry) {
   if (status === "skipped") {
     const reason = typeof entry.reason === "string" ? entry.reason.trim() : "";
     label = reason
-      ? reason.startsWith("Skipped:")
+      ? /^skipped(?:\s|:|$)/i.test(reason)
         ? reason
         : `Skipped: ${reason}`
       : "Skipped";

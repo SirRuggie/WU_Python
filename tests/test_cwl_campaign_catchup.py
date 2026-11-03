@@ -733,3 +733,212 @@ def test_receipt_recovery_delete_matches_the_observed_message_id(runtime):
         assert runtime.mongo.cwl_pending_reminders.documents.get(job_id) == newer
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("replacement_kind", ["manual", "retry"])
+def test_pre_post_replacement_releases_only_its_claim_so_staff_job_sends(runtime, replacement_kind):
+    async def run():
+        job_id, _, _ = await persist_due(runtime, minutes=1)
+        await native._reconcile_cwl_startup()
+        old_job = runtime.scheduler.get_job(job_id)
+        fetch = runtime.rest.fetch_channel
+        async def replace_while_fetching(channel):
+            runtime.rest.fetch_channel = fetch
+            if replacement_kind == "manual":
+                await native.queue_manual_campaign_occurrence(GUILD, CYCLE, "signup", ["main"])
+            else:
+                await native.queue_campaign_retry(GUILD, CYCLE, campaign.occurrence_id(CYCLE, "signup", "main"))
+            return await fetch(channel)
+        runtime.rest.fetch_channel = replace_while_fetching
+        await old_job.function(*old_job.args, **(getattr(old_job, "kwargs", None) or {}))
+        loaded = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+        assert not loaded["deliveries"] and not loaded["uncertain_occurrences"]
+        raw = runtime.mongo.bot_config.documents[campaign.cycle_id(GUILD, CYCLE)]
+        assert not raw.get("delivery_claims")
+        assert runtime.mongo.cwl_pending_reminders.documents[job_id]["job_kind"] == replacement_kind
+        await run_current_due_jobs(runtime)
+        assert len(runtime.rest.sent) == 1
+        loaded = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+        assert len(loaded["deliveries"]) == 1 and loaded["deliveries"][0]["status"] == "sent"
+        assert not loaded["deliveries"][0].get("late")
+
+    asyncio.run(run())
+
+
+def test_second_worker_mid_post_fences_an_older_preflight_even_after_lease_expiry(runtime):
+    async def run():
+        job_id, due, loaded = await persist_due(runtime, minutes=1)
+        await native._reconcile_cwl_startup()
+        generation = native._campaign_generation(loaded)
+        a_fetching, resume_a, b_posting, resume_b = [asyncio.Event() for _ in range(4)]
+        original_fetch, original_post = runtime.rest.fetch_channel, runtime.rest.create_message
+        fetch_count = 0
+        async def fetching(channel):
+            nonlocal fetch_count
+            fetch_count += 1
+            if fetch_count == 1:
+                a_fetching.set()
+                await resume_a.wait()
+            return await original_fetch(channel)
+        post_count = 0
+        async def posting(*args, **kwargs):
+            nonlocal post_count
+            post_count += 1
+            if post_count == 1:
+                b_posting.set()
+                await resume_b.wait()
+            return await original_post(*args, **kwargs)
+        runtime.rest.fetch_channel, runtime.rest.create_message = fetching, posting
+        args = (GUILD, CYCLE, "signup", ["main"], generation, due.isoformat())
+        # Inner dispatch models independent processes, not the local active-job guard.
+        worker_a = asyncio.create_task(native._deliver_catchup_message(*args))
+        await asyncio.wait_for(a_fetching.wait(), 2)
+        runtime.clock[0] = runtime.clock[0].add(minutes=16)
+        worker_b = asyncio.create_task(native._deliver_catchup_message(*args))
+        await asyncio.wait_for(b_posting.wait(), 2)
+        before = deepcopy(runtime.mongo.bot_config.documents[campaign.cycle_id(GUILD, CYCLE)])
+        resume_a.set()
+        assert await asyncio.wait_for(worker_a, 2) is False
+        after = runtime.mongo.bot_config.documents[campaign.cycle_id(GUILD, CYCLE)]
+        assert after["delivery_claims"] == before["delivery_claims"]
+        assert after["uncertain_occurrences"] == before["uncertain_occurrences"]
+        resume_b.set()
+        assert await asyncio.wait_for(worker_b, 2) is True
+        assert len(runtime.rest.sent) == 1
+        final = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+        assert len(final["deliveries"]) == 1 and final["deliveries"][0]["status"] == "sent"
+
+    asyncio.run(run())
+
+
+def test_startup_catchup_leaves_roster_rows_and_history_untouched(runtime):
+    async def run():
+        _, due, loaded = await persist_due(runtime, minutes=1)
+        roster_id = native._campaign_job_id(GUILD, CYCLE, "roster", "main")
+        await native._persist_campaign_job(
+            roster_id, due, GUILD, CYCLE, "roster", ["main"], native._campaign_generation(loaded)
+        )
+        roster = deepcopy(runtime.mongo.cwl_pending_reminders.documents[roster_id])
+        rows = [deepcopy(roster)]
+        assert native.catchup_policy.scheduled_candidate(roster) is False
+        handled, kept = await native._restore_scheduled_catchups(rows, runtime.clock[0])
+        assert not handled and not kept
+        assert runtime.mongo.cwl_pending_reminders.documents[roster_id] == roster
+        assert not (await campaign.load_campaign(runtime.mongo, GUILD, CYCLE))["deliveries"]
+        assert not runtime.rest.sent
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("legacy_base_id", [False, True])
+def test_past_combined_legacy_job_is_recorded_once_without_consuming_pool_occurrences(runtime, legacy_base_id):
+    async def run():
+        job_id, due, _ = await persist_due(runtime, minutes=1)
+        row = runtime.mongo.cwl_pending_reminders.documents.pop(job_id)
+        if legacy_base_id:
+            job_id = f"cwl_campaign:{GUILD}:{CYCLE}:signup"
+        row.update(_id=job_id, variants=["main", "lazy"])
+        runtime.mongo.cwl_pending_reminders.documents[job_id] = deepcopy(row)
+        await native._reconcile_cwl_startup()
+        assert not runtime.rest.sent
+        assert job_id not in runtime.mongo.cwl_pending_reminders.documents
+        loaded = await campaign.load_campaign(runtime.mongo, GUILD, CYCLE)
+        assert len(loaded["deliveries"]) == 1
+        entry = loaded["deliveries"][0]
+        assert entry["status"] == "skipped" and "Main and Lazy" in entry["reason"]
+        assert "occurrence_id" not in entry
+        raw = runtime.mongo.bot_config.documents[campaign.cycle_id(GUILD, CYCLE)]
+        assert not raw.get("catchup_reported_occurrences")
+        assert not raw.get("skipped") and not raw.get("sent_occurrences")
+        # Lost delete acknowledgement / restart may present the same legacy row again.
+        runtime.mongo.cwl_pending_reminders.documents[job_id] = deepcopy(row)
+        assert not await campaign.record_legacy_catchup_skip(runtime.mongo, row, due.isoformat())
+        assert job_id not in runtime.mongo.cwl_pending_reminders.documents
+        assert len((await campaign.load_campaign(runtime.mongo, GUILD, CYCLE))["deliveries"]) == 1
+
+    asyncio.run(run())
+
+
+def test_combined_legacy_report_does_not_delete_a_replacement_or_silently_drop_failed_history(runtime, monkeypatch):
+    async def run():
+        job_id, due, _ = await persist_due(runtime, minutes=1)
+        row = deepcopy(runtime.mongo.cwl_pending_reminders.documents[job_id])
+        row["variants"] = ["main", "lazy"]
+        runtime.mongo.cwl_pending_reminders.documents[job_id] = deepcopy(row)
+        replacement = {**row, "variants": ["main"], "job_kind": "manual", "generation": "new"}
+        original = runtime.mongo.bot_config.update_one
+        async def replacing(*args, **kwargs):
+            result = await original(*args, **kwargs)
+            runtime.mongo.cwl_pending_reminders.documents[job_id] = deepcopy(replacement)
+            return result
+        monkeypatch.setattr(runtime.mongo.bot_config, "update_one", replacing)
+        assert await campaign.record_legacy_catchup_skip(runtime.mongo, row, due.isoformat())
+        assert runtime.mongo.cwl_pending_reminders.documents[job_id] == replacement
+        monkeypatch.setattr(runtime.mongo.bot_config, "update_one", original)
+        runtime.mongo.cwl_pending_reminders.documents[job_id] = deepcopy(row)
+        row["_id"] = f"cwl_campaign:{GUILD}:{CYCLE}:signup:lazy"
+        runtime.mongo.cwl_pending_reminders.documents[row["_id"]] = deepcopy(row)
+        async def unavailable(*args, **kwargs):
+            raise OSError("Fixture history storage unavailable")
+        monkeypatch.setattr(runtime.mongo.bot_config, "update_one", unavailable)
+        with pytest.raises(OSError):
+            await campaign.record_legacy_catchup_skip(runtime.mongo, row, due.isoformat())
+        assert runtime.mongo.cwl_pending_reminders.documents[row["_id"]] == row
+
+    asyncio.run(run())
+
+
+def test_direct_schedule_sync_reports_a_past_combined_legacy_row(runtime):
+    async def run():
+        job_id, _, _ = await persist_due(runtime, minutes=1)
+        runtime.mongo.cwl_pending_reminders.documents[job_id]["variants"] = ["main", "lazy"]
+        await native.sync_campaign_schedule(GUILD, CYCLE)
+        assert not runtime.rest.sent
+        assert job_id not in runtime.mongo.cwl_pending_reminders.documents
+        records = (await campaign.load_campaign(runtime.mongo, GUILD, CYCLE))["deliveries"]
+        assert len(records) == 1 and records[0]["status"] == "skipped"
+
+    asyncio.run(run())
+
+
+def test_failed_preparation_does_not_release_a_later_manual_workers_claim(runtime):
+    async def run():
+        job_id, due, loaded = await persist_due(runtime, minutes=1)
+        await native._reconcile_cwl_startup()
+        a_fetching, resume_a, b_posting, resume_b = [asyncio.Event() for _ in range(4)]
+        fetch, post = runtime.rest.fetch_channel, runtime.rest.create_message
+        first = True
+        async def fetching(channel):
+            nonlocal first
+            if first:
+                first = False
+                a_fetching.set()
+                await resume_a.wait()
+                raise OSError("Fixture stale worker preparation failure")
+            return await fetch(channel)
+        async def posting(*args, **kwargs):
+            b_posting.set()
+            await resume_b.wait()
+            return await post(*args, **kwargs)
+        runtime.rest.fetch_channel, runtime.rest.create_message = fetching, posting
+        worker_a = asyncio.create_task(native._deliver_catchup_message(
+            GUILD, CYCLE, "signup", ["main"], native._campaign_generation(loaded), due.isoformat()
+        ))
+        await asyncio.wait_for(a_fetching.wait(), 2)
+        runtime.clock[0] = runtime.clock[0].add(minutes=16)
+        await native.queue_manual_campaign_occurrence(GUILD, CYCLE, "signup", ["main"])
+        manual = runtime.scheduler.get_job(job_id)
+        runtime.clock[0] = runtime.clock[0].add(seconds=3)
+        worker_b = asyncio.create_task(manual.function(*manual.args, **(getattr(manual, "kwargs", None) or {})))
+        await asyncio.wait_for(b_posting.wait(), 2)
+        before = deepcopy(runtime.mongo.bot_config.documents[campaign.cycle_id(GUILD, CYCLE)]["delivery_claims"])
+        resume_a.set()
+        assert await asyncio.wait_for(worker_a, 2) is False
+        assert runtime.mongo.bot_config.documents[campaign.cycle_id(GUILD, CYCLE)]["delivery_claims"] == before
+        resume_b.set()
+        assert await asyncio.wait_for(worker_b, 2) is True
+        assert len(runtime.rest.sent) == 1
+        entries = (await campaign.load_campaign(runtime.mongo, GUILD, CYCLE))["deliveries"]
+        assert sum(entry["status"] == "sent" for entry in entries) == 1
+
+    asyncio.run(run())

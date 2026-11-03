@@ -1199,6 +1199,79 @@ async def catchup_state(mongo, guild_id: int, cycle: str) -> dict:
     }
 
 
+async def record_legacy_catchup_skip(mongo, row: dict, original_due_at: str) -> bool:
+    """Report one combined legacy job without consuming either pool occurrence."""
+    if (
+        not isinstance(original_due_at, str)
+        or not re.search(r"(?:Z|[+-][0-9]{2}:[0-9]{2})$", original_due_at)
+        or pendulum.parse(original_due_at) != pendulum.parse(row.get("run_time"))
+    ):
+        raise ValueError("Legacy reminder time changed")
+    variants = row.get("variants")
+    if (
+        not isinstance(variants, list)
+        or len(variants) != 2
+        or any(not isinstance(value, str) for value in variants)
+        or set(variants) != set(AUDIENCES)
+    ):
+        raise ValueError("Invalid combined reminder audiences")
+    gid, cycle, message_key = row.get("guild_id"), row.get("cycle"), row.get("message_id")
+    base_id = f"cwl_campaign:{gid}:{cycle}:{message_key}"
+    _catchup_row_scope({
+        **row, "_id": f"{base_id}:{variants[0]}", "variants": [variants[0]],
+    })
+    if (
+        row.get("_id") not in {base_id, *(f"{base_id}:{value}" for value in variants)}
+        or row.get("kind") != "campaign"
+        or row.get("job_kind", "scheduled") != "scheduled"
+        or row.get("status", "scheduled") != "scheduled"
+    ):
+        raise ValueError("Invalid combined legacy reminder")
+    query = {
+        "_id": cycle_id(gid, cycle),
+        "catchup_legacy_reported_jobs": {"$ne": row["_id"]},
+    }
+    entry = {
+        "message_key": message_key,
+        "status": "skipped",
+        "reason": "Skipped: older reminder listed Main and Lazy together; review settings",
+        "at": _utcnow(),
+        "original_due_at": original_due_at,
+        "revision": row.get("generation"),
+    }
+    recorded = False
+    try:
+        result = await mongo.bot_config.update_one(
+            query,
+            {
+                "$setOnInsert": {
+                    "kind": "cwl_campaign_cycle", "guild_id": int(gid),
+                    "cycle": cycle, "revision": 0,
+                },
+                "$addToSet": {"catchup_legacy_reported_jobs": row["_id"]},
+                "$push": {"deliveries": {"$each": [entry], "$slice": -HISTORY_LIMIT}},
+            },
+            upsert=True,
+        )
+        recorded = bool(getattr(result, "matched_count", 0) or getattr(result, "upserted_id", None))
+    except DuplicateKeyError:
+        pass
+    if not recorded:
+        current = await mongo.bot_config.find_one(
+            {"_id": cycle_id(gid, cycle)}, {"catchup_legacy_reported_jobs": 1}
+        ) or {}
+        if row["_id"] not in current.get("catchup_legacy_reported_jobs", ()):
+            raise RuntimeError("Legacy reminder decision was not recorded")
+    await mongo.cwl_pending_reminders.delete_one({
+        "_id": row["_id"], "kind": "campaign", "variants": variants,
+        "run_time": row.get("run_time"),
+        "job_kind": row.get("job_kind", {"$exists": False}),
+        "status": row.get("status", {"$exists": False}),
+        "generation": row.get("generation", {"$exists": False}),
+    })
+    return recorded
+
+
 async def prepare_catchup_job(mongo, row: dict, due, now) -> bool:
     """CAS one existing scheduled row; never derive or insert a missing job."""
     _catchup_row_scope(row)

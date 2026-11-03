@@ -504,12 +504,30 @@ async def _restore_scheduled_catchups(rows, now, *, tagged_only=False, loaded=No
         try:
             if not catchup_policy.scheduled_candidate(row):
                 continue
-            if tagged_only and row.get("job_kind") != catchup_policy.CATCHUP_JOB_KIND:
+            combined_legacy = (
+                row.get("job_kind", "scheduled") == "scheduled"
+                and isinstance(row.get("variants"), list)
+                and len(row["variants"]) > 1
+            )
+            if (
+                tagged_only
+                and row.get("job_kind") != catchup_policy.CATCHUP_JOB_KIND
+                and not combined_legacy
+            ):
                 continue
             due = catchup_policy.original_due(row)
             if due > now:
                 continue
             variants = row.get("variants")
+            if isinstance(variants, list) and len(variants) > 1:
+                recorded = await cwl_campaign.record_legacy_catchup_skip(
+                    mongo_client, row, due.isoformat()
+                )
+                handled.add(row["_id"])
+                _remove_catchup_scheduler_job(row)
+                if recorded:
+                    print("[CWL Reminder] ALERT campaign_catchup_legacy action=review delivery history")
+                continue
             gid, cycle, message_id = int(row["guild_id"]), row["cycle"], row["message_id"]
             if (
                 not isinstance(variants, list) or len(variants) != 1
@@ -613,8 +631,10 @@ async def _claim_campaign_occurrence(
     cycle: str,
     occurrence: str,
     generation: str,
-) -> bool:
-    """Atomically claim one audience delivery before calling Discord."""
+    *,
+    return_claim: bool = False,
+) -> bool | dict:
+    """Claim one delivery; optionally return its identity for guarded release."""
     loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
     if occurrence in loaded.get("uncertain_occurrences", []):
         return False
@@ -669,11 +689,14 @@ async def _claim_campaign_occurrence(
         },
         upsert=not bool(cycle_document),
     )
-    return bool(
+    claimed = bool(
         getattr(result, "matched_count", 0)
         or getattr(result, "upserted_id", None) is not None
         or getattr(result, "modified_count", 0)
     )
+    if claimed and return_claim:
+        return {"at": now.isoformat(), "generation": generation}
+    return claimed
 
 
 async def _campaign_channel_belongs_to_guild(
@@ -876,7 +899,10 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
     if reason:
         await _finish_catchup_decision(row, due, "skipped", reason)
         return False
-    if not await _claim_campaign_occurrence(guild_id, cycle, oid, generation):
+    claim = await _claim_campaign_occurrence(
+        guild_id, cycle, oid, generation, return_claim=True
+    )
+    if not claim:
         return False
     attempted = False
     try:
@@ -895,13 +921,18 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
         if reason is None and _sequence_spacing_blocked(fresh, message_id, variant, pendulum.now(DEFAULT_TIMEZONE)):
             reason = "Skipped: too close to another send"
         if reason:
-            await _release_campaign_claim(guild_id, cycle, oid)
+            await cwl_campaign.release_catchup_preflight_claim(
+                mongo_client, guild_id, cycle, oid, claim
+            )
             await _finish_catchup_decision(row, due, "skipped", reason)
             return False
         if not await cwl_campaign.begin_catchup_attempt(
             mongo_client, guild_id=guild_id, cycle=cycle, occurrence=oid,
             generation=generation, job_id=job_id, original_due_at=due_at,
         ):
+            await cwl_campaign.release_catchup_preflight_claim(
+                mongo_client, guild_id, cycle, oid, claim
+            )
             return False
         attempted = True
         result = await bot_instance.rest.create_message(
@@ -914,7 +945,9 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
         if attempted:
             await _finish_catchup_decision(row, due, "uncertain", "Not sure it sent. Check Discord.")
         else:
-            await _release_campaign_claim(guild_id, cycle, oid)
+            await cwl_campaign.release_catchup_preflight_claim(
+                mongo_client, guild_id, cycle, oid, claim
+            )
             await _finish_catchup_decision(row, due, "failed", "Not sent: delivery unavailable")
         return False
     message_id_value = getattr(result, "id", None)
