@@ -7,6 +7,7 @@ import hikari
 from extensions.commands.recruit import perms
 from extensions.commands.tickets import store, testing_service
 from utils.component_state import get_state
+from utils.role_hierarchy import RolePositions
 from .schema import SCHEMA_VERSION
 from .timing import read, span
 
@@ -89,6 +90,8 @@ def permissions(member, roles, owner_id):
 
 
 def top(member, roles):
+    if isinstance(roles, RolePositions):
+        return roles.top(member.role_ids)
     role_ids = set(member.role_ids)
     return max((r.position for r in roles if r.id in role_ids), default=0)
 

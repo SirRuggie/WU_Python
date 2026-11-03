@@ -2021,6 +2021,10 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app["after_login"] = after_login
     app["dev_fixture"] = dev_fixture
     app["dev_identity"] = dev_identity
+    from .member_directory_cache import KEY as directory_cache_key, DirectoryCache
+    app[directory_cache_key] = DirectoryCache()
+    from .member_row_work import install as install_member_row_work
+    install_member_row_work(app)
     app["member_timing_cache"] = {}
     app["member_timing_state"] = {"task": None}
     app["participation_sync_locks"] = {}

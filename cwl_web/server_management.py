@@ -242,6 +242,10 @@ async def queue_action(request, section, action, values, revision):
         saved = await db.bot_config.find_one({'_id':key})
         if saved.get('payload_hash') not in (None, payload_hash):
             raise web.HTTPConflict(text='This action identifier was already used with different settings.')
+    if section in {"roles", "member_profiles"}:
+        from .member_directory_cache import invalidate
+
+        invalidate(getattr(request, "app", {}))
     return web.json_response({'request_id':key, 'status':saved['status'], 'status_url':'/manage/requests/'+key,
                              'message':saved.get('message') or 'Queued. Waiting for the bot.'})
 
@@ -254,6 +258,9 @@ async def request_status(request):
     if not row:
         raise web.HTTPNotFound(text='This action is no longer available.')
     await require_manage(request, row['section'])
+    from .member_directory_cache import observe_job
+
+    observe_job(getattr(request, "app", {}), row)
     return web.json_response({'status':row['status'], 'message':row.get('message') or 'Waiting for the bot.', 'result':row.get('result')})
 
 

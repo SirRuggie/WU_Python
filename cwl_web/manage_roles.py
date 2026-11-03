@@ -1,4 +1,5 @@
 """Discord role tools using the same hierarchy helpers as /manage."""
+
 import re
 import asyncio
 import time
@@ -27,14 +28,23 @@ def sid(value):
 
 
 async def hierarchy(request, actor):
-    me = await discord(request, 'GET', '/users/@me')
-    bot_data = await discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{me["id"]}')
-    roles = {int(r['id']): role(r) for r in actor['roles']}
+    me = await discord(request, "GET", "/users/@me")
+    bot_data = await discord(request, "GET", f'/guilds/{GUILD_ID}/members/{me["id"]}')
+    return hierarchy_context(actor, me, bot_data)
+
+
+def hierarchy_context(actor, me, bot_data):
+    """Adapt a read snapshot; mutating callers still use live hierarchy()."""
+    roles = {int(r["id"]): role(r) for r in actor["roles"]}
     bot_member = member(bot_data)
-    guild = NS(id=GUILD_ID, owner_id=int(actor['guild']['owner_id']), get_role=roles.get,
-               get_member=lambda uid: bot_member if int(uid) == int(me['id']) else None)
-    bot = NS(get_me=lambda: NS(id=int(me['id'])))
-    return roles, guild, bot, member(actor['member'])
+    guild = NS(
+        id=GUILD_ID,
+        owner_id=int(actor["guild"]["owner_id"]),
+        get_role=roles.get,
+        get_member=lambda uid: bot_member if int(uid) == int(me["id"]) else None,
+    )
+    bot = NS(get_me=lambda: NS(id=int(me["id"])))
+    return roles, guild, bot, member(actor["member"])
 
 
 async def dashboard_grant_roles(request, actor, *, include_owner=False):
@@ -197,6 +207,9 @@ async def change(request):
         if already == (operation == 'add'):
             skipped.append(roles[int(selected_id)].name)
             continue
+        from .member_directory_cache import invalidate
+        # Invalidate before transport: Discord may accept even if its reply fails.
+        invalidate(request.app)
         try:
             await discord(request, 'PUT' if operation == 'add' else 'DELETE', f'/guilds/{GUILD_ID}/members/{target_id}/roles/{selected_id}')
         except web.HTTPException as exc:

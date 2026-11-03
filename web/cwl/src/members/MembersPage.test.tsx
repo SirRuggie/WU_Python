@@ -30,7 +30,7 @@ beforeEach(() => {
   root = createRoot(host);
   vi.mocked(api).mockReset();
   vi.mocked(api).mockImplementation(async (path) => {
-    if (path === "/manage/members/overview")
+    if (path.split("?")[0] === "/manage/members/overview")
       return {
         members: [
           ...Array.from({ length: 26 }, (_, i) => member(i)),
@@ -116,12 +116,20 @@ it("a partial selection survives search and reports the hidden count", async () 
   expect(host.textContent).toContain("Person 25");
 });
 
-it.each(["profile text", "duplicate role", "country choices"])(
+it.each([
+  "profile text",
+  "duplicate role",
+  "country choices",
+  "cache flag",
+  "cache date",
+  "cache age",
+])(
   "malformed directory %s cannot render protected controls and recovers with Refresh",
   async (bad) => {
     let healthy = false;
     vi.mocked(api).mockImplementation(async (path) => {
-      if (path !== "/manage/members/overview") return { runs: [] };
+      if (path.split("?")[0] !== "/manage/members/overview")
+        return { runs: [] };
       const roles = [{ id: ROLE, name: "Officer" }];
       const person = member(0);
       const result = {
@@ -151,6 +159,16 @@ it.each(["profile text", "duplicate role", "country choices"])(
               },
             },
           ],
+        };
+      if (bad.startsWith("cache"))
+        return {
+          ...result,
+          directory_cache: {
+            cached: bad === "cache flag" ? "yes" : true,
+            checked_at:
+              bad === "cache date" ? "invalid" : "2026-11-02T00:00:00Z",
+            max_age_seconds: bad === "cache age" ? 0 : 60,
+          },
         };
       if (bad === "duplicate role")
         return { ...result, roles: [...roles, ...roles] };
@@ -190,7 +208,7 @@ it("one-person role change refreshes immediately and Undo sends the exact post-c
   const confirmations: unknown[] = [],
     previews: { guard_role_ids?: string[] }[] = [];
   vi.mocked(api).mockImplementation(async (path, method, body) => {
-    if (path === "/manage/members/overview")
+    if (path.split("?")[0] === "/manage/members/overview")
       return {
         members: [{ ...member(0), role_ids: [...roleIds] }],
         roles: [{ id: ROLE, name: "Officer" }],
@@ -334,7 +352,7 @@ it("keeps displayed local time current without repeating directory or progress r
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-11-01T20:00:00Z"));
   vi.mocked(api).mockImplementation(async (path) =>
-    path === "/manage/members/overview"
+    path.split("?")[0] === "/manage/members/overview"
       ? {
           members: [
             {
@@ -521,4 +539,53 @@ it("a person above the actor keeps every role switch disabled", async () => {
   expect(
     vi.mocked(api).mock.calls.some((c) => c[0].includes("role-preview")),
   ).toBe(false);
+});
+
+it("manual refresh accepts the server TTL and retains visible members", async () => {
+  const previous = vi.mocked(api).getMockImplementation()!;
+  let finish: (value: unknown) => void = () => {};
+  let original: unknown;
+  vi.mocked(api).mockImplementation(async (path, method, body, options) => {
+    if (path === "/manage/members/overview?refresh=1")
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    const result = await previous(path, method, body, options);
+    if (path === "/manage/members/overview") {
+      original = result;
+      return {
+        ...(result as object),
+        directory_cache: {
+          cached: true,
+          checked_at: "2026-11-02T00:00:00Z",
+          max_age_seconds: 120,
+        },
+      };
+    }
+    return result;
+  });
+  await render();
+  expect(host.textContent).toContain("Recent member list");
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="Actions for Members"]',
+      )!
+      .click(),
+  );
+  const refresh = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((row) => row.textContent?.includes("Refresh members"))!;
+  await act(async () => refresh.click());
+  expect(host.textContent).toContain("Updating member list…");
+  expect(host.textContent).toContain("Person 0");
+  expect(
+    vi
+      .mocked(api)
+      .mock.calls.some(
+        ([path]) => path === "/manage/members/overview?refresh=1",
+      ),
+  ).toBe(true);
+  await act(async () => finish(original));
+  expect(host.textContent).not.toContain("Updating member list…");
 });

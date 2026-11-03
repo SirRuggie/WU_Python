@@ -8,7 +8,10 @@ vi.mock("../api", async (original) => ({
   api: async (...args: unknown[]) => {
     if (String(args[0]).endsWith("runs?active=1")) return { runs: [] };
     const result = await transport(...args);
-    if (args[0] !== "/manage/members/overview" || !result?.members)
+    if (
+      String(args[0]).split("?")[0] !== "/manage/members/overview" ||
+      !result?.members
+    )
       return result;
     return {
       ...result,

@@ -7,6 +7,7 @@ transactions publish synchronously. Neither pool is created per request.
 import os
 
 from utils.mongo import MongoClient
+from utils.mongo_read_metrics import NumericReadListener
 from utils.mongo_routes import Namespace
 
 APP_NAME = "wu-dashboard-http"
@@ -44,6 +45,7 @@ def get_client(app):
         route_overrides=overrides,
         appName=APP_NAME,
         maxPoolSize=MAX_POOL_SIZE,
+        event_listeners=[NumericReadListener()],
         serverSelectionTimeoutMS=5000,
         timeoutMS=15000,
     )

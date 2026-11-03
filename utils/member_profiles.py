@@ -7,6 +7,22 @@ from pymongo.errors import DuplicateKeyError
 
 SOURCES = frozenset({"warrior", "nickname_import", "staff"})
 LEFT_TTL_SECONDS = 90 * 24 * 60 * 60
+# Read-only directory DTO. Keep edit/import reads complete by default.
+DIRECTORY_FIELDS = {
+    key: 1
+    for key in (
+        "discord_id",
+        "zone_id",
+        "gmt_label",
+        "utc_offset_minutes",
+        "country",
+        "flag",
+        "name_source_tag",
+        "source",
+        "revision",
+        "updated_at",
+    )
+} | {"_id": 0}
 
 
 class ProfileOutcomeUncertain(RuntimeError):
@@ -44,20 +60,65 @@ class MemberProfiles:
     async def get(self, discord_id):
         return await self.collection.find_one({"_id": member_id(discord_id)})
 
-    async def for_members(self, discord_ids, *, include_departed=False):
+    async def for_members(
+        self, discord_ids, *, include_departed=False, display_only=False
+    ):
+        read_started = perf_counter()
         keys = sorted({member_id(value) for value in discord_ids})
         if not keys:
             return {}
         query = {"_id": {"$in": keys}}
         if not include_departed:
             query["left_at"] = None
-        rows = await self.collection.find(query).to_list(length=None)
-        return {row["discord_id"]: row for row in rows}
+        if display_only:
+            # A bounded unique _id set fits one batch; limit also closes the
+            # server cursor instead of leaving a delayed killCursors roundtrip.
+            cursor = (
+                self.collection.find(query, DIRECTORY_FIELDS)
+                .batch_size(len(keys))
+                .limit(len(keys))
+            )
+        else:
+            cursor = self.collection.find(query)
+        if not display_only:
+            rows = await cursor.to_list(length=None)
+            return {row["discord_id"]: row for row in rows}
+        from utils.mongo_read_metrics import collect
+        from bson import BSON
+
+        started = perf_counter()
+        with collect() as metrics:
+            rows = await cursor.to_list(length=None)
+        cursor_ms = (perf_counter() - started) * 1000
+        result = {row["discord_id"]: row for row in rows}
+        # BSON document bytes, not wire-compressed bytes or billed bandwidth.
+        # Observability failure must never change a successful read outcome.
+        try:
+            document_bytes = sum(len(BSON.encode(row)) for row in rows)
+            logging.getLogger(__name__).info(
+                "Member display profiles timing setup_ms=%.1f checkout_ms=%.1f first_response_ms=%.1f command_ms=%.1f cursor_ms=%.1f adapt_ms=%.1f total_ms=%.1f commands=%d responses=%d failures=%d checkouts=%d docs=%d bson_bytes=%d",
+                (started - read_started) * 1000,
+                metrics.checkout_ms,
+                metrics.first_response_ms,
+                metrics.command_ms,
+                cursor_ms,
+                (perf_counter() - started) * 1000 - cursor_ms,
+                (perf_counter() - read_started) * 1000,
+                metrics.commands,
+                metrics.responses,
+                metrics.failures,
+                metrics.checkouts,
+                len(rows),
+                document_bytes,
+            )
+        except Exception:
+            pass
+        return result
 
     async def membership_rows(self):
-        rows = await self.collection.find(
-            {}, {"_id": 1, "left_at": 1}
-        ).to_list(length=10001)
+        rows = await self.collection.find({}, {"_id": 1, "left_at": 1}).to_list(
+            length=10001
+        )
         if len(rows) > 10000:
             raise ValueError(
                 "Member profile reconciliation limit exceeded; no absence marks applied."
@@ -103,9 +164,7 @@ class MemberProfiles:
         from utils.component_state import get_state
 
         row = await get_state(self.mongo, session_id)
-        return bool(
-            row and (row.get("nickname_setup") or {}).get("nonce") == nonce
-        )
+        return bool(row and (row.get("nickname_setup") or {}).get("nonce") == nonce)
 
     async def write(self, discord_id, fields, **options):
         await self.ensure_indexes()
@@ -148,9 +207,7 @@ class MemberProfiles:
         ) as claim:
             current = await self.get(discord_id)
             if int((current or {}).get("revision", 0)) != expected_revision:
-                raise ProfileConflict(
-                    "Member profile changed. Refresh before saving."
-                )
+                raise ProfileConflict("Member profile changed. Refresh before saving.")
             from utils.member_timezones import profile_fields
 
             profile_fields(fields)
@@ -196,14 +253,11 @@ class MemberProfiles:
             raise ValueError("Invalid profile source or revision.")
         current = await self.get(key)
         if int((current or {}).get("revision", 0)) != expected_revision:
-            raise ProfileConflict(
-                "Member profile changed. Refresh before saving."
-            )
+            raise ProfileConflict("Member profile changed. Refresh before saving.")
         if (
             source == "nickname_import"
             and current
-            and current.get("source")
-            in ("warrior", "staff", "nickname_import")
+            and current.get("source") in ("warrior", "staff", "nickname_import")
         ):
             return current
         checked = profile_fields(fields, source=source)
