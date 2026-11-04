@@ -50,7 +50,7 @@ class WaitingTests(unittest.IsolatedAsyncioTestCase):
         row, data = await self.result()
         self.assertEqual(data["sync"]["status"], "waiting")
         self.assertEqual(
-            data["sync"]["warning"], "November CWL hasn't started in Clash yet"
+            data["sync"]["warning"], "November CWL has not started in Clash yet"
         )
         self.assertIsNone(row["source_attacks"])
         self.assertEqual(self.league.war_calls, [])
@@ -61,7 +61,7 @@ class WaitingTests(unittest.IsolatedAsyncioTestCase):
         _, data = await self.result()
         self.assertEqual(data["sync"]["status"], "waiting")
         self.assertEqual(
-            data["sync"]["warning"], "December CWL hasn't started in Clash yet"
+            data["sync"]["warning"], "December CWL has not started in Clash yet"
         )
 
     async def test_later_reported_month_is_a_real_warning(self):
@@ -258,7 +258,7 @@ class NoGroupTests(unittest.IsolatedAsyncioTestCase):
             row, data = await self.result()
         self.assertEqual(data["sync"]["status"], "waiting")
         self.assertEqual(
-            data["sync"]["warning"], "November CWL hasn't started in Clash yet"
+            data["sync"]["warning"], "November CWL has not started in Clash yet"
         )
         self.assertIsNone(row["source_attacks"])
         self.assertEqual(self.league.war_calls, [])

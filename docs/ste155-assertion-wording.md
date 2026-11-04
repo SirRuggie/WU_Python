@@ -202,3 +202,12 @@ Current 158 locations:
 - `web/cwl/src/WeightQueue.test.tsx:283`: `"The roster changed. Refresh before you save.",`.
 - `tests/test_cwl_web_manage_reminders.py:38`: `self.assertEqual((await response.json())['error'], 'Invalid automatic message fields')`.
 - `tests/test_ste155_participation_words.py:40`: `assert sync._waiting_message('2026-11') == 'November CWL has not started in Clash yet'`.
+
+
+### 551 warning expectation corrections (runtime unchanged)
+- `tests/test_participation_waiting.py:53`: `data["sync"]["warning"], "November CWL hasn't started in Clash yet"` → `data["sync"]["warning"], "November CWL has not started in Clash yet"`.
+- `tests/test_participation_waiting.py:64`: `data["sync"]["warning"], "December CWL hasn't started in Clash yet"` → `data["sync"]["warning"], "December CWL has not started in Clash yet"`.
+- `tests/test_participation_waiting.py:261`: `data["sync"]["warning"], "November CWL hasn't started in Clash yet"` → `data["sync"]["warning"], "November CWL has not started in Clash yet"`.
+- `tests/test_participation_clan_evidence.py:64`: `assert row["source_warning"] == "November CWL hasn't started in Clash yet"` → `assert row["source_warning"] == "November CWL has not started in Clash yet"`.
+
+551 required whole-tests grep: one remaining match, `tests/test_participation_waiting.py:73`, is the unchanged negative assertion `assertNotIn("hasn't started", ...warning)` for a later reported month. It is not an old positive warning expectation and remains unchanged under the four-expectation constraint. No old full capacity sentence or Invalid campaign fields matches remain. The three whole participation files passed 142 cases after the four expectation edits.
