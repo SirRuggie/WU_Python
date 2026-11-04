@@ -13,8 +13,8 @@ from cwl_web.app import login_destination, saved_login_destination
 def test_roster_defaults_exact_copy_links_and_no_delivery_policy_changes():
     campaign = cwl_campaign.default_campaign()
     bodies = {
-        "main": "Rosters are out! Tap **My clan assignments** to find your clan.\n\nFinish both attacks in your current war, then move to your clan. __The sooner the better.__\n\nQuestions? Ask in <#801950200133976124> <:warriorcat:947992348971905035>",
-        "lazy": "Lazy rosters are out! Tap **My clan assignments** to find your clan.\n\nFinish both attacks in your current war, then move to your clan. __The sooner the better.__\n\nNeed help? Ping <@&769130325460254740> in <#872692009066958879>.",
+        "main": "The rosters are ready. Select **My clan assignments** to see your clan.\n\nFinish both attacks in your current war. Then move to your clan. Do this as soon as you can.\n\nDo you have a question? Ask in <#801950200133976124> <:warriorcat:947992348971905035>",
+        "lazy": "The Lazy rosters are ready. Select **My clan assignments** to see your clan.\n\nFinish both attacks in your current war. Then move to your clan. Do this as soon as you can.\n\nDo you need help? Ask <@&769130325460254740> in <#872692009066958879>.",
     }
     for pool, body in bodies.items():
         item = campaign["messages"]["roster"]["variants"][pool]
@@ -52,7 +52,7 @@ def test_signup_rule_before_steps_and_short_reminder_prefix_once_after_normaliza
         for index in range(1, 6):
             body = campaign["messages"][f"reminder:{index}"]["variants"][pool]["body"]
             assert body.startswith(
-                "**Already signed up? You're set!** Not yet? Sign up below.\nTap **Check my signups** to see your accounts."
+                "**Are you signed up already? Then you do not need to do more.** If not, sign up below.\nSelect **Check my signups** to see your accounts."
             )
             assert body.count("Check my signups") == 1
             assert body.count("FWA clan members must choose Lazy CWL.") == 1

@@ -163,6 +163,17 @@ def normalize_signup_entry(campaign: dict) -> dict:
             replacement = _legacy_dashboard_signup_body(pool)
             if replacement and legacy in item.get("body", ""):
                 item["body"] = item["body"].replace(legacy, replacement)
+            if _current_wording(result) and any(
+                line in item.get("body", "")
+                for line in (
+                    SIGNUP_CHECK_LINE,
+                    SHORT_SIGNUP_CHECK_LINE,
+                    CURRENT_SIGNUP_CHECK_LINE,
+                    CURRENT_SHORT_SIGNUP_CHECK_LINE,
+                )
+            ):
+                # Recognize existing saved copy; never replace its check line.
+                continue
             if (
                 check_line not in item.get("body", "")
                 and not (new_default_copy and short_line in item.get("body", ""))

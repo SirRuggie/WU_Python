@@ -159,3 +159,31 @@ Additional checks are new, not replacements for old behavior assertions:
 - `web/cwl/src/plainWordsPolicy.test.ts`: four new canonical-word rows and the visible-word AST guard. Existing policy assertions remain in place.
 
 Machine status names, numeric/status/write-count assertions, delivery-ledger checks, cancellation and no-retry assertions remain exact. Existing legacy127 expectations stay frozen; only tests creating fresh128 data reference CURRENT_SIGNUP_CHECK_LINE.
+
+## Shaka546 current128 expectation alignment
+
+The existing custom-saved-copy test, including `normalized == before`, is byte
+identical to b84de52a. Its genuine failure is fixed in runtime recognition, not
+by changing its input. Only current128 paths gain recognition of known127/128
+full/short lines; no line is replaced or removed. The127/unmarked append path
+stays textually identical.
+
+| Current test location | Old expected string/reference | New expected string/reference |
+| --- | --- | --- |
+| `tests/test_cwl_signup_entry.py:43` | SIGNUP_CHECK_LINE for fresh defaults | CURRENT_SIGNUP_CHECK_LINE for fresh128 |
+| `tests/test_cwl_signup_entry.py:94` | SIGNUP_HELP_LINE count | help_line: CURRENT_SIGNUP_HELP_LINE if new_copy, otherwise the unchanged SIGNUP_HELP_LINE |
+| `tests/test_cwl_signup_entry.py:96` | SIGNUP_HELP_LINE footer | same conditional help_line |
+| `tests/test_cwl_signup_entry.py:104` | SIGNUP_CHECK_LINE count | check_line: CURRENT_SIGNUP_CHECK_LINE if new_copy, otherwise the unchanged SIGNUP_CHECK_LINE |
+| `tests/test_cwl_signup_entry.py:106` | SHORT_SIGNUP_CHECK_LINE count | short_line: CURRENT_SHORT_SIGNUP_CHECK_LINE if new_copy, otherwise the unchanged SHORT_SIGNUP_CHECK_LINE |
+| `tests/test_dashboard_message_links.py:16` | `Rosters are out! Tap **My clan assignments** to find your clan.\n\nFinish both attacks in your current war, then move to your clan. __The sooner the better.__\n\nQuestions? Ask in <#801950200133976124> <:warriorcat:947992348971905035>` | `The rosters are ready. Select **My clan assignments** to see your clan.\n\nFinish both attacks in your current war. Then move to your clan. Do this as soon as you can.\n\nDo you have a question? Ask in <#801950200133976124> <:warriorcat:947992348971905035>` |
+| `tests/test_dashboard_message_links.py:17` | `Lazy rosters are out! Tap **My clan assignments** to find your clan.\n\nFinish both attacks in your current war, then move to your clan. __The sooner the better.__\n\nNeed help? Ping <@&769130325460254740> in <#872692009066958879>.` | `The Lazy rosters are ready. Select **My clan assignments** to see your clan.\n\nFinish both attacks in your current war. Then move to your clan. Do this as soon as you can.\n\nDo you need help? Ask <@&769130325460254740> in <#872692009066958879>.` |
+| `tests/test_dashboard_message_links.py:55` | `**Already signed up? You're set!** Not yet? Sign up below.\nTap **Check my signups** to see your accounts.` | `**Are you signed up already? Then you do not need to do more.** If not, sign up below.\nSelect **Check my signups** to see your accounts.` |
+
+All original button/order/role/channel/media/schedule/length/idempotence and data
+assertions remain. The False branch of the footer test still uses the exact old
+constants. The existing127 fixture tests remain unchanged. New five-way current128
+custom-line cases cover old full, old short, current full, current short and none;
+assert exact body, exactly one check phrase, input nonmutation and second-run
+idempotence.
+
+An additional stored127 custom-body case pins its original full check line, full object equality, input nonmutation and second-run idempotence. It passed independently after the58-case targeted run.

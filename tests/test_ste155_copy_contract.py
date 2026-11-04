@@ -1,5 +1,6 @@
 """Wording updates affect fresh defaults while saved compatibility stays exact."""
 from copy import deepcopy
+import pytest
 import json
 from pathlib import Path
 
@@ -69,3 +70,37 @@ def test_same_custom_body_uses_the_stored127_and_current128_check_lines_side_by_
         assert saved == original
     assert campaign.CURRENT_SIGNUP_CHECK_LINE not in bodies[127]
     assert campaign.SIGNUP_CHECK_LINE not in bodies[128]
+
+
+@pytest.mark.parametrize('line', [campaign.SIGNUP_CHECK_LINE, campaign.SHORT_SIGNUP_CHECK_LINE,
+                                 campaign.CURRENT_SIGNUP_CHECK_LINE, campaign.CURRENT_SHORT_SIGNUP_CHECK_LINE, ''])
+def test_current128_keeps_each_known_saved_line_or_appends_exactly_one_when_none(line):
+    saved = campaign.default_campaign()
+    original_body = 'Custom saved instructions' + ('\n\n' + line if line else '')
+    for key, message in saved['messages'].items():
+        if key == 'signup' or key.startswith('reminder:'):
+            for item in message['variants'].values():
+                item['body'] = original_body
+    before = deepcopy(saved)
+    result = campaign.normalize_signup_entry(saved)
+    expected = original_body if line else original_body + '\n\n' + campaign.CURRENT_SIGNUP_CHECK_LINE
+    for key, message in result['messages'].items():
+        if key == 'signup' or key.startswith('reminder:'):
+            for item in message['variants'].values():
+                assert item['body'] == expected
+                assert item['body'].count('Check my signups') == 1
+    assert saved == before
+    assert campaign.normalize_signup_entry(result) == result
+
+
+def test_stored127_original_check_line_stays_exact_and_idempotent():
+    saved = campaign.default_campaign(copy_version=127)
+    for key, message in saved['messages'].items():
+        if key == 'signup' or key.startswith('reminder:'):
+            for item in message['variants'].values():
+                item['body'] = 'Stored127 custom text\n\n' + campaign.SIGNUP_CHECK_LINE
+    before = deepcopy(saved)
+    result = campaign.normalize_signup_entry(saved)
+    assert result == before
+    assert saved == before
+    assert campaign.normalize_signup_entry(result) == result

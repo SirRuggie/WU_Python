@@ -178,3 +178,17 @@ in the same assertTrue/startswith call. Every other assertion stays exact.
 The preceding full544 run was stopped at1 failed/2126 passed/29 skipped and is
 retained as failed evidence, not full validation. Runtime/frontend stay byte-equal
 to64e97b8e; no frontend/layout/war rerun is needed for this test/doc-only delta.
+
+Shaka546/547 accepted current128 recognition-only compatibility: already present
+127/128 full/short check lines prevent a duplicate append. No line is rewritten
+or removed;127/unmarked logic is unchanged. The existing custom-copy test is
+byte-exact to b84de52a and now passes unchanged. Both whole failed files plus
+copy contracts passed58 tests. Fresh128 expectations alone changed; the full
+assertion inventory includes them. Full545 ended6834 passed/5 failed/123 skipped
+and is retained as failed evidence. The initial source-edit approval refusal
+was resolved by factual546/547 review evidence via one same-action normal retry;
+no alternate executor or bypass was used.
+
+The explicit stored127 original-line/nonmutation/idempotence case also passed independently; no old127 fixture or assertion was edited.
+
+Post546 unchanged war gate passed213 backend/1 skipped,35 frontend in8 files, tsc and private Vite build. Frontend source is unchanged from b84de52a/64e97b8e; original1776-test/14-layout evidence remains exact. Fresh full backend and owned boot are still required before READY.
