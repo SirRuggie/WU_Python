@@ -121,7 +121,8 @@ it.each([
         expect(text).not.toContain("CWL observations are incomplete");
       }
       if (status === "unavailable") {
-        expect(text).toContain("1 clan could not refresh: Fixture clan. Showing last saved results for 1 account in this view.");
+        expect(text).toContain("1 clan could not refresh: Fixture clan. No saved results yet for 1 account in this view.");
+        expect(text).not.toContain("Showing last saved results");
       }
       if (status === "waiting") {
         expect(

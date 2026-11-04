@@ -53,6 +53,20 @@ def test_complete_below_threshold_still_needs_staff_reason_and_warning_ack():
     assert len(result['warnings']) == 1
 
 
+def test_refresh_instruction_follows_all_incomplete_accounts_once():
+    data = view(complete=False, reason='Reviewed')
+    data['clans'][0]['slots'] = 3
+    data['accounts'] += [{**data['accounts'][0], 'tag': '#Q', 'player_name': 'Second'}]
+    result = preview(data)
+    assert result['can_confirm'] is False
+    assert result['warnings'] == []
+    assert result['blocking_reasons'] == [
+        'CWL results are not complete for Player',
+        'CWL results are not complete for Second',
+        'Use Check Clash now to refresh results.',
+    ]
+
+
 @pytest.mark.parametrize('reason', ['', 'Staff override'])
 def test_neither_raffle_path_can_override_incomplete_results(reason):
     account = dict(tag='#P',pool='lazy',assigned_clan_tag='#A',in_current_roster=True,

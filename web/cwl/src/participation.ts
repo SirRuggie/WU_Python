@@ -3,6 +3,7 @@ import type { Pool } from "./api";
 export type ParticipationDisplayStatus = {
   code: string; label: string; warning: string | null;
   failed_clan: boolean; round: number | null;
+  last_check_failed?: boolean;
 };
 type StatusAccount = {
   source_status?: string; display_status?: ParticipationDisplayStatus;
@@ -95,9 +96,18 @@ export function participationSummary(accounts: StatusAccount[], sync?: { status?
         : statuses[0]?.label || 'No accounts in this view');
   const otherWarnings = [...new Set(statuses.filter(status => !status.failed_clan)
     .map(status => status.warning).filter((warning): warning is string => !!warning))];
+  const saved = failed.filter(account => participationStatus(account).code === 'stale').length;
+  const withoutSaved = failed.length - saved;
+  const failureDetails = [
+    saved ? `Showing last saved results for ${saved} account${saved === 1 ? '' : 's'} in this view.` : '',
+    withoutSaved ? `No saved results yet for ${withoutSaved} account${withoutSaved === 1 ? '' : 's'} in this view.` : '',
+  ].filter(Boolean).join(' ');
+  // The adapter keeps this per-clan fact after fresh row warnings expire. A
+  // season-wide sync warning alone must never accuse a filtered-out clan.
+  const previousFailure = statuses.some(status => status.last_check_failed) ? sync?.warning : null;
   const warning = clans.length
-    ? `${clans.length} clan${clans.length === 1 ? '' : 's'} could not refresh: ${clans.join(', ')}. Showing last saved results for ${failed.length} account${failed.length === 1 ? '' : 's'} in this view.`
-    : otherWarnings.join(' ');
+    ? `${clans.length} clan${clans.length === 1 ? '' : 's'} could not refresh: ${clans.join(', ')}. ${failureDetails}`
+    : [...new Set([...otherWarnings, previousFailure].filter(Boolean))].join(' ');
   return { label, warning, affected: failed.length, count: accounts.length, updated };
 }
 export type ParticipationSort =

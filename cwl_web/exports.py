@@ -192,6 +192,14 @@ def _export_snapshot(db, season_id: int, kind: str, basis: str, stamp: str) -> d
                 row["assigned_clan_name"] = names.get(account.get("assigned_clan_tag"))
             row.update({"participation_" + key: part.get(key) for key in participation_fields})
             matches_roster = bool(part) and not bool(part.get("roster_changed"))
+            # Decoration needs raw Clash evidence, independently of staff
+            # overrides in the visible attacks/stars columns. The adapter
+            # consumes this private projection before emitting JSON or CSV.
+            if matches_roster:
+                row['_participation_display_source'] = {
+                    'source_attacks': part.get('source_attacks'),
+                    'source_stars': part.get('source_stars'),
+                }
             recorded = part.get("previous_results") if not matches_roster else None
             recorded = recorded or part
             row.update(
@@ -262,7 +270,7 @@ async def export_csv(request):
             status = row.get(prefix + 'display_status')
             if status and row.get(prefix + 'source_status') is not None:
                 row[prefix + 'source_status'] = status['label']
-                if status['code'] != 'waiting':
+                if status['warning']:
                     row[prefix + 'source_warning'] = status['warning']
         writer.writerow([
             csv_cell(row.get(key))

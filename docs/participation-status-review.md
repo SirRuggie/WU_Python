@@ -1,6 +1,6 @@
-# Participation status review (160 / rework164)
+# Participation status review (160 / rework164 / rework167)
 
-Implementation and validation are complete; submitted for Shaka review. PR199 on `codex/participation-status-160` began
+The 160/164 evidence below is historical. Rework167 is in validation; its final full backend and owned startup evidence are pending. Release is gated on Shaka acceptance under existing owner authorization558. This workflow performed no deployment; public deployment state was not assessed. PR199 on `codex/participation-status-160` began
 on main955. PR198 is live as `strikes-activity-2` at maina1a8b937. Rework checkpoint
 1323099f was merged locally with that exact released tree, without conflicts,
 at54c7d745b662588ec4e9cfbdb4d5b261857320f4. No root pull/reset or production
@@ -221,3 +221,88 @@ anonymous auth401, closed network boundary and empty Healthchecks passed.
 The owned database/process/data and exported artifact were all cleaned. Frontend source is unchanged, so its existing full tests,
 TypeScript, private build and layouts remain applicable. Builder for this fix:
 Terra; independent refuter: Sol. Parent coordinates integration and release.
+
+
+## Rework167: export evidence and honest failure summaries
+
+Sol builds this delta; Terra independently refutes it. Parent coordinates review,
+remote handoff and release. The starting revision is00d21306642551eba47a3ee3a93cb8f6e514d770,
+which already includes released maina1a8b937. Earlier full6962/FE1785 and51-route
+startup counts remain pre167 evidence and are not reused as new passes.
+
+Accounts export decoration now receives raw participation source attacks/stars
+through a transient private projection. It consumes and removes that projection
+before JSON/CSV output. The visible effective values, manual overrides, export
+columns and weight fields remain intact. The participation identity chooses its
+own clan evidence rather than the Accounts roster/weight identity. Stored warning
+text is retained whenever the display status supplies no warning.
+
+The first implementation incorrectly used effective export values to infer raw
+source results. Terra found that manual-only values and null overrides could
+contradict GET. That claim was withdrawn and corrected before the final freeze.
+The actual HTTP regression now checks source2/5, source0/0, no source, manual2/5
+over no source, and manualnull/null over source2/5. GET, both CSVs and both export
+previews agree on source status while preserving the effective values. Read-only
+database dumps and all nonparticipation CSV fields are checked for equality.
+
+Failure summaries name only clans in the displayed scope. Failed rows whose
+status confirms saved source results count toward the saved-results sentence;
+first-check rows count toward a separate no-saved-results sentence on that same
+line. The explicitly contradictory unavailable expectation was replaced under
+167 item2; all existing month, navigation, GET-only and data guards remain.
+
+A per-clan last-check failure fact survives the30-minute freshness window as an
+optional display-only field. Fresh failed_clan behavior and raw stored statuses
+remain unchanged. Participation and Bonus show the existing sync failure line
+only when a supplied visible row has that fact and no fresh row failure summary
+already covers it. Healthy, empty and hidden-clan scopes cannot borrow a global
+failure warning. Both rendered workspaces check exactly one older-failure line,
+fresh warning suppression and hidden-failure exclusion. New/unchecked accounts
+and history do not borrow a current failure fact.
+
+The bonus preview names each incomplete account, then appends Check Clash now
+once where refreshing applies. Owner588 completion hard blocks, reason/ack
+requirements, revisions, fingerprint, receipts and all write paths are held.
+Capture sync, participation routes, storage/allowance owners and raffle policy
+files are byte-equal to00d. All8 capture and12 bonus SQL write-call ASTs plus
+bonus_view/fingerprint ASTs match that revision. Twenty-one weight/participation
+status projections retain byte-equal weight fields; these are isolated sample
+proofs, not production/provider delivery evidence.
+
+Current focused evidence:93 backend tests plus5 subtests passed in23.40s with
+verifiedc02 startup guard, explicit empty Mongo/Healthcheck/native opt-ins and
+private disk temp files. Frontend25 focused tests passed; full frontend1789
+passed across298 files in31.28s. TypeScript passed; the private application build
+completed in6.32s with the existing chunk-size warning. Backend-only follow-up
+changed no frontend source after those checks.
+
+The initial new HTTP comparison failed only because exported_at_utc changed
+between downloads. Its preserved fixture correction freezes only
+cwl_web.exports.datetime.now inside that test; the full byte-equality and every
+status/data/write assertion remain. The corrected run passed92 tests/3 subtests
+before Terra's additional cases; the final focused result above supersedes it.
+The first browser attempt failed before rendering because Chrome's Unix socket
+path exceeded its limit. A short symlink points only to this checkout's private
+disk browser temp directory. Original scripts, builds and failure logs remain.
+The next attempt exposed an invalid Bonus fixture/list assumption. Review615
+approved the page-specific ready wait and selected-clan scope: Participation
+retains two clans/eight accounts (mixed4saved/4none); Bonus selects Alpha/four
+accounts (mixed2saved/2none) and excludes Beta. Layout-c passed all16 checks.
+Visual inspection then found the sample DTO omitted the actual588 incomplete
+exclusion while claiming recommended=true. This was a fake-data inconsistency,
+not a product/test failure. The approved605 correction sets recommended=false
+and the actual incomplete exclusion, retaining all source statuses, scores,
+summary assertions and16 layout checks. Fresh layout-d passed all16 at360/1440,
+for both pages and saved/none/mixed/old states, with no overflow, page errors,
+external requests or non-GET requests. Inspected360 Bonus mixed and1440
+Participation none; text wraps and no-saved values agree with their summaries.
+The static retained preview serves those final fixture assets with GET only,
+fake API responses and CSP connect-src none; it has no backend, Mongo, Discord
+or provider. Its dynamic localhost origin/PID/hashes are recorded privately in
+retained-preview.json and retained-preview-readiness.json.
+
+Private167 evidence lives in.local/status167: focused logs, frontend/tsc/build
+logs, fixture before/after sources, policy-write-invariants.json and
+weight-status-parity.json. Full backend, retained preview and fresh owned startup
+must bind the final frozen source and use new output directories. No live Clash,
+Discord, notification or public production verification is claimed.

@@ -228,6 +228,7 @@ def _preview(db, season_id):
             blocks.append(f"Set bonus slots for {clan['name']}")
         elif count and count + confirmed > clan["slots"]:
             blocks.append(f"Bonus selections exceed slots for {clan['name']}")
+    incomplete = False
     for account in selected:
         if account['pool'] == 'lazy':
             blocks.append(f"{account['player_name']}: use Bonus winners for Lazy eligibility review and drawing")
@@ -239,8 +240,7 @@ def _preview(db, season_id):
             blocks.append(f"{account['player_name']} has no recorded hosting clan")
         if not account["source_complete"]:
             blocks.append(f"CWL results are not complete for {account['player_name']}")
-            if view["season_status"] == "draft" and view["cycle"]:
-                blocks.append("Use Check Clash now to refresh results.")
+            incomplete = True
             continue
         needs_reason = account["recommended"] is not True
         if needs_reason:
@@ -250,6 +250,8 @@ def _preview(db, season_id):
             )
             if not account["reason"].strip():
                 blocks.append(f"Add a reason for {account['player_name']}")
+    if incomplete and view["season_status"] == "draft" and view["cycle"]:
+        blocks.append("Use Check Clash now to refresh results.")
     return {
         "revision": view["revision"], "fingerprint": _fingerprint(view),
         "selected": selected, "warnings": warnings, "capacity": capacities,

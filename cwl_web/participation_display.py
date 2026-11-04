@@ -51,10 +51,11 @@ def participation_evidence(db, season_id, cycle, *, now=None, accounts=()):
     result = {}
     for group in groups:
         clan = group['clan_tag']
-        group_current = recent and group['observed_at'] == checked
+        group_checked = bool(checked and group['observed_at'] == checked)
+        group_current = recent and group_checked
         active_current = True
         final_usable = True
-        failure = 'group_unavailable' if recent and not group_current else None
+        failure = 'group_unavailable' if checked and not group_checked else None
         round_number = None
         for number, tags in enumerate(json.loads(group['war_tags_json']), 1):
             own_tags = [tag for tag in tags if (tag, clan) in wars]
@@ -72,7 +73,7 @@ def participation_evidence(db, season_id, cycle, *, now=None, accounts=()):
                     and clan in json.loads(fetched['scanned_clans_json'])
                 )
                 if war and war['ended']:
-                    if group_current and fetched and fetched['observed_at'] == checked and not fetched['ended']:
+                    if group_checked and fetched and fetched['observed_at'] == checked and not fetched['ended']:
                         failure = 'war_state_regression'
                         active_current = False
                     final_usable = final_usable and (sealed or war['observed_at'] == checked)
@@ -85,13 +86,14 @@ def participation_evidence(db, season_id, cycle, *, now=None, accounts=()):
                 if sealed and war is None:
                     continue
                 active_current = active_current and fresh_fetch
-                if group_current and not fresh_fetch:
+                if group_checked and not fresh_fetch:
                     failure = 'war_unavailable'
         result[clan] = ParticipationEvidence(
             group_state=group['state'], group_current=group_current,
             active_wars_current=recent and active_current,
             finalized_wars_usable=final_usable,
-            round_number=round_number, failure_reason=failure,
+            round_number=round_number, failure_reason=failure if recent else None,
+            last_check_failed=bool(failure),
         )
     # A matching captured account can confirm an initial group failure even
     # when no group observation has ever been saved. A new/unchecked signup
@@ -101,6 +103,7 @@ def participation_evidence(db, season_id, cycle, *, now=None, accounts=()):
         if clan and clan not in result and account.get('source_status') in ('stale', 'unavailable'):
             result[clan] = ParticipationEvidence(
                 failure_reason='group_unavailable' if recent else None,
+                last_check_failed=bool(checked),
             )
     return result
 
@@ -138,7 +141,12 @@ def decorate_participation_payload(db, season_id, payload, *, now=None):
             return None
         account = {key.removeprefix('participation_'): item for key, item in value.items()
                    if key.startswith('participation_')}
-        account.update(tag=value.get('tag'), assigned_clan_tag=value.get('assigned_clan_tag'))
+        # Effective attacks/stars may contain staff overrides. Only raw Clash
+        # evidence establishes saved source results, as on the participation GET.
+        account.update(value.get('_participation_display_source') or {})
+        account.update(tag=value.get('tag'))
+        if 'assigned_clan_tag' not in account:
+            account['assigned_clan_tag'] = value.get('assigned_clan_tag')
         return account
 
     def collect(value, inherited_cycle):
@@ -163,14 +171,14 @@ def decorate_participation_payload(db, season_id, payload, *, now=None):
             # Rebuild each path separately. deepcopy's alias preservation would
             # let a historical path overwrite the current account's status.
             result = {key: visit(item, own_cycle) for key, item in value.items()
-                      if key != 'display_status'}
+                      if key not in ('display_status', '_participation_display_source')}
             if participation_account(value):
                 # Saved draws from another month must not borrow today's check.
                 facts = evidence if own_cycle == cycle else {}
                 result = decorate_participation_accounts(
                     [result], facts, sync_status=sync_status if own_cycle == cycle else None,
                 )[0]
-            exported = export_account(result)
+            exported = export_account(value)
             if exported:
                 facts = evidence if own_cycle == cycle else {}
                 result['participation_display_status'] = decorate_participation_accounts(

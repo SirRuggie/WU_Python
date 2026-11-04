@@ -70,6 +70,25 @@ def test_active_failure_is_attributed_without_treating_old_check_as_new_failure(
     status = decorate_participation_accounts(accounts(), participation_evidence(db, 1, '2026-11', now=later))[0]['display_status']
     assert status['code'] == 'not_recent'
     assert status['failed_clan'] is False
+    assert status['last_check_failed'] is True
+
+
+def test_old_failure_fact_stays_clan_scoped_without_changing_raw_statuses():
+    db = fixture()
+    db.execute("UPDATE participation_war_fetches SET observed_at=? WHERE war_tag='#LIVE'", (OLD,))
+    later = datetime(2026, 11, 4, 12, tzinfo=timezone.utc)
+    rows = accounts() + [{**accounts()[0], 'tag': '#NEW', 'source_status': 'never'}]
+    before = deepcopy(rows)
+    writes = db.total_changes
+    result = decorate_participation_accounts(rows, participation_evidence(db, 1, '2026-11', now=later))
+    assert result[0]['display_status']['last_check_failed'] is True
+    assert result[0]['display_status']['failed_clan'] is False
+    assert 'last_check_failed' not in result[1]['display_status']
+    assert rows == before
+    assert db.total_changes == writes
+    healthy = fixture()
+    result = decorate_participation_accounts(accounts(), participation_evidence(healthy, 1, '2026-11', now=later))
+    assert 'last_check_failed' not in result[0]['display_status']
 
 
 def test_unsealed_final_result_does_not_fabricate_success():
@@ -168,6 +187,28 @@ def test_export_prefixed_status_preserves_columns_nulling_values_and_scope():
     assert output['rows'][1] == nulled
     assert output['columns'] == payload['columns'] and output['counts'] == {'rows': 2}
     assert {k: v for k, v in output['rows'][0].items() if k != 'participation_display_status'} == row
+
+
+def test_accounts_projection_uses_participation_clan_and_consumes_private_raw_evidence():
+    from cwl_web.participation_display import decorate_participation_payload
+    db = fixture()
+    db.execute("UPDATE participation_group_observations SET observed_at=? WHERE clan_tag='#B'", (OLD,))
+    row = {'tag': '#P', 'assigned_clan_tag': '#A', 'source_status': 'current',
+           'participation_assigned_clan_tag': '#B', 'participation_source_status': 'stale',
+           'participation_source_complete': False, 'participation_attacks': None, 'participation_stars': None,
+           '_participation_display_source': {'source_attacks': 2, 'source_stars': 5}}
+    before = deepcopy(row)
+    writes = db.total_changes
+    result = decorate_participation_payload(db, 1, {'cycle': '2026-11', 'rows': [row]}, now=NOW)['rows'][0]
+    assert result['participation_display_status']['code'] == 'stale'
+    assert result['participation_display_status']['failed_clan'] is True
+    assert result['assigned_clan_tag'] == '#A'
+    assert result['participation_assigned_clan_tag'] == '#B'
+    assert result['source_status'] == 'current'
+    assert result['participation_attacks'] is None and result['participation_stars'] is None
+    assert '_participation_display_source' not in result
+    assert row == before
+    assert db.total_changes == writes
 
 
 def test_manual_bonus_warning_words_change_after_policy_without_removing_reason_gate():

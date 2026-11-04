@@ -10,6 +10,7 @@ class ParticipationEvidence:
     finalized_wars_usable: bool = False
     round_number: int | None = None
     failure_reason: str | None = None
+    last_check_failed: bool = False
 
 
 def effective_participation_status(stored_status, *, complete, has_results, evidence, sync_status=None):
@@ -21,8 +22,13 @@ def effective_participation_status(stored_status, *, complete, has_results, evid
     """
     stored_status = stored_status or 'never'
     def result(code, label, *, warning=None, failed=False):
-        return {'code': code, 'label': label, 'warning': warning,
-                'failed_clan': failed, 'round': evidence.round_number}
+        status = {'code': code, 'label': label, 'warning': warning,
+                  'failed_clan': failed, 'round': evidence.round_number}
+        if (evidence.last_check_failed and not evidence.failure_reason
+                and stored_status not in ('never', 'missing', 'unassigned', 'waiting', 'historical', 'season_mismatch')
+                and sync_status != 'season_mismatch'):
+            status['last_check_failed'] = True
+        return status
 
     if sync_status == 'season_mismatch' or stored_status == 'season_mismatch':
         return result('season_mismatch', 'CWL month mismatch',

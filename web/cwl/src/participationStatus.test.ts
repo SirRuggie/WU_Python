@@ -22,6 +22,27 @@ describe('participation display summaries', () => {
     expect(scoped.count).toBe(2);
     expect(scoped.updated).toBe(1);
   });
+  it('counts saved and first-check failures separately within one named-clan line', () => {
+    const rows = [
+      { assigned_clan_tag: '#A', assigned_clan_name: 'Alpha', display_status: status('stale', true) },
+      { assigned_clan_tag: '#A', assigned_clan_name: 'Alpha', display_status: status('unavailable', true) },
+      { assigned_clan_tag: '#B', assigned_clan_name: 'Beta', display_status: status('unavailable', true) },
+    ];
+    expect(participationSummary(rows).warning).toBe('2 clans could not refresh: Alpha, Beta. Showing last saved results for 1 account in this view. No saved results yet for 2 accounts in this view.');
+    expect(participationSummary(rows.slice(1)).warning).toBe('2 clans could not refresh: Alpha, Beta. No saved results yet for 2 accounts in this view.');
+  });
+  it('retains an older visible failure, but never borrows hidden-clan failures or repeats a fresh failure', () => {
+    const sync = { status: 'stale', warning: 'Some Clash CWL data could not be refreshed; cached results are marked stale' };
+    const old = { assigned_clan_tag: '#A', display_status: {
+      ...status('not_recent'), warning: 'These results have not been checked recently.', last_check_failed: true,
+    } };
+    const healthy = { assigned_clan_tag: '#B', display_status: status('complete') };
+    expect(participationSummary([old, healthy], sync).warning).toContain(sync.warning);
+    expect(participationSummary([healthy], sync).warning).toBe('');
+    expect(participationSummary([], sync).warning).toBe('');
+    const fresh = { ...old, display_status: status('stale', true) };
+    expect(participationSummary([fresh], sync).warning).not.toContain(sync.warning);
+  });
 });
 
 
