@@ -3,8 +3,9 @@
 Prepared November 4, 2026 on `codex/actions-clan-picker-157`. The task started
 from `9552757eae8ebb2c7bd5a779f058aab26cc75f97` and was fast-forwarded to released
 main `a1a8b937` before final integrated checks. Task 159's released implementation
-is preserved. Release remains held for the owner's release decision; this review
-does not establish the current public deployment state.
+is preserved. Release is gated on Shaka acceptance under existing owner
+authorization 535. This workflow performed no deployment; the current public
+deployment state was not assessed.
 
 ## Result and boundaries
 
