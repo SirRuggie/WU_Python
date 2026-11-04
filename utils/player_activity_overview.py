@@ -29,6 +29,8 @@ def family_activity_rows(activity, profiles, records, clans, *, replacements=Non
         if clan not in clan_names and not left and not include_unknown_clans:
             continue
         totals = record_totals.get(player, {}) if record_totals is not None else None
+        if totals is not None and totals.get('invalid'):
+            raise ValueError('Invalid strike dates in activity ledger')
         active = totals.get('active_strikes', 0) if totals is not None else sum(row.get('kind')=='strike' and status_of(row, now)=='active' for row in by_record[player])
         marked = bool(profile.get('replacement_listed') and profile.get('replacement_clan_tag')==clan)
         filler = bool(profile.get('filler') and profile.get('filler_clan_tag')==clan)
@@ -92,9 +94,6 @@ def activity_view_context(core, activity, records, *, now=None):
                 and stamp(row['departed_last_seen_at']) >= now-timedelta(days=90))]
     if any(not row.get('player_tag') for row in profiles):
         raise ValueError('Invalid strike profile identity')
-    selected = {row['player_tag'] for row in profiles} | {row['tag'] for row in activity or []}
-    if any(core['record_totals'].get(player, {}).get('invalid') for player in selected):
-        raise ValueError('Invalid strike dates in activity ledger')
     return {'profiles': profiles, 'records': records or [],
             'clans': core['clans'], 'record_totals': core['record_totals'],
             'replacements': core['replacements'], 'strike_limit': core['strike_limit'],

@@ -604,7 +604,7 @@ class StrikeService:
     async def activity_core(self, guild_id):
         """Fresh counts/profiles/settings; only clan display metadata is optional."""
         import asyncio
-        from pymongo.errors import PyMongoError
+        from pymongo.errors import PyMongoError, NetworkTimeout
         from utils.player_activity_polling import active_clan
         from utils.player_activity_store import PlayerActivityStore
         from utils.strike_activity_summary import record_query, count_pipeline, decode_counts
@@ -640,6 +640,8 @@ class StrikeService:
             if isinstance(value, BaseException):
                 raise value  # Missing core data is an error, never zero strikes.
         profiles, totals, settings, clan_rows, headers = values
+        if isinstance(headers, TimeoutError):
+            raise NetworkTimeout('Strike account scope read timed out') from headers
         if isinstance(headers, BaseException):
             raise headers
         clan_warning = isinstance(clan_rows, (PyMongoError, TimeoutError))

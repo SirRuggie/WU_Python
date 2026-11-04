@@ -1,6 +1,6 @@
 # Strikes activity timeout: review evidence
 
-Task 159 rework 162 is ready for review. Release remains held for Ruggie. No indexes,
+Task 159 rework 163 is local and incomplete. Release remains held for Ruggie. No indexes,
 production write jobs, notifications or service changes were performed.
 Private numeric reports and original failure logs are retained under
 `.local/read159`. BSON sizes below describe decoded documents, not wire traffic.
@@ -441,3 +441,62 @@ All original RED/failure logs, rejected prototypes, harness errors and their
 corrections remain in the private provenance. There were no live messages,
 notification delivery claims, production writes, index builds or service changes.
 Release remains held for Ruggie's approval.
+
+
+## Rework163: correction to the equivalence claim
+
+The earlier nine450-player fixtures covered row eligibility and manual strike
+counts, but contained no war records/recent_wars. They did not establish full
+signal equivalence. Their reference also imported the live activity_signals,
+which could hide a shared regression. The broad “equals base” claim was too
+strong and is withdrawn.
+
+Shaka’s independent real-Mongo24-seed review found no extra/missing rows and
+matching warnings, but12seeds had1–2 rows with different signal values due only
+to the approved order-independent veto. The example in review163 is seed1:
+base “missed2/watch”, corrected output “missed0/active”. A neutral/exempt/imported
+disposition now vetoes the same war in any read order, matching history_exclusions.
+This correction is intentionally retained. Base could re-add the war if a
+monitored row came later. Normal records share a war/player `_id`, so this mixed
+shape may be unreachable in current storage; legacy data is unverified.
+Equivalence is required everywhere outside this explicit correction, whose
+expected result must be asserted independently.
+
+Review163 also found that validation still included hidden activity tags. Date
+validation now occurs inside row assembly only after old visibility keeps the
+row. Outside-family and200-day-departed hidden rows do not fail filled output;
+kept malformed rows remain errors. A plain header TimeoutError is converted to
+the same core NetworkTimeout/service-unavailable error. Initial focused checks
+passed24tests. The test reference now freezes955 activity_signals and
+skipped_weekends as well as the row assembler; the unchanged latest_raid_end
+dependency was compared by AST. War-rich randomized fixtures, requested
+missed=99/veto mutations and final validation are still pending.
+
+
+The replacement ordinary fixture now runs24seeds of450players with recent_wars,
+neutral/exempt/imported/revoked records, monitored completions and monitored
+strikes. Every record/date/kind is retained in the expected ledger; only a
+colliding monitored war's provenance is masked to a non-war source before the
+frozen base computes the approved veto expectation. This independent reference
+transformation preserves every strike count while excluding the vetoed signal.
+All output fields match that expectation. On non-colliding players, the entire
+row must match unmodified base; mixed rows also retain exact original count and
+replacement columns. Both record orders have literal veto expectations, and
+cold subsets/counts and input nonmutation remain required.
+
+The signal reference now freezes955 activity_signals and skipped_weekends.
+The reference proof covers those functions and the original overview, context
+and row assembler. Shared stamp, utc, status_of and latest_raid_end helpers were
+AST-checked unchanged from955; no function changed by this PR is silently shared
+with the reference. Actual isolated missed=99 and removed-veto mutations both
+fail the new frozen-reference equality assertion; the unmodified suite passes.
+These supplement the two earlier cache mutation proofs.
+
+Current163 checks:45targeted passed,428broad passed with16skips,11owned Mongo
+checks passed with complete cleanup, and31war-rich equivalence tests passed
+again after including monitored-strike counts. The plain header timeout test
+also exercises the actual shared Mongo HTTP adapter and asserts status503 with
+the NetworkTimeout cause. Required unchanged war checks passed213backend tests
+with one skip and35frontend tests, TypeScript and a temporary build. No frontend
+source changed in163, so the162full frontend/build/layout/preview evidence stays
+applicable. New frozen full backend and exact-artifact boot remain to be run.

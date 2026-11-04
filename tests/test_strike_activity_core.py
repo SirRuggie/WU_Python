@@ -40,6 +40,23 @@ def test_missing_core_read_is_an_error_not_zero_counts(field):
     asyncio.run(run())
 
 
+def test_plain_header_timeout_maps_to_the_core_service_unavailable_error():
+    async def run():
+        from aiohttp import web
+        from cwl_web.server_management import mongo
+        ledger = fixture()
+        ledger.mongo.player_activity.find.return_value.to_list = AsyncMock(side_effect=TimeoutError('fixture'))
+        with pytest.raises(NetworkTimeout, match='scope read timed out'):
+            await ledger.activity_core(123)
+        request = SimpleNamespace(app={'server_management_mongo': ledger.mongo})
+        with pytest.raises(web.HTTPServiceUnavailable) as caught:
+            async with mongo(request):
+                await ledger.activity_core(123)
+        assert caught.value.status == 503
+        assert isinstance(caught.value.__cause__, NetworkTimeout)
+    asyncio.run(run())
+
+
 def test_clan_failure_keeps_known_counts_and_tag_label_without_hiding_profile():
     async def run():
         core = await fixture(clan_error=True).activity_core(123)
