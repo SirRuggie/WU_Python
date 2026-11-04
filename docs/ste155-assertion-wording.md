@@ -149,6 +149,8 @@ Per Shaka543: this is the complete text-change inventory for existing tests agai
 | `web/cwl/src/weightTrial/WeightTrial.test.tsx:641` | `Town Hall unavailable · choose storages` | `Town Hall unavailable · select storages` |
 | `web/cwl/src/weightTrial/model.test.ts:187` | `Choose storages` | `Select storages` |
 
+| `tests/test_cwl_roster_full_test_http.py:60` | `'Can'` in `startswith` | `'Your name is not on the list?'` in the same `startswith` assertion |
+
 Additional checks are new, not replacements for old behavior assertions:
 
 - `tests/test_ste155_copy_contract.py`: frozen3bc/unversioned/127 normalization and sparse baseline,128-only text/version delta, and identical custom body with127 vs128 check lines side by side.

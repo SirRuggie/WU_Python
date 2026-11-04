@@ -57,7 +57,7 @@ class FullTestHTTPTests(ManageBridgeTests):
         self.assertEqual(sent[0]['flags'], 32768)
         self.assertNotIn('TEST', json.dumps(sent, ensure_ascii=False))
         self.assertTrue(sent[1]['content'].startswith('**'))
-        self.assertTrue(sent[2]['content'].startswith('Can'))
+        self.assertTrue(sent[2]['content'].startswith('Your name is not on the list?'))
         self.assertTrue(all(payload['allowed_mentions'] == {'parse': [], 'roles': []} for payload in sent))
         status = await self.call('GET', path + '/' + body['request_id'], self.owner)
         self.assertEqual((await status.json())['test']['status'], 'complete')

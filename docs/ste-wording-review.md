@@ -171,3 +171,10 @@ remain exact. Fresh128 recurring-save expectations use CURRENT_SIGNUP_CHECK_LINE
 the side-by-side test also pins stored127 to its original line.
 
 Final544 required unchanged war gate passed:213 backend,1 skipped;35 frontend in8 files; tsc/private build. No source change followed those checks apart from this review record.
+
+Shaka545 approves the additional test-only closing-message prefix alignment:
+`tests/test_cwl_roster_full_test_http.py:60`, Can -> Your name is not on the list?
+in the same assertTrue/startswith call. Every other assertion stays exact.
+The preceding full544 run was stopped at1 failed/2126 passed/29 skipped and is
+retained as failed evidence, not full validation. Runtime/frontend stay byte-equal
+to64e97b8e; no frontend/layout/war rerun is needed for this test/doc-only delta.
