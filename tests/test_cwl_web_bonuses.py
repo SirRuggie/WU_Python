@@ -34,6 +34,19 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
             json={"cycle": "2026-10", "enabled": False},
         )).status, 200)
 
+    async def seed_complete_source(self, *, attacks=7, stars=21):
+        # Owner decision588/591: only success cases seed complete sealed reuse.
+        from utils.cwl_working_roster import working_accounts, account_token
+        with self.app["store"].tx() as db:
+            token = account_token(working_accounts(db, self.sid)["#P2Y"])
+            db.execute(
+                "INSERT INTO participation_source_results("
+                "season_id,cycle,tag,attacks,stars,status,complete,checked_at,warning,roster_token"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (self.sid, "2026-10", "#P2Y", attacks, stars, "stale", 1,
+                 "2026-10-14T16:00:00+00:00", None, token),
+            )
+
     async def view(self):
         response = await self.call("GET", self.base, self.owner)
         self.assertEqual(response.status, 200, await response.text())
@@ -85,6 +98,7 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_preview_confirm_replay_void_and_snapshot_retention(self):
         await self.setup_published()
+        await self.seed_complete_source()
         self.assertEqual((await self.settings(0, slots=1)).status, 200)
         self.assertEqual((await self.select(1)).status, 200)
         preview = await self.preview()
@@ -134,6 +148,7 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_preview_invalidates_on_participation_change_and_capacity_required(self):
         await self.setup_published()
+        await self.seed_complete_source()
         self.assertEqual((await self.select(0)).status, 200)
         first = await self.preview()
         self.assertFalse(first["can_confirm"])
@@ -144,6 +159,7 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("exceed" in text for text in second["blocking_reasons"]))
         self.assertEqual((await self.settings(2, slots=1)).status, 200)
         third = await self.preview()
+        self.assertTrue(third["can_confirm"])
         participation = await self.call(
             "PATCH", f"/seasons/{self.sid}/participation/%23P2Y", self.owner,
             json={"publication_version": 1, "revision": 0, "attacks": 2, "stars": 5, "notes": "Verified"},
@@ -156,7 +172,7 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stale.status, 409)
         self.assertEqual((await self.view())["history"], [])
 
-    async def test_incomplete_source_requires_reason_and_warning_ack(self):
+    async def test_incomplete_source_is_blocked_even_with_reason_and_warning_ack(self):
         await self.setup_published()
         participation = await self.call(
             "PATCH", f"/seasons/{self.sid}/participation/%23P2Y", self.owner,
@@ -178,19 +194,28 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
         preview = await self.preview()
         self.assertTrue(preview["selected"][0]["recommended"])
         self.assertFalse(preview["can_confirm"])
-        self.assertTrue(preview["warnings"])
-        self.assertTrue(any("reason" in item for item in preview["blocking_reasons"]))
+        self.assertEqual(preview["warnings"], [])
+        self.assertTrue(any("CWL results are not complete" in item for item in preview["blocking_reasons"]))
         self.assertEqual((await self.select(2, reason="Staff checked partial source")).status, 200)
         preview = await self.preview()
-        self.assertTrue(preview["can_confirm"])
-        self.assertEqual((await self.call(
-            "POST", self.base + "/confirm", self.owner,
-            json={"revision": preview["revision"], "fingerprint": preview["fingerprint"],
-                  "acknowledge_warnings": False},
-        )).status, 409)
+        self.assertFalse(preview["can_confirm"])
+        def counts():
+            return {table: len(self.app["store"].rows(
+                f"SELECT * FROM {table} WHERE season_id=?", (self.sid,),
+            )) for table in ("bonus_batches", "bonus_confirmations", "bonus_audit")}
+        before = counts()
+        for acknowledged in (False, True):
+            self.assertEqual((await self.call(
+                "POST", self.base + "/confirm", self.owner,
+                json={"revision": preview["revision"], "fingerprint": preview["fingerprint"],
+                      "acknowledge_warnings": acknowledged},
+            )).status, 409)
+            self.assertEqual(counts(), before)
+        self.assertEqual((await self.view())["history"], [])
 
     async def test_cycle_wide_capacity_counts_other_seasons(self):
         await self.setup_published()
+        await self.seed_complete_source()
         with self.app["store"].tx() as db:
             other = db.execute("INSERT INTO seasons(label) VALUES ('Other season')").lastrowid
             batch = db.execute(
@@ -278,3 +303,62 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
             json={"revision": 1, "selections": []},
         )).status, 423)
         self.assertEqual((await self.call("GET", self.base, self.owner)).status, 200)
+
+    async def test_complete_sealed_stale_has_no_participation_reason_or_warning(self):
+        await self.setup_published()
+        await self.seed_complete_source()
+        self.assertEqual((await self.settings(0, slots=1, min_attacks=1, min_stars=1, cooldown=0)).status, 200)
+        self.assertEqual((await self.select(1, reason="")).status, 200)
+        preview = await self.preview()
+        self.assertTrue(preview["selected"][0]["source_complete"])
+        self.assertEqual(preview["selected"][0]["source_status"], "stale")
+        self.assertTrue(preview["can_confirm"])
+        self.assertEqual(preview["warnings"], [])
+        response = await self.call("POST", self.base + "/confirm", self.owner,
+            json={"revision":preview["revision"], "fingerprint":preview["fingerprint"],
+                  "acknowledge_warnings":False})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertEqual(len((await response.json())["history"]), 1)
+
+    async def test_complete_below_threshold_still_requires_reason_and_warning_ack(self):
+        await self.setup_published()
+        await self.seed_complete_source(attacks=3, stars=8)
+        self.assertEqual((await self.settings(0, slots=1, min_attacks=4, min_stars=0, cooldown=0)).status, 200)
+        self.assertEqual((await self.select(1, reason="")).status, 200)
+        preview = await self.preview()
+        self.assertFalse(preview["can_confirm"])
+        self.assertIn(f"Add a reason for {preview['selected'][0]['player_name']}", preview["blocking_reasons"])
+        self.assertEqual((await self.select(2, reason="Reviewed threshold exception")).status, 200)
+        preview = await self.preview()
+        self.assertTrue(preview["can_confirm"])
+        self.assertEqual(len(preview["warnings"]), 1)
+        for acknowledged, expected in ((False,409),(True,200)):
+            response = await self.call("POST", self.base + "/confirm", self.owner,
+                json={"revision":preview["revision"],"fingerprint":preview["fingerprint"],
+                      "acknowledge_warnings":acknowledged})
+            self.assertEqual(response.status, expected, await response.text())
+
+    async def test_old_selected_draft_cannot_confirm_after_results_become_incomplete(self):
+        await self.setup_published()
+        await self.seed_complete_source()
+        self.assertEqual((await self.settings(0, slots=1,min_attacks=1,min_stars=1,cooldown=0)).status,200)
+        self.assertEqual((await self.select(1,reason="Previously approved exception")).status,200)
+        prior = await self.preview()
+        self.assertTrue(prior['can_confirm'])
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE participation_source_results SET complete=0,status='partial' WHERE season_id=?",(self.sid,))
+        def counts():
+            return {table:len(self.app['store'].rows(f'SELECT * FROM {table} WHERE season_id=?',(self.sid,)))
+                    for table in ('bonus_batches','bonus_confirmations','bonus_audit')}
+        before = counts()
+        response = await self.call('POST', self.base+'/confirm', self.owner,
+            json={'revision':prior['revision'],'fingerprint':prior['fingerprint'],'acknowledge_warnings':True})
+        self.assertEqual(response.status,409,await response.text())
+        current = await self.preview()
+        self.assertFalse(current['can_confirm'])
+        self.assertTrue(any('CWL results are not complete' in item for item in current['blocking_reasons']))
+        response = await self.call('POST',self.base+'/confirm',self.owner,
+            json={'revision':current['revision'],'fingerprint':current['fingerprint'],'acknowledge_warnings':True})
+        self.assertEqual(response.status,409,await response.text())
+        self.assertEqual(counts(),before)
+        self.assertEqual(current['selected'][0]['reason'],'Previously approved exception')

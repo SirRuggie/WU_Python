@@ -14,6 +14,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
     revision = fixtures.BonusTests.revision
     signup = fixtures.BonusTests.signup
     setup_published = fixtures.BonusTests.setup_published
+    seed_complete_source = fixtures.BonusTests.seed_complete_source
     settings = fixtures.BonusTests.settings
     select = fixtures.BonusTests.select
     preview = fixtures.BonusTests.preview
@@ -157,6 +158,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bonus_history_retains_void_and_participation(self):
         await self.setup_published()
+        await self.seed_complete_source()
         response = await self.call('PATCH', f'/seasons/{self.sid}/participation/%23P2Y', self.owner,
             json={'revision': 0, 'publication_version': 1, 'attacks': 0, 'stars': 0, 'notes': 'Reviewed'})
         self.assertEqual(response.status, 200, await response.text())
@@ -185,3 +187,137 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(csv_cell(value).startswith("'"))
         self.assertEqual(csv_cell(None), '')
         self.assertEqual(csv_cell(0), '0')
+
+    async def test_accounts_csv_keeps_weight_status_separate_from_waiting_participation(self):
+        from cwl_web.exports import _export_snapshot
+        from utils.cwl_working_roster import working_accounts, account_token
+        await self.setup_published()
+        query = '?kind=accounts&basis=published'
+        before = await self.download(query)
+        with self.app['store'].tx() as db:
+            token = account_token(working_accounts(db, self.sid)['#P2Y'])
+            db.execute(
+                'INSERT INTO participation_source_results('
+                'season_id,cycle,tag,attacks,stars,status,complete,checked_at,warning,roster_token) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                (self.sid,'2026-10','#P2Y',None,None,'waiting',0,
+                 '2026-10-01T00:00:00+00:00','October CWL has not started in Clash yet',token),
+            )
+            raw = _export_snapshot(db,self.sid,'accounts','published','test')
+            changes = db.total_changes
+            dump = list(db.iterdump())
+        rows = await self.download(query)
+        self.assertEqual(len(rows),len(before))
+        self.assertEqual(rows[0]['source_status'],before[0]['source_status'])
+        self.assertEqual(rows[0]['source_status'],raw['rows'][0]['source_status'])
+        self.assertEqual(rows[0]['source_weight'],before[0]['source_weight'])
+        self.assertEqual(rows[0]['effective_weight'],before[0]['effective_weight'])
+        self.assertEqual(rows[0]['participation_source_status'],'CWL has not started')
+        self.assertEqual(rows[0]['participation_source_warning'],'October CWL has not started in Clash yet')
+        self.assertEqual(rows[0]['participation_attacks'],'')
+        self.assertEqual(rows[0]['participation_stars'],'')
+        with self.app['store'].tx() as db:
+            self.assertEqual(list(db.iterdump()),dump)
+
+    async def test_failed_capture_agrees_at_get_csv_and_both_preview_boundaries(self):
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+        clock = patch('cwl_web.exports.datetime', wraps=datetime)
+        export_clock = clock.start()
+        self.addCleanup(clock.stop)
+        export_clock.now.return_value = datetime.now(timezone.utc)
+        await self.setup_published()
+        await self.seed_complete_source(attacks=2, stars=5)
+        before = (await self.download('?kind=accounts&basis=published'))[0]
+        for attacks, stars, override, label, code in (
+            (2, 5, None, 'Last saved results', 'stale'),
+            (0, 0, None, 'Last saved results', 'stale'),
+            (None, None, None, 'Results unavailable', 'unavailable'),
+            (None, None, (2, 5), 'Results unavailable', 'unavailable'),
+            (2, 5, (None, None), 'Last saved results', 'stale'),
+        ):
+            with self.subTest(attacks=attacks, stars=stars, override=override):
+                stamp = datetime.now(timezone.utc).isoformat()
+                with self.app['store'].tx() as db:
+                    db.execute('UPDATE participation_source_results SET attacks=?,stars=?,status=?,complete=0,checked_at=?,warning=? WHERE season_id=?',
+                               (attacks, stars, 'stale' if attacks is not None else 'unavailable', stamp, 'CWL data unavailable', self.sid))
+                    db.execute('UPDATE participation_sync_settings SET status=?,warning=?,last_checked_at=? WHERE season_id=?',
+                               ('unavailable', 'Some Clash CWL data could not be refreshed; cached results are marked stale', stamp, self.sid))
+                if override is not None:
+                    response = await self.call('GET', f'/seasons/{self.sid}/participation', self.owner)
+                    self.assertEqual(response.status, 200, await response.text())
+                    current = (await response.json())['accounts'][0]
+                    response = await self.call('PATCH', f'/seasons/{self.sid}/participation/%23P2Y', self.owner, json={
+                        'revision': current['revision'], 'publication_version': 1,
+                        'source_checked_at': current['source_checked_at'],
+                        'attacks': override[0], 'stars': override[1], 'notes': '',
+                    })
+                    self.assertEqual(response.status, 200, await response.text())
+                    edited = (await response.json())['account']
+                    self.assertTrue(edited['attacks_override'])
+                    self.assertTrue(edited['stars_override'])
+                effective_attacks, effective_stars = override if override is not None else (attacks, stars)
+                with self.app['store'].tx() as db:
+                    dump = list(db.iterdump())
+                response = await self.call('GET', f'/seasons/{self.sid}/participation', self.owner)
+                self.assertEqual(response.status, 200, await response.text())
+                account = next(row for row in (await response.json())['accounts'] if row['tag'] == '#P2Y')
+                expected = account['display_status']
+                self.assertEqual((expected['code'], expected['label'], expected['failed_clan']), (code, label, True))
+                self.assertEqual((account['source_attacks'], account['source_stars']), (attacks, stars))
+                for kind, prefix in (('accounts', 'participation_'), ('participation', '')):
+                    query = f'?kind={kind}&basis=published'
+                    csv_row = next(row for row in await self.download(query) if row['tag'] == '#P2Y')
+                    self.assertEqual(csv_row[prefix + 'source_status'], label)
+                    self.assertEqual(csv_row[prefix + 'source_warning'], expected['warning'])
+                    self.assertEqual(csv_row[prefix + 'attacks'], '' if effective_attacks is None else str(effective_attacks))
+                    self.assertEqual(csv_row[prefix + 'stars'], '' if effective_stars is None else str(effective_stars))
+                    response = await self.call('GET', f'/seasons/{self.sid}/export-preview' + query, self.owner)
+                    self.assertEqual(response.status, 200, await response.text())
+                    preview_row = next(row for row in (await response.json())['rows'] if row['tag'] == '#P2Y')
+                    self.assertEqual(preview_row[prefix + 'display_status'], expected)
+                    self.assertEqual(preview_row[prefix + 'attacks'], effective_attacks)
+                    self.assertEqual(preview_row[prefix + 'stars'], effective_stars)
+                    self.assertNotIn('_participation_display_source', preview_row)
+                    if kind == 'accounts':
+                        self.assertNotIn('participation_source_attacks', preview_row)
+                        self.assertNotIn('participation_source_stars', preview_row)
+                    if kind == 'accounts':
+                        self.assertEqual({key: value for key, value in csv_row.items() if not key.startswith('participation_')},
+                                         {key: value for key, value in before.items() if not key.startswith('participation_')})
+                with self.app['store'].tx() as db:
+                    self.assertEqual(list(db.iterdump()), dump)
+
+    async def test_unavailable_export_keeps_stored_warning_when_display_has_none(self):
+        await self.setup_published()
+        await self.seed_complete_source()
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE participation_source_results SET attacks=NULL,stars=NULL,status='unavailable',complete=0,warning='CWL data unavailable' WHERE season_id=?", (self.sid,))
+            dump = list(db.iterdump())
+        for kind, prefix in (('accounts', 'participation_'), ('participation', '')):
+            row = (await self.download(f'?kind={kind}&basis=published'))[0]
+            self.assertEqual(row[prefix + 'source_status'], 'Results unavailable')
+            self.assertEqual(row[prefix + 'source_warning'], 'CWL data unavailable')
+        with self.app['store'].tx() as db:
+            self.assertEqual(list(db.iterdump()), dump)
+
+    async def test_old_failed_get_retains_scoped_failure_fact_without_fresh_failure_claim(self):
+        from datetime import datetime, timedelta, timezone
+        await self.setup_published()
+        await self.seed_complete_source(attacks=2, stars=5)
+        old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        failure = 'Some Clash CWL data could not be refreshed; cached results are marked stale'
+        with self.app['store'].tx() as db:
+            db.execute('UPDATE participation_sync_settings SET status=?,warning=?,last_checked_at=? WHERE season_id=?',
+                       ('unavailable', failure, old, self.sid))
+            dump = list(db.iterdump())
+        response = await self.call('GET', f'/seasons/{self.sid}/participation', self.owner)
+        self.assertEqual(response.status, 200, await response.text())
+        payload = await response.json()
+        self.assertEqual(payload['sync']['warning'], failure)
+        status = payload['accounts'][0]['display_status']
+        self.assertEqual(status['code'], 'not_recent')
+        self.assertFalse(status['failed_clan'])
+        self.assertTrue(status['last_check_failed'])
+        with self.app['store'].tx() as db:
+            self.assertEqual(list(db.iterdump()), dump)

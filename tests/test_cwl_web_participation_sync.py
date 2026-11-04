@@ -218,6 +218,42 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["source_status"], "complete")
         self.assertEqual(data["sync"]["status"], "complete")
 
+    async def test_all_rounds_ended_with_six_sealed_rounds_keeps_bonus_eligibility(self):
+        """578: distinguish raw freshness words from completion and eligibility."""
+        from utils.cwl_bonus_raffle import eligibility, lazy_eligibility
+
+        await self.setup_published()
+        tags = ['#Y2Y', '#J2Y', '#L2Y', '#R2Y', '#G2Y', '#V2Y', '#C2Y']
+        self.set_group([[tag] for tag in tags], state='WAR')
+        for index, tag in enumerate(tags):
+            self.set_war(tag, state='WAR' if index == 6 else 'ENDED', attacks=(3,))
+        self.assertEqual((await self.sync()).status, 200)
+        first, _ = await self.account()
+        self.assertFalse(first['source_complete'])
+        self.assertEqual(self.league.war_calls, sorted(tags))
+
+        self.set_group([[tag] for tag in tags], state='ENDED')
+        self.set_war(tags[-1], state='ENDED', attacks=(3,))
+        self.assertEqual((await self.sync()).status, 200)
+        # Rounds 1–6 are sealed and skipped, only round 7 is fetched again.
+        self.assertEqual(self.league.war_calls, sorted(tags) + [tags[-1]])
+        final, _ = await self.account()
+        self.assertEqual((final['source_attacks'], final['source_stars']), (7, 21))
+        self.assertTrue(final['source_complete'])
+        self.assertEqual(final['source_status'], 'stale')
+        self.assertEqual(final['display_status']['code'], 'complete')
+        self.assertIsNone(final['display_status']['warning'])
+        self.assertIsNone(eligibility(final, 4))
+        self.assertIsNone(lazy_eligibility({**final, 'pool': 'lazy'}))
+
+        # A later check skips all seven; completeness and eligibility persist.
+        self.assertEqual((await self.sync()).status, 200)
+        self.assertEqual(self.league.war_calls, sorted(tags) + [tags[-1]])
+        again, _ = await self.account()
+        self.assertEqual((again['source_status'], again['source_complete']), ('stale', True))
+        self.assertIsNone(eligibility(again, 4))
+        self.assertIsNone(lazy_eligibility({**again, 'pool': 'lazy'}))
+
     async def test_absent_from_group_and_wars_is_not_invented_zero(self):
         await self.setup_published()
         self.set_group([["#Y2Y"]])
@@ -241,11 +277,53 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         row, data = await self.account()
         self.assertIsNone(row["source_attacks"])
         self.assertEqual(data["sync"]["status"], "season_mismatch")
+        self.assertIn(row["source_status"], {"never", "unavailable"})
+        self.assertEqual(row["display_status"]["code"], "season_mismatch")
         self.assertEqual(self.league.war_calls, [])
         self.assertFalse(self.app["store"].rows(
             "SELECT * FROM participation_war_observations WHERE season_id=?",
             (self.sid,),
         ))
+
+    async def test_mismatch_with_saved_results_decorates_get_patch_and_reset(self):
+        await self.setup_published()
+        self.set_group([["#Y2Y"]])
+        self.set_war("#Y2Y")
+        self.assertEqual((await self.sync()).status, 200)
+        saved, _ = await self.account()
+        self.set_group([["#Y2Y"]], season="2026-09")
+        self.assertEqual((await self.sync()).status, 200)
+        row, data = await self.account()
+        self.assertEqual(data['sync']['status'], 'season_mismatch')
+        self.assertEqual(row['source_status'], 'stale')
+        self.assertEqual((row['source_attacks'], row['source_stars']),
+                         (saved['source_attacks'], saved['source_stars']))
+        self.assertEqual(row['display_status']['code'], 'season_mismatch')
+
+        response = await self.call('PATCH', self.base + '/%23P2Y', self.owner, json={
+            'publication_version': data['publication_version'], 'revision': row['revision'],
+            'attacks': 2, 'stars': 5, 'notes': '', 'source_checked_at': row['source_checked_at'],
+        })
+        self.assertEqual(response.status, 200, await response.text())
+        edited = (await response.json())['account']
+        self.assertEqual(edited['display_status']['code'], 'season_mismatch')
+        self.assertEqual(edited['source_status'], 'stale')
+        self.assertTrue(edited['attacks_override'])
+        current, _ = await self.account()
+        self.assertEqual(edited['display_status'], current['display_status'])
+
+        response = await self.call('POST', self.base + '/%23P2Y/reset-to-source', self.owner, json={
+            'publication_version': data['publication_version'], 'revision': edited['revision'],
+            'source_checked_at': edited['source_checked_at'],
+        })
+        self.assertEqual(response.status, 200, await response.text())
+        reset = (await response.json())['account']
+        self.assertEqual(reset['display_status']['code'], 'season_mismatch')
+        self.assertEqual(reset['source_status'], 'stale')
+        self.assertEqual((reset['attacks'], reset['stars']),
+                         (saved['source_attacks'], saved['source_stars']))
+        current, _ = await self.account()
+        self.assertEqual(reset['display_status'], current['display_status'])
 
     async def test_preparation_unknown_then_observed_zero_in_war(self):
         await self.setup_published()
@@ -289,7 +367,12 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         first, _ = await self.account()
         checked = first["source_checked_at"]
         self.league.fail_wars.add("#Y2Y")
-        self.assertEqual((await self.sync()).status, 200)
+        response = await self.sync()
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())['failures'], [{
+            'clan_tag': '#C2Y', 'clan_name': 'Host #C2Y', 'round': 1,
+            'war_tag': '#Y2Y', 'reason': 'unavailable', 'error_type': 'ProviderUnavailable',
+        }])
         second, data = await self.account()
         self.assertEqual(self.league.war_calls, ["#Y2Y", "#Y2Y"])
         self.assertEqual((second["source_attacks"], second["source_stars"]), (1, 2))
@@ -613,3 +696,37 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.league.group_calls), before)
         history = await self.call('GET', self.base + '?source=history', self.owner)
         self.assertEqual((await history.json())['accounts'][0]['source_attacks'], 1)
+
+    async def test_failed_other_clan_war_names_its_real_sides_not_our_host(self):
+        await self.setup_published()
+        self.set_group([["#Y2Y", "#L2Y"]], state="WAR")
+        self.set_war("#Y2Y", state="WAR", attacks=(3,))
+        self.set_war("#L2Y", state="INVALID")
+        self.league.wars["#L2Y"]["clan"] = side("#R2Y", [member("#Q2Y", (1,))])
+        self.league.wars["#L2Y"]["opponent"] = side("#G2Y", [member("#G2Y", (2,))])
+        response = await self.sync()
+        self.assertEqual(response.status, 200, await response.text())
+        failures = (await response.json())["failures"]
+        self.assertEqual({event['clan_tag'] for event in failures}, {'#R2Y', '#G2Y'})
+        self.assertTrue(all(event['war_tag'] == '#L2Y' and event['round'] == 1
+                            and event['reason'] == 'invalid_war_state' for event in failures))
+        row, _ = await self.account()
+        self.assertEqual((row['source_attacks'], row['source_stars']), (1, 3))
+        self.assertFalse(row['display_status']['failed_clan'])
+
+    async def test_first_unreadable_other_group_war_never_invents_a_host_failure(self):
+        await self.setup_published()
+        self.set_group([["#Y2Y", "#L2Y"]], state="WAR")
+        self.set_war("#Y2Y", state="WAR", attacks=(3,))
+        self.league.fail_wars.add('#L2Y')
+        response = await self.sync()
+        self.assertEqual(response.status, 200, await response.text())
+        failures = (await response.json())["failures"]
+        self.assertEqual(len(failures), 1)
+        self.assertIsNone(failures[0]['clan_tag'])
+        self.assertEqual(failures[0]['clan_name'], 'Unknown clans')
+        self.assertEqual(failures[0]['round'], 1)
+        self.assertEqual(failures[0]['war_tag'], '#L2Y')
+        row, _ = await self.account()
+        self.assertEqual((row['source_attacks'], row['source_stars']), (1, 3))
+        self.assertFalse(row['display_status']['failed_clan'])

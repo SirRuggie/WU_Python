@@ -1,3 +1,4 @@
+import { participationSummary } from './participation';
 import "./rosterUi/tokens.css";
 import CwlPageHeader from "./CwlPageHeader";
 import useConfirmDialog from "./useConfirmDialog";
@@ -271,6 +272,11 @@ export default function BonusWorkspace({
       !item.cancelled_at,
   );
   const allowance = data?.allowances?.[clanTag];
+  const statusSummary = participationSummary(
+    data?.accounts.filter(account =>
+      account.pool === pool && (!clanTag || account.assigned_clan_tag === clanTag)) || [],
+    data?.sync,
+  );
   const requestedSlots = manualCount ? Number(slots) : null;
   const countReady = manualCount
     ? /^\d+$/.test(slots) && Number(slots) >= 1 && Number(slots) <= 50
@@ -605,9 +611,9 @@ export default function BonusWorkspace({
               </span>
             </p>
           )}
-          {data.sync.warning && (
+          {statusSummary.warning && (
             <p className="notice" role="status">
-              {data.sync.warning}
+              {statusSummary.warning}
             </p>
           )}
           <ol className="bonus-steps" aria-label="Bonus progress">
@@ -668,7 +674,7 @@ export default function BonusWorkspace({
                 void mutate(
                   "/refresh-results",
                   {},
-                  "Clash results refreshed. Review incomplete data before drawing.",
+                  "CWL check finished. Review this clan’s status before drawing.",
                 )
               }
             >

@@ -1,5 +1,15 @@
 import type { Pool } from "./api";
 
+export type ParticipationDisplayStatus = {
+  code: string; label: string; warning: string | null;
+  failed_clan: boolean; round: number | null;
+  last_check_failed?: boolean;
+};
+type StatusAccount = {
+  source_status?: string; display_status?: ParticipationDisplayStatus;
+  assigned_clan_tag?: string | null; assigned_clan_name?: string | null;
+};
+
 export type ParticipationAccount = {
   roster_token?: string;
   previous_results?: {
@@ -28,6 +38,7 @@ export type ParticipationAccount = {
   source_attacks?: number | null;
   source_stars?: number | null;
   source_status?: string;
+  display_status?: ParticipationDisplayStatus;
   source_checked_at?: string | null;
   source_complete?: boolean;
   attacks_override?: boolean;
@@ -47,12 +58,58 @@ export type ParticipationSync = {
   warning: string | null;
 };
 export type ParticipationData = {
+  scope_counts?: { current_signups: number; saved_history: number };
   historical_accounts_count?: number;
   roster_source?: string;
   publication_version: number | null;
   accounts: ParticipationAccount[];
   sync?: ParticipationSync;
 };
+
+export function participationStatus(account: StatusAccount): ParticipationDisplayStatus {
+  return account.display_status || {
+    code: account.source_status || 'never', label: syncStatusLabel(account.source_status),
+    warning: null, failed_clan: false, round: null,
+  };
+}
+
+/** Summarize only the supplied displayed scope, before pagination. */
+export function participationSummary(accounts: StatusAccount[], sync?: { status?: string; cycle?: string | null; warning?: string | null }) {
+  if (sync?.status === 'season_mismatch') {
+    return {
+      label: 'CWL month mismatch',
+      warning: sync.warning || 'Clash CWL month differs from the selected month',
+      affected: 0, count: accounts.length, updated: 0,
+    };
+  }
+  const statuses = accounts.map(participationStatus);
+  const failed = accounts.filter(account => participationStatus(account).failed_clan);
+  const clans = [...new Map(failed.map(account => [account.assigned_clan_tag,
+    account.assigned_clan_name || account.assigned_clan_tag || 'Unknown clan'])).values()];
+  const round = Math.max(0, ...statuses.map(status => status.round || 0));
+  const active = statuses.some(status => status.code === 'in_progress');
+  const updated = statuses.filter(status => ['in_progress', 'complete', 'preparation'].includes(status.code)).length;
+  const label = active ? `CWL in progress${round ? ` · round ${round} of 7` : ''}`
+    : statuses.length && statuses.every(status => status.code === 'complete') ? 'CWL complete'
+    : statuses.find(status => status.warning)?.label
+      || (sync?.status === 'waiting' ? syncStatusLabel('waiting', sync.cycle)
+        : statuses[0]?.label || 'No accounts in this view');
+  const otherWarnings = [...new Set(statuses.filter(status => !status.failed_clan)
+    .map(status => status.warning).filter((warning): warning is string => !!warning))];
+  const saved = failed.filter(account => participationStatus(account).code === 'stale').length;
+  const withoutSaved = failed.length - saved;
+  const failureDetails = [
+    saved ? `Showing last saved results for ${saved} account${saved === 1 ? '' : 's'} in this view.` : '',
+    withoutSaved ? `No saved results yet for ${withoutSaved} account${withoutSaved === 1 ? '' : 's'} in this view.` : '',
+  ].filter(Boolean).join(' ');
+  // The adapter keeps this per-clan fact after fresh row warnings expire. A
+  // season-wide sync warning alone must never accuse a filtered-out clan.
+  const previousFailure = statuses.some(status => status.last_check_failed) ? sync?.warning : null;
+  const warning = clans.length
+    ? `${clans.length} clan${clans.length === 1 ? '' : 's'} could not refresh: ${clans.join(', ')}. ${failureDetails}`
+    : [...new Set([...otherWarnings, previousFailure].filter(Boolean))].join(' ');
+  return { label, warning, affected: failed.length, count: accounts.length, updated };
+}
 export type ParticipationSort =
   | "name"
   | "attacks-asc"

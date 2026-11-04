@@ -47,6 +47,16 @@ class SeasonTrial(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await request('GET', '/my-assignments', who=self.member))['draft_changed'])
         await request('POST', '/participation/sync-settings', {'cycle': '2026-10', 'enabled': False})
         await request('PATCH', '/participation/%23P2Y', {'revision': 0, 'publication_version': 1, 'attacks': 7, 'stars': 18, 'notes': 'Season trial'})
+        # Owner588/591: successful confirmation now needs complete source data.
+        from utils.cwl_working_roster import working_accounts, account_token
+        with self.app['store'].tx() as db:
+            token = account_token(working_accounts(db, self.sid)['#P2Y'])
+            db.execute(
+                'INSERT INTO participation_source_results('
+                'season_id,cycle,tag,attacks,stars,status,complete,checked_at,warning,roster_token) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                (self.sid,'2026-10','#P2Y',7,18,'stale',1,'2026-10-14T16:00:00+00:00',None,token),
+            )
         await request('PATCH', '/bonuses/settings', {'revision': 0, 'policy': {'min_attacks': 5, 'min_stars': 8, 'cooldown_months': 0}, 'clans': [{'tag': '#C2Y', 'slots': 1}, {'tag': '#R2Y', 'slots': 1}]})
         await request('PATCH', '/bonuses/draft', {'revision': 1, 'selections': [{'tag': '#P2Y', 'reason': 'Trial manual results reviewed'}]})
         preview = await request('GET', '/bonuses/preview')

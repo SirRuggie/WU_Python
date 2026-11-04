@@ -10,6 +10,7 @@ from aiohttp import web
 from .providers import tag as normalize_tag
 from utils.cwl_working_roster import working_accounts, account_token
 from .participation_sync import settings_view, source_row
+from .participation_display import participation_evidence, decorate_participation_accounts
 
 IDENTITY_FIELDS = (
     "user_id", "player_name", "town_hall", "pool",
@@ -232,10 +233,16 @@ async def get_participation(request):
         ]
         for account in accounts:
             account["in_latest_publication"] = account["tag"] in published_tags
+        accounts = decorate_participation_accounts(
+            accounts, participation_evidence(db, season_id, settings['cycle'], accounts=accounts),
+            sync_status=None if history else settings['status'],
+        )
+        scope_counts = {'current_signups': len(current), 'saved_history': len(saved)}
     return web.json_response({
         "publication_version": latest["version"] if latest else 0,
         "roster_source": "history" if history else "current_signups",
         "historical_accounts_count": len(set(saved) - set(current)),
+        "scope_counts": scope_counts,
         "sync": settings,
         "accounts": accounts,
     })
@@ -312,6 +319,11 @@ async def patch_participation(request):
             saved = _record(db, season_id, player_tag)
             _audit(db, season_id, player_tag, session["user_id"], before, saved, stamp)
             account = current_account_view(snapshot, saved, source)
+        settings = settings_view(db, season_id)
+        account = decorate_participation_accounts(
+            [account], participation_evidence(db, season_id, settings['cycle'], accounts=[account]),
+            sync_status=settings['status'],
+        )[0]
     return web.json_response({"account": account})
 
 
@@ -364,6 +376,11 @@ async def reset_to_source(request):
             saved = _record(db, sid, player_tag)
             _audit(db, sid, player_tag, session["user_id"], before, saved, stamp)
             account = current_account_view(snapshot, saved, source)
+        settings = settings_view(db, sid)
+        account = decorate_participation_accounts(
+            [account], participation_evidence(db, sid, settings['cycle'], accounts=[account]),
+            sync_status=settings['status'],
+        )[0]
     return web.json_response({"account": account})
 
 
