@@ -57,7 +57,7 @@ async def _backfill(mongo, fetch, now):
     from utils.player_activity_polling import active_clan
 
     store = PlayerActivityStore(mongo)
-    players = await store.all_players()
+    players = await store.all_players(view='history')
     if not players:
         return {"players": 0, "wars": 0, "retryable": 0}
     clans = [

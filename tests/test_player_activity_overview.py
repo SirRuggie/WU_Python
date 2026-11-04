@@ -5,6 +5,28 @@ from datetime import timedelta
 from tests.test_player_activity_signals import NOW
 from utils.player_activity_overview import family_activity_rows
 from cwl_web.strikes import public
+from tests.fixtures.strike_activity_955_reference import overview_reference, activity_context_reference
+
+
+def activity_ledger(context):
+    """Existing HTTP fixtures expressed through the fresh-core owner contract."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    core = {**context, 'record_totals': {}, 'replacements': [],
+            'strike_limit': 3, 'clan_warning': False}
+    return SimpleNamespace(activity_core=AsyncMock(return_value=core),
+                           activity_observations=AsyncMock(return_value=context['records']))
+
+
+async def ready_activity_accounts(request):
+    """564 fixture setup: finish the on-demand job before checking warm output."""
+    from cwl_web import strikes
+    from cwl_web.strike_activity_cache import snapshots
+    await strikes.activity_accounts(request)
+    task = snapshots(request.app).entries[strikes.GUILD_ID].task
+    if task is not None:
+        await task
+    return await strikes.activity_accounts(request)
 
 
 @pytest.fixture(autouse=True)
@@ -79,8 +101,8 @@ def test_route_uses_public_weight_owner_and_preserves_rows_on_upstream_failure()
         @asynccontextmanager
         async def mongo(request):
             yield SimpleNamespace(player_activity=SimpleNamespace())
-        ledger = SimpleNamespace(activity_context=AsyncMock(return_value={
-            'profiles': [], 'records': [], 'clans':[{'tag':'#CLAN','name':'Family'}]}))
+        ledger = activity_ledger({
+            'profiles': [], 'records': [], 'clans':[{'tag':'#CLAN','name':'Family'}]})
         request = SimpleNamespace(app={'store':object(),'providers':object()})
         activity=[{'tag':'#PYY','name':'Healthy','current_clan_tag':'#CLAN','last_seen_at':NOW}]
         weights = AsyncMock(return_value={'#PYY':{'weight':149000}})
@@ -91,19 +113,19 @@ def test_route_uses_public_weight_owner_and_preserves_rows_on_upstream_failure()
              patch('utils.player_activity_store.PlayerActivityStore.overview',AsyncMock(return_value=activity)), \
              patch.object(clan_weights,'source_weights',weights), \
              patch.object(clan_weights,'overlay_accounts',overlay):
-            result=json.loads((await strikes.activity_accounts(request)).body)
+            result=json.loads((await ready_activity_accounts(request)).body)
             assert result['accounts'][0]['weight']==149000
             assert not result['weight_warning']
             assert weights.call_args.args[2]==['#PYY']
-            ledger.activity_context.return_value['profiles']=[{'player_tag':'#PYY','current_clan_tag':'#CLAN','weight':149000}]
+            ledger.activity_core.return_value['profiles']=[{'player_tag':'#PYY','current_clan_tag':'#CLAN','weight':149000}]
             saved_blank[0]=True
             weights.side_effect=ProviderUnavailable('fixture outage')
-            result=json.loads((await strikes.activity_accounts(request)).body)
+            result=json.loads((await ready_activity_accounts(request)).body)
             assert len(result['accounts'])==1 and result['weight_warning']
             assert result['accounts'][0]['weight'] is None
             weights.side_effect=None
             weights.return_value=[]
-            result=json.loads((await strikes.activity_accounts(request)).body)
+            result=json.loads((await ready_activity_accounts(request)).body)
             assert result['weight_warning'] and result['accounts'][0]['weight'] is None
     asyncio.run(run())
 
@@ -132,7 +154,7 @@ def test_context_keeps_all_family_members_without_writes_and_reuses_eligibility(
         await db.clans.insert_one({'_id':'archived','tag':'#PYY','name':'Archived','archived':True})
         await db.strike_profiles.insert_one({'_id':'profile','player_tag':PLAYER,'guild_id':GUILD,'current_clan_tag':CLAN})
         ledger.replacement=AsyncMock(return_value=[{'player_tag':PLAYER}])
-        context=await ledger.activity_context(GUILD,[PLAYER])
+        context=await activity_context_reference(ledger,GUILD,[PLAYER])
         assert [row['tag'] for row in context['clans']]==[CLAN]
         assert len(context['profiles'])==1 and context['replacements']==[{'player_tag':PLAYER}]
         ledger.replacement.assert_awaited_once_with(GUILD,limit=None)
@@ -140,7 +162,7 @@ def test_context_keeps_all_family_members_without_writes_and_reuses_eligibility(
     asyncio.run(run())
 
 
-def test_activity_overview_projects_out_the_large_unit_baseline():
+def test_original_overview_reference_projects_out_the_large_unit_baseline():
     import asyncio
     from types import SimpleNamespace
     from unittest.mock import Mock, AsyncMock
@@ -150,7 +172,7 @@ def test_activity_overview_projects_out_the_large_unit_baseline():
         find=Mock(return_value=SimpleNamespace(to_list=AsyncMock(return_value=[])))
     )
     asyncio.run(
-        PlayerActivityStore(SimpleNamespace(player_activity=collection)).overview()
+        overview_reference(PlayerActivityStore(SimpleNamespace(player_activity=collection)))
     )
     query, fields = collection.find.call_args.args
     assert (
@@ -159,6 +181,24 @@ def test_activity_overview_projects_out_the_large_unit_baseline():
     )
     assert "baseline" not in fields and "active_days" not in fields
     assert fields["raid_weekends"] == 1 and fields["last_seen_at"] == 1
+
+
+def test_selected_overview_projects_only_used_nested_signals_before_packing():
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from utils.player_activity_store import PlayerActivityStore
+    collection = SimpleNamespace(aggregate=AsyncMock(return_value=SimpleNamespace(
+        to_list=AsyncMock(return_value=[{'players': [], 'war_keys': [], 'raid_keys': []}]))))
+    assert asyncio.run(PlayerActivityStore(SimpleNamespace(player_activity=collection)).overview()) == []
+    pipeline = collection.aggregate.call_args.args[0]
+    assert pipeline[0] == {'$match': {'kind': {'$ne': 'history_clan'}}}
+    fields = pipeline[1]['$project']
+    assert fields['baseline.townHallLevel'] == fields['last_seen_at'] == 1
+    assert fields['raid_weekends.weekend_id'] == fields['raid_weekends.attacked'] == 1
+    assert fields['recent_wars.war_key'] == fields['recent_wars.missed_attacks'] == 1
+    assert 'baseline' not in fields and 'active_days' not in fields
+    assert 'raid_weekends' not in fields and 'recent_wars' not in fields
 
 
 def test_activity_outage_preserves_strike_rows_and_directory_names_without_profile_name():
@@ -176,8 +216,8 @@ def test_activity_outage_preserves_strike_rows_and_directory_names_without_profi
         profile={'player_tag':'#PYY','current_clan_tag':'#CLAN'}
         from utils import recruit_links
         recruit_links.resolve_players.return_value=recruit_links.PlayerOwners(owners={'#PYY':'123456789012345678'})
-        ledger=SimpleNamespace(activity_context=AsyncMock(return_value={'profiles':[profile], 'records':[],
-            'clans':[{'tag':'#CLAN','name':'Family'}]}))
+        ledger=activity_ledger({'profiles':[profile], 'records':[],
+            'clans':[{'tag':'#CLAN','name':'Family'}]})
         request=SimpleNamespace(app={'store':object(),'providers':object()})
         directory=AsyncMock(return_value=[{'nick':'Real display name','user':{'id':'123456789012345678','username':'fixture'}}])
         with patch.object(strikes.shared,'mongo',mongo), patch.object(strikes,'service',AsyncMock(return_value=ledger)), \
@@ -266,9 +306,9 @@ def test_page_does_not_wait_for_names_and_failure_refresh_is_cached(monkeypatch)
             raise RuntimeError('name provider offline')
         recruit_links.resolve_players.side_effect=slow
         request=SimpleNamespace(app={'store':object(),'providers':object()})
-        ledger=SimpleNamespace(activity_context=AsyncMock(return_value={
+        ledger=activity_ledger({
             'profiles':[{'player_tag':'#PYY','current_clan_tag':'#CLAN'}],
-            'records':[], 'clans':[{'tag':'#CLAN'}]}))
+            'records':[], 'clans':[{'tag':'#CLAN'}]})
         @asynccontextmanager
         async def mongo(request):yield SimpleNamespace(player_activity=object())
         monkeypatch.setattr(strikes.shared,'mongo',mongo)
@@ -277,7 +317,7 @@ def test_page_does_not_wait_for_names_and_failure_refresh_is_cached(monkeypatch)
         monkeypatch.setattr(clan_weights,'source_weights',AsyncMock(return_value={}))
         monkeypatch.setattr(clan_weights,'overlay_accounts',lambda store,payload:payload)
         for _ in range(3):
-            response=await asyncio.wait_for(strikes.activity_accounts(request),.1)
+            response=await asyncio.wait_for(ready_activity_accounts(request),.1)
             body=json.loads(response.body)
             assert not body['identity_warning']
             assert body['identity_updating'] is True
@@ -286,7 +326,7 @@ def test_page_does_not_wait_for_names_and_failure_refresh_is_cached(monkeypatch)
         blocked.set()
         await request.app['activity_identity_cache']['task']
         for _ in range(3):
-            response=await asyncio.wait_for(strikes.activity_accounts(request),.1)
+            response=await asyncio.wait_for(ready_activity_accounts(request),.1)
             assert json.loads(response.body)['identity_updating'] is False
         assert recruit_links.resolve_players.await_count==1
     asyncio.run(run())
@@ -305,9 +345,9 @@ def test_route_clan_failure_names_clan_without_changing_healthy_chain(monkeypatc
         sample={'tag':'#PYY','current_clan_tag':'#PQQ','updated_at':now,
                 'recent_wars':[{'war_key':str(n),'occurred_at':now-timedelta(days=n),
                     'attacks_used':0,'attacks_available':2} for n in range(3)]}
-        ledger=SimpleNamespace(activity_context=AsyncMock(return_value={
+        ledger=activity_ledger({
             'profiles':[], 'records':[], 'clans':[{'tag':'#PQQ','name':'Healthy clan'},
-                                                {'tag':'#PQL','name':'Unavailable clan'}]}))
+                                                {'tag':'#PQL','name':'Unavailable clan'}]})
         @asynccontextmanager
         async def mongo(request):yield SimpleNamespace(player_activity=object())
         monkeypatch.setattr(strikes.shared,'mongo',mongo)
@@ -317,7 +357,7 @@ def test_route_clan_failure_names_clan_without_changing_healthy_chain(monkeypatc
         monkeypatch.setattr('cwl_web.strike_activity_identity.account_identities',AsyncMock(return_value=({},True)))
         monkeypatch.setattr(clan_weights,'source_weights',AsyncMock(return_value={}))
         monkeypatch.setattr(clan_weights,'overlay_accounts',lambda store,payload:payload)
-        response=await strikes.activity_accounts(SimpleNamespace(app={'store':object(),'providers':object()}))
+        response=await ready_activity_accounts(SimpleNamespace(app={'store':object(),'providers':object()}))
         result=json.loads(response.body)
         assert result['history_warning']=='Some war reads unavailable for clans: Unavailable clan'
         assert result['accounts'][0]['no_attack_wars']==3
@@ -396,4 +436,83 @@ def test_partial_provider_preserves_cache_warns_and_recovers(monkeypatch, caplog
         await request.app["activity_identity_cache"]["task"]
         rows,warning=await identity.account_identities(request,["#PYY","#PQQ"])
         assert len(rows)==2 and not warning and not request.app["activity_identity_cache"]["partial"]
+    asyncio.run(run())
+
+
+def test_context_timeout_keeps_core_strike_rows_and_marks_activity_unknown(monkeypatch):
+    """159: a timeout after overview must not blank the entire Accounts tab."""
+    import asyncio
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from pymongo.errors import NetworkTimeout
+    from cwl_web import strikes
+    from utils import clan_weights
+    from cwl_web import strike_activity_identity
+
+    async def run():
+        @asynccontextmanager
+        async def mongo(request):
+            yield SimpleNamespace(player_activity=SimpleNamespace())
+        core = {'player_tag': '#PYY', 'player_name': 'Known strike account',
+                'member_id': None, 'current_clan_tag': '#CLAN',
+                'active_strikes': 3, 'total_strikes': 5,
+                'last_strike_at': NOW, 'last_record_at': NOW,
+                'over_limit': False, 'new_this_week': True}
+        ledger = SimpleNamespace(
+            activity_core=AsyncMock(return_value={
+                'profiles': [core], 'clans': [{'tag': '#CLAN', 'name': 'Family'}],
+                'record_totals': {'#PYY': {'active_strikes': 3, 'total_strikes': 5, 'new_this_week': True}},
+                'replacements': [], 'strike_limit': 4, 'clan_warning': False}),
+            activity_observations=AsyncMock(side_effect=NetworkTimeout('isolated context read')))
+        request = SimpleNamespace(query={}, app={'store': object(), 'providers': object()})
+        monkeypatch.setattr(strikes.shared, 'mongo', mongo)
+        monkeypatch.setattr(strikes, 'service', AsyncMock(return_value=ledger))
+        monkeypatch.setattr(strikes, 'clan_rows', AsyncMock(return_value=[{'tag': '#CLAN', 'name': 'Family'}]))
+        monkeypatch.setattr('utils.player_activity_store.PlayerActivityStore.overview', AsyncMock(return_value=[
+            {'tag': '#PYY', 'current_clan_tag': '#CLAN', 'last_seen_at': NOW, 'updated_at': NOW}]))
+        monkeypatch.setattr(strike_activity_identity, 'account_identities', AsyncMock(return_value=({}, False)))
+        monkeypatch.setattr(strike_activity_identity, 'identity_updating', lambda request: False)
+        monkeypatch.setattr(clan_weights, 'source_weights', AsyncMock(return_value={}))
+        monkeypatch.setattr(clan_weights, 'overlay_accounts', lambda store, payload: payload)
+        response = await strikes.activity_accounts(request)
+        assert response.status == 200
+        data = json.loads(response.body)
+        assert data['activity_warning'].startswith('Activity unavailable')
+        assert len(data['accounts']) == 1
+        row = data['accounts'][0]
+        assert row['player_tag'] == '#PYY'
+        assert row['active_strikes'] == 3 and row['total_strikes'] == 5
+        assert row['new_this_week'] is True and row['over_limit'] is False
+        assert row['activity_unavailable'] is True and row['quiet_days'] is None
+        assert not row['observed_attacks'] and not row['missed_attacks']
+    asyncio.run(run())
+
+
+def test_as_of_metadata_does_not_hide_the_existing_tracking_behind_warning(monkeypatch):
+    import asyncio
+    from contextlib import asynccontextmanager
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from cwl_web import strikes
+    from utils import clan_weights
+    async def run():
+        @asynccontextmanager
+        async def mongo(request):
+            yield SimpleNamespace(player_activity=object())
+        ledger = activity_ledger({'profiles': [], 'records': [], 'clans': [{'tag': '#PQQ', 'name': 'Family'}]})
+        monkeypatch.setattr(strikes.shared, 'mongo', mongo)
+        monkeypatch.setattr(strikes, 'service', AsyncMock(return_value=ledger))
+        now = datetime.now(timezone.utc)
+        monkeypatch.setattr('utils.player_activity_store.PlayerActivityStore.overview', AsyncMock(return_value=[
+            {'tag': '#PYY', 'current_clan_tag': '#PQQ', 'updated_at': now-timedelta(hours=37)}]))
+        monkeypatch.setattr('cwl_web.strike_activity_identity.account_identities', AsyncMock(return_value=({}, False)))
+        monkeypatch.setattr('cwl_web.strike_activity_identity.identity_updating', lambda request: False)
+        monkeypatch.setattr(clan_weights, 'source_weights', AsyncMock(return_value={}))
+        monkeypatch.setattr(clan_weights, 'overlay_accounts', lambda store, payload: payload)
+        data = json.loads((await ready_activity_accounts(SimpleNamespace(app={'store': object(), 'providers': object()}))).body)
+        assert data['activity_as_of'].startswith('Activity as of ')
+        assert data['activity_warning'] == 'Activity tracking is behind. Quiet indicators are paused.'
+        assert data['accounts'][0]['quiet_days'] is None
     asyncio.run(run())

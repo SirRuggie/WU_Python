@@ -6,7 +6,7 @@ from utils.player_activity_signals import activity_signals
 from utils.strike_store import status_of, stamp
 
 
-def family_activity_rows(activity, profiles, records, clans, *, replacements=None, strike_limit=3, now=None):
+def family_activity_rows(activity, profiles, records, clans, *, replacements=None, strike_limit=3, now=None, record_totals=None, include_unknown_clans=False):
     now = now or datetime.now(timezone.utc)
     updated = [stamp(row['updated_at']) for row in activity if row.get('updated_at')]
     tracking_fresh = bool(updated and now-timedelta(hours=36) <= max(updated) <= now+timedelta(minutes=5))
@@ -26,9 +26,12 @@ def family_activity_rows(activity, profiles, records, clans, *, replacements=Non
         left = bool(item.get('left_at') or (clan not in clan_names and profile.get('departed_clan_tag')))
         if left:
             clan = None
-        if clan not in clan_names and not left:
+        if clan not in clan_names and not left and not include_unknown_clans:
             continue
-        active = sum(row.get('kind')=='strike' and status_of(row, now)=='active' for row in by_record[player])
+        totals = record_totals.get(player, {}) if record_totals is not None else None
+        if totals is not None and totals.get('invalid'):
+            raise ValueError('Invalid strike dates in activity ledger')
+        active = totals.get('active_strikes', 0) if totals is not None else sum(row.get('kind')=='strike' and status_of(row, now)=='active' for row in by_record[player])
         marked = bool(profile.get('replacement_listed') and profile.get('replacement_clan_tag')==clan)
         filler = bool(profile.get('filler') and profile.get('filler_clan_tag')==clan)
         priority = profile.get('replacement_priority') if marked else 'replace_first' if filler else None
@@ -49,10 +52,10 @@ def family_activity_rows(activity, profiles, records, clans, *, replacements=Non
                        'town_hall': profile.get('town_hall') or item.get('baseline', {}).get('townHallLevel'),
                        'weight': profile.get('weight'), 'active_strikes': active,
                        'over_limit': active >= strike_limit,
-                       'new_this_week': any(row.get('kind')=='strike' and status_of(row,now)=='active'
+                       'new_this_week': totals.get('new_this_week', False) if totals is not None else any(row.get('kind')=='strike' and status_of(row,now)=='active'
                                             and now-timedelta(days=7) <= stamp(row['occurred_at']) <= now
                                             for row in by_record[player]),
-                       'total_strikes': sum(row.get('kind') == 'strike' for row in by_record[player]),
+                       'total_strikes': totals.get('total_strikes', 0) if totals is not None else sum(row.get('kind') == 'strike' for row in by_record[player]),
                        'discord_id': str(profile['member_id']) if profile.get('member_id') else None,
                        'discord_name': profile.get('discord_name'), 'priority': priority,
                        'replacement_note': profile.get('replacement_note') or '',
@@ -60,3 +63,38 @@ def family_activity_rows(activity, profiles, records, clans, *, replacements=Non
                        'replacement_eligible_low': bool(replacement and active in (1, 2)),
                        'revision': profile.get('revision', 0), **signals})
     return result
+
+
+def activity_view_context(core, activity, records, *, now=None):
+    """Apply old filled eligibility; fresh headers select a safe cold subset."""
+    now = now or datetime.now(timezone.utc)
+    profiles = core['profiles']
+    family = {row['tag'] for row in core['clans']}
+    missing_optional = activity is None or records is None
+    def known_family(row):
+        return row.get('current_clan_tag') in family or (
+            row.get('departed_clan_tag') in family
+            and isinstance(row.get('departed_last_seen_at'), datetime)
+            and stamp(row['departed_last_seen_at']) >= now-timedelta(days=90))
+    if missing_optional:
+        headers = {row['tag']: row for row in core.get('activity_headers', [])
+                   if not row.get('left_at') or stamp(row['left_at']) >= now-timedelta(days=90)}
+        def cold_visible(profile):
+            header = headers.get(profile.get('player_tag'), {})
+            clan = header.get('current_clan_tag', profile.get('current_clan_tag'))
+            left = bool(header.get('left_at') or (clan not in family and profile.get('departed_clan_tag')))
+            return clan in family or left
+        profiles = [row for row in profiles if (core['clan_warning'] or known_family(row))
+                    and (core['clan_warning'] or cold_visible(row))]
+    if not core['clan_warning'] and not missing_optional:
+        players = {row['tag'] for row in activity}
+        profiles = [row for row in profiles if row.get('current_clan_tag') in family
+            or row.get('player_tag') in players or (row.get('departed_clan_tag') in family
+                and isinstance(row.get('departed_last_seen_at'), datetime)
+                and stamp(row['departed_last_seen_at']) >= now-timedelta(days=90))]
+    if any(not row.get('player_tag') for row in profiles):
+        raise ValueError('Invalid strike profile identity')
+    return {'profiles': profiles, 'records': records or [],
+            'clans': core['clans'], 'record_totals': core['record_totals'],
+            'replacements': core['replacements'], 'strike_limit': core['strike_limit'],
+            'include_unknown_clans': core['clan_warning']}

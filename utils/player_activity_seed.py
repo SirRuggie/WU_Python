@@ -43,7 +43,7 @@ async def seed_players(store, fetch_last_online, *, sleep=asyncio.sleep, timeout
     counts = {key: 0 for key in ('seeded', 'official_or_existing', 'unavailable', 'failed',
                                  'non_200', 'timeout', 'already_attempted', 'pending', 'retryable')}
     semaphore = asyncio.Semaphore(5)
-    rows = await store.all_players()
+    rows = await store.all_players(view='seed')
 
     async def one(row):
         if row.get('last_seen_at'):
