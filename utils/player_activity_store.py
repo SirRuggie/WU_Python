@@ -48,6 +48,13 @@ class PlayerActivityStore:
         data = await (await self.collection.aggregate(dictionary_pipeline())).to_list(length=1)
         return decode_dictionary(data[0]) if data else []
 
+    async def headers(self):
+        """Fresh row eligibility only; never use these fields as activity signals."""
+        return await self.collection.find(
+            {'kind': {'$ne': 'history_clan'}},
+            {'_id': 0, 'tag': 1, 'current_clan_tag': 1, 'left_at': 1},
+        ).to_list(length=None)
+
     async def mark_seed_attempt(self, player_tag, status, version):
         await self.collection.update_one(
             {'_id': tag(player_tag)},

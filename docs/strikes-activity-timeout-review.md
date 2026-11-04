@@ -1,6 +1,6 @@
 # Strikes activity timeout: review evidence
 
-Task 159 is ready for review. Release remains held for Ruggie. No indexes,
+Task 159 rework 162 is being validated. Release remains held for Ruggie. No indexes,
 production write jobs, notifications or service changes were performed.
 Private numeric reports and original failure logs are retained under
 `.local/read159`. BSON sizes below describe decoded documents, not wire traffic.
@@ -22,12 +22,15 @@ without a profile (160 active strikes), and 16 were profiles outside the active
 family without a family departure (77 active strikes). No account identifiers
 or raw rows were retained.
 
-The cold cohort now contains only accounts whose family membership or recent
-family departure is known from fresh core profiles. It no longer manufactures
-profile-less rows or includes unrelated profiles merely because activity is
-unavailable. Optional activity may add accounts; it cannot remove core-known
-ones, including when optional clan metadata conflicts with the core profile.
-Clan-label failure still retains all known profiles with tag labels.
+The first 567 fix retained those core-known rows even when optional clan metadata
+contradicted the profile. Review 162 found that bypass added rows the old filled
+view hid. It has been removed: the filled view now uses the exact old eligibility
+rule. Review 572 approved a fresh, projected header read (`tag`,
+`current_clan_tag`, `left_at`) in parallel with the core reads. Headers filter the
+cold profile cohort using that same eligibility, including the old departure
+cutoff. They are never cached or used for signals. A header failure is a core
+503, never a false empty view. Clan-label failure still retains known profiles
+with tag labels.
 
 On that same classification read, both new cold and filled cohorts contained
 576 rows. Cold tags were a subset of filled tags; active and total strike counts
@@ -111,9 +114,9 @@ The as-of label and background readiness follow the explicit 564 policy change.
 
 | Current location | Before → after |
 | --- | --- |
-| `tests/test_strike_activity_background.py:44` | Raw-only `get` → explicitly request combined observations |
-| `tests/test_strike_activity_background.py:45` | Assert before the refresh finishes → await its task, retain both before/after-write assertions |
-| `tests/test_strike_activity_background.py:57` | Zero-argument mock → accept and assert guild 123 |
+| `tests/test_strike_activity_background.py:87` | Raw-only `get` → explicitly request combined observations |
+| `tests/test_strike_activity_background.py:88` | Assert before the refresh finishes → await its task, retain both before/after-write assertions |
+| `tests/test_strike_activity_background.py:100` | Zero-argument mock → accept and assert guild 123 |
 | `tests/test_player_activity_overview.py:20` | Implicit synchronous activity setup → explicit warm background fixture for warm-output checks |
 | `tests/test_player_activity_overview.py:213` | Extra warm-up request accidentally completed identity lookup → retain the original single cold request before testing pending identity; assertions unchanged |
 | `tests/test_strike_activity_reads.py:39` | Synchronous first observations → explicit combined-payload warm setup |
@@ -330,3 +333,74 @@ the validation logs, original failures, archive sources, cleanup and previews.
 Production end-to-end authenticated latency remains unmeasured by the
 read-adaptation or fake-provider HTTP fixture. There is no deployment or live
 notification proof for task 159, and release still needs Ruggie's approval.
+
+
+## Rework 162
+
+The normal backend suite now includes nine deterministic 450-player fixture
+adapters comparing every filled output field with the frozen 955 row assembler,
+with nonzero active/expired/revoked/manual strike counts and input nonmutation.
+Each seed also checks cold tags are a subset of filled tags with equal per-row
+counts. The two conflicting activity-clan trigger cases stay hidden exactly as
+before. The owned Mongo equivalence suite remains an additional check.
+
+Validation of profile identities and malformed strike dates is restricted to
+the old selected scope. An unrelated malformed profile or date does not fail the
+family page; malformed selected data still fails. Duplicate war dispositions are
+resolved independently of record order: an exemption/revocation vetoes its war
+after all monitored rows are considered. Both orders are tested. This is the
+explicit correction requested by 162; other signal rules remain unchanged.
+
+The existing weights timeout is restored to eight seconds. The earlier half-second
+change was outside the approved scope. The response can therefore still wait for
+that existing weight lookup; the core timing is not a complete HTTP latency claim.
+While activity is updating, one neutral “Loading activity…” line replaces the cold
+error. Failure/timeout retains the red unavailable warning. A missing history
+status now says “Could not check recent war reads.”, a deliberate plain-word change.
+
+Two actual isolated source mutations are killed by new ordinary tests. Counting
+observation expiry from completion incorrectly serves a 20-second loader's result
+at 30.5 seconds after its start. Dropping the generation fence incorrectly stores
+a result from a loader that ignores write cancellation. Both mutated runs fail at
+the intended data assertions; the unmodified tests pass. No production source
+file is replaced for mutation execution, and this is not delivery evidence.
+
+The transient codecs do not promise preservation of every BSON numeric subtype:
+Mongo grouping can equate numerically equal dictionary values of different types.
+Current identifiers are strings and disposition values are consumed by truthiness,
+so no visible change is established for this edge. A stored `recent_wars: null`
+remains null and the old and new signal paths can both reject that malformed
+shape. These are documented limits, not newly supported stored shapes.
+
+One approved 572 current-data read measured 566 fresh headers, 36,414 decoded BSON
+bytes in 1.583170 seconds. The new parallel core plus cold row assembly took
+1.858704 seconds including initial connection, with 576 rows and 3,475 known
+active strikes. No raw player rows were retained; no writes, jobs or indexes were
+run. This is not authenticated HTTP/provider/weights/browser latency.
+
+Rework checks so far: 33 targeted tests, 11 owned Mongo tests, 410 broad tests
+with 16 skips, 1,781 frontend tests in 296 files and 30 focused UI tests passed.
+The first broad run was mistakenly started in the socket-restricted sandbox and
+stopped at TestServer socket creation after 211 passes. Review 573 approved the
+same guarded host run once; it passed without source or assertion changes. The
+failed log remains. New frozen full backend, layout, preview and owned boot
+receipts will supersede the earlier 049c validation above when complete.
+
+
+Rework frontend, TypeScript, private build and required war checks passed:
+1,781 tests / 296 frontend files; 213 backend war tests with one skip and 35
+frontend war tests. Eight new isolated 360/1440 screenshots cover cold, filled,
+timeout and filling states. The narrow cold loading line and wide filled as-of
+line were visually inspected; document overflow and page errors are zero.
+The fresh retained preview is an actual component with sample GET responses,
+not a full backend or deployment artifact. Its first bootstrap used the wrong
+Node path; review 574 approved changing only the executable to the verified
+absolute path. The corrected bootstrap succeeded, with the failure retained.
+
+The 162 fixture change in `tests/test_strike_activity_core.py` replaces the
+incorrect requirement that a conflicting activity clan retain a family profile
+with the reviewed exact955 hidden-row behavior. Fresh headers exclude it from
+cold too; subset and per-row active/total count assertions are retained. The
+parallel-read fixture now requires five children including mandatory headers,
+and the header failure has its own error test. No HTTP status, count or durable
+write assertion was removed for these changes.

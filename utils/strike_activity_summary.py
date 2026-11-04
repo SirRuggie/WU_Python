@@ -44,9 +44,10 @@ def observation_query(query):
     ]}]}
 
 
-def decode_counts(rows):
-    if any(row['invalid'] for row in rows):
+def decode_counts(rows, *, validate=True):
+    if validate and any(row['invalid'] for row in rows):
         raise ValueError('Invalid strike dates in activity ledger')
     return {row['_id']: {'replacement_active': row['replacement_active'], 'active_strikes': row['active_strikes'],
                         'total_strikes': row['total_strikes'],
-                        'new_this_week': bool(row['new_this_week'])} for row in rows}
+                        'new_this_week': bool(row['new_this_week']),
+                        **({'invalid': row['invalid']} if not validate else {})} for row in rows}

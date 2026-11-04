@@ -470,8 +470,9 @@ export default function StrikeActivityRoster({
       {data.history_warning && (
         <p className="notice error">{data.history_warning}</p>
       )}
-      {data.activity_as_of && <p className="notice">{data.activity_as_of}</p>}
-      {data.activity_warning && (
+      {data.activity_updating ? <p className="notice">Loading activity…</p> :
+        data.activity_as_of && <p className="notice">{data.activity_as_of}</p>}
+      {data.activity_warning && !data.activity_updating && (
         <p className="notice error">{data.activity_warning}</p>
       )}
       {data.weight_warning && (

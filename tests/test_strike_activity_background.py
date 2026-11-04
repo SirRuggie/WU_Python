@@ -10,6 +10,49 @@ from cwl_web.strike_activity_reads import read_activity
 from utils.player_activity_cache import ActivityPayload, ActivitySnapshots
 
 
+def test_slow_refresh_expires_thirty_seconds_after_start_not_completion():
+    async def run():
+        clock = [1000.0]
+        cache = ActivitySnapshots(clock=lambda: clock[0])
+        async def slow():
+            clock[0] = 1020.0
+            return ActivityPayload([], [{'kind': 'exempt'}])
+        await cache.get(123, slow, require_observations=True)
+        await cache.entries[123].task
+        assert cache.entries[123].observations == [{'kind': 'exempt'}]
+        clock[0] = 1030.5
+        expired = await cache.get(123, slow, require_observations=True)
+        assert expired.observations is None
+        assert expired.refreshing
+        await cache.close()
+    asyncio.run(run())
+
+
+def test_generation_fence_rejects_loader_that_ignores_write_cancellation():
+    async def run():
+        cache = ActivitySnapshots()
+        entered, ignored, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        async def stubborn():
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                ignored.set()
+                await finish.wait()
+                return ActivityPayload([{'tag': '#PYY'}], [{'kind': 'exempt'}])
+        await cache.get(123, stubborn, require_observations=True)
+        task = cache.entries[123].task
+        await entered.wait()
+        cache.invalidate_observations(123)
+        await ignored.wait()
+        finish.set()
+        await asyncio.gather(task, return_exceptions=True)
+        assert cache.entries[123].observations is None
+        assert cache.entries[123].rows is None
+        await cache.close()
+    asyncio.run(run())
+
+
 def test_observations_expire_from_fetch_start_and_are_not_served_after_a_write():
     async def run():
         clock = [1000.0]

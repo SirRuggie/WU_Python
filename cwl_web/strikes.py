@@ -387,7 +387,7 @@ async def activity_accounts(request):
 
         weights = {}
         try:
-            async with asyncio.timeout(.5):
+            async with asyncio.timeout(8):
                 weights = await source_weights(
                     request.app["store"],
                     request.app["providers"],

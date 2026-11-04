@@ -76,7 +76,7 @@ async def read_activity(request, db, ledger, guild_id):
     if core['clan_warning']:
         history_warning = 'Clan names are unavailable. Showing clan tags.'
     elif failed_clans is None:
-        history_warning = 'War read status is unavailable.'
+        history_warning = 'Could not check recent war reads.'
     return ActivityRead([] if unavailable else activity, context, warning, history_warning,
                         snapshot.observations_checked_at,
                         snapshot.refreshing, unavailable)

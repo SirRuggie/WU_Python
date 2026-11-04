@@ -10,7 +10,7 @@ from utils.player_activity_overview import family_activity_rows, activity_view_c
 from datetime import datetime, timezone
 
 
-def fixture(profile_error=False, count_error=False, clan_error=False, gate=None):
+def fixture(profile_error=False, count_error=False, clan_error=False, header_error=False, gate=None):
     async def read(label, value, fail):
         if gate:
             await gate(label)
@@ -21,6 +21,7 @@ def fixture(profile_error=False, count_error=False, clan_error=False, gate=None)
     counts = [{'_id': '#PYY', 'active_strikes': 3, 'total_strikes': 5,
                'new_this_week': 1, 'replacement_active': 3, 'invalid': 0}]
     db = SimpleNamespace(
+        player_activity=SimpleNamespace(find=Mock(return_value=SimpleNamespace(to_list=lambda **kw: read('headers', [], header_error)))),
         strike_profiles=SimpleNamespace(find=Mock(return_value=SimpleNamespace(to_list=lambda **kw: read('profiles', profiles, profile_error)))),
         strike_records=SimpleNamespace(aggregate=AsyncMock(return_value=SimpleNamespace(to_list=lambda **kw: read('counts', counts, count_error)))),
         clans=SimpleNamespace(find=Mock(return_value=SimpleNamespace(to_list=lambda **kw: read('clans', [{'tag': '#2UVGQU9', 'name': 'Family'}], clan_error)))))
@@ -29,10 +30,10 @@ def fixture(profile_error=False, count_error=False, clan_error=False, gate=None)
     return ledger
 
 
-@pytest.mark.parametrize('field', ['profiles', 'counts'])
+@pytest.mark.parametrize('field', ['profiles', 'counts', 'headers'])
 def test_missing_core_read_is_an_error_not_zero_counts(field):
     async def run():
-        ledger = fixture(profile_error=field == 'profiles', count_error=field == 'counts')
+        ledger = fixture(profile_error=field == 'profiles', count_error=field == 'counts', header_error=field == 'headers')
         with pytest.raises(NetworkTimeout):
             await ledger.activity_core(123)
         assert not [task for task in asyncio.all_tasks() if task is not asyncio.current_task() and not task.done()]
@@ -57,7 +58,7 @@ def test_independent_core_reads_start_together_and_cancel_without_orphans():
         ready, release = asyncio.Event(), asyncio.Event()
         async def gate(label):
             started.add(label)
-            if len(started) == 4:
+            if len(started) == 5:
                 ready.set()
             await release.wait()
         task = asyncio.create_task(fixture(gate=gate).activity_core(123))
@@ -65,7 +66,7 @@ def test_independent_core_reads_start_together_and_cancel_without_orphans():
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        assert started == {'profiles', 'counts', 'settings', 'clans'}
+        assert started == {'profiles', 'counts', 'settings', 'clans', 'headers'}
         assert not [item for item in asyncio.all_tasks() if item is not asyncio.current_task() and not item.done()]
     asyncio.run(run())
 
@@ -96,15 +97,17 @@ def test_cold_account_set_only_adds_rows_when_activity_fills_and_counts_stay_equ
         ]
         for player in ('#QYY', '#RYY', '#UYY', '#VYY'):
             core['record_totals'][player] = {'active_strikes': 2, 'total_strikes': 5, 'new_this_week': False}
-        before = deepcopy(core)
-        # Include contradictory optional clan metadata: it cannot remove a
-        # core-known family account or turn its known strike count into zero.
+        # Fresh headers exclude the contradictory family profile from cold,
+        # matching the exact955 filled visibility rather than overriding it.
         activity = [{'tag': '#PYY', 'current_clan_tag': '#OUT'},
                     {'tag': '#QYY', 'current_clan_tag': family},
                     {'tag': '#VYY', 'current_clan_tag': family}]
+        core['activity_headers'] = deepcopy(activity)
+        before = deepcopy(core)
         cold = {row['player_tag']: row for row in family_activity_rows([], **activity_view_context(core, None, None, now=now), now=now)}
         filled = {row['player_tag']: row for row in family_activity_rows(activity, **activity_view_context(core, activity, [], now=now), now=now)}
-        assert set(cold) == {'#PYY', '#RYY'}
+        assert set(cold) == {'#RYY'}
+        assert '#PYY' not in filled
         assert set(cold) <= set(filled)
         assert {'#QYY', '#VYY'} <= set(filled)
         assert '#UYY' not in cold

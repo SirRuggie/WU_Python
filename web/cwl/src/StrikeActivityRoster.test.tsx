@@ -90,7 +90,9 @@ it("keeps known strikes on a cold activity view and fills signals when refresh c
     })));
   const choose = vi.fn();
   await act(async () => root.render(<StrikeActivityRoster onChoose={choose} />));
-  expect(host.textContent).toContain("Activity unavailable");
+  expect(host.querySelector(".notice:not(.error)")?.textContent).toBe("Loading activity…");
+  expect(host.textContent).not.toContain("Activity unavailable");
+  expect(host.querySelector(".notice.error")).toBeNull();
   expect(host.textContent).not.toContain("Quiet 0d");
   expect(host.textContent).not.toContain("No activity yet");
   await act(async () => vi.advanceTimersByTimeAsync(2000));
@@ -102,6 +104,16 @@ it("keeps known strikes on a cold activity view and fills signals when refresh c
   expect(choose.mock.calls[0][0].total_strikes).toBe(5);
   await act(async () => vi.advanceTimersByTimeAsync(20000));
   expect(fetch).toHaveBeenCalledTimes(2);
+});
+it("shows an activity error after refresh failure rather than a loading notice", async () => {
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({
+    accounts: [{ ...row, quiet_days: null, activity_unavailable: true }],
+    clans: [{ tag: "#PQQ", name: "Family" }], activity_updating: false,
+    activity_warning: "Activity unavailable. Strike rows remain available.",
+  })));
+  await act(async () => root.render(<StrikeActivityRoster onChoose={vi.fn()} />));
+  expect(host.querySelector(".notice.error")?.textContent).toBe("Activity unavailable. Strike rows remain available.");
+  expect(host.textContent).not.toContain("Loading activity");
 });
 it("loads the family once, keeps weight tool closed, and row selection only navigates", async () => {
   const choose = vi.fn();

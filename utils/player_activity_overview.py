@@ -6,7 +6,7 @@ from utils.player_activity_signals import activity_signals
 from utils.strike_store import status_of, stamp
 
 
-def family_activity_rows(activity, profiles, records, clans, *, replacements=None, strike_limit=3, now=None, record_totals=None, include_unknown_clans=False, required_players=()):
+def family_activity_rows(activity, profiles, records, clans, *, replacements=None, strike_limit=3, now=None, record_totals=None, include_unknown_clans=False):
     now = now or datetime.now(timezone.utc)
     updated = [stamp(row['updated_at']) for row in activity if row.get('updated_at')]
     tracking_fresh = bool(updated and now-timedelta(hours=36) <= max(updated) <= now+timedelta(minutes=5))
@@ -26,7 +26,7 @@ def family_activity_rows(activity, profiles, records, clans, *, replacements=Non
         left = bool(item.get('left_at') or (clan not in clan_names and profile.get('departed_clan_tag')))
         if left:
             clan = None
-        if clan not in clan_names and not left and not include_unknown_clans and player not in required_players:
+        if clan not in clan_names and not left and not include_unknown_clans:
             continue
         totals = record_totals.get(player, {}) if record_totals is not None else None
         active = totals.get('active_strikes', 0) if totals is not None else sum(row.get('kind')=='strike' and status_of(row, now)=='active' for row in by_record[player])
@@ -64,7 +64,7 @@ def family_activity_rows(activity, profiles, records, clans, *, replacements=Non
 
 
 def activity_view_context(core, activity, records, *, now=None):
-    """Core-known family rows persist; optional evidence may only add accounts."""
+    """Apply old filled eligibility; fresh headers select a safe cold subset."""
     now = now or datetime.now(timezone.utc)
     profiles = core['profiles']
     family = {row['tag'] for row in core['clans']}
@@ -74,16 +74,28 @@ def activity_view_context(core, activity, records, *, now=None):
             row.get('departed_clan_tag') in family
             and isinstance(row.get('departed_last_seen_at'), datetime)
             and stamp(row['departed_last_seen_at']) >= now-timedelta(days=90))
-    required = {row['player_tag'] for row in profiles if core['clan_warning'] or known_family(row)}
     if missing_optional:
-        profiles = [row for row in profiles if row['player_tag'] in required]
+        headers = {row['tag']: row for row in core.get('activity_headers', [])
+                   if not row.get('left_at') or stamp(row['left_at']) >= now-timedelta(days=90)}
+        def cold_visible(profile):
+            header = headers.get(profile.get('player_tag'), {})
+            clan = header.get('current_clan_tag', profile.get('current_clan_tag'))
+            left = bool(header.get('left_at') or (clan not in family and profile.get('departed_clan_tag')))
+            return clan in family or left
+        profiles = [row for row in profiles if (core['clan_warning'] or known_family(row))
+                    and (core['clan_warning'] or cold_visible(row))]
     if not core['clan_warning'] and not missing_optional:
         players = {row['tag'] for row in activity}
         profiles = [row for row in profiles if row.get('current_clan_tag') in family
-            or row['player_tag'] in players or (row.get('departed_clan_tag') in family
+            or row.get('player_tag') in players or (row.get('departed_clan_tag') in family
                 and isinstance(row.get('departed_last_seen_at'), datetime)
                 and stamp(row['departed_last_seen_at']) >= now-timedelta(days=90))]
+    if any(not row.get('player_tag') for row in profiles):
+        raise ValueError('Invalid strike profile identity')
+    selected = {row['player_tag'] for row in profiles} | {row['tag'] for row in activity or []}
+    if any(core['record_totals'].get(player, {}).get('invalid') for player in selected):
+        raise ValueError('Invalid strike dates in activity ledger')
     return {'profiles': profiles, 'records': records or [],
             'clans': core['clans'], 'record_totals': core['record_totals'],
             'replacements': core['replacements'], 'strike_limit': core['strike_limit'],
-            'include_unknown_clans': core['clan_warning'], 'required_players': required}
+            'include_unknown_clans': core['clan_warning']}

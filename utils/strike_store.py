@@ -606,6 +606,7 @@ class StrikeService:
         import asyncio
         from pymongo.errors import PyMongoError
         from utils.player_activity_polling import active_clan
+        from utils.player_activity_store import PlayerActivityStore
         from utils.strike_activity_summary import record_query, count_pipeline, decode_counts
         now = datetime.now(timezone.utc)
         profile_fields = {name: 1 for name in (
@@ -619,14 +620,15 @@ class StrikeService:
         clan_fields['_id'] = 0
         async def counts():
             return decode_counts(await (await self.mongo.strike_records.aggregate(
-                count_pipeline(record_query(guild_id, None, now), now))).to_list(length=None))
+                count_pipeline(record_query(guild_id, None, now), now))).to_list(length=None), validate=False)
         async def clans():
             return await asyncio.wait_for(
                 self.mongo.clans.find({}, clan_fields).to_list(length=None), timeout=.75)
         tasks = [asyncio.create_task(self.mongo.strike_profiles.find(
                     {'guild_id': int(guild_id)}, profile_fields).to_list(length=None)),
                  asyncio.create_task(counts()), asyncio.create_task(self.settings(guild_id)),
-                 asyncio.create_task(clans())]
+                 asyncio.create_task(clans()),
+                 asyncio.create_task(PlayerActivityStore(self.mongo).headers())]
         try:
             values = await asyncio.gather(*tasks, return_exceptions=True)
         except BaseException:
@@ -637,9 +639,9 @@ class StrikeService:
         for value in values[:3]:
             if isinstance(value, BaseException):
                 raise value  # Missing core data is an error, never zero strikes.
-        profiles, totals, settings, clan_rows = values
-        if any(not profile.get('player_tag') for profile in profiles):
-            raise ValueError('Invalid strike profile identity')
+        profiles, totals, settings, clan_rows, headers = values
+        if isinstance(headers, BaseException):
+            raise headers
         clan_warning = isinstance(clan_rows, (PyMongoError, TimeoutError))
         if isinstance(clan_rows, BaseException) and not clan_warning:
             raise clan_rows
@@ -659,7 +661,8 @@ class StrikeService:
         return {'profiles': profiles, 'record_totals': totals,
                 'clans': [row for row in clan_rows if active_clan(row) and row.get('tag')],
                 'replacements': replacements, 'strike_limit': settings['strike_limit'],
-                'clan_warning': clan_warning, 'read_at': now}
+                'clan_warning': clan_warning, 'read_at': now,
+                'activity_headers': headers}
 
     async def account_list(self, guild_id: int, *, query=None, clan_tag=None,
                            status='active', limit=25, skip=0, action='all') -> dict:
