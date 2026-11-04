@@ -1,6 +1,6 @@
 # Strikes activity timeout: review evidence
 
-Task 159 rework 163 is local and incomplete. Release remains held for Ruggie. No indexes,
+Task 159 rework 163 is ready for review. Release remains held for Ruggie. No indexes,
 production write jobs, notifications or service changes were performed.
 Private numeric reports and original failure logs are retained under
 `.local/read159`. BSON sizes below describe decoded documents, not wire traffic.
@@ -469,8 +469,8 @@ kept malformed rows remain errors. A plain header TimeoutError is converted to
 the same core NetworkTimeout/service-unavailable error. Initial focused checks
 passed24tests. The test reference now freezes955 activity_signals and
 skipped_weekends as well as the row assembler; the unchanged latest_raid_end
-dependency was compared by AST. War-rich randomized fixtures, requested
-missed=99/veto mutations and final validation are still pending.
+dependency was compared by AST. War-rich randomized fixtures, the requested missed=99/veto mutations and
+final validation are recorded below.
 
 
 The replacement ordinary fixture now runs24seeds of450players with recent_wars,
@@ -499,4 +499,38 @@ also exercises the actual shared Mongo HTTP adapter and asserts status503 with
 the NetworkTimeout cause. Required unchanged war checks passed213backend tests
 with one skip and35frontend tests, TypeScript and a temporary build. No frontend
 source changed in163, so the162full frontend/build/layout/preview evidence stays
-applicable. New frozen full backend and exact-artifact boot remain to be run.
+applicable. The frozen full backend and exact-artifact boot results follow below.
+
+
+### Final163 validation
+
+The single full backend run on clean frozen
+`76168901ae6c9c6b3652d6d3c60adcaa91503a74` passed **6,912 tests**, with134skips
+and270passing subtests in580.08seconds. The c02 startup guard, explicit empty
+Mongo/Healthcheck settings and private temporary folder were active. No source
+edits, exports, boot or other suites ran during architecture collection.
+
+The new exact-archive owned boot passed51production routes, native async pool
+and an owned ping, the real durability owner with retained copied SQLite,
+config200 and unauthenticated auth401, and18archive module origins. The archive
+frontend tree equals the validated162build reference. Network restrictions were
+installed before application imports; Healthchecks were empty. Owned Mongo
+PID806642, executable, working directory, database path and listener were
+verified before clients. The process, database, data and archive export were
+cleaned and manifests retained.
+
+No frontend source changed in163. The1781-test frontend, TypeScript, private
+build162, eight360/1440layouts and retained sample preview on45201 remain bound
+to the identical frontend tree. The private main entry remains
+`index-BkBhL6gP.js`, SHA256
+`122066a18b8e444a2e7bbbde11518505add59960027cb7dc70ff65b7f6a84dc5`.
+The preview is component/sample data only, not a full backend or tagged artifact.
+
+Final documentation is the only change after the full-tested and booted
+revision. Runtime, tests and frontend remain byte-identical. Four actual
+isolated mutation failures are retained: completion-based observation expiry,
+removed generation fence, missed=99 and removed neutral veto. Neither live
+source files nor production data were mutated to execute them. Full production
+HTTP/auth/identity/weights/browser latency remains unmeasured. Release remains
+held for Ruggie's explicit approval; no services, indexes, notifications or
+production writes were changed.
