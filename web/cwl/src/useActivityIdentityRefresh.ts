@@ -5,6 +5,13 @@ export type IdentitySnapshot = {
   accounts: ActivityAccount[];
   identity_warning?: string | null;
   identity_updating?: boolean;
+  activity_updating?: boolean;
+  activity_checked_at?: string | null;
+  activity_as_of?: string | null;
+  activity_warning?: string | null;
+  history_warning?: string | null;
+  weight_warning?: string | null;
+  clans?: { tag: string; name: string }[];
 };
 export function mergeIdentityAccounts(
   current: ActivityAccount[],
@@ -24,15 +31,17 @@ export default function useActivityIdentityRefresh({
   busy,
   onResult,
   onDenied,
+  readVersion = () => 0,
 }: {
   enabled: boolean;
   generation: number;
   busy: () => boolean;
   onResult: (result: IdentitySnapshot) => void;
   onDenied: () => void;
+  readVersion?: () => string | number;
 }) {
-  const callbacks = useRef({ busy, onResult, onDenied });
-  callbacks.current = { busy, onResult, onDenied };
+  const callbacks = useRef({ busy, onResult, onDenied, readVersion });
+  callbacks.current = { busy, onResult, onDenied, readVersion };
   useEffect(() => {
     if (!enabled) return;
     let alive = true,
@@ -48,14 +57,19 @@ export default function useActivityIdentityRefresh({
         return;
       }
       attempts++;
+      const version = callbacks.current.readVersion();
       try {
         const result = await api<IdentitySnapshot>(
           "/strikes/accounts?activity=true",
         );
         if (!alive || !Array.isArray(result.accounts)) return;
+        if (callbacks.current.busy() || version !== callbacks.current.readVersion()) {
+          schedule();
+          return;
+        }
         callbacks.current.onResult(result);
-        if (result.identity_updating || result.identity_warning) {
-          schedule(result.identity_updating && attempts < 6 ? 2000 : 120_000);
+        if (result.identity_updating || result.identity_warning || result.activity_updating) {
+          schedule((result.identity_updating || result.activity_updating) && attempts < 6 ? 2000 : 120_000);
           if (attempts >= 6) attempts = 0;
         }
       } catch (cause) {

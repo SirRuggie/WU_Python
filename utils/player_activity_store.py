@@ -12,6 +12,22 @@ from utils.player_activity_raids import latest_raid_end
 from utils.strike_store import tag, utc
 
 
+PLAYER_READ_FIELDS = {
+    'membership': ('_id', 'revision', 'current_clan_tag', 'left_at', 'last_roster_at',
+                   'previous_roster_at', 'family_since', 'raid_membership_ends', 'raid_clan_history'),
+    'history': ('_id', 'current_clan_tag', 'tracking_started_at'),
+    'raids': ('_id', 'raid_logs_reviewed', 'raid_checked_weekends', 'raid_membership_ends',
+              'raid_clan_history', 'previous_roster_at', 'last_roster_at', 'family_since', 'left_at'),
+    'seed': ('_id', 'last_seen_at', 'seed_job_version', 'seed_status', 'seed_attempts'),
+    'war_merge': ('_id', 'revision', 'recent_wars', 'recent_wars_version'),
+    'raid_merge': ('_id', 'revision', 'raid_weekends', 'raid_checked_weekends', 'raid_logs_reviewed'),
+}
+
+
+def player_read_fields(view):
+    return {field: 1 for field in PLAYER_READ_FIELDS[view]} if view is not None else None
+
+
 class PlayerActivityStore:
     def __init__(self, mongo):
         self.collection = mongo.player_activity
@@ -21,31 +37,22 @@ class PlayerActivityStore:
         # TTL creation is reserved for the backup-verified retention migration.
         await self.collection.create_index('current_clan_tag', name='activity_family_clan')
 
-    async def all_players(self):
-        return await self.collection.find({"kind": {"$ne": "history_clan"}}).to_list(
+    async def all_players(self, *, view=None):
+        return await self.collection.find({"kind": {"$ne": "history_clan"}}, player_read_fields(view)).to_list(
             length=None
         )
 
     async def overview(self):
-        """Read only page signals, never the large per-unit diff baseline."""
-        fields = {
-            key: 1
-            for key in (
-                "tag",
-                "name",
-                "current_clan_tag",
-                "left_at",
-                "last_seen_at",
-                "last_seen_source",
-                "tracking_started_at",
-                "raid_weekends",
-                "recent_wars",
-                "updated_at",
-                "baseline.townHallLevel",
-            )
-        }
+        """Lossless bounded page signals, without per-unit baselines/history cache."""
+        from utils.player_activity_projection import dictionary_pipeline, decode_dictionary
+        data = await (await self.collection.aggregate(dictionary_pipeline())).to_list(length=1)
+        return decode_dictionary(data[0]) if data else []
+
+    async def headers(self):
+        """Fresh row eligibility only; never use these fields as activity signals."""
         return await self.collection.find(
-            {"kind": {"$ne": "history_clan"}}, fields
+            {'kind': {'$ne': 'history_clan'}},
+            {'_id': 0, 'tag': 1, 'current_clan_tag': 1, 'left_at': 1},
         ).to_list(length=None)
 
     async def mark_seed_attempt(self, player_tag, status, version):
@@ -54,8 +61,8 @@ class PlayerActivityStore:
             {'$set': {'seed_job_version': version, 'seed_status': status,
                       'seed_attempted_at': datetime.now(timezone.utc)}, '$inc': {'revision': 1, 'seed_attempts': 1}})
 
-    async def get(self, player_tag):
-        return await self.collection.find_one({'_id': tag(player_tag)})
+    async def get(self, player_tag, *, view=None):
+        return await self.collection.find_one({'_id': tag(player_tag)}, player_read_fields(view))
 
     async def record(self, player: dict, clan_tag: str, *, now=None):
         now = utc(now or datetime.now(timezone.utc))
@@ -110,7 +117,7 @@ class PlayerActivityStore:
         ended = latest_raid_end(now)
         upcoming = (ended + timedelta(days=7)).isoformat()
         seen = {}
-        for row in await self.all_players():
+        for row in await self.all_players(view='membership'):
             key = row["_id"]
             for attempt in range(2):
                 if key in members:
@@ -190,7 +197,7 @@ class PlayerActivityStore:
                 if result.matched_count:
                     break
                 if attempt == 0:
-                    fresh = await self.get(key)
+                    fresh = await self.get(key, view='membership')
                     if fresh is None:
                         break
                     row = fresh
@@ -208,7 +215,7 @@ class PlayerActivityStore:
             if type(attacks) is not int or attacks < 0:
                 raise ValueError('Raid attacks must be a non-negative integer')
         for _ in range(5):
-            row = await self.get(player_tag)
+            row = await self.get(player_tag, view='raid_merge')
             if row is None:
                 return False
             weekends = {item['weekend_id']: item for item in row.get('raid_weekends', [])}
@@ -237,7 +244,7 @@ class PlayerActivityStore:
 
         now = utc(now or datetime.now(timezone.utc))
         for _ in range(5):
-            row = await self.get(player_tag)
+            row = await self.get(player_tag, view='war_merge')
             if row is None:
                 return False  # No extra document solely for historical data.
             fields = {

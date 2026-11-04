@@ -50,13 +50,14 @@ def activity_signals(
             and 0 <= used <= available
         ):
             regular[row["war_key"]] = {**row, "missed_attacks": available - used}
+    neutral_wars = set()
     for row in records:
         if row.get("source") == "war" and (
             row.get("revoked_at")
             or row.get("kind") in ("mismatch", "exempt", "no_attack")
             or row.get("exemption")
         ):
-            regular.pop(row.get("war_key"), None)
+            neutral_wars.add(row.get("war_key"))
             continue
         # Imported ledgers omit completed members. Only full-lineup backfill or
         # monitored captures can establish the ordered sequence for this player.
@@ -69,6 +70,10 @@ def activity_signals(
             continue
         if row.get("war_key"):
             regular[row["war_key"]] = row
+    # A recorded exemption/revocation vetoes the same war regardless of the
+    # storage read order. A later monitored row must not undo that disposition.
+    for war_key in neutral_wars:
+        regular.pop(war_key, None)
     eligible = [
         row
         for row in regular.values()
