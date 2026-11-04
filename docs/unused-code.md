@@ -23,7 +23,7 @@ Started 2026-11-04 by Shaka, at Ruggie's request: "mark all parts that are NO LO
 | `extensions/commands/tickets/manage.py` | Never imported by `extensions/commands/tickets/__init__.py` (lines 376–420 import every other module) | Confirmed by Shaka | TK-52; part of TK-50, 51 |
 | `extensions/commands/cwl_announcement.py` | Its command class is never registered on the loader | No `@loader.command`; no importer | BT-204, 205 |
 
-**Ruggie's call:** the card code is switched off, not deleted. The code comment says it can be turned on again for another Clash of Cards event. Decide whether it goes or stays.
+**ARCHIVED, keep (Ruggie, 2026-11-04):** "cards and things should be archived for maybe a future event so we can build on it". The Clash of Cards files (`cards.py`, `cards_sticky.py`, `cards_deadlines.py`, `utils/cards.py`, `utils/card_board.py` and the three disabled previews) stay in the tree, switched off. Do not remove them. When the event comes back, rerun the wording review on CD-1 to CD-73 (`.local/ste-bot-audit/B-cards.md`) before turning it on.
 
 ## B. Dead functions inside live files
 

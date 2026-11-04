@@ -1,9 +1,11 @@
 # Participation status review (160 / rework164)
 
 DRAFT: current work on `codex/participation-status-160` is not READY. PR199 began
-on main955. PR198 is now live as `strikes-activity-2` at maina1a8b937; integrate
-that released tree in this worktree before the final freeze and full backend
-run. The root checkout and production assets remain outside this development
+on main955. PR198 is live as `strikes-activity-2` at maina1a8b937. Rework checkpoint
+1323099f was merged locally with that exact released tree, without conflicts,
+at54c7d745b662588ec4e9cfbdb4d5b261857320f4. No root pull/reset or production
+change was involved. Final checks must bind this combined candidate before its
+full backend freeze. The root checkout and production assets remain outside this development
 work. No production writes, forced jobs, notifications or service changes were
 performed for160/164. Earlier160 full/boot receipts are historical, not164 passes.
 
@@ -85,7 +87,7 @@ stale and7attacks/21stars after six sealed rounds plus one freshly ended round,
 and on subsequent sealed reuse. Both raffle paths remain eligible with complete
 results. This explicitly supersedes the earlier579 pending-policy note.
 
-## Current evidence before main integration/final freeze
+## Current evidence and final freeze
 
 - Whole affected boundary/SeasonTrial run:149 passed49.19s. Includes auth,
   raw cached-ended status/timestamps, failures, alias/input invariants, Bonus,
@@ -97,7 +99,7 @@ results. This explicitly supersedes the earlier579 pending-policy note.
 - Frontend1780 passed297files29.16s; final TypeScript passed. Private build6.10s:
   index-3bWmt-hb.js, SHA256
   b8fedff7839f1a3dd902eb133e893c65757c32805ccc55ce1867ff25e234fec7.
-  Main integration may change unrelated strike assets, requiring final checks.
+  This is the pre-integration build; the combined checks below supersede it.
 - Eight360/1440 sample layouts: progress, failed, ended, mismatch with saved
   attack/star values. No document overflow or page errors; fake GET-only API,
   external origins blocked, keyboard focus reachable. Healthy Main/search does
@@ -130,18 +132,43 @@ No PRODUCT.md or DESIGN.md was invented.
 |592 manual candidate fixture | no complete source yet expected2 eligible → first assert incomplete exclusion, seed bound complete source, then original2 eligible/no signup mutation/duplicate409/removal checks |
 |164 count copy | duplicate capture population positive → current list count positive plus capture duplicate negative; GET/month/navigation/waiting checks retained |
 |566/592 layout selector | full-row count included37 closed Details warnings → inline status-area count; same zero-inline-explanation assertion, full Details retained; new output prefix |
+|597 integration audit | expected test.ts typo → actual test.tsx, preserving exact four-file membership and all159 byte assertions |
+|598 disk temp environment | combined frontend EDQUOT → identical run with private disk TMPDIR,1785 passed; failed log retained |
+|602 localhost test environment | sandbox denied socket creation → unchanged guarded host-scope war check; no product or assertion change |
 |566 earlier layout setup | hidden first row/absent UTF-8 metadata → visible-row wait/Main initialization and real-app UTF-8; same data/behavior checks |
 
 All failed sources/logs and private receipts remain under `.local/status160`;
 none is counted as a passing run. Whole-run failures99/100 and the old unbound
 fixture failure are preserved beside their reviewed corrections.
 
+
+Combined main integration was audited under597: all31 released159 runtime/test
+files match maina1a8 byte for byte, and the only four frontend imports are the
+StrikeActivityRoster and useActivityIdentityRefresh source/test pairs. All43
+changed Python files compiled. Participation layout sources remain unchanged.
+Combined frontend:1785 passed297files26.02s; TypeScript passed; private build
+6.13s, index-x4Dw9kB7.js, SHA256 02ee2c7c0ecff7b777effaf516dda812848fed82644481629149eb7944cd029c.
+The first combined run hit EDQUOT in /tmp (232files passed,65failed); the598
+reviewed rerun changed only TMPDIR to private disk and passed. Both logs remain.
+Archive599 is a separate maintenance job and does not change this feature.
+
 ## Remaining gates
 
-Integrate released current main in this feature worktree, inspect the combined
-delta and repeat checks affected by those source changes. Then required unchanged
-war check, final frontend checks/build provenance, clean freeze, ONE full backend
+Released159 is integrated in this feature worktree. Its changed frontend files
+are disjoint from the Participation layouts; their component fixture remains
+valid. The combined full frontend, TypeScript and private build passed. Complete
+clean freeze, ONE full backend
 with the startup network guard/empty connections/private temp directory, NEW
 exact-artifact owned boot and cleanup, final evidence/remote verification/READY.
 No source edits/exports/boot/other suite during full architecture collection.
 160 release remains separate from159 and requires its own review acceptance.
+
+
+Owner593 documentation follow-through: after integration supplied the real
+`docs/unused-code.md`, only sectionA's pending Cards decision was replaced with
+the canonical ARCHIVED, keep paragraph. Card code stays disabled and present;
+no runtime file was removed or reworded. All other backlog entries are unchanged.
+
+Required unchanged war validation under602 passed:213 backend tests,1 skip
+in25.82s;35 frontend tests across8files; TypeScript, diff check and private
+Vite build passed. Failed sandbox run131passed/7failed is retained separately.
