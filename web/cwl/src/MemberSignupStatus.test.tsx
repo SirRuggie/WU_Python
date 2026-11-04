@@ -117,7 +117,7 @@ it("shows a red action card without remaining account names only while signups a
 
 it("reassures two of five and offers the remaining accounts in a separate card", async () => {
   const callbacks = await render();
-  expect(host.textContent).toContain("✓ You're signed up · 2 of 5 accounts");
+  expect(host.textContent).toContain("✓ You are signed up · 2 of 5 accounts");
   expect(host.textContent).toContain("Aurora · Main CWL");
   expect(host.textContent).toContain("Ace · Lazy CWL");
   expect(host.querySelector(".member-signup-remaining")?.textContent).toContain(
@@ -160,7 +160,7 @@ it("closed and hidden remain reassuring, all signed counts correctly, empty neve
   expect(host.textContent).toContain("all 1 account");
   expect(host.querySelector(".member-signup-remaining")).toBeNull();
   await render({ signups: [], accounts: accounts.slice(0, 3) });
-  expect(host.textContent).toContain("You haven't signed up any accounts yet.");
+  expect(host.textContent).toContain("You have not signed up any accounts yet.");
   expect(host.querySelector(".member-signup-success")).toBeNull();
   expect(host.querySelector(".member-signup-remaining")).toBeNull();
   expect(host.querySelector(".member-signup-empty")?.textContent).toContain(
@@ -175,7 +175,7 @@ it("partly placed lists only waiting names and does not invent totals when links
   expect(host.textContent).toContain("Waiting for a clan");
   expect(host.querySelector("ul")?.textContent).toBe("Ace · Lazy CWL");
   await render({ accounts: null });
-  expect(host.textContent).toContain("You're signed up · 2 accounts");
+  expect(host.textContent).toContain("You are signed up · 2 accounts");
   expect(host.textContent).not.toContain("not signed up");
 });
 it("local dates, minute-only countdown, late and null guidance", async () => {
@@ -195,7 +195,7 @@ it("local dates, minute-only countdown, late and null guidance", async () => {
   ).toContain("in 18 h");
   expect(
     memberDateLines(closed, false, Date.parse("2026-11-01T00:00:00Z")),
-  ).toEqual(["Clans are not ready yet. Check back soon."]);
+  ).toEqual(["Clans are not ready yet. Try again later."]);
   expect(
     memberDateLines({ ...season, placements_by: null }, false, now),
   ).toEqual([]);
@@ -294,7 +294,7 @@ it("keeps saved-view status and links without repeating the editable account lis
   await render({ savedView: true });
   expect(
     host.querySelector(".member-signup-success h2")?.textContent,
-  ).toContain("You're signed up");
+  ).toContain("You are signed up");
   expect(host.querySelectorAll(".member-signup-success li")).toHaveLength(0);
   await render({ savedView: false });
   expect(host.querySelectorAll(".member-signup-success li")).toHaveLength(
@@ -307,5 +307,5 @@ it("leaves the saved-page closed label to the season line while retaining the pl
   expect(
     host.querySelector(".member-signup-summary")?.textContent,
   ).not.toContain("Signups closed");
-  expect(host.textContent).toContain("You'll see your clan by");
+  expect(host.textContent).toContain("You will see your clan by");
 });

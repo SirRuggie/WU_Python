@@ -139,7 +139,7 @@ it("uncertain edits use explicit same-message confirmation", async () => {
   await render();
   await act(async () => button("Retry the edit with version 2").click());
   expect(host.textContent).toContain(
-    "Retry the edit on the same message with version 2? This won't create a new message.",
+    "Retry the edit on the same message with version 2? This will not create a new message.",
   );
   expect(writes()).toHaveLength(0);
   await act(async () => button("Confirm").click());
@@ -259,8 +259,8 @@ it.each(["post", "update"])(
     expect(writes()).toHaveLength(0);
     expect(host.textContent).toContain(
       operation === "post"
-        ? "won't change anything in Discord"
-        : "Edit the existing message to say Old Clan is no longer hosting? This won't create a new message.",
+        ? "does not change anything in Discord"
+        : "Edit the existing message to say Old Clan is no longer hosting? This will not create a new message.",
     );
     await act(async () => button("Cancel").click());
     expect(writes()).toHaveLength(0);

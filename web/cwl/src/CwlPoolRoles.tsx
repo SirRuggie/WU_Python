@@ -336,7 +336,7 @@ export default function CwlPoolRoles({
               {row.role_id &&
                 data.saved_roles?.[row.pool]?.allowed === false && (
                   <p role="status">
-                    Saved role is no longer eligible. Choose another role or
+                    Saved role is no longer eligible. Select another role or
                     turn it off.
                   </p>
                 )}

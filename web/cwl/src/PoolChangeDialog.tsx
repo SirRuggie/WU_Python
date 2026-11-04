@@ -27,7 +27,7 @@ export default function PoolChangeDialog({
     <ConfirmDialog
       heading="Change CWL pool?"
       text={subject}
-      confirmLabel={`Choose ${to}`}
+      confirmLabel={`Select ${to}`}
       disabled={disabled}
       onCancel={onCancel}
       onConfirm={onConfirm}
@@ -52,7 +52,7 @@ export default function PoolChangeDialog({
         </p>
         {rows.some((row) => row.has_staff_placement) && (
           <p className="pool-change-warning">
-            Saving removes your clan placement and notifies staff.
+            If you save, your clan placement is removed. Staff get a message.
           </p>
         )}
         <p className="pool-change-save-note">

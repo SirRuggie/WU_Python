@@ -11,7 +11,7 @@ def test_deadline_change_shows_which_dependent_reminders_move():
     after["signup_deadline"] = {"day": 27, "hour": 17, "minute": 0}
     summary = change_summary(before, after, "2026-10")
     assert "Signup deadline:" in summary
-    assert "Sign-up reminder 5** timing: <t:" in summary
+    assert "Signup reminder 5** timing: <t:" in summary
     assert "Signups open** timing" not in summary
 
 

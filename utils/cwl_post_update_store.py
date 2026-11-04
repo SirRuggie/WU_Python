@@ -137,7 +137,7 @@ class PostUpdateStore:
         if not isinstance(nonce, str) or not re.fullmatch(r"[a-f0-9]{32}", nonce):
             raise ValueError("Invalid post-update review identity")
         if pool not in ("main", "lazy") or type(future_months) is not bool:
-            raise ValueError("Choose Main or Lazy and which months")
+            raise ValueError("Select Main or Lazy and which months")
         if (
             type(guild_id) is not int
             or guild_id < 1
@@ -148,7 +148,7 @@ class PostUpdateStore:
         if not isinstance(cycle, str) or not re.fullmatch(
             r"[0-9]{4}-(0[1-9]|1[0-2])", cycle
         ):
-            raise ValueError("Choose the month")
+            raise ValueError("Select the month")
         if (
             not re.fullmatch(r"[0-9]{1,18}", str(season_id))
             or not isinstance(generation, str)
@@ -175,7 +175,7 @@ class PostUpdateStore:
             or len(candidate["buttons"]) > 5
             or len(json.dumps(candidate)) > 20000
         ):
-            raise ValueError("Choose up to five link buttons")
+            raise ValueError("Select up to five link buttons")
         key = f"cwl:post-update:{guild_id}:{user_id}:{nonce}"
         payload = {
             "season_id": str(season_id),
@@ -352,7 +352,7 @@ class PostUpdateStore:
         if future_months is None:
             future_months = row["future_months"]
         if type(future_months) is not bool:
-            raise ValueError("Choose whether to use the copy for future months")
+            raise ValueError("Select whether to use the copy for future months")
         if row["status"] in ("pending_update", "updating", "done", "uncertain"):
             return row
         if row.get("has_changes") is False:

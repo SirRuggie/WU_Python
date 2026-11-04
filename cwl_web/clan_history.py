@@ -64,7 +64,7 @@ def reminder_snapshot(clan):
 async def history(request):
     await require_manage(request, 'clans')
     try:page = max(0, min(10000, int(request.query.get('page', '0'))))
-    except ValueError:raise web.HTTPBadRequest(text='Choose a valid history page.') from None
+    except ValueError:raise web.HTTPBadRequest(text="Select a valid history page.") from None
     query = {'guild_id': GUILD_ID}
     term = request.query.get('q', '').strip()[:100]
     if term:query['$or'] = [{key:{'$regex':re.escape(term),'$options':'i'}} for key in ('clan.name','clan.tag')]
@@ -72,7 +72,7 @@ async def history(request):
              'reminders': 'reminders', 'added': 'add', 'restored': 'restore'}
     kind = request.query.get('kind', 'all')
     if kind not in ('all', *kinds):
-        raise web.HTTPBadRequest(text='Choose a valid change type.')
+        raise web.HTTPBadRequest(text="Select a valid change type.")
     if kind in kinds:
         query['action'] = kinds[kind]
     async with mongo(request) as db:

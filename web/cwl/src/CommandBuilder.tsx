@@ -342,7 +342,7 @@ export default function CommandBuilder({
             : type === "select"
               ? {
                   type,
-                  placeholder: "Choose an option",
+                  placeholder: "Select an option",
                   options: [
                     {
                       label: "Option 1",
@@ -441,7 +441,7 @@ export default function CommandBuilder({
                 });
               }}
             >
-              <option value="">Choose a block</option>
+              <option value="">Select a block</option>
               {blocks.map((block, index) => (
                 <option key={ids[index]} value={ids[index]}>
                   {index + 1}. {block.name || titles[block.type]}

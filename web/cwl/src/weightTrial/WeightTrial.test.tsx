@@ -638,7 +638,7 @@ it("edits departed war players, defaults newest, switches wars and copies select
   });
   const departed = host.querySelector('[data-player="#J2Y"]')!;
   expect(departed.textContent).toContain(
-    "Town Hall unavailable · choose storages",
+    "Town Hall unavailable · select storages",
   );
   const storages = departed.querySelector<HTMLSelectElement>("select")!;
   expect(storages.value).toBe("");

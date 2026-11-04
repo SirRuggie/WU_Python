@@ -62,7 +62,7 @@ async def send_occurrence(store, bot, config, war, event, owners):
         # Discord might already have accepted the request; do not retry a ping.
         await store.finish_delivery(
             key, status='uncertain', urls=urls,
-            detail='Delivery interrupted. Check the channel; this occurrence will not be resent.',
+            detail="The delivery stopped. Check the channel. The bot will not send this reminder again.",
         )
         raise
 
@@ -100,7 +100,7 @@ async def scan_clan(db, client, bot, links, config):
         _log.warning('War reminder check failed for %s: %s', clan_tag, type(exc).__name__)
         await store.record_status(
             clan_tag, checked_at=datetime.now(timezone.utc), error=type(exc).__name__,
-            detail='Could not check or deliver reminders. Check war-log visibility, link services, and channel permissions.',
+            detail="The bot could not check or send the reminders. Check these things: the war log is public, the account link service works, and the bot can use the channel.",
         )
 
 

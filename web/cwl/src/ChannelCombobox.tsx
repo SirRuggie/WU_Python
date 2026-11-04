@@ -142,10 +142,10 @@ export default function ChannelCombobox({
       </div>
       <small id={hintId} className="channel-picker-hint">
         {onResolve
-          ? "Search active forum posts and channels, or paste a post ID and choose Look up. "
+          ? "Search active forum posts and channels, or paste a post ID and select Look up. "
           : "Type part of a channel name or ID. "}
         <span className="channel-keyboard-hint">
-          Use arrow keys and Enter to choose; Escape closes results.
+          Use arrow keys and Enter to select. Escape closes the results.
         </span>
       </small>
       {open && !disabled && (

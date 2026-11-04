@@ -26,7 +26,7 @@ export default function SignupDateField({label, value, cycle, timezone, deadline
         onChange({...(deadline ? {} : {mode: 'specific'}), at: event.target.value})}/>
     </label>}
     <p className="small">{manual
-      ? 'The opening announcement is sent manually. Turn on scheduling to choose its date.'
+      ? 'The opening announcement is sent manually. Turn on scheduling to select its date.'
       : rule.month_end_offset_days !== undefined
         ? `Currently repeats ${rule.month_end_offset_days} days before the end of each month. Choosing a date changes this to the same day each month.`
         : 'Repeats on this day each month. Times use the schedule timezone.'}</p>

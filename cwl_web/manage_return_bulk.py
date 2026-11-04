@@ -38,7 +38,7 @@ async def page(request):
         items=eligible(await available(db),operation)
         channels=await destinations.load(db)
     revision=fingerprint({'items':items,'channels':channels})
-    fields=[dict(key='clans',label='Choose clans',type='multiselect',value=[],required=True,options=[dict(value=key,label=f"{item['name']} · {item['section']}") for key,item in sorted(items.items(),key=lambda pair:pair[1]['name'].casefold())])]
+    fields=[dict(key='clans',label="Select clans",type='multiselect',value=[],required=True,options=[dict(value=key,label=f"{item['name']} · {item['section']}") for key,item in sorted(items.items(),key=lambda pair:pair[1]['name'].casefold())])]
     if operation in ('start','resume'):
         fields.append(dict(key='every_minutes',label='Reminder interval',type='select',value='60',options=[dict(value='30',label='Every 30 minutes'),dict(value='60',label='Every hour'),dict(value='120',label='Every 2 hours')]))
     effective=destinations.channels(channels)
@@ -70,8 +70,8 @@ async def run(request):
     rid=request_id(body); values=body['values']; selected=values.get('clans')
     if set(values)-{'clans','every_minutes','schedule_start','schedule_end'} or not isinstance(selected,list) or not 1<=len(selected)<=50 or any(not isinstance(x,str) for x in selected) or len(set(selected))!=len(selected):raise web.HTTPBadRequest(text='Select between 1 and 50 different clans.')
     try:minutes=int(values.get('every_minutes',60))
-    except (TypeError,ValueError):raise web.HTTPBadRequest(text='Choose a reminder interval.') from None
-    if minutes not in (30,60,120):raise web.HTTPBadRequest(text='Choose 30 minutes, 1 hour, or 2 hours.')
+    except (TypeError,ValueError):raise web.HTTPBadRequest(text="Select a reminder interval.") from None
+    if minutes not in (30,60,120):raise web.HTTPBadRequest(text="Select 30 minutes, 1 hour, or 2 hours.")
     async with shared.mongo(request) as db:
         # Return an existing receipt before comparing new live state: network retries
         # after completed mutations must not fail merely because those mutations worked.

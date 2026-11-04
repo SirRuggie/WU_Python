@@ -10,7 +10,7 @@ describe('Tasks failure presentation', () => {
     expect(html.match(/9 accounts failed/g)).toHaveLength(1)
     expect(html.match(/33 accounts missing/g)).toHaveLength(1)
     expect(html).toContain('<details><summary>Check details</summary>')
-    expect(html).toContain('Couldn’t load this activity')
+    expect(html).toContain('Could not load this activity')
     expect(html).not.toContain('logs are private')
   })
   it('keeps partial results and loading distinct from a successful empty result', () => {

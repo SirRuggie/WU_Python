@@ -436,7 +436,7 @@ export default function PublicationWorkspace({
           heading="Hide roster from members?"
           confirmLabel="Hide roster"
           danger
-          text="Members will see no assignments until you publish again. The working roster and signups are kept. Discord messages already sent stay as they are. Publishing again creates the next version."
+          text="Members will not see assignments until you publish again. The working roster and signups stay saved. Discord messages that you already sent do not change. When you publish again, the dashboard makes the next version."
           onCancel={() => setHideTarget(null)}
           onConfirm={() => void withdraw()}
           disabled={locked || loading || !!error || !canManage}

@@ -103,8 +103,7 @@ export default function BandStatusSummary({
           field.key === 'task' && display(field.value) === 'Status unavailable',
       ) && (
         <p className="small">
-          Last successful checks and recorded problems are historical. Check status
-          for current bot information.
+          The last good checks and the saved problems show past results. Select Check status to see the bot now.
         </p>
       )}
       {details.length > 0 && (

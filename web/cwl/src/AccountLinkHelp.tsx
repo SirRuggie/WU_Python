@@ -15,9 +15,7 @@ export default function AccountLinkHelp({
           <code>/link create</code> command.
         </li>
         <li>
-          Choose your player tag and follow the bot’s instructions. If
-          verification is requested, find your API token in Clash of Clans under
-          Settings → More Settings.
+          Enter your player tag. Follow the instructions from the bot. If the bot asks for verification, find your API token in Clash of Clans under Settings → More Settings.
         </li>
         <li>
           Return here and check your linked accounts. New links may take a

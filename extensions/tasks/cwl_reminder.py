@@ -956,7 +956,7 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
         item = loaded["campaign"]["messages"][message_id]["variants"][variant]
         channel_id = int(item["destination_channel_id"])
         if not await _campaign_channel_belongs_to_guild(channel_id, guild_id):
-            raise ValueError("Configured destination is outside the campaign guild")
+            raise ValueError("The configured channel is outside this Discord server")
         components = await cwl_campaign.render_message(
             {"campaign": loaded["campaign"], "deadline": loaded["deadline"]},
             message_id, variant, preview=False,
@@ -1181,7 +1181,7 @@ async def _deliver_campaign_message(
                 channel_id, guild_id
             ):
                 raise ValueError(
-                    "Configured destination is outside the campaign guild"
+                    "The configured channel is outside this Discord server"
                 )
             components = await cwl_campaign.render_message(
                 {"campaign": campaign, "deadline": loaded["deadline"]},
@@ -2939,8 +2939,7 @@ async def _legacy_campaign_guard(ctx, mongo) -> bool:
         return True
     if LEGACY_RUNTIME_DISABLED:
         await ctx.respond(
-            "Legacy CWL controls are retired. Use `/manage section:CWL` to edit, preview, "
-            "schedule, pause, or send CWL announcements.",
+            "The old CWL commands do not work now. Use `/manage section:CWL` to edit, preview, schedule, pause, or send CWL announcements.",
             ephemeral=True,
         )
         return True
@@ -2962,8 +2961,7 @@ async def _legacy_campaign_guard(ctx, mongo) -> bool:
     schedule = await mongo.cwl_reminder.find_one({"_id": "schedule"}) or {}
     if schedule.get("campaign_managed"):
         await ctx.respond(
-            "CWL is now managed in `/manage section:CWL`. Open it to edit messages, change timing, "
-            "pause delivery, or preview without sending a test ping.",
+            "Use `/manage section:CWL` to manage CWL. There you can edit messages, change the times, pause delivery, or preview a message. A preview does not send a test ping.",
             ephemeral=True,
         )
         return True

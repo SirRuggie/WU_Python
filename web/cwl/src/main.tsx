@@ -24,7 +24,7 @@ window.addEventListener('dashboard-issue', ((event: CustomEvent<string>) => {
     notice.setAttribute('role', 'alert')
     document.body.prepend(notice)
   }
-  notice.textContent = `A browser problem was reported. Contact staff with reference: ${event.detail}`
+  notice.textContent = `The browser reported a problem. Tell staff this reference: ${event.detail}`
 }) as EventListener)
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>)

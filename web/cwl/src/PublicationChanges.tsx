@@ -61,7 +61,7 @@ export default function PublicationChanges({
           setError(
             cause instanceof Error
               ? cause.message
-              : "Couldn't load placement changes.",
+              : "Could not load placement changes.",
           );
         }
       });

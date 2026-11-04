@@ -23,7 +23,7 @@ export function finalizeStatus(draft: PublicationDraft): string {
   if (draft.last_publication?.withdrawn_at) {
     return hiddenPublicationStatus(draft.last_publication);
   }
-  return "Draft · members can't see placements yet";
+  return "Draft · members cannot see placements yet";
 }
 
 export function capacityWarnings(draft: PublicationDraft) {

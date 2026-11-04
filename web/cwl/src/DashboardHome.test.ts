@@ -12,9 +12,9 @@ describe('Home next step', () => {
 
   it('reassures partially signed members with the same counts as assignments', () => {
     expect(homeNextStep(true, season(true), 3, 2)).toMatchObject({
-      title: "✓ You're signed up · 1 of 3 accounts",
+      title: "✓ You are signed up · 1 of 3 accounts",
       destination: 'assignments',
-      detail: "We've got your signup. Your clan will show here once staff finish the roster.",
+      detail: "Your signup is saved. Your clan appears here after staff finish the roster.",
     })
   })
 

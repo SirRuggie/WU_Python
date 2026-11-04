@@ -58,7 +58,7 @@ export default function CompareFilterPanel({
       }
     >
       <div className="roster-filters-fields">
-        <p>Filters hide players; clan totals include everyone.</p>
+        <p>Filters hide players. Clan totals include everyone.</p>
         <RosterFilterOptions
           title="CWL league"
           options={options.leagues}

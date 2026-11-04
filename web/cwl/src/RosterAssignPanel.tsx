@@ -174,7 +174,7 @@ export default function RosterAssignPanel({
         {pool === null && selectedAccounts.length > 0 && (
           <p className="roster-assign-warning">
             Main and Lazy accounts are selected together. Unassign is available;
-            choose one pool to assign a clan.
+            select one pool to assign a clan.
           </p>
         )}
         {(pool !== null || canUnassign) && (

@@ -114,7 +114,7 @@ export default function StrikeReviewResolution({
       aria-label="Quarantined war review"
     >
       <h3>Staff review required</h3>
-      <p>{reason || "This unresolved war is holding newer streak credit."}</p>
+      <p>{reason || "This war is not resolved. It stops the newer streak credit."}</p>
       {error && <p role="alert">{error}</p>}
       {canManage &&
         (!open ? (
@@ -132,8 +132,7 @@ export default function StrikeReviewResolution({
               />
             </label>
             <p className="small">
-              Resolving releases the streak hold. It does not add a missing
-              strike.
+              Resolve this war to release the streak hold. This does not add a missing strike.
             </p>
             {conflict ? (
               <button disabled={busy} onClick={() => void refresh()}>

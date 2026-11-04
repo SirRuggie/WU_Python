@@ -302,7 +302,7 @@ async def _snapshot(app, user_id, progress=None):
         return result
     except Exception:
         if progress is not None:
-            progress.update(error='Tasks could not be updated. Please try again.', expires=time.monotonic() + 5)
+            progress.update(error="Tasks could not be updated. Try again.", expires=time.monotonic() + 5)
         raise
     finally:
         if progress is not None:

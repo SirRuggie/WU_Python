@@ -40,7 +40,7 @@ def test_signup_entry_upgrades_existing_templates_without_mutating_custom_conten
             for variant in message['variants'].values():
                 assert variant['buttons'] == [{'label': 'Sign up for CWL', 'url': cwl_campaign.SIGNUP_URL}, {'label': 'Check my signups', 'custom_id': cwl_campaign.SIGNUP_CHECK_ID}]
     assert 'two signup forms' not in upgraded['messages']['signup']['variants']['main']['body']
-    assert upgraded['messages']['reminder:1']['variants']['lazy']['body'] == 'Family-specific instructions\n\n' + cwl_campaign.SIGNUP_CHECK_LINE
+    assert upgraded['messages']['reminder:1']['variants']['lazy']['body'] == 'Family-specific instructions\n\n' + cwl_campaign.CURRENT_SIGNUP_CHECK_LINE
     assert upgraded['messages']['roster'] == original['messages']['roster']
     assert upgraded['messages']['signup']['schedule'] == original['messages']['signup']['schedule']
     assert cwl_campaign.normalize_signup_entry(upgraded) == upgraded
@@ -83,14 +83,17 @@ def test_signup_help_footer_covers_both_pools_and_all_reminders_only(new_copy):
     import asyncio
     campaign = cwl_campaign.default_campaign(new_copy=new_copy)
     original = deepcopy(campaign)
+    help_line = cwl_campaign.CURRENT_SIGNUP_HELP_LINE if new_copy else cwl_campaign.SIGNUP_HELP_LINE
+    check_line = cwl_campaign.CURRENT_SIGNUP_CHECK_LINE if new_copy else cwl_campaign.SIGNUP_CHECK_LINE
+    short_line = cwl_campaign.CURRENT_SHORT_SIGNUP_CHECK_LINE if new_copy else cwl_campaign.SHORT_SIGNUP_CHECK_LINE
     for key, message in campaign['messages'].items():
         for pool in message['variants']:
             built = asyncio.run(cwl_campaign.render_message(campaign, key, pool, preview=False))[0].build()[0]
             children = built['components']
             signup = key == 'signup' or key.startswith('reminder:')
-            assert str(built).count(cwl_campaign.SIGNUP_HELP_LINE) == int(signup)
+            assert str(built).count(help_line) == int(signup)
             if signup:
-                assert children[-1]['content'] == cwl_campaign.SIGNUP_HELP_LINE
+                assert children[-1]['content'] == help_line
                 assert children[-2]['type'] == 14
                 assert children[-2]['divider'] is True
                 assert children[-3]['type'] == 1
@@ -98,8 +101,8 @@ def test_signup_help_footer_covers_both_pools_and_all_reminders_only(new_copy):
                 assert children[-3]['components'][0]['url'] == cwl_campaign.SIGNUP_URL
                 assert children[-3]['components'][1]['custom_id'] == cwl_campaign.SIGNUP_CHECK_ID
                 short_default = new_copy and key.startswith("reminder:")
-                assert str(built).count(cwl_campaign.SIGNUP_CHECK_LINE) == int(not short_default)
+                assert str(built).count(check_line) == int(not short_default)
                 if short_default:
-                    assert str(built).count(cwl_campaign.SHORT_SIGNUP_CHECK_LINE) == 1
+                    assert str(built).count(short_line) == 1
             assert 'cwl signup' not in str(built)
     assert campaign == original

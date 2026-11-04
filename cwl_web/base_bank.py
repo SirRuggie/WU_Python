@@ -15,7 +15,7 @@ async def read(request):
     if set(request.query) - {"level"} or (
         level is not None and level not in FWA_TH_LEVELS
     ):
-        raise web.HTTPBadRequest(text="Choose an available base level")
+        raise web.HTTPBadRequest(text="Select an available base level")
     cache = request.app.get("base_bank_cache")
     if cache is None or time.monotonic() >= cache[0]:
         try:
@@ -24,7 +24,7 @@ async def read(request):
                     rows, details = await read_base_bank(client)
         except TimeoutError:
             raise web.HTTPServiceUnavailable(
-                text="Base bank is unavailable. Try again shortly."
+                text="Base bank is unavailable. Try again later."
             )
         cache = (time.monotonic() + 30, rows, details)
         request.app["base_bank_cache"] = cache

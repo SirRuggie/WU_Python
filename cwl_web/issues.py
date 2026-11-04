@@ -49,7 +49,7 @@ async def diagnostics(request, handler):
         raise
     except Exception as exc:
         reference = await record(request, 'server_error', 500, error_type=type(exc).__name__)
-        return web.json_response({'error': 'Something went wrong. Please contact staff before retrying a send.',
+        return web.json_response({'error': "Something went wrong. Tell staff before you send again.",
                                   'issue_reference': reference}, status=500,
                                  headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
     # Expected session probes and routine validation are not incidents.
@@ -113,7 +113,7 @@ async def browser_report(request):
         if now - stamp > 60:
             del limits[key]
     if member in limits or len(limits) >= 1000:
-        raise web.HTTPTooManyRequests(text='Report already received. Please contact staff.')
+        raise web.HTTPTooManyRequests(text="We already have this report. Tell staff.")
     limits[member] = now
     reference = await record(request, kind, 0)
     return web.json_response({'reference': reference})

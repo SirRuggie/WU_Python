@@ -198,8 +198,8 @@ it("a late settings reload cannot replace a newer response", async () => {
     () => new Promise((resolve) => pending.push(resolve)),
   );
   await act(async () => {
-    button("Reload latest settings").click();
-    button("Reload latest settings").click();
+    button("Refresh latest settings").click();
+    button("Refresh latest settings").click();
   });
   expect(pending).toHaveLength(2);
   await act(async () =>

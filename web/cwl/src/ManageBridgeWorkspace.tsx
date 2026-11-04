@@ -306,7 +306,7 @@ export default function ManageBridgeWorkspace({
     ) {
       setNotice({
         kind: "error",
-        text: "Choose a CWL month in YYYY-MM format.",
+        text: "Select a CWL month in YYYY-MM format.",
       });
       return;
     }
@@ -324,7 +324,7 @@ export default function ManageBridgeWorkspace({
         await load(true);
         setNotice({
           kind: "success",
-          text: `Season bound to Manage CWL settings ${cycleInput}. Review both messages before sending.`,
+          text: `This season now uses the Manage CWL settings for ${cycleInput}. Review both messages before you send.`,
         });
       }
     } catch (error) {
@@ -353,7 +353,7 @@ export default function ManageBridgeWorkspace({
     ) {
       setNotice({
         kind: "error",
-        text: "Choose a current Discord guild channel.",
+        text: "Select a current Discord guild channel.",
       });
       return;
     }
@@ -583,7 +583,7 @@ export default function ManageBridgeWorkspace({
       aria-label="Announcements"
     >
       <p className="announcement-muted">
-        Sending posts to Discord and pings the listed roles. Publishing doesn't
+        Sending posts to Discord and pings the listed roles. Publishing does not
         send anything.
       </p>
       <header className="announcement-toolbar">
@@ -901,8 +901,8 @@ export default function ManageBridgeWorkspace({
               )}
               {draftGeneration !== bridge.generation && (
                 <p className="notice error">
-                  Settings changed elsewhere. Copy your edits, then refresh and
-                  review.
+                  Someone else changed the settings. Copy your changes. Then
+                  refresh and make them again.
                 </p>
               )}
             </>
@@ -996,7 +996,7 @@ export default function ManageBridgeWorkspace({
       {confirmation && (
         <ConfirmDialog
           heading={
-            confirmation === "refresh" ? "Reload announcements" : "Send test"
+            confirmation === "refresh" ? "Refresh announcements" : "Send test"
           }
           text={
             confirmation === "refresh"

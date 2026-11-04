@@ -16,15 +16,15 @@ from .member_timezones import directory
 def body_selection(body):
     required = {"member_ids", "role_id", "operation"}
     if not isinstance(body, dict) or not required <= set(body) <= required | {"guard_role_ids"}:
-        raise ValueError("Choose one role and a reviewed member selection.")
+        raise ValueError("Select one role and a reviewed member selection.")
     ids = body["member_ids"]
     if not isinstance(ids, list) or not 1 <= len(ids) <= 10000:
-        raise ValueError("Choose between 1 and 10000 people.")
+        raise ValueError("Select between 1 and 10000 people.")
     normalized = [member_id(uid) for uid in ids]
     if normalized != ids or len(set(normalized)) != len(normalized):
-        raise ValueError("Choose each person once using their full Discord ID.")
+        raise ValueError("Select each person once using their full Discord ID.")
     if body["operation"] not in ("add", "remove"):
-        raise ValueError("Choose Add role or Remove role.")
+        raise ValueError("Select Add role or Remove role.")
     role = member_id(body["role_id"])
     if "guard_role_ids" in body:
         guard = body["guard_role_ids"]
@@ -155,13 +155,13 @@ async def confirm(request):
     try:
         body = await request.json()
     except (ValueError, TypeError):
-        raise web.HTTPBadRequest(text="Choose a reviewed role change.") from None
+        raise web.HTTPBadRequest(text="Select a reviewed role change.") from None
     if (
         not isinstance(body, dict)
         or set(body) != {"token", "selected", "protected_confirmed"}
         or type(body["protected_confirmed"]) is not bool
     ):
-        raise web.HTTPBadRequest(text="Choose a reviewed role change.")
+        raise web.HTTPBadRequest(text="Select a reviewed role change.")
     async with mongo(request) as db:
         heartbeat = await db.bot_config.find_one({"_id": WORKER_ID}) or {}
         if time.time() - heartbeat.get("checked_at", 0) > 60:

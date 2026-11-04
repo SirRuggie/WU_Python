@@ -272,7 +272,7 @@ export default function RosterBalance({
             <p>
               {automatic
                 ? "Place unplaced accounts using the current clan rules."
-                : `${tags.length} selected · Choose at least 2 hosting clans.`}
+                : `${tags.length} selected · Select at least 2 hosting clans.`}
             </p>
             {!!hiddenTags.length && (
               <details>
@@ -292,7 +292,7 @@ export default function RosterBalance({
             )}
             {automatic && pool === "all" && (
               <fieldset disabled={busy}>
-                <legend>Choose a pool</legend>
+                <legend>Select a pool</legend>
                 <div className="roster-plan-pools">
                   {(["main", "lazy"] as const).map((p) => (
                     <Button

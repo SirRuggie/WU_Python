@@ -344,7 +344,7 @@ export default function StaffSignupControls({
         >
           <div className="staff-signup-form">
             <div className="section-heading">
-              <h3>Choose how to add</h3>
+              <h3>Select how to add</h3>
               <Button
                 icon={X}
                 disabled={working}
@@ -398,7 +398,7 @@ export default function StaffSignupControls({
               />
             ) : (
               <>
-                <p>Choose a member and their linked accounts.</p>
+                <p>Select a member and their linked accounts.</p>
                 <fieldset disabled={busy || disabled}>
                   <MemberPicker
                     label="Member for signup"
@@ -428,7 +428,7 @@ export default function StaffSignupControls({
                         disabled={busy || disabled}
                         onValueChange={(value) => setPool(value as Pool | "")}
                         options={[
-                          { value: "", label: "Choose Main or Lazy" },
+                          { value: "", label: "Select Main or Lazy" },
                           { value: "main", label: "Main CWL" },
                           { value: "lazy", label: "Lazy CWL" },
                         ]}
@@ -440,7 +440,7 @@ export default function StaffSignupControls({
                           disabled={loading || busy}
                           onClick={() => setReload((value) => value + 1)}
                         >
-                          Reload accounts
+                          Refresh accounts
                         </Button>
                       </div>
                       {loading ? (
@@ -448,7 +448,7 @@ export default function StaffSignupControls({
                       ) : !accounts.length ? (
                         <p>
                           {error
-                            ? "Could not load accounts. Select Reload accounts to try again."
+                            ? "Could not load accounts. Select Refresh accounts to try again."
                             : "No linked accounts. Ask this member to use /link in Discord, then reload accounts."}
                         </p>
                       ) : (

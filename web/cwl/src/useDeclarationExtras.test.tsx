@@ -57,7 +57,7 @@ it("ignores old source replies and clears prior data after an unavailable read",
   expect(host.textContent).toBe("2");
   mock.api.mockRejectedValue(new Error("fixture failure"));
   await act(async () => current.refresh());
-  expect(host.textContent).toBe("Couldn't check clan members");
+  expect(host.textContent).toBe("Could not check clan members");
   expect(current.data).toBeUndefined();
 });
 

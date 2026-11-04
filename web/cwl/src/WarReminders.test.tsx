@@ -78,7 +78,7 @@ it("retains hidden drafts without polling", async () => {
 it("keeps conflicted drafts until explicitly discarded", async () => {
   await render(true);
   edit();
-  vi.mocked(api).mockRejectedValueOnce(new Error("Settings changed. Reload."));
+  vi.mocked(api).mockRejectedValueOnce(new Error("Settings changed. Refresh."));
   await act(async () => {
     expect(await editor!.save()).toBe(false);
   });

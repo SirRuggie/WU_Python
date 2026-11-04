@@ -99,7 +99,7 @@ it("keeps the section order and saves a lock immediately without closing", async
   await render();
   expect(
     Array.from(document.querySelectorAll("h3")).map((n) => n.textContent),
-  ).toEqual(["At a glance", "Placement", "Weight", "Signup", "Danger area"]);
+  ).toEqual(["Summary", "Placement", "Weight", "Signup", "Danger area"]);
   expect(save).not.toHaveBeenCalled();
   await act(async () =>
     document.querySelector<HTMLInputElement>(".details-lock input")!.click(),
@@ -205,7 +205,7 @@ it.each([
 it("signup-only staff can edit Signup, but cannot edit placements or weights", async () => {
   await render({}, ["cwl_signups"]);
   expect(document.body.textContent).toContain(
-    "View only · you don't have roster editing access",
+    "View only · you do not have roster editing access",
   );
   expect(document.querySelector('section[aria-label="Signup"]')).not.toBeNull();
   expect(document.querySelector('section[aria-label="Placement"]')).toBeNull();
@@ -218,7 +218,7 @@ it("staff without roster or signup access see no editing actions", async () => {
     document.querySelector('section[aria-label="Danger area"]'),
   ).toBeNull();
   expect(document.body.textContent).toContain(
-    "View only · you don't have roster editing access",
+    "View only · you do not have roster editing access",
   );
 });
 
@@ -396,11 +396,11 @@ it("a weight conflict preserves typed text and Clear waits for Save", async () =
     )!.set!.call(input, "179k");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  save.mockRejectedValueOnce(new Error("Changed by someone else · Reload"));
+  save.mockRejectedValueOnce(new Error("Changed by someone else · Refresh"));
   await click("Save");
   expect(input.value).toBe("179k");
   expect(document.body.textContent).toContain(
-    "Changed by someone else · Reload",
+    "Changed by someone else · Refresh",
   );
   await click("Clear weight");
   expect(input.value).toBe("");
@@ -416,7 +416,7 @@ it("a weight conflict preserves typed text and Clear waits for Save", async () =
 it("opens a historical fractional-thousand weight clean and closes without a discard prompt", async () => {
   await render({ effective_weight: 151500 });
   expect(document.body.textContent).toContain(
-    "Saved value isn't a whole thousand. Enter a new one to change it.",
+    "Saved value is not a whole thousand. Enter a new one to change it.",
   );
   expect(
     document.querySelector<HTMLInputElement>(

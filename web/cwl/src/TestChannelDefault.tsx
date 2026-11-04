@@ -26,7 +26,7 @@ export default function TestChannelDefault({
         <p role="alert">
           Saved test channel unavailable: {error}{" "}
           <button disabled={disabled} onClick={onReload}>
-            Reload saved channel
+            Refresh saved channel
           </button>
         </p>
       )}

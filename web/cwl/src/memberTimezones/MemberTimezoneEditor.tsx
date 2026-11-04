@@ -78,7 +78,7 @@ export default function MemberTimezoneEditor({
         }
         if (!result.complete)
           setWarning(
-            "Some linked accounts are unavailable. Choose a loaded account or type a name; no highest Town Hall was assumed.",
+            "Some linked accounts are unavailable. Select a loaded account or type a name; no highest Town Hall was assumed.",
           );
       })
       .catch((e) => {
@@ -192,7 +192,7 @@ export default function MemberTimezoneEditor({
         <div role="alert">
           {error}
           <button disabled={busy} onClick={() => void reloadBase()}>
-            Reload latest and keep draft
+            Refresh latest and keep draft
           </button>
         </div>
       )}
@@ -246,7 +246,7 @@ export default function MemberTimezoneEditor({
             setZone(e.target.value);
           }}
         >
-          <option value="">Choose a time zone</option>
+          <option value="">Select a time zone</option>
           {extra && (
             <option value={extra.zone_id}>
               {extra.gmt_label} · Imported offset
@@ -284,7 +284,7 @@ export default function MemberTimezoneEditor({
             );
           }}
         >
-          <option value="other">Other / choose country</option>
+          <option value="other">Other / select country</option>
           {data.countries.map((c) => (
             <option key={c.code} value={c.code}>
               {c.flag} {c.label}

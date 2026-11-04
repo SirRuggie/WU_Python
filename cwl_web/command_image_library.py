@@ -75,7 +75,7 @@ async def listing(request):
 async def update(request):
     actor=await require_manage(request,'text_commands',write=True)
     body=await request.json()
-    if not isinstance(body,dict):raise web.HTTPBadRequest(text='Choose an image.')
+    if not isinstance(body,dict):raise web.HTTPBadRequest(text="Select an image.")
     url=body.get('url');name=body.get('name');archived=body.get('archived');folder=body.get('folder')
     expected=body.get('expected')
     if expected is not None and (not isinstance(expected,dict) or set(expected)!={'name','folder','archived'} or not isinstance(expected['name'],str) or not isinstance(expected['folder'],str) or type(expected['archived']) is not bool):

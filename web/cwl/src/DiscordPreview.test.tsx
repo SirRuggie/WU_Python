@@ -11,7 +11,7 @@ describe('Discord preview content safety',()=>{
   expect(html).toContain('discord-preview-link')
  })
  it('keeps preview buttons and selectors inert even with hostile values',()=>{
-  const parts:PreviewPart[]=[{type:'row',children:[{type:'button',label:'<script>send()</script>',url:'javascript:send()',style:'primary" onclick="send()'},{type:'select',placeholder:'Choose a clan',options:[{label:'A'}]}]}]
+  const parts:PreviewPart[]=[{type:'row',children:[{type:'button',label:'<script>send()</script>',url:'javascript:send()',style:'primary" onclick="send()'},{type:'select',placeholder:'Select a clan',options:[{label:'A'}]}]}]
   const html=renderToStaticMarkup(<DiscordPreview parts={parts}/>)
   expect(html).not.toMatch(/<button|<select|<a\b|href=|<script| onclick="/)
   expect(html).toContain('&lt;script&gt;send()&lt;/script&gt;')

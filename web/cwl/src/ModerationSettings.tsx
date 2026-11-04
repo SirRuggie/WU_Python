@@ -291,12 +291,12 @@ export default function ModerationSettings({
         <div>
           <h2 id="moderation-settings-title">Log settings</h2>
           <p>
-            Choose where member and moderation notices appear. History remains
+            Select where member and moderation notices appear. History remains
             available when posting is off.
           </p>
         </div>
         <button type="button" onClick={reloadLatest} disabled={loading || busy}>
-          Reload settings
+          Refresh settings
         </button>
       </header>
 
@@ -351,7 +351,7 @@ export default function ModerationSettings({
           <div className="moderation-main-route">
             <h3>Main log channel</h3>
             <p>
-              Categories and events can use this destination unless you choose
+              Categories and events can use this destination unless you select
               an override.
             </p>
             <ModerationDestinationPicker

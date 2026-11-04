@@ -31,10 +31,10 @@ async def clan(request, store):
 
 async def channel(request, value):
     if not value:
-        raise web.HTTPBadRequest(text='Choose a channel first.')
+        raise web.HTTPBadRequest(text="Select a channel first.")
     found = await discord(request, 'GET', f'/channels/{value}')
     if str(found.get('guild_id')) != str(GUILD_ID) or found.get('type') not in (0, 5):
-        raise web.HTTPBadRequest(text='Choose a text or announcement channel in this server.')
+        raise web.HTTPBadRequest(text="Select a text or announcement channel in this server.")
 
 
 def candidate(body):
@@ -49,7 +49,7 @@ def candidate(body):
 def event_key(body):
     value = str(body.get('event', '60'))
     if value != 'start' and (not re.fullmatch(r'[0-9]{1,4}', value) or not 1 <= int(value) <= 1440):
-        raise web.HTTPBadRequest(text='Choose a reminder time to preview.')
+        raise web.HTTPBadRequest(text="Select a reminder time to preview.")
     return value
 
 
@@ -175,7 +175,7 @@ async def copy_settings(request):
         raise web.HTTPBadRequest(text=str(exc)) from None
     targets = body['targets']
     if not isinstance(targets, list) or not 1 <= len(targets) <= 100:
-        raise web.HTTPBadRequest(text='Choose between 1 and 100 clans.')
+        raise web.HTTPBadRequest(text="Select between 1 and 100 clans.")
     from .providers import tag as normalize_tag
     seen = set()
     for target in targets:
@@ -184,9 +184,9 @@ async def copy_settings(request):
         try:
             valid_tag = normalize_tag(target['tag'])
         except (ValueError, TypeError, AttributeError):
-            raise web.HTTPBadRequest(text='Choose a valid target clan.') from None
+            raise web.HTTPBadRequest(text="Select a valid target clan.") from None
         if valid_tag != target['tag'] or valid_tag in seen or valid_tag == tag(request):
-            raise web.HTTPBadRequest(text='Choose each other clan once.')
+            raise web.HTTPBadRequest(text="Select each other clan once.")
         seen.add(valid_tag)
     results = []
     async with mongo(request) as db:

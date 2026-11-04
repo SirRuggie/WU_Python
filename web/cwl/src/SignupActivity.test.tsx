@@ -216,7 +216,7 @@ it("load failure shows Retry, loading shows nothing, and hidden polling pauses",
       />,
     ),
   );
-  expect(host.textContent).toContain("Couldn't check signup changes");
+  expect(host.textContent).toContain("Could not check signup changes");
   api.mockResolvedValue({ items: [item()] });
   await click("Retry");
   expect(host.textContent).toContain("1 signup change to review");

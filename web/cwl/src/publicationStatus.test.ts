@@ -18,7 +18,7 @@ it("distinguishes never published, current, changed and hidden with the shared s
     published_at: "2026-10-27T21:10:00Z",
   } as NonNullable<PublicationDraft["published"]>;
   expect(finalizeStatus(draft)).toBe(
-    "Draft · members can't see placements yet",
+    "Draft · members cannot see placements yet",
   );
   expect(finalizeStatus({ ...draft, published })).toBe(
     `Members see roster version 4 · Published ${publicationDate(published.published_at)}`,

@@ -74,7 +74,7 @@ export default function WeightRow({
           </small>
           {row.name === row.tag && <small>Name unavailable</small>}
           {row.town_hall == null && (
-            <small>Town Hall unavailable · choose storages</small>
+            <small>Town Hall unavailable · select storages</small>
           )}
         </span>
       </div>

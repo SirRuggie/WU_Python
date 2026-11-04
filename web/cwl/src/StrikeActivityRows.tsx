@@ -186,7 +186,7 @@ export default function StrikeActivityRows({
               className="strike-activity-quiet"
               title={
                 seeded(row)
-                  ? "Last seen seeded from ClashKing"
+                  ? "Last seen: first value taken from ClashKing"
                   : "Last observed activity"
               }
             >
@@ -203,7 +203,7 @@ export default function StrikeActivityRows({
               aria-label="Activity summary"
               className="strike-activity-one-summary"
               title={
-                seeded(row) ? "~ Last seen seeded from ClashKing" : undefined
+                seeded(row) ? "~ Last seen: first value taken from ClashKing" : undefined
               }
             >
               {compactActivitySummary(row)}

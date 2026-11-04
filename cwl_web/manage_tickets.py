@@ -13,7 +13,7 @@ def validated_settings(values):
     for key,value in values.items():
         if key=='ticket_staff_viewer_role_ids':
             if not isinstance(value,list) or len(value)>25 or any(not isinstance(v,str) or not v.isdigit() for v in value):
-                raise ValueError('Choose valid viewer roles.')
+                raise ValueError("Select valid viewer roles.")
             clean[key]=list(map(int,value))
         elif key=='ticket_inactivity_minutes':
             if type(value) is not int or not 1440<=value<=525600:raise ValueError('Open-ticket wait must be 1 to 365 days in minutes.')
@@ -22,7 +22,7 @@ def validated_settings(values):
             if type(value) is not int or not 0<=value<=365:raise ValueError('Archive wait must be 0 to 365 days.')
             clean[key]=value
         else:
-            if not isinstance(value,str) or not value.isdigit() or not 15<=len(value)<=22:raise ValueError('Choose a channel or role.')
+            if not isinstance(value,str) or not value.isdigit() or not 15<=len(value)<=22:raise ValueError("Select a channel or role.")
             clean[key]=int(value)
     return clean
 
@@ -41,18 +41,18 @@ async def settings(request):
     await require_manage(request,'ticket_settings')
     async with mongo(request) as db:cfg=await db.ticket_setup.find_one({'_id':'config'}) or {}
     part=request.match_info.get('part')
-    result=dict(id='ticket_settings',label='Ticket settings',description='Choose the ticket settings to change.',group='Recruitment',revision=fingerprint(cfg),fields=[])
+    result=dict(id='ticket_settings',label='Ticket settings',description="Select the ticket settings to change.",group='Recruitment',revision=fingerprint(cfg),fields=[])
     if not part:
         result['documents']=[dict(id=key,label=label,endpoint='/manage/ticket-settings/'+key) for key,label in [('timers','Ticket wait times'),('main','Main application channels'),('fwa','FWA application channels'),('viewers','Staff viewing access'),('tools','Ticket panel tools')]]
     elif part=='timers':
         result['description']='Set when staff review inactive tickets and when resolved tickets are archived.'
         result['fields']=[field('ticket_inactivity_minutes','Open-ticket review wait (minutes)',cfg.get('ticket_inactivity_minutes',10080),'number',min=1440,max=525600,description='Staff are asked to review silent tickets. Tickets are not denied automatically.'),field('ticket_archive_quiet_days','Archive resolved tickets after quiet days',cfg.get('ticket_archive_quiet_days',1),'number',min=0,max=365,description='0 turns automatic archiving off. History is kept.')]
     elif part in ('main','fwa'):
-        result['description']='Choose application channels and the recruiter role.'
+        result['description']="Select application channels and the recruiter role."
         result['fields']=[field(f'{part}_{key}',label,str(cfg.get(f'{part}_{key}') or ''),kind) for key,label,kind in [('candidate_parent','Recruit channel','channel'),('staff_parent','Staff channel','channel'),('thread_recruiter_role','Recruiter role','role')]]
         result['warning']='The recruit channel must match the active Apply panel. Moving intake requires updating that binding first.'
     elif part=='viewers':
-        result['description']='Choose additional roles that can view tickets.'
+        result['description']="Select additional roles that can view tickets."
         result['fields']=[field('ticket_staff_viewer_role_ids','Extra staff viewer roles',[str(x) for x in cfg.get('ticket_staff_viewer_role_ids',[])],'multiselect',description='Viewing access does not grant permission to make ticket decisions.',source='roles')]
     elif part=='tools':
         result['description']='Check ticket setup or restore a missing panel.'

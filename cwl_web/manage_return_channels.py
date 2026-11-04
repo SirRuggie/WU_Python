@@ -8,7 +8,7 @@ from .manage_operations import cas, revision, check_channel_permissions, checked
 def descriptor(row):
     channels = settings.channels(row)
     return dict(id='cwl_return_channels', label='Return reminder channels',
-        description='Choose where Main and FWA return reminders are sent. Discord /manage uses the same channels.',
+        description="Select where Main and FWA return reminders are sent. Discord /manage uses the same channels.",
         group='War', revision=revision(row), fields=[
             dict(key=field, label=label, type='channel', value=str(channels[section]))
             for section, field, label in [('MAIN', 'main_channel_id', 'Main return channel'),
@@ -28,14 +28,14 @@ async def save(request):
     body = await _json(request)
     values = checked(body.get('values'), settings.FIELDS.values())
     if not values:
-        raise web.HTTPBadRequest(text='Choose a return channel to change.')
+        raise web.HTTPBadRequest(text="Select a return channel to change.")
     changes = {}
     for key, value in values.items():
         if not isinstance(value, str) or not value.isascii() or not value.isdigit() or not 15 <= len(value) <= 22:
-            raise web.HTTPBadRequest(text='Choose a channel from this server.')
+            raise web.HTTPBadRequest(text="Select a channel from this server.")
         channel = await shared.discord(request, 'GET', '/channels/' + value)
         if str(channel.get('guild_id')) != str(shared.GUILD_ID) or channel.get('type') not in (0, 5):
-            raise web.HTTPBadRequest(text='Choose a text channel in this server.')
+            raise web.HTTPBadRequest(text="Select a text channel in this server.")
         await check_channel_permissions(request, channel)
         changes[key] = int(value)
     async with shared.mongo(request) as db:

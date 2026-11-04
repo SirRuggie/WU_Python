@@ -36,7 +36,7 @@ def _settings(campaign: dict) -> dict | None:
 def validate(campaign: dict) -> None:
     """Validate sequence settings without requiring the sequence to be enabled."""
     if not isinstance(campaign, dict) or not isinstance(campaign.get("messages"), dict):
-        raise ValueError("Campaign messages are missing.")
+        raise ValueError("Automatic messages are missing.")
     settings = _settings(campaign)
     if settings is None:
         return
@@ -62,7 +62,7 @@ def validate(campaign: dict) -> None:
     if mode == "evenly":
         _require_slots(campaign, settings["count"])
     if len(campaign["messages"]) > MAX_CAMPAIGN_MESSAGES:
-        raise ValueError("A reminder sequence supports at most 12 campaign messages in total.")
+        raise ValueError("A reminder sequence supports at most 12 automatic messages in total.")
 
 
 def _new_title(number: int) -> str:
@@ -72,7 +72,7 @@ def _new_title(number: int) -> str:
 def _provision(campaign: dict) -> None:
     messages = campaign["messages"]
     if len(messages) > MAX_CAMPAIGN_MESSAGES:
-        raise ValueError("A reminder sequence supports at most 12 campaign messages in total.")
+        raise ValueError("A reminder sequence supports at most 12 automatic messages in total.")
 
     existing = []
     for key, message in messages.items():
@@ -135,7 +135,7 @@ def configure(
 ) -> dict:
     """Return an independent campaign with an explicitly enabled sequence."""
     if not isinstance(campaign, dict) or not isinstance(campaign.get("messages"), dict):
-        raise ValueError("Campaign messages are missing.")
+        raise ValueError("Automatic messages are missing.")
     if mode not in MODES:
         raise ValueError("Reminder sequence mode must be `evenly` or `interval`.")
     settings = {

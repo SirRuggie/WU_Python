@@ -69,7 +69,7 @@ export default function CommandImage({
   async function transfer(file?: File) {
     if (transferring.current) return
     if (file && (!file.size || file.size > 10 * 1024 * 1024)) {
-      setError('Choose an image up to 10 MB.')
+      setError('Select an image up to 10 MB.')
       return
     }
     transferring.current = true
@@ -121,7 +121,7 @@ export default function CommandImage({
           disabled={busy}
           onClick={() => setLibrary(true)}
         >
-          Choose image
+          Select image
         </button>
         <label className="command-image-upload">
           Upload image

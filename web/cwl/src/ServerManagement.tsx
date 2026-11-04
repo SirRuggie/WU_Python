@@ -196,7 +196,7 @@ function Field({
               }
             >
               {!multiple && (
-                <option value="">Choose {field.label.toLowerCase()}</option>
+                <option value="">Select {field.label.toLowerCase()}</option>
               )}
               {options
                 .filter(
@@ -267,7 +267,7 @@ function Field({
               setUploadError("");
               if (file.size > (field.upload_max_bytes || 10 * 1024 * 1024)) {
                 setUploadError(
-                  "This image is too large. Choose a smaller image.",
+                  "This image is too large. Select a smaller image.",
                 );
                 return;
               }
@@ -694,7 +694,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
             {conflict
               ? "Discard edits and load latest"
               : document
-                ? "Reload saved settings"
+                ? "Refresh saved settings"
                 : "Retry loading"}
           </button>
         </div>
@@ -959,7 +959,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                   }}
                 >
                   <option value="">
-                    Choose {pickerCopy.label.toLowerCase()}
+                    Select {pickerCopy.label.toLowerCase()}
                   </option>
                   {documents
                     .filter(

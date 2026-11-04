@@ -106,8 +106,8 @@ export default function useDeclarationData(season: string) {
           if (!signal.aborted || signal.reason?.name === "TimeoutError")
             setError(
               hasResults
-                ? "Couldn't update · showing last results"
-                : "Couldn't check locations",
+                ? "Could not update · showing last results"
+                : "Could not check locations",
             );
           throw cause;
         }

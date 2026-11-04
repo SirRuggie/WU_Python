@@ -172,7 +172,7 @@ export default function WarReminders({
         <p className="notice error" role="alert">
           {error}{" "}
           <button disabled={busy} onClick={reload}>
-            Reload
+            Refresh
           </button>
         </p>
       )}
@@ -184,7 +184,7 @@ export default function WarReminders({
       {!draft || !data ? (
         <p role="status">
           {error
-            ? "Reminders could not be loaded. Use Reload to try again."
+            ? "Reminders could not be loaded. Use Refresh to try again."
             : "Loading reminders…"}
         </p>
       ) : (

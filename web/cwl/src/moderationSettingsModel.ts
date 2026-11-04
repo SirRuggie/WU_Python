@@ -386,7 +386,7 @@ export function moderationSettingsError(
       message:
         operation === "save"
           ? "These settings changed since you loaded them. Your edits are preserved; reload the latest version before saving again."
-          : "Saved settings changed. Reload before sending a test log.",
+          : "Saved settings changed. Refresh before sending a test log.",
     };
   }
   return {

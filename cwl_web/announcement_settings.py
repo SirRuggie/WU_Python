@@ -19,11 +19,11 @@ async def save(request):
             or not isinstance(body['channel_id'], str)
             or not re.fullmatch(r'\d{15,22}', body['channel_id'])
             or type(body['expected_revision']) is not int or body['expected_revision'] < 0):
-        raise web.HTTPBadRequest(text='Choose a test channel and a valid revision')
+        raise web.HTTPBadRequest(text="Select a test channel and a valid revision")
     channel = await discord(request, 'GET', '/channels/' + body['channel_id'])
     if (str(channel.get('guild_id')) != str(GUILD_ID) or channel.get('type') not in (0, 5)
             or str(channel.get('id')) != body['channel_id'] or not channel.get('name')):
-        raise web.HTTPBadRequest(text='Choose a text or announcement channel in this server')
+        raise web.HTTPBadRequest(text="Select a text or announcement channel in this server")
     try:
         result = RosterImageStore(request.app['store']).configure_test_channel(
             body['channel_id'], channel['name'], actor['user_id'], body['expected_revision'])

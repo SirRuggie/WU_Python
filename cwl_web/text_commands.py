@@ -55,13 +55,13 @@ async def validate_scope(request, actor, values):
         channels = await discord(request, 'GET', f'/guilds/{GUILD_ID}/channels')
         available = {str(row['id']) for row in channels if row.get('type') in (0, 5)}
         if not set(values['allowed_channel_ids']) <= available:
-            raise web.HTTPBadRequest(text='Choose channels from this server.')
+            raise web.HTTPBadRequest(text="Select channels from this server.")
     if values['allowed_role_ids']:
         roles = actor.get('roles', [])
         available = {str(row['id']) for row in roles
                      if not row.get('managed') and str(row['id']) != str(GUILD_ID)}
         if not set(values['allowed_role_ids']) <= available:
-            raise web.HTTPBadRequest(text='Choose non-managed roles from this server.')
+            raise web.HTTPBadRequest(text="Select non-managed roles from this server.")
 
 
 async def scope_options(request):
@@ -113,7 +113,7 @@ async def save(request):
             for _,action in actions(values):
                 if action['kind']!='reply':
                     await check_role(request,actor,action['role_id']);continue
-                if action['command']!=values['command'] and not await collection(db).find_one({'_id':f'{GUILD_ID}:{action["command"]}','enabled':True}):raise ValueError('Choose an enabled saved reply.')
+                if action['command']!=values['command'] and not await collection(db).find_one({'_id':f'{GUILD_ID}:{action["command"]}','enabled':True}):raise ValueError("Select an enabled saved reply.")
         except ValueError as exc:raise web.HTTPBadRequest(text=str(exc)) from None
         target = collection(db)
         from .change_history import begin, finish
@@ -124,7 +124,7 @@ async def save(request):
             try:
                 await target.insert_one(row)
             except DuplicateKeyError:
-                raise web.HTTPConflict(text='This command name is already taken. Choose another name or edit the existing command.') from None
+                raise web.HTTPConflict(text="This command name is already taken. Select another name or edit the existing command.") from None
             await finish(db, history_id, values)
         else:
             try:
@@ -220,7 +220,7 @@ async def role_options(request):
 
 async def check_role(request,actor,role_id):
     if not any(role['id']==role_id for role in await available_roles(request,actor)):
-        raise ValueError('Choose a non-staff role below the bot’s highest role.')
+        raise ValueError("Select a non-staff role below the bot’s highest role.")
 
 
 async def role_activity(request):

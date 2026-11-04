@@ -75,7 +75,7 @@ class SeasonFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('IntegrityError', captured.output[0])
         self.assertIn('fixture failure', captured.output[0])
         self.assertEqual(response.status, 500)
-        self.assertIn("Couldn't copy hosting clans; nothing was created.", await response.text())
+        self.assertIn("Could not copy hosting clans; nothing was created.", await response.text())
         self.assertEqual(before, {table: store.rows(f'SELECT * FROM {table}') for table in before})
 
     async def test_signup_guard_mismatch_is_409_without_any_write(self):

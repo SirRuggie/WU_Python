@@ -35,7 +35,7 @@ export default function CompareClanPicker({
     );
   return (
     <ActionPanel
-      title={replace ? "Change clan in this column" : "Choose clans"}
+      title={replace ? "Change clan in this column" : "Select clans"}
       trigger={trigger}
       onClose={onClose}
       className="roster-ui"

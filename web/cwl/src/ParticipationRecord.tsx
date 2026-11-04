@@ -208,7 +208,7 @@ export default function ParticipationRecord({
       : "";
     if (
       !(await confirm(
-        `Replace manual attack and star overrides for ${account.player_name} with synced values? Staff notes stay saved.${partial}`,
+        `Replace the attacks and stars that staff typed for ${account.player_name} with the values from Clash? Staff notes stay saved.${partial}`,
         "Use synced results",
       ))
     )
@@ -355,7 +355,7 @@ export default function ParticipationRecord({
           <div className="notice error" role="alert">
             Saved results belong to a previous assignment.{" "}
             {account.assigned_clan_tag
-              ? "Refresh Clash results, then use synced values to replace old corrections."
+              ? "Refresh the Clash results. Then use the values from Clash to replace the old corrections."
               : "Assign this account to a CWL clan, then refresh Clash results."}
           </div>
         )}

@@ -218,7 +218,7 @@ it("reloads a conflicting revision while keeping the draft for explicit reapply"
   });
   await click("Save profile");
   latest = true;
-  await click("Reload latest and keep draft");
+  await click("Refresh latest and keep draft");
   expect(
     document.querySelector<HTMLInputElement>(".mt-editor input")!.value,
   ).toBe("Draft kept");
@@ -255,7 +255,7 @@ it("uses a fresh identity only on an explicit retry of a confirmed failed save o
   expect(posts[0].body.request_id).not.toBe(posts[1].body.request_id);
   await click("Cancel");
 });
-it("retains the request identity after an unconfirmed transport failure", async () => {
+it("retains the request identity after an not confirmed transport failure", async () => {
   const ids: string[] = [];
   transport.mockImplementation(
     async (path: string, method?: string, body?: { request_id: string }) => {

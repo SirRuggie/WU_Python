@@ -45,7 +45,7 @@ export default function CommandImageLibrary({
       aria-labelledby="image-library-title"
     >
       <header>
-        <h2 id="image-library-title">Choose image</h2>
+        <h2 id="image-library-title">Select image</h2>
         <button type="button" onClick={close} aria-label="Close image library">
           Close ×
         </button>

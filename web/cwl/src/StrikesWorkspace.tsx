@@ -623,7 +623,7 @@ export default function StrikesWorkspace({
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setLeaveConflict(true);
-        setError("Changed by someone else · Reload");
+        setError("Changed by someone else · Refresh");
       } else setError(errorText(err));
     } finally {
       mutation.current = false;
@@ -948,7 +948,7 @@ export default function StrikesWorkspace({
                 })
               }
             >
-              Reload
+              Refresh
             </button>
           )}
           {tab === "history" && (
@@ -960,7 +960,7 @@ export default function StrikesWorkspace({
                   : refreshAccounts())
               }
             >
-              Reload records
+              Refresh records
             </button>
           )}
         </div>
@@ -1494,7 +1494,7 @@ export default function StrikesWorkspace({
                     value={selectedMember}
                     onChange={(event) => chooseMember(event.target.value)}
                   >
-                    <option value="">Choose member</option>
+                    <option value="">Select member</option>
                     {members.map((item) => (
                       <option key={item.id} value={item.id}>
                         {discordIdentityName(item.id, null, item.name) ||

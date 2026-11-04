@@ -352,7 +352,7 @@ it.each([false, true, "confirm"] as const)(
         );
         await act(async () => button("My signups").click());
         await act(async () => button("Change CWL pool").click());
-        await act(async () => button("Choose Lazy CWL").click());
+        await act(async () => button("Select Lazy CWL").click());
         vi.stubGlobal(
           "confirm",
           vi.fn(() => false),

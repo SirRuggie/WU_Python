@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import ts from "typescript";
 import { expect, it } from "vitest";
 
 /** Canonical owner/reviewer wording, scoped to UI files (never API/status keys or Discord templates). */
@@ -7,6 +8,10 @@ const terms: [string, RegExp][] = [
   ["App.tsx", /Lazy: relaxed CWL\. You can upgrade during the event\./],
   ["App.tsx", /If you’re in FWA… it’s Lazy Way or No Way!!!/],
   ["App.tsx", /<h1>Signup reminders<\/h1>/],
+  ["ClanSettings.tsx", /Clan size/],
+  ["RosterPlayerDialog.tsx", /Summary/],
+  ["DeclarationPingReview.tsx", /Message \$\{i \+ 1\} of/],
+  ["rosterImagePosting.ts", /Discord is slow · wait/],
   ["App.tsx", /'Bonus medals'/],
   ["MemberAssignments.tsx", /<h1>My clan assignments<\/h1>/],
   ["MemberAssignments.tsx", /<h2>Waiting for a clan<\/h2>/],
@@ -50,4 +55,33 @@ it("retains linking context and rejects obsolete visible labels without renaming
     'label="Find an account"',
   );
   expect(read("DeclarationPingPanel.tsx")).not.toMatch(/\|\| "unassigned"/);
+});
+
+it("keeps internal feature names out of visible dashboard words", () => {
+  const bannedWords = /\bcampaigns?\b/i;
+  const root = new URL("./", import.meta.url);
+  const violations: string[] = [];
+  function scan(folder: URL) {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      const url = new URL(entry.name, folder);
+      if (entry.isDirectory()) { scan(new URL(entry.name + "/", folder)); continue; }
+      if (!/\.tsx?$/.test(entry.name) || /\.(test|spec)\./.test(entry.name)) continue;
+      const source = readFileSync(url, "utf8");
+      const tree = ts.createSourceFile(url.pathname, source, ts.ScriptTarget.Latest, true);
+      function visit(node: ts.Node) {
+        if (ts.isJsxText(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
+          // Exempt syntax positions for keys, never exact text used as a label.
+          const parent = node.parent;
+          if (ts.isPropertyAssignment(parent) && parent.name === node) return;
+          if (ts.isPropertySignature(parent) && parent.name === node) return;
+          if (ts.isElementAccessExpression(parent) && parent.argumentExpression === node) return;
+          if (ts.isCallExpression(parent) && parent.arguments[0] === node && ts.isPropertyAccessExpression(parent.expression) && ["get", "set", "delete"].includes(parent.expression.name.text)) return;
+          if (bannedWords.test(node.text)) violations.push(`${entry.name}: ${node.text}`);
+        } else ts.forEachChild(node, visit);
+      }
+      visit(tree);
+    }
+  }
+  scan(root);
+  expect(violations).toEqual([]);
 });

@@ -265,7 +265,7 @@ export default function MessagePublish({
                   disabled={busy}
                   onChange={(event) => setChannel(event.target.value)}
                 >
-                  <option value="">Choose a channel</option>
+                  <option value="">Select a channel</option>
                   {channels
                     .filter(
                       (item) =>

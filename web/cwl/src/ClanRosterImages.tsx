@@ -248,7 +248,7 @@ export default function ClanRosterImages({
                 </p>
                 {destination?.reason && <p>{destination.reason}</p>}
                 {data.posts.some((post) => post.pool === pool) && (
-                  <p>New clans are appended after the closing message.</p>
+                  <p>New clans are added after the closing message.</p>
                 )}
                 <p role="status">{status.label}</p>
                 {canSend &&
@@ -356,13 +356,13 @@ export default function ClanRosterImages({
                                     },
                                   ],
                                   dismiss
-                                    ? `Mark ${clan.name}'s post as checked? This only clears our warning and won't change anything in Discord.`
+                                    ? `Mark the post for ${clan.name} as checked? This removes the warning on the dashboard. It does not change anything in Discord.`
                                     : recoveryOperation === "drop" &&
                                         post.operation === "update"
-                                      ? `Edit the existing message to say ${clan.name} is no longer hosting? This won't create a new message.`
+                                      ? `Edit the existing message to say ${clan.name} is no longer hosting? This will not create a new message.`
                                       : post.operation === "post"
                                         ? "This can create a duplicate message if the first one did post."
-                                        : `Retry the edit on the same message with version ${data.published!.version}? This won't create a new message.`,
+                                        : `Retry the edit on the same message with version ${data.published!.version}? This will not create a new message.`,
                                 )
                               }
                             >

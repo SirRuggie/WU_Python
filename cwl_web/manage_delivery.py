@@ -45,7 +45,7 @@ async def page(request):
     data = await review(request, key)
     fields = [{'key':f'section.{i}', 'label':label, 'type':'textarea', 'value':data['sections'][i], 'readonly':True} for i,label in enumerate(content.BLOCK_LABELS[key])]
     channel = data['destination'] or (data['target'] or {}).get('channel_id')
-    fields.insert(0, {'key':'channel','label':'Posting channel','type':'text','value':str(channel or 'Choose a posting channel first'),'readonly':True})
+    fields.insert(0, {'key':'channel','label':'Posting channel','type':'text','value':str(channel or "Select a posting channel first"),'readonly':True})
     channel_name = None
     if channel:
         channel_data = await discord(request, 'GET', f'/channels/{channel}')
@@ -77,7 +77,7 @@ async def queue(request):
     if not isinstance(body, dict) or body.get('revision') != fingerprint(data):
         raise web.HTTPConflict(text='The message, post, or channel changed. Reload and review before publishing.')
     if action == 'send' and (key == 'apply' or not data['destination']):
-        raise web.HTTPBadRequest(text='Choose a posting channel. Apply posts must be created through ticket setup.')
+        raise web.HTTPBadRequest(text="Select a posting channel. Apply posts must be created through ticket setup.")
     if action == 'update' and not data['target']:
         raise web.HTTPBadRequest(text='There is no saved post to update')
     return await queue_action(request, 'recruit', action, data, fingerprint(data))
@@ -87,7 +87,7 @@ async def publish(bot, mongo, row, ctx):
     from extensions.commands import content
     values = row['values']; key = values['document']; action = row['action']
     if key not in content.DOCUMENTS or key == 'rite-of-passage' or action not in ('send','update'):
-        raise ValueError('Choose a public onboarding message')
+        raise ValueError("Select a public onboarding message")
     document = content.DOCUMENTS[key]
     sections, media, revision = await content.template_for(mongo, document, GUILD_ID)
     if revision != values['template_revision'] or fingerprint({'sections':sections,'media':media}) != values['template']:
@@ -104,10 +104,10 @@ async def publish(bot, mongo, row, ctx):
             raise ValueError('The Discord post changed. Reload and review before sending.')
     if action == 'send':
         if key == 'apply' or not destination:
-            raise ValueError('Choose a posting channel. Use ticket setup to create Apply posts.')
+            raise ValueError("Select a posting channel. Use ticket setup to create Apply posts.")
         channel = await bot.rest.fetch_channel(destination)
         if int(getattr(channel,'guild_id',0)) != GUILD_ID or channel.type not in content._DESTINATION_TYPES:
-            raise ValueError('Choose a text or announcement channel in this server.')
+            raise ValueError("Select a text or announcement channel in this server.")
         permissions = await content.destination_permissions(bot, GUILD_ID, channel)
         needed = hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES | hikari.Permissions.ATTACH_FILES
         if not permissions & hikari.Permissions.ADMINISTRATOR and permissions & needed != needed:
@@ -133,7 +133,7 @@ async def publish(bot, mongo, row, ctx):
     try:
         await mongo.bot_config.update_one({'_id':lease,'until':{'$lte':content.utcnow()}},{'$set':{'until':content.utcnow()+timedelta(minutes=1),'token':token}},upsert=True)
     except DuplicateKeyError:
-        raise ValueError('Another update is in progress. Try again shortly.') from None
+        raise ValueError("Another update is in progress. Try again later.") from None
     try:
         loaded = await content.loaded_published_target(bot,GUILD_ID,document,target,int(ctx.interaction.application_id))
         message = await bot.rest.fetch_message(target['channel_id'],target['message_id'])

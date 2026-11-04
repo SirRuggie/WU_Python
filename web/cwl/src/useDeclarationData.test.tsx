@@ -69,7 +69,7 @@ it("reads published only, retains last records on failure, and never forces exce
   expect(fetch).toHaveBeenCalledTimes(6);
   vi.mocked(fetch).mockResolvedValue(new Response("{}", { status: 400 }));
   await act(async () => value.refresh());
-  expect(value.error).toBe("Couldn't update · showing last results");
+  expect(value.error).toBe("Could not update · showing last results");
   expect(value.records["#P"].current_clan_name).toBe("Amber");
   expect(
     vi.mocked(fetch).mock.calls.some((c) => String(c[0]).includes("refresh=1")),
@@ -196,7 +196,7 @@ it("pauses the follow-up window while hidden and aborts on unmount", async () =>
 it("reports first-load failure without claiming previous results", async () => {
   vi.mocked(fetch).mockResolvedValue(new Response("{}", { status: 400 }));
   await act(async () => root.render(<Probe />));
-  expect(value.error).toBe("Couldn't check locations");
+  expect(value.error).toBe("Could not check locations");
 });
 
 it("148 failed explicit read stays failed when a later background poll succeeds", async () => {

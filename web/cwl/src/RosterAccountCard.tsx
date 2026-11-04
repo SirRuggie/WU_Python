@@ -142,11 +142,11 @@ export default function RosterAccountCard({
           (account.kept ||
             (account.auto_placement_reason !== "ready" &&
               account.auto_placement_note !==
-                "Hosting clans need a 15- or 30-player capacity in Clan settings." &&
+                "Set Clan size to 15 or 30 in Clan settings." &&
               !!account.auto_placement_note)) && (
             <small className="roster-player-note">
               {account.kept
-                ? "Kept unplaced · unlock in Details to auto-place"
+                ? "Stays unplaced. To place it with Auto-place, unlock it in Details."
                 : account.auto_placement_note}
             </small>
           )}

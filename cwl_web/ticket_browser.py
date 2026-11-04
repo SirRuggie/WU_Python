@@ -35,20 +35,20 @@ def date_value(raw):
     try:
         return datetime.strptime(raw, '%Y-%m-%d').replace(tzinfo=timezone.utc)
     except (ValueError, TypeError):
-        raise web.HTTPBadRequest(text='Choose a valid date.')
+        raise web.HTTPBadRequest(text="Select a valid date.")
 
 def filters(params, flag_identities=None):
     query = {**RUNTIME_FILTER, 'guild_id': GUILD_ID}
     status = params.get('status', 'closed')
     if status == 'closed': query['status'] = {'$in':['approved','denied','closed']}
     elif status in {'open','approved','denied'}: query['status'] = status
-    elif status != 'all': raise web.HTTPBadRequest(text='Choose a ticket status.')
+    elif status != 'all': raise web.HTTPBadRequest(text="Select a ticket status.")
     kind = params.get('kind','all')
     if kind in {'main','fwa'}: query['ticket_type'] = kind
-    elif kind != 'all': raise web.HTTPBadRequest(text='Choose Main, FWA or All.')
+    elif kind != 'all': raise web.HTTPBadRequest(text="Select Main, FWA or All.")
     flag_kind = params.get('flag', 'all')
     if flag_kind != 'all' and flag_kind not in FLAG_LABELS:
-        raise web.HTTPBadRequest(text='Choose a valid applicant flag.')
+        raise web.HTTPBadRequest(text="Select a valid applicant flag.")
     text = params.get('q','').strip()
     if len(text)>80: raise web.HTTPBadRequest(text='Use a shorter search.')
     if text:
@@ -75,7 +75,7 @@ def filters(params, flag_identities=None):
         if start: dates['$gte']=date_value(start)
         if end:
             try: dates['$lt']=date_value(end)+timedelta(days=1)
-            except OverflowError: raise web.HTTPBadRequest(text='Choose an earlier end date.')
+            except OverflowError: raise web.HTTPBadRequest(text="Select an earlier end date.")
         if start and end and dates['$gte']>=dates['$lt']: raise web.HTTPBadRequest(text='End date must be after start date.')
         query['created_at']=dates
     return query
@@ -224,7 +224,7 @@ async def conversation(request):
     ticket_id=request.match_info['ticket_id']
     if not re.fullmatch(r'ticket_[0-9]{1,22}',ticket_id):raise web.HTTPNotFound(text='Ticket not found.')
     space=request.query.get('space','applicant')
-    if space not in {'applicant','staff'}:raise web.HTTPBadRequest(text='Choose a conversation.')
+    if space not in {'applicant','staff'}:raise web.HTTPBadRequest(text="Select a conversation.")
     before=request.query.get('before','')
     if before and not re.fullmatch(r'[0-9]{1,22}',before):raise web.HTTPBadRequest(text='Invalid message page.')
     async with mongo(request) as db:

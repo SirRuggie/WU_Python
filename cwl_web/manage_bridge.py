@@ -27,14 +27,14 @@ async def _mongo(request):
         return
     client = get_client(request.app)
     if client is None:
-        raise web.HTTPServiceUnavailable(text='Bot campaign database is not configured')
+        raise web.HTTPServiceUnavailable(text="Automatic messages are not set up.")
     routes = load_routes()
     facade = SimpleNamespace(**{name: BudgetedCollection(collection_for(client, name, routes=routes), 10)
                                for name in ('bot_config', 'cwl_reminder', 'cwl_pending_reminders')})
     try:
         yield facade
     except PyMongoError as exc:
-        raise web.HTTPServiceUnavailable(text='Bot campaign database is unavailable; refresh before retrying') from exc
+        raise web.HTTPServiceUnavailable(text="Automatic messages are not available. Refresh before you try again.") from exc
 
 
 def _binding(request, sid):
@@ -48,7 +48,7 @@ def _binding(request, sid):
 def _required_binding(request, sid):
     cycle = _binding(request, sid)
     if cycle is None:
-        raise web.HTTPConflict(text='Select the matching Manage campaign month first')
+        raise web.HTTPConflict(text="Select the matching Manage CWL month first")
     return cycle
 
 
@@ -127,7 +127,7 @@ async def bind(request):
     body = await _json(request)
     cycle = body.get('cycle')
     if set(body) != {'cycle'} or not isinstance(cycle, str) or not re.fullmatch(r'20\d{2}-(0[1-9]|1[0-2])', cycle):
-        raise web.HTTPBadRequest(text='Choose a campaign month in YYYY-MM format')
+        raise web.HTTPBadRequest(text="Select a CWL month in YYYY-MM format")
     sid = _sid(request)
     previous = _binding(request, sid)
     async with _mongo(request) as mongo:
@@ -135,18 +135,18 @@ async def bind(request):
         if previous and previous != cycle:
             for pool in cwl_campaign.AUDIENCES:
                 if await get_roster_send_status(mongo, guild_id=GUILD_ID, cycle=previous, pool=pool):
-                    raise web.HTTPConflict(text='This season already has delivery activity; keep its campaign month')
+                    raise web.HTTPConflict(text="This season already has delivery activity. Keep its CWL month.")
     try:
         with _store(request).tx() as db:
             if _season(db, sid)['status'] != 'draft':
                 raise web.HTTPConflict(text='Season is archived')
             current = db.execute('SELECT cycle FROM manage_campaign_bindings WHERE season_id=?', (sid,)).fetchone()
             if (current['cycle'] if current else None) != previous:
-                raise web.HTTPConflict(text='Campaign binding changed; refresh first')
+                raise web.HTTPConflict(text="The CWL month link changed. Refresh first.")
             db.execute('INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES (?,?) ON CONFLICT(season_id) DO UPDATE SET cycle=excluded.cycle', (sid, cycle))
             _audit(db, sid, None, session['user_id'], 'manage_campaign_bind', {'cycle': previous}, {'cycle': cycle})
     except sqlite3.IntegrityError as exc:
-        raise web.HTTPConflict(text='That campaign month is already linked to another web season') from exc
+        raise web.HTTPConflict(text="That CWL month is already linked to another dashboard season") from exc
     return web.json_response({'cycle': cycle})
 
 
@@ -160,12 +160,12 @@ async def save_variant(request):
     pool = _pool(request)
     body = await _json(request)
     if set(body) != {'generation', 'channel_id', 'body', 'roster_url'}:
-        raise web.HTTPBadRequest(text='Expected generation, channel_id, body and roster_url')
+        raise web.HTTPBadRequest(text="The request is not complete. Refresh the page and try again.")
     if not isinstance(body['body'], str) or len(body['body']) > 4000:
         raise web.HTTPBadRequest(text='Announcement text must be at most 4000 characters')
     channel_id = str(body['channel_id'])
     if not re.fullmatch(r'\d{15,22}', channel_id):
-        raise web.HTTPBadRequest(text='Choose a Discord channel')
+        raise web.HTTPBadRequest(text="Select a Discord channel")
     url = body['roster_url']
     if not isinstance(url, str) or len(url) > 2048:
         raise web.HTTPBadRequest(text='Invalid roster link')
@@ -182,13 +182,13 @@ async def save_variant(request):
     try:
         await _transport(request).get_channel(channel_id)
     except AnnouncementRejected as exc:
-        raise web.HTTPBadRequest(text='Choose a Warriors United text channel') from exc
+        raise web.HTTPBadRequest(text="Select a Warriors United text channel") from exc
     except AnnouncementUnavailable as exc:
         raise web.HTTPServiceUnavailable(text='Discord channel validation unavailable') from exc
     async with _mongo(request) as mongo:
         loaded = await cwl_campaign.load_campaign(mongo, GUILD_ID, cycle)
         if body['generation'] != campaign_generation(loaded):
-            raise web.HTTPConflict(text='Manage settings changed; refresh and review')
+            raise web.HTTPConflict(text="Manage settings changed. Refresh and review.")
         delivery = await get_roster_send_status(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool)
         if delivery and delivery.get('status') in ('sent', 'pending', 'sending', 'uncertain'):
             raise web.HTTPConflict(text='This announcement is sent or in progress; edit it through Manage after delivery review')
@@ -196,7 +196,7 @@ async def save_variant(request):
         try:
             # A fresh draft may load a different revision if Manage edited during validation.
             if (draft['base_revision'] != loaded['revision'] or draft.get('defaults_base_revision') != loaded['defaults_revision'] or draft.get('recurring_base_version') != loaded.get('recurring_version')):
-                raise web.HTTPConflict(text='Manage settings changed; refresh and review')
+                raise web.HTTPConflict(text="Manage settings changed. Refresh and review.")
             candidate = copy.deepcopy(draft['campaign'])
             item = candidate['messages']['roster']['variants'][pool]
             item['destination_channel_id'] = int(channel_id)
@@ -234,9 +234,9 @@ async def send(request):
             raise web.HTTPConflict(text='Season is archived')
         latest = db.execute('SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
         if latest is None or latest['version'] != body['version']:
-            raise web.HTTPConflict(text='Published roster changed; refresh and review')
+            raise web.HTTPConflict(text="Published roster changed. Refresh and review.")
     if not isinstance(body['channel_id'], str) or not re.fullmatch(r'\d{15,22}', body['channel_id']) or not isinstance(body['generation'], str):
-        raise web.HTTPBadRequest(text='Invalid channel or campaign generation')
+        raise web.HTTPBadRequest(text="The channel or saved automatic message settings are not valid.")
     async with _mongo(request) as mongo:
         if not await _worker_ready(mongo):
             raise web.HTTPServiceUnavailable(text='Manage delivery worker is unavailable; nothing queued')
@@ -287,15 +287,15 @@ async def test_announcement(request):
     pool = _pool(request)
     body = await _json(request)
     if set(body) != {'channel_id','request_id','generation','body','roster_url'}:
-        raise web.HTTPBadRequest(text='Choose a test channel and review the message.')
+        raise web.HTTPBadRequest(text="Select a test channel and review the message.")
     channel, nonce = body['channel_id'], body['request_id']
     if not isinstance(channel,str) or not re.fullmatch(r'\d{15,22}',channel) or not isinstance(nonce,str) or not re.fullmatch(r'[a-f0-9]{24}',nonce):
-        raise web.HTTPBadRequest(text='Choose a test channel and try again.')
+        raise web.HTTPBadRequest(text="Select a test channel and try again.")
     if not isinstance(body['body'],str) or len(body['body'])>4000 or not isinstance(body['roster_url'],str):
         raise web.HTTPBadRequest(text='Check the message and roster link.')
     destination = await discord(request,'GET',f'/channels/{channel}')
     if str(destination.get('guild_id')) != str(GUILD_ID) or destination.get('type') not in (0,5):
-        raise web.HTTPBadRequest(text='Choose a text channel in this server.')
+        raise web.HTTPBadRequest(text="Select a text channel in this server.")
     async with _mongo(request) as mongo:
         loaded = await cwl_campaign.load_campaign(mongo,GUILD_ID,cycle)
         if body['generation'] != campaign_generation(loaded):

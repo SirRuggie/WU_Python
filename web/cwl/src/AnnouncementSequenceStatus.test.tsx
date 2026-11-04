@@ -146,7 +146,7 @@ it("shows the confirmed deleted-closing repost label", async () => {
   expect(api).not.toHaveBeenCalled();
 });
 
-it("requires an explicit no-ping review before continuing an unconfirmed sent announcement", async () => {
+it("requires an explicit no-ping review before continuing an not confirmed sent announcement", async () => {
   sequence.announcement_confirmed = false;
   await mount(true, true);
   expect(host.textContent).toContain("Announcement shows as sent");

@@ -37,7 +37,7 @@ from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
 
 
 SCHEMA_VERSION = 1
-DEFAULT_COPY_VERSION = 127
+DEFAULT_COPY_VERSION = 128
 DEFAULT_COPY_FIELD = "default_copy_version"
 SHORT_SIGNUP_CHECK_LINE = "Tap **Check my signups** to see your accounts."
 DEFAULT_TIMEZONE = "America/New_York"
@@ -49,6 +49,9 @@ HISTORY_LIMIT = 100
 SIGNUP_HELP_LINE = "-# Having trouble with the dashboard? Ping staff—we can help."
 SIGNUP_CHECK_ID = "cwl_member_check:open"
 SIGNUP_CHECK_LINE = "Already signed up? Tap **Check my signups** anytime to see your accounts."
+CURRENT_SHORT_SIGNUP_CHECK_LINE = "Select **Check my signups** to see your accounts."
+CURRENT_SIGNUP_CHECK_LINE = "Are you signed up already? To see your accounts, select **Check my signups**."
+CURRENT_SIGNUP_HELP_LINE = "-# Do you have a problem with the dashboard? Ask staff for help."
 _CYCLE_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 _SKIP_OCCURRENCE = object()
 
@@ -59,7 +62,7 @@ def _utcnow() -> str:
 
 def _uses_new_default_copy(value: dict | None) -> bool:
     version = value.get(DEFAULT_COPY_FIELD) if isinstance(value, dict) else None
-    return type(version) is int and version == DEFAULT_COPY_VERSION
+    return type(version) is int and version in (127, DEFAULT_COPY_VERSION)
 
 
 def cycle_key(now=None, timezone_name: str = DEFAULT_TIMEZONE) -> str:
@@ -123,10 +126,21 @@ LEGACY_ROSTER_URLS = (
 )
 
 
+def _current_wording(campaign: dict) -> bool:
+    version = campaign.get(DEFAULT_COPY_FIELD)
+    return type(version) is int and version == DEFAULT_COPY_VERSION
+
+
+def _signup_help_line(campaign: dict) -> str:
+    return CURRENT_SIGNUP_HELP_LINE if _current_wording(campaign) else SIGNUP_HELP_LINE
+
+
 def normalize_signup_entry(campaign: dict) -> dict:
     """Upgrade signup destinations without changing delivery state or custom copy."""
     result = copy.deepcopy(campaign)
     new_default_copy = _uses_new_default_copy(result)
+    check_line = CURRENT_SIGNUP_CHECK_LINE if _current_wording(result) else SIGNUP_CHECK_LINE
+    short_line = CURRENT_SHORT_SIGNUP_CHECK_LINE if _current_wording(result) else SHORT_SIGNUP_CHECK_LINE
     for message_id, message in result.get("messages", {}).items():
         for item in message.get("variants", {}).values():
             item["body"] = item.get("body", "").replace(LEGACY_DASHBOARD_ORIGIN, DASHBOARD_ORIGIN)
@@ -149,12 +163,23 @@ def normalize_signup_entry(campaign: dict) -> dict:
             replacement = _legacy_dashboard_signup_body(pool)
             if replacement and legacy in item.get("body", ""):
                 item["body"] = item["body"].replace(legacy, replacement)
-            if (
-                SIGNUP_CHECK_LINE not in item.get("body", "")
-                and not (new_default_copy and SHORT_SIGNUP_CHECK_LINE in item.get("body", ""))
+            if _current_wording(result) and any(
+                line in item.get("body", "")
+                for line in (
+                    SIGNUP_CHECK_LINE,
+                    SHORT_SIGNUP_CHECK_LINE,
+                    CURRENT_SIGNUP_CHECK_LINE,
+                    CURRENT_SHORT_SIGNUP_CHECK_LINE,
+                )
             ):
-                proposed = item.get("body", "").rstrip() + "\n\n" + SIGNUP_CHECK_LINE
-                overhead = len(" ".join(f"<@&{role}>" for role in item.get("role_ids", []))) + len(item.get("title", "")) + 3 + len(SIGNUP_HELP_LINE)
+                # Recognize existing saved copy; never replace its check line.
+                continue
+            if (
+                check_line not in item.get("body", "")
+                and not (new_default_copy and short_line in item.get("body", ""))
+            ):
+                proposed = item.get("body", "").rstrip() + "\n\n" + check_line
+                overhead = len(" ".join(f"<@&{role}>" for role in item.get("role_ids", []))) + len(item.get("title", "")) + 3 + len(_signup_help_line(result))
                 if "{signup_deadline}" in proposed:
                     overhead += 32
                 if len(proposed) + overhead <= 4000:
@@ -185,8 +210,12 @@ def _legacy_dashboard_signup_body(pool: str) -> str:
     )
     return signup_main if pool == "main" else signup_lazy
 
-def default_campaign(*, new_copy: bool = True) -> dict:
+def default_campaign(*, new_copy: bool = True, copy_version: int | None = None) -> dict:
     """Provision current copy, or the exact compatibility fallback for saved data."""
+    version = DEFAULT_COPY_VERSION if copy_version is None else copy_version
+    if type(version) is not int or version not in (127, DEFAULT_COPY_VERSION):
+        raise ValueError("Unknown default copy version")
+    current_wording = new_copy and version == DEFAULT_COPY_VERSION
     role = 1080521665584308286
     main_channel = 1072714594625257502
     lazy_channel = 865726525990633472
@@ -210,6 +239,19 @@ def default_campaign(*, new_copy: bool = True) -> dict:
         "4. Check your choices and select **Sign up**.\n\n"
         "Need help? Ask in <#872692009066958879>."
     )
+    if current_wording:
+        signup_main = signup_main.replace(
+            "3. Choose Main or Lazy CWL, then select your accounts.\n"
+            "4. Check your choices and select **Sign up**.",
+            "3. Select Main or Lazy CWL.\n4. Select your accounts.\n"
+            "5. Check your choices.\n6. Select **Sign up**.",
+        )
+        signup_lazy = signup_lazy.replace(
+            "3. Choose **Lazy CWL**, then select your accounts.\n"
+            "4. Check your choices and select **Sign up**.",
+            "3. Select **Lazy CWL**.\n4. Select your accounts.\n"
+            "5. Check your choices.\n6. Select **Sign up**.",
+        )
     if not new_copy:
         # Existing records retain their previous missing-field fallback copy.
         signup_main = _legacy_dashboard_signup_body("main")
@@ -251,17 +293,37 @@ def default_campaign(*, new_copy: bool = True) -> dict:
             },
         },
     }
+    if current_wording:
+        messages["roster"]["variants"]["main"]["body"] = (
+            "The rosters are ready. Select **My clan assignments** to see your clan.\n\n"
+            "Finish both attacks in your current war. Then move to your clan. "
+            "Do this as soon as you can.\n\n"
+            "Do you have a question? Ask in <#801950200133976124> <:warriorcat:947992348971905035>"
+        )
+        messages["roster"]["variants"]["lazy"]["body"] = (
+            "The Lazy rosters are ready. Select **My clan assignments** to see your clan.\n\n"
+            "Finish both attacks in your current war. Then move to your clan. "
+            "Do this as soon as you can.\n\n"
+            "Do you need help? Ask <@&769130325460254740> in <#872692009066958879>."
+        )
     for number in range(1, 6):
+        reminder_label = f"Signup reminder {number}" if current_wording else f"Sign-up reminder {number}"
+        reminder_title = f"Signup reminder #{number}" if current_wording else f"Sign-up Reminder #{number}"
         prefix = "**Already signed up? You're set!** Not yet? Sign up below.\nTap **Check my signups** to see your accounts.\n\n"
+        if current_wording:
+            prefix = (
+                "**Are you signed up already? Then you do not need to do more.** "
+                "If not, sign up below.\nSelect **Check my signups** to see your accounts.\n\n"
+            )
         if not new_copy:
             prefix = "**If you already signed up, we got ya down. No need to sign up again. But everyone else...**\n\n"
         messages[f"reminder:{number}"] = {
             "enabled": True,
-            "label": f"Sign-up reminder {number}",
+            "label": reminder_label,
             "schedule": {"mode": "legacy_chain", "after": "signup" if number == 1 else f"reminder:{number - 1}", "offset_minutes": 24 * 60},
             "variants": {
-                "main": _variant(title=f"<:CWL:1399013745598009375> Sign-up Reminder #{number} <:CWL:1399013745598009375>", body=prefix + signup_main + "\n\n# **Signups close {signup_deadline}**", media_url=reminder_media[number], channel_id=main_channel, role_ids=[role], buttons=main_buttons),
-                "lazy": _variant(title=f"<:CWL:1399013745598009375> Sign-up Reminder #{number} <:CWL:1399013745598009375>", body=prefix + signup_lazy + "\n\n# **Signups close {signup_deadline}**", media_url=reminder_media[number], channel_id=lazy_channel, role_ids=[role], buttons=lazy_buttons),
+                "main": _variant(title=f"<:CWL:1399013745598009375> {reminder_title} <:CWL:1399013745598009375>", body=prefix + signup_main + "\n\n# **Signups close {signup_deadline}**", media_url=reminder_media[number], channel_id=main_channel, role_ids=[role], buttons=main_buttons),
+                "lazy": _variant(title=f"<:CWL:1399013745598009375> {reminder_title} <:CWL:1399013745598009375>", body=prefix + signup_lazy + "\n\n# **Signups close {signup_deadline}**", media_url=reminder_media[number], channel_id=lazy_channel, role_ids=[role], buttons=lazy_buttons),
             },
         }
     if not new_copy:
@@ -271,7 +333,7 @@ def default_campaign(*, new_copy: bool = True) -> dict:
         messages["roster"]["variants"]['lazy']['buttons'] = [{'label': 'My assignments', 'url': ASSIGNMENTS_URL, 'emoji': '😴'}, {'label': 'LazyCWL Guide', 'url': 'https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit', 'emoji': '📖'}]
     return {
         "schema_version": SCHEMA_VERSION,
-        **({DEFAULT_COPY_FIELD: DEFAULT_COPY_VERSION} if new_copy else {}),
+        **({DEFAULT_COPY_FIELD: version} if new_copy else {}),
         "timezone": DEFAULT_TIMEZONE,
         "paused": False,
         "reminder_sequence": {"enabled": False},
@@ -384,7 +446,7 @@ def _offset_minutes(schedule: dict) -> int:
         return max(0, int(value))
     match = re.fullmatch(r"\s*(\d+)\s*(m|min|minute|minutes|h|hour|hours|d|day|days)?\s*", str(value), re.I)
     if not match:
-        raise ValueError("Schedule offset must look like `30 minutes`, `12 hours`, or `2 days`")
+        raise ValueError("Use a time like `30 minutes`, `12 hours` or `2 days`.")
     amount = int(match.group(1))
     unit = (match.group(2) or "minutes").lower()
     if unit.startswith("h"):
@@ -404,14 +466,14 @@ def _monthly_parts(schedule: dict) -> tuple[int, int, int]:
     if schedule.get("time"):
         match = re.fullmatch(r"\s*(\d{1,2})\s+(\d{1,2}):(\d{2})\s*", str(schedule["time"]))
         if not match:
-            raise ValueError("Monthly schedule must look like `20 17:00`")
+            raise ValueError("Use the day and time like this: `20 17:00`.")
         day, hour, minute = map(int, match.groups())
     else:
         day = int(schedule.get("day", 1))
         hour = int(schedule.get("hour", 0))
         minute = int(schedule.get("minute", 0))
     if not 1 <= day <= 31 or not 0 <= hour <= 23 or not 0 <= minute <= 59:
-        raise ValueError("Monthly schedule day or time is outside its valid range")
+        raise ValueError("The day or time is not valid.")
     return day, hour, minute
 
 
@@ -480,7 +542,7 @@ def resolve_schedule(campaign: dict, cycle: str, now=None) -> list[dict]:
         if not pending or not progressed:
             break
     if pending:
-        raise ValueError("Campaign schedules contain an unresolved or cyclic dependency")
+        raise ValueError("The reminder times depend on each other in a loop, or a time they use is missing. Change the times.")
     output.sort(key=lambda item: (item["run_at"] is None, item["run_at"] or "", item["message_id"], item["variant"]))
     return output
 
@@ -494,15 +556,15 @@ def _safe_url(value: str, *, media=False):
 
 def validate_campaign(campaign: dict) -> None:
     if not isinstance(campaign, dict) or not isinstance(campaign.get("messages"), dict):
-        raise ValueError("Campaign messages are missing")
+        raise ValueError("Automatic messages are missing")
     if not 1 <= len(campaign["messages"]) <= 25:
-        raise ValueError("A campaign must contain between 1 and 25 messages")
+        raise ValueError("Use between 1 and 25 automatic messages.")
     from utils import cwl_sequence
     cwl_sequence.validate(campaign)
     try:
         pendulum.timezone(campaign.get("timezone", DEFAULT_TIMEZONE))
     except Exception as exc:
-        raise ValueError("Campaign timezone is invalid") from exc
+        raise ValueError("The time zone is not valid.") from exc
     timezone_name = campaign.get("timezone", DEFAULT_TIMEZONE)
     deadline_rule = campaign.get("signup_deadline", {})
     try:
@@ -531,10 +593,10 @@ def validate_campaign(campaign: dict) -> None:
         raise ValueError("Signup deadline is invalid") from exc
     transitional_schedules = campaign.get("schedules")
     if transitional_schedules is not None and not isinstance(transitional_schedules, dict):
-        raise ValueError("Legacy campaign schedules are invalid")
+        raise ValueError("The saved automatic message times are not valid.")
     for message_id, message in campaign["messages"].items():
         if not isinstance(message_id, str) or not re.fullmatch(r"[A-Za-z0-9:_-]{1,64}", message_id):
-            raise ValueError("A campaign message id is invalid")
+            raise ValueError("An automatic message ID is not valid.")
         if not isinstance(message, dict) or not isinstance(message.get("variants"), dict):
             raise ValueError(f"{message_id} variants are missing")
         for variant, item in message["variants"].items():
@@ -550,7 +612,7 @@ def validate_campaign(campaign: dict) -> None:
             mention_text = " ".join(f"<@&{role}>" for role in roles)
             rendered_length = len(mention_text) + len(item["title"]) + 3 + len(item["body"])
             if message_id == "signup" or message_id.startswith("reminder:"):
-                rendered_length += len(SIGNUP_HELP_LINE)
+                rendered_length += len(_signup_help_line(campaign))
             if "{signup_deadline}" in item["body"]:
                 rendered_length += 32
             if rendered_length > 4000:
@@ -629,7 +691,7 @@ async def render_message(config: dict, message_id: str, variant: str, preview: b
         children.append(ActionRow(components=buttons))
     if message_id == "signup" or message_id.startswith("reminder:"):
         children.append(Separator(divider=True))
-        children.append(Text(content=SIGNUP_HELP_LINE))
+        children.append(Text(content=_signup_help_line(campaign)))
     return [Container(accent_color=int(message.get("accent_color", GOLDENROD_ACCENT)), components=children)]
 
 
@@ -661,7 +723,9 @@ async def _legacy(mongo):
 
 
 def _saved_copy_baseline(campaign: dict | None) -> dict:
-    return default_campaign(new_copy=_uses_new_default_copy(campaign))
+    if _uses_new_default_copy(campaign):
+        return default_campaign(copy_version=campaign[DEFAULT_COPY_FIELD])
+    return default_campaign(new_copy=False)
 
 
 async def load_defaults_campaign(mongo, guild_id: int) -> dict:
@@ -1150,7 +1214,7 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
     else:
         wanted_revision = int(expected_revision)
     if current_revision != wanted_revision:
-        raise RuntimeError("CWL campaign changed while this draft was open")
+        raise RuntimeError("The automatic messages changed while this draft was open.")
     candidate = copy.deepcopy(candidate_campaign if candidate_campaign is not None else row["campaign"])
     recurring_candidate = monthly_campaign(candidate, cycle) if repeat_monthly else None
     if recurring_candidate:
@@ -1226,13 +1290,13 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
             upsert=current_revision == 0,
         )
     except DuplicateKeyError as exc:
-        raise RuntimeError("CWL campaign changed while this draft was being applied") from exc
+        raise RuntimeError("The automatic messages changed while this draft was being saved.") from exc
     matched = getattr(write, "matched_count", None)
     upserted = getattr(write, "upserted_id", None)
     modified = getattr(write, "modified_count", None)
     won = matched == 1 or upserted is not None or (matched is None and modified == 1)
     if not won:
-        raise RuntimeError("CWL campaign changed while this draft was being applied")
+        raise RuntimeError("The automatic messages changed while this draft was being saved.")
     if not keep_draft:
         await mongo.bot_config.delete_one({"_id": row["_id"]})
     result = await load_campaign(mongo, guild_id, cycle)
@@ -1292,7 +1356,7 @@ def validate_roster_copy(candidate: dict) -> dict:
         raise ValueError("Check the roster text length")
     buttons = candidate["buttons"]
     if not isinstance(buttons, list) or len(buttons) > 5:
-        raise ValueError("Choose up to five link buttons")
+        raise ValueError("Select up to five link buttons")
     cleaned = []
     for button in buttons:
         if (
@@ -1357,7 +1421,7 @@ async def save_updated_roster_variant(
     loaded = await load_campaign(mongo, guild_id, cycle)
     if campaign_generation(loaded) != expected_generation:
         raise RuntimeError(
-            "Campaign changed; the updated post's saved copy was not overwritten"
+            "The automatic messages changed. The saved copy of the updated post was not overwritten."
         )
     reviewed = copy.deepcopy(loaded["campaign"])
     reviewed["messages"]["roster"]["variants"][pool].update(copy.deepcopy(candidate))
@@ -1426,7 +1490,7 @@ async def save_updated_roster_variant(
     )
     if getattr(write, "matched_count", 0) != 1:
         raise RuntimeError(
-            "Campaign changed; the updated post's saved copy was not overwritten"
+            "The automatic messages changed. The saved copy of the updated post was not overwritten."
         )
     return {"campaign_saved": True, "recurring_saved": future_months}
 
@@ -1527,7 +1591,7 @@ async def set_paused(
         )
     except DuplicateKeyError as exc:
         raise RuntimeError(
-            "CWL campaign changed while pause state was updating"
+            "The automatic messages changed while the pause setting was being saved."
         ) from exc
     if not (
         getattr(write, "matched_count", 0)
@@ -1537,7 +1601,7 @@ async def set_paused(
             and getattr(write, "modified_count", 0)
         )
     ):
-        raise RuntimeError("CWL campaign changed while pause state was updating")
+        raise RuntimeError("The automatic messages changed while the pause setting was being saved.")
     result = await load_campaign(mongo, guild_id, loaded["cycle"])
     try:
         from extensions.tasks import cwl_reminder
@@ -1630,7 +1694,7 @@ async def queue_manual_occurrence(
     if audience not in message.get("variants", {}):
         raise ValueError("That message has no configured audience version")
     if loaded["campaign"].get("paused"):
-        raise ValueError("Resume the campaign before sending a manual message")
+        raise ValueError("Resume automatic messages before you send a manual message.")
     from extensions.tasks import cwl_reminder
     if getattr(cwl_reminder, "mongo_client", None) is not mongo:
         raise RuntimeError("CWL scheduler is not ready")
@@ -2213,10 +2277,10 @@ async def reopen_deleted_roster_delivery(
             return previous[-1]
         raise ValueError("No matching sent announcement receipt; refresh before resending")
     if not matches(sent[-1]):
-        raise ValueError("The announcement receipt changed; refresh before resending")
+        raise ValueError("The announcement receipt changed. Refresh before you send again.")
     # Multiple live receipts are ambiguous: never discard another confirmed send.
     if any(not matches(item) for item in sent):
-        raise ValueError("Multiple announcement receipts require reconciliation")
+        raise ValueError("More than one sent announcement matches. Check Discord.")
     archived = None
     for item in deliveries:
         if item.get("occurrence_id") == occurrence and item.get("status") == "sent":
@@ -2229,7 +2293,7 @@ async def reopen_deleted_roster_delivery(
         "sent_occurrences": [value for value in row.get("sent_occurrences", []) if value != occurrence],
     }})
     if not result.matched_count:
-        raise ValueError("Announcement receipts changed; refresh before resending")
+        raise ValueError("The announcement receipts changed. Refresh before you send again.")
     return archived
 
 

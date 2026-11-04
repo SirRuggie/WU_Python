@@ -210,7 +210,7 @@ it("timeout displays the last-results error without advancing freshness", async 
   await mount();
   await act(async () => vi.advanceTimersByTimeAsync(20000));
   expect(host.textContent).toContain(
-    "Couldn't update locations · showing last results",
+    "Could not update locations · showing last results",
   );
   expect(memory.pools.get("main")!.lastCheck).toBe(-Infinity);
 });

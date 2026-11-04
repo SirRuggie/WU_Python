@@ -128,7 +128,7 @@ export default function MemberAssignments({
           className={data ? "member-refresh-note" : "notice error"}
           role={data ? "status" : "alert"}
         >
-          {data ? "Couldn't refresh. Showing last update." : error}
+          {data ? "Could not refresh. Showing last update." : error}
           <button onClick={() => void load()}>Retry</button>
         </div>
       )}
@@ -143,7 +143,7 @@ export default function MemberAssignments({
           {!data.accounts.length && (
             <div className="member-signup-summary">
               <section className="member-signup-empty">
-                <h2>You haven't signed up any accounts yet.</h2>
+                <h2>You have not signed up any accounts yet.</h2>
                 {memberSignupsOpen(season) ? (
                   <button
                     onClick={

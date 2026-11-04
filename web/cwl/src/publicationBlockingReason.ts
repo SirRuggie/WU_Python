@@ -13,24 +13,24 @@ export function publicationBlockingReason(state: {
   unplaced: number;
   acknowledged: boolean;
 }): string {
-  if (!state.hasDraft) return "Load the roster before publishing.";
+  if (!state.hasDraft) return "Load the roster. Then publish.";
   if (!state.canManage)
     return "You do not have permission to publish this roster.";
   if (state.locked)
-    return "Finish the current edit or operation before publishing.";
+    return "Finish the current edit. Then publish.";
   if (state.loading) return "Wait for the roster refresh to finish.";
   if (state.hasError)
-    return "Refresh the draft and resolve the error before publishing.";
+    return "Refresh the draft and fix the error. Then publish.";
   if (state.archived)
-    return "Publishing is unavailable for an archived season.";
+    return "You cannot publish an archived season.";
   if (state.instructionsLength > 2000)
-    return "Joining instructions must be 2,000 characters or fewer.";
+    return "Joining instructions must not be more than 2,000 characters.";
   if (!state.changesReady)
     return state.comparisonStatus === "loading"
       ? ""
       : "Refresh the draft to load the latest roster changes.";
   if (!state.accounts) return "No signed-up accounts are in this roster yet.";
   if (state.unplaced > 0 && !state.acknowledged)
-    return "Acknowledge the unplaced accounts before publishing.";
+    return "Confirm that you know about the unplaced accounts. Then publish.";
   return "";
 }

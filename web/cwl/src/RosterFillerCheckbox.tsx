@@ -72,7 +72,7 @@ export default function RosterFillerCheckbox({
       setError(
         cause instanceof Error
           ? cause.message
-          : "Couldn't save filler mark. Refresh and try again.",
+          : "Could not save filler mark. Refresh and try again.",
       );
     } finally {
       pending.current = false;

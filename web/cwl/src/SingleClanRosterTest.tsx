@@ -145,7 +145,7 @@ export default function SingleClanRosterTest({
           Refresh images
         </Button>
       </div>
-      <p>Choose a clan, preview its finalized roster, then send a test.</p>
+      <p>Select a clan, preview its finalized roster, then send a test.</p>
       {!version ? (
         <p>Finalize a roster first.</p>
       ) : (

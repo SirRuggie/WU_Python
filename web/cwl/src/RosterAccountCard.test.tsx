@@ -2,6 +2,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { Window } from "happy-dom";
 import { readFileSync } from "node:fs";
+const capacityFixturePath = "../../../tests/fixtures/ste158_capacity_note.json";
+const backendCapacityNote = JSON.parse(readFileSync(new URL(capacityFixturePath, import.meta.url), "utf8")).capacity_note;
 const cardCss = readFileSync("src/PlayerCard.css", "utf8");
 const accountCss = readFileSync("src/RosterAccountCard.css", "utf8");
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -98,7 +100,7 @@ describe("roster account card", () => {
     expect(html).not.toContain("<Alpha & Beta>");
     expect(html).toContain('aria-label="Select &lt;Alpha &amp; Beta&gt;"');
     expect(html).toContain("No weight");
-    expect(html).toContain("Kept unplaced");
+    expect(html).toContain("Stays unplaced");
     expect(html).toContain("location not checked yet");
     expect(html).not.toContain("Unavailable");
     expect(html).toContain("Main CWL");
@@ -126,11 +128,10 @@ describe("roster account card", () => {
       account: {
         ...account,
         kept: false,
-        auto_placement_note:
-          "Hosting clans need a 15- or 30-player capacity in Clan settings.",
+        auto_placement_note: backendCapacityNote,
       },
     });
-    expect(capacity).not.toContain("Hosting clans need");
+    expect(capacity).not.toContain(backendCapacityNote);
     expect(
       render({
         account: {
@@ -160,7 +161,7 @@ describe("roster account card", () => {
     expect(host.querySelector(".roster-player-note")?.textContent).toBe(
       "Needs review",
     );
-    expect(render()).toContain("Kept unplaced");
+    expect(render()).toContain("Stays unplaced");
   });
   it("keeps the full location in a title and ellipsizes only the current clan", () => {
     const html = render({

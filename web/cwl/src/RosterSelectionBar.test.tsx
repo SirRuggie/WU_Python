@@ -21,8 +21,8 @@ it("blocks every bulk action above 50 while retaining clear and visibility warni
       unloadedCount={15}
     />,
   );
-  expect(html).toContain("Max 50 per action");
-  expect(html).toContain("Narrow your selection to 50 or fewer");
+  expect(html).toContain("50 accounts at most for each action");
+  expect(html).toContain("Select 50 accounts or fewer");
   expect(html).toContain("hidden by filters");
   expect(html).toContain("not shown yet");
   expect((html.match(/disabled=""/g) || []).length).toBe(3);

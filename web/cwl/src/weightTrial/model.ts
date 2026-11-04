@@ -180,7 +180,7 @@ export function gaps(roster: Roster) {
 export function validateDraft(draft: Draft) {
   if (!draft.storages.trim())
     throw new Error(
-      "Choose storages; the saved lineup has no Town Hall default.",
+      "Select storages; the saved lineup has no Town Hall default.",
     );
   const storages = whole(draft.storages, 5);
   if (!draft.full.trim() && !draft.loot.trim())

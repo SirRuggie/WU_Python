@@ -61,7 +61,7 @@ class EvidenceTests(CaptureTests):
                 data["sync"]["status"] == "partial" and data["sync"]["warning"] is None
             )
             assert row["source_status"] == "waiting" and row["source_attacks"] is None
-            assert row["source_warning"] == "November CWL hasn't started in Clash yet"
+            assert row["source_warning"] == "November CWL has not started in Clash yet"
             assert data["sync"]["last_success_at"] == data["sync"]["last_checked_at"]
             assert data["sync"]["last_success_at"] != "2026-11-01T10:00:00+00:00"
         with self.app["store"].tx() as db:

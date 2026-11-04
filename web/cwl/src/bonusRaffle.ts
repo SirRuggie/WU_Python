@@ -63,7 +63,7 @@ export function bonusCandidateStatus(account: RaffleAccount, mode: BonusListMode
   if (mode === 'excluded') return 'Not included'
   if (account.bonus_review?.override_reason) return 'Included by staff exception'
   if (mode === 'eligible') return ''
-  if (account.three_cycle_cooldown) return 'Three consecutive bonus seasons · sit out this season'
+  if (account.three_cycle_cooldown) return 'Got a bonus in the last 3 seasons · cannot enter this season'
   return account.manual_candidate ? 'Added by staff · review eligibility' : ''
 }
 

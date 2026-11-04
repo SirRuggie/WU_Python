@@ -618,7 +618,7 @@ class Store:
                     "SELECT progress_version,last_backup_version FROM cwl_pool_role_clock WHERE id=1"
                 ).fetchone()
                 self.role_dirty = clock[0] > clock[1]
-            self.role_recovery_error = "Role progress could not be recovered. Check roles, turn both settings off, then save them again. Signups are unchanged."
+            self.role_recovery_error = "The bot could not finish the role work. 1. Check the roles. 2. Turn both settings off. 3. Save the settings again. Signups do not change."
             logging.getLogger(__name__).warning(
                 "Role progress recovery unavailable; role work paused"
             )
@@ -740,7 +740,7 @@ class Store:
                     "SELECT status FROM seasons WHERE id=?", (season_id,)
                 ).fetchone()
                 if not season or season["status"] != "draft":
-                    raise ValueError("Choose a non-archived season.")
+                    raise ValueError("Select a non-archived season.")
             db.execute(
                 "UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1",
                 (season_id,),

@@ -111,7 +111,7 @@ it("reports a successful write followed by failed reload as saved and notifies i
     expect(await spy.props.onSave({ kept: true })).toBe(true);
   });
   expect(host.textContent).toContain(
-    "Saved. Couldn't refresh. Refresh the page to see the latest.",
+    "Saved. Could not refresh. Refresh the page to see the latest.",
   );
   expect(changed).toHaveBeenCalledOnce();
 });
@@ -178,7 +178,7 @@ it("Declaration uses published snapshots for removed players and blocks every wr
   expect(setRequest.mock.calls[0][0].tag).toBe("#NEXT");
 });
 
-it("keeps a conflicting weight editor mounted until explicit Reload and uses the fresh revision", async () => {
+it("keeps a conflicting weight editor mounted until explicit Refresh and uses the fresh revision", async () => {
   await render();
   const panel = host.firstElementChild;
   vi.mocked(api).mockClear();
@@ -192,7 +192,7 @@ it("keeps a conflicting weight editor mounted until explicit Reload and uses the
     ).toBe(false);
   });
   expect(host.firstElementChild).toBe(panel);
-  expect(host.textContent).toContain("Changed by someone else · Reload");
+  expect(host.textContent).toContain("Changed by someone else · Refresh");
   expect(api).toHaveBeenCalledTimes(1);
   expect(changed).not.toHaveBeenCalled();
   await act(async () => {

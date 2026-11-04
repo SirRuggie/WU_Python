@@ -62,7 +62,7 @@ export default function BaseBank({
         if (!active || controller.signal.aborted || accessLost.current) return;
         if (err instanceof ApiError && [401, 403].includes(err.status))
           denied();
-        else setError("Couldn't load Base bank. Try again.");
+        else setError("Could not load Base bank. Try again.");
       });
     return () => {
       active = false;
@@ -90,7 +90,7 @@ export default function BaseBank({
     <section className="base-bank" aria-labelledby="base-bank-heading">
       <header>
         <h1 id="base-bank-heading">Base bank</h1>
-        <p>Choose your Town Hall, then copy a FWA base.</p>
+        <p>Select your Town Hall. Then copy a FWA base.</p>
       </header>
       {error ? (
         <p role="alert">
@@ -99,7 +99,7 @@ export default function BaseBank({
       ) : !bases ? (
         <p role="status">Loading bases…</p>
       ) : !bases.length ? (
-        <p>No bases are available yet. Check back soon.</p>
+        <p>No bases are available yet. Try again later.</p>
       ) : (
         <>
           <div

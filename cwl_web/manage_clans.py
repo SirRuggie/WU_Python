@@ -169,13 +169,13 @@ async def save(request):
         if not isinstance(value,str):raise web.HTTPBadRequest(text='Check the clan fields.')
         value=value.strip()
         if key in IDS:
-            if value and not re.fullmatch(r'\d{15,22}',value):raise web.HTTPBadRequest(text='Choose a valid Discord member, role or channel.')
+            if value and not re.fullmatch(r'\d{15,22}',value):raise web.HTTPBadRequest(text="Select a valid Discord member, role or channel.")
             changes[key]=int(value or 0)
         else:
             if len(value)>(1000 if key in ('logo','banner','profile') else 120):raise web.HTTPBadRequest(text='Clan field is too long.')
             if key=='name' and not value:raise web.HTTPBadRequest(text='Enter the clan name.')
-            if key=='type' and value not in ['',*CLAN_TYPES]:raise web.HTTPBadRequest(text='Choose a clan type.')
-            if key=='th_requirements' and value not in ['',*TH_LEVELS]:raise web.HTTPBadRequest(text='Choose a Town Hall level.')
+            if key=='type' and value not in ['',*CLAN_TYPES]:raise web.HTTPBadRequest(text="Select a clan type.")
+            if key=='th_requirements' and value not in ['',*TH_LEVELS]:raise web.HTTPBadRequest(text="Select a Town Hall level.")
             if key in ('logo','banner','profile') and value:
                 from utils.text_commands import public_url
                 try:public_url(value,'image' if key!='profile' else 'profile')
@@ -188,10 +188,10 @@ async def save(request):
             if not value or key not in IDS or str(value)==str(row.get(key)):continue
             if key=='leader_id':await discord(request,'GET',f'/guilds/{GUILD_ID}/members/{value}')
             elif key.endswith('role_id'):
-                if value==GUILD_ID or not any(str(r['id'])==str(value) for r in actor['roles']):raise web.HTTPBadRequest(text='Choose a role in this server.')
+                if value==GUILD_ID or not any(str(r['id'])==str(value) for r in actor['roles']):raise web.HTTPBadRequest(text="Select a role in this server.")
             else:
                 channel=await discord(request,'GET',f'/channels/{value}')
-                if str(channel.get('guild_id'))!=str(GUILD_ID) or channel.get('type') not in ((10,11,12) if key=='thread_id' else (0,5)):raise web.HTTPBadRequest(text='Choose a channel in this server.')
+                if str(channel.get('guild_id'))!=str(GUILD_ID) or channel.get('type') not in ((10,11,12) if key=='thread_id' else (0,5)):raise web.HTTPBadRequest(text="Select a channel in this server.")
         names = await change_names(request, actor, row, changes)
         event_id=await audit(db,actor,'before_edit',row)
         result=await db.clans.update_one(match(row),{'$set':changes})
@@ -215,7 +215,7 @@ async def remove(request):
 async def image(request):
     await require_manage(request,'clans',write=True)
     slot=request.match_info['slot']
-    if slot not in ('logo','banner'):raise web.HTTPBadRequest(text='Choose logo or banner.')
+    if slot not in ('logo','banner'):raise web.HTTPBadRequest(text="Select logo or banner.")
     async with mongo(request) as db:row=await current(request,db,{'revision':request.query.get('revision')})
     media=request.app.get('server_management_media') or MediaStore.from_env()
     try:

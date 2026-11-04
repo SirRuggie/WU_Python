@@ -25,7 +25,7 @@ describe('bonus review status', () => {
     const { bonusCandidateStatus } = await import('./bonusRaffle')
     const account = { exclusion: 'Missed sync', three_cycle_cooldown: true } as RaffleAccount
     expect(bonusCandidateStatus(account, 'excluded')).toBe('Missed sync')
-    expect(bonusCandidateStatus({ three_cycle_cooldown: true } as RaffleAccount, 'candidates')).toContain('sit out this season')
+    expect(bonusCandidateStatus({ three_cycle_cooldown: true } as RaffleAccount, 'candidates')).toContain('cannot enter this season')
   })
   it('labels a staff exception and a saved winner distinctly', async () => {
     const { bonusCandidateStatus } = await import('./bonusRaffle')

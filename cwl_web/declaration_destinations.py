@@ -47,7 +47,7 @@ def issue(channel, actor):
         0,
         5,
     ):
-        return "Choose a text or announcement channel in this server"
+        return "Select a text or announcement channel in this server"
     rights = effective_permissions(
         actor["permissions"],
         actor["role_ids"],

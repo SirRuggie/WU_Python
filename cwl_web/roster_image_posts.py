@@ -29,13 +29,13 @@ async def configure(request):
     actor = staff(request, send=True)
     body = await _json(request)
     if set(body) != {'pool', 'channel_id'} or body.get('pool') not in ('main', 'lazy'):
-        raise web.HTTPBadRequest(text='Choose Main or Lazy and a text channel.')
+        raise web.HTTPBadRequest(text="Select Main or Lazy and a text channel.")
     channel = body['channel_id']
     if not isinstance(channel, str) or not re.fullmatch(r'\d{15,22}', channel):
-        raise web.HTTPBadRequest(text='Choose a text channel in this server.')
+        raise web.HTTPBadRequest(text="Select a text channel in this server.")
     destination = await discord(request, 'GET', f'/channels/{channel}')
     if str(destination.get('guild_id')) != str(GUILD_ID) or destination.get('type') not in (0, 5):
-        raise web.HTTPBadRequest(text='Choose a text channel in this server.')
+        raise web.HTTPBadRequest(text="Select a text channel in this server.")
     return web.json_response(store(request).configure(body['pool'], channel, str(destination.get('name') or channel), actor['user_id']))
 
 
@@ -117,7 +117,7 @@ async def deliver(request):
     if (set(body) - {'confirm_duplicate'} != {'pool', 'version', 'request_id'}
             or body.get('pool') not in ('main', 'lazy')
             or ('confirm_duplicate' in body and body['confirm_duplicate'] is not True)):
-        raise web.HTTPBadRequest(text='Choose a pool and published version.')
+        raise web.HTTPBadRequest(text="Select a pool and published version.")
     version, nonce = body['version'], body['request_id']
     if type(version) is not int or version < 1 or not isinstance(nonce, str) or not re.fullmatch(r'[a-f0-9]{24}', nonce):
         raise web.HTTPBadRequest(text='Invalid version or request ID.')
@@ -164,7 +164,7 @@ async def deliver(request):
         removed_clan = (uncertain and uncertain['operation'] == 'update' and operation == 'drop'
                         and version > uncertain['target_version'] and (clan not in groups or groups[clan]['pool'] != pool))
         if uncertain and uncertain['operation'] != operation and not (returned_clan or removed_clan):
-            raise web.HTTPConflict(text='Retry the uncertain operation explicitly before changing this message.')
+            raise web.HTTPConflict(text="Try the post again yourself before you change this message.")
     if previous and previous['status'] in ('uncertain', 'failed') and operation != 'post':
         prior = storage.receipt(previous['request_id'])
         if prior and prior['operation'] == operation and prior['target_version'] == version:
@@ -195,7 +195,7 @@ async def deliver(request):
         channel, message_id = previous['channel_id'], previous['message_id']
     destination = await discord(request, 'GET', f'/channels/{channel}')
     if str(destination.get('guild_id')) != str(GUILD_ID) or destination.get('type') not in (0, 5):
-        raise web.HTTPBadRequest(text='Choose a text channel in this server.')
+        raise web.HTTPBadRequest(text="Select a text channel in this server.")
     if frozen is None:
         if operation != 'drop':
             await metadata(request, group)

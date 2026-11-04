@@ -414,7 +414,7 @@ export default function StrikeActivityRoster({
               <span
                 key={filter.key}
                 className="strike-tab-predicate"
-                title="This predicate defines the selected tab. Choose All to include other accounts."
+                title="This rule decides which accounts the tab shows. Select All to show other accounts."
               >
                 {filter.label}
               </span>

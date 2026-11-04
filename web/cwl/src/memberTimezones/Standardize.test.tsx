@@ -411,5 +411,5 @@ it("shows history loading until the summary request finishes", async () => {
   await click("Past nickname changes");
   expect(host.textContent).toContain("Loading…");
   await act(async () => resolve({ runs: [] }));
-  expect(host.textContent).toContain("Choose a run");
+  expect(host.textContent).toContain("Select a run");
 });

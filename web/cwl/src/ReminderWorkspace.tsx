@@ -536,7 +536,7 @@ export default function ReminderWorkspace({
                     </a>
                   </p>
                   <p className="reminder-overview-note">
-                    Delivery is confirmed in Delivery history. Website signups
+                    Delivery is confirmed in Delivery history. Dashboard signups
                     are {state.signup_open ? "open" : "closed"} separately.
                   </p>
                 </>
@@ -667,7 +667,7 @@ export default function ReminderWorkspace({
                                   changeVariant({ role_ids: next });
                                 }}
                               >
-                                <option value="">Choose a server role</option>
+                                <option value="">Select a server role</option>
                                 {roles.map((role) => (
                                   <option key={role.id} value={role.id}>
                                     {role.name}
@@ -839,14 +839,14 @@ export default function ReminderWorkspace({
                 <div className="card">
                   <h3>Signup Reminders</h3>
                   <p>
-                    Choose when Discord announces signups, the advertised
+                    Select when Discord announces signups, the advertised
                     deadline, and how often reminders are sent.
                   </p>
                   <fieldset disabled={disabled}>
                     <legend>Signup window &amp; reminder timing</legend>
                     <p className="small">
                       All dates and times below use {draft.timezone}. Current
-                      campaign: {state.cycle}.
+                      CWL month: {state.cycle}.
                     </p>
                     <div className="signup-date-grid">
                       <SignupDateField
@@ -872,7 +872,7 @@ export default function ReminderWorkspace({
                       />
                     </div>
                     <p className="small">
-                      Website signups are currently{" "}
+                      Dashboard signups are currently{" "}
                       {state.signup_open ? "open" : "closed"}. Reminders do not
                       open or close website signups or external forms.
                     </p>
@@ -1024,7 +1024,7 @@ export default function ReminderWorkspace({
                     {error ||
                       (dirty
                         ? preview
-                          ? "Review ready — save to apply your changes"
+                          ? "Review is ready. Save to use your changes."
                           : "Unsaved changes"
                         : "All changes saved")}
                   </span>
@@ -1067,7 +1067,7 @@ export default function ReminderWorkspace({
                             await load();
                             setNotice(
                               result.warning ||
-                                "Saved to Manage. Signup links are unchanged; the existing bot will reconcile scheduled sends.",
+                                "Saved to Manage. Signup links are unchanged. The existing bot will check the scheduled sends.",
                             );
                           }),
                       });

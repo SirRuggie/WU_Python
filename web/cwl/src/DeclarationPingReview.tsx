@@ -22,7 +22,7 @@ export default function DeclarationPingReview({
       text={
         review.mode === "test"
           ? `Post ${review.chunks} sample messages to #${review.channel.name}. Nobody will be pinged; no ping receipt or cooldown is recorded.`
-          : `Fresh arrival check: ${review.count} missing accounts. ${review.unlinked} have no linked Discord. ${review.unknown} unavailable locations excluded. ${review.chunks} messages.`
+          : `New arrival check: ${review.count} accounts are missing. ${review.unlinked} have no linked Discord account. Locations not available: ${review.unknown}. These are not counted. ${review.chunks} messages.`
       }
       confirmLabel={review.mode === "test" ? "Send test" : "Send pings"}
       onCancel={onCancel}
@@ -52,7 +52,7 @@ export default function DeclarationPingReview({
             <DiscordPreview
               key={i}
               parts={parts}
-              label={`Chunk ${i + 1} of ${review.chunks}`}
+              label={`Message ${i + 1} of ${review.chunks}`}
             />
           ))}
         </details>

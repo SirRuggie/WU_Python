@@ -208,9 +208,7 @@ export default function SavedSignups({
             </button>
           </div>
           <small>
-            Changes stay here until you select Save changes. Accounts already in
-            that pool stay there. Staff will be alerted to withdrawals and pool
-            changes.
+            Your changes stay here until you select Save changes. Accounts that are in that pool stay in it. Staff get a message about withdrawals and pool changes.
           </small>
           {selected.some((row) =>
             missingAccounts.some((missing) => missing.tag === row.tag),
@@ -305,7 +303,7 @@ export default function SavedSignups({
                   accounts.find((account) => account.tag === signup.tag)
                     ?.current_clan_type === "FWA" && (
                     <p className="inline-reason">
-                      This account is currently in FWA and can only choose Lazy
+                      This account is currently in FWA and can only select Lazy
                       CWL.
                     </p>
                   )}

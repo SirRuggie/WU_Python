@@ -226,7 +226,7 @@ def _query(request):
     kind = request.query.get("kind", "accounts")
     basis = request.query.get("basis", "current")
     if kind not in EXPORT_KINDS or basis not in EXPORT_BASES:
-        raise web.HTTPBadRequest(text="Choose a supported export type and roster version")
+        raise web.HTTPBadRequest(text="Select a supported export type and roster version")
     return kind, basis
 
 

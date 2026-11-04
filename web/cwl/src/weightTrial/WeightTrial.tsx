@@ -473,7 +473,7 @@ export default function WeightTrial({
             >
               {(clans.find((clan) => clan.tag === selected)
                 ? clanLabel(clans.find((clan) => clan.tag === selected)!)
-                : "") || "Choose a clan"}{" "}
+                : "") || "Select a clan"}{" "}
               ▾
             </button>
             {(pickerOpen || !selected) && (
@@ -591,7 +591,7 @@ export default function WeightTrial({
                   !warOrder?.[targetPlayer] &&
                   lineups.some((war) => war.order[targetPlayer]) && (
                     <p role="status">
-                      This player is in the previous saved war. Choose Previous
+                      This player is in the previous saved war. Select Previous
                       in War lineup.
                     </p>
                   )}

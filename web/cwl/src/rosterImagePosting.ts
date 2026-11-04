@@ -276,7 +276,7 @@ export async function runImageJobs(
           error.status === 429 &&
           error.retryAfter !== undefined
         ) {
-          options.progress(`Discord rate limit · waiting ${error.retryAfter}s`);
+          options.progress(`Discord is slow · wait ${error.retryAfter} seconds`);
           await wait(error.retryAfter * 1000);
           continue;
         }

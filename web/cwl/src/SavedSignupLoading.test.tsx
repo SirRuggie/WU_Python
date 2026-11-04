@@ -126,7 +126,7 @@ it("does not claim clans are late or show date lines before publication is known
   );
   expect(host.textContent).toContain("Checking clan assignments…");
   expect(host.textContent).not.toContain(
-    "Clans are not ready yet. Check back soon.",
+    "Clans are not ready yet. Try again later.",
   );
   expect(host.querySelector(".member-signup-date")).toBeNull();
 });

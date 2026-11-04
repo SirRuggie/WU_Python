@@ -12,10 +12,10 @@ export default function TaskEventTimer({ kind, now }: { kind: 'raid' | 'games' |
       <strong>{cwl ? (live ? 'Signup closes' : 'Signup opens') : live ? 'Ends' : 'Starts'} in {countdown(target, now)}</strong>
       <time dateTime={new Date(target).toISOString()}>{localTime(target)}</time>
     </div>
-    <p>{cwl ? 'This is the in-game clan signup window. Each clan’s battle schedule is different. Your attack tasks and battle timers appear below when wars are reported.' : live
+    <p>{cwl ? 'This is the time when clans sign up in the game. Each clan has its own battle times. Your attack tasks and battle timers appear below after the game reports a war.' : live
       ? 'Progress appears below as activity is reported. If it has not appeared yet, check again after playing.'
       : 'New event progress will appear here after the event starts and activity is reported.'}
-      <small>Standard game schedule, same as Events. The in-game timer takes precedence.</small>
+      <small>This is the usual game schedule, the same as on Events. If the in-game timer is different, use the in-game timer.</small>
     </p>
   </aside>
 }

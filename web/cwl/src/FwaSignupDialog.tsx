@@ -28,13 +28,13 @@ export default function FwaSignupDialog({ onClose }: { onClose: () => void }) {
         onClose();
       }}
     >
-      <h2 id={title}>Nuh uh uh, your account is in FWA!</h2>
+      <h2 id={title}>Your account is in an FWA clan.</h2>
       <img
         className="fwa-signup-animation"
         src={animation}
         width="220"
         height="124"
-        alt="A playful finger wag: no, no, no."
+        alt="A picture of a finger saying no."
       />
       <p className="fwa-signup-slogan">LAZY WAY OR NO WAY!</p>
       <p>

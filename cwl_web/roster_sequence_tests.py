@@ -37,7 +37,7 @@ async def prepare(request):
             or not isinstance(body['body'], str) or len(body['body']) > 4000
             or type(body['version']) is not int or body['version'] < 1
             or not isinstance(body['roster_url'], str)):
-        raise web.HTTPBadRequest(text='Choose a test channel and valid published roster')
+        raise web.HTTPBadRequest(text="Select a test channel and valid published roster")
     try:
         url = urlsplit(body['roster_url'])
         valid_url = url.scheme == 'https' and url.hostname and not url.username and not url.password
@@ -54,7 +54,7 @@ async def prepare(request):
         return web.json_response({'test': public_test(prior)})
     destination = await discord(request, 'GET', f'/channels/{channel}')
     if str(destination.get('guild_id')) != str(GUILD_ID) or destination.get('type') not in (0, 5):
-        raise web.HTTPBadRequest(text='Choose a text channel in this server')
+        raise web.HTTPBadRequest(text="Select a text channel in this server")
     async with _mongo(request) as mongo:
         loaded = copy.deepcopy(await cwl_campaign.load_campaign(mongo, GUILD_ID, cycle))
         if body['generation'] != campaign_generation(loaded):

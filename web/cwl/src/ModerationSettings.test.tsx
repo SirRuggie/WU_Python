@@ -295,8 +295,8 @@ it("shows the missing effective channel without changing enabled settings", asyn
       (b) => b.textContent === "Send test",
     )!;
     expect(test.disabled).toBe(true);
-    expect(test.title).toBe("Choose a channel first");
-    expect(row.textContent).toContain("Choose a channel first");
+    expect(test.title).toBe("Select a channel first");
+    expect(row.textContent).toContain("Select a channel first");
   }
   expect(
     card.querySelector<HTMLInputElement>('[aria-label="Moderation logging"]')

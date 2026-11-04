@@ -44,7 +44,7 @@ export default function VisitorSummary({ refresh = 0 }: { refresh?: number }) {
         <svg viewBox="0 0 298 64" role="img" aria-label="Unique dashboard visitors each day for the last 30 days">
           <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" />
         </svg>
-        <p className="visitor-note">Unique people · New York days · Staff includes anyone recorded as staff during the period.</p>
+        <p className="visitor-note">Each person counts one time a day. Days use New York time. Staff means anyone who was staff in this period.</p>
         <details><summary>Daily counts</summary><table><caption>Last 30 days</caption><thead><tr><th>Date</th><th>Members</th><th>Staff</th><th>Total</th></tr></thead><tbody>{data.series.map((day) => <tr key={day.day}><th scope="row">{day.day}</th><td>{day.members}</td><td>{day.staff}</td><td>{day.total}</td></tr>)}</tbody></table></details>
       </> : null}
     </section>

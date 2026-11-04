@@ -36,7 +36,7 @@ export default function ScheduleEditor({
         <div>
           <h3>War reminders</h3>
           <p>
-            Choose when and where to remind players with unused attacks.
+            Select when and where to remind players with unused attacks.
             Supports regular wars and CWL.
           </p>
         </div>
@@ -84,7 +84,7 @@ export default function ScheduleEditor({
             When war starts
           </label>
           <p className="small">
-            Choose any combination of times before war ends.
+            Select any combination of times before war ends.
           </p>
           <div className="war-chips">
             {settings.minutes.map((minutes) => (
@@ -115,7 +115,7 @@ export default function ScheduleEditor({
                   min={1 / unit}
                   max={1440 / unit}
                   step="any"
-                  placeholder="e.g. 8"
+                  placeholder="Example: 8"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                 />

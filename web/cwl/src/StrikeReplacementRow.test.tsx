@@ -66,7 +66,7 @@ it("retains the same draft after conflict and only retries using an explicit ref
   expect(input.value).toBe("My note");
   expect(button("Save priority").disabled).toBe(true);
   revision = 8;
-  await click("Reload");
+  await click("Refresh");
   expect(input.value).toBe("My note");
   await click("Save priority");
   expect(vi.mocked(api).mock.calls.at(-1)?.[2]).toMatchObject({

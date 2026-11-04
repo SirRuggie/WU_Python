@@ -41,7 +41,7 @@ export default function JoiningInstructionsEditor({
       )}
       {tooLong && (
         <p id={`${id}-error`} role="alert">
-          Keep joining instructions to 2,000 characters or fewer.
+          Joining instructions must not be more than 2,000 characters.
         </p>
       )}
       <details>

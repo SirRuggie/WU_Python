@@ -226,7 +226,7 @@ export default function TextCommands({
       }
       setError(
         e instanceof ApiError && e.status === 409
-          ? "This command changed elsewhere. Your draft is kept. Reload commands to review the saved version."
+          ? "This command changed elsewhere. Your draft is kept. Refresh commands to review the saved version."
           : e instanceof Error
             ? e.message
             : "Could not save command.",
@@ -327,7 +327,7 @@ export default function TextCommands({
               else reload();
             }}
           >
-            Reload commands
+            Refresh commands
           </button>
         </div>
       )}
@@ -357,7 +357,7 @@ export default function TextCommands({
           {loading ? (
             <p role="status">Loading commands…</p>
           ) : error && rows.length === 0 ? (
-            <p>Commands could not be loaded. Use Reload commands above.</p>
+            <p>Commands could not be loaded. Use Refresh commands above.</p>
           ) : rows.length === 0 ? (
             <p>No commands yet. Select New command.</p>
           ) : (
@@ -762,7 +762,7 @@ export default function TextCommands({
         ) : (
           <section className="card">
             <h2>Create a saved reply</h2>
-            <p>Choose New command or select a command to edit.</p>
+            <p>Select New command or select a command to edit.</p>
             <p className="small">Example: !trigger → your saved reply.</p>
           </section>
         )}

@@ -21,7 +21,7 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 it.each([
-  ["waiting", "November CWL hasn't started in Clash yet", false],
+  ["waiting", "November CWL has not started in Clash yet", false],
   [
     "season_mismatch",
     "Clash reports a later CWL month than the selected month",
@@ -106,12 +106,12 @@ it.each([
       ).toBe(incomplete);
       if (status === "waiting") {
         expect(
-          text.split("November CWL hasn't started in Clash yet"),
+          text.split("November CWL has not started in Clash yet"),
         ).toHaveLength(2);
         expect(text).not.toContain("CWL month mismatch");
         expect(host.querySelector('[role="alert"]')).toBeNull();
       } else {
-        expect(text).not.toContain("hasn't started in Clash yet");
+        expect(text).not.toContain("has not started in Clash yet");
         if (warning) expect(text).toContain(warning);
       }
       expect(
@@ -126,7 +126,7 @@ it.each([
 );
 it("names the selected month and never reinterprets a real mismatch by calendar alone", () => {
   expect(syncStatusLabel("waiting", "2027-01")).toBe(
-    "January CWL hasn't started in Clash yet",
+    "January CWL has not started in Clash yet",
   );
   expect(syncStatusLabel("season_mismatch", "2026-11")).toBe(
     "CWL month mismatch",

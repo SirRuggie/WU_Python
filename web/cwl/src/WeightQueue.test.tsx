@@ -143,11 +143,11 @@ it("reports nonempty drafts and clears drafts and errors on reset without saving
   expect(onDirtyCount).toHaveBeenLastCalledWith(2);
   expect(onDirty).toHaveBeenLastCalledWith(true);
   await click(button("Save", rows()[0]));
-  expect(rows()[0].textContent).toContain("Weight wasn't saved");
+  expect(rows()[0].textContent).toContain("Weight was not saved");
   await render({ ...props, resetToken: 1 });
   expect(input().value).toBe("");
   expect(input(1).value).toBe("");
-  expect(rows()[0].textContent).not.toContain("Weight wasn't saved");
+  expect(rows()[0].textContent).not.toContain("Weight was not saved");
   expect(onDirtyCount).toHaveBeenLastCalledWith(0);
   expect(onDirty).toHaveBeenLastCalledWith(false);
   expect(props.onSave).toHaveBeenCalledOnce();
@@ -256,7 +256,7 @@ it("retains input on failed saves and prevents duplicate submits while pending",
   expect(save).toHaveBeenCalledOnce();
   await act(async () => finish(false));
   expect(input().value).toBe("25000");
-  expect(rows()[0].textContent).toContain("Weight wasn't saved");
+  expect(rows()[0].textContent).toContain("Weight was not saved");
 });
 it("disables edits and refresh in archived seasons and while busy", async () => {
   await render({ archived: true });
@@ -280,7 +280,7 @@ it("uses 15px primary names and 12px regular metadata and helper text, with a te
 it.each([
   "Request timed out",
   "Your login expired",
-  "Roster changed; refresh before saving",
+  "The roster changed. Refresh before you save.",
 ])(
   "keeps the draft and never retries automatically after %s",
   async (message) => {

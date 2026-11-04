@@ -67,7 +67,7 @@ function parseWeightRange(minimum: string, maximum: string) {
       return {
         minWeight: null,
         maxWeight: null,
-        error: "Maximum weight must be at least the minimum.",
+        error: "The maximum weight must be the same as or more than the minimum weight.",
       };
     }
     return { minWeight, maxWeight, error: "" };
@@ -290,7 +290,7 @@ export default function RosterFilters({
         >
           <div className="roster-filters-fields">
             <p>
-              Choose any status within a section. Different sections narrow the
+              Select any status within a section. Different sections narrow the
               result together.
             </p>
             <RosterFilterOptions

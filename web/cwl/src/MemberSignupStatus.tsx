@@ -43,22 +43,22 @@ export function memberDateLines(
   const deadline = Date.parse(season.signup_deadline),
     placement = Date.parse(season.placements_by);
   if (!Number.isFinite(deadline) || !Number.isFinite(placement)) return [];
-  if (placement < now) return ["Clans are not ready yet. Check back soon."];
+  if (placement < now) return ["Clans are not ready yet. Try again later."];
   if (memberSignupsOpen(season))
     return [
       signupCloseLine(season, now)!,
-      `You'll see your clan by ${formatMemberDate(placement)}.`,
+      `You will see your clan by ${formatMemberDate(placement)}.`,
     ];
   return [
-    `Signups closed · you'll see your clan by ${formatMemberDate(placement)} · ${relativeMinutes(placement, now)}`,
+    `Signups closed · you will see your clan by ${formatMemberDate(placement)} · ${relativeMinutes(placement, now)}`,
   ];
 }
 export function signupHeading(signed: number, total: number | null) {
   if (total === null)
-    return `✓ You're signed up · ${signed} account${signed === 1 ? "" : "s"}`;
+    return `✓ You are signed up · ${signed} account${signed === 1 ? "" : "s"}`;
   return signed === total
-    ? `✓ You're signed up · all ${total} account${total === 1 ? "" : "s"}`
-    : `✓ You're signed up · ${signed} of ${total} accounts`;
+    ? `✓ You are signed up · all ${total} account${total === 1 ? "" : "s"}`
+    : `✓ You are signed up · ${signed} of ${total} accounts`;
 }
 export default function MemberSignupStatus({
   signups,
@@ -109,7 +109,7 @@ export default function MemberSignupStatus({
   const dateLines = publicationLoading
     ? []
     : memberDateLines(season, published, now).map((line) =>
-        savedView ? line.replace(/^Signups closed · you\'ll/, "You\'ll") : line,
+        savedView ? line.replace(/^Signups closed · you will/, "You will") : line,
       );
   const signupDeadlineLine = signupCloseLine(season, now);
   const checkingAccounts =
@@ -132,9 +132,9 @@ export default function MemberSignupStatus({
             ? "Your saved signups"
             : signups.length
               ? partial
-                ? "✓ You're signed up · Waiting for a clan"
+                ? "✓ You are signed up · Waiting for a clan"
                 : signupHeading(signups.length, total)
-              : "You haven't signed up any accounts yet."}
+              : "You have not signed up any accounts yet."}
         </h2>
         {signups.length > 0 && (
           <p>
@@ -174,7 +174,7 @@ export default function MemberSignupStatus({
                     : " Some accounts are waiting for a clan.")}
               </>
             ) : (
-              "We've got your signup. Your clan will show here once staff finish the roster."
+              "Your signup is saved. Your clan appears here after staff finish the roster."
             )}
           </p>
         )}

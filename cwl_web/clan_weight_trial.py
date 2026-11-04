@@ -185,7 +185,7 @@ async def directory(request):
         try:
             season_id = int(request.query["season_id"])
         except ValueError:
-            _fail(400, "Choose a valid season.")
+            _fail(400, "Select a valid season.")
         with _store(request).tx() as db:
             _season(db, season_id)
             accounts = _roster_rows(db, season_id)
@@ -276,7 +276,7 @@ async def saved_players(request):
 def validate_changes(changes):
     """Validate request shape; the storage owner validates changed numeric values."""
     if not isinstance(changes, list) or not 1 <= len(changes) <= 150:
-        raise ValueError("Choose between 1 and 150 weights to save.")
+        raise ValueError("Select between 1 and 150 weights to save.")
     seen = set()
     cleaned = []
     for item in changes:
@@ -357,7 +357,7 @@ async def save(request):
     try:
         if not isinstance(body, dict) or set(body) != {"changes"}:
             raise ValueError(
-                "Choose weight changes only; refresh members before saving."
+                "Select weight changes only; refresh members before saving."
             )
         changes = validate_changes(body.get("changes"))
     except (ValueError, TypeError) as exc:

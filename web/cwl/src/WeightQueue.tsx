@@ -124,7 +124,7 @@ export default function WeightQueue({
         setErrors((current) => ({
           ...current,
           [account.tag]:
-            "Weight wasn't saved. Check the message above and try again.",
+            "Weight was not saved. Check the message above and try again.",
         }));
     } catch (error) {
       if (mounted.current)
@@ -192,7 +192,7 @@ export default function WeightQueue({
           </div>
         </div>
       )}
-      <div className="weight-queue-help">Saving doesn't move players.</div>
+      <div className="weight-queue-help">Saving does not move players.</div>
       {accounts.some((account) => account.current_fwa_status === "stale") && (
         <p role="status">
           Clan membership could not be checked. Showing last known groups.

@@ -93,7 +93,7 @@ export default function StrikeSettingsEditor({
       setConflict(cause instanceof ApiError && cause.status === 409);
       setError(
         cause instanceof ApiError && cause.status === 409
-          ? "Changed by someone else · Reload"
+          ? "Changed by someone else · Refresh"
           : cause instanceof Error
             ? cause.message
             : "Could not save settings.",
@@ -143,7 +143,7 @@ export default function StrikeSettingsEditor({
           {error}
           {conflict && (
             <button disabled={busy} onClick={() => setReload(true)}>
-              Reload
+              Refresh
             </button>
           )}
         </div>
@@ -213,9 +213,9 @@ export default function StrikeSettingsEditor({
       </div>
       {reload && (
         <ConfirmDialog
-          heading="Reload settings?"
+          heading="Refresh settings?"
           text="Discard your unsaved role and strike-limit edits and load the latest settings?"
-          confirmLabel="Reload"
+          confirmLabel="Refresh"
           cancelLabel="Keep editing"
           onCancel={() => setReload(false)}
           onConfirm={() => void reloadSettings()}

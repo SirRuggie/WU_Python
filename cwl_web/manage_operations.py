@@ -82,7 +82,7 @@ async def load_document(db, section, item=None, *, source_snapshot=None):
         row=await war_weight.load(db,shared.GUILD_ID)
         if source_snapshot is not None:source_snapshot.update(copy.deepcopy(row))
         if item and item!='settings':
-            if item!='new' and not re.fullmatch(r'[1-9][0-9]?',item):raise web.HTTPBadRequest(text='Choose a Town Hall.')
+            if item!='new' and not re.fullmatch(r'[1-9][0-9]?',item):raise web.HTTPBadRequest(text="Select a Town Hall.")
             th=int(item) if item!='new' else 19; value=row['ranges'].get(str(th),{'min':1,'max':2,'emoji':''})
             return document(section,row,[field('th','Town Hall',th,'number',min=1,max=99,readonly=item!='new'),field('min','Minimum weight',value['min'],'number',min=1,max=500000),field('max','Maximum weight',value['max'],'number',min=2,max=500000),field('emoji','Town Hall emoji',value.get('emoji',''))])
         if item=='settings':return document(section,row,[field('minimum_th','Lowest Town Hall shown',row['minimum_th'],'number',min=1,max=99)])
@@ -94,7 +94,7 @@ async def load_document(db, section, item=None, *, source_snapshot=None):
             from extensions.commands.clan.dashboard.fwa_data import FWA_TH_LEVELS
             return document(section,row,[],documents=[{'id':th,'label':'Town Hall '+th[2:].replace('_new',' (new upgrade)'),'endpoint':f'/manage/operations/{section}/{th}'} for th in FWA_TH_LEVELS])
         from extensions.commands.clan.dashboard.fwa_data import FWA_TH_LEVELS
-        if item not in FWA_TH_LEVELS:raise web.HTTPBadRequest(text='Choose a Town Hall.')
+        if item not in FWA_TH_LEVELS:raise web.HTTPBadRequest(text="Select a Town Hall.")
         fields=[field(key,label,row.get(key,{}).get(item,''),'textarea' if key in {'base_information','base_upgrade_notes'} else 'text',max_length=4000) for key,label in BASE_FIELDS.items()]
         for entry in fields:
             if entry['key'].endswith('_images'):entry['upload_endpoint']=f'/manage/operations/fwa_bases/{item}/upload/{entry["key"]}'
@@ -129,7 +129,7 @@ async def load_document(db, section, item=None, *, source_snapshot=None):
         row=await db.fwa_sync_config.find_one({'_id':CONFIG_ID}) or {}
         if source_snapshot is not None:source_snapshot.update(copy.deepcopy(row))
         effective = normalize_config(row)
-        return document(section,row,[field('enabled','Reminders enabled',effective['enabled'],'boolean'),field('panel_channel_id','Signup channel',str(effective['panel_channel_id'] or ''),'channel'),field('band_url','BAND fallback link',effective['band_url'])],warning='Changes take effect on the next bot check, within 5 minutes.',actions=[{'id':'check_feed','label':'Check calendar','description':'Checks the feed without sending messages.'},{'id':'test_dm','label':'Send me a test DM','description':'Sends a test only to you.','advanced':True}])
+        return document(section,row,[field('enabled','Reminders enabled',effective['enabled'],'boolean'),field('panel_channel_id','Signup channel',str(effective['panel_channel_id'] or ''),'channel'),field('band_url','BAND fallback link',effective['band_url'])],warning="Changes start at the next bot check. That is within 5 minutes.",actions=[{'id':'check_feed','label':'Check calendar','description':'Checks the feed without sending messages.'},{'id':'test_dm','label':'Send me a test DM','description':'Sends a test only to you.','advanced':True}])
     raise web.HTTPNotFound()
 
 async def check_channel_permissions(request, channel):
@@ -192,7 +192,7 @@ async def save(request):
                 await war_weight.save(db,shared.GUILD_ID,row,int(actor['user_id']))
                 if item=='new':item=str(th)
             elif section=='fwa_bases':
-                if not item:raise ValueError('Choose a Town Hall first.')
+                if not item:raise ValueError("Select a Town Hall first.")
                 row=source_snapshot;changes={};baseline={}
                 for key,value in values.items():
                     if key=='fwa_base_links' and value and not value.startswith('https://link.clashofclans.com/'):raise ValueError('Use a Clash of Clans base link.')
@@ -223,13 +223,13 @@ async def save(request):
             elif section=='fwa_sync':
                 from extensions.tasks.band_sync_schema import CONFIG_ID
                 row=source_snapshot
-                if 'enabled' in values and not isinstance(values['enabled'],bool):raise ValueError('Choose enabled or disabled.')
+                if 'enabled' in values and not isinstance(values['enabled'],bool):raise ValueError("Select enabled or disabled.")
                 if values.get('band_url') and not public_url(values['band_url']):raise ValueError('Use a public HTTPS link.')
                 if 'panel_channel_id' in values:
                     if not re.fullmatch(r'[0-9]{15,22}', values['panel_channel_id']):
-                        raise ValueError('Choose a signup channel in this server.')
+                        raise ValueError("Select a signup channel in this server.")
                     channel=await shared.discord(request,'GET','/channels/'+values['panel_channel_id'])
-                    if str(channel.get('guild_id'))!=str(shared.GUILD_ID) or channel.get('type') not in (0,5):raise ValueError('Choose a text channel in this server.')
+                    if str(channel.get('guild_id'))!=str(shared.GUILD_ID) or channel.get('type') not in (0,5):raise ValueError("Select a text channel in this server.")
                     await check_channel_permissions(request,channel)
                     values['panel_channel_id']=int(values['panel_channel_id'])
                 if values:await cas(db.fwa_sync_config,CONFIG_ID,row,values)
@@ -258,7 +258,7 @@ async def upload_base(request):
     from utils.url_safety import MAX_IMAGE_BYTES
     await shared.require_manage(request,'fwa_bases',write=True)
     item=request.match_info['item'];slot=request.match_info['slot']
-    if slot not in {'war_base_images','active_base_images'}:raise web.HTTPBadRequest(text='Choose a base image.')
+    if slot not in {'war_base_images','active_base_images'}:raise web.HTTPBadRequest(text="Select a base image.")
     async with shared.mongo(request) as db:current=await load_document(db,'fwa_bases',item)
     if request.query.get('revision')!=str(current['revision']):raise web.HTTPConflict(text='Base settings changed. Refresh before uploading.')
     if request.content_length is not None and request.content_length>MAX_IMAGE_BYTES:raise web.HTTPRequestEntityTooLarge(max_size=MAX_IMAGE_BYTES,actual_size=request.content_length)
