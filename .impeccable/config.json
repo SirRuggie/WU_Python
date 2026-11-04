@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-11-04T17:14:02.543Z",
         "reason": "Agent triage: unchanged from released a1a8b937; these existing row-state markers identify unsaved edits and invalid/suspicious weights alongside explicit text, not decorative card accents. Task157 preserves the player table and edit/warning behavior."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "web/cwl/src/style.css"
+        ],
+        "createdAt": "2026-11-04T18:53:35.678Z",
+        "reason": "Agent triage: task165 requires exact render preservation outside its three approved color categories. Existing roster-source-note 3px gold and folded signup-guide 5px warm-panel borders are preserved from a1a8b937/current646266. This narrow file-only preservation exception retains text and forced-colors behavior; it does not claim individual user confirmation of these borders."
       }
     ]
   }

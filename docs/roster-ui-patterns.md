@@ -2,26 +2,26 @@
 
 ## CWL names and plain words (audit 119)
 
-| Thing | Visible name |
-| --- | --- |
-| Member clan destination | My clan assignments |
-| Member without a clan assignment | Waiting for a clan |
-| Staff account without a placement | Unplaced |
-| Bonus page and navigation | Bonus medals |
-| 15/30-player limit and progress labels | Clan size |
-| Hide the member roster | Hide roster; Roster hidden. |
-| Campaign message/reminder workspace | Signup reminders |
-| Staff workflow destinations | Build roster; Finalize roster; Announcements |
-| CWL clan configuration | Hosting clans |
-| Existing staff CWL page eyebrow | CWL |
-| Member page eyebrows | None |
-| Existing account-linking help control | Link an account |
-| Search that actually matches players and clans | Find a player or clan |
-| Read the latest data again | Refresh (use Reload the page only for a browser reload) |
-| Pick an item, account, clan or permission | Select |
-| Member and staff web surface | Dashboard |
-| Short account details | Summary |
-| One Discord send in a reviewed declaration ping | Message (keep transport chunk keys unchanged) |
+| Thing                                           | Visible name                                            |
+| ----------------------------------------------- | ------------------------------------------------------- |
+| Member clan destination                         | My clan assignments                                     |
+| Member without a clan assignment                | Waiting for a clan                                      |
+| Staff account without a placement               | Unplaced                                                |
+| Bonus page and navigation                       | Bonus medals                                            |
+| 15/30-player limit and progress labels          | Clan size                                               |
+| Hide the member roster                          | Hide roster; Roster hidden.                             |
+| Campaign message/reminder workspace             | Signup reminders                                        |
+| Staff workflow destinations                     | Build roster; Finalize roster; Announcements            |
+| CWL clan configuration                          | Hosting clans                                           |
+| Existing staff CWL page eyebrow                 | CWL                                                     |
+| Member page eyebrows                            | None                                                    |
+| Existing account-linking help control           | Link an account                                         |
+| Search that actually matches players and clans  | Find a player or clan                                   |
+| Read the latest data again                      | Refresh (use Reload the page only for a browser reload) |
+| Pick an item, account, clan or permission       | Select                                                  |
+| Member and staff web surface                    | Dashboard                                               |
+| Short account details                           | Summary                                                 |
+| One Discord send in a reviewed declaration ping | Message (keep transport chunk keys unchanged)           |
 
 Use full forms in dashboard copy: could not, cannot, will not, do not,
 you are and you will. Separate instructions into sentences. Keep the owner’s
@@ -32,7 +32,6 @@ CWL month, automatic messages and time zone. Internal code names, storage fields
 transport keys, docstrings and journals keep their existing names.
 Discord defaults use copy version 128; saved version 127 and unversioned legacy
 text remain unchanged, including legacy typos needed to recognize stored copy.
-
 
 At 320 px, the existing strip may retain My clan / Build / Finalize / Announce;
 accessible names use the full destination names. Other headings and navigation
@@ -59,7 +58,9 @@ Home and My signups share a green confirmation naming signed accounts and pools.
 
 Optional campaign guidance uses local dates and minute-updated relative time, or the muted `Clans are not ready yet. Check back soon.` line. Missing guidance never hides saved signups. The member strip reuses the staff pattern: Sign up / My signups / My clan. My CWL starts expanded and remembers collapse.
 
-The roster page's UI system. Source of truth for tokens and states: `web/cwl/src/rosterUi/primitives.css`. Scope: roster page only (other dashboard pages adopt these later, by decision, not by drift).
+Every dashboard page uses the global color tokens in `web/cwl/src/tokens.css`.
+Roster primitives and states remain in `web/cwl/src/rosterUi/primitives.css`;
+the existing `--roster-*` color names are aliases for the shared `--wu-*` tokens.
 
 ## Visual direction
 
@@ -76,6 +77,35 @@ Ruggie's reference screenshots (2026-10-27):
 The goal was to replace the old square buttons and native OS pickers ("early 2000s"). Accent color is **gold** (no orange).
 
 ## Tokens
+
+Global colors live on `:root` in `web/cwl/src/tokens.css`, imported first by
+`main.tsx`. New code uses `--wu-*`; existing roster consumers retain aliases.
+
+| Token                                                           | Value                             | Use                                         |
+| --------------------------------------------------------------- | --------------------------------- | ------------------------------------------- |
+| `--wu-bg`                                                       | `#0c0c0e`                         | Page background                             |
+| `--wu-surface`                                                  | `#19191d`                         | Cards, sidebar, topbar                      |
+| `--wu-surface-raised`                                           | `#242429`                         | Raised panels, menus                        |
+| `--wu-surface-soft`                                             | `#2d2d33`                         | Inputs, secondary buttons, pills            |
+| `--wu-card`                                                     | `#303037`                         | Roster-style cards                          |
+| `--wu-border`                                                   | `#494950`                         | Default border                              |
+| `--wu-border-subtle`                                            | `#38383e`                         | Dividers, quiet borders                     |
+| `--wu-text`                                                     | `#f5f4f0`                         | Body text                                   |
+| `--wu-text-muted`                                               | `#b9bbc4`                         | Secondary text                              |
+| `--wu-accent`                                                   | `#f4cd64`                         | Primary fill, gold text, selected border    |
+| `--wu-accent-hover`                                             | `#ffdc7b`                         | Primary hover                               |
+| `--wu-accent-ink`                                               | `#241b08`                         | Text on a gold fill                         |
+| `--wu-accent-soft`                                              | `#30291a`                         | Selected or active tint                     |
+| `--wu-focus`                                                    | `#f5d66e`                         | Focus ring only; never selection            |
+| `--wu-success` / `--wu-success-surface` / `--wu-success-border` | `#79c89b` / `#2b4b38` / `#43e58c` | Success                                     |
+| `--wu-warning` / `--wu-warning-surface` / `--wu-warning-border` | `#efc867` / `#30291c` / `#786435` | Warning; separate from accent               |
+| `--wu-danger` / `--wu-danger-surface` / `--wu-danger-border`    | `#f19999` / `#493235` / `#ff737d` | Errors, destructive actions                 |
+| `--wu-info` / `--wu-info-surface` / `--wu-info-border`          | `#b9d5ff` / `#1a212b` / `#495563` | Informational notices only; 1b applies this |
+
+Gold means action or selection only. Warning amber is a separate token. Blue is
+for information only; retiring existing navy surfaces belongs to the later 1b
+change. The 1a foundation preserves existing roster card edge, glow and text
+colors, selection surface, strong gold, type, spacing, radius, and shadow values.
 
 - Radius: sm 10 · md 14 · lg 20 · pill 999
 - Control height: 44 / 48 (visual chips can be ~36 with a ≥44 hit area)
@@ -219,13 +249,13 @@ Player card v2 (2026-10-28), superseding the earlier shared-card dimensions abov
 - Wide Accounts (>700px): 56px icon centered left; 18px bold name; metadata/location below; 22px bold weight centered right. Keep the 44px checkbox and 44px menu target. Emoji source and size=64 unchanged by Ruggie's choice; fallback is TH text.
 - Surface: existing base fill tokens, plus `--roster-card-glow-neutral/success/danger` top-to-bottom internal gradient. Rounded 5px left edge uses `--roster-card-edge-*`; no external glow. Gold selection/focus remains. Card-local text tokens meet 4.5:1 including hover: upper text at the brightest gradient, clan text where line 3 sits below the glow.
 
-| Location (both pages) | Row 3 |
-| --- | --- |
-| In assigned clan | Green bold assigned clan + nonshrinking green `In clan` pill + muted · age |
-| Assigned elsewhere | Bold assigned clan → red current clan name (No clan when clanless) + muted · age |
-| Not assigned (Accounts) | Muted Not assigned → current clan (in no clan if clanless) · age |
-| No result (Accounts) | Assigned clan / Not assigned · location not checked yet |
-| Checking (Compare) | Column clan · Checking… |
+| Location (both pages)   | Row 3                                                                            |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| In assigned clan        | Green bold assigned clan + nonshrinking green `In clan` pill + muted · age       |
+| Assigned elsewhere      | Bold assigned clan → red current clan name (No clan when clanless) + muted · age |
+| Not assigned (Accounts) | Muted Not assigned → current clan (in no clan if clanless) · age                 |
+| No result (Accounts)    | Assigned clan / Not assigned · location not checked yet                          |
+| Checking (Compare)      | Column clan · Checking…                                                          |
 
 One shared component renders both pages. Compare's column clan is the assigned clan; its former In this clan / Not in this clan / Checking chips are removed. Other warnings retain their own row, omitted when empty. No weight stays at the headline weight position.
 
@@ -281,7 +311,6 @@ Select 15/30 with no unlocked matches retains the current selection, including h
 - Publication status reuses Finalize's version/date and hidden-publication wording. One Refresh status control; no sender-ready badge. Three text levels: 15px bold, 13–14px regular, 12px muted. Check text-fill as well as color; links must stay legible on dark cards.
 - Images keep their existing select/preview/download/test behavior. This batch does not add real image posting.
 
-
 ## Details panel
 
 - Desktop (≥768px): nonmodal right-side panel; phone: full-screen sheet. Keep the opener list mounted. Previous/Next use its current order and filters; disable at the ends and hide when no list exists.
@@ -326,11 +355,10 @@ Member navigation uses unique labelled icons; staff icon changes are limited to 
 
 Pool cards remain full keyboard/touch buttons. Review Change actions preserve eligible selections; switching to Main lists FWA/otherwise ineligible accounts removed from the unsaved selection. No automatic submit. Help is a footer menu row; profile/mobile avatar open a React Aria account menu with a separated Sign out action. The real-page tour retains its non-GET guard and whole-block targets.
 
-
 ## Compare: Time zone sort
 
 Compare can sort each clan west to east from the owner's Discord nickname. The
-parser uses text after the last ` | `, removes flag emoji and trims it. Explicit
+parser uses text after the last `|`, removes flag emoji and trims it. Explicit
 UTC/GMT offsets support hours and minutes; recognized abbreviations use their
 literal standard/daylight offset, without seasonal inference. CST means US
 Central, IST India, AST Atlantic and BST British. EASTERN/CENTRAL/PACIFIC/MOUNTAIN
@@ -374,6 +402,7 @@ The table caption remains accessible without consuming visual space and mobile
 priority labels remain visible while the summary truncates. Full detail holds
 the unabridged evidence and notes. Isolated fake transport never proves live
 Discord or clipboard permissions on another browser.
+
 ## Declaration ping interaction
 
 Keep a saved destination, its revisioned save action and `Ping N missing` next to
@@ -415,7 +444,6 @@ QA covers 320/360/390 and desktop, slow-read rows first, empty and failed offici
 reads, alt identities, published/draft changes, Main exclusion, stale responses,
 filtering and an unchanged pool-wide ping count. This feature has no notification
 delivery to prove and no production test send.
-
 
 ## Members page (prompt 93, in development)
 
@@ -502,7 +530,6 @@ retains totals, assignment links, dates and read-failure warnings without
 repeating account names. Clan-change guidance appears once and only while
 changes are allowed. The closed Sign up page leaves **Signups closed** to its
 heading and keeps the season name and existing destinations.
-
 
 151 regression checks keep recovery actions next to visible failures, preserve
 role=status on compact current status, and avoid repeating a uniform unavailable

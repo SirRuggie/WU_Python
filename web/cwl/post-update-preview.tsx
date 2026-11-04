@@ -1,3 +1,4 @@
+import "./src/tokens.css";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api, setCsrfToken, type Session, type Pool } from "./src/api";
@@ -6,7 +7,6 @@ import DiscordPreview, { type PreviewPart } from "./src/DiscordMessagePreview";
 import type { PostCopy } from "./src/announcementPostUpdate";
 import "./src/style.css";
 import "./src/announcementWorkspace.css";
-import "./src/contrast.css";
 import "./src/workflowControls.css";
 import "./src/accessibility.css";
 type State = {

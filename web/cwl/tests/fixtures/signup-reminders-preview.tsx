@@ -1,9 +1,9 @@
+import "../../src/tokens.css";
 import { createRoot } from "react-dom/client";
 import ReminderWorkspace from "../../src/ReminderWorkspace";
 import type { Campaign } from "../../src/reminderCampaign";
 import initial from "./signup-reminders-data.json";
 import "../../src/style.css";
-import "../../src/contrast.css";
 import "../../src/workflowControls.css";
 import "../../src/accessibility.css";
 const query = new URLSearchParams(location.search);
