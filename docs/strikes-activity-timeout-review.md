@@ -1,6 +1,6 @@
 # Strikes activity timeout: review evidence
 
-Task 159 rework 162 is being validated. Release remains held for Ruggie. No indexes,
+Task 159 rework 162 is ready for review. Release remains held for Ruggie. No indexes,
 production write jobs, notifications or service changes were performed.
 Private numeric reports and original failure logs are retained under
 `.local/read159`. BSON sizes below describe decoded documents, not wire traffic.
@@ -383,8 +383,8 @@ with 16 skips, 1,781 frontend tests in 296 files and 30 focused UI tests passed.
 The first broad run was mistakenly started in the socket-restricted sandbox and
 stopped at TestServer socket creation after 211 passes. Review 573 approved the
 same guarded host run once; it passed without source or assertion changes. The
-failed log remains. New frozen full backend, layout, preview and owned boot
-receipts will supersede the earlier 049c validation above when complete.
+failed log remains. The final frozen backend and owned boot receipts below supersede the earlier
+049c validation. The full local checks and preview do not prove deployment.
 
 
 Rework frontend, TypeScript, private build and required war checks passed:
@@ -404,3 +404,40 @@ cold too; subset and per-row active/total count assertions are retained. The
 parallel-read fixture now requires five children including mandatory headers,
 and the header failure has its own error test. No HTTP status, count or durable
 write assertion was removed for these changes.
+
+
+### Final 162 validation
+
+The single full backend run on clean frozen
+`edba131198776511793fddf3e143da790a68b68e` passed **6,894 tests**, with 134
+skips and 270 passing subtests in 581.05 seconds. The startup c02 network guard,
+explicit empty Mongo/Healthcheck settings and private temporary folder were
+active. No source edits, exports, boot or other suites ran during collection.
+
+The new exact-archive owned boot then passed all 51 production routes, native
+async pool and owned ping, retained copied SQLite with the real durability
+owner, config 200, unauthenticated auth 401 and 18 archive module origins.
+Network restrictions preceded application imports; Healthchecks were empty.
+Owned Mongo PID 786317, executable, working directory, database path and listener
+were verified before clients. The process, database, data and archive export
+were cleaned; source hashes and cleanup receipts remain private.
+
+The current private main build entry is `index-BkBhL6gP.js`, SHA256
+`122066a18b8e444a2e7bbbde11518505add59960027cb7dc70ff65b7f6a84dc5`.
+The separately retained component fixture is served on port 45201, with fake GET
+responses and a static CSP. Its PID/executable and index 200 were verified after
+the bootstrap had exited. It is not a backend preview or deployable artifact.
+The main build and fixture bundles have separate bindings.
+
+The exact955 overview, context and row-assembler reference functions were checked
+again by normalized AST (test-only function name changes). The two requested
+cache mutants fail the new assertions while the unmodified tests pass. Ordinary
+no-Mongo randomized equality runs in the full suite; the owned Mongo tests remain
+an additional opt-in check.
+
+Final changes after the tested revision are documentation only. Runtime, tests
+and frontend remain byte-identical to the full-tested and booted revision.
+All original RED/failure logs, rejected prototypes, harness errors and their
+corrections remain in the private provenance. There were no live messages,
+notification delivery claims, production writes, index builds or service changes.
+Release remains held for Ruggie's approval.
