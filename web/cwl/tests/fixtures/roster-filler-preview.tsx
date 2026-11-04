@@ -1,3 +1,4 @@
+import "../../src/tokens.css";
 import "../../src/CompareClans.css";
 import CompareClanHeader from "../../src/CompareClanHeader";
 import ClanSettings from "../../src/ClanSettings";

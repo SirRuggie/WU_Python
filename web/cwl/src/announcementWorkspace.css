@@ -2,7 +2,7 @@
 .announcement-workspace,
 .announcement-edit-panel,
 .clan-roster-images {
-  color: var(--roster-text-primary, #f3f3f5);
+  color: var(--roster-text-primary, var(--wu-text));
   font-size: 14px;
 }
 .announcement-workspace .announcement-toolbar,
@@ -24,7 +24,7 @@
   border: 1px solid var(--roster-border, #444650);
   border-radius: 14px;
   padding: 14px;
-  background: var(--roster-surface, #191a20);
+  background: var(--roster-surface, var(--wu-surface));
   min-width: 0;
 }
 .announcement-pool-card h3 {
@@ -47,7 +47,7 @@
 }
 .announcement-workspace .announcement-muted,
 .announcement-edit-panel .announcement-muted {
-  color: var(--roster-text-muted, #b9bbc4);
+  color: var(--roster-text-muted, var(--wu-text-muted));
   font-size: 12px;
   -webkit-text-fill-color: currentColor;
 }
@@ -69,7 +69,7 @@
 .announcement-link {
   font-size: 13px;
   overflow-wrap: anywhere;
-  color: var(--roster-text-muted, #b9bbc4);
+  color: var(--roster-text-muted, var(--wu-text-muted));
 }
 .announcement-test summary,
 .clan-roster-images summary {
@@ -103,7 +103,7 @@
 }
 .clan-roster-images .small {
   font-size: 12px;
-  color: var(--roster-text-muted, #b9bbc4);
+  color: var(--roster-text-muted, var(--wu-text-muted));
 }
 .clan-roster-images select {
   min-height: 44px;
@@ -133,8 +133,8 @@
   padding: 20px;
   border: 1px solid #596171;
   border-radius: 12px;
-  background: #17181c;
-  color: #f3f3f5;
+  background: var(--wu-surface);
+  color: var(--wu-text);
   overflow-wrap: anywhere;
 }
 .announcement-send-review::backdrop {
@@ -198,7 +198,7 @@
   -webkit-text-fill-color: currentColor;
 }
 .announcement-editor-body textarea {
-  color: var(--roster-text-primary, #f3f3f5);
+  color: var(--roster-text-primary, var(--wu-text));
   -webkit-text-fill-color: currentColor;
   font-size: 14px;
   font-weight: 400;
@@ -218,7 +218,7 @@
   background: transparent;
 }
 .announcement-edit-panel .announcement-test > summary {
-  color: var(--roster-text-primary, #f3f3f5);
+  color: var(--roster-text-primary, var(--wu-text));
   -webkit-text-fill-color: currentColor;
   font-weight: 400;
 }

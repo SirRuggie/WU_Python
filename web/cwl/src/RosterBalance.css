@@ -16,7 +16,7 @@
   margin-bottom: 8px;
 }
 .roster-balance-panel small {
-  color: #bdc1ca;
+  color: var(--wu-text-muted);
 }
 .roster-plan-clan {
   display: flex;

@@ -1,3 +1,4 @@
+import "../../src/tokens.css";
 import { createRoot } from "react-dom/client";
 import BaseBank from "../../src/BaseBank";
 import "../../src/style.css";

@@ -1,0 +1,30 @@
+/* Shared dashboard colors. Gold is action/selection; warning amber is separate. */
+:root {
+  --wu-bg: #0c0c0e;
+  --wu-surface: #19191d;
+  --wu-surface-raised: #242429;
+  --wu-surface-soft: #2d2d33;
+  --wu-card: #303037;
+  --wu-border: #494950;
+  --wu-border-subtle: #38383e;
+  --wu-text: #f5f4f0;
+  --wu-text-muted: #b9bbc4;
+  --wu-accent: #f4cd64;
+  --wu-accent-hover: #ffdc7b;
+  --wu-accent-ink: #241b08;
+  --wu-accent-soft: #30291a;
+  --wu-focus: #f5d66e;
+  --wu-success: #79c89b;
+  --wu-success-surface: #2b4b38;
+  --wu-success-border: #43e58c;
+  --wu-warning: #efc867;
+  --wu-warning-surface: #30291c;
+  --wu-warning-border: #786435;
+  --wu-danger: #f19999;
+  --wu-danger-surface: #493235;
+  --wu-danger-border: #ff737d;
+  /* Informational notices only. Navy retirement is a separate 1b change. */
+  --wu-info: #b9d5ff;
+  --wu-info-surface: #1a212b;
+  --wu-info-border: #495563;
+}

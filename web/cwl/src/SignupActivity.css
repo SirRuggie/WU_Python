@@ -12,10 +12,10 @@
   min-height: 44px;
   max-width: 100%;
   padding: 4px 10px;
-  border: 1px solid #79633d;
+  border: 1px solid var(--wu-warning-border);
   border-left: 4px solid #ffb85c;
   border-radius: 14px;
-  background: #30251b;
+  background: var(--wu-warning-surface);
   color: #ffca85;
   -webkit-text-fill-color: currentColor;
   font-size: 13px;

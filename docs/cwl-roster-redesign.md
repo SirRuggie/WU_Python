@@ -1,5 +1,27 @@
 # CWL roster redesign — spec and status
 
+## Color tokens 1a — decisions, 2026-11-04
+
+Status: **1a in review**. Global `--wu-*` colors live in
+`web/cwl/src/tokens.css`, with existing roster color names retained as aliases.
+The accent family uses `#f4cd64`; gold means action or selection. Blue is reserved
+for informational notices. The foundation (1a) precedes navy retirement (1b),
+which is a separate review and release decision. Task 165's broad CSS sweep and
+complete fixture pixel proof follow task 157 integration; the independent
+foundation work does not claim those checks are complete.
+
+Later:
+
+- 1b navy retirement: Strikes, Home, Server management, signup pool cards, Bonus,
+  Participation, Member assignments, and Server management's blue focus ring.
+- Warning amber `#efc867` and accent `#f4cd64` have near-identical hues, so warning
+  can read like selected.
+- Roster `--roster-selection-surface: #493f24` and global
+  `--wu-accent-soft: #30291a` retain two selected tints.
+- Gold eyebrows and count pills belong to the page-header batch.
+- Typography tokens and loading Inter: `@font-face` is missing, and the production
+  page loads no font faces in the reference observation.
+
 ## Linked weights — review pending, October 30, 2026
 
 Prompt 39 reverses the FWA popup link-only rule: roster Details and Clan weights
@@ -8,7 +30,6 @@ share explicit Save/Clear, parsing, history and revision checks. See
 write handling and the history source column; no production activation yet.
 Read-only backup audit: 42 legacy / 350 clan rows, zero overlaps or changed
 values, all timestamps reliable. Source and history rows are retained.
-
 
 Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signed-up Clash of Clans accounts to hosting clans in two pools (Main CWL, Lazy CWL), balance the clans by count and weight, manage signups, and publish from the Finalize roster tab. Placements are a private draft until published. Signup changes save immediately and members can see them.
 
@@ -355,7 +376,6 @@ Later: Version history on Finalize (number, time, who, counts, hidden) via a new
 read-only endpoint. The separate flow batch (step strip/sidebar/renames) is not
 part of this implementation.
 
-
 ## Decisions — CWL flow (2026-10-27)
 
 Released as `cwl-flow-1` on 2026-10-28; S1/S2/S3 and shared player cards included.
@@ -447,7 +467,6 @@ Released frontend + approved B1 backend as `announcements-1` at `73fe3fa92d8d0d8
 ### Next — Roster images (approved design; not implemented here)
 
 Main/Lazy image channels are saved server-side and carried over. Post per pool sends one message per clan, with no pings, idempotent receipts and retry of failed messages only. Republish updates existing messages in place; a new clan gets a new post, and a dropped clan's post is edited to “<Clan> is no longer hosting · Roster vN”, never deleted. Test all sends to a chosen channel with production-identical content and no TEST label and is never recorded as production delivery. Preview and download remain. Ruggie approved the backend and schema work for that separate batch.
-
 
 ## Decisions — Details panel (2026-10-27)
 
@@ -563,7 +582,6 @@ Items 1–10 implemented frontend-only: unique member/staff-CWL menu icons; bold
 
 Released `signup-polish-1` (`ef90834`, PR #44), frontend only. Claude smoke passed (handoff 30): 360px signup steps, approved Villager art, copy, unique menu icons and account menu; GET only, no overflow. 804 frontend tests, TypeScript/build and isolated layout passed. Protected counts unchanged; backend `8e0ee01` unchanged with no restarts. Backup, public hashes and rollback targets are in CLAUDE.md.
 
-
 ## Decisions — Staff navigation (2026-10-29)
 
 Approved prompt 13: keep member navigation, all routes/view IDs and item permissions unchanged. Replace the staff fold-out with a STAFF TOOLS label, direct Staff overview and Moderation links, and top-level CWL, Clans, Members, Bot and owner-only Admin groups. CWL results and Replacements are flat items. Empty groups and unauthorized direct links remain hidden.
@@ -662,6 +680,7 @@ not My clan assignments. Before publishing, My clan assignments shows a compact
 Not published yet card. Home is unchanged. My signups lists every signed-up
 account, keeps its green card when closed, and offers remaining accounts only
 while signups are open. Existing withdrawal and pool-change rules are unchanged.
+
 ## Manual Declaration pings
 
 Declaration check has one shared posting channel per Main/Lazy pool. Staff with
@@ -747,7 +766,6 @@ Main later requires an explicit policy change to the server's Lazy hosting filte
 the UI scope label and Main-exclusion tests, followed by review; there is no hidden
 client switch. No new persistent collection or production write is introduced.
 
-
 ### Persistent roster filler marks — prompt 89 (development)
 
 Staff explicitly mark a player tag as Filler; TH never creates a mark. A separate
@@ -818,7 +836,6 @@ directory read serve the entire check. Missing, conflicting or unavailable links
 never become an ID label or a guessed DM target. Optional lookup failures retain
 all member comparison rows. The bot sends nothing; no new polling is added.
 
-
 Prompt 91 rework uses one filler-aware capacity helper for Compare, Settings,
 chips, assignment, readiness and finalize. Filler overflow is neutral with an
 explicit count; true regular overflow stays red. Backend clan rules expose
@@ -843,7 +860,6 @@ The failed-save case exercises RosterWorkspace itself; five successive marks and
 Undo retain an open Declaration list with no recheck. Regression cases include
 season revision, archived writes, eight-second optional identity lookup, planner
 weight, swaps, actual over-capacity chip state and newer location evidence.
-
 
 Prompt 94 closes the Undo difference: both swap and move Undo restore the prior
 placement when overflow is filler-only, accounting for regular leaving/restored
@@ -941,7 +957,6 @@ The release must preserve both blank settings and all existing SQLite rows;
 new settings/jobs/clock/audit tables are additive. A bot restart is required,
 with a 210-second drain and no queued Standardize run before activation.
 
-
 ### Prompt95 rework in progress
 
 Role progress now uses FULL-synchronous local SQLite commits and an independent
@@ -982,7 +997,6 @@ for changed settings; unchanged Save no longer enters either replacement path.
 Preserving both pending expiry and cancel work is tested directly. No artificial
 mutation-kill claim is made for an equivalent implementation.
 
-
 Prompt95 final checks: full guarded backend 5,779 passed / 64 skipped / 227
 subtests; full frontend 1,402 in 250 files; TypeScript and production build;
 46 focused service/HTTP transport cases plus three subtests, seven progress
@@ -1004,7 +1018,6 @@ copy. An owned empty-schema migration/reopen rehearsal preserves all old table
 counts and rows and accepts only the exact additive default role rows. This is
 not a production-copy rehearsal; fresh backup/restore, current runtime boundaries
 and no queued Standardize remain activation requirements after Claude ACCEPT.
-
 
 ### Prompt98 recovery and intent corrections (development; not live)
 
@@ -1054,7 +1067,6 @@ without a success receipt for empty, thin, incomplete or unproven captures.
 A release coordinator must require that success before any switch; the gate
 itself cannot switch services or restore data. Tests cover this public entry,
 not only a private `.local` coordinator.
-
 
 ### Prompt99 small corrections
 
@@ -1170,7 +1182,6 @@ after. All preserved review previews remain untouched.
 
 Discord member messages share **My clan assignments**, **My tasks** and **Wars** destinations. New CWL default copy is explicitly versioned; saved, partial, legacy and custom campaigns retain their prior normalization without a production rewrite. The native Discord editor supports text and buttons; web signup buttons remain locked. The read-only comparison from November 2 at 16:14 UTC is historical evidence, not a current production claim. See [Discord dashboard links review](discord-dashboard-links-review.md) for the message inventory, new-default provenance, local checks and limits.
 
-
 ### Audit 119: one name for each thing
 
 Frontend presentation only: use My clan assignments, Waiting for a clan on
@@ -1195,7 +1206,6 @@ are part of 119. Short strip labels are the 320-width exception, with full
 accessible names. See the kept-term/scope checklist in
 [cwl-plain-words-review.md](cwl-plain-words-review.md).
 
-
 ### Later — browser error-report noise observed during 120
 
 The isolated navigation matrix sometimes emitted `POST /api/cwl/issues/browser`
@@ -1214,6 +1224,7 @@ notice and dismissible receipt. Background comparison reads do not disable fille
 ticks. Explicit Refresh locks marks and requires both matching reads to succeed
 before clearing a halted queue. Regression evidence, mutation checks and retained
 SQLite preview details are in `docs/filler-background-saves-review.md`.
+
 ## 121 — Less on top
 
 Base: main `440c2204` plus accepted PR188 `177e2f3`, locally integrated as
@@ -1363,6 +1374,7 @@ season menu retained the subsequently picked season. This may predate the shared
 picker change; that attribution is unproven. Investigate with a bounded baseline
 comparison in a separately approved change. No history/selection fix is bundled
 into122/152.
+
 ### Update-post review corrections (146)
 
 Only an actual whole-template save supersedes a saved future-month roster copy;

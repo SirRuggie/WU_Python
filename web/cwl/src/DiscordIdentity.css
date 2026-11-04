@@ -2,7 +2,7 @@
   display: grid;
   place-items: center;
   background: #ffffff0d;
-  color: #b6bdc7;
+  color: var(--wu-text-muted);
 }
 .roster-discord-person {
   min-width: 0;
@@ -18,7 +18,7 @@
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
-  color: #b7bac3;
+  color: var(--wu-text-muted);
 }
 .discord-identity-compact {
   margin: 0;

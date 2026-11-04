@@ -10,7 +10,7 @@
   display: flex;
   gap: 0;
   overflow-x: auto;
-  border-bottom: 1px solid #383838;
+  border-bottom: 1px solid var(--wu-border-subtle);
   padding: 0;
   margin-bottom: 10px;
   scrollbar-width: thin;
@@ -27,7 +27,7 @@
 .strikes-tabs button[aria-pressed="true"] {
   background: #e7b3380b;
   border-bottom-color: #e7b338;
-  color: #f4cd64;
+  color: var(--wu-accent);
 }
 .strikes-toolbar {
   display: grid;
@@ -479,13 +479,13 @@
 .strikes-account-list {
   display: grid;
   gap: 0;
-  border: 1px solid #383838;
+  border: 1px solid var(--wu-border-subtle);
   border-radius: 12px;
   overflow: hidden;
 }
 .strikes-account-row {
   border: 0;
-  border-bottom: 1px solid #383838;
+  border-bottom: 1px solid var(--wu-border-subtle);
   border-radius: 0;
   box-shadow: none;
   display: grid;
@@ -546,7 +546,7 @@
 @media (max-width: 760px) {
   .strikes-account-row {
     border: 0;
-    border-bottom: 1px solid #383838;
+    border-bottom: 1px solid var(--wu-border-subtle);
     border-radius: 0;
     box-shadow: none;
     grid-template-columns: minmax(0, 1fr) auto 14px;
@@ -561,7 +561,7 @@
 @media (max-width: 480px) {
   .strikes-account-row {
     border: 0;
-    border-bottom: 1px solid #383838;
+    border-bottom: 1px solid var(--wu-border-subtle);
     border-radius: 0;
     box-shadow: none;
     grid-template-columns: minmax(0, 1fr) auto 10px;
@@ -639,7 +639,7 @@
 }
 .strikes-tracking.warning {
   border-color: #ae8750;
-  background: #2a261f;
+  background: var(--wu-warning-surface);
 }
 .strikes-tracking summary {
   display: flex;
@@ -958,7 +958,7 @@
   overflow: hidden;
 }
 .strikes-detail-context h2 {
-  color: #f2f4f8;
+  color: var(--wu-text);
   margin: 8px 0;
   font-size: 21px;
 }
@@ -1004,7 +1004,7 @@
   min-height: 44px;
 }
 .strikes-workspace :is(button, a, input, select, summary):focus-visible {
-  outline: 2px solid #f4d078;
+  outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
 .strikes-workspace small {
@@ -1102,7 +1102,7 @@
   margin-bottom: 16px;
   border: 1px solid #ae8750;
   border-radius: 12px;
-  background: #2a261f;
+  background: var(--wu-warning-surface);
 }
 .strike-review-resolution textarea {
   display: block;
@@ -1110,10 +1110,10 @@
   min-height: 88px;
   padding: 10px;
   margin-block: 6px 10px;
-  background: #171719;
+  background: var(--wu-surface);
   border: 1px solid #6d624e;
   border-radius: 8px;
-  color: #f5f4f0;
+  color: var(--wu-text);
   font: inherit;
   resize: vertical;
 }

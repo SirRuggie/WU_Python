@@ -87,7 +87,7 @@
   align-items: center;
   gap: 8px;
   padding: 10px;
-  background: #222326;
+  background: var(--wu-surface-raised);
   border: 1px solid #59503d;
   border-radius: 8px;
 }

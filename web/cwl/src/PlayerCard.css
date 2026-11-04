@@ -270,7 +270,7 @@
   border: 1px solid var(--roster-card-text-success);
   border-radius: 999px;
   color: var(--roster-card-text-success);
-  background: #204d35;
+  background: var(--wu-success-surface);
 }
 @media (min-width: 701px) {
   .player-card-responsive .player-clan-status {

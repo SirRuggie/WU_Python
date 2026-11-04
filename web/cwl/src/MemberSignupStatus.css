@@ -8,16 +8,16 @@
   border: 1px solid #3a7962;
   border-radius: 14px;
   background: #162c23;
-  color: #f0f5f2;
+  color: var(--wu-text);
 }
 .member-signup-empty {
-  background: #1b1d22;
-  border-color: #464a52;
+  background: var(--wu-surface);
+  border-color: var(--wu-border);
 }
 .member-signup-remaining {
   margin-top: 10px;
-  background: var(--roster-card-danger, #493235);
-  border-color: var(--roster-card-edge-danger, #ff737d);
+  background: var(--roster-card-danger, var(--wu-danger-surface));
+  border-color: var(--roster-card-edge-danger, var(--wu-danger-border));
   color: #fbe7e9;
 }
 .member-signup-remaining h2 {
@@ -85,9 +85,9 @@
   align-items: center;
 }
 .saved-view-summary .account-summary-neutral {
-  background: #1b1d22;
-  border-color: #464a52;
-  color: #f0f5f2;
+  background: var(--wu-surface);
+  border-color: var(--wu-border);
+  color: var(--wu-text);
 }
 @media (max-width: 600px) {
   .saved-view-summary > section > h2 {

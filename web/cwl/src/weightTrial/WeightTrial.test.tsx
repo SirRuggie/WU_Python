@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import WeightTrial from "./WeightTrial";
 import type { Roster } from "./model";
 import { api } from "../api";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 vi.mock("../api", () => ({
   api: vi.fn(),
   ApiError: class extends Error {
@@ -104,25 +104,49 @@ async function render() {
   );
 }
 async function openClanPicker() {
-  if (document.querySelector('.weight-clan-picker-panel')) return;
-  const trigger = host.querySelector<HTMLButtonElement>('.weight-trial-header .roster-menu-trigger');
+  if (document.querySelector(".weight-clan-picker-panel")) return;
+  const trigger = host.querySelector<HTMLButtonElement>(
+    ".weight-trial-header .roster-menu-trigger",
+  );
   expect(trigger).toBeTruthy();
   await act(async () => trigger!.click());
 }
 async function click(text: string, scope: ParentNode = document) {
-  let target: HTMLElement | undefined = Array.from(scope.querySelectorAll<HTMLButtonElement>("button"))
-    .find(node => node.textContent?.includes(text));
+  let target: HTMLElement | undefined = Array.from(
+    scope.querySelectorAll<HTMLButtonElement>("button"),
+  ).find((node) => node.textContent?.includes(text));
   if (!target && scope === document) {
     await openClanPicker();
-    target = [...document.querySelectorAll<HTMLElement>('.weight-clan-picker-panel [role="menuitem"]')]
-      .find(node => node.textContent?.includes(text));
+    target = [
+      ...document.querySelectorAll<HTMLElement>(
+        '.weight-clan-picker-panel [role="menuitem"]',
+      ),
+    ].find((node) => node.textContent?.includes(text));
   }
   expect(target).toBeTruthy();
   await act(async () => {
-    target!.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true,pointerType:'mouse',pointerId:1,button:0}));
-    target!.dispatchEvent(new MouseEvent('mousedown', {bubbles:true,button:0}));
-    target!.dispatchEvent(new PointerEvent('pointerup', {bubbles:true,pointerType:'mouse',pointerId:1,button:0}));
-    target!.dispatchEvent(new MouseEvent('mouseup', {bubbles:true,button:0}));
+    target!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        pointerType: "mouse",
+        pointerId: 1,
+        button: 0,
+      }),
+    );
+    target!.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0 }),
+    );
+    target!.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        pointerType: "mouse",
+        pointerId: 1,
+        button: 0,
+      }),
+    );
+    target!.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, button: 0 }),
+    );
     target!.click();
   });
 }
@@ -351,7 +375,22 @@ it("owns hidden-label styling, readable text and disclosure targets on cold navi
     /\.weight-trial \.weight-trial-sr-only\s*\{[^}]*position: absolute;[^}]*width: 1px;[^}]*height: 1px;[^}]*clip: rect\(0, 0, 0, 0\)/,
   );
   expect(css).toMatch(/\.weight-trial summary\s*\{[^}]*min-height: 44px/);
-  expect(css).toMatch(/\.weight-trial a\s*\{[^}]*color: #f4cd64/);
+  expect(css).toMatch(/\.weight-trial a\s*\{[^}]*color: var\(--wu-accent\)/);
+  const globalTokens = readFileSync("src/tokens.css", "utf8");
+  expect(globalTokens.match(/--wu-accent:\s*(#[\da-f]{6})\s*;/)?.[1]).toBe(
+    "#f4cd64",
+  );
+  const main = readFileSync("src/main.tsx", "utf8");
+  expect(main.match(/^import\s+["']([^"']+)["'];?/m)?.[1]).toBe("./tokens.css");
+  const accentDefinitions = readdirSync("src", {
+    recursive: true,
+    encoding: "utf8",
+  })
+    .filter((file) => file.endsWith(".css"))
+    .filter((file) =>
+      /--wu-accent\s*:/.test(readFileSync(`src/${file}`, "utf8")),
+    );
+  expect(accentDefinitions).toEqual(["tokens.css"]);
   expect(css).toMatch(
     /\.weight-trial \.town-hall-fallback\s*\{[^}]*font-size: 12px/,
   );
@@ -878,62 +917,132 @@ it("does not relabel an unchanged verified war after saving a weight", async () 
 it("restores the last clan for its viewer without sharing it with another viewer", async () => {
   localStorage.clear();
   localStorage.setItem("wu-clan-weights:last-clan:viewer-one", "#R2Y");
-  await act(async () => root.render(<WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-one" />));
-  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.textContent).toContain("Needs work");
-  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.textContent).not.toContain("weighed");
-  expect(localStorage.getItem("wu-clan-weights:last-clan:viewer-one")).toBe("#R2Y");
+  await act(async () =>
+    root.render(
+      <WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-one" />,
+    ),
+  );
+  expect(
+    host.querySelector(".weight-trial-header .roster-menu-trigger")
+      ?.textContent,
+  ).toContain("Needs work");
+  expect(
+    host.querySelector(".weight-trial-header .roster-menu-trigger")
+      ?.textContent,
+  ).not.toContain("weighed");
+  expect(localStorage.getItem("wu-clan-weights:last-clan:viewer-one")).toBe(
+    "#R2Y",
+  );
   await act(async () => root.render(null));
   vi.mocked(api).mockClear();
-  await act(async () => root.render(<WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-two" />));
-  expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("/clans/"))).toBe(false);
-  expect(localStorage.getItem("wu-clan-weights:last-clan:viewer-two")).toBeNull();
+  await act(async () =>
+    root.render(
+      <WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-two" />,
+    ),
+  );
+  expect(
+    vi.mocked(api).mock.calls.some(([path]) => path.includes("/clans/")),
+  ).toBe(false);
+  expect(
+    localStorage.getItem("wu-clan-weights:last-clan:viewer-two"),
+  ).toBeNull();
   localStorage.clear();
 });
 
 it("keeps an explicit clan deep link ahead of remembered selection", async () => {
   localStorage.clear();
   localStorage.setItem("wu-clan-weights:last-clan:viewer-link", "#J2Y");
-  await act(async () => root.render(<WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-link" targetClan="#R2Y" />));
+  await act(async () =>
+    root.render(
+      <WeightTrial
+        onDirty={onDirty}
+        seasonId="1"
+        viewerId="viewer-link"
+        targetClan="#R2Y"
+      />,
+    ),
+  );
   const requests = vi.mocked(api).mock.calls.map(([path]) => path);
-  expect(requests.some(path => path.includes("/clans/%23R2Y"))).toBe(true);
-  expect(requests.some(path => path.includes("/clans/%23J2Y"))).toBe(false);
-  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.textContent).toContain("Needs work");
+  expect(requests.some((path) => path.includes("/clans/%23R2Y"))).toBe(true);
+  expect(requests.some((path) => path.includes("/clans/%23J2Y"))).toBe(false);
+  expect(
+    host.querySelector(".weight-trial-header .roster-menu-trigger")
+      ?.textContent,
+  ).toContain("Needs work");
   localStorage.clear();
 });
 
 it("ignores a remembered clan absent from the current permitted directory", async () => {
   localStorage.clear();
-  localStorage.setItem("wu-clan-weights:last-clan:viewer-missing", "#NOTVISIBLE");
-  await act(async () => root.render(<WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-missing" />));
-  expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("/clans/"))).toBe(false);
-  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.textContent).toContain("Select a clan");
-  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.getAttribute("aria-label")).toBe("Select a clan");
+  localStorage.setItem(
+    "wu-clan-weights:last-clan:viewer-missing",
+    "#NOTVISIBLE",
+  );
+  await act(async () =>
+    root.render(
+      <WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-missing" />,
+    ),
+  );
+  expect(
+    vi.mocked(api).mock.calls.some(([path]) => path.includes("/clans/")),
+  ).toBe(false);
+  expect(
+    host.querySelector(".weight-trial-header .roster-menu-trigger")
+      ?.textContent,
+  ).toContain("Select a clan");
+  expect(
+    host
+      .querySelector(".weight-trial-header .roster-menu-trigger")
+      ?.getAttribute("aria-label"),
+  ).toBe("Select a clan");
   localStorage.clear();
 });
 
 it("guards unsaved edits when changing clans through the picker", async () => {
   await render();
   await click("Needs work");
-  const trigger = host.querySelector<HTMLButtonElement>(".weight-trial-header .roster-menu-trigger")!;
+  const trigger = host.querySelector<HTMLButtonElement>(
+    ".weight-trial-header .roster-menu-trigger",
+  )!;
   expect(trigger.getAttribute("aria-label")).toBe("Clan: Needs work");
   expect(trigger.textContent).not.toContain("Clan:");
   await openClanPicker();
-  expect(document.querySelector('.weight-clan-picker-panel [role="menu"]')?.getAttribute('aria-label')).toBe('Clan: Needs work');
+  expect(
+    document
+      .querySelector('.weight-clan-picker-panel [role="menu"]')
+      ?.getAttribute("aria-label"),
+  ).toBe("Clan: Needs work");
   await act(async () => {
-    document.querySelector<HTMLButtonElement>('.weight-clan-picker-panel header button')!.click();
+    document
+      .querySelector<HTMLButtonElement>(
+        ".weight-clan-picker-panel header button",
+      )!
+      .click();
   });
-  const loot = host.querySelector<HTMLInputElement>(".weight-trial-loot input")!;
+  const loot = host.querySelector<HTMLInputElement>(
+    ".weight-trial-loot input",
+  )!;
   await act(async () => loot.focus());
   await input(loot, "35.8k");
   await click("Complete");
-  expect(document.querySelector("dialog")?.textContent).toContain("You have 1 unsaved weight.");
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "You have 1 unsaved weight.",
+  );
   await click("Keep editing");
-  await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+  await act(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+  });
   expect(loot.isConnected).toBe(true);
   expect(document.activeElement).toBe(loot);
   expect(loot.value.replace(/[, ]/g, "")).toMatch(/^(35\.8k|35800)$/);
-  expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("%23J2Y"))).toBe(false);
+  expect(
+    vi.mocked(api).mock.calls.some(([path]) => path.includes("%23J2Y")),
+  ).toBe(false);
   await click("Complete");
   await click("Discard");
-  expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("%23J2Y"))).toBe(true);
+  expect(
+    vi.mocked(api).mock.calls.some(([path]) => path.includes("%23J2Y")),
+  ).toBe(true);
 });

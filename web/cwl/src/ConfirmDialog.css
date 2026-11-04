@@ -6,7 +6,7 @@
   border: 1px solid #515968;
   border-radius: 14px;
   background: #191b22;
-  color: #f4f4f5;
+  color: var(--wu-text);
   overflow-wrap: anywhere;
 }
 .confirm-dialog::backdrop {

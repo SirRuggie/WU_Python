@@ -1,5 +1,5 @@
 .roster-assign-panel {
-  color: #f5f4f0;
+  color: var(--wu-text);
 }
 .roster-assign-panel button {
   min-height: 44px;
@@ -60,7 +60,7 @@
   border: 1px solid #526075;
   border-radius: 9px;
   background: #202936;
-  color: #f5f4f0;
+  color: var(--wu-text);
   text-align: left;
   white-space: normal;
   cursor: pointer;
@@ -122,7 +122,7 @@
   font-size: 12px;
 }
 .roster-assign-clan-count {
-  color: #f5f4f0;
+  color: var(--wu-text);
   font-size: 14px;
   font-weight: 700;
   white-space: nowrap;

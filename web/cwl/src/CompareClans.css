@@ -16,7 +16,7 @@
   font-size: 20px;
 }
 .compare-header small {
-  color: #b9c0ca;
+  color: var(--wu-text-muted);
 }
 .compare-toolbar {
   display: flex;
@@ -84,9 +84,9 @@
   display: flex;
   flex-direction: column;
   max-height: var(--compare-column-height);
-  border: 1px solid #45464d;
+  border: 1px solid var(--wu-border);
   border-radius: 14px;
-  background: #1b1c20;
+  background: var(--wu-surface);
   scroll-snap-align: start;
 }
 .compare-player-list {
@@ -111,7 +111,7 @@
   align-items: center;
   min-height: 44px;
   padding: 8px;
-  border: 1px solid #45464d;
+  border: 1px solid var(--wu-border);
   border-radius: 14px;
 }
 .compare-picker-list input {
@@ -121,7 +121,7 @@
 }
 .compare-picker-list small {
   display: block;
-  color: #b9c0ca;
+  color: var(--wu-text-muted);
 }
 .compare-picked-order {
   padding: 0;
@@ -132,7 +132,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border-bottom: 1px solid #45464d;
+  border-bottom: 1px solid var(--wu-border);
   padding: 8px 0;
 }
 .compare-picked-order li > div {

@@ -13,11 +13,11 @@
 }
 .server-settings-index h3 {
   font-size: 0.95rem;
-  color: #bec1c9;
+  color: var(--wu-text-muted);
   margin: 0 0 8px;
 }
 .server-settings-list {
-  border: 1px solid #38383e;
+  border: 1px solid var(--wu-border-subtle);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -29,17 +29,17 @@
   gap: 16px;
   border: 0;
   border-radius: 0;
-  background: #171719;
+  background: var(--wu-surface);
   padding: 14px 16px;
   min-height: 44px;
   text-align: left;
   white-space: normal;
 }
 .server-settings-list > button + button {
-  border-top: 1px solid #38383e;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 .server-settings-list > button:hover {
-  background: #242427;
+  background: var(--wu-surface-raised);
 }
 .server-settings-list > button > span:first-child {
   min-width: 0;
@@ -48,7 +48,7 @@
   overflow-wrap: anywhere;
 }
 .server-settings-list small {
-  color: #b6b9c3;
+  color: var(--wu-text-muted);
   font-weight: 400;
   line-height: 1.45;
 }
@@ -61,8 +61,8 @@
 }
 .server-operations-workspace
   .manage-preview-toggle
-  button[aria-pressed='true'] {
-  color: #f8d365;
+  button[aria-pressed="true"] {
+  color: var(--wu-accent);
   border-color: #caa434;
 }
 .server-operations-workspace .manage-editor-layout {
@@ -78,7 +78,7 @@
 .server-operations-workspace .manage-action {
   background: transparent;
   border: 0;
-  border-top: 1px solid #38383e;
+  border-top: 1px solid var(--wu-border-subtle);
   padding: 12px 0;
   border-radius: 0;
   margin-top: 12px;
@@ -88,7 +88,7 @@
 }
 .manage-status-summary {
   margin: 16px 0;
-  border: 1px solid #38383e;
+  border: 1px solid var(--wu-border-subtle);
   border-radius: 12px;
   padding: 0 16px;
 }
@@ -99,10 +99,10 @@
   padding: 12px 0;
 }
 .manage-status-summary > div + div {
-  border-top: 1px solid #38383e;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 .manage-status-summary dt {
-  color: #b6b9c3;
+  color: var(--wu-text-muted);
 }
 .manage-status-summary dd {
   margin: 0;
@@ -137,7 +137,7 @@
 }
 .server-settings-index summary span {
   margin-left: 12px;
-  color: #b6b9c3;
+  color: var(--wu-text-muted);
   font-size: 0.85rem;
 }
 .server-settings-index summary:focus-visible {

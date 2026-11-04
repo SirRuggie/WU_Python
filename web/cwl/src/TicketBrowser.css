@@ -15,7 +15,7 @@
 }
 .ticket-date-filter {
   margin: 14px 0;
-  border-bottom: 1px solid #34343b;
+  border-bottom: 1px solid var(--wu-border-subtle);
   padding-bottom: 12px;
 }
 .ticket-date-filter summary {
@@ -42,7 +42,7 @@
   margin: 12px 0;
   min-height: 44px;
   font-size: 0.875rem;
-  color: var(--muted, #b6b6bf);
+  color: var(--muted, var(--wu-text-muted));
 }
 .ticket-list-summary button {
   background: transparent;
@@ -51,7 +51,7 @@
 }
 .ticket-list {
   display: grid;
-  border: 1px solid #34343b;
+  border: 1px solid var(--wu-border-subtle);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -61,8 +61,8 @@
   justify-content: space-between;
   gap: 14px;
   padding: 14px 16px;
-  border-bottom: 1px solid #34343b;
-  background: #171719;
+  border-bottom: 1px solid var(--wu-border-subtle);
+  background: var(--wu-surface);
 }
 .ticket-row:last-child {
   border-bottom: 0;
@@ -81,7 +81,7 @@
 .ticket-row small {
   display: block;
   margin-top: 4px;
-  color: var(--muted, #b6b6bf);
+  color: var(--muted, var(--wu-text-muted));
 }
 .ticket-flags {
   display: flex;
@@ -115,7 +115,7 @@
 }
 .ticket-conversation-tabs {
   gap: 0;
-  border-bottom: 1px solid #34343b;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 .ticket-conversation-tabs button {
   border: 0;
@@ -123,10 +123,10 @@
   border-radius: 0;
   background: transparent;
 }
-.ticket-conversation-tabs button[aria-pressed='true'] {
-  color: #f5d46c;
+.ticket-conversation-tabs button[aria-pressed="true"] {
+  color: var(--wu-accent);
   background: #f5d46c0a;
-  border-color: #f5d46c;
+  border-color: var(--wu-accent);
 }
 .ticket-reader-tools {
   gap: 8px;
@@ -147,7 +147,7 @@
   display: grid;
 }
 .ticket-message {
-  border-bottom: 1px solid #34343b;
+  border-bottom: 1px solid var(--wu-border-subtle);
   padding: 16px 0;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -200,7 +200,7 @@
   min-height: 44px;
 }
 .ticket-browser :focus-visible {
-  outline: 2px solid #f5d46c;
+  outline: 2px solid var(--wu-focus);
   outline-offset: -2px;
 }
 @media (max-width: 650px) {

@@ -281,8 +281,8 @@
   padding: 0;
   border: 1px solid #6e5d31;
   border-radius: 16px;
-  background: #171719;
-  color: #f5f4f0;
+  background: var(--wu-surface);
+  color: var(--wu-text);
   overflow: auto;
 }
 .announcement-preview-dialog::backdrop {
@@ -292,7 +292,7 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #211e17;
+  background: var(--wu-surface);
   display: flex;
   align-items: center;
   justify-content: space-between;

@@ -45,7 +45,7 @@
 .return-overview .return-clan-row small {
   margin-top: 2px;
   font-size: 11px;
-  color: #bcc3cc;
+  color: var(--wu-text-muted);
 }
 .return-overview .return-row-actions {
   flex-direction: row;
@@ -64,7 +64,7 @@
 }
 .return-overview .return-health-note {
   margin: 9px 0;
-  color: #aeb8c4;
+  color: var(--wu-text-muted);
   font-size: 11px;
 }
 .return-overview .return-maintenance {
@@ -118,7 +118,7 @@
 
 .return-overview .return-cycle {
   margin: 0 0 8px;
-  color: #bcc3cc;
+  color: var(--wu-text-muted);
   font-size: 13px;
 }
 .return-overview .return-search-line {

@@ -7,7 +7,7 @@
 .strike-help-copy {
   margin: 0;
   padding-left: 1.25rem;
-  color: #f2f2f5;
+  color: var(--wu-text);
   font-size: 16px;
   line-height: 1.5;
   overflow-wrap: anywhere;

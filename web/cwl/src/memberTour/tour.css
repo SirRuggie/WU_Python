@@ -16,7 +16,7 @@
   text-align: left;
 }
 .tour-launcher:hover {
-  background: #252529;
+  background: var(--wu-surface-raised);
 }
 .tour-launcher:focus-visible {
   outline: 2px solid #f4cd64;
@@ -28,7 +28,7 @@
   background: transparent;
 }
 .shell .sidebar-foot > .tour-launcher:hover {
-  background: #252529;
+  background: var(--wu-surface-raised);
 }
 .shell .sidebar-foot > .tour-launcher:focus-visible {
   outline-offset: -2px;
@@ -65,7 +65,7 @@
   padding: 18px 16px 12px calc(var(--art-width) + 16px);
   border: 2px solid #ef9f27;
   border-radius: 16px;
-  background: #1f1d17;
+  background: var(--wu-surface);
   box-shadow: 0 16px 50px #0008;
   animation: tour-enter 220ms ease-out;
 }
@@ -116,7 +116,7 @@
   border-radius: 999px;
   padding: 8px 13px;
   border: 1px solid #6e6657;
-  background: #302c23;
+  background: var(--wu-accent-soft);
   color: #fff3d6;
 }
 .member-tour button:focus-visible,

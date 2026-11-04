@@ -335,7 +335,7 @@
 }
 
 .clan-tabs[aria-label="Used by"] a {
-  color: #f4cd64;
+  color: var(--wu-accent);
   display: inline-flex;
   align-items: center;
   min-height: 44px;

@@ -1,143 +1,637 @@
-.clan-activity-workspace { max-width: 1400px; margin: auto; }
-.activity-card-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
-.activity-card { padding: 22px; border: 1px solid #343434; border-radius: 18px; background: #171717; min-width: 0; }
-.activity-card header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
-.activity-card :is(h2,h3) { margin: 0 0 5px; font-size: 17px; overflow-wrap: anywhere; }
-.activity-card p { line-height: 1.6; color: #c3bfb6; }
-.activity-card small { color: #b8b3a9; }
-.activity-state { padding: 4px 9px; border-radius: 14px; font-size: 12px; color: #ded8ca; background: #292929; flex: none; }
-.state-inWar { color: #aee4c8; background: #2b4b38; }
-.state-preparation { color: #f4cd64; background: #332c1d; }
-.state-private,.state-error,.state-awaitingResult { color: #f4cd64; background: #332c1d; }
-.calendar-title { display: flex; align-items: center; gap: 12px; }
-.calendar-event-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; background: #30291c; color: #f4cd64; }
-.calendar-event-icon > svg { width: 24px; height: 24px; }
-.calendar-card { display: flex; flex-direction: column; }
-.calendar-card .calendar-description { flex: 1; }
-.activity-card .activity-countdown { font-size: 22px; font-weight: 650; color: #f1eee7; margin: 18px 0 12px; }
-.activity-card progress { display: block; width: 100%; height: 6px; border: 0; border-radius: 6px; overflow: hidden; margin: 10px 0 18px; background: #323232; accent-color: #e7b338; }
-.activity-card progress::-webkit-progress-bar { background: #323232; }
-.activity-card progress::-webkit-progress-value { background: #e7b338; }
-.activity-card progress::-moz-progress-bar { background: #e7b338; }
-.activity-dates { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; padding-top: 14px; border-top: 1px solid #333; }
-.activity-dates div { display: grid; gap: 4px; font-size: 13px; overflow-wrap: anywhere; }
-.activity-card footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
-.activity-card a,.calendar-sources a { color: #f4cd64; }
-.activity-card footer a { display: inline-flex; align-items: center; min-height: 44px; }
-.shell .calendar-link { border: 0; background: transparent; color: #f4cd64; text-align: left; padding: 12px 0 0; min-height: 44px; }
-.activity-timezone { display: flex; align-items: center; gap: 8px; min-height: 44px; }
-.activity-timezone input { width: 18px; }
-.calendar-sources { margin: 20px 0 32px; font-size: 13px; color: #b8b3a9; }
-.calendar-sources summary { cursor: pointer; min-height: 44px; padding-top: 12px; }
-.activity-toolbar { display: flex; align-items: end; gap: 16px; margin: 20px 0; }
-.activity-toolbar > label:first-child { flex: 1; }
-.activity-toolbar input { width: 100%; }
-.activity-refresh { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; color: #b8b3a9; font-size: 13px; }
-.raid-totals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
-.raid-totals dt { font-size: 12px; color: #b8b3a9; }
-.raid-totals dd { margin: 8px 0; font-size: 22px; overflow-wrap: anywhere; }
-@media(max-width:850px) { .activity-card-grid { grid-template-columns: 1fr; } }
-@media(max-width:480px) {
-  .activity-card { padding: 16px; }
-  .activity-card header { flex-wrap: wrap; gap: 8px; }
-  .activity-toolbar { flex-direction: column; align-items: stretch; }
-  .activity-dates { gap: 12px; }
+.clan-activity-workspace {
+  max-width: 1400px;
+  margin: auto;
 }
-.shell .clan-activity-workspace > .workflow-tabs { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: thin; scrollbar-color: #807351 #191919; }
-.shell .clan-activity-workspace > .workflow-tabs > button { flex: 0 0 auto; white-space: nowrap; }
+.activity-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.activity-card {
+  padding: 22px;
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: 18px;
+  background: var(--wu-surface);
+  min-width: 0;
+}
+.activity-card header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.activity-card :is(h2, h3) {
+  margin: 0 0 5px;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.activity-card p {
+  line-height: 1.6;
+  color: #c3bfb6;
+}
+.activity-card small {
+  color: #b8b3a9;
+}
+.activity-state {
+  padding: 4px 9px;
+  border-radius: 14px;
+  font-size: 12px;
+  color: #ded8ca;
+  background: var(--wu-surface-raised);
+  flex: none;
+}
+.state-inWar {
+  color: #aee4c8;
+  background: var(--wu-success-surface);
+}
+.state-preparation {
+  color: var(--wu-warning);
+  background: var(--wu-warning-surface);
+}
+.state-private,
+.state-error,
+.state-awaitingResult {
+  color: var(--wu-warning);
+  background: var(--wu-warning-surface);
+}
+.calendar-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.calendar-event-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 12px;
+  background: #30291c;
+  color: #f4cd64;
+}
+.calendar-event-icon > svg {
+  width: 24px;
+  height: 24px;
+}
+.calendar-card {
+  display: flex;
+  flex-direction: column;
+}
+.calendar-card .calendar-description {
+  flex: 1;
+}
+.activity-card .activity-countdown {
+  font-size: 22px;
+  font-weight: 650;
+  color: var(--wu-text);
+  margin: 18px 0 12px;
+}
+.activity-card progress {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 10px 0 18px;
+  background: var(--wu-surface-soft);
+  accent-color: #e7b338;
+}
+.activity-card progress::-webkit-progress-bar {
+  background: var(--wu-surface-soft);
+}
+.activity-card progress::-webkit-progress-value {
+  background: #e7b338;
+}
+.activity-card progress::-moz-progress-bar {
+  background: #e7b338;
+}
+.activity-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #333;
+}
+.activity-dates div {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.activity-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.activity-card a,
+.calendar-sources a {
+  color: var(--wu-accent);
+}
+.activity-card footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.shell .calendar-link {
+  border: 0;
+  background: transparent;
+  color: var(--wu-accent);
+  text-align: left;
+  padding: 12px 0 0;
+  min-height: 44px;
+}
+.activity-timezone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+.activity-timezone input {
+  width: 18px;
+}
+.calendar-sources {
+  margin: 20px 0 32px;
+  font-size: 13px;
+  color: #b8b3a9;
+}
+.calendar-sources summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding-top: 12px;
+}
+.activity-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 16px;
+  margin: 20px 0;
+}
+.activity-toolbar > label:first-child {
+  flex: 1;
+}
+.activity-toolbar input {
+  width: 100%;
+}
+.activity-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0;
+  color: #b8b3a9;
+  font-size: 13px;
+}
+.raid-totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.raid-totals dt {
+  font-size: 12px;
+  color: #b8b3a9;
+}
+.raid-totals dd {
+  margin: 8px 0;
+  font-size: 22px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 850px) {
+  .activity-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 480px) {
+  .activity-card {
+    padding: 16px;
+  }
+  .activity-card header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .activity-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .activity-dates {
+    gap: 12px;
+  }
+}
+.shell .clan-activity-workspace > .workflow-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: #807351 #191919;
+}
+.shell .clan-activity-workspace > .workflow-tabs > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 
 /* Wars: compact matchups, with personal context and secondary detail on demand. */
-.wars-workspace .activity-card-grid { align-items: start; }
-.war-card { padding: 18px 20px 8px; }
-.war-card .war-card-meta { align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; color: #c3bfb6; font-size: 12px; }
-.war-card-kind { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
-.war-card-kind > svg { width: 16px; height: 16px; }
-.war-card .activity-state { padding: 3px 7px; }
-.war-matchup { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 12px; }
-.war-team { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 4px 8px; overflow-wrap: anywhere; }
-.war-team img { grid-column: 1; grid-row: 1 / span 2; object-fit: contain; }
-.war-team strong { grid-column: 2; grid-row: 1; font-size: 15px; }
-.war-team small { grid-column: 2; font-size: 12px; }
-.war-team:last-child { text-align: right; }
-.war-matchup-score { display: grid; text-align: center; gap: 3px; }
-.war-matchup-score strong { white-space: nowrap; font-size: 23px; }
-.war-matchup-score small { font-size: 11px; }
-.war-attacks { display: flex; justify-content: space-between; gap: 12px; margin: 16px 0; font-size: 12px; color: #c3bfb6; }
-.war-personal { border-top: 1px solid #333; padding-top: 12px; }
-.war-personal h3 { font-size: 12px; color: #b8b3a9; font-weight: 500; margin-bottom: 8px; }
-.war-personal ul { padding: 0; margin: 0; list-style: none; }
-.war-personal li { display: flex; justify-content: space-between; gap: 14px; margin: 7px 0; font-size: 13px; }
-.war-personal li span { min-width: 0; overflow-wrap: anywhere; }
-.war-personal li strong { font-size: 12px; text-align: right; flex-shrink: 0; }
-.war-personal p { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
-.war-personal > small { display: block; margin-top: 8px; }
-.war-details > summary, .war-inactive > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 8px; color: #c3bfb6; font-size: 13px; }
-.war-details > summary::before,.war-inactive > summary::before { content: '▸'; }
-.war-details[open] > summary::before,.war-inactive[open] > summary::before { content: '▾'; }
-.war-details footer { margin-top: 8px; }
-.shell .war-text-action { background: transparent; border: 0; padding: 8px 0; color: #f4cd64; min-height: 44px; }
-.war-inactive { margin-top: 16px; }
-@media(max-width:480px) {
-  .war-card { padding: 14px 14px 4px; }
-  .war-matchup { gap: 8px; }
-  .war-team { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
-  .war-team:last-child { align-items: flex-end; }
-  .war-team strong { font-size: 14px; }
-  .war-matchup-score strong { font-size: 21px; }
-  .war-personal li { gap: 8px; }
+.wars-workspace .activity-card-grid {
+  align-items: start;
+}
+.war-card {
+  padding: 18px 20px 8px;
+}
+.war-card .war-card-meta {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+  color: #c3bfb6;
+  font-size: 12px;
+}
+.war-card-kind {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.war-card-kind > svg {
+  width: 16px;
+  height: 16px;
+}
+.war-card .activity-state {
+  padding: 3px 7px;
+}
+.war-matchup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+.war-team {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 8px;
+  overflow-wrap: anywhere;
+}
+.war-team img {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  object-fit: contain;
+}
+.war-team strong {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 15px;
+}
+.war-team small {
+  grid-column: 2;
+  font-size: 12px;
+}
+.war-team:last-child {
+  text-align: right;
+}
+.war-matchup-score {
+  display: grid;
+  text-align: center;
+  gap: 3px;
+}
+.war-matchup-score strong {
+  white-space: nowrap;
+  font-size: 23px;
+}
+.war-matchup-score small {
+  font-size: 11px;
+}
+.war-attacks {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0;
+  font-size: 12px;
+  color: #c3bfb6;
+}
+.war-personal {
+  border-top: 1px solid #333;
+  padding-top: 12px;
+}
+.war-personal h3 {
+  font-size: 12px;
+  color: #b8b3a9;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.war-personal ul {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.war-personal li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 7px 0;
+  font-size: 13px;
+}
+.war-personal li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.war-personal li strong {
+  font-size: 12px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.war-personal p {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.war-personal > small {
+  display: block;
+  margin-top: 8px;
+}
+.war-details > summary,
+.war-inactive > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #c3bfb6;
+  font-size: 13px;
+}
+.war-details > summary::before,
+.war-inactive > summary::before {
+  content: "▸";
+}
+.war-details[open] > summary::before,
+.war-inactive[open] > summary::before {
+  content: "▾";
+}
+.war-details footer {
+  margin-top: 8px;
+}
+.shell .war-text-action {
+  background: transparent;
+  border: 0;
+  padding: 8px 0;
+  color: var(--wu-accent);
+  min-height: 44px;
+}
+.war-inactive {
+  margin-top: 16px;
+}
+@media (max-width: 480px) {
+  .war-card {
+    padding: 14px 14px 4px;
+  }
+  .war-matchup {
+    gap: 8px;
+  }
+  .war-team {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  .war-team:last-child {
+    align-items: flex-end;
+  }
+  .war-team strong {
+    font-size: 14px;
+  }
+  .war-matchup-score strong {
+    font-size: 21px;
+  }
+  .war-personal li {
+    gap: 8px;
+  }
 }
 
 /* Events hierarchy stays scoped so Wars and raid cards retain their layout. */
-.events-workspace .calendar-card { padding: 20px; }
-.events-workspace .calendar-title { min-width: 0; gap: 12px; }
-.events-workspace .calendar-title h2 { margin: 0; font-size: 20px; line-height: 1.3; }
-.events-workspace .calendar-card > header { align-items: center; gap: 12px; }
-.events-workspace .calendar-games .calendar-event-icon { background: #20362d; color: #aee4c8; }
-.events-workspace .calendar-raid .calendar-event-icon { background: #282d40; color: #c2cbf2; }
-.events-workspace .calendar-countdown { display: grid; gap: 4px; margin: 22px 0 12px; line-height: 1.3; }
-.events-workspace .calendar-countdown > span { font-size: 13px; color: #c3bfb6; }
-.events-workspace .calendar-countdown > strong { font-size: 27px; font-weight: 650; color: #f5f1e8; font-variant-numeric: tabular-nums; }
-.events-workspace .calendar-description { margin: 0 0 18px; font-size: 14px; line-height: 1.5; color: #c3bfb6; }
-.events-workspace .calendar-card progress { margin: 0 0 16px; height: 4px; }
-.events-workspace .calendar-card .activity-dates { gap: 16px; }
-.events-workspace .calendar-card .activity-dates small { color: #aaa69d; font-size: 12px; }
-.events-workspace .calendar-card .activity-dates time { line-height: 1.5; color: #c3bfb6; }
-.events-workspace .clan-event-status { margin-top: 28px; }
-@media(max-width:480px) {
-  .events-workspace .calendar-card { padding: 16px; }
-  .events-workspace .calendar-title h2 { font-size: 19px; }
-  .events-workspace .calendar-countdown { margin-top: 18px; }
-  .events-workspace .calendar-countdown > strong { font-size: 25px; }
+.events-workspace .calendar-card {
+  padding: 20px;
+}
+.events-workspace .calendar-title {
+  min-width: 0;
+  gap: 12px;
+}
+.events-workspace .calendar-title h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.3;
+}
+.events-workspace .calendar-card > header {
+  align-items: center;
+  gap: 12px;
+}
+.events-workspace .calendar-games .calendar-event-icon {
+  background: #20362d;
+  color: #aee4c8;
+}
+.events-workspace .calendar-raid .calendar-event-icon {
+  background: #282d40;
+  color: #c2cbf2;
+}
+.events-workspace .calendar-countdown {
+  display: grid;
+  gap: 4px;
+  margin: 22px 0 12px;
+  line-height: 1.3;
+}
+.events-workspace .calendar-countdown > span {
+  font-size: 13px;
+  color: #c3bfb6;
+}
+.events-workspace .calendar-countdown > strong {
+  font-size: 27px;
+  font-weight: 650;
+  color: var(--wu-text);
+  font-variant-numeric: tabular-nums;
+}
+.events-workspace .calendar-description {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #c3bfb6;
+}
+.events-workspace .calendar-card progress {
+  margin: 0 0 16px;
+  height: 4px;
+}
+.events-workspace .calendar-card .activity-dates {
+  gap: 16px;
+}
+.events-workspace .calendar-card .activity-dates small {
+  color: #aaa69d;
+  font-size: 12px;
+}
+.events-workspace .calendar-card .activity-dates time {
+  line-height: 1.5;
+  color: #c3bfb6;
+}
+.events-workspace .clan-event-status {
+  margin-top: 28px;
+}
+@media (max-width: 480px) {
+  .events-workspace .calendar-card {
+    padding: 16px;
+  }
+  .events-workspace .calendar-title h2 {
+    font-size: 19px;
+  }
+  .events-workspace .calendar-countdown {
+    margin-top: 18px;
+  }
+  .events-workspace .calendar-countdown > strong {
+    font-size: 25px;
+  }
 }
 
 /* War details mount only while open and keep the long records paged. */
-.war-detail-panel { margin-top: 16px; padding-top: 14px; border-top: 1px solid #333; min-width: 0; }
-.war-detail-freshness { color: #b8b3a9; font-size: 12px; margin: 0 0 12px; }
-.war-detail-view,.war-detail-side { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
-.shell .war-detail-view button,.shell .war-detail-side button,.shell .war-detail-pages button,.shell .war-detail-error button { min-height: 44px; }
-.war-detail-view button[aria-pressed="true"],.war-detail-side button[aria-pressed="true"] { border-color: #dcae38; color: #f4cd64; }
-.war-detail-panel h3 { margin: 12px 0 8px; font-size: 14px; }
-.war-detail-panel h3 small { color: #b8b3a9; font-weight: 400; }
-.war-detail-lineup-list,.war-detail-attack-list { list-style: none; padding: 0; margin: 0; }
-.war-detail-member,.war-detail-attack-list > li { display: grid; gap: 5px; padding: 10px 0; border-top: 1px solid #303030; font-size: 13px; min-width: 0; }
-.war-detail-member-title,.war-detail-member-meta,.war-detail-attack-list li > div { min-width: 0; overflow-wrap: anywhere; }
-.war-detail-member-title small,.war-detail-attack-list small { color: #aaa69d; margin-left: 5px; }
-.war-detail-member-meta,.war-detail-attack-list strong { color: #c3bfb6; font-size: 12px; }
-.war-detail-linked { display: inline-flex; margin-left: 8px; padding: 2px 7px; border: 1px solid #566b50; border-radius: 12px; color: #b9dfa8; font-size: 11px; white-space: nowrap; }
-.war-detail-attacks > header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
-.war-detail-attacks > header > span { color: #b8b3a9; font-size: 12px; }
-.war-detail-attack-list li > div:last-child { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px 12px; }
-.war-detail-attack-list strong { text-align: right; }
-.war-detail-pages { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 10px 0; }
-.war-detail-pages span { color: #c3bfb6; font-size: 12px; }
-.war-detail-error { padding: 8px 0; }
-.war-detail-error p,.war-detail-partial { color: #f4cd64; font-size: 13px; }
-.war-detail-error button + button { margin-left: 8px; }
-.war-detail-partial { padding-left: 20px; }
-@media(max-width:480px) {
-  .war-detail-view,.war-detail-side { display: grid; grid-template-columns: 1fr 1fr; }
-  .war-detail-view button,.war-detail-side button { min-width: 0; overflow-wrap: anywhere; }
-  .war-detail-attack-list li > div:last-child { display: grid; }
-  .war-detail-attack-list strong { text-align: left; }
+.war-detail-panel {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #333;
+  min-width: 0;
 }
-.war-detail-attack-side { color: #b8b3a9; font-size: 11px; margin-right: 6px; }
+.war-detail-freshness {
+  color: #b8b3a9;
+  font-size: 12px;
+  margin: 0 0 12px;
+}
+.war-detail-view,
+.war-detail-side {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+.shell .war-detail-view button,
+.shell .war-detail-side button,
+.shell .war-detail-pages button,
+.shell .war-detail-error button {
+  min-height: 44px;
+}
+.war-detail-view button[aria-pressed="true"],
+.war-detail-side button[aria-pressed="true"] {
+  border-color: #dcae38;
+  color: var(--wu-accent);
+}
+.war-detail-panel h3 {
+  margin: 12px 0 8px;
+  font-size: 14px;
+}
+.war-detail-panel h3 small {
+  color: #b8b3a9;
+  font-weight: 400;
+}
+.war-detail-lineup-list,
+.war-detail-attack-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.war-detail-member,
+.war-detail-attack-list > li {
+  display: grid;
+  gap: 5px;
+  padding: 10px 0;
+  border-top: 1px solid #303030;
+  font-size: 13px;
+  min-width: 0;
+}
+.war-detail-member-title,
+.war-detail-member-meta,
+.war-detail-attack-list li > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.war-detail-member-title small,
+.war-detail-attack-list small {
+  color: #aaa69d;
+  margin-left: 5px;
+}
+.war-detail-member-meta,
+.war-detail-attack-list strong {
+  color: #c3bfb6;
+  font-size: 12px;
+}
+.war-detail-linked {
+  display: inline-flex;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border: 1px solid #566b50;
+  border-radius: 12px;
+  color: #b9dfa8;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.war-detail-attacks > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.war-detail-attacks > header > span {
+  color: #b8b3a9;
+  font-size: 12px;
+}
+.war-detail-attack-list li > div:last-child {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+}
+.war-detail-attack-list strong {
+  text-align: right;
+}
+.war-detail-pages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 10px 0;
+}
+.war-detail-pages span {
+  color: #c3bfb6;
+  font-size: 12px;
+}
+.war-detail-error {
+  padding: 8px 0;
+}
+.war-detail-error p,
+.war-detail-partial {
+  color: var(--wu-warning);
+  font-size: 13px;
+}
+.war-detail-error button + button {
+  margin-left: 8px;
+}
+.war-detail-partial {
+  padding-left: 20px;
+}
+@media (max-width: 480px) {
+  .war-detail-view,
+  .war-detail-side {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .war-detail-view button,
+  .war-detail-side button {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .war-detail-attack-list li > div:last-child {
+    display: grid;
+  }
+  .war-detail-attack-list strong {
+    text-align: left;
+  }
+}
+.war-detail-attack-side {
+  color: #b8b3a9;
+  font-size: 11px;
+  margin-right: 6px;
+}

@@ -23,7 +23,7 @@
 }
 .weight-trial-columns {
   font-size: 0.8rem;
-  color: #b6bfcb;
+  color: var(--wu-text-muted);
 }
 .weight-trial-row.is-edited {
   background: #f3ca5610;
@@ -67,7 +67,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px;
-  background: #1c1d21;
+  background: var(--wu-surface);
   border-top: 1px solid #56504a;
   z-index: 1;
 }
@@ -140,7 +140,7 @@
 }
 .weight-saved-player {
   padding: 12px 0;
-  border-bottom: 1px solid #45454d;
+  border-bottom: 1px solid var(--wu-border);
 }
 .weight-trial-storages {
   margin: 0;
@@ -156,8 +156,8 @@
 }
 .weight-trial-gap {
   padding: 14px 10px;
-  color: #b6bfcb;
-  border-bottom: 1px dashed #45454d;
+  color: var(--wu-text-muted);
+  border-bottom: 1px dashed var(--wu-border);
   font-size: 0.85rem;
 }
 .weight-trial-filters {
@@ -255,7 +255,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: #f4cd64;
+  color: var(--wu-accent);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -299,7 +299,9 @@
   flex: 0 1 300px;
   min-width: 200px;
 }
-.weight-trial-header .roster-menu-label { display: none; }
+.weight-trial-header .roster-menu-label {
+  display: none;
+}
 .weight-trial-header .roster-menu-current {
   white-space: nowrap;
   overflow: hidden;
@@ -309,7 +311,9 @@
   max-height: min(56vh, 448px);
   overflow-y: auto;
 }
-.weight-clan-picker-panel .roster-menu-item { min-height: 52px; }
+.weight-clan-picker-panel .roster-menu-item {
+  min-height: 52px;
+}
 @media (max-width: 650px) {
   .weight-trial .page-head.cwl-page-header.weight-trial-header {
     height: auto;

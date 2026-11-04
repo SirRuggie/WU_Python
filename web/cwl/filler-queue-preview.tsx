@@ -1,3 +1,4 @@
+import "./src/tokens.css";
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import ArrivalCheck from "./src/ArrivalCheck";

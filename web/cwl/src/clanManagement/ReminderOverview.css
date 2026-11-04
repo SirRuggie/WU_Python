@@ -41,7 +41,7 @@
 .overview-filters button[aria-pressed="true"] {
   border-color: #e6a640;
   box-shadow: inset 0 -3px #e6a640;
-  background: #302a1f;
+  background: var(--wu-accent-soft);
 }
 .overview-toolbar {
   display: flex;
@@ -118,12 +118,12 @@
 .overview-state-attention {
   border-color: #dba94d;
   color: #ffe1a4;
-  background: #382b15;
+  background: var(--wu-warning-surface);
 }
 .overview-state-tracking {
   border-color: #90ee90;
   color: #b9f1da;
-  background: #2b4b38;
+  background: var(--wu-success-surface);
 }
 .overview-state-off,
 .overview-state-not_configured {
@@ -136,7 +136,7 @@
   border-radius: 12px;
 }
 .overview-note {
-  color: #b7c0ce;
+  color: var(--wu-text-muted);
   font-size: 0.85rem;
   margin-top: 16px;
 }

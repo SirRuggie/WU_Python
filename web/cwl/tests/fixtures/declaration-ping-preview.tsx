@@ -1,3 +1,4 @@
+import "../../src/tokens.css";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import DeclarationPingPanel from "../../src/DeclarationPingPanel";

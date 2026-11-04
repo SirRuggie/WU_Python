@@ -3,7 +3,7 @@
   border: 1px solid #8b733b;
   border-radius: 14px;
   overflow: hidden;
-  background: #1d1b16;
+  background: var(--wu-surface);
 }
 .signup-walkthrough ol {
   display: grid;
@@ -22,8 +22,8 @@
   border-left: 1px solid #8b733b;
 }
 .signup-walkthrough li.current {
-  background: #f4cd64;
-  color: #241b08;
+  background: var(--wu-accent);
+  color: var(--wu-accent-ink);
   padding-right: 136px;
   min-height: 144px;
 }

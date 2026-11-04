@@ -1,3 +1,4 @@
+import "../../src/tokens.css";
 import { createRoot } from "react-dom/client";
 import ArrivalCheck from "../../src/ArrivalCheck";
 import data from "./declaration-extras-data.json";

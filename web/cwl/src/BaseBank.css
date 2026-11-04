@@ -4,7 +4,7 @@
 }
 .base-bank header p,
 .base-bank-muted {
-  color: var(--muted, #b4b7bf);
+  color: var(--muted, var(--wu-text-muted));
 }
 .base-bank-levels {
   display: flex;
@@ -38,7 +38,7 @@
   overflow: hidden;
   border: 1px solid #444750;
   border-radius: 16px;
-  background: #191b20;
+  background: var(--wu-surface);
 }
 .base-bank-image {
   aspect-ratio: 1;
@@ -53,7 +53,7 @@
   object-fit: contain;
 }
 .base-bank-image p {
-  color: #b4b7bf;
+  color: var(--wu-text-muted);
   font-size: 14px;
   padding: 16px;
 }

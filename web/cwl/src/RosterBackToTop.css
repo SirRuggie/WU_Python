@@ -10,7 +10,7 @@
   padding: 10px 16px;
   border: 1px solid #d8b65a;
   border-radius: 999px;
-  background: #23232a;
+  background: var(--wu-surface-raised);
   color: #f6df9b;
   box-shadow: 0 4px 16px #0006;
   font-size: 14px;

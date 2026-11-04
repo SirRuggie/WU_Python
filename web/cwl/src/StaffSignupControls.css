@@ -61,7 +61,7 @@
 .staff-add-modes.workflow-tabs {
   margin: 0 0 12px;
   gap: 0;
-  border-bottom: 1px solid #35353b;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 .staff-add-modes.workflow-tabs button {
   min-height: 44px;
@@ -96,7 +96,7 @@
 .staff-signup-account {
   min-width: 0;
   padding: 9px;
-  border: 1px solid #42464d;
+  border: 1px solid var(--wu-border);
   border-radius: 8px;
 }
 .staff-signup-account > label {
