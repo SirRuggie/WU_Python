@@ -1,6 +1,6 @@
-# Strikes activity timeout: development evidence
+# Strikes activity timeout: review evidence
 
-Task 159 is incomplete and local. Release remains held for Ruggie. No indexes,
+Task 159 is ready for review. Release remains held for Ruggie. No indexes,
 production write jobs, notifications or service changes were performed.
 Private numeric reports and original failure logs are retained under
 `.local/read159`. BSON sizes below describe decoded documents, not wire traffic.
@@ -13,8 +13,8 @@ unknown activity and updating true; filled output contained 576 rows / 3,475
 active strikes with known activity, updating false and an as-of label. Cold
 fallback uses the broad known-core scope; filled output reapplies the original
 family/activity scope. The observed difference is not a same-scope count
-comparison, and no production data was changed. Exact per-account reasons for
-the 44-row difference were not persisted or separately measured.
+comparison, and no production data was changed. That initial measurement preceded the scope correction below; per-account
+identifiers were not persisted.
 
 Review 567 required this scope difference to be resolved before READY. A new
 numeric-only classification reproduced all 44 rows: 28 were known strike totals
@@ -80,7 +80,8 @@ must not be used as complete latency.
 The request-driven raw activity cache follows review 559: fresh through 30
 seconds; stale through 10 minutes with an as-of line and one refresh; expired
 or absent data has unavailable/unknown activity. Counts, profiles, settings,
-authorization and ledger observations remain fresh per request.
+authorization remain fresh per request. The initial ledger-observation
+requirement was also per-request, before the 564 decision below.
 
 That last observation policy was superseded by review 564: the same single
 on-demand background refresh now fetches raw activity and observations. Core
@@ -131,7 +132,9 @@ changing the product budget. It returned 1,942 decoded observations, packed in
 one aggregate document: 231,124 BSON bytes versus 435,013 decoded bytes. Aggregate
 first batch took 3.290048 seconds, cursor completion 3.290103 seconds and total
 including decode/breakdown 3.368789 seconds. Initial connection was included.
-The product remains at 1.5 seconds; observations are not cached.
+At that diagnostic checkpoint the request budget was 1.5 seconds and
+observations were not cached. Review 564 subsequently replaced that path with
+the bounded background policy described above.
 
 Packed components were records 211,993 bytes, player dictionary 7,884 and war
 dictionary 11,257. Standalone per-field BSON sums identify repeated import IDs
@@ -148,8 +151,8 @@ corrected or revoked. A maximum `revoked_at` also fails to detect new older impo
 and kind-only corrections. Current index metadata contains player/member/clan
 occurrence indexes, a kind occurrence index, war-key index and retention index;
 no general update/revocation revision index is present. Token cost has not been
-measured because no correct candidate is established. No token or cache code
-has been built.
+measured because no correct candidate is established. No freshness-token code or durable revision has been built. The accepted
+background observation cache uses the explicit 30-second limit instead.
 
 | Storage-owner path | Change relevant to freshness |
 | --- | --- |
@@ -213,7 +216,7 @@ job writers, using fake providers: results, every stored document, revisions and
 unrelated data remain equal. Production schedules, predicates, writes and retries
 are unchanged.
 
-## Validation and remaining work
+## Validation
 
 The production-shaped owned 125-account HTTP fixture uses real HTTP transport,
 SQLite sessions and unchanged permission adapters, with GET-only fake Discord
@@ -248,7 +251,7 @@ A retained browser-only component preview uses this isolated sample build. It
 is not a full backend preview or a tagged deployment artifact. The production
 bundle and actual component source are separately bound in the evidence.
 
-### End-to-end review so far
+### End-to-end review
 
 | Concern | Evidence and limit |
 | --- | --- |
@@ -272,7 +275,8 @@ with hashes; neither is counted as passing evidence.
 Frontend refresh checks include pending activity without pending identities,
 post-fetch busy state, completed-mutation epochs, generation changes and permission
 loss. Full frontend: 1,780 tests in 296 files passed; TypeScript and the private
-build passed. No layout or preview completion is claimed yet.
+build passed. The isolated layouts and retained component preview described
+above passed; they use sample data and fake API responses.
 
 Shaka's signed-in Members measurement was 5,074 ms / 133 KB for the overview,
 437 ms for role runs and 344 ms for timezone runs. This is Shaka's measurement;
@@ -300,7 +304,29 @@ skips. The required unchanged war validation passed 213 backend tests with one
 skip, 35 frontend tests, TypeScript and its temporary build. These are local
 regression checks, not notification delivery or deployment evidence.
 
-Full backend on a frozen revision, exact-artifact owned boot, final provenance
-and final adversarial review remain. Production end-to-end authenticated latency
-is not measured by the read-adaptation or fake-provider HTTP fixture. This
-document is not READY evidence.
+The single full backend run on clean frozen commit
+`049c27c17830d5d670ed9aad21020a1dff8e5e54` passed 6,877 tests, with 134
+skips and 270 passing subtests in 586.60 seconds. The reviewed c02 startup
+network guard, explicit empty Mongo/Healthcheck settings and private temporary
+folder were active. No source edits or other suites ran during collection.
+
+The exact-commit archive then passed the owned production-shaped boot: 51
+configured routes, native async pool and an owned ping, real durability owner
+with a retained copied SQLite database, config 200 and unauthenticated auth 401.
+All 18 checked module origins, including the new cache/read/projection modules,
+were inside the archive. External network access was blocked before application
+imports; Healthchecks were empty. Mongo executable, working directory, database
+path and listener ownership were checked before any client. The owned process,
+data, database and archive export were cleaned; manifests remain private.
+
+The freeze launcher initially used unavailable `python` and failed before any
+interpreter or script started. Review 569 approved the same action with the
+absolute verified virtualenv interpreter; that one correction succeeded. No
+source or test assertion changed for this launcher correction.
+
+Final documentation is the only change after that tested revision. Runtime,
+tests and frontend source remain byte-identical. Private READY provenance binds
+the validation logs, original failures, archive sources, cleanup and previews.
+Production end-to-end authenticated latency remains unmeasured by the
+read-adaptation or fake-provider HTTP fixture. There is no deployment or live
+notification proof for task 159, and release still needs Ruggie's approval.
