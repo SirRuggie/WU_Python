@@ -146,3 +146,18 @@
 .return-overview .return-clan-name {
   min-height: 44px;
 }
+
+.return-selection-bar {
+  flex-wrap: nowrap;
+}
+.return-selection-bar .members-bulk-desktop {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.return-selection-bar .members-bulk-desktop > button:nth-child(-n + 2) {
+  padding-inline: 6px;
+  background: none;
+  border-color: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

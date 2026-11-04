@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "web/cwl/src/weightTrial/WeightTrial.css"
+        ],
+        "createdAt": "2026-11-04T17:14:02.543Z",
+        "reason": "Agent triage: unchanged from released a1a8b937; these existing row-state markers identify unsaved edits and invalid/suspicious weights alongside explicit text, not decorative card accents. Task157 preserves the player table and edit/warning behavior."
+      }
+    ]
+  }
+}

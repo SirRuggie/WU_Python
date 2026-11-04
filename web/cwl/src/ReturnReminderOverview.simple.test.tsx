@@ -74,9 +74,9 @@ async function press(element: Element) {
 async function click(label: string) {
   const direct = button(label);
   if (direct) return press(direct);
-  await press(
-    document.querySelector('[aria-label="Actions for Return reminders"]')!,
-  );
+  const selectionMenu = Object.values(actionLabels).includes(label)
+    ? document.querySelector('[aria-label="More actions"]') : null;
+  await press(selectionMenu || document.querySelector('[aria-label="Actions for Return reminders"]')!);
   const item = [...document.querySelectorAll('[role="menuitem"]')].find(
     (node) => node.textContent?.trim() === label,
   )!;
@@ -400,3 +400,86 @@ it("selection has no preselected action and survives a filter edit without an au
   );
   expect(host.querySelector(".return-batch")).toBeNull();
 });
+
+it("uses Resume as the primary action only when every selected clan is paused", async () => {
+  vi.mocked(api).mockImplementation(async path => path === "/manage/return-reminders"
+    ? ({ documents: [row("A", "paused", "Paused"), row("B")] } as never)
+    : ({ fields: [], channels: [] } as never));
+  await act(async () => root.render(<ReturnReminderOverview onOpen={vi.fn()} />));
+  await press(host.querySelector('[aria-label="Select A"]')!);
+  expect(host.querySelector('.members-bulk-desktop')?.textContent).toContain('Resume');
+  expect(host.querySelector('.members-bulk-desktop')?.textContent).not.toContain('Pause');
+  await press(host.querySelector('[aria-label="Select B"]')!);
+  expect(host.querySelector('.members-bulk-desktop')?.textContent).toContain('Pause');
+  await press(host.querySelector('[aria-label="More actions"]')!);
+  expect([...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent?.trim())).toContain('Resume');
+});
+
+it.each(['More actions', 'Actions'])('%s keeps the complete action order and separates only destructive items', async menuLabel => {
+  vi.mocked(api).mockImplementation(async path => path === "/manage/return-reminders"
+    ? ({ documents: [row('A'), row('B', 'paused', 'Paused'), row('C', 'not_saved', 'No saved list')] } as never)
+    : ({ fields: [], channels: [] } as never));
+  await act(async () => root.render(<ReturnReminderOverview onOpen={vi.fn()} />));
+  for (const id of ['A', 'B', 'C']) await press(host.querySelector(`[aria-label="Select ${id}"]`)!);
+  await press(host.querySelector(`[aria-label="${menuLabel}"]`)!);
+  const menu = document.querySelector('[role="menu"]')!;
+  const entries = [...menu.querySelectorAll('[role="menuitem"], [role="separator"]')];
+  const actions = ['Send now', 'Check away players', 'Start return reminders', 'Resume', 'Capture current members', '|', 'Replace saved lists', 'Clear lists'];
+  expect(entries.map(item => item.getAttribute('role') === 'separator' ? '|' : item.textContent?.trim()))
+    .toEqual(menuLabel === 'Actions' ? ['Select all', 'Select none', 'Change frequency', 'Pause', ...actions] : actions);
+  expect(entries.filter(item => item.classList.contains('roster-action-danger')).map(item => item.textContent?.trim()))
+    .toEqual(['Replace saved lists', 'Clear lists']);
+});
+
+it("passes selected clans hidden by filtering into the batch exclusion list", async () => {
+  vi.mocked(api).mockImplementation(async path => path === '/manage/return-reminders'
+    ? ({ documents: [row('A'), row('B')] } as never)
+    : ({ revision: 'r1', fields: [{ key: 'clans', options: [{ value: 'FWA:#A' }, { value: 'FWA:#B' }] }], channels: [] } as never));
+  await act(async () => root.render(<ReturnReminderOverview onOpen={vi.fn()} />));
+  await press(host.querySelector('[aria-label="Select A"]')!);
+  await press(host.querySelector('[aria-label="Select B"]')!);
+  const search = host.querySelector('input[type="search"]') as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'B');
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await click('Change frequency');
+  expect(host.textContent).toContain('A · Hidden by the current filters; not changed.');
+  await click('Review action');
+  expect(document.querySelector('dialog')?.textContent).toContain('Change frequency for B?');
+  expect(vi.mocked(api).mock.calls.filter(call => call[1] === 'POST')).toHaveLength(0);
+});
+
+it.each(["frequency", "pause", "resume", "send", "away", "start", "replace", "clear", "save"] as const)(
+  "%s keeps review/cancel protection and writes once for visible applicable permitted clans only",
+  async (action) => {
+    const state = action === "resume" ? "paused" : action === "save" ? "not_saved" : "scheduled";
+    const label = state === "paused" ? "Paused" : state === "not_saved" ? "No saved list" : "Running";
+    const clans = [row("A", state, label), row("B", state, label), row("C", state, label), row("D", "expired", "Expired")];
+    const done = vi.fn();
+    vi.mocked(api).mockImplementation(async (_path, method) => method === "POST"
+      ? { status: "done", message: "Saved" }
+      : ({ revision: "scope-r1", fields: [{ key: "clans", options: [{ value: "FWA:#A" }, { value: "FWA:#B" }] }] } as never));
+    await act(async () => root.render(<ReturnBatch action={action} clans={clans} hiddenIds={[clans[1].id]} onClose={vi.fn()} onDone={done} />));
+    const writes = () => vi.mocked(api).mock.calls.filter(call => call[1] === "POST");
+    expect(writes()).toHaveLength(0);
+    expect(host.textContent).toContain("B · Hidden by the current filters; not changed.");
+    expect(host.textContent).toContain("C · No longer available for this action; not changed.");
+    expect(host.textContent).toContain("D · Expired");
+    await click("Review action");
+    expect(writes()).toHaveLength(0);
+    const dialog = document.querySelector("dialog")!;
+    expect(dialog.textContent).toContain(`${actionLabels[action]} for A?`);
+    const cancel = [...dialog.querySelectorAll("button")].find(node => node.textContent === "Cancel")!;
+    await press(cancel);
+    expect(document.querySelector("dialog")).toBeNull();
+    expect(writes()).toHaveLength(0);
+    expect(done).not.toHaveBeenCalled();
+    await click("Review action");
+    await click(`${actionLabels[action]} for 1 clan`);
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0][0]).toBe(`/manage/return-bulk/${action === "frequency" ? "resume" : action}/run`);
+    expect(writes()[0][2]).toMatchObject({ revision: "scope-r1", values: { clans: ["FWA:#A"] } });
+    expect(done).toHaveBeenCalledTimes(1);
+  },
+);

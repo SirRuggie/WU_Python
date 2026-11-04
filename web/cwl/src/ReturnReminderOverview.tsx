@@ -1,5 +1,5 @@
 import SelectionActionBar from "./SelectionActionBar";
-import ActionMenu from "./rosterUi/ActionMenu";
+import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import ActionPanel from "./ActionPanel";
 import "./members/Members.css";
 import ReturnBatch from "./returns/ReturnBatch";
@@ -206,20 +206,33 @@ export default function ReturnReminderOverview({
     const row = records.find((row) => row.id === id);
     if (row) onOpen(row);
   };
+  const pauseAction: ReturnAction = chosen.length > 0 && chosen.every(row => row.return_status?.state === "paused") ? "resume" : "pause";
   const actions: ReturnAction[] =
     section === "FWA"
       ? [
           "frequency",
-          "pause",
-          "resume",
-          "start",
-          "save",
+          pauseAction,
           "send",
           "away",
+          "start",
+          ...(pauseAction === "pause" && chosen.some(row => row.return_status?.state === "paused") ? ["resume" as const] : []),
+          "save",
           "replace",
           "clear",
         ]
       : ["save", "send", "away", "replace", "clear"];
+  const applicable = (action: ReturnAction) => visible.some(row => selected.includes(row.id) && canApply(row, action));
+  const menuAction = (action: ReturnAction): ActionMenuItem => ({
+    id: action,
+    label: actionLabels[action],
+    disabled: chosen.length > 50 || !applicable(action),
+    onAction: () => openBatch(action),
+    danger: action === "replace" || action === "clear",
+  });
+  const primaryIds: ReturnAction[] = section === "FWA" ? ["frequency", pauseAction] : [];
+  const overflow = actions.filter(action => !primaryIds.includes(action) && applicable(action)).map(menuAction);
+  const firstDanger = overflow.findIndex(action => action.danger);
+  if (firstDanger >= 0) overflow[firstDanger] = { ...overflow[firstDanger], separatorBefore: true };
   return (
     <section
       className="return-overview"
@@ -408,6 +421,7 @@ export default function ReturnReminderOverview({
         </div>
         {chosen.length > 0 && (
           <SelectionActionBar
+            className="return-selection-bar"
             name="Clan selection"
             busy={!!batch || loading}
             label={`${chosen.length} selected${hidden.length ? ` (${hidden.length} hidden)` : ""}`}
@@ -416,18 +430,8 @@ export default function ReturnReminderOverview({
               setQuery("");
               setFilter("all");
             }}
-            actions={actions
-              .filter((action) =>
-                visible.some(
-                  (row) => selected.includes(row.id) && canApply(row, action),
-                ),
-              )
-              .map((action) => ({
-                id: action,
-                label: actionLabels[action],
-                disabled: chosen.length > 50,
-                onAction: () => openBatch(action),
-              }))}
+            actions={primaryIds.map(menuAction)}
+            overflowActions={overflow}
             selectionActions={[
               {
                 id: "all",

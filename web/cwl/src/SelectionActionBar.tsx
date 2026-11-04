@@ -11,6 +11,8 @@ export default function SelectionActionBar({
   selectionActions,
   desktopSelection,
   busy = false,
+  overflowActions,
+  className = "",
 }: {
   name: string;
   label: string;
@@ -20,9 +22,11 @@ export default function SelectionActionBar({
   selectionActions: ActionMenuItem[];
   desktopSelection: ReactNode;
   busy?: boolean;
+  overflowActions?: ActionMenuItem[];
+  className?: string;
 }) {
   return (
-    <div className="members-bulk-bar" role="region" aria-label={name}>
+    <div className={`members-bulk-bar ${className}`} role="region" aria-label={name}>
       <button onClick={onShow} aria-label={label}>
         <span className="members-selection-full">{label}</span>
         <span className="members-selection-short" aria-hidden="true">
@@ -34,7 +38,7 @@ export default function SelectionActionBar({
           name={name}
           label="Actions"
           disabled={busy}
-          items={[...actions, ...selectionActions]}
+          items={overflowActions ? [...selectionActions, ...actions, ...overflowActions] : [...actions, ...selectionActions]}
         />
       </div>
       <div className="members-bulk-desktop">
@@ -49,6 +53,9 @@ export default function SelectionActionBar({
             {item.label}
           </button>
         ))}
+        {overflowActions && overflowActions.length > 0 && (
+          <ActionMenu name={name} label="More actions" disabled={busy} items={overflowActions} />
+        )}
       </div>
     </div>
   );

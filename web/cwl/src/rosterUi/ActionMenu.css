@@ -78,3 +78,12 @@
     overflow-wrap: anywhere;
   }
 }
+
+.roster-action-separator {
+  height: 1px;
+  margin: 6px 8px;
+  background: #ffffff2b;
+}
+.roster-action-item.roster-action-danger {
+  color: #ffaaa5;
+}
