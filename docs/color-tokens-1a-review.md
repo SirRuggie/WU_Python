@@ -93,11 +93,51 @@ production write; the public deployment state was not assessed.
 The signed-out primary is live outside `.shell`: `App.tsx` renders Continue with
 Discord in `.center-screen.welcome-screen .login-card` as an anchor with
 `button primary`. Therefore the old global `.primary` fill/border `#d9a628`, ink
-`#211b10`, and hover `#e7b73f` remain intact pending review of the retirement versus
-distance-12 rule. The shell's folded contrast primary stays the approved
+`#211b10`, and hover `#e7b73f` remain intact. Owner decision 610 confirms that every
+live old-gold use stays as-is in 1a: retirement means no new uses, not an exception
+to the distance-12 rule. The shell's folded contrast primary stays the approved
 `#f4cd64` / `#241b08`. The explicit dead sidebar-current and tabs-active base
 rules were removed. Other live out-of-threshold old gold values remain held;
-there is no blanket recoloring exception.
+there is no blanket recoloring exception. The only intended visible categories
+remain roster gold, the global focus ring, and the success-notice border, plus
+permitted below-12 shifts.
+
+### Remaining legacy gold for 1b review
+
+This complete checkpoint inventory covers all remaining `#d9a628` and `#edc64d`
+declarations under `web/cwl/src`; no TypeScript/TSX use remains. All are preserved.
+It is a source inventory for the later live/reachability review, not a claim that
+every selector currently wins the cascade or renders. In particular, some active
+base rules are overridden inside `.shell`, and no current source reference to
+`.roster-source-note` was found. The signed-out `.primary` CTA is confirmed live.
+Refresh line numbers and reachability after task157/166 integration.
+
+| File                  | Line | Selector                                                 | Property       | Retained value |
+| --------------------- | ---: | -------------------------------------------------------- | -------------- | -------------- |
+| `RosterBalance.css`   |   90 | `.roster-plan-pools [aria-pressed="true"]`               | `border-color` | `#edc64d`      |
+| `RosterBalance.css`   |   91 | `.roster-plan-pools [aria-pressed="true"]`               | `color`        | `#edc64d`      |
+| `staffNavigation.css` |   16 | `.staff-section-menu button[aria-pressed="true"]`        | `background`   | `#d9a628`      |
+| `staffNavigation.css` |   18 | `.staff-section-menu button[aria-pressed="true"]`        | `border-color` | `#d9a628`      |
+| `style.css`           |   52 | `.primary`                                               | `background`   | `#d9a628`      |
+| `style.css`           |   53 | `.primary`                                               | `border-color` | `#d9a628`      |
+| `style.css`           |   80 | `input[type="checkbox"], input[type="radio"]`            | `accent-color` | `#d9a628`      |
+| `style.css`           |  185 | `.emblem`                                                | `background`   | `#d9a628`      |
+| `style.css`           |  976 | `.completion-mark`                                       | `background`   | `#d9a628`      |
+| `style.css`           | 1065 | `.signup-panel-tabs button.active`                       | `background`   | `#d9a628`      |
+| `style.css`           | 1067 | `.signup-panel-tabs button.active`                       | `border-color` | `#d9a628`      |
+| `style.css`           | 1094 | `.pool-choice-grid button.active`                        | `border-color` | `#d9a628`      |
+| `style.css`           | 1095 | `.pool-choice-grid button.active`                        | `box-shadow`   | `#d9a628`      |
+| `style.css`           | 1156 | `.roster-source-note`                                    | `border-left`  | `#d9a628`      |
+| `style.css`           | 1255 | `.roster-select-all input, .roster-account-select input` | `accent-color` | `#d9a628`      |
+| `style.css`           | 1296 | `.member-nav-tabs button.active`                         | `background`   | `#d9a628`      |
+| `style.css`           | 1297 | `.member-nav-tabs button.active`                         | `border-color` | `#d9a628`      |
+| `style.css`           | 1652 | `.compare-player.selected`                               | `border-color` | `#d9a628`      |
+| `style.css`           | 1731 | `.compare-mobile-toggle button.active`                   | `background`   | `#d9a628`      |
+| `style.css`           | 1732 | `.compare-mobile-toggle button.active`                   | `border-color` | `#d9a628`      |
+
+Paths above are relative to `web/cwl/src/`. The private machine-readable inventory
+is `remaining-legacy-gold-610.json`: 18 old primary-gold uses and two old
+roster-gold uses. No binding was added or changed for this clarification.
 
 The AST fixture initially compared `.1em` and Prettier's equivalent `0.1em`
 literally. The original checker and failed log were retained. Canonicalizing the
