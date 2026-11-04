@@ -45,7 +45,7 @@ export type SavedDraw = {
   };
 }
 export type RaffleData = Omit<BonusData, 'accounts'> & {
-  season_status: string; historical_accounts_count: number; sync: {enabled: boolean; last_checked_at: string | null; warning: string | null}; roster_source: string; policies: Record<Pool, number | null>;
+  season_status: string; historical_accounts_count: number; sync: {enabled: boolean; last_checked_at: string | null; warning: string | null; status?: string; cycle?: string | null}; roster_source: string; policies: Record<Pool, number | null>;
   draws: SavedDraw[]; accounts: RaffleAccount[]; allowances?: Record<string, BonusAllowance>;
   lazy_settings?: { representative_role_id: string };
   bonus_reviews?: Record<string, BonusReview>;

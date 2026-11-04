@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from aiohttp import web
 
 from .bonuses import _view as bonus_view
+from .participation_display import decorate_export_snapshot
 
 EXPORT_KINDS = {"accounts", "participation", "participation-history", "bonus-history"}
 EXPORT_BASES = {"current", "published"}
@@ -238,6 +239,7 @@ async def export_preview(request):
     kind, basis = _query(request)
     with _store(request).tx() as db:
         result = _export_snapshot(db, season_id, kind, basis, datetime.now(timezone.utc).isoformat())
+        result = decorate_export_snapshot(db, season_id, result)
     return web.json_response(result, headers={"Cache-Control": "no-store"})
 
 
@@ -249,11 +251,18 @@ async def export_csv(request):
     kind, basis = _query(request)
     with _store(request).tx() as db:
         snapshot = _export_snapshot(db, season_id, kind, basis, datetime.now(timezone.utc).isoformat())
+        snapshot = decorate_export_snapshot(db, season_id, snapshot)
 
     output = io.StringIO(newline="")
     writer = csv.writer(output)
     writer.writerow(snapshot["columns"])
     for row in snapshot["rows"]:
+        row = dict(row)
+        for prefix in ('', 'participation_'):
+            status = row.get(prefix + 'display_status')
+            if status and row.get(prefix + 'source_status') is not None:
+                row[prefix + 'source_status'] = status['label']
+                row[prefix + 'source_warning'] = status['warning']
         writer.writerow([
             csv_cell(row.get(key))
             if key not in {"user_id", "confirmed_by", "voided_by", "updated_by"} or not row.get(key)

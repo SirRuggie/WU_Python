@@ -13,7 +13,7 @@ import { api, ApiError, type Season } from "./api";
 import {
   validCwlCycle,
   visibleParticipation,
-  syncStatusLabel,
+  participationSummary,
   type ParticipationAccount,
   type ParticipationData,
   type ParticipationSort,
@@ -46,7 +46,7 @@ export default function ParticipationWorkspace({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<{
     text: string;
-    kind: "success" | "error";
+    kind: "success" | "error" | "info";
   } | null>(null);
   const [dirtyTags, setDirtyTags] = useState<Set<string>>(new Set());
   const [activeEditorTag, setActiveEditorTag] = useState<string | null>(null);
@@ -263,8 +263,8 @@ export default function ParticipationWorkspace({
       }>(`/seasons/${encodeURIComponent(sid)}/participation/sync`, "POST");
       if (currentSeason.current !== sid) return;
       setNotice({
-        kind: "success",
-        text: `Clash checked this CWL month. ${result.updated_accounts} account${result.updated_accounts === 1 ? "" : "s"} updated.`,
+        kind: "info",
+        text: `CWL check finished. ${result.updated_accounts} current signup accounts updated. Review the status for this view below.`,
       });
     } catch (cause) {
       if (currentSeason.current === sid) {
@@ -414,12 +414,7 @@ export default function ParticipationWorkspace({
     clan: "all",
     sort,
   });
-  const incomplete =
-    data?.accounts.filter(
-      (account) =>
-        !account.source_complete ||
-        ["stale", "unavailable", "never"].includes(account.source_status || ""),
-    ).length || 0;
+  const statusSummary = participationSummary(visible, data?.sync);
 
   return (
     <div className="participation-workspace">
@@ -483,7 +478,7 @@ export default function ParticipationWorkspace({
                   {data.sync?.cycle
                     ? exportMonthLabel(data.sync.cycle)
                     : "CWL month not set"}{" "}
-                  · {syncStatusLabel(data.sync?.status, data.sync?.cycle)} ·
+                  · {statusSummary.label} · {statusSummary.updated} accounts updated in this view ·
                   Last checked{" "}
                   {data.sync?.last_checked_at
                     ? dateText(data.sync.last_checked_at)
@@ -519,16 +514,11 @@ export default function ParticipationWorkspace({
                 retain current results.
               </p>
             )}
-            {!!incomplete && data.sync?.status !== "waiting" && (
-              <p className="participation-capture-warning" role="status">
-                {incomplete} account{incomplete === 1 ? "" : "s"} with
-                incomplete, stale or unavailable source results.
-              </p>
-            )}
-            {data.sync?.warning && data.sync.status !== "waiting" && (
-              <p className="participation-capture-warning" role="alert">
-                {data.sync.warning}
-              </p>
+            <p>{visible.length} current signups in this view
+              {data.scope_counts ? ` · ${data.scope_counts.current_signups} current signups total · ${data.scope_counts.saved_history} saved-history records` : ''}
+            </p>
+            {statusSummary.warning && (
+              <p className="participation-capture-warning" role="status">{statusSummary.warning}</p>
             )}
             {syncError && (
               <p className="participation-capture-warning" role="alert">

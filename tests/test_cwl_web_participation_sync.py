@@ -218,6 +218,42 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["source_status"], "complete")
         self.assertEqual(data["sync"]["status"], "complete")
 
+    async def test_all_rounds_ended_with_six_sealed_rounds_keeps_bonus_eligibility(self):
+        """578: distinguish raw freshness words from completion and eligibility."""
+        from utils.cwl_bonus_raffle import eligibility, lazy_eligibility
+
+        await self.setup_published()
+        tags = ['#Y2Y', '#J2Y', '#L2Y', '#R2Y', '#G2Y', '#V2Y', '#C2Y']
+        self.set_group([[tag] for tag in tags], state='WAR')
+        for index, tag in enumerate(tags):
+            self.set_war(tag, state='WAR' if index == 6 else 'ENDED', attacks=(3,))
+        self.assertEqual((await self.sync()).status, 200)
+        first, _ = await self.account()
+        self.assertFalse(first['source_complete'])
+        self.assertEqual(self.league.war_calls, sorted(tags))
+
+        self.set_group([[tag] for tag in tags], state='ENDED')
+        self.set_war(tags[-1], state='ENDED', attacks=(3,))
+        self.assertEqual((await self.sync()).status, 200)
+        # Rounds 1–6 are sealed and skipped, only round 7 is fetched again.
+        self.assertEqual(self.league.war_calls, sorted(tags) + [tags[-1]])
+        final, _ = await self.account()
+        self.assertEqual((final['source_attacks'], final['source_stars']), (7, 21))
+        self.assertTrue(final['source_complete'])
+        self.assertEqual(final['source_status'], 'stale')
+        self.assertEqual(final['display_status']['code'], 'complete')
+        self.assertIsNone(final['display_status']['warning'])
+        self.assertIsNone(eligibility(final, 4))
+        self.assertIsNone(lazy_eligibility({**final, 'pool': 'lazy'}))
+
+        # A later check skips all seven; completeness and eligibility persist.
+        self.assertEqual((await self.sync()).status, 200)
+        self.assertEqual(self.league.war_calls, sorted(tags) + [tags[-1]])
+        again, _ = await self.account()
+        self.assertEqual((again['source_status'], again['source_complete']), ('stale', True))
+        self.assertIsNone(eligibility(again, 4))
+        self.assertIsNone(lazy_eligibility({**again, 'pool': 'lazy'}))
+
     async def test_absent_from_group_and_wars_is_not_invented_zero(self):
         await self.setup_published()
         self.set_group([["#Y2Y"]])
@@ -289,7 +325,12 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         first, _ = await self.account()
         checked = first["source_checked_at"]
         self.league.fail_wars.add("#Y2Y")
-        self.assertEqual((await self.sync()).status, 200)
+        response = await self.sync()
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())['failures'], [{
+            'clan_tag': '#C2Y', 'clan_name': 'Host #C2Y', 'round': 1,
+            'war_tag': '#Y2Y', 'reason': 'unavailable', 'error_type': 'ProviderUnavailable',
+        }])
         second, data = await self.account()
         self.assertEqual(self.league.war_calls, ["#Y2Y", "#Y2Y"])
         self.assertEqual((second["source_attacks"], second["source_stars"]), (1, 2))

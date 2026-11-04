@@ -6,7 +6,7 @@ import {
   canUseSyncedResults,
   parseOptionalCount,
   participationValidation,
-  syncStatusLabel,
+  participationStatus,
   type ParticipationAccount,
 } from "./participation";
 
@@ -204,7 +204,7 @@ export default function ParticipationRecord({
     )
       return;
     const partial = !account.source_complete
-      ? " These source results are partial and may change."
+      ? " These CWL totals may change while wars continue."
       : "";
     if (
       !(await confirm(
@@ -263,12 +263,12 @@ export default function ParticipationRecord({
         <strong>
           {account.roster_changed
             ? "Assignment changed"
-            : syncStatusLabel(account.source_status)}
+            : participationStatus(account).label}
         </strong>
         {hasOverride && !account.roster_changed && (
           <small>Staff correction</small>
         )}
-        {account.source_warning && <small>{account.source_warning}</small>}
+        {participationStatus(account).warning && <small>{participationStatus(account).warning}</small>}
       </div>
       <button
         ref={opener}
@@ -385,7 +385,7 @@ export default function ParticipationRecord({
             <span>Recorded stars</span>
           </div>
           <div>
-            <strong>{syncStatusLabel(account.source_status)}</strong>
+            <strong>{participationStatus(account).label}</strong>
             <span>Clash source</span>
           </div>
         </div>
@@ -396,24 +396,20 @@ export default function ParticipationRecord({
             {account.source_stars ?? "Unrecorded"} stars
           </p>
           <p>
-            {syncStatusLabel(account.source_status)}
+            {participationStatus(account).label}
             {hasSource
               ? account.source_complete
                 ? " · Final results"
-                : " · Partial results"
+                : " · Results so far"
               : ""}
             {account.source_checked_at
               ? ` · Checked ${dateText(account.source_checked_at)}`
               : ""}
           </p>
-          {account.source_warning && (
-            <p className="participation-error">{account.source_warning}</p>
+          {participationStatus(account).warning && (
+            <p className="participation-error">{participationStatus(account).warning}</p>
           )}
-          {!account.source_complete && hasSource && (
-            <p className="participation-error">
-              Source observations are incomplete; synced totals may change.
-            </p>
-          )}
+
           {hasOverride && (
             <p>
               Manual correction in use

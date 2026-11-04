@@ -27,12 +27,12 @@ it.each([
     "Clash reports a later CWL month than the selected month",
     true,
   ],
-  ["partial", "CWL observations are incomplete", true],
+  ["partial", "CWL observations are incomplete", false],
   ["unavailable", "Clash could not be refreshed", true],
   ["complete", null, false],
 ] as const)(
   "keeps %s distinct from ordinary waiting",
-  async (status, warning, incomplete) => {
+  async (status, warning, hasProblem) => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     const account = {
       tag: "#P2Y",
@@ -50,6 +50,14 @@ it.each([
       in_latest_publication: true,
       source_status: status === "complete" ? "complete" : "unavailable",
       source_complete: status === "complete",
+      display_status: {
+        code: status === "partial" ? "in_progress" : status,
+        label: status === "partial" ? "CWL in progress" : status === "complete" ? "Complete"
+          : status === "waiting" ? "CWL has not started" : status === "season_mismatch" ? "CWL month mismatch" : "Results unavailable",
+        warning: status === "season_mismatch" ? warning : status === "unavailable" ? "This clan could not refresh. No saved results are available." : null,
+        failed_clan: status === "unavailable",
+        round: status === "partial" ? 2 : null,
+      },
     };
     fixture.api.mockResolvedValue({
       publication_version: 1,
@@ -101,9 +109,17 @@ it.each([
       expect(
         host.querySelector(".participation-capture")?.textContent,
       ).not.toContain("2026-11");
-      expect(
-        text.includes("incomplete, stale or unavailable source results."),
-      ).toBe(incomplete);
+      expect(text).not.toContain("incomplete, stale or unavailable source results.");
+      const problems = host.querySelectorAll(".participation-capture-warning");
+      expect(problems.length > 0).toBe(hasProblem);
+      if (status === "partial") {
+        expect(text).toContain("CWL in progress · round 2 of 7");
+        expect(text).toContain("1 current signups in this view");
+        expect(text).not.toContain("CWL observations are incomplete");
+      }
+      if (status === "unavailable") {
+        expect(text).toContain("1 clan could not refresh: Fixture clan. Showing last saved results for 1 account in this view.");
+      }
       if (status === "waiting") {
         expect(
           text.split("November CWL has not started in Clash yet"),
@@ -112,7 +128,7 @@ it.each([
         expect(host.querySelector('[role="alert"]')).toBeNull();
       } else {
         expect(text).not.toContain("has not started in Clash yet");
-        if (warning) expect(text).toContain(warning);
+        if (status === "season_mismatch" && warning) expect(text).toContain(warning);
       }
       expect(
         fixture.api.mock.calls.every(

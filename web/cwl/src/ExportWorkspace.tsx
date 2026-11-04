@@ -3,7 +3,7 @@ import RosterMenu from "./rosterUi/Menu";
 import { fetchReadWithRetry } from "./readRetry";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Season } from "./api";
-import { syncStatusLabel } from "./participation";
+import { syncStatusLabel, type ParticipationDisplayStatus } from "./participation";
 import "./ExportWorkspace.css";
 import {
   bonusSelectionReason,
@@ -79,8 +79,10 @@ const displayField = (row: PreviewRow, key: string) => {
       : row.pool === "lazy"
         ? "Lazy CWL"
         : cell(row, key);
-  if (key === "source_status")
-    return syncStatusLabel(row.source_status as string | null | undefined);
+  if (key === "source_status" || key === "participation_source_status") {
+    const prefix = key === "source_status" ? "" : "participation_";
+    return (row[prefix + 'display_status'] as ParticipationDisplayStatus | undefined)?.label || syncStatusLabel(row[key] as string | null | undefined);
+  }
   if (key === "confirmed_at" && row.confirmed_at)
     return dateText(String(row.confirmed_at));
   return cell(row, key);

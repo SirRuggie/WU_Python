@@ -30,6 +30,26 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _capture_failure(details, *, clan_tag, clan_name, reason, war_tag=None, round_number=None, diagnostic=None):
+    """Record bounded capture diagnostics; never persist player or attack rows."""
+    item = {
+        'clan_tag': clan_tag,
+        'clan_name': str(clan_name or clan_tag)[:100],
+        'round': round_number,
+        'war_tag': war_tag,
+        'reason': reason,
+    }
+    if diagnostic:
+        item.update({key: diagnostic[key] for key in ('http_status', 'error_type', 'reason_detail')
+                     if diagnostic.get(key) is not None})
+    if item not in details:
+        details.append(item)
+        # JSON keeps external clan names on one journal line, including newline
+        # characters, without treating them as format strings or extra events.
+        logging.getLogger(__name__).warning('CWL capture failure %s', json.dumps(item, sort_keys=True))
+    return item
+
+
 def _explicit_month(value):
     if not isinstance(value, str):
         return None
@@ -321,7 +341,7 @@ def _side_observation(war: dict, clan_tag: str) -> dict | None:
     return {"state": state, "ended": state == "ENDED", "members": members}
 
 
-async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=None):
+async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=None, *, diagnostics=None):
     semaphore = asyncio.Semaphore(3)
 
     async def one(clan_tag):
@@ -458,6 +478,9 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     if getattr(exc, "group_absent", False) and category == "no_group"
                     else reasons.get(str(exc), "other")
                 )
+                if diagnostics is not None:
+                    diagnostics.append({'phase': 'group', 'tag': clan_tag, 'http_status': status,
+                                        'error_type': type(exc).__name__, 'reason_detail': reason})
                 observed_state = (
                     group.get("state")
                     if isinstance(group, dict)
@@ -482,7 +505,7 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
     return await asyncio.gather(*(one(tag) for tag in clans))
 
 
-async def _fetch_wars(providers, tags: list[str]):
+async def _fetch_wars(providers, tags: list[str], *, diagnostics=None):
     semaphore = asyncio.Semaphore(3)
 
     async def one(war_tag):
@@ -492,7 +515,11 @@ async def _fetch_wars(providers, tags: list[str]):
                 if not isinstance(war, dict) or war.get("tag", war_tag) != war_tag:
                     raise ValueError("War unavailable")
                 return war_tag, war, None
-            except (ProviderUnavailable, ValueError, KeyError, TypeError, TimeoutError):
+            except (ProviderUnavailable, ValueError, KeyError, TypeError, TimeoutError) as exc:
+                if diagnostics is not None:
+                    diagnostics.append({'phase': 'war', 'tag': war_tag,
+                                        'http_status': getattr(exc, 'status_code', None),
+                                        'error_type': type(exc).__name__})
                 return war_tag, None, "unavailable"
 
     tasks = [asyncio.create_task(one(tag)) for tag in tags]
@@ -699,8 +726,33 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             _fail(400, "Too many hosting clans for one sync")
         with store.tx() as db:
             known_groups = _group_rows(db, season_id, cycle)
+            known_sides = {}
+            for row in db.execute(
+                'SELECT war_tag,clan_tag FROM participation_war_observations WHERE season_id=? AND cycle=?',
+                (season_id, cycle),
+            ):
+                known_sides.setdefault(row['war_tag'], set()).add(row['clan_tag'])
+        failure_details = []
+        fetch_diagnostics = []
+        clan_names = {row['assigned_clan_tag']: row.get('assigned_clan_name') or row['assigned_clan_tag']
+                      for row in working_snapshot.values() if row['assigned_clan_tag']}
+        rounds_by_clan = {clan: json.loads(row['war_tags_json']) for clan, row in known_groups.items()}
+
+        def record_failure(reason, *, clan_tag=None, war_tag=None):
+            owners = [clan_tag] if clan_tag else sorted(set(clans) & known_sides.get(war_tag, set()))
+            if not owners:
+                owners = [clan for clan in clans if any(war_tag in tags for tags in rounds_by_clan.get(clan, []))]
+            for clan in owners:
+                round_number = next((number for number, tags in enumerate(rounds_by_clan.get(clan, []), 1)
+                                     if war_tag in tags), None) if war_tag else None
+                _capture_failure(failure_details, clan_tag=clan, clan_name=clan_names.get(clan),
+                                 reason=reason, war_tag=war_tag, round_number=round_number,
+                                 diagnostic=next((item for item in fetch_diagnostics
+                                     if item['phase'] == ('war' if war_tag else 'group')
+                                     and item['tag'] == (war_tag or clan)), None))
+
         group_fetches = await _fetch_groups(
-            app["providers"], clans, cycle, known_groups
+            app["providers"], clans, cycle, known_groups, diagnostics=fetch_diagnostics
         )
         fresh_groups = set()
         groups_to_write = []
@@ -713,11 +765,13 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     waiting_candidates[clan_tag] = error
                 else:
                     failures.append(error or "unavailable")
+                    record_failure(error or 'unavailable', clan_tag=clan_tag)
                 continue
             rounds, members, state, league, missing = result
             if missing:
                 inferred_clans.add(clan_tag)
             groups_to_write.append((clan_tag, state, rounds, members, league))
+            rounds_by_clan[clan_tag] = rounds
             fresh_groups.add(clan_tag)
         with store.tx() as db:
             captured_scores = AllowanceStore(db, season_id, cycle).captured_wars()
@@ -755,7 +809,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             ):
                 continue
             to_fetch.append(war_tag)
-        war_fetches = await _fetch_wars(app["providers"], to_fetch)
+        war_fetches = await _fetch_wars(app["providers"], to_fetch, diagnostics=fetch_diagnostics)
         _log_war_months(war_fetches, cycle)
         mismatching_tags = {
             tag
@@ -789,6 +843,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
         for war_tag, war, error in war_fetches:
             if war is None:
                 failures.append(error or "unavailable")
+                record_failure(error or 'unavailable', war_tag=war_tag)
                 continue
             for clan_tag in clans:
                 side = _side_observation(war, clan_tag)
@@ -903,6 +958,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 ).fetchone()
                 if old and old["ended"] and not side["ended"]:
                     failures.append("war_state_regression")
+                    record_failure('war_state_regression', clan_tag=clan_tag, war_tag=war_tag)
                     continue
                 fresh_wars.add((war_tag, clan_tag))
                 db.execute(
@@ -929,14 +985,14 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 if _upcoming_cycle(cycle)
                 and not _clan_month_evidence(db, season_id, cycle, clan)
             }
-            failures.extend(
-                (
+            for clan in sorted(waiting_candidates.keys() - waiting_clans):
+                reason = (
                     "season_older"
                     if waiting_candidates[clan] == "season_older"
                     else "unavailable"
                 )
-                for clan in waiting_candidates.keys() - waiting_clans
-            )
+                failures.append(reason)
+                record_failure(reason, clan_tag=clan)
             group_rows = _group_rows(db, season_id, cycle)
             war_rows = _war_rows(db, season_id, cycle)
             updated = 0
@@ -1106,7 +1162,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 ),
             )
             result = settings_view(db, season_id)
-        return {"sync": result, "updated_accounts": updated}
+        return {"sync": result, "updated_accounts": updated, "failures": failure_details}
 
 
 async def sync_settings(request):

@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 from aiohttp import web
+from .participation_display import participation_json_response
 from extensions.cwl_discord_transport import AnnouncementRejected, AnnouncementUnavailable, DiscordTransport
 from utils.cwl_bonus_raffle_store import RaffleConflict, RaffleStore
 from utils.cwl_bonus_allowance import AllowanceStore
@@ -64,7 +65,7 @@ async def _response(request, sid):
     evidence = await _role_evidence(request, sid)
     with _store(request).tx() as db:
         result = _state(db, sid, evidence)
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 def _selection(body):
@@ -108,7 +109,7 @@ async def policy(request):
         RaffleStore(db, sid).save_policy(body['pool'], body['minimum'])
         _bump(db, sid, actor)
         result = _state(db, sid)
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 async def preview(request):
@@ -123,7 +124,7 @@ async def preview(request):
     with _store(request).tx() as db:
         _require_draft(db, sid, _fail)
         result = RaffleStore(db, sid).preview(_state(db, sid, evidence), *selection)
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 async def draw(request):
@@ -142,7 +143,7 @@ async def draw(request):
             result = _state(db, sid, evidence)
     except RaffleConflict as exc:
         _fail(409, str(exc))
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 def _draw_id(request):
@@ -170,7 +171,7 @@ async def approve(request):
             result = _state(db, sid, evidence)
     except (RaffleConflict, sqlite3.IntegrityError) as exc:
         _fail(409, str(exc) if isinstance(exc, RaffleConflict) else 'Bonus selections changed. Refresh and review')
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 async def cancel(request):
@@ -187,7 +188,7 @@ async def cancel(request):
             result = _state(db, sid)
     except RaffleConflict as exc:
         _fail(409, str(exc))
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 async def send(request):
@@ -204,7 +205,7 @@ async def send(request):
             _require_draft(db, sid, _fail)
             prior = RaffleStore(db, sid).get(draw_id)
             if prior['delivery'] and not (prior['delivery']['status'] == 'failed' and body.get('retry') is True):
-                return web.json_response(_state(db, sid))
+                return participation_json_response(request, _state(db, sid), db=db)
         channel = await transport.get_channel(channel_id)
         if channel['id'] != channel_id:
             _fail(503, 'Discord channel lookup did not match')
@@ -234,7 +235,7 @@ async def send(request):
             RaffleStore(db, sid).finish_delivery(draw_id, 'sent')
     with _store(request).tx() as db:
         result = _state(db, sid)
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 def _review_body(body, keys):

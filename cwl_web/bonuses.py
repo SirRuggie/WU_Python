@@ -7,6 +7,7 @@ import json
 from datetime import datetime, timezone
 
 from aiohttp import web
+from .participation_display import participation_json_response
 
 from .participation import historical_account_view, _latest, current_account_view
 from .participation_sync import settings_view, source_row
@@ -273,7 +274,7 @@ async def get_bonuses(request):
         result = _view(db, _sid(request))
         if result is None:
             _fail(404, "Season not found")
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 async def get_preview(request):
@@ -284,7 +285,7 @@ async def get_preview(request):
         result = _preview(db, _sid(request))
         if result is None:
             _fail(404, "Season not found")
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 async def patch_settings(request):
@@ -332,7 +333,7 @@ async def patch_settings(request):
         _bump(db, sid, session["user_id"])
         result = _view(db, sid)
         _audit(db, sid, session["user_id"], "settings", before, {"policy": result["policy"], "clans": result["clans"]})
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 async def patch_draft(request):
@@ -368,7 +369,7 @@ async def patch_draft(request):
         _bump(db, sid, session["user_id"])
         result = _view(db, sid)
         _audit(db, sid, session["user_id"], "draft", before, selections)
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 async def confirm(request):
@@ -392,7 +393,7 @@ async def confirm(request):
                 (sid, revision, fingerprint),
             ).fetchone()
             if prior:
-                return web.json_response(_view(db, sid))
+                return participation_json_response(request, _view(db, sid), db=db)
         _cas(db, sid, revision, _fail)
         preview = _preview(db, sid)
         if preview["fingerprint"] != fingerprint:
@@ -438,7 +439,7 @@ async def confirm(request):
         _bump(db, sid, session["user_id"])
         result = _view(db, sid)
         _audit(db, sid, session["user_id"], "confirm", None, {"batch_id": batch_id, "tags": sorted(row["tag"] for row in preview["selected"])})
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 async def void_confirmation(request):
@@ -475,7 +476,7 @@ async def void_confirmation(request):
         _bump(db, sid, session["user_id"])
         result = _view(db, sid)
         _audit(db, sid, session["user_id"], "void", {"id": history_id, "tag": row["tag"]}, {"id": history_id, "reason": reason.strip()})
-    return web.json_response(result)
+    return participation_json_response(request, result)
 
 
 def routes():
