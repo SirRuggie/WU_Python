@@ -308,7 +308,7 @@ bind the frozen167 source with new output directories. No live Clash,
 Discord, notification or public production verification is claimed.
 
 
-### Final167 freeze and evidence
+### Pre-integration167 freeze and evidence
 
 Runtime/test freeze: `ededf5aef810b3e192731a13a7e067807306baf4`.
 The final documentation follow-through changes only this review. Runtime and
@@ -357,3 +357,56 @@ Accounts identity/weight fields. Existing published/current roster mismatch
 nulling remains in force; that synthetic adapter case is not claimed as a
 reproduced production bug. Parent owns remote review/handoff and the existing
 release authorization after Shaka ACCEPT558. No fresh owner decision is implied.
+
+
+## Preserve accepted157 in the final167 candidate
+
+The accepted main revision `646266b680f2fbd51245dff16a23404eb30c0148`
+was merged exactly into this isolated branch without conflicts or root checkout
+changes. Combined runtime/frontend freeze:
+`0252ddd6e46a2f8eef17f10b5108807dc9d7b207`. The final documentation follow-through
+changes only this review. All15 accepted157 paths are byte-equal to646266,
+including its menu behavior, tests and scoped existing WeightTrial marker waiver.
+No additional visual suppression was introduced.
+
+All956 tracked Python file paths and blobs, including runtime and tests, are
+identical to05235194 and the backend-testedededf5ae. Seven affected Python files
+and the new isolated runners compiled. The6968/134skip/275subtest backend pass
+remains applicable by those identical bytes: it was not rerun or described as a
+new combined backend run. The earlier052 owned startup, frontend/build and
+layout receipts remain accurate pre-integration evidence and are preserved.
+
+Participation/Bonus components, their own styles, CwlPoolTabs styles and global
+style.css are byte-equal to052. Accepted157 adds shared menu status-dot,
+separator and danger styles plus optional backwards-compatible menu props.
+Rather than relying only on unused-selector attribution, new combined frontend
+and layout runs bind the actual shared context:
+
+| Combined check | Result | Private167-integrated evidence |
+| --- | --- | --- |
+| Accepted157 preservation/Python byte proof | All15 release paths equal646266; all956 Python paths/blobs equal052/ededf | integration-byte-proof.json |
+| Full frontend | 1807 passed across298 files in30.07s | full-fe.log |
+| TypeScript/private build | Pass;6.04s; existing chunk-size warning | tsc.log;build.log;frontend-proof.json |
+| Same16 layout assertions | Pass at360/1440, both pages, all4 failure states; no overflow/page errors/external/non-GET requests | layout/proof.json |
+| Screenshot comparison | 15 PNGs byte-equal; remaining image differs by2 pixels at a control edge, same dimensions; manually inspected with no content/geometric change identified | layout-image-comparison.json |
+| NEW exact combined owned startup | 51 routes/25 artifact module origins;config200/auth401; native pool owned ping; current new frontend source/assets bound | boot/boot-readiness.json;boot/adapter-manifest.json |
+| Owned cleanup | Inner cleanup plus owned process/data/artifact cleanup all true; listener/PID binding before clients | boot/client-binding.json;boot/outer-cleanup.json |
+
+Private application entry: `assets/index-DUtqGVrf.js`, SHA256
+`ff2a0f8dc2ca69445aa6f032d2401a59058a6ccb71bdfb4a20e06f4c05bf9964`. This is a local validation asset, not
+a public deployment claim. The frontend build's full source and asset manifest
+binds it to the combined freeze.
+
+A new retained combined preview is `http://127.0.0.1:41985/?page=participation&phase=mixed`
+(or `page=bonus`; `phase=saved`, `none`, `mixed`, `old`). It is detached,
+GET-only static serving with fake API responses and CSP connect-src none;
+there is no backend, Mongo, Discord or provider. Old38051 and its assets remain
+preserved. Its PID/origin/hash/CSP receipts live in retained-preview*.json.
+
+The own dependency symlink was attached only for checks and removed before
+combined freeze; the shared target's183 entry names were preserved. New outputs
+use.local/status167-integrated, including a NEW boot directory and fresh owned
+27168 database. Previous boot/layout/build/failure receipts were not overwritten.
+No push, merge into main, tag, production read or deployment was performed by
+this167 integration workflow. Parent owns remote verification, review and release
+under existing authorization after Shaka acceptance; public state is unassessed.
