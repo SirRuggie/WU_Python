@@ -81,6 +81,21 @@ class LazyBonusApiTests(RaffleTests):
         self.assertTrue(any(a['tag'] == '#Q2Y' and a.get('manual_candidate') for a in state['accounts']))
         self.assertIsNone(self.app['store'].one('SELECT tag FROM signups WHERE season_id=? AND tag=?', (self.sid, '#Q2Y')))
         preview = await self.review_preview()
+        # Owner588/591/592: the manual candidate needs complete bound results;
+        # a staff exception cannot replace them. Keep the original success path.
+        self.assertEqual(len(preview['eligible']), 1)
+        excluded = next(a for a in preview['excluded'] if a['tag'] == '#Q2Y')
+        self.assertIn('Complete participation results are unavailable', excluded['exclusion'])
+        candidate = next(a for a in state['accounts'] if a['tag'] == '#Q2Y')
+        with self.app['store'].tx() as db:
+            db.execute(
+                'INSERT INTO participation_source_results('
+                'season_id,cycle,tag,attacks,stars,status,complete,checked_at,warning,roster_token) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                (self.sid,state['cycle'],'#Q2Y',4,12,'stale',1,
+                 '2026-10-14T16:00:00+00:00',None,account_token(candidate)),
+            )
+        preview = await self.review_preview()
         self.assertEqual(len(preview['eligible']), 2)
         self.assertFalse(preview['blocking_reasons'])
         response = await self.call('POST', self.base + '/manual-candidates', self.owner, json=body)

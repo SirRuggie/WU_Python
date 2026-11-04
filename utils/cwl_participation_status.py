@@ -12,7 +12,7 @@ class ParticipationEvidence:
     failure_reason: str | None = None
 
 
-def effective_participation_status(stored_status, *, complete, has_results, evidence):
+def effective_participation_status(stored_status, *, complete, has_results, evidence, sync_status=None):
     """Interpret existing evidence for display only.
 
     Callers must retain stored_status/complete for bonus and export decisions.
@@ -24,7 +24,7 @@ def effective_participation_status(stored_status, *, complete, has_results, evid
         return {'code': code, 'label': label, 'warning': warning,
                 'failed_clan': failed, 'round': evidence.round_number}
 
-    if stored_status == 'season_mismatch':
+    if sync_status == 'season_mismatch' or stored_status == 'season_mismatch':
         return result('season_mismatch', 'CWL month mismatch',
                       warning='The CWL month from Clash does not match this month.')
     if stored_status == 'waiting':

@@ -262,7 +262,8 @@ async def export_csv(request):
             status = row.get(prefix + 'display_status')
             if status and row.get(prefix + 'source_status') is not None:
                 row[prefix + 'source_status'] = status['label']
-                row[prefix + 'source_warning'] = status['warning']
+                if status['code'] != 'waiting':
+                    row[prefix + 'source_warning'] = status['warning']
         writer.writerow([
             csv_cell(row.get(key))
             if key not in {"user_id", "confirmed_by", "voided_by", "updated_by"} or not row.get(key)

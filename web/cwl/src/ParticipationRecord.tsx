@@ -268,7 +268,7 @@ export default function ParticipationRecord({
         {hasOverride && !account.roster_changed && (
           <small>Staff correction</small>
         )}
-        {participationStatus(account).warning && <small>{participationStatus(account).warning}</small>}
+
       </div>
       <button
         ref={opener}

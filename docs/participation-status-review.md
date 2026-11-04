@@ -1,170 +1,147 @@
-# Participation status review (160)
+# Participation status review (160 / rework164)
 
-Development candidate on `codex/participation-status-160`, based on main
-`9552757eae8ebb2c7bd5a779f058aab26cc75f97`. The frozen full backend and exact owned
-boot passed on `fb57b66feebdf6aa8f2b52439e36ffba0a704b00`. Task159 is accepted separately and its release remains held.
-No production writes, forced capture jobs, notifications or service changes
-were performed for 160.
+DRAFT: current work on `codex/participation-status-160` is not READY. PR199 began
+on main955. PR198 is now live as `strikes-activity-2` at maina1a8b937; integrate
+that released tree in this worktree before the final freeze and full backend
+run. The root checkout and production assets remain outside this development
+work. No production writes, forced jobs, notifications or service changes were
+performed for160/164. Earlier160 full/boot receipts are historical, not164 passes.
 
-## Diagnosis and count scopes
+## Diagnosis and populations
 
-One approved diagnostic (570), November4 10:12:15–10:12:32UTC, read the current
-canonical dashboard checkpoint into RAM-only SQLite with query-only enabled.
-It called the normal official provider's public group method once for Funnies,
-W.U.Lazy.126, W.U.Lazy.128 and healthy W.U.Lazy.124, and the public war method
-once for each of44 unique round war tags. No outer retry cycle, storage writer,
-lease, index or job ran. Existing provider transport policy was unchanged.
-Only numeric and clan/war metadata was retained, without member rows. The
-private instrument was compiled and checked with a synthetic fixture first.
+The one approved570 diagnostic read a canonical checkpoint into RAM-only,
+query-only SQLite, then called public official providers for four groups and44
+unique wars once per key. Existing transport policy stayed unchanged; no outer
+retry, writer, job, index or persisted member rows. Current170 signups were
+147Lazy/23Main, versus162 saved-history rows (141Lazy/21Main); eight current-only,
+zero history-only. Three affected clans had an ended first round and active
+second round; healthy control's first round was active. No current API error,
+regression or month mismatch was reproduced. Skipping sealed final fetches
+without adding them to fresh_wars explains the raw stale classification in code.
+The exact skip-coverage predicate was not retained; this is code attribution,
+not proof of each historical reply. Do not repeat the production diagnostic.
 
-All four groups reported WAR and date-shaped month2026-11-02. The affected
-three had round1 ENDED, round2 WAR, round3 PREPARATION; the healthy control had
-round1 WAR, round2 PREPARATION. No current provider error, state regression or
-month mismatch was reproduced. This does not prove historical provider replies.
+The list count describes the current displayed pool and filters. The capture
+box does not repeat that count or saved-history totals. History remains a
+separate read-only disclosure/export scope. Warning counts use the displayed
+pool/search/clan scope before pagination, never hidden accounts.
 
-Current signups:170 (147Lazy/23Main), with37stale,125partial,7no_data,
-1unassigned. Saved history:162 (141Lazy/21Main), with37stale/125partial.
-Eight current-only signups (6Lazy/2Main), zero history-only, explain the counts.
-The page now labels the two sets and counts warnings only within the current
-pool/search/clan filter, before pagination.
+## Display and storage boundaries
 
-The capture intentionally skips final wars when fetch coverage includes all
-current clans and allowance evidence was captured. Skipped wars are not added
-to fresh_wars, so the unchanged aggregator marks accounts stale even when their
-final round is safely retained and their active round refreshed. That code path
-explains the three-clan correlation. The retained diagnostic did not include
-the exact skip-coverage predicate; this is accepted code attribution, not a
-second measurement or proof of each past capture. Do not repeat the diagnostic.
+One pure `utils/cwl_participation_status.py` helper interprets existing facts.
+The HTTP read adapter batches existing group, war, fetch and allowance evidence;
+it never writes or performs per-account queries. Fresh group/active-war evidence
+and usable sealed final observations mean normal progress. Unknown/new accounts
+cannot borrow success or failure. Actual failed checks name affected clans;
+old checks, ended incomplete and mismatch remain distinct.
 
-## Behavior and ownership
+The selected sync month's mismatch outranks a saved raw stale/never account.
+Historical paths do not borrow the current month. Real participation DTOs own
+`source_complete`; weight-only `source_status` records are excluded from both
+participation evidence and decoration. Accounts exports decorate only their
+prefixed participation fields. Weight status, row basis, filters, columns,
+roster-mismatch nulling and numeric values remain unchanged. Waiting CSV text is
+retained when the display helper has no additional warning.
 
-`utils/cwl_participation_status.py` owns the single effective display rule.
-`cwl_web/participation_display.py` reads existing season group/war/fetch/allowance
-metadata as one batch, without per-account queries or writes. Fresh group and
-active-war evidence plus sealed final observations establish display health.
-Only confirmed failed checks identify failed clans; an old check is distinct.
-Unchecked signups cannot borrow another account's success or failure. Ended
-incomplete and month mismatch remain distinct. A fresh ended-to-active fetch
-regression is named even when the prior final side is retained.
+Decorate independent outgoing copies after internal calculations, fingerprints,
+snapshots and receipts. Keep raw status and completeness fields. Shared object
+aliases across current/history paths cannot overwrite one another.
 
-`participation_sync.py` logs each unique failure with clan/name, round, war tag,
-reason and available HTTP status/error class, and returns the same metadata in
-`failures`. Unknown-side failures retain candidate group/round context. JSON
-escapes external newlines; provider text and member rows are not logged. Existing
-reason codes, fetch budgets, retries, capture schedule and storage values stay
-unchanged. No schema or durable receipt fields were added.
+Failures are JSON journal events and sync-result metadata, with clan/round/war,
+reason and available HTTP/error class. Provider text/member rows stay out;
+external newlines are escaped. Real sides come from existing final allowance
+evidence or the fetched war body before normalization. A group round alone
+cannot identify a failed war's sides: without identity evidence the journal
+honestly says Unknown clans with a null clan tag, retaining war/round/reason.
+It must not blame the hosting clan whose group merely listed another war.
+No extra provider call, retry, capture schedule, schema or capture write change.
 
-Outgoing response copies receive `display_status` only after internal policy,
-fingerprints and receipts are calculated. Each response path gets its own copy;
-shared current/historical input objects cannot overwrite one another. Other
-months cannot borrow the selected month's freshness. Raw source fields remain
-available for every existing decision.
-
-| Consumer | Final treatment |
+| Staff consumer | Treatment |
 | --- | --- |
-| Participation capture/header/refresh | Neutral progress with round and scoped updated count; one named-failure warning; separately labelled current/history counts; completed check notice makes no blanket health claim |
-| Participation row/details/reset hint | Shared effective label/warning; numeric values, corrections, revisions, reset/save behavior unchanged |
-| Bonus medals capture warning | Shared summary restricted to selected pool/clan |
-| BonusCandidateReview / bonusRaffle | Existing policy exclusions, staff flags, cooldowns and draw gates retained; no independent capture status rule added |
-| Bonus/manual preview account copies | Effective status; generated warning status words rewritten only on the outgoing copy; warning count, acknowledgement and staff-reason gates retained |
-| Export preview / CSV | Shared status/warning text, including prefixed account-export fields; same basis, filters, rows, columns, nulling and numbers |
-| `_view`, `_preview`, `_fingerprint`, raffle eligibility | Original raw policy/fingerprint inputs unchanged |
-| RaffleStore snapshots/manual candidates/receipts | Original persisted fields and values unchanged; outgoing copies only |
+| Participation capture/refresh | Neutral progress, round and scoped updated count; one named-failure or mismatch warning; no duplicate population line |
+| Participation row | Short shared label; full failure explanation remains in Details |
+| Participation details/reset | Shared label/warning; corrections, values, revision checks and reset/save behavior retained |
+| Bonus and raffle staff views | Same display interpretation, with existing pool/clan scope; eligibility changes only as owner588 below |
+| Manual bonus preview | Raw policy/fingerprint first, outgoing display copies afterward |
+| Export preview/CSV | Same display status for participation only; weight status and waiting explanations preserved |
+| Raffle snapshots/manual candidates/receipts | Persisted fields and receipt semantics retained |
 
-### End-of-CWL decision check (578/579)
+## Owner decision588: CWL completion before bonuses
 
-An actual isolated sync saves rounds1–6 ended/sealed and round7 live. When round7
-and the group end, only round7 is fetched again. Results become7attacks/21stars,
-source_complete=true, raw source_status=stale. A third capture skips all seven
-and retains completeness. General raffle eligibility(account,4) and Lazy
-eligibility both return None (eligible) on both checks. No false raffle
-exclusion was found. The separate manual `_preview` still requires a staff
-reason when raw status is not complete, even with completeness true. That
-behavior is deliberately unchanged pending Ruggie's decision, per579.
+Complete source results need no reason solely because raw status is stale.
+Incomplete source results are a hard block, including saved draft selections,
+filled reasons and warning acknowledgement. The message names the incomplete
+player and points to Check Clash now where refreshing is useful. Other threshold,
+cooldown, hosting and already-confirmed rules retain their existing behavior.
 
-## Evidence and regression scope
+Lazy raffle previously allowed a reason to override incomplete results; it now
+blocks them unconditionally. Keep the original flag list plus incomplete reason
+visible together; complete accounts keep their old override behavior. General
+raffle already hard-blocked incomplete results and is unchanged. Fingerprint,
+revision, snapshot and receipt mechanisms are unchanged.
 
-- Final HTTP boundary suite:129 passed in43.52s, including sync, pure status,
-  SQLite adapter, Bonus, Lazy API, Exports and raffle. Existing cached-ended
-  stale/timestamp/attack/star contracts remain. Tests pin input identity/deep
-  equality, output copy separation, raw policy/fingerprint preservation, no
-  adapter writes, selected-clan ownership, initial missing groups, state
-  regression, ended incomplete and month mismatch.
-- Audit against955: all8 capture SQL write-call ASTs are identical. Store schema,
-  raffle eligibility/store and allowance files are byte-identical. Bonus
-  `_view`, `_preview`, `_fingerprint` function ASTs are identical. Private proof:
-  `.local/status160/policy-write-invariants-160.json`.
-- Full frontend:1778 passed in297files/25.99s. This branch starts from main955;
-  task159's frontend count belongs to a different tree. TypeScript passed.
-  Private Vite build completed in6.00s; entry `index-C4QPJEwE.js`, SHA256
-  `a238c5e419ea995c91d129760f5c5d6bab04024e6ece9b01ec01b02b0724860a`.
-- Required unchanged war checker:213 backend passed/1skipped24.74s;35 frontend
-  passed in8files; tsc, diff check and private temporary build5.89s passed.
-- Eight isolated Participation layouts at360/1440: progress, failed, ended and
-  mismatch; zero document overflow/page errors; GET-only fake API, CSP and
-  blocked external origins. Main stays healthy when only Lazy clans failed;
-  Lazy names Alpha/Beta/Gamma and37affected accounts; healthy search removes
-  that warning. Twenty visible paged rows; keyboard focus reachable. Inspected
-  360progress and1440failed, then corrected fixture UTF-8 metadata matching the
-  actual app. Proof: `.local/status160/layout-160c/proof.json`.
+The actual seven-ended-round fixture still proves source_complete=true with raw
+stale and7attacks/21stars after six sealed rounds plus one freshly ended round,
+and on subsequent sealed reuse. Both raffle paths remain eligible with complete
+results. This explicitly supersedes the earlier579 pending-policy note.
 
-Retained sample preview: `http://127.0.0.1:40669/?phase=progress`, detached
-PID839434. Static GET/HEAD-only component/sample170/fake browser API; no backend,
-Mongo or provider connection. Executable/cwd and local200/CSP/index hash were
-verified after the launcher exited. Fixture index SHA256
-`5d2cc422dfdde31797a7e0c936b891987dbd85278f2344b5016be3fd0abf57ca`.
-It is a separate sample bundle, not the deployable dashboard artifact.
+## Current evidence before main integration/final freeze
 
-## Corrections and preserved failures
+- Whole affected boundary/SeasonTrial run:149 passed49.19s. Includes auth,
+  raw cached-ended status/timestamps, failures, alias/input invariants, Bonus,
+  Lazy API, Exports, raffle and real old-selected-draft confirm rejection.
+- All8 capture SQL write-call ASTs equal955. Store, raffle storage and allowance
+  owner files remain byte-identical; bonus_view/fingerprint and general raffle
+  eligibility ASTs unchanged. Approved588 preview/Lazy policy differences are
+  explicit exceptions, not claimed old-policy equality.
+- Frontend1780 passed297files29.16s; final TypeScript passed. Private build6.10s:
+  index-3bWmt-hb.js, SHA256
+  b8fedff7839f1a3dd902eb133e893c65757c32805ccc55ce1867ff25e234fec7.
+  Main integration may change unrelated strike assets, requiring final checks.
+- Eight360/1440 sample layouts: progress, failed, ended, mismatch with saved
+  attack/star values. No document overflow or page errors; fake GET-only API,
+  external origins blocked, keyboard focus reachable. Healthy Main/search does
+  not show Lazy's37-account/three-clan failure. No duplicate capture count or
+  full inline row explanation. Inspected360progress and1440mismatch.
+- New retained component-only preview: http://127.0.0.1:32955/?phase=progress,
+  PID954588, index SHA256
+  e571b0918127817de503bfd32a3760e1f4ec899b0053d71776dfa6aa98f489b3.
+  Separate fixture bundle, not a deployable/full-backend artifact. Static
+  GET/HEAD+CSP/sample170/fake browser API, no backend/Mongo/provider connection.
+  Executable/cwd and200/CSP/hash verified after separate tool calls. Older
+  previews/assets and failed outputs remain preserved.
 
-| Review / location | Before → after; retained protections |
+These checks do not establish live Discord delivery, real-phone operation or a
+complete assistive-technology/contrast audit. The optional Impeccable context
+engine was unavailable (not installed/cache write denied); no retry/install.
+Repository interaction rules and incumbent UI guided the read-only review.
+No PRODUCT.md or DESIGN.md was invented.
+
+## Corrections retained, with before/after contracts
+
+| Review / fixture | Before → after; protection retained |
 | --- | --- |
-|580, participation_display.py / test_participation_display.py | deepcopy preserved a shared row alias, letting historical status overwrite current → independent dict/list copy per path; all strict assertions retained, plus input identity/deep equality and distinct output identity |
-|581, private frontend launcher | cwd web/cwl with duplicated web/cwl paths → root-based link/test setup and separate compiler cwd/gates; original failure log retained; no product/assertion change |
-|582, participation.ts:76 / bonusRaffle.ts:48 | full ParticipationSync required → only optional status/cycle actually read; then optional matching DTO type fields resolve weak-type TS2559; type-only, no casts/any/runtime/assertion change |
-|583, ParticipationWaiting.test.tsx:53/112 | raw-only fixture and required obsolete incomplete phrase for normal progress → outgoing display metadata and exact neutral progress/named-failure count/mismatch checks; all GET/navigation/month/waiting protections retained |
-|566, private layout160→160b | wait on first DOM row (hidden Lazy row in Main) → visible-list-item wait; initialize Main per page; no product/data/output assertion changed |
-|566, private layout160b→160c | missing UTF-8 fixture metadata → HTML/HTTP UTF-8 matching actual app; same assertions and data |
+|580 alias regression | deepcopy preserved current/history alias → independent copies, strict input identity/deep equality and distinct output identity |
+|581/582 launcher/types | wrong package cwd and overly broad sync type → correct cwd/paths and optional fields actually read; no casts/any or runtime workaround |
+|583 waiting copy | obsolete normal-progress amber phrase → neutral progress/named real failures/mismatch, retaining GET/auth/navigation/month/waiting checks |
+|588/591 owner decision | incomplete-with-reason can_confirm=true → hard block even acknowledgement/old selection; complete raw stale no participation-only reason; below threshold still requires reason/ack |
+|592 source binding | complete fixture with null token ignored → actual working-account token, same totals/status/completeness; all assertions retained |
+|594 reason priority | early hard return hid Left the family → original flags plus incomplete reason, unconditional incomplete block; complete override control retained |
+|592 manual candidate fixture | no complete source yet expected2 eligible → first assert incomplete exclusion, seed bound complete source, then original2 eligible/no signup mutation/duplicate409/removal checks |
+|164 count copy | duplicate capture population positive → current list count positive plus capture duplicate negative; GET/month/navigation/waiting checks retained |
+|566/592 layout selector | full-row count included37 closed Details warnings → inline status-area count; same zero-inline-explanation assertion, full Details retained; new output prefix |
+|566 earlier layout setup | hidden first row/absent UTF-8 metadata → visible-row wait/Main initialization and real-app UTF-8; same data/behavior checks |
 
-Original failed logs, source hashes, fixture bundles and stop summaries remain
-under `.local/status160`. No failed run is counted as a pass. Prior development
-notes are retained privately in `review-draft-before-final-audit.md`.
+All failed sources/logs and private receipts remain under `.local/status160`;
+none is counted as a passing run. Whole-run failures99/100 and the old unbound
+fixture failure are preserved beside their reviewed corrections.
 
-## End-to-end review and remaining gates
+## Remaining gates
 
-Authorization remains at each original editor-required HTTP boundary. No new
-route or Discord destination was introduced. Clan names render as React text
-and journal JSON; CSV formula/identity escaping remains intact. Existing
-concurrent-revision, stale-preview, draw/approval/replay, cancellation and
-identity-loss protections remain; response metadata is excluded from internal
-fingerprints, policy and saved receipts. No notification path or retry changed.
-Mocked fixtures are not live Discord delivery evidence.
-
-One full backend on clean frozen `fb57b66f` passed:6881 tests,123 skipped,
-270subtests,592.23s. The reviewed c02 network guard loaded before imports;
-production Mongo/Healthcheck settings were explicitly empty, native test opt-ins
-cleared and temporary output private. No source edits, exports, boots or other
-suites ran during architecture collection. Source remained clean afterward.
-
-The new exact-artifact owned boot passed on the same SHA:51 production routes,
-native async pool plus owned ping, real MongoDashboardState with retained copied
-SQLite, config200/auth401,18 artifact module origins including all seven touched
-Participation/Bonus/Exports status modules. The network boundary preceded
-application imports, Healthchecks were empty, and the fresh owned27168 process's
-executable/cwd/dbpath/listener were verified before any Mongo client. Database,
-owned process, data and export were cleaned. The private frontend is bound by
-actual source hashes to the frozen archive; no tautological tree assertion or
-159-only modules were reused. These are owned fixtures, not production health
-or Discord-delivery claims.
-
-Two freeze-audit failures are preserved: an inherited unmeasured195 dependency
-count was wrongly treated as a directory assertion, and a later receipt tried
-to hash docs/unused-code.md from the wrong branch.584/585 approved the narrow
-audit corrections. Only the owned dependency symlink was unlinked; the actual
-target's183 entry-name snapshot remained unchanged. The unrelated document was
-not created or copied. All11 changed Python modules compiled before the unlink.
-No code/test behavior was changed by these corrections.
-
-Final documentation-only provenance and remote-head verification complete the
-review handoff. No deployment, merge, tag or production service action is part
-of these checks. Manual bonus staff-reason behavior remains unchanged per579.
+Integrate released current main in this feature worktree, inspect the combined
+delta and repeat checks affected by those source changes. Then required unchanged
+war check, final frontend checks/build provenance, clean freeze, ONE full backend
+with the startup network guard/empty connections/private temp directory, NEW
+exact-artifact owned boot and cleanup, final evidence/remote verification/READY.
+No source edits/exports/boot/other suite during full architecture collection.
+160 release remains separate from159 and requires its own review acceptance.

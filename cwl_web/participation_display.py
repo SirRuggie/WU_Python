@@ -105,7 +105,7 @@ def participation_evidence(db, season_id, cycle, *, now=None, accounts=()):
     return result
 
 
-def decorate_participation_accounts(accounts, evidence):
+def decorate_participation_accounts(accounts, evidence, *, sync_status=None):
     """Return copies; callers keep raw source fields for all decisions."""
     result = deepcopy(accounts)
     for account in result:
@@ -114,6 +114,7 @@ def decorate_participation_accounts(accounts, evidence):
             has_results=(account.get('source_attacks') is not None
                          or account.get('source_stars') is not None),
             evidence=evidence.get(account.get('assigned_clan_tag'), ParticipationEvidence()),
+            sync_status=sync_status,
         )
     return result
 
@@ -125,6 +126,13 @@ def decorate_participation_payload(db, season_id, payload, *, now=None):
     cycle = (payload.get('cycle') or (payload.get('sync') or {}).get('cycle')
              or (payload.get('summary') or {}).get('cwl_month'))
     cycle = cycle or settings_view(db, season_id)['cycle']
+    sync_status = (payload.get('sync') or {}).get('status')
+
+    def participation_account(value):
+        # Weight sources use source_status too; only participation DTOs own
+        # source_complete. Accounts exports carry these fields with a prefix.
+        return 'tag' in value and 'source_status' in value and 'source_complete' in value
+
     def export_account(value):
         if value.get('participation_source_status') is None:
             return None
@@ -138,7 +146,7 @@ def decorate_participation_payload(db, season_id, payload, *, now=None):
             return [account for item in value for account in collect(item, inherited_cycle)]
         if isinstance(value, dict):
             own_cycle = value.get('cycle') or inherited_cycle
-            found = [value] if own_cycle == cycle and 'source_status' in value and 'tag' in value else []
+            found = [value] if own_cycle == cycle and participation_account(value) else []
             exported = export_account(value)
             if own_cycle == cycle and exported:
                 found.append(exported)
@@ -156,14 +164,18 @@ def decorate_participation_payload(db, season_id, payload, *, now=None):
             # let a historical path overwrite the current account's status.
             result = {key: visit(item, own_cycle) for key, item in value.items()
                       if key != 'display_status'}
-            if 'source_status' in value and 'tag' in value:
+            if participation_account(value):
                 # Saved draws from another month must not borrow today's check.
                 facts = evidence if own_cycle == cycle else {}
-                result = decorate_participation_accounts([result], facts)[0]
+                result = decorate_participation_accounts(
+                    [result], facts, sync_status=sync_status if own_cycle == cycle else None,
+                )[0]
             exported = export_account(result)
             if exported:
                 facts = evidence if own_cycle == cycle else {}
-                result['participation_display_status'] = decorate_participation_accounts([exported], facts)[0]['display_status']
+                result['participation_display_status'] = decorate_participation_accounts(
+                    [exported], facts, sync_status=sync_status if own_cycle == cycle else None,
+                )[0]['display_status']
             if isinstance(result.get('selected'), list) and isinstance(result.get('warnings'), list):
                 # Keep the manual preview's reason/acknowledgement decision and
                 # warning count. Only its generated status words change here,

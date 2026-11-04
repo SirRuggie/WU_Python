@@ -23,3 +23,15 @@ describe('participation display summaries', () => {
     expect(scoped.updated).toBe(1);
   });
 });
+
+
+describe('selected CWL month mismatch', () => {
+  it.each([true, false])('keeps mismatch above saved/unchecked account status: %s', saved => {
+    const rows = [{ assigned_clan_tag: '#A', assigned_clan_name: 'Alpha',
+      display_status: status(saved ? 'stale' : 'never', saved) }];
+    expect(participationSummary(rows, { status: 'season_mismatch', cycle: '2026-11' })).toEqual({
+      label: 'CWL month mismatch', warning: 'Clash CWL month differs from the selected month',
+      affected: 0, count: 1, updated: 0,
+    });
+  });
+});

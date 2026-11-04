@@ -73,7 +73,14 @@ export function participationStatus(account: StatusAccount): ParticipationDispla
 }
 
 /** Summarize only the supplied displayed scope, before pagination. */
-export function participationSummary(accounts: StatusAccount[], sync?: { status?: string; cycle?: string | null }) {
+export function participationSummary(accounts: StatusAccount[], sync?: { status?: string; cycle?: string | null; warning?: string | null }) {
+  if (sync?.status === 'season_mismatch') {
+    return {
+      label: 'CWL month mismatch',
+      warning: sync.warning || 'Clash CWL month differs from the selected month',
+      affected: 0, count: accounts.length, updated: 0,
+    };
+  }
   const statuses = accounts.map(participationStatus);
   const failed = accounts.filter(account => participationStatus(account).failed_clan);
   const clans = [...new Map(failed.map(account => [account.assigned_clan_tag,

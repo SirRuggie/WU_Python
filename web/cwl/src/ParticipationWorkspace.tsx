@@ -514,9 +514,6 @@ export default function ParticipationWorkspace({
                 retain current results.
               </p>
             )}
-            <p>{visible.length} current signups in this view
-              {data.scope_counts ? ` · ${data.scope_counts.current_signups} current signups total · ${data.scope_counts.saved_history} saved-history records` : ''}
-            </p>
             {statusSummary.warning && (
               <p className="participation-capture-warning" role="status">{statusSummary.warning}</p>
             )}

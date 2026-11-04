@@ -114,7 +114,10 @@ it.each([
       expect(problems.length > 0).toBe(hasProblem);
       if (status === "partial") {
         expect(text).toContain("CWL in progress · round 2 of 7");
-        expect(text).toContain("1 current signups in this view");
+        // Prompt164 removes the duplicate capture count; list scope stays visible.
+        expect(text).toContain("1 matching · 1 current signups");
+        expect(host.querySelector(".participation-capture")?.textContent)
+          .not.toContain("current signups in this view");
         expect(text).not.toContain("CWL observations are incomplete");
       }
       if (status === "unavailable") {

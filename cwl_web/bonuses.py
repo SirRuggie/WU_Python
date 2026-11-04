@@ -237,7 +237,12 @@ def _preview(db, season_id):
             blocks.append(f"{account['player_name']} is already confirmed for this CWL month")
         if not account["assigned_clan_tag"]:
             blocks.append(f"{account['player_name']} has no recorded hosting clan")
-        needs_reason = account["recommended"] is not True or not account["source_complete"] or account["source_status"] != "complete"
+        if not account["source_complete"]:
+            blocks.append(f"CWL results are not complete for {account['player_name']}")
+            if view["season_status"] == "draft" and view["cycle"]:
+                blocks.append("Use Check Clash now to refresh results.")
+            continue
+        needs_reason = account["recommended"] is not True
         if needs_reason:
             warnings.append(
                 f"{account['tag']} {account['player_name']}: {account['eligibility_reason']}; "

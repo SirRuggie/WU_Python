@@ -732,6 +732,19 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 (season_id, cycle),
             ):
                 known_sides.setdefault(row['war_tag'], set()).add(row['clan_tag'])
+            # Final allowance evidence retains both real sides, including wars
+            # between other group clans. Diagnostic reads never change capture.
+            for row in db.execute(
+                'SELECT war_tag,evidence_json FROM bonus_allowance_wars WHERE season_id=? AND cycle=?',
+                (season_id, cycle),
+            ):
+                try:
+                    final = json.loads(row['evidence_json'])
+                    tags = {side['tag'] for side in final['sides']
+                            if isinstance(side, dict) and isinstance(side.get('tag'), str)}
+                except (ValueError, KeyError, TypeError):
+                    continue
+                known_sides.setdefault(row['war_tag'], set()).update(tags)
         failure_details = []
         fetch_diagnostics = []
         clan_names = {row['assigned_clan_tag']: row.get('assigned_clan_name') or row['assigned_clan_tag']
@@ -739,13 +752,16 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
         rounds_by_clan = {clan: json.loads(row['war_tags_json']) for clan, row in known_groups.items()}
 
         def record_failure(reason, *, clan_tag=None, war_tag=None):
-            owners = [clan_tag] if clan_tag else sorted(set(clans) & known_sides.get(war_tag, set()))
-            if not owners:
-                owners = [clan for clan in clans if any(war_tag in tags for tags in rounds_by_clan.get(clan, []))]
-            for clan in owners:
-                round_number = next((number for number, tags in enumerate(rounds_by_clan.get(clan, []), 1)
+            owners = [clan_tag] if clan_tag else sorted(known_sides.get(war_tag, set()))
+            # A round lists every group war; it does not identify its sides.
+            # An unreadable first fetch must remain unattributed, rather than
+            # falsely accusing the hosting clan whose group listed that war.
+            for clan in owners or [None]:
+                rounds = [rounds_by_clan[clan]] if clan in rounds_by_clan else rounds_by_clan.values()
+                round_number = next((number for group in rounds for number, tags in enumerate(group, 1)
                                      if war_tag in tags), None) if war_tag else None
-                _capture_failure(failure_details, clan_tag=clan, clan_name=clan_names.get(clan),
+                _capture_failure(failure_details, clan_tag=clan,
+                                 clan_name=clan_names.get(clan) if clan else 'Unknown clans',
                                  reason=reason, war_tag=war_tag, round_number=round_number,
                                  diagnostic=next((item for item in fetch_diagnostics
                                      if item['phase'] == ('war' if war_tag else 'group')
@@ -811,6 +827,12 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             to_fetch.append(war_tag)
         war_fetches = await _fetch_wars(app["providers"], to_fetch, diagnostics=fetch_diagnostics)
         _log_war_months(war_fetches, cycle)
+        for war_tag, war, _ in war_fetches:
+            if isinstance(war, dict):
+                tags = {side['tag'] for key in ('clan', 'opponent')
+                        if isinstance((side := war.get(key)), dict)
+                        and isinstance(side.get('tag'), str)}
+                known_sides.setdefault(war_tag, set()).update(tags)
         mismatching_tags = {
             tag
             for tag, war, _ in war_fetches

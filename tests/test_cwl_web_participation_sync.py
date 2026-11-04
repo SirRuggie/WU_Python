@@ -654,3 +654,37 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.league.group_calls), before)
         history = await self.call('GET', self.base + '?source=history', self.owner)
         self.assertEqual((await history.json())['accounts'][0]['source_attacks'], 1)
+
+    async def test_failed_other_clan_war_names_its_real_sides_not_our_host(self):
+        await self.setup_published()
+        self.set_group([["#Y2Y", "#L2Y"]], state="WAR")
+        self.set_war("#Y2Y", state="WAR", attacks=(3,))
+        self.set_war("#L2Y", state="INVALID")
+        self.league.wars["#L2Y"]["clan"] = side("#R2Y", [member("#Q2Y", (1,))])
+        self.league.wars["#L2Y"]["opponent"] = side("#G2Y", [member("#G2Y", (2,))])
+        response = await self.sync()
+        self.assertEqual(response.status, 200, await response.text())
+        failures = (await response.json())["failures"]
+        self.assertEqual({event['clan_tag'] for event in failures}, {'#R2Y', '#G2Y'})
+        self.assertTrue(all(event['war_tag'] == '#L2Y' and event['round'] == 1
+                            and event['reason'] == 'invalid_war_state' for event in failures))
+        row, _ = await self.account()
+        self.assertEqual((row['source_attacks'], row['source_stars']), (1, 3))
+        self.assertFalse(row['display_status']['failed_clan'])
+
+    async def test_first_unreadable_other_group_war_never_invents_a_host_failure(self):
+        await self.setup_published()
+        self.set_group([["#Y2Y", "#L2Y"]], state="WAR")
+        self.set_war("#Y2Y", state="WAR", attacks=(3,))
+        self.league.fail_wars.add('#L2Y')
+        response = await self.sync()
+        self.assertEqual(response.status, 200, await response.text())
+        failures = (await response.json())["failures"]
+        self.assertEqual(len(failures), 1)
+        self.assertIsNone(failures[0]['clan_tag'])
+        self.assertEqual(failures[0]['clan_name'], 'Unknown clans')
+        self.assertEqual(failures[0]['round'], 1)
+        self.assertEqual(failures[0]['war_tag'], '#L2Y')
+        row, _ = await self.account()
+        self.assertEqual((row['source_attacks'], row['source_stars']), (1, 3))
+        self.assertFalse(row['display_status']['failed_clan'])

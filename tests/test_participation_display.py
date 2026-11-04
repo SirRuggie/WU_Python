@@ -186,3 +186,55 @@ def test_manual_bonus_warning_words_change_after_policy_without_removing_reason_
     assert output['blocking_reasons'] == payload['blocking_reasons']
     assert output['can_confirm'] is False
     assert output['fingerprint'] == payload['fingerprint']
+
+
+def test_weight_source_fields_are_not_participation_accounts():
+    from cwl_web.participation_display import decorate_participation_payload
+    for weight_status in ('missing', 'current', 'unavailable'):
+        db = fixture()
+        row = {'tag': '#WEIGHT', 'assigned_clan_tag': '#MISSING',
+               'source_status': weight_status, 'source_checked_at': OLD,
+               'effective_weight': 123}
+        before = deepcopy(row)
+        payload = {'cycle': '2026-11', 'rows': [row]}
+        writes = db.total_changes
+        output = decorate_participation_payload(db, 1, payload, now=NOW)
+        assert output == payload
+        assert row == before
+        assert 'display_status' not in output['rows'][0]
+        assert db.total_changes == writes
+
+
+def test_mixed_export_only_decorates_prefixed_participation_fields():
+    from cwl_web.participation_display import decorate_participation_payload
+    db = fixture()
+    row = {'tag': '#P', 'assigned_clan_tag': '#A', 'source_status': 'unavailable',
+           'source_checked_at': OLD, 'effective_weight': None,
+           'participation_source_status': 'stale', 'participation_source_complete': False,
+           'participation_source_attacks': 1, 'participation_source_stars': 3}
+    original = deepcopy(row)
+    output = decorate_participation_payload(db, 1, {'cycle': '2026-11', 'rows': [row]}, now=NOW)['rows'][0]
+    assert output['source_status'] == 'unavailable'
+    assert 'display_status' not in output
+    assert output['participation_display_status']['code'] == 'in_progress'
+    assert {key: value for key, value in output.items() if key != 'participation_display_status'} == original
+    assert row == original
+
+
+def test_sync_month_mismatch_precedes_saved_failure_and_unchecked_status():
+    from cwl_web.participation_display import decorate_participation_payload
+    for saved in (True, False):
+        db = fixture()
+        db.execute("UPDATE participation_war_fetches SET observed_at=? WHERE war_tag='#LIVE'", (OLD,))
+        row = accounts()[0]
+        row.update(source_status='stale' if saved else 'never',
+                   source_attacks=1 if saved else None, source_stars=3 if saved else None)
+        original = deepcopy(row)
+        output = decorate_participation_payload(db, 1, {
+            'cycle': '2026-11', 'sync': {'status': 'season_mismatch'}, 'accounts': [row],
+        }, now=NOW)['accounts'][0]
+        assert output['display_status']['code'] == 'season_mismatch'
+        assert output['display_status']['failed_clan'] is False
+        assert output['display_status']['warning'] == 'The CWL month from Clash does not match this month.'
+        assert {key: value for key, value in output.items() if key != 'display_status'} == original
+        assert row == original

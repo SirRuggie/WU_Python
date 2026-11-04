@@ -14,6 +14,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
     revision = fixtures.BonusTests.revision
     signup = fixtures.BonusTests.signup
     setup_published = fixtures.BonusTests.setup_published
+    seed_complete_source = fixtures.BonusTests.seed_complete_source
     settings = fixtures.BonusTests.settings
     select = fixtures.BonusTests.select
     preview = fixtures.BonusTests.preview
@@ -157,6 +158,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bonus_history_retains_void_and_participation(self):
         await self.setup_published()
+        await self.seed_complete_source()
         response = await self.call('PATCH', f'/seasons/{self.sid}/participation/%23P2Y', self.owner,
             json={'revision': 0, 'publication_version': 1, 'attacks': 0, 'stars': 0, 'notes': 'Reviewed'})
         self.assertEqual(response.status, 200, await response.text())
@@ -185,3 +187,34 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(csv_cell(value).startswith("'"))
         self.assertEqual(csv_cell(None), '')
         self.assertEqual(csv_cell(0), '0')
+
+    async def test_accounts_csv_keeps_weight_status_separate_from_waiting_participation(self):
+        from cwl_web.exports import _export_snapshot
+        from utils.cwl_working_roster import working_accounts, account_token
+        await self.setup_published()
+        query = '?kind=accounts&basis=published'
+        before = await self.download(query)
+        with self.app['store'].tx() as db:
+            token = account_token(working_accounts(db, self.sid)['#P2Y'])
+            db.execute(
+                'INSERT INTO participation_source_results('
+                'season_id,cycle,tag,attacks,stars,status,complete,checked_at,warning,roster_token) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                (self.sid,'2026-10','#P2Y',None,None,'waiting',0,
+                 '2026-10-01T00:00:00+00:00','October CWL has not started in Clash yet',token),
+            )
+            raw = _export_snapshot(db,self.sid,'accounts','published','test')
+            changes = db.total_changes
+            dump = list(db.iterdump())
+        rows = await self.download(query)
+        self.assertEqual(len(rows),len(before))
+        self.assertEqual(rows[0]['source_status'],before[0]['source_status'])
+        self.assertEqual(rows[0]['source_status'],raw['rows'][0]['source_status'])
+        self.assertEqual(rows[0]['source_weight'],before[0]['source_weight'])
+        self.assertEqual(rows[0]['effective_weight'],before[0]['effective_weight'])
+        self.assertEqual(rows[0]['participation_source_status'],'CWL has not started')
+        self.assertEqual(rows[0]['participation_source_warning'],'October CWL has not started in Clash yet')
+        self.assertEqual(rows[0]['participation_attacks'],'')
+        self.assertEqual(rows[0]['participation_stars'],'')
+        with self.app['store'].tx() as db:
+            self.assertEqual(list(db.iterdump()),dump)
