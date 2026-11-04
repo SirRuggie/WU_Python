@@ -153,7 +153,7 @@ def _clan_month_evidence(db, season_id, cycle, clan_tag):
 
 
 def _waiting_message(cycle: str) -> str:
-    return f"{calendar.month_name[int(cycle[5:7])]} CWL hasn't started in Clash yet"
+    return f"{calendar.month_name[int(cycle[5:7])]} CWL has not started in Clash yet"
 
 
 def settings_view(db, season_id: int) -> dict:

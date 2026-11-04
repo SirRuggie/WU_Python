@@ -215,3 +215,13 @@ Any final review-record-only commit has the same runtime and tests as the tested
 revision. Delivery tests use fake transports; they do not prove live Discord
 or push-notification delivery. Production release still requires feature ACCEPT,
 a reviewed coordinator and fresh operational gates.
+
+
+### Review delta 158 (Shaka 548–550)
+
+- STE-12 producer `cwl_web/placement_status.py:17` now returns exactly `Set Clan size to 15 or 30 in Clan settings.` The backend pins `explain()` to the shared `tests/fixtures/ste158_capacity_note.json` and the exact owner sentence. `RosterAccountCard.test.tsx` reads that same fixture and asserts the entire note is absent; keeping a card's reason, placement, and write behavior unchanged.
+- The visible-word guards now reject both campaign and campaigns. Backend inventory covers every Python file under cwl_web, utils, and extensions. Machine field-name membership tuples/lists use the existing syntax-position exemption; plural reply/embed negative cases reject prose. No prose whitelist was added.
+- `manage_reminders._candidate` passes the display label automatic message to malformed-field validation, while durable campaign keys stay unchanged. The HTTP regression pins status 400 and the exact JSON error field.
+- `participation_sync._waiting_message` expands has not started. WeightQueue's fake conflict now matches the existing backend sentence.
+- Comparison sweep: AST inventory of frontend comparison/call expressions is retained in private 158-comparison-inventory.json. Checked RosterAccountCard capacity (fixed), App's FWA prefix against utils/cwl_signup_policy.py (unchanged), ClanRosterImages/rosterImagePosting deleted-message error against cwl_web/roster_image_posts.py and server_management.py (unchanged), RosterPlayerDialog's Changed by someone else against its workspace and weight conflict producers (prefix retained). ArrivalCheck, ModerationSettings, and dashboardSearchAttention compare locally produced text; each producer still matches. Other matches are durable status/kind fields, URL parameters, or search filters. No additional backend-prose comparison mismatch found in this inventory.
+- Harness failures are retained: initial wrong process cwd, then Vite asset rewriting of literal new URL and new HTTP test incorrectly expecting raw text rather than the existing JSON envelope. Shaka 549/550 approved narrow harness corrections; fixture path is file-relative via a variable URL, and HTTP error/status semantics are unchanged.

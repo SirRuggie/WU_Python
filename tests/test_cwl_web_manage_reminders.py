@@ -30,6 +30,13 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.status, 200)
 
+    async def test_invalid_top_level_fields_have_plain_http_error(self):
+        state = await self.state()
+        response = await self.call('PATCH', self.base, self.owner,
+            json={'generation': state['generation'], 'patch': {'unexpected': True}})
+        self.assertEqual(response.status, 400)
+        self.assertEqual((await response.json())['error'], 'Invalid automatic message fields')
+
     async def state(self):
         response = await self.call("GET", self.base, self.owner)
         self.assertEqual(response.status, 200, await response.text())

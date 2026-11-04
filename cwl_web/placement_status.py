@@ -14,7 +14,7 @@ def explain(account, clans, reason):
         return 'No active hosting clan is configured for this signup pool.'
     sized = [c for c in pools if c['capacity'] in (15,30)]
     if not sized:
-        return 'Hosting clans need a 15- or 30-player capacity in Clan settings.'
+        return 'Set Clan size to 15 or 30 in Clan settings.'
     weight = account['effective_weight']
     ranges = ', '.join(dict.fromkeys(f"{c['min_weight']/1000:g}k–{c['max_weight']/1000:g}k" for c in sized if c['min_weight'] is not None and c['max_weight'] is not None))
     return f"Weight {weight/1000:g}k is outside matching clan ranges" + (f' ({ranges}).' if ranges else '.')

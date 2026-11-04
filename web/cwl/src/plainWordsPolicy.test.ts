@@ -58,7 +58,7 @@ it("retains linking context and rejects obsolete visible labels without renaming
 });
 
 it("keeps internal feature names out of visible dashboard words", () => {
-  const bannedWords = /\bcampaign\b/i;
+  const bannedWords = /\bcampaigns?\b/i;
   const root = new URL("./", import.meta.url);
   const violations: string[] = [];
   function scan(folder: URL) {

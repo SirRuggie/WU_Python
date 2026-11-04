@@ -280,7 +280,7 @@ it("uses 15px primary names and 12px regular metadata and helper text, with a te
 it.each([
   "Request timed out",
   "Your login expired",
-  "Roster changed; refresh before saving",
+  "The roster changed. Refresh before you save.",
 ])(
   "keeps the draft and never retries automatically after %s",
   async (message) => {

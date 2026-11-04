@@ -34,3 +34,7 @@ def test_invalid_group_keeps_its_category_and_exact_safe_reason(field, value, me
 def test_month_error_says_which_month_to_check():
     with pytest.raises(ValueError, match="The CWL month from Clash does not match the month set here"):
         sync._valid_group({"season": "2026-10"}, "2026-11", "#C2Y")
+
+
+def test_not_started_month_uses_expanded_words():
+    assert sync._waiting_message('2026-11') == 'November CWL has not started in Clash yet'

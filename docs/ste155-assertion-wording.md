@@ -187,3 +187,18 @@ assert exact body, exactly one check phrase, input nonmutation and second-run
 idempotence.
 
 An additional stored127 custom-body case pins its original full check line, full object equality, input nonmutation and second-run idempotence. It passed independently after the58-case targeted run.
+
+
+### Review 158 assertion additions
+
+- tests/test_cwl_web_placement_status.py: old capacity substring assertion becomes an exact owner sentence plus shared fixture equality for the same explain() result. Existing weight, pool, missing-weight, and readiness assertions remain.
+- web/cwl/src/RosterAccountCard.test.tsx: the duplicated capacity input becomes the backend-pinned shared fixture; old absent prefix Hosting clans need becomes absent exact backendCapacityNote. This catches the original backend/dashboard mismatch.
+- web/cwl/src/WeightQueue.test.tsx: fake conflict Roster changed; refresh before saving → The roster changed. Refresh before you save. Existing error, retry, and mutation checks unchanged.
+- New malformed-fields HTTP and waiting-month exact-word tests were added, not substituted for behavior assertions. Legacy127/input-nonmutation/idempotence/data/write-count/status assertions remain unchanged.
+
+Current 158 locations:
+- `tests/test_cwl_web_placement_status.py:15`: `self.assertEqual(explain(account,[clan|{'capacity':None}],'no_eligible_rule'), expected)`.
+- `web/cwl/src/RosterAccountCard.test.tsx:134`: `expect(capacity).not.toContain(backendCapacityNote);`.
+- `web/cwl/src/WeightQueue.test.tsx:283`: `"The roster changed. Refresh before you save.",`.
+- `tests/test_cwl_web_manage_reminders.py:38`: `self.assertEqual((await response.json())['error'], 'Invalid automatic message fields')`.
+- `tests/test_ste155_participation_words.py:40`: `assert sync._waiting_message('2026-11') == 'November CWL has not started in Clash yet'`.

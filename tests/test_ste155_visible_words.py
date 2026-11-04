@@ -7,10 +7,8 @@ import pytest
 from utils import cwl_campaign
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ['utils/cwl_campaign.py', 'utils/cwl_forms.py', 'utils/cwl_sequence.py',
-         'utils/cwl_web_bridge.py', 'utils/cwl_post_update_store.py',
-         'cwl_web/manage_bridge.py', 'cwl_web/roster_sequence_review.py',
-         'extensions/tasks/cwl_reminder.py']
+FILES = [str(file.relative_to(ROOT)) for folder in ('cwl_web', 'utils', 'extensions')
+         for file in sorted((ROOT / folder).rglob('*.py'))]
 
 
 def _kind_expression(node):
@@ -71,7 +69,7 @@ def visible_violations(source):
     for node in ast.walk(tree):
         if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
             continue
-        if not re.search(r'\bcampaign\b', node.value, re.I):
+        if not re.search(r'\bcampaigns?\b', node.value, re.I):
             continue
         parent = parents.get(node)
         if isinstance(parent, ast.Expr):
@@ -96,6 +94,9 @@ def visible_violations(source):
             assignment = parents.get(parent)
             if isinstance(assignment, ast.Assign) and any(isinstance(t, ast.Name) and t.id.startswith('allowed') for t in assignment.targets):
                 continue  # An allowed-field-name set, not a list of prose.
+        if isinstance(parent, (ast.Tuple, ast.List)) and isinstance(parents.get(parent), ast.Compare):
+            if any(isinstance(op, (ast.In, ast.NotIn)) for op in parents[parent].ops):
+                continue  # A field-name membership tuple/list.
         if isinstance(parent, ast.Compare):
             if any(isinstance(op, (ast.In, ast.NotIn)) for op in parent.ops):
                 continue  # Field-name membership.
@@ -126,6 +127,7 @@ def test_discord_forms_and_staff_error_literals_use_human_visible_terms():
     'value = row.get("campaign")',
     'allowed_fields = {"campaign", "scope"}',
     'present = "campaign" in patch',
+    'present = key not in ("campaign", "draft_id")',
     'query = {"kind": "campaign"}',
     'same = row.get("kind") == "campaign"',
     'query = {"kind": {"$ne": "campaign"}}',
@@ -137,6 +139,8 @@ def test_machine_syntax_positions_remain_unchanged(source):
 
 @pytest.mark.parametrize('source', [
     'reply("Resume the campaign")',
+    'reply("Resume campaigns")',
+    'Embed(title="Campaigns")',
     'Embed(title="Campaign")',
     'HTTPConflict(text="The campaign changed")',
     'label("Campaign")',
@@ -157,4 +161,4 @@ def test_fresh_discord_message_bodies_titles_labels_and_buttons_have_no_internal
         for variant in message['variants'].values():
             visible.extend([variant['title'], variant['body']])
             visible.extend(button.get('label', '') for button in variant['buttons'])
-    assert all(not re.search(r'\bcampaign\b', text, re.I) for text in visible)
+    assert all(not re.search(r'\bcampaigns?\b', text, re.I) for text in visible)

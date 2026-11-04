@@ -1,4 +1,6 @@
 import unittest
+import json
+from pathlib import Path
 from cwl_web.placement_status import explain
 
 class PlacementStatusTests(unittest.TestCase):
@@ -8,7 +10,9 @@ class PlacementStatusTests(unittest.TestCase):
         self.assertIn('159k',explain(account,[clan],'no_eligible_rule'))
         self.assertIn('160k–174k',explain(account,[clan],'no_eligible_rule'))
         self.assertNotIn('under',explain(account,[clan],'no_eligible_rule'))
-        self.assertIn('capacity',explain(account,[clan|{'capacity':None}],'no_eligible_rule'))
+        expected = json.loads((Path(__file__).parent / 'fixtures/ste158_capacity_note.json').read_text())['capacity_note']
+        self.assertEqual(expected, 'Set Clan size to 15 or 30 in Clan settings.')
+        self.assertEqual(explain(account,[clan|{'capacity':None}],'no_eligible_rule'), expected)
         self.assertIn('signup pool',explain(account,[],'no_eligible_rule'))
         self.assertIn('place manually',explain(account,[clan],'missing_weight'))
         self.assertIn('Preview and apply',explain(account,[clan],'ready'))

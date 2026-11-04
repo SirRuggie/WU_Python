@@ -29,7 +29,7 @@ def _snowflake(value):
 
 
 def _candidate(loaded, patch):
-    _object(patch, ('timezone', 'signup_deadline', 'reminder_sequence', 'messages'), 'campaign')
+    _object(patch, ('timezone', 'signup_deadline', 'reminder_sequence', 'messages'), 'automatic message')
     candidate = copy.deepcopy(loaded['campaign'])
     if 'timezone' in patch:
         if not isinstance(patch['timezone'], str):
