@@ -2939,8 +2939,7 @@ async def _legacy_campaign_guard(ctx, mongo) -> bool:
         return True
     if LEGACY_RUNTIME_DISABLED:
         await ctx.respond(
-            "Legacy CWL controls are retired. Use `/manage section:CWL` to edit, preview, "
-            "schedule, pause, or send CWL announcements.",
+            "The old CWL commands do not work now. Use `/manage section:CWL` to edit, preview, schedule, pause, or send CWL announcements.",
             ephemeral=True,
         )
         return True
@@ -2962,8 +2961,7 @@ async def _legacy_campaign_guard(ctx, mongo) -> bool:
     schedule = await mongo.cwl_reminder.find_one({"_id": "schedule"}) or {}
     if schedule.get("campaign_managed"):
         await ctx.respond(
-            "CWL is now managed in `/manage section:CWL`. Open it to edit messages, change timing, "
-            "pause delivery, or preview without sending a test ping.",
+            "Use `/manage section:CWL` to manage CWL. There you can edit messages, change the times, pause delivery, or preview a message. A preview does not send a test ping.",
             ephemeral=True,
         )
         return True

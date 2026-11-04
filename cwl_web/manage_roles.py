@@ -23,7 +23,7 @@ def role(data):
 
 def sid(value):
     if not isinstance(value, str) or not value.isdigit() or not 15 <= len(value) <= 22:
-        raise web.HTTPBadRequest(text='Choose a valid Discord member or role.')
+        raise web.HTTPBadRequest(text="Select a valid Discord member or role.")
     return value
 
 
@@ -64,7 +64,7 @@ async def page(request):
     options = [{'value': str(r.id), 'label': r.name} for r in role_map.values()
                if str(r.id) not in protected and role_is_manageable(guild, bot, r) and perms.actor_can_manage_role(actor_member, guild, r)]
     current_role_options = [{'value': str(r.id), 'label': r.name} for r in role_map.values() if r.id != GUILD_ID]
-    return web.json_response({'id': 'roles', 'label': 'Member roles', 'description': 'Choose a member and roles, then add or remove them.',
+    return web.json_response({'id': 'roles', 'label': 'Member roles', 'description': "Select a member and roles, then add or remove them.",
         'group': 'Server', 'revision': 'live', 'fields': [
             {'key': 'member_id', 'label': 'Member', 'type': 'member', 'value': '', 'required': True, 'options': [], 'current_role_options': current_role_options},
             {'key': 'role_ids', 'label': 'Roles', 'type': 'multiselect', 'value': [], 'required': True, 'options': options}],
@@ -135,7 +135,7 @@ async def members(request):
     if after:
         sid(after)
     if exact_id and (query or after):
-        raise web.HTTPBadRequest(text='Choose a member by ID or search by name, not both.')
+        raise web.HTTPBadRequest(text="Select a member by ID or search by name, not both.")
     if query and after:
         raise web.HTTPBadRequest(text='Search cannot be combined with a member-list page.')
     mode = 'browse'
@@ -171,7 +171,7 @@ async def change(request):
         raise web.HTTPNotFound()
     body = await request.json()
     if not isinstance(body, dict) or set(body) - {'revision', 'values', 'request_id'}:
-        raise web.HTTPBadRequest(text='Choose one member and their roles.')
+        raise web.HTTPBadRequest(text="Select one member and their roles.")
     # The dashboard supplies a request UUID; Discord role PUT/DELETE operations
     # remain idempotent, with current membership checked again on each request.
     if 'request_id' in body:
@@ -183,11 +183,11 @@ async def change(request):
             raise web.HTTPBadRequest(text='Refresh this page and try the role change again.') from None
     values = body.get('values', {})
     if not isinstance(values, dict) or set(values) - {'member_id', 'role_ids'}:
-        raise web.HTTPBadRequest(text='Choose one member and their roles.')
+        raise web.HTTPBadRequest(text="Select one member and their roles.")
     target_id = sid(values.get('member_id'))
     selected = values.get('role_ids', [])
     if not isinstance(selected, list) or not 1 <= len(selected) <= 25 or len(set(map(str, selected))) != len(selected):
-        raise web.HTTPBadRequest(text='Choose between 1 and 25 different roles.')
+        raise web.HTTPBadRequest(text="Select between 1 and 25 different roles.")
     selected = [sid(value) for value in selected]
     protected = await dashboard_grant_roles(request, actor)
     if protected.intersection(selected):

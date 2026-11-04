@@ -81,7 +81,7 @@ it('opening the gallery only reads the catalog and never scans storage', async (
   expect(transport).toHaveBeenCalledTimes(1)
   expect(transport).toHaveBeenCalledWith('/manage/text-command-images')
 })
-it('partial bulk move retains only unconfirmed selections and reports progress', async () => {
+it('partial bulk move retains only not confirmed selections and reports progress', async () => {
   const second = { ...image, url: 'https://example.com/two.png', name: 'Two' }
   hooks.values = [
     [image, second],

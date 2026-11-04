@@ -33,7 +33,7 @@ async def page(request):
                     documents.append({'id':section+clan,'return_section':section,'clan_tag':clan,'clan_name':name,'label':f'{name} · {section}', 'return_status':return_status(saved.get(clan),section), 'endpoint':f'/manage/return-reminders/{section}/{quote(clan,safe="")}'})
             return web.json_response({'id':'cwl_rosters','label':'CWL return reminders','description':'Saved home-clan members. These are separate from CWL signup placements.','group':'War','revision':'index','fields':[],'documents':documents})
         try:pool=store.normalize_section(pool);clan_tag=tag(clan_tag)
-        except ValueError as exc:raise web.HTTPBadRequest(text='Choose a valid clan.') from exc
+        except ValueError as exc:raise web.HTTPBadRequest(text="Select a valid clan.") from exc
         current=await store.get_active(db,clan_tag,section=pool)
         destination=await return_reminder_settings.destination(db,pool)
     base=f'/manage/return-reminders/{pool}/{quote(clan_tag,safe="")}'
@@ -66,7 +66,7 @@ async def action(request):
             values['player_tags']=[tag(x) for x in selected]
         if request.match_info['action'] in ('start','resume'):
             interval=int(values.get('every_minutes',60))
-            if interval not in (30,60,120):raise ValueError('Choose 30 minutes, 1 hour, or 2 hours.')
+            if interval not in (30,60,120):raise ValueError("Select 30 minutes, 1 hour, or 2 hours.")
             values['every_minutes']=interval
             if values['section']!='FWA':raise ValueError('Main return reminders are sent manually.')
     except ValueError as exc:raise web.HTTPBadRequest(text=str(exc)) from exc

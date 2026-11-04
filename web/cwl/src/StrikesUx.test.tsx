@@ -121,12 +121,12 @@ it("preserves server role order, hides only managed additions, and retains a con
     role_ids: ["9", "3"],
     strike_limit: 11,
   });
-  expect(host.textContent).toContain("Changed by someone else · Reload");
+  expect(host.textContent).toContain("Changed by someone else · Refresh");
   expect(
     host.querySelector<HTMLInputElement>('input[type="number"]')!.value,
   ).toBe("11");
   expect(button("Save settings").disabled).toBe(true);
-  await click("Reload");
+  await click("Refresh");
   await click("Keep editing");
   expect(host.textContent).toContain("Captain");
   transport.mockResolvedValueOnce({
@@ -134,8 +134,8 @@ it("preserves server role order, hides only managed additions, and retains a con
     revision: 10,
     strike_limit: 12,
   });
-  await click("Reload");
-  await click("Reload", document.querySelector("dialog")!);
+  await click("Refresh");
+  await click("Refresh", document.querySelector("dialog")!);
   expect(
     host.querySelector<HTMLInputElement>('input[type="number"]')!.value,
   ).toBe("12");
@@ -514,14 +514,14 @@ it("sends the selected leave revision and retains the date and accounts after a 
     resume_date: "2027-01-01",
     revision: 6,
   });
-  expect(host.textContent).toContain("Changed by someone else · Reload");
+  expect(host.textContent).toContain("Changed by someone else · Refresh");
   expect(
     host.querySelector<HTMLInputElement>('input[type="date"]')!.value,
   ).toBe("2027-01-01");
   expect(
     host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked,
   ).toBe(true);
-  await click("Reload");
+  await click("Refresh");
   await click("Keep editing");
   expect(
     host.querySelector<HTMLInputElement>('input[type="date"]')!.value,

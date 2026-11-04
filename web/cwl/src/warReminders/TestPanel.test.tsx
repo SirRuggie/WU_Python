@@ -101,7 +101,7 @@ it("refuses to send a changed destination from an old confirmation", async () =>
   expect(document.querySelector("dialog")).toBeNull();
 });
 it("preserves the receipt identity after uncertain delivery and never retries automatically", async () => {
-  vi.mocked(api).mockRejectedValue(new Error("Delivery unconfirmed"));
+  vi.mocked(api).mockRejectedValue(new Error("Delivery not confirmed"));
   render();
   await click("Send test to selected channel");
   await click("Post test");

@@ -24,7 +24,7 @@ def date_bound(raw: str, *, end: bool):
     try:
         day = datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     except ValueError:
-        raise web.HTTPBadRequest(text="Choose a valid date in YYYY-MM-DD format.") from None
+        raise web.HTTPBadRequest(text="Select a valid date in YYYY-MM-DD format.") from None
     try:
         return day + timedelta(days=1) if end else day
     except OverflowError:
@@ -40,7 +40,7 @@ async def listing(request):
     if len(q) > 80 or any(ord(c) < 32 for c in q):
         raise web.HTTPBadRequest(text="Keep searches to 80 printable characters.")
     if kind not in ("", "join", "leave", "kick", "ban"):
-        raise web.HTTPBadRequest(text="Choose join, leave, kick or ban.")
+        raise web.HTTPBadRequest(text="Select join, leave, kick or ban.")
     if before and not ID_PATTERN.fullmatch(before):
         raise web.HTTPBadRequest(text="Invalid page cursor.")
     try:
@@ -48,7 +48,7 @@ async def listing(request):
     except ValueError:
         raise web.HTTPBadRequest(text="Invalid page size.") from None
     if not 1 <= limit <= 100:
-        raise web.HTTPBadRequest(text="Choose 1 to 100 events per page.")
+        raise web.HTTPBadRequest(text="Select 1 to 100 events per page.")
     start = date_bound(request.query["from"], end=False) if "from" in request.query else None
     end = date_bound(request.query["to"], end=True) if "to" in request.query else None
     if start and end and start >= end:
@@ -172,7 +172,7 @@ async def destination(request):
     except (web.HTTPNotFound, web.HTTPForbidden):
         raise web.HTTPBadRequest(text="That destination is missing or inaccessible to the bot.") from None
     if not option:
-        raise web.HTTPBadRequest(text="Choose an accessible text channel, forum, or forum post in this server.")
+        raise web.HTTPBadRequest(text="Select an accessible text channel, forum, or forum post in this server.")
     if not option["can_post"]:
         raise web.HTTPBadRequest(text="The bot cannot post here. Check its permissions and whether the forum post is locked.")
     response = web.json_response(option)
@@ -247,11 +247,11 @@ def _destination(value, label):
 
 def _checked_settings(body):
     if not isinstance(body, dict) or type(body.get("revision")) is not int or body["revision"] < 0:
-        raise web.HTTPBadRequest(text="Choose a valid settings revision.")
+        raise web.HTTPBadRequest(text="Select a valid settings revision.")
     if set(body) == {"revision", "events"}:  # Original API clients.
         legacy = body["events"]
         if not isinstance(legacy, dict) or set(legacy) != set(EVENT_TYPES):
-            raise web.HTTPBadRequest(text="Choose all four event settings.")
+            raise web.HTTPBadRequest(text="Select all four event settings.")
         for kind in EVENT_TYPES:
             value = legacy[kind]
             if not isinstance(value, dict) or set(value) != {"enabled", "channel_id", "forum_tag_id"}:
@@ -264,13 +264,13 @@ def _checked_settings(body):
     if set(body) == {"revision", "main", "categories", "events", "ignores"}:
         body = {"schema_version": SCHEMA_VERSION, **body}
     if set(body) != {"schema_version", "revision", "main", "categories", "events", "ignores"}:
-        raise web.HTTPBadRequest(text="Choose all member log settings.")
+        raise web.HTTPBadRequest(text="Select all member log settings.")
     if body["schema_version"] != SCHEMA_VERSION or body["ignores"] != {}:
         raise web.HTTPBadRequest(text="Unsupported member log settings schema.")
     main = _destination(body["main"], "main")
     categories = body["categories"]
     if not isinstance(categories, dict) or set(categories) != set(CATEGORIES):
-        raise web.HTTPBadRequest(text="Choose both member log categories.")
+        raise web.HTTPBadRequest(text="Select both member log categories.")
     checked_categories = {}
     for category in CATEGORIES:
         value = categories[category]
@@ -282,7 +282,7 @@ def _checked_settings(body):
             {"channel_id": value["channel_id"], "forum_tag_id": value["forum_tag_id"]}, category)}
     events = body["events"]
     if not isinstance(events, dict) or set(events) != set(EVENT_TYPES):
-        raise web.HTTPBadRequest(text="Choose all four event settings.")
+        raise web.HTTPBadRequest(text="Select all four event settings.")
     checked_events = {}
     for kind in EVENT_TYPES:
         value = events[kind]
@@ -351,7 +351,7 @@ async def send_test(request):
     if (not isinstance(body, dict) or set(body) != {"event_type", "revision"}
             or body["event_type"] not in EVENT_TYPES
             or type(body["revision"]) is not int or body["revision"] < 0):
-        raise web.HTTPBadRequest(text="Choose an event and saved settings revision.")
+        raise web.HTTPBadRequest(text="Select an event and saved settings revision.")
     kind = body["event_type"]
     async with mongo(request) as db:
         store = MemberEventStore(db.member_events, db.member_event_test_audit)

@@ -213,7 +213,7 @@ it("uses a danger confirmation for Hide, Cancel sends no write, and a successful
   await act(async () => button("Hide roster from members").click());
   const dialog = document.querySelector("dialog")!;
   expect(dialog.textContent).toContain(
-    "The working roster and signups are kept.",
+    "The working roster and signups stay saved.",
   );
   expect(button("Hide roster", dialog).className).toBe("confirm-danger");
   expect(
@@ -367,14 +367,14 @@ it("exposes Refresh on Announcements when the reload after successful publish fa
           joining_instructions: "Join after war\nThanks",
         },
       };
-    throw new Error("Reload failed");
+    throw new Error("Refresh failed");
   });
   await act(async () =>
     button("Publish roster", document.querySelector("dialog")!).click(),
   );
   expect(changeStep).toHaveBeenCalledWith("announce");
   expect(button("Refresh draft").closest("[hidden]")).toBeNull();
-  expect(host.textContent).toContain("Reload failed");
+  expect(host.textContent).toContain("Refresh failed");
   expect(api.mock.calls.filter((c) => c[1] === "POST")).toHaveLength(1);
 });
 it("each check chip passes its exact navigation target, with singular labels", async () => {

@@ -9,7 +9,7 @@ export const todoTabs: { key: TodoKind; icon: DashboardIconName; label: string; 
   { key: 'cwl', icon: 'trophy', label: 'CWL', description: 'CWL attacks still to use. This is your live war activity, separate from season signups.' },
   { key: 'raid', icon: 'raid', label: 'Raids', description: 'Capital Raid attacks still to use for the current raid weekend.' },
   { key: 'games', icon: 'games', label: 'Clan Games', description: 'Points earned by each account for this month’s Clan Games.' },
-  { key: 'private', icon: 'locked', label: 'Cannot check', description: 'Accounts whose war activity needs checking in-game because a log is private or unavailable.' },
+  { key: 'private', icon: 'locked', label: 'Cannot check', description: 'Accounts with a private or unavailable war log. Check these accounts in the game.' },
 ]
 export function visibleTodoRows(rows: TodoRow[], selected: string[] | null, search: string, sort: string, exactTag = false) {
   const query = search.trim().toLocaleLowerCase()

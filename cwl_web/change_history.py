@@ -42,7 +42,7 @@ class RestoreRequest:
 
 
 def target_info(value):
-    if not isinstance(value,str):raise web.HTTPBadRequest(text='Choose a message or setting.')
+    if not isinstance(value,str):raise web.HTTPBadRequest(text="Select a message or setting.")
     base='/api/cwl/manage/'
     path=value.removeprefix('/api/cwl')
     if path.startswith('/manage/content/'):
@@ -56,7 +56,7 @@ def target_info(value):
     if path.startswith('/manage/text-commands/'):
         from utils.text_commands import command_name
         try: name=command_name(unquote(path.removeprefix('/manage/text-commands/')))
-        except ValueError: raise web.HTTPBadRequest(text='Choose a valid text command.') from None
+        except ValueError: raise web.HTTPBadRequest(text="Select a valid text command.") from None
         return 'commands','text_commands',{'name':name},base+'text-commands/'+name
     match=re.fullmatch(r'/manage/ticket-settings/(timers|main|fwa|viewers)',path)
     if match:return 'tickets','ticket_settings',{'part':match[1]},base+'ticket-settings/'+match[1]
@@ -80,7 +80,7 @@ async def restore(request):
     await require_manage(request,scope,write=True)
     body=await request.json()
     if not isinstance(body,dict) or body.get('side') not in ('before','after') or not isinstance(body.get('id'),str):
-        raise web.HTTPBadRequest(text='Choose a saved version.')
+        raise web.HTTPBadRequest(text="Select a saved version.")
     async with mongo(request) as db:
         row=await db.bot_config.find_one({'_id':body['id']})
     if not row or row.get('kind')!='dashboard_history' or row.get('target')!=target or row.get('status')!='saved':
@@ -99,7 +99,7 @@ async def restore(request):
         from .text_commands import save
         from utils.text_commands import collection, GUILD_ID
         if not values or values.get('command') != match['name']:
-            raise web.HTTPBadRequest(text='Choose a version containing a command reply.')
+            raise web.HTTPBadRequest(text="Select a version containing a command reply.")
         async with mongo(request) as db:
             current = await collection(db).find_one({'_id': f"{GUILD_ID}:{match['name']}"})
         if row.get('action') == 'delete' and body['side'] == 'before':

@@ -128,7 +128,7 @@ export default function useSignupAction(
     hiddenOpen,
     visibilityCheck: checkFailed ? (
       <p className="muted" role="status">
-        Couldn't check signup visibility ·{" "}
+        Could not check signup visibility ·{" "}
         <button
           disabled={busy}
           onClick={() => setCheckAttempt((value) => value + 1)}

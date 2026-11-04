@@ -237,7 +237,7 @@ export default function AnnouncementSequenceStatus({
           (sequence.status === "awaiting_announcement" && waitExpired)) && (
           <>
             <p>
-              Announcement shows as sent, but its message couldn't be confirmed.
+              Announcement shows as sent, but its message could not be confirmed.
             </p>
             <Button disabled={busy} onClick={() => setAssumeReview(true)}>
               Post clan images now

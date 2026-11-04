@@ -329,7 +329,7 @@ class PostUpdateHTTPTests(unittest.IsolatedAsyncioTestCase):
     async def test_validation_errors_keep_400_error_schema_and_plain_copy(self):
         original = PostUpdateStore.create
         cases = [
-            ({"future_months": 1}, "Choose Main or Lazy and which months"),
+            ({"future_months": 1}, "Select Main or Lazy and which months"),
             ({"cycle": "2026-13"}, "Choose the month"),
             ({"generation": ""}, "Invalid season or saved settings"),
         ]

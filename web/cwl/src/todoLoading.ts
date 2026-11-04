@@ -4,7 +4,7 @@ export type TaskProgress = { snapshot: TodoSnapshot | null; updating: boolean; e
 export async function loadTasks(onProgress: (data: TodoSnapshot, updating: boolean) => void, active: () => boolean) {
   const deadline = Date.now() + 110_000
   while (active()) {
-    if (Date.now() >= deadline) throw new Error('Some task checks are taking too long. Please try again.')
+    if (Date.now() >= deadline) throw new Error('Some task checks are taking too long. Try again.')
     if (document.hidden) {
       await new Promise(resolve => setTimeout(resolve, 1000))
       continue

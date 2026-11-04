@@ -33,7 +33,7 @@ class SampleAccounts:
                 raise web.HTTPServiceUnavailable(text='Could not load your linked accounts. Try again shortly or use sample players.') from None
             profiles = [p for p in roster if p['tag'] in tags][:SAMPLE_ACCOUNT_LIMIT]
             if not profiles:
-                raise web.HTTPBadRequest(text='None of your linked accounts are currently in this clan. Choose a clan containing your accounts or use sample players.')
+                raise web.HTTPBadRequest(text="None of your linked accounts are currently in this clan. Select a clan containing your accounts or use sample players.")
             if len(self.cache) >= CACHE_LIMIT:
                 self.cache.clear()
             self.cache[key] = (time.monotonic()+CACHE_SECONDS, profiles)

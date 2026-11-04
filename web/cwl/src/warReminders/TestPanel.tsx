@@ -214,8 +214,7 @@ export default function TestPanel({
             ))}
             {mentionMe && (
               <small>
-                Your Discord mention heads your account group and triggers the
-                test notification.
+                Your Discord mention is at the top of your account group. It starts the test notification.
               </small>
             )}
           </div>

@@ -21,7 +21,7 @@ it('switches CWL signup labels at the opening boundary without calling it battle
   const html = renderToStaticMarkup(<EventsWorkspace canEdit onWars={vi.fn()}/> )
   expect(html).toContain('Signup open')
   expect(html).toContain('Signup closes')
-  expect(html).toContain('not a fixed end date')
+  expect(html).toContain('do not show when each clan’s battles end')
   expect(html).toContain('Family clans')
 })
 it('retains unavailable raid status instead of implying zero or no activity', () => {

@@ -104,7 +104,7 @@ it.each([false, true])(
       value ? "Clan assignments" : "Waiting for a clan",
     );
     if (!value) {
-      expect(host.textContent).toContain("You'll see your clan by");
+      expect(host.textContent).toContain("You will see your clan by");
       expect(host.textContent).toContain("2 accounts signed up");
       expect(host.querySelector('a[href="/my-signups"]')?.textContent).toBe(
         "My signups ›",
@@ -117,7 +117,7 @@ it("preserves the empty assignment card", async () => {
   await act(async () =>
     root.render(<MemberAssignments seasonId="1" seasons={[season]} />),
   );
-  expect(host.textContent).toContain("You haven't signed up any accounts yet.");
+  expect(host.textContent).toContain("You have not signed up any accounts yet.");
   expect(host.textContent).not.toContain("Waiting for a clan");
   expect(host.querySelector(".member-signup-refresh")?.textContent).toBe(
     "Refresh",
@@ -148,7 +148,7 @@ it.each([true, false])(
         ),
       ].map((node) => node.textContent),
     ).toEqual(["Alpha", "Beta"]);
-    expect(host.textContent).toContain("✓ You're signed up · 2 of 3 accounts");
+    expect(host.textContent).toContain("✓ You are signed up · 2 of 3 accounts");
     expect(host.textContent).not.toContain("Change signups");
     expect(!!host.querySelector(".member-signup-remaining")).toBe(open);
     if (open) {
@@ -195,7 +195,7 @@ it("does not advertise remaining totals while linked accounts are unavailable", 
       />,
     ),
   );
-  expect(host.textContent).toContain("You're signed up · 2 accounts");
+  expect(host.textContent).toContain("You are signed up · 2 accounts");
   const pending = host.querySelector(".member-signup-remaining");
   expect(pending?.textContent).toContain("Checking linked accounts…");
   expect(pending?.querySelector("button")).toBeNull();
@@ -297,7 +297,7 @@ it("distinguishes a publication with no placements for this member", async () =>
   expect(host.querySelector("h2")?.textContent).toBe("Waiting for a clan");
   expect(host.querySelector(".member-unpublished-status li")).not.toBeNull();
   expect(host.textContent).not.toContain("Not published yet");
-  expect(host.textContent).not.toContain("You'll see your clan by");
+  expect(host.textContent).not.toContain("You will see your clan by");
   expect(host.textContent).toContain("2 accounts signed up");
   expect(host.querySelector('a[href="/my-signups"]')).not.toBeNull();
   expect(

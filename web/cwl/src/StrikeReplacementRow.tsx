@@ -64,7 +64,7 @@ export default function StrikeReplacementRow({
       setConflict(stale);
       setError(
         stale
-          ? "Changed by someone else · Reload"
+          ? "Changed by someone else · Refresh"
           : cause instanceof Error
             ? cause.message
             : "Could not save priority.",
@@ -119,7 +119,7 @@ export default function StrikeReplacementRow({
             setError("");
           }}
         >
-          Reload
+          Refresh
         </button>
       )}
       {editing && canManage && (

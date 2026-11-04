@@ -323,7 +323,7 @@ export default function ReturnBatch({
             )}
             {action === "save" && (
               <p>
-                Capture current home-clan members before they leave for CWL.
+                Save the list of the members who are now in the home clan, before they leave for CWL.
                 This does not send reminders. Your clan selection is kept for
                 the next step.
               </p>
@@ -352,8 +352,7 @@ export default function ReturnBatch({
             )}
             {action === "clear" && (
               <p>
-                Closes and archives the selected member lists and stops their
-                reminders. History is retained.
+                This closes the selected member lists and stops their reminders. The history stays.
               </p>
             )}
             <button

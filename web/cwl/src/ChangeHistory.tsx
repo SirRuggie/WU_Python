@@ -102,7 +102,7 @@ export default function ChangeHistory({
         } else
           setError(
             result.message ||
-              "Restore was not confirmed. Reload the settings before trying again.",
+              "Restore was not confirmed. Refresh the settings before trying again.",
           );
       }
     } catch (e) {

@@ -64,7 +64,7 @@ export function FileUpload({
   async function upload(file?: File) {
     if (!file) return;
     if (!file.size || file.size > 8 * 1024 * 1024) {
-      setError("Choose a file between 1 byte and 8 MB.");
+      setError("Select a file between 1 byte and 8 MB.");
       return;
     }
     setError("");
@@ -177,7 +177,7 @@ export function ActionFields({
                 })
               }
             >
-              <option value="">Choose a command</option>
+              <option value="">Select a command</option>
               {commands.map((command) => (
                 <option key={command} value={command}>
                   {command}

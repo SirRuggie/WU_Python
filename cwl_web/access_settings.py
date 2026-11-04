@@ -84,20 +84,20 @@ async def save(request):
     kind, subject = body.get('kind'), body.get('id')
     revision, permissions = body.get('revision'), body.get('permissions')
     if kind not in ('user', 'role') or not isinstance(subject, str) or not subject.isdigit() or not 1 <= len(subject) <= 25:
-        raise web.HTTPBadRequest(text='Choose a member or role.')
+        raise web.HTTPBadRequest(text="Select a member or role.")
     if type(revision) is not int or revision < 0:
         raise web.HTTPBadRequest(text='Reload access before saving.')
     if (kind == 'user' and subject in OWNER_IDS) or (kind == 'role' and subject == str(GUILD_ID)):
         raise web.HTTPBadRequest(text='Owners and @everyone cannot be edited here.')
     if permissions is not None and (not isinstance(permissions, list) or not permissions or any(not isinstance(p, str) or p not in PERMISSIONS for p in permissions)):
-        raise web.HTTPBadRequest(text='Choose at least one valid permission.')
+        raise web.HTTPBadRequest(text="Select at least one valid permission.")
     label = subject
     if permissions is not None:
         if kind == 'role':
             roles = await discord(request, 'GET', f'/guilds/{GUILD_ID}/roles')
             role = next((r for r in roles if str(r['id']) == subject), None)
             if not role or role.get('managed'):
-                raise web.HTTPBadRequest(text='Choose an available server role.')
+                raise web.HTTPBadRequest(text="Select an available server role.")
             label = role['name']
         else:
             member = await discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{subject}')

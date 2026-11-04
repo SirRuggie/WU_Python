@@ -61,7 +61,7 @@ export default function ClanDirectory<T extends Row>({
         aria-expanded={!selected || expanded}
         onClick={() => onExpanded(!expanded)}
       >
-        {selected ? `Change clan · ${selected.name}` : "Choose a clan"}
+        {selected ? `Change clan · ${selected.name}` : "Select a clan"}
       </button>
       <div
         id="clan-directory-picker"
@@ -119,7 +119,7 @@ export default function ClanDirectory<T extends Row>({
               <p>
                 {clans.length
                   ? "No clans match these filters."
-                  : "No family clans yet. Add a clan by tag to get started."}
+                  : "No family clans yet. Add a clan by tag."}
               </p>
             )}
             {(query || clanType) && (

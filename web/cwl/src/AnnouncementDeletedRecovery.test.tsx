@@ -53,7 +53,7 @@ it("checks read-only and requires explicit ping-again confirmation", async () =>
   expect(host.textContent).toContain("Previous post was deleted");
   await click("Send again");
   expect(api).toHaveBeenCalledTimes(1);
-  expect(document.body.textContent).toContain("Earlier image posts stay");
+  expect(document.body.textContent).toContain("earlier image posts stay in Discord");
   expect(document.body.textContent).toContain("Lazy.128");
   await click("Send again");
   expect(api.mock.calls[1]).toEqual([

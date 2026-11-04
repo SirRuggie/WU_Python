@@ -53,7 +53,7 @@ export default function DashboardIssues() {
       <button type="button" disabled={loading} onClick={() => setRefresh(value => value + 1)}>{loading ? 'Checking…' : 'Refresh'}</button>
     </div>
     {error && <p className="notice error" role="alert">{error}{history.items.length > 0 && ' Showing previously loaded reports.'}</p>}
-    {history.profiles_available === false && <p className="issues-hint" role="status">Discord profiles could not load. Saved user IDs are shown; refresh to try again.</p>}
+    {history.profiles_available === false && <p className="issues-hint" role="status">Discord profiles could not load. Saved user IDs are shown. Refresh to try again.</p>}
     <p className="issues-count" role="status">{loading && !history.items.length ? 'Loading reports…' : `${matching.length} ${matching.length === 1 ? 'report' : 'reports'} · Last 30 days`}</p>
     {!loading && !error && !matching.length && <p>{search || kind ? 'No matching issues. Try another name or issue type.' : 'No recorded issues in the current history.'}</p>}
     <div className="issues-list" aria-busy={loading}>
@@ -79,7 +79,7 @@ export default function DashboardIssues() {
     {matching.length > limit && <button className="issues-more" type="button" onClick={() => setLimit(value => value + 25)}>Show more · {matching.length - limit} remaining</button>}
     <details className="issues-history"><summary>About this history</summary>
       <p>Up to 500 reports from the last 30 days. Rejected actions may be permission or input problems. Successful signups remain in signup history.</p>
-      <p>Repeated browser reports are limited to one per member per minute. Offline browsers cannot send reports. Storage outages appear in service logs. This page does not send Discord alerts.</p>
+      <p>Each member can send one browser report each minute. A browser that is offline cannot send reports. Problems with storage show in the service logs. This page does not send Discord alerts.</p>
     </details>
   </section>
 }

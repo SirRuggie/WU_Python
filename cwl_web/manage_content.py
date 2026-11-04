@@ -24,7 +24,7 @@ def catalog():
     for key, doc in gauntlet.DOCUMENTS.items():
         add('gauntlet', key, doc.label, 'recruit', 'Welcome messages', 'Preview and edit this private ticket message.' if key == 'rite-of-passage' else 'Preview, edit and publish this message.')
         if key not in {'apply', 'rite-of-passage'}:
-            add('destination', key, f'{doc.label}: posting channel', 'recruit', 'Welcome messages', 'Choose the channel used by Discord /manage when posting this message.')
+            add('destination', key, f'{doc.label}: posting channel', 'recruit', 'Welcome messages', "Select the channel used by Discord /manage when posting this message.")
     for group in questions.GROUPS.values():
         for key in group['variants']:
             add('question', key, questions.VARIANT_LABELS[key], 'recruitment_questions', group['label'], 'Changes apply the next time this question is sent.')
@@ -38,7 +38,7 @@ def catalog():
 def descriptor(item_id):
     item = next((item for item in catalog() if item['id'] == item_id), None)
     if item is None:
-        raise web.HTTPNotFound(text='Choose an available message')
+        raise web.HTTPNotFound(text="Select an available message")
     return item
 
 
@@ -217,7 +217,7 @@ def serialize_components(components, item_id):
             if _preview_url(node.get('url')):result['url'] = node['url']
             return result
         if kind in (3, 5, 6, 7, 8):
-            return {'type': 'select', 'placeholder': str(node.get('placeholder') or 'Choose an option'),
+            return {'type': 'select', 'placeholder': str(node.get('placeholder') or "Select an option"),
                     'options': [{'label': str(option.get('label') or ''),
                                  'description': str(option.get('description') or ''),
                                  'emoji': _emoji(option.get('emoji'))}
@@ -375,10 +375,10 @@ async def item_handler(request):
             elif prefix == 'destination':
                 value = updated['channel_id']
                 if not value.isdigit() or len(value) not in range(15, 23):
-                    raise ValueError('Choose a Discord text or announcement channel')
+                    raise ValueError("Select a Discord text or announcement channel")
                 channel = await discord(request, 'GET', f'/channels/{value}')
                 if str(channel.get('guild_id')) != str(GUILD_ID) or channel.get('type') not in (0, 5):
-                    raise ValueError('Choose a text or announcement channel in this server')
+                    raise ValueError("Select a text or announcement channel in this server")
                 row = loaded['_row']
                 data = dict(guild_id=GUILD_ID, document=key, channel_id=int(value), updated_by=int(actor['user_id']), updated_at=datetime.now(timezone.utc))
                 if row is None:
@@ -415,7 +415,7 @@ async def upload(request):
     slot = request.match_info['slot']
     fields = schema(item, loaded)['fields']
     if not any(field['key'] == slot and field.get('upload_endpoint') for field in fields):
-        raise web.HTTPBadRequest(text='Choose an artwork field')
+        raise web.HTTPBadRequest(text="Select an artwork field")
     if request.content_length is not None and request.content_length > MAX_IMAGE_BYTES:
         raise web.HTTPRequestEntityTooLarge(max_size=MAX_IMAGE_BYTES, actual_size=request.content_length)
     chunks = bytearray()

@@ -280,7 +280,7 @@ it.each([
     );
     expect(apiUpload).not.toHaveBeenCalled();
     expect(host.textContent).toContain(
-      "Choose PNG, JPG, GIF or WEBP up to 10 MB.",
+      "Select PNG, JPG, GIF or WEBP up to 10 MB.",
     );
   },
 );

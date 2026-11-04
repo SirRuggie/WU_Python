@@ -62,11 +62,11 @@ describe("roster device order persistence", () => {
   it("rejects corrupt JSON/unknown values and survives denied storage access", () => {
     const session = store(),
       local = store();
-    session.setItem("s", "null");
+    session.setItem(" seconds", "null");
     local.setItem(ROSTER_ORDER_KEY, "{broken");
     expect(
       readRosterPreferences(
-        "s",
+        " seconds",
         () => session,
         () => local,
       ),
@@ -77,7 +77,7 @@ describe("roster device order persistence", () => {
     );
     expect(
       readRosterPreferences(
-        "s",
+        " seconds",
         () => session,
         () => local,
       ),
@@ -85,9 +85,9 @@ describe("roster device order persistence", () => {
     const denied = () => {
       throw new Error("blocked");
     };
-    expect(readRosterPreferences("s", denied, denied)).toEqual(defaults);
+    expect(readRosterPreferences(" seconds", denied, denied)).toEqual(defaults);
     expect(
-      saveRosterPreferences("s", { ...defaults, sort: "name" }, denied, denied)
+      saveRosterPreferences(" seconds", { ...defaults, sort: "name" }, denied, denied)
         .sort,
     ).toBe("name");
   });

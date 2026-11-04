@@ -104,14 +104,14 @@ export function homeNextStep(
     return {
       title: signupHeading(accountCount - unsigned, accountCount),
       detail:
-        "We've got your signup. Your clan will show here once staff finish the roster.",
+        "Your signup is saved. Your clan appears here after staff finish the roster.",
       destination: "assignments" as const,
     };
   if (memberSignupsOpen(season) && unsigned)
     return {
       title: `${unsigned} account${unsigned === 1 ? "" : "s"} to sign up`,
       detail:
-        "Choose Main or Lazy for your accounts, then review before saving.",
+        "Select Main or Lazy for your accounts. Then review your choices and save.",
       destination: "signup" as const,
     };
   if (memberSignupsOpen(season))
@@ -559,7 +559,7 @@ export default function DashboardHome(props: Props) {
       </div>
       {!!data && attentionError && (
         <p role="status">
-          Couldn't refresh. Showing last update.{" "}
+          Could not refresh. Showing last update.{" "}
           <button disabled={refreshing} onClick={refreshDashboard}>
             Retry
           </button>
@@ -764,7 +764,7 @@ export default function DashboardHome(props: Props) {
               ) : !rows.length ? null : !visible.length ? (
                 <div className="card empty">
                   <h3>No accounts match</h3>
-                  <p>Try another name or choose All accounts.</p>
+                  <p>Try another name or select All accounts.</p>
                   <button
                     onClick={() => {
                       setSearch("");
@@ -832,7 +832,7 @@ export default function DashboardHome(props: Props) {
                                 <strong>{row.name}</strong>
                                 <small>{row.tag}</small>
                                 {session.can_edit && (
-                                  <small title="Saved clan weight, staff override, or FWA Stats fallback">
+                                  <small title="Saved clan weight, staff weight, or backup weight from FWA Stats">
                                     War weight:{" "}
                                     {row.war_weight == null
                                       ? "Not Available"
@@ -925,7 +925,7 @@ export default function DashboardHome(props: Props) {
                       {selected.length === 1 ? "" : "s"} selected
                     </strong>
                     <small>
-                      Choose a pool, then review. Nothing is submitted yet.
+                      Select a pool, then review. Nothing is submitted yet.
                     </small>
                   </div>
                   <button
@@ -957,7 +957,7 @@ export default function DashboardHome(props: Props) {
           <summary>Link an account</summary>
           <AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} />
           <p>
-            Already signed-up accounts can be moved or withdrawn in My signups.
+            To move or withdraw a signup, go to My signups.
           </p>
           <button onClick={() => onNavigate("saved")}>Open My signups →</button>
         </details>

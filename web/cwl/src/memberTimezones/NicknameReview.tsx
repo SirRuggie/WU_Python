@@ -8,7 +8,7 @@ const labels: Record<ReviewCategory, string> = {
   needs_flag: "Needs flag",
   no_time_zone: "No time zone",
   already_done: "Already done",
-  cant_rename: "Can't rename",
+  cant_rename: "Cannot rename",
   check_name: "Check name",
 };
 export function MemberPages({

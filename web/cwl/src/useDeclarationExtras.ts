@@ -61,7 +61,7 @@ export default function useDeclarationExtras(
       .catch(() => {
         if (!disposed && current === sequence.current) {
           setData(undefined);
-          setError("Couldn't check clan members");
+          setError("Could not check clan members");
           if (refreshNonce)
             setRefreshResult((current) =>
               current?.id === refreshNonce && current.status === "pending"

@@ -130,7 +130,7 @@ export default function CopyReminders({
             <p role="status">Loading clans…</p>
           ) : (
             <fieldset disabled={disabled || busy}>
-              <legend>Choose what to copy</legend>
+              <legend>Select what to copy</legend>
               {(Object.keys(labels) as Field[]).map((field) => (
                 <label key={field}>
                   <input

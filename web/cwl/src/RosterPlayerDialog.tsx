@@ -126,7 +126,7 @@ export default function RosterPlayerDialog({
     : viewOnly === "declaration"
       ? "View only here · change placements in Build roster ›"
       : !rosterPermission
-        ? "View only · you don't have roster editing access"
+        ? "View only · you do not have roster editing access"
         : "";
   const pending = useRef(false);
   const assignTrigger = useRef<HTMLButtonElement>(null);
@@ -284,8 +284,8 @@ export default function RosterPlayerDialog({
         {publicationNote && (
           <p className="details-view-only">{publicationNote}</p>
         )}
-        <section aria-label="At a glance">
-          <h3>At a glance</h3>
+        <section aria-label="Summary">
+          <h3>Summary</h3>
           <p>
             {currentHost
               ? `Assigned: ${currentHost.name}`
@@ -355,7 +355,7 @@ export default function RosterPlayerDialog({
             {unusualWeight && (
               <p>
                 Saved weight: {fullWeight(account.effective_weight)}. Saved
-                value isn't a whole thousand. Enter a new one to change it.
+                value is not a whole thousand. Enter a new one to change it.
               </p>
             )}
             {canWeight && (
@@ -443,7 +443,7 @@ export default function RosterPlayerDialog({
                 })
               }
             >
-              Reload
+              Refresh
             </Button>
           )}
         {busy && <p role="status">Saving account changes…</p>}

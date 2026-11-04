@@ -121,7 +121,7 @@ export default function ReminderOverview({
     >
       <div className="overview-heading">
         <div>
-          <p className="eyebrow">Family at a glance</p>
+          <p className="eyebrow">All clans</p>
           <h2 id="reminder-overview-title" ref={heading} tabIndex={-1}>
             War reminders across your family
           </h2>
@@ -211,7 +211,7 @@ export default function ReminderOverview({
             <div className="overview-empty">
               <h3>Your family starts here</h3>
               <p>
-                Add your first clan, then choose its reminder channel and times.
+                Add your first clan, then select its reminder channel and times.
               </p>
               <button onClick={onAdd}>Add a clan</button>
             </div>
@@ -319,7 +319,7 @@ export default function ReminderOverview({
                         </strong>
                         <small>
                           {state.category === "not_configured"
-                            ? "Choose times during setup"
+                            ? "Select times during setup"
                             : config.war_started
                               ? "War start"
                               : ""}
@@ -389,16 +389,16 @@ export default function ReminderOverview({
             </table>
           )}
           <p className="overview-note">
-            Reminder times are relative to the active war. Monitoring is not
-            proof of delivery.
+            Reminder times are counted from the end of the active war. A monitor
+            check does not prove a delivery.
           </p>
           <details className="overview-note">
             <summary>About reminder status</summary>
             <p>
-              Exact upcoming timing depends on the active war’s end time, which
-              is not available in this overview. A channel appearing in the
-              server list does not confirm the bot can send there. Status uses
-              saved settings and stored bot checks. Test messages appear only in
+              The next reminder time depends on when the active war ends. This
+              overview does not show that time. A channel in the server list does
+              not prove that the bot can send there. The status comes from the
+              saved settings and the last bot checks. Test messages show only in
               each clan’s delivery history.
             </p>
           </details>

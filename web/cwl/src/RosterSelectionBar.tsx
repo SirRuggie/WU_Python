@@ -71,8 +71,8 @@ export default function RosterSelectionBar({
           )}
           {overLimit && (
             <span role="alert" className="roster-selection-limit">
-              <StatusPill tone="danger">Max 50 per action</StatusPill>
-              <span>Narrow your selection to 50 or fewer</span>
+              <StatusPill tone="danger">50 accounts at most for each action</StatusPill>
+              <span>Select 50 accounts or fewer</span>
             </span>
           )}
         </div>

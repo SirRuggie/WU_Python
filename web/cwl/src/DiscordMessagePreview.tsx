@@ -13,7 +13,7 @@ class PreviewBoundary extends Component<{ children: ReactNode }, { failed: boole
   render() {
     return this.state.failed
       ? <div className="discord-preview" role="alert">
-          <p>Message preview couldn’t load. You can keep editing and save your changes, then reload to try the preview again.</p>
+          <p>Message preview could not load. You can keep editing and save your changes, then reload to try the preview again.</p>
         </div>
       : this.props.children
   }

@@ -13,7 +13,7 @@ export default function TodoActivityStatus({ view, hasRows, unreadable, onAffect
     return details.length ? <div className="todo-notes">{details.map(note => <p key={note}>{note}</p>)}</div> : null
   }
   return <div className="todo-warning" role="status">
-    <strong>{failed ? hasRows ? 'Some tasks are missing' : 'Couldn’t load this activity' : 'Some war logs could not be checked'}</strong>
+    <strong>{failed ? hasRows ? 'Some tasks are missing' : 'Could not load this activity' : 'Some war logs could not be checked'}</strong>
     <p>{failed
       ? hasRows ? 'Showing the results we could check. Check in-game for the rest.' : 'Clash data is unavailable. Check in-game for now, or try Check now again later.'
       : 'These accounts need checking in-game.'}</p>

@@ -406,7 +406,7 @@ export default function Standardize({
             }}
           >
             <option value="">
-              {historyLoading ? "Loading…" : "Choose a run"}
+              {historyLoading ? "Loading…" : "Select a run"}
             </option>
             {history.map((r) => (
               <option key={r.run_id} value={r.run_id}>

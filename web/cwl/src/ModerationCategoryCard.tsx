@@ -220,7 +220,7 @@ export default function ModerationCategoryCard({
                     disabled={testDisabled}
                     title={
                       !effective.target?.channel_id
-                        ? "Choose a channel first"
+                        ? "Select a channel first"
                         : dirty
                           ? "Save changes first"
                           : undefined
@@ -231,7 +231,7 @@ export default function ModerationCategoryCard({
                   </button>
                 </div>
                 {!effective.target?.channel_id && (
-                  <small>Choose a channel first</small>
+                  <small>Select a channel first</small>
                 )}
                 {dirty && <small>Save changes first to send a test.</small>}
               </div>

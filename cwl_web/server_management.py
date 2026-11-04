@@ -26,7 +26,7 @@ async def mongo(request):
         # No CSOT context may span Discord waits or task creation here.
         yield client
     except PyMongoError as exc:
-        raise web.HTTPServiceUnavailable(text='Server settings are unavailable. Try again shortly.') from exc
+        raise web.HTTPServiceUnavailable(text="Server settings are unavailable. Try again later.") from exc
 
 
 class DiscordDeliveryUncertain(Exception):
@@ -79,7 +79,7 @@ async def discord(request, method, path, *, roster_delivery=False, **kwargs):
     except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
         if roster_delivery:
             raise DiscordDeliveryUncertain('Discord delivery could not be confirmed') from exc
-        raise web.HTTPServiceUnavailable(text='Discord is unavailable. Try again shortly.') from exc
+        raise web.HTTPServiceUnavailable(text="Discord is unavailable. Try again later.") from exc
 
 
 async def _discord_identity(request, uid):
@@ -169,7 +169,7 @@ async def catalog(request):
         sections = []
         for key, label, description, group, endpoint in (
             ('roles', 'Member roles', 'Add or remove roles. See who has a role.', 'Server', '/manage/roles'),
-            ('ticket_settings', 'Ticket settings', 'Choose ticket channels, staff, and wait times.', 'Recruitment', '/manage/ticket-settings'),
+            ('ticket_settings', 'Ticket settings', "Select ticket channels, staff, and wait times.", 'Recruitment', '/manage/ticket-settings'),
             ('ticket_testing', 'Test tickets', 'Try tickets in a separate test area.', 'Recruitment', '/manage/ticket-testing'),
             ('band_monitor', 'BAND monitor', 'Check the bot’s calendar connection and debug mode.', 'War', '/manage/operations/band_monitor'),
             ('fwa_points', 'FWA points', 'Manage watched clans and points checks.', 'War', '/manage/operations/fwa_points'),
@@ -217,7 +217,7 @@ async def queue_action(request, section, action, values, revision):
     from utils.manage_web_worker import ACTIONS, WORKER_ID
     actor = await require_manage(request, section, write=not (section == 'ticket_testing' and action in ('main', 'fwa')))
     if (section, action) not in ACTIONS or not isinstance(values, dict) or len(json.dumps(values)) > 24000:
-        raise web.HTTPBadRequest(text='Choose a supported action.')
+        raise web.HTTPBadRequest(text="Select a supported action.")
     payload = dict(section=section, action=action, values=values, revision=revision, user_id=actor['user_id'], guild_id=GUILD_ID)
     if section=='ticket_settings' and getattr(request,'history_action',None)=='restore': payload['history_action']='restore'
     body = await request.json()
@@ -234,7 +234,7 @@ async def queue_action(request, section, action, values, revision):
     async with mongo(request) as db:
         worker = await db.bot_config.find_one({'_id': WORKER_ID}) or {}
         if time.time() - worker.get('checked_at', 0) > 60:
-            raise web.HTTPServiceUnavailable(text='The bot is not ready. Nothing was queued. Try again shortly.')
+            raise web.HTTPServiceUnavailable(text="The bot is not ready. Nothing was queued. Try again later.")
         try:
             await db.bot_config.insert_one({'_id':key, 'kind':'manage_web_request', **payload, 'status':'pending', 'created_at':time.time(), 'payload_hash':payload_hash})
         except DuplicateKeyError:

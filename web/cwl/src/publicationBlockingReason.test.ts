@@ -14,25 +14,25 @@ const ready = {
   acknowledged: false,
 };
 it.each([
-  [{ hasDraft: false }, "Load the roster before publishing."],
+  [{ hasDraft: false }, "Load the roster. Then publish."],
   [{ canManage: false }, "You do not have permission to publish this roster."],
-  [{ locked: true }, "Finish the current edit or operation before publishing."],
+  [{ locked: true }, "Finish the current edit. Then publish."],
   [{ loading: true }, "Wait for the roster refresh to finish."],
   [
     { hasError: true },
-    "Refresh the draft and resolve the error before publishing.",
+    "Refresh the draft and fix the error. Then publish.",
   ],
-  [{ archived: true }, "Publishing is unavailable for an archived season."],
+  [{ archived: true }, "You cannot publish an archived season."],
   [
     { instructionsLength: 2001 },
-    "Joining instructions must be 2,000 characters or fewer.",
+    "Joining instructions must not be more than 2,000 characters.",
   ],
   [
     { changesReady: false },
     "Refresh the draft to load the latest roster changes.",
   ],
   [{ accounts: 0 }, "No signed-up accounts are in this roster yet."],
-  [{ unplaced: 2 }, "Acknowledge the unplaced accounts before publishing."],
+  [{ unplaced: 2 }, "Confirm that you know about the unplaced accounts. Then publish."],
 ] as const)("explains blocked Publish gate %j", (change, text) =>
   expect(reason({ ...ready, ...change })).toBe(text),
 );

@@ -193,7 +193,7 @@ async def members(request):
         from .manage_roles import member_option
         values = request.query['ids'].split(',')
         if not 1 <= len(values) <= 100:
-            raise ValueError('Choose up to 100 member identities.')
+            raise ValueError("Select up to 100 member identities.")
         wanted = {uid(value) for value in values}
         rows = await searchable_members(request)
         options = []
@@ -269,7 +269,7 @@ async def overview(request):
         raise ValueError('Use a shorter name or tag.')
     status = request.query.get('status') or 'strikes'
     if status not in ('strikes', 'all', 'active', 'expired', 'removed', 'exempt', 'recorded', 'cwl', 'mismatch'):
-        raise ValueError('Choose a history status.')
+        raise ValueError("Select a history status.")
     if status == 'recorded':
         status = 'missed'
     clan = request.query.get('clan') or None
@@ -322,7 +322,7 @@ async def accounts(request):
     clan = request.query.get('clan') or None
     status = request.query.get('status') or 'active'
     if status not in ('active', 'all'):
-        raise ValueError('Choose active or all accounts.')
+        raise ValueError("Select active or all accounts.")
     limit = number(request.query.get('limit', '25'))
     offset = number(request.query.get('offset', '0'), 0, 100000)
     async with shared.mongo(request) as db:
@@ -591,7 +591,7 @@ async def save_roles(request):
     limit = number(data['strike_limit'], 1, 20) if 'strike_limit' in data else None
     roles = data.get('role_ids')
     if not isinstance(roles, list) or len(roles) > 100:
-        raise ValueError('Choose up to 100 roles.')
+        raise ValueError("Select up to 100 roles.")
     roles = [uid(value) for value in roles]
     actor = await shared.identity(request)
     selectable = {str(row['id']) for row in actor['roles']
@@ -623,7 +623,7 @@ async def save_leave(request):
     if set(values) - linked:
         raise ValueError('Account links changed. Select the member again.')
     if not isinstance(data.get('resume_date'), str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', data['resume_date']):
-        raise ValueError('Choose a return date.')
+        raise ValueError("Select a return date.")
     from .app import _session
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
@@ -651,10 +651,10 @@ async def replacements(request):
     clan = request.query.get('clan') or None
     scope = request.query.get('scope') or 'fwa'
     if scope not in ('fwa', 'all'):
-        raise ValueError('Choose FWA or all clans.')
+        raise ValueError("Select FWA or all clans.")
     raw_low = request.query.get('include_low', 'false').lower()
     if raw_low not in ('true', 'false', '1', '0'):
-        raise ValueError('Choose whether to show one or two strikes.')
+        raise ValueError("Select whether to show one or two strikes.")
     include_low = raw_low in ('true', '1')
     offset = number(request.query.get('offset', '0'), 0, 100000)
     limit = number(request.query.get('limit', '25'), 1, 100)
@@ -663,7 +663,7 @@ async def replacements(request):
     exact_tag = tag(request.query['exact_tag']) if request.query.get('exact_tag') else None
     raw_browse = request.query.get('browse_all', 'false').lower()
     if raw_browse not in ('true', 'false', '1', '0'):
-        raise ValueError('Choose whether to browse all accounts.')
+        raise ValueError("Select whether to browse all accounts.")
     browse_all = raw_browse in ('true', '1')
     town_hall = number(request.query['town_hall'], 1, 99) if request.query.get('town_hall') else None
     async with shared.mongo(request) as db:
@@ -747,7 +747,7 @@ async def _verified_replacement_player(request, player_tag):
 async def _live_replacement_roster(request, db, clan_value):
     clan_tag = tag(clan_value)
     if not await db.clans.find_one({'tag': clan_tag}, {'_id': 1}):
-        raise ValueError('Choose a registered family clan.')
+        raise ValueError("Select a registered family clan.")
     try:
         roster = await request.app['providers'].clan_roster(clan_tag)
     except ProviderUnavailable as exc:
@@ -761,7 +761,7 @@ async def _live_replacement_roster(request, db, clan_value):
 async def replacement_roster(request):
     clan = request.query.get('clan')
     if not clan:
-        raise ValueError('Choose a clan.')
+        raise ValueError("Select a clan.")
     async with shared.mongo(request) as db:
         roster = await _live_replacement_roster(request, db, clan)
         tags = [row['tag'] for row in roster['members']]
@@ -783,9 +783,9 @@ async def bulk_add_replacement_list(request):
     data = await body(request, {'clan_tag', 'player_tags', 'priority', 'note', 'revisions'})
     raw_tags = data.get('player_tags')
     if not isinstance(raw_tags, list) or not 1 <= len(raw_tags) <= 50:
-        raise ValueError('Choose 1 to 50 accounts.')
+        raise ValueError("Select 1 to 50 accounts.")
     if any(not isinstance(value, str) for value in raw_tags):
-        raise ValueError('Choose valid player accounts.')
+        raise ValueError("Select valid player accounts.")
     selected = [tag(value) for value in raw_tags]
     if len(set(selected)) != len(selected):
         raise ValueError('Select each account only once.')
@@ -796,7 +796,7 @@ async def bulk_add_replacement_list(request):
     priority = data.get('priority')
     note = data.get('note', '')
     if priority not in ('replace_first', 'high', 'normal'):
-        raise ValueError('Choose a replacement priority.')
+        raise ValueError("Select a replacement priority.")
     if not isinstance(note, str) or len(note.strip()) > 500:
         raise ValueError('Keep the note under 500 characters.')
     from .app import _session
@@ -834,7 +834,7 @@ async def bulk_add_replacement_list(request):
             _job_log.exception('Replacement bulk add stopped after partial write')
             return web.json_response({'clan_tag': roster['tag'], 'added': added, 'skipped': skipped,
                 'added_count': len(added), 'skipped_count': len(skipped),
-                'error': 'Bulk add stopped. Retry to finish; saved choices will be skipped.'}, status=503)
+                'error': "Bulk add stopped. Select Retry to finish. The bot skips the choices that are already saved."}, status=503)
     return web.json_response({'clan_tag': roster['tag'], 'added': added, 'skipped': skipped,
                               'added_count': len(added), 'skipped_count': len(skipped)})
 
@@ -851,7 +851,7 @@ async def replacement_preference(request):
 async def add_replacement_list(request):
     data = await body(request, {'player_tag', 'priority', 'note', 'revision'})
     if 'player_tag' not in data:
-        raise ValueError('Choose a player account.')
+        raise ValueError("Select a player account.")
     revision = number(data.get('revision'), 0, 2**53 - 1)
     profile = await _verified_replacement_player(request, data['player_tag'])
     from .app import _session
@@ -1133,7 +1133,7 @@ async def tracking_retry(request):
     async with shared.mongo(request) as db:
         registered = await db.clans.find_one({'tag': clan_tag}, {'tag': 1})
         if registered is None:
-            raise ValueError('Choose a registered family clan.')
+            raise ValueError("Select a registered family clan.")
         row = await StrikeTracking(db).queue_retry(GUILD_ID, clan_tag, int(actor['user_id']))
     return web.json_response({'clan_tag': clan_tag, 'retry_pending': True,
                               'retry_requested_at': public(row['retry_requested_at'])}, status=202)

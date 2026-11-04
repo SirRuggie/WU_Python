@@ -58,12 +58,12 @@ async def send_test(request):
     from .app import _json,_sid,_store
     from .roster_image_posts import staff
     actor=staff(request, send=True);body=await _json(request);sid=_sid(request)
-    if set(body)!={'version','channel_id','request_id'}:raise web.HTTPBadRequest(text='Choose a test channel.')
+    if set(body)!={'version','channel_id','request_id'}:raise web.HTTPBadRequest(text="Select a test channel.")
     channel=body['channel_id'];nonce=body['request_id']
-    if not isinstance(channel,str) or not re.fullmatch(r'\d{15,22}',channel) or not isinstance(nonce,str) or not re.fullmatch(r'[a-f0-9]{24}',nonce):raise web.HTTPBadRequest(text='Choose a test channel.')
+    if not isinstance(channel,str) or not re.fullmatch(r'\d{15,22}',channel) or not isinstance(nonce,str) or not re.fullmatch(r'[a-f0-9]{24}',nonce):raise web.HTTPBadRequest(text="Select a test channel.")
     season,pub,group=snapshot(request,body['version'],request.match_info['tag'])
     destination=await discord(request,'GET',f'/channels/{channel}')
-    if str(destination.get('guild_id'))!=str(GUILD_ID) or destination.get('type') not in (0,5):raise web.HTTPBadRequest(text='Choose a text channel in this server.')
+    if str(destination.get('guild_id'))!=str(GUILD_ID) or destination.get('type') not in (0,5):raise web.HTTPBadRequest(text="Select a text channel in this server.")
     await metadata(request,group)
     pages=math.ceil(len(group['accounts'])/15)
     if pages>10:raise web.HTTPBadRequest(text='This roster is too large to send.')

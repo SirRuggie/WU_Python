@@ -18,7 +18,7 @@ export function settingsClans(clans: RosterClan[], pool: Pool) {
 
 export function poolChangeReason(clan: RosterClan, pool: Pool) {
   return clan.pool && clan.pool !== pool && clan.assigned_count > 0
-    ? `Can't move to ${pool === "main" ? "Main" : "Lazy"} CWL: ${clan.assigned_count} players are assigned here. Assign them elsewhere first.`
+    ? `Cannot move to ${pool === "main" ? "Main" : "Lazy"} CWL: ${clan.assigned_count} players are assigned here. Assign them elsewhere first.`
     : "";
 }
 

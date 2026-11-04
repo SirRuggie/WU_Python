@@ -43,7 +43,7 @@ export function destinationIssue(
   if (!row.settings.enabled || !row.settings.channel_id || !available)
     return null;
   if (channels.has(row.settings.channel_id)) return null;
-  return "Saved channel is missing from the current server channel list. It may have been removed or become inaccessible.";
+  return "The saved channel is not in the server channel list. Someone may have removed it, or the bot may not be able to use it.";
 }
 
 export function deliveryLabel(status: string): string {

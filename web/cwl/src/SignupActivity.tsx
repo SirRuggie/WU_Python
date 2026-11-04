@@ -50,7 +50,7 @@ export default function SignupActivity({
     <div className="signup-activity" aria-live="polite">
       {activity.error ? (
         <div className="signup-activity-load-error">
-          Couldn't check signup changes ·{" "}
+          Could not check signup changes ·{" "}
           <Button onClick={activity.retry}>Retry</Button>
         </div>
       ) : (

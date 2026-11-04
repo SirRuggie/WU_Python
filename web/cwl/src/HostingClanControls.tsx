@@ -335,7 +335,7 @@ export function ArchiveHostingClan({
         <ConfirmDialog
           heading="Archive hosting clan"
           danger
-          text={`Archive ${clan.name}? It won't host CWL in future seasons until you add it again. This season's assignments stay.`}
+          text={`Archive ${clan.name}? It will not host CWL in future seasons until you add it again. This season's assignments stay.`}
           confirmLabel="Archive clan"
           disabled={disabled || busy}
           onCancel={() => setConfirm(false)}

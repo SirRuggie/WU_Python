@@ -242,15 +242,15 @@ def _valid_group(
     group: dict, cycle: str, clan_tag: str
 ) -> tuple[list[list[str]], list[str]]:
     if not isinstance(group, dict) or group.get("season") != cycle:
-        raise ValueError("CWL group season does not match configured month")
+        raise ValueError("The CWL month from Clash does not match the month set here.")
     rounds = group.get("rounds")
     if not isinstance(rounds, list) or len(rounds) > 7:
-        raise ValueError("CWL group rounds are unavailable")
+        raise ValueError("Clash has not sent the rounds for this CWL group yet.")
     result = []
     for round_row in rounds:
         values = round_row.get("war_tags") if isinstance(round_row, dict) else None
         if not isinstance(values, list):
-            raise ValueError("CWL round war tags are unavailable")
+            raise ValueError("Clash has not sent the war tags for this round yet.")
         tags = []
         for raw in values:
             if raw == "#0":
@@ -259,7 +259,7 @@ def _valid_group(
         result.append(list(dict.fromkeys(tags)))
     clans = group.get("clans")
     if not isinstance(clans, list):
-        raise ValueError("CWL group clan roster is unavailable")
+        raise ValueError("Clash has not sent the clan list for this CWL group yet.")
     matching = [
         clan for clan in clans if isinstance(clan, dict) and clan.get("tag") == clan_tag
     ]
@@ -448,9 +448,9 @@ async def _fetch_groups(providers, clans: list[str], cycle: str, known_groups=No
                     "Invalid Clash league-group town hall": "invalid_town_hall",
                     "Invalid Clash league-group rounds": "invalid_rounds",
                     "Invalid Clash league war tag": "invalid_war_tag",
-                    "CWL group rounds are unavailable": "invalid_rounds",
-                    "CWL round war tags are unavailable": "invalid_round_tags",
-                    "CWL group clan roster is unavailable": "invalid_clan_roster",
+                    "Clash has not sent the rounds for this CWL group yet.": "invalid_rounds",
+                    "Clash has not sent the war tags for this round yet.": "invalid_round_tags",
+                    "Clash has not sent the clan list for this CWL group yet.": "invalid_clan_roster",
                     "CWL hosting clan is missing from its league group": "missing_hosting_clan",
                 }
                 reason = (
@@ -1116,7 +1116,7 @@ async def sync_settings(request):
     body = await _json(request)
     allowed = {"cycle", "enabled", "expected_updated_at"}
     if set(body) - allowed or not {"cycle", "enabled"} <= set(body):
-        _fail(400, "Expected cycle and enabled, with optional expected_updated_at")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     cycle = body["cycle"]
     enabled = body["enabled"]
     if not isinstance(cycle, str) or not _CYCLE.fullmatch(cycle):
@@ -1137,7 +1137,7 @@ async def sync_settings(request):
             _fail(423, "Archived season is read-only")
         prior = settings_view(db, sid)
         if "expected_updated_at" in body and expected_updated_at != prior["updated_at"]:
-            _fail(409, "Participation sync settings changed; refresh before saving")
+            _fail(409, "The participation sync settings changed. Refresh before you save.")
         stamp = now()
         changed_cycle = prior["cycle"] != cycle
         db.execute(

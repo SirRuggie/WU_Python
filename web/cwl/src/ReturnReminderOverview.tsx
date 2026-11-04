@@ -460,7 +460,7 @@ export default function ReturnReminderOverview({
           />
         )}
         {chosen.length > 50 && (
-          <p role="alert">Choose up to 50 clans per action.</p>
+          <p role="alert">Select up to 50 clans per action.</p>
         )}
         {section === "FWA" && chosen.length > 0 && (
           <details className="return-maintenance">

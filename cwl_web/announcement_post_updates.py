@@ -151,7 +151,7 @@ async def update(request):
     body = await _json(request)
     if set(body) != {"future_months"} or type(body["future_months"]) is not bool:
         raise web.HTTPBadRequest(
-            text="Choose whether to use this copy for future months"
+            text="Select whether to use this copy for future months"
         )
     async with manage_bridge._mongo(request) as mongo:
         row = await _owned(mongo, actor, sid, cycle, pool, _nonce(request))

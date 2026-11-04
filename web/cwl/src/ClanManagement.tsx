@@ -311,13 +311,13 @@ export default function ClanManagement({
           }));
         } catch (error) {
           errors.push(
-            `Clan details: ${error instanceof Error ? error.message : "Could not save."} Reload that section to resolve a conflict.`,
+            `Clan details: ${error instanceof Error ? error.message : "Could not save."} Refresh that section to resolve a conflict.`,
           );
         }
       }
       if (reminderDirty && !(await reminderEditor.current?.save()))
         errors.push(
-          "War reminders changed or could not be saved. Reload that section; other edits are kept.",
+          "War reminders changed or could not be saved. Refresh that section; other edits are kept.",
         );
       if (errors.length) setError(errors.join(" "));
       else setNotice("Clan settings saved.");
@@ -358,7 +358,7 @@ export default function ClanManagement({
       ) ||
         file.size > 10 * 1024 * 1024)
     ) {
-      setError("Choose PNG, JPG, GIF or WEBP up to 10 MB.");
+      setError("Select PNG, JPG, GIF or WEBP up to 10 MB.");
       return;
     }
     await run(async () => {
@@ -603,7 +603,7 @@ export default function ClanManagement({
                         void run(() => load(true));
                     }}
                   >
-                    Reload
+                    Refresh
                   </button>
                 </div>
                 <ClanSettingsNavigation
@@ -751,7 +751,7 @@ export default function ClanManagement({
             ) : (
               <section className="card">
                 <h2>Select a clan</h2>
-                <p>Choose a family clan or add one by tag.</p>
+                <p>Select a family clan or add one by tag.</p>
               </section>
             )}
           </div>

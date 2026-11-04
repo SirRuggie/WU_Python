@@ -30,7 +30,7 @@ async def add(request):
     preference = body.get('prefer_crystal_1_or_lower')
     has_discord = body.get('has_discord')
     if pool not in ('main', 'lazy') or type(preference) is not bool or type(has_discord) is not bool:
-        _fail(400, 'Choose a CWL type and Discord option')
+        _fail(400, "Select a CWL type and Discord option")
     uid = body.get('user_id') or ''
     if not isinstance(uid, str) or (has_discord and not re.fullmatch(r'[0-9]{15,22}', uid)) or (not has_discord and uid):
         _fail(400, 'Enter a valid Discord ID or turn off Has a Discord account')

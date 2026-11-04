@@ -580,7 +580,7 @@ export default function BonusWorkspace({
           {archived && <p className="notice">Archived season · Read only</p>}
           {!data.cycle && (
             <p className="notice">
-              Choose this season’s CWL month in Results &amp; participation
+              Select this season’s CWL month in Results &amp; participation
               first.
             </p>
           )}
@@ -948,9 +948,7 @@ export default function BonusWorkspace({
                   <details className="bonus-secondary">
                     <summary>Eligibility rules</summary>
                     <p>
-                      Three consecutive saved bonus approvals require a
-                      one-season sit-out. Earlier in-game medals not recorded
-                      here cannot be inferred.
+                      If an account got a bonus in 3 seasons in a row, it cannot enter the next season. The dashboard has no record of bonuses from before.
                     </p>
                   </details>
                   {clanAccounts.some(
@@ -1041,10 +1039,7 @@ export default function BonusWorkspace({
                   >
                     <summary>FWA Rep odds settings</summary>
                     <p>
-                      Members with this Discord role receive two chances in Lazy
-                      draws. Each account can win only once. Two tickets do not
-                      guarantee twice the final winning probability when several
-                      winners are drawn.
+                      Members with this Discord role get 2 chances in Lazy draws. Each account can win only one time. With 2 chances, an account does not always have twice the chance to win when the draw picks more than one winner.
                     </p>
                     {rolesLoading && <p role="status">Loading roles…</p>}
                     {rolesError && (
@@ -1174,7 +1169,7 @@ export default function BonusWorkspace({
                       {preview.blocking_reasons.map((reason) => (
                         <p key={reason}>{reason}</p>
                       ))}
-                      <p>Refresh or reconcile the results before drawing.</p>
+                      <p>Refresh the results before you draw.</p>
                     </div>
                   )}
                   <h4>In the draw</h4>
@@ -1259,7 +1254,7 @@ export default function BonusWorkspace({
                   {draw.snapshot.allowance_source === "automatic"
                     ? "Calculated"
                     : "Staff-confirmed"}{" "}
-                  allowance · Saved results remain fixed if rules change later.
+                  allowance · Saved results do not change if the rules change later.
                 </p>
                 <AccountList
                   accounts={draw.snapshot.eligible}
@@ -1279,7 +1274,7 @@ export default function BonusWorkspace({
                       void mutate(
                         `/${draw.id}/approve`,
                         {},
-                        "Winners approved. Review the announcement and choose a channel.",
+                        "Winners approved. Review the announcement and select a channel.",
                       )
                     }
                   >
@@ -1291,8 +1286,7 @@ export default function BonusWorkspace({
                 <details className="bonus-secondary">
                   <summary>Cancel this draw</summary>
                   <p>
-                    Cancel only if the results or setup need correction. The
-                    winners and reason remain in history.
+                    Cancel only if the results or setup are wrong. The winners and the reason stay in history.
                   </p>
                   <label>
                     Reason
@@ -1312,7 +1306,7 @@ export default function BonusWorkspace({
                       void mutate(
                         `/${draw.id}/cancel`,
                         { reason: cancelReason.trim() },
-                        "Draw cancelled and retained in history.",
+                        "Draw cancelled. It stays in history.",
                       )
                     }
                   >

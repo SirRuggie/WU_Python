@@ -38,7 +38,7 @@ export default function DeclarationExtras({
   ) {
     return (
       <p className="declaration-extras-status" role="status">
-        Couldn't check
+        Could not check
         {row?.checked_at
           ? ` · Last checked ${comparisonAge(row.checked_at, now)}`
           : " · Never checked"}
@@ -64,7 +64,7 @@ export default function DeclarationExtras({
     ).values(),
   ];
   const counts = [
-    `${row.count} not on roster`,
+    `${row.count} players not on the roster`,
     ...(unpublishedCount ? [`${unpublishedCount} not published yet`] : []),
     ...(low.length ? [`${low.length} low TH in clan`] : []),
     ...(otherFillers.length
@@ -76,7 +76,7 @@ export default function DeclarationExtras({
   if (!rows.length)
     return (
       <p className="declaration-extras-status">
-        0 not on roster · Checked{" "}
+        0 players not on the roster · Checked{" "}
         {comparisonAge(row.checked_at || undefined, now)}
       </p>
     );

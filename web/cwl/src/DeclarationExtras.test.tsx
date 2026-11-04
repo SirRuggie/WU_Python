@@ -34,7 +34,7 @@ it("distinguishes empty, failed and never-checked observations", async () => {
       />,
     ),
   );
-  expect(host.textContent).toContain("0 not on roster");
+  expect(host.textContent).toContain("0 players not on the roster");
   await act(async () =>
     root.render(
       <DeclarationExtras
@@ -45,8 +45,8 @@ it("distinguishes empty, failed and never-checked observations", async () => {
       />,
     ),
   );
-  expect(host.textContent).toContain("Couldn't check");
-  expect(host.textContent).not.toContain("0 not on roster");
+  expect(host.textContent).toContain("Could not check");
+  expect(host.textContent).not.toContain("0 players not on the roster");
   expect(host.textContent).toContain("Last checked");
   await act(async () =>
     root.render(<DeclarationExtras loading={true} error="" now={Date.now()} />),
@@ -76,7 +76,7 @@ it("lists account identity and context without a send action or external HTML", 
       />,
     ),
   );
-  expect(host.textContent).toContain("⚠ 1 not on roster");
+  expect(host.textContent).toContain("⚠ 1 players not on the roster");
   expect(host.textContent).toContain("TH 16");
   expect(host.textContent).toContain("Assigned to Other clan");
   expect(host.querySelector("img")).toBeNull();
@@ -89,9 +89,9 @@ it("a completed response missing this clan is terminal unavailable", async () =>
       <DeclarationExtras loading={false} error="" now={Date.now()} />,
     ),
   );
-  expect(host.textContent).toContain("Couldn't check");
+  expect(host.textContent).toContain("Could not check");
   expect(host.textContent).not.toContain("Checking");
-  expect(host.textContent).not.toContain("0 not on roster");
+  expect(host.textContent).not.toContain("0 players not on the roster");
 });
 it("separates a neutral draft move from intruders without changing account counts", async () => {
   const person = {
@@ -126,7 +126,7 @@ it("separates a neutral draft move from intruders without changing account count
       />,
     ),
   );
-  expect(host.textContent).toContain("1 not on roster · 1 not published yet");
+  expect(host.textContent).toContain("1 players not on the roster · 1 not published yet");
   expect(host.textContent).toContain("Moved here · not published yet");
   expect(host.querySelector(".is-unpublished")?.textContent).not.toContain(
     "Assigned to Fixture",
@@ -146,7 +146,7 @@ it("separates a neutral draft move from intruders without changing account count
   expect(host.querySelector("details")?.classList.contains("is-neutral")).toBe(
     true,
   );
-  expect(host.textContent).toContain("0 not on roster · 1 not published yet");
+  expect(host.textContent).toContain("0 players not on the roster · 1 not published yet");
 });
 it("does not turn incomplete unpublished counts into zero", async () => {
   await act(async () =>
@@ -159,8 +159,8 @@ it("does not turn incomplete unpublished counts into zero", async () => {
       />,
     ),
   );
-  expect(host.textContent).toContain("Couldn't check");
-  expect(host.textContent).not.toContain("0 not on roster");
+  expect(host.textContent).toContain("Could not check");
+  expect(host.textContent).not.toContain("0 players not on the roster");
 });
 it("uses one identity and DM across low TH, intruder and unpublished categories", async () => {
   const uid = "123456789012345678";
@@ -198,6 +198,6 @@ it("uses one identity and DM across low TH, intruder and unpublished categories"
   expect(host.querySelectorAll("a.discord-contact")).toHaveLength(1);
   expect(host.querySelectorAll(".declaration-member-account")).toHaveLength(3);
   expect(host.textContent).toContain(
-    "1 not on roster · 1 not published yet · 1 low TH in clan",
+    "1 players not on the roster · 1 not published yet · 1 low TH in clan",
   );
 });

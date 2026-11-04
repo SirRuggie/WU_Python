@@ -161,14 +161,14 @@ it("filters extra-member clans without changing the pool-wide ping count", async
   expect(
     host.querySelector("[data-ping-count]")?.getAttribute("data-ping-count"),
   ).toBe(count);
-  expect(host.textContent).toContain("1 not on roster");
+  expect(host.textContent).toContain("1 players not on the roster");
 });
 
 it("renders ordinary roster rows before a slow extra-members read completes", async () => {
   await render();
   expect(toggles()).toHaveLength(2);
   expect(host.textContent).toContain("Checking clan members…");
-  expect(host.textContent).not.toContain("0 not on roster");
+  expect(host.textContent).not.toContain("0 players not on the roster");
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -298,7 +298,7 @@ it("Copy mentions deduplicates, lists unlinked players and falls back to selecta
   const copy = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
     (b) => b.textContent === "Copy mentions",
   )!;
-  expect(host.textContent).toContain("Can't mention: Player 0");
+  expect(host.textContent).toContain("Cannot mention: Player 0");
   await act(async () => copy.click());
   expect(host.querySelector("textarea")?.value).toBe("<@505227988229554179>");
   vi.mocked(navigator.clipboard.writeText).mockResolvedValue();
@@ -309,7 +309,7 @@ it("keeps the draft-changed notice muted without blocking readiness", async () =
   state.value.data.arrival.publication_outdated = true;
   await render();
   expect(host.querySelector(".declaration-help")?.textContent).toBe(
-    "Checking published version 1 · the draft has changes members can't see yet",
+    "Checking published version 1 · the draft has changes members cannot see yet",
   );
   expect(host.textContent).toContain("1 / 2 clans ready to declare");
 });
@@ -808,7 +808,7 @@ it("copies only confirmed elsewhere accounts and excludes unknown linked and unl
   expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
     "<@234567890123456789>",
   );
-  expect(host.textContent).toContain("Can't mention: Player 1");
+  expect(host.textContent).toContain("Cannot mention: Player 1");
   expect(host.textContent).not.toContain("Player 1, Player 2");
   state.value.records = Object.fromEntries(
     a.map((row: any) => [
@@ -820,7 +820,7 @@ it("copies only confirmed elsewhere accounts and excludes unknown linked and unl
   expect(
     host.querySelector<HTMLButtonElement>(".declaration-copy button")?.disabled,
   ).toBe(true);
-  expect(host.textContent).not.toContain("Can't mention:");
+  expect(host.textContent).not.toContain("Cannot mention:");
 });
 it("includes unpublished-only clans in both extras filters and the separate top-line count", async () => {
   localStorage.setItem("wu-staff-cwl-pool", "lazy");
@@ -861,7 +861,7 @@ it("includes unpublished-only clans in both extras filters and the separate top-
   };
   await render();
   expect(host.querySelector(".declaration-summary")?.textContent).toContain(
-    "0 not on roster · 3 not published yet",
+    "0 players not on the roster · 3 not published yet",
   );
   const ping = host
     .querySelector("[data-ping-count]")

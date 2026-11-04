@@ -157,8 +157,7 @@ export default function AnnouncementFullTest({
     <details className="announcement-test">
       <summary>Test full post · no pings</summary>
       <p>
-        The announcement, clan images in order, then a closing note. Does not
-        mark announcements as sent.
+        The test posts the announcement, then the clan images in order, then a closing note. It does not mark announcements as sent.
       </p>
       <ChannelCombobox
         label="Full test channel"

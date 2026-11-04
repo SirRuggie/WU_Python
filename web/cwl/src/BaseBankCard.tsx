@@ -38,7 +38,7 @@ export default function BaseBankCard({
         if (!active || controller.signal.aborted) return;
         if (err instanceof ApiError && [401, 403].includes(err.status))
           onDenied();
-        else setError("Couldn't load base details.");
+        else setError("Could not load base details.");
       });
     return () => {
       active = false;
@@ -65,7 +65,7 @@ export default function BaseBankCard({
             onError={() => setImageFailed(true)}
           />
         ) : (
-          <p>Base image coming soon</p>
+          <p>Base image not available yet</p>
         )}
       </div>
       <div className="base-bank-card-body">
@@ -84,7 +84,7 @@ export default function BaseBankCard({
             Copy base
           </a>
         ) : (
-          <p className="base-bank-muted">Base link coming soon</p>
+          <p className="base-bank-muted">Base link not available yet</p>
         )}
         {base.has_details && (
           <details onToggle={(event) => setOpen(event.currentTarget.open)}>

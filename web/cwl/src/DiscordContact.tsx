@@ -6,7 +6,7 @@ export function discordContact(userId?: string | null, compact = false) {
         : undefined,
     label: compact ? "DM ↗" : "Message on Discord ↗",
     unavailable: "No Discord linked",
-    title: "Open their Discord profile, then choose Message",
+    title: "Open their Discord profile, then select Message",
   };
 }
 export default function DiscordContact({

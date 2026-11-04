@@ -40,7 +40,7 @@ export default function useAnnouncementTestChannel(allowed: boolean) {
     if (!makeDefault) return;
     if (!allowed || !setting)
       throw new Error(
-        "Reload the saved test channel before making this the default.",
+        "Refresh the saved test channel before making this the default.",
       );
     const current = generation.current;
     let value: Setting;

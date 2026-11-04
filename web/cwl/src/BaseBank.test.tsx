@@ -81,10 +81,10 @@ it("sorts merged first, shows no copy button for missing link, uses uncropped im
     "TH18 Non-merged defenses",
   ]);
   expect(cards[0].querySelector("a")).toBeNull();
-  expect(cards[0].textContent).toContain("Base link coming soon");
+  expect(cards[0].textContent).toContain("Base link not available yet");
   expect(cards[1].querySelector("a")?.getAttribute("href")).toBe(link);
   expect(cards[1].querySelector("a")?.textContent).toBe("Copy base");
-  expect(host.textContent).toContain("Base image coming soon");
+  expect(host.textContent).toContain("Base image not available yet");
   expect(mock.api).toHaveBeenCalledTimes(1);
 });
 it("does not fetch details until open; renders external text as plain text", async () => {
@@ -129,7 +129,7 @@ it("distinguishes empty, unavailable and signed-out states", async () => {
   root = createRoot(host);
   mock.api.mockRejectedValue(new Error("fixture"));
   await mount();
-  expect(host.textContent).toContain("Couldn't load Base bank");
+  expect(host.textContent).toContain("Could not load Base bank");
   mock.api.mockRejectedValue(new ApiError("Permission lost", 403));
   await act(async () =>
     host.querySelector<HTMLButtonElement>("button")!.click(),
@@ -157,5 +157,5 @@ it("never exposes an unvalidated upstream copy link", async () => {
   });
   await mount();
   expect(host.querySelector("a")).toBeNull();
-  expect(host.textContent).toContain("Base link coming soon");
+  expect(host.textContent).toContain("Base link not available yet");
 });

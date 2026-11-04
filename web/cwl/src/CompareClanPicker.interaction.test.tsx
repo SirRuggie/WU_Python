@@ -99,7 +99,7 @@ it("filters the real Compare view to league Y then sorts without losing chosen l
     await act(async () => checkbox.click());
     await act(async () => button("Show 0 players").click());
     expect(document.querySelectorAll(".compare-side")).toHaveLength(1);
-    await act(async () => button("Choose clans").click());
+    await act(async () => button("Select clans").click());
     await act(async () => button("Sort chosen clans").click());
     const sort = [...document.querySelectorAll('[role="menuitem"]')].find(
       (e) => e.textContent === "Name A–Z",

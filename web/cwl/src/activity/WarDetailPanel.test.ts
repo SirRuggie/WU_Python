@@ -45,9 +45,9 @@ describe('readWarDetail', () => {
 
   it('rejects malformed nested lineup or attack records instead of rendering them', async () => {
     await expect(readWarDetail({...request, signal: new AbortController().signal, onAccessDenied: vi.fn()}, async () => response(200, {...detail, lineup: {clan: [null], opponent: []}})))
-      .rejects.toThrow('incomplete or malformed')
+      .rejects.toThrow('The war details are not complete')
     await expect(readWarDetail({...request, signal: new AbortController().signal, onAccessDenied: vi.fn()}, async () => response(200, {...detail, attacks: [{...attack, stars: {value: 3}}]})))
-      .rejects.toThrow('incomplete or malformed')
+      .rejects.toThrow('The war details are not complete')
   })
 
   it('caps oversized reads and marks the attack list partial', async () => {

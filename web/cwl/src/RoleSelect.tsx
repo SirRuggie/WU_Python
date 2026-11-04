@@ -40,7 +40,7 @@ export default function RoleSelect({
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
         >
-          <option value="">Choose a role</option>
+          <option value="">Select a role</option>
           {value && !roles.some((role) => role.id === value) && (
             <option value={value}>{unavailableLabel}</option>
           )}

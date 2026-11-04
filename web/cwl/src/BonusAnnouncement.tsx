@@ -35,7 +35,7 @@ export default function BonusAnnouncement({ draw, disabled, onSend }: Props) {
       <p role="status"><strong>{delivery.status === 'sent' ? 'Announcement sent' : delivery.status === 'sending' ? 'Delivery in progress or awaiting verification' : `Delivery ${delivery.status}`}</strong></p>
       {delivery.failure && <p role="alert">{delivery.failure}</p>}
       {delivery.status === 'failed' && <button disabled={!canManage || disabled} onClick={() => onSend(delivery.channel_id, true)}>Retry unsent messages</button>}
-      {delivery.status === 'sending' && <p>Refresh to check the result. After an interrupted send, check Discord before taking any further action.</p>}
+      {delivery.status === 'sending' && <p>Refresh to see the result. If the send stopped, check Discord before you do anything else.</p>}
       <p className="small">Channel {delivery.channel_id} · {delivery.pages.filter(p => p.status === 'sent').length}/{draw.messages.length} messages confirmed</p>
       {delivery.pages.some(p => p.message_id) && <details className="bonus-secondary"><summary>Sent messages in Discord</summary>
         {delivery.pages.filter(p => p.message_id).map(p => <p key={p.page}><a href={`https://discord.com/channels/644963518025826315/${delivery.channel_id}/${p.message_id}`} target="_blank" rel="noreferrer">View message {p.page + 1} in Discord ↗</a></p>)}

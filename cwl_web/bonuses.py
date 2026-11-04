@@ -262,7 +262,7 @@ def _validate_revision(body, fail):
 def _cas(db, season_id, expected, fail):
     actual, _ = _meta(db, season_id)
     if actual != expected:
-        fail(409, "Bonus review changed; refresh before saving")
+        fail(409, "The bonus review changed. Refresh before you save.")
 
 
 async def get_bonuses(request):
@@ -293,7 +293,7 @@ async def patch_settings(request):
     session = _require(request, "editor")
     body = await _json(request)
     if set(body) != {"revision", "policy", "clans"}:
-        _fail(400, "Expected revision, policy, and clans")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     revision = _validate_revision(body, _fail)
     policy, clans = body["policy"], body["clans"]
     if not isinstance(policy, dict) or set(policy) != POLICY_KEYS or not isinstance(clans, list):
@@ -317,7 +317,7 @@ async def patch_settings(request):
         current = _view(db, sid)
         expected = {clan["tag"] for clan in current["clans"]}
         if set(supplied) != expected:
-            _fail(409, "Current hosting clans changed; refresh bonus settings")
+            _fail(409, "The current hosting clans changed. Refresh bonus settings.")
         before = {"policy": current["policy"], "clans": current["clans"]}
         _ensure_meta(db, sid)
         db.execute(
@@ -341,7 +341,7 @@ async def patch_draft(request):
     session = _require(request, "editor")
     body = await _json(request)
     if set(body) != {"revision", "selections"} or not isinstance(body["selections"], list):
-        _fail(400, "Expected revision and selections")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     revision = _validate_revision(body, _fail)
     selections = {}
     for entry in body["selections"]:
@@ -377,7 +377,7 @@ async def confirm(request):
     session = _require(request, "editor")
     body = await _json(request)
     if set(body) != {"revision", "fingerprint", "acknowledge_warnings"}:
-        _fail(400, "Expected revision, fingerprint, and acknowledge_warnings")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     revision = _validate_revision(body, _fail)
     fingerprint, acknowledged = body["fingerprint"], body["acknowledge_warnings"]
     if not isinstance(fingerprint, str) or len(fingerprint) != 64 or type(acknowledged) is not bool:
@@ -396,7 +396,7 @@ async def confirm(request):
         _cas(db, sid, revision, _fail)
         preview = _preview(db, sid)
         if preview["fingerprint"] != fingerprint:
-            _fail(409, "Bonus preview changed; review it again before confirming")
+            _fail(409, "The bonus preview changed. Review it again before you confirm.")
         if not preview["can_confirm"]:
             _fail(409, "; ".join(preview["blocking_reasons"]))
         if preview["warnings"] and not acknowledged:
@@ -447,7 +447,7 @@ async def void_confirmation(request):
     session = _require(request, "editor")
     body = await _json(request)
     if set(body) != {"revision", "reason"}:
-        _fail(400, "Expected revision and reason")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     revision = _validate_revision(body, _fail)
     reason = body["reason"]
     if not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 500:

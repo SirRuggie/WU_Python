@@ -67,7 +67,7 @@ export default function ModerationDestinationPicker({
             }
           >
             <option value="">
-              {selected.requires_tag ? "Choose a forum tag" : "No forum tag"}
+              {selected.requires_tag ? "Select a forum tag" : "No forum tag"}
             </option>
             {selectableTags.map((tag) => (
               <option key={tag.id} value={tag.id}>

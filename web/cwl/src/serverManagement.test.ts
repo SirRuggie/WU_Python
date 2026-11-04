@@ -10,7 +10,7 @@ import {safeDiscordUrl} from './serverManagement'
 it('links only to HTTPS Discord channels without allowing spoofed hosts',()=>{expect(safeDiscordUrl('https://discord.com/channels/123/456/789')).toBe('https://discord.com/channels/123/456/789');for(const url of ['javascript:alert(1)','https://discord.com.evil.test/channels/1/2','https://evil.test@discord.com/channels/1/2','http://discord.com/channels/1/2','https://discord.com/login'])expect(safeDiscordUrl(url)).toBeNull()})
 
 import {actionConfirmation} from './serverManagement'
-it('reviews selected clan names before a bulk action',()=>{const clans:ManagementField[]=[{key:'clans',label:'Choose clans',type:'multiselect',value:[],options:[{value:'FWA:#A',label:'Alpha · FWA'},{value:'MAIN:#B',label:'Beta · MAIN'}]}];expect(actionConfirmation('Send?',clans,{clans:['MAIN:#B','FWA:#A']})).toBe('Send?\n\n2 clans selected:\nBeta · MAIN\nAlpha · FWA');expect(actionConfirmation('Save?',fields,{})).toBe('Save?')})
+it('reviews selected clan names before a bulk action',()=>{const clans:ManagementField[]=[{key:'clans',label:'Select clans',type:'multiselect',value:[],options:[{value:'FWA:#A',label:'Alpha · FWA'},{value:'MAIN:#B',label:'Beta · MAIN'}]}];expect(actionConfirmation('Send?',clans,{clans:['MAIN:#B','FWA:#A']})).toBe('Send?\n\n2 clans selected:\nBeta · MAIN\nAlpha · FWA');expect(actionConfirmation('Save?',fields,{})).toBe('Save?')})
 
 
 import {actionNeedsConfirmation} from './serverManagement'

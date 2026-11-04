@@ -33,7 +33,7 @@ export default function ApplicationSettingsIndex({
         />
       </label>
       <p className="small">
-        Choose an area, then the item to edit. Saving a message does not publish
+        Select an area, then the item to edit. Saving a message does not publish
         it.
       </p>
       {groups.map((group) => (

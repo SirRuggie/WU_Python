@@ -141,7 +141,7 @@ export default function StaffDetailsPanel({
       if (id === generation.current) {
         if (saved) {
           setError(
-            "Saved. Couldn't refresh. Refresh the page to see the latest.",
+            "Saved. Could not refresh. Refresh the page to see the latest.",
           );
           receipt.current = null;
           setUndo(null);
@@ -152,7 +152,7 @@ export default function StaffDetailsPanel({
           cause instanceof ApiError &&
             cause.status === 409 &&
             "manual_weight" in body
-            ? "Changed by someone else · Reload"
+            ? "Changed by someone else · Refresh"
             : cause instanceof Error
               ? cause.message
               : "Could not save account.",

@@ -419,7 +419,7 @@ async def save(request):
     await require_manage(request, "member_profiles", write=True)
     body = await request.json()
     if not isinstance(body, dict):
-        raise web.HTTPBadRequest(text="Choose a member profile.")
+        raise web.HTTPBadRequest(text="Select a member profile.")
     values = {
         key: body.get(key)
         for key in ("discord_id", "fields", "rename", "name", "old_nickname")
@@ -439,17 +439,17 @@ async def standardize_preview(request):
     rows = await inventory(request)
     body = await request.json() if getattr(request, "can_read_body", False) else {}
     if not isinstance(body, dict) or set(body) - {"member_ids"}:
-        raise web.HTTPBadRequest(text="Choose a reviewed member selection.")
+        raise web.HTTPBadRequest(text="Select a reviewed member selection.")
     if "member_ids" in body:
         from utils.member_profiles import member_id
 
         try:
             selected = body["member_ids"]
             if not isinstance(selected, list) or not 1 <= len(selected) <= 10000:
-                raise ValueError("Choose people once each.")
+                raise ValueError("Select people once each.")
             normalized = [member_id(uid) for uid in selected]
             if normalized != selected or len(set(selected)) != len(selected):
-                raise ValueError("Choose people once each.")
+                raise ValueError("Select people once each.")
             known = {row["discord_id"]: row for row in rows}
             if any(uid not in known or known[uid].get("bot") for uid in selected):
                 raise ValueError(
@@ -477,7 +477,7 @@ async def standardize_confirm(request):
     actor = await require_manage(request, "member_profiles", write=True)
     body = await request.json()
     if not isinstance(body, dict):
-        raise web.HTTPBadRequest(text="Choose a reviewed selection.")
+        raise web.HTTPBadRequest(text="Select a reviewed selection.")
     from utils.member_profile_runs import ProfileRuns
     from utils.manage_web_worker import WORKER_ID
     import time

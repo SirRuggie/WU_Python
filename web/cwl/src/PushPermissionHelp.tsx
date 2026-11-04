@@ -12,14 +12,14 @@ export default function PushPermissionHelp({
       {platform === 'android' ? (
         <ol>
           <li>
-            If you opened this page from another app and no prompt appears, use
-            its ⋮ menu to open in Chrome or your full browser. Use a normal tab,
-            not Incognito.
+            If you opened this page from another app and no prompt appears, open
+            that app’s ⋮ menu. Open the page in Chrome or your full browser.
+            Use a normal tab. Do not use Incognito.
           </li>
           <li>
-            In Chrome, tap the site controls beside the address → Permissions →
-            Notifications → Allow. You can also check ⋮ → Settings → Site
-            settings → Notifications. A quiet permission prompt may appear near
+            In Chrome, select the site controls beside the address. Then select
+            Permissions → Notifications → Allow. You can also use ⋮ → Settings →
+            Site settings → Notifications. The permission prompt can appear near
             the address bar.
           </li>
           <li>
@@ -29,8 +29,8 @@ export default function PushPermissionHelp({
           </li>
           <li>
             If Chrome says “Managed by Warriors United”, the installed app
-            controls permission. After allowing it, close the app from recent
-            apps and reopen it from its home-screen icon, then recheck
+            controls permission. Allow notifications. Close the app from recent
+            apps. Open it again from its home-screen icon. Then select Recheck
             permission here.
           </li>
         </ol>
@@ -38,12 +38,12 @@ export default function PushPermissionHelp({
         <ol>
           <li>
             Use iOS or iPadOS 16.4 or later. Add Warriors United to your Home
-            Screen from the browser’s Share menu, then open that Home Screen
-            app.
+            Screen with the Share menu in your browser. Then open the Home
+            Screen app.
           </li>
           <li>
-            Choose your accounts and times here, tap Enable notifications, and
-            allow the prompt.
+            Select your accounts and times here. Select Enable notifications.
+            Then allow the prompt.
           </li>
           <li>
             If blocked, open Settings → Notifications → Warriors United and
@@ -64,10 +64,10 @@ export default function PushPermissionHelp({
         </ol>
       )}
       <p className="small">
-        This website cannot change browser or phone permissions for you. Once
-        enabled, use Send test notification to check delivery. Focus/Do Not
-        Disturb and device settings can silence alerts even when browser
-        permission is allowed.
+        This dashboard cannot change your browser or phone permissions. After
+        you turn on notifications, select Send test notification to check
+        delivery. Do Not Disturb and device settings can stop alerts, also when
+        the browser allows them.
       </p>
     </details>
   )

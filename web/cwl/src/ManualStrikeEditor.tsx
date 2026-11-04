@@ -325,7 +325,7 @@ export default function ManualStrikeEditor({
                             variant="compact"
                             contact={false}
                           />
-                          <small>Choose account</small>
+                          <small>Select account</small>
                         </button>
                       ))}
                     </div>

@@ -348,7 +348,7 @@ class LiveProviders:
                         else:
                             return await response.json()
                 except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-                    error = ProviderUnavailable("Couldn’t refresh game data. Try again shortly.")
+                    error = ProviderUnavailable("Couldn’t refresh game data. Try again later.")
                     error.__cause__ = exc
                 if attempt == 2:
                     error.read_retries_exhausted = True

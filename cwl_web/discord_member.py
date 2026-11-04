@@ -94,7 +94,7 @@ async def dispatch(request):
                 raise member.MemberError(409, "The member season changed. Reopen CWL.")
         elif action == "submit":
             if not isinstance(body.get("accounts"), list) or not body["accounts"]:
-                raise member.MemberError(400, "Choose at least one account")
+                raise member.MemberError(400, "Select at least one account")
             if type(body.get("expected_revision")) is not int:
                 raise member.MemberError(400, "Missing signup revision")
             result = await member.submit(

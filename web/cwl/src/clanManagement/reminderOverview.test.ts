@@ -28,7 +28,7 @@ describe("Family overview filters and honest states", () => {
     expect(rowHealth(row, new Set(), false).category).toBe("tracking");
     expect(rowHealth(row, new Set(), true).category).toBe("attention");
     expect(destinationIssue(row, new Set(), true)).toContain(
-      "removed or become inaccessible",
+      "removed it, or the bot may not be able to use it",
     );
     expect(
       rowHealth(
@@ -53,7 +53,7 @@ describe("Family overview filters and honest states", () => {
     };
     expect(rowHealth(failed, new Set(), true).label).toBe("Check delivery");
     expect(destinationIssue(failed, new Set(), true)).toContain(
-      "removed or become inaccessible",
+      "removed it, or the bot may not be able to use it",
     );
     expect(destinationIssue(row, new Set(), false)).toBeNull();
     expect(

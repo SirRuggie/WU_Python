@@ -198,7 +198,7 @@ export default function ImageCollection({
       // Validate every file before beginning the batch.
       for (const file of files)
         if (!file.size || file.size > 10 * 1024 * 1024)
-          throw new Error(`${file.name}: choose an image up to 10 MB.`)
+          throw new Error(`${file.name}: select an image up to 10 MB.`)
       try {
         if (files.length) {
           for (const file of files) {
@@ -324,7 +324,7 @@ export default function ImageCollection({
             />
           </label>
           <label>
-            Choose files
+            Select files
             <input
               type="file"
               multiple

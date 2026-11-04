@@ -24,7 +24,7 @@ def _bool(value):
 
 def _snowflake(value):
     if not isinstance(value, str) or not re.fullmatch(r'\d{15,22}', value):
-        raise ValueError('Choose a valid Discord channel or role ID')
+        raise ValueError("Select a valid Discord channel or role ID")
     return int(value)
 
 
@@ -33,7 +33,7 @@ def _candidate(loaded, patch):
     candidate = copy.deepcopy(loaded['campaign'])
     if 'timezone' in patch:
         if not isinstance(patch['timezone'], str):
-            raise ValueError('Choose a timezone')
+            raise ValueError("Select a timezone")
         candidate['timezone'] = patch['timezone']
     if 'signup_deadline' in patch:
         candidate['signup_deadline'] = copy.deepcopy(patch['signup_deadline'])
@@ -63,7 +63,7 @@ def _candidate(loaded, patch):
                     item[key] = _snowflake(value)
                 elif key == 'role_ids':
                     if not isinstance(value, list) or len(value) > 10:
-                        raise ValueError('Choose up to 10 roles')
+                        raise ValueError("Select up to 10 roles")
                     item[key] = list(dict.fromkeys(_snowflake(role) for role in value))
                 elif key == 'enabled':
                     item[key] = _bool(value)
@@ -78,7 +78,7 @@ def _candidate(loaded, patch):
     for mid, message in loaded['campaign']['messages'].items():
         for pool, item in message['variants'].items():
             if candidate['messages'][mid]['variants'][pool].get('buttons') != item.get('buttons'):
-                raise ValueError('Signup links must remain unchanged until launch approval')
+                raise ValueError("Do not change signup links until staff approve the launch.")
     return candidate
 
 
@@ -196,7 +196,7 @@ async def _edit(request, preview=False):
             loaded = await cwl_campaign.load_campaign(mongo, GUILD_ID, cycle)
             cycle = loaded['cycle']
             if body['generation'] != campaign_generation(loaded):
-                raise web.HTTPConflict(text='Manage settings changed; refresh and review')
+                raise web.HTTPConflict(text="Manage settings changed. Refresh and review.")
             candidate = _candidate(loaded, body['patch'])
             cwl_campaign._validate_future_signup(candidate, loaded, cycle)
             channels = {item['destination_channel_id'] for mid, message in candidate['messages'].items() if mid != 'roster' for item in message['variants'].values()}
@@ -208,7 +208,7 @@ async def _edit(request, preview=False):
             if edited_roles:
                 allowed_roles = {str(role['id']) for role in await _transport(request).list_roles()}
                 if not edited_roles <= allowed_roles:
-                    raise ValueError('Choose roles that exist in Warriors United')
+                    raise ValueError("Select roles that exist in Warriors United")
             if repeat:
                 recurring = cwl_campaign.monthly_campaign(candidate, cycle)
                 for offset in range(1, 13):
@@ -220,7 +220,7 @@ async def _edit(request, preview=False):
             draft = await cwl_campaign.new_draft(mongo, GUILD_ID, int(session['user_id']), cycle)
             try:
                 if (draft['base_revision'] != loaded['revision'] or draft['defaults_base_revision'] != loaded['defaults_revision'] or draft.get('recurring_base_version') != loaded.get('recurring_version')):
-                    raise web.HTTPConflict(text='Manage settings changed; refresh and review')
+                    raise web.HTTPConflict(text="Manage settings changed. Refresh and review.")
                 saved = await cwl_campaign.apply_draft(mongo, draft['_id'], int(session['user_id']), expected_revision=loaded['revision'], candidate_campaign=candidate, require_future_signup=True, repeat_monthly=repeat, expected_generation=body['generation'])
             finally:
                 await mongo.bot_config.delete_one({'_id': draft['_id'], 'user_id': int(session['user_id'])})
@@ -228,7 +228,7 @@ async def _edit(request, preview=False):
                 _audit(db, sid, None, session['user_id'], 'manage_reminders_save', {'generation': body['generation']}, {'generation': campaign_generation(saved), 'repeat_monthly': repeat})
             return web.json_response(await _response(request, mongo, saved, protected=saved.get('protected_sent', [])))
     except AnnouncementRejected as exc:
-        raise web.HTTPBadRequest(text='Choose Warriors United text channels') from exc
+        raise web.HTTPBadRequest(text="Select Warriors United text channels") from exc
     except AnnouncementUnavailable as exc:
         raise web.HTTPServiceUnavailable(text='Discord channel validation unavailable') from exc
     except (ValueError, TypeError, KeyError, OverflowError) as exc:

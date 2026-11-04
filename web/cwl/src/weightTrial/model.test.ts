@@ -184,7 +184,7 @@ it("does not guess storages for an unknown saved-lineup Town Hall", () => {
     current_member: false,
   };
   expect(draftFor(row)).toEqual({ storages: "", loot: "", full: "" });
-  expect(() => validateDraft(draftFor(row))).toThrow("Choose storages");
+  expect(() => validateDraft(draftFor(row))).toThrow("Select storages");
   expect(draftFor({ ...row, weight: 140000, storages: 4 })).toEqual({
     storages: "4",
     loot: "35000",

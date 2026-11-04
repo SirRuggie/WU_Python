@@ -558,7 +558,7 @@ export default function RosterWorkspace({
         )
           setFeedback({
             kind: "error",
-            text: "Changed by someone else · Reload",
+            text: "Changed by someone else · Refresh",
           });
         else await fail(error);
       }
@@ -774,7 +774,7 @@ export default function RosterWorkspace({
     if (tags.some((tag) => !available.has(tag))) {
       setFeedback({
         kind: "error",
-        text: "The selection changed. Clear it and choose the accounts again.",
+        text: "The selection changed. Clear it and select the accounts again.",
       });
       return false;
     }
@@ -1331,7 +1331,7 @@ export default function RosterWorkspace({
               onHostingChanged={async () => {
                 if (!(await refresh()))
                   throw new Error(
-                    "Saved, but the roster could not refresh. Reload before making more changes.",
+                    "Saved, but the roster could not refresh. Refresh before making more changes.",
                   );
               }}
               onHostingBusy={setHostingBusy}
@@ -1355,7 +1355,7 @@ export default function RosterWorkspace({
                 else
                   await fail(
                     new ApiError(
-                      "Your roster access changed. Reload after access is restored.",
+                      "Your roster access changed. Refresh after access is restored.",
                       403,
                     ),
                   );

@@ -25,7 +25,7 @@ export const membersText = {
   rolePacing: "Changes one person at a time. You can stop at any time.",
   updatingRoles: (done: number, total: number) =>
     `Updating roles ${done} of ${total}`,
-  chooseRole: (count: number) => `Choose a role for ${count} members`,
+  chooseRole: (count: number) => `Select a role for ${count} members`,
   reviewChanges: "Review changes",
   protectedRole:
     "This role gives extra access. Check the role and people before continuing.",
@@ -40,7 +40,7 @@ export const membersText = {
   roleReviewChanged: "The role or people changed. Review the selection again.",
   loading: "Loading members…",
   membersUnavailable: "Members are unavailable. Refresh before trying again.",
-  accessChanged: "Your access changed. Reload after access is restored.",
+  accessChanged: "Your access changed. Refresh after access is restored.",
   importInterrupted:
     "Import stopped early. No nicknames changed. Press Fix nicknames again.",
   refresh: "Refresh members",
@@ -58,7 +58,7 @@ export const membersText = {
     "Linked accounts are unavailable. Close and open this section to try again.",
   roleSearch: "Find a role",
   selectedLeft:
-    "Some selected people are no longer available. Clear selection and choose again.",
+    "Some selected people are no longer available. Clear selection and select again.",
   zoneExplanation:
     "GMT shows the saved difference from UTC. Daylight saving time can change local time.",
   closeEditor: "Close editor",

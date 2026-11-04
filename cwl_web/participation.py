@@ -140,7 +140,7 @@ def current_account_view(snapshot, saved=None, source=None, *, archived=False):
 def _validate(body, fail):
     required = {"publication_version", "revision", "attacks", "stars", "notes"}
     if not required <= set(body) or set(body) - required - {"source_checked_at", "roster_token"}:
-        fail(400, "Expected publication_version, revision, attacks, stars, and notes")
+        fail(400, "The request is not complete. Refresh the page and try again.")
     publication_version = body["publication_version"]
     revision = body["revision"]
     attacks = body["attacks"]
@@ -176,11 +176,11 @@ def _context(db, season_id: int, player_tag: str, publication_version: int, fail
         fail(404, "This account is no longer signed up for this season")
     if roster_token is not None:
         if not isinstance(roster_token, str) or roster_token != account_token(snapshot):
-            fail(409, "Signup or assignment changed; refresh before saving")
+            fail(409, "The signup or assignment changed. Refresh before you save.")
     else:
         published = _published_account(db, latest['id'], player_tag) if latest else None
         if latest is None or latest['version'] != publication_version or published is None or account_token(published) != account_token(snapshot):
-            fail(409, "Roster changed; refresh before saving")
+            fail(409, "The roster changed. Refresh before you save.")
     saved = _record(db, season_id, player_tag)
     if saved is not None and account_token(saved) != account_token(snapshot) and not reconcile:
         fail(409, "Saved results belong to a previous assignment. Refresh Clash results and use synced results before editing.")
@@ -213,7 +213,7 @@ async def get_participation(request):
         settings = settings_view(db, season_id)
         history = request.query.get('source', 'current') == 'history'
         if request.query.get('source', 'current') not in {'current', 'history'}:
-            raise web.HTTPBadRequest(text="Choose current results or history")
+            raise web.HTTPBadRequest(text="Select current results or history")
         current = working_accounts(db, season_id)
         saved = {
             row["tag"]: row for row in db.execute(
@@ -257,10 +257,10 @@ async def patch_participation(request):
             db, season_id, player_tag, publication_version, _fail, body.get("roster_token"),
         )
         if "source_checked_at" in body and checked != (source["checked_at"] if source else None):
-            _fail(409, "Synced results changed; refresh before saving")
+            _fail(409, "The synced results changed. Refresh before you save.")
         current_revision = saved["revision"] if saved is not None else 0
         if revision != current_revision:
-            _fail(409, "Participation changed; refresh before saving")
+            _fail(409, "The participation changed. Refresh before you save.")
         current = current_account_view(snapshot, saved, source)
         attack_changed = attacks != current["attacks"]
         star_changed = stars != current["stars"]
@@ -308,7 +308,7 @@ async def patch_participation(request):
                     ),
                 )
                 if result.rowcount != 1:
-                    _fail(409, "Participation changed; refresh before saving")
+                    _fail(409, "The participation changed. Refresh before you save.")
             saved = _record(db, season_id, player_tag)
             _audit(db, season_id, player_tag, session["user_id"], before, saved, stamp)
             account = current_account_view(snapshot, saved, source)
@@ -322,7 +322,7 @@ async def reset_to_source(request):
     body = await _json(request)
     required = {"publication_version", "revision", "source_checked_at"}
     if not required <= set(body) or set(body) - required - {"roster_token"}:
-        _fail(400, "Expected publication_version, revision, and source_checked_at")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     publication_version = body["publication_version"]
     revision = body["revision"]
     checked = body["source_checked_at"]
@@ -342,12 +342,12 @@ async def reset_to_source(request):
             db, sid, player_tag, publication_version, _fail, body.get("roster_token"), reconcile=True,
         )
         if checked != (source["checked_at"] if source else None):
-            _fail(409, "Synced results changed; refresh before resetting")
+            _fail(409, "The synced results changed. Refresh before you reset.")
         if source is None or source["roster_token"] != account_token(snapshot) or (source["attacks"] is None and source["stars"] is None):
             _fail(409, "No synced results are available to use")
         current_revision = saved["revision"] if saved is not None else 0
         if revision != current_revision:
-            _fail(409, "Participation changed; refresh before resetting")
+            _fail(409, "The participation changed. Refresh before you reset.")
         if saved is None or not (saved["attacks_override"] or saved["stars_override"] or account_token(saved) != account_token(snapshot)):
             account = current_account_view(snapshot, saved, source)
         else:
@@ -360,7 +360,7 @@ async def reset_to_source(request):
                 (session["user_id"], stamp, *(snapshot[key] for key in IDENTITY_FIELDS), sid, player_tag, revision),
             )
             if result.rowcount != 1:
-                _fail(409, "Participation changed; refresh before resetting")
+                _fail(409, "The participation changed. Refresh before you reset.")
             saved = _record(db, sid, player_tag)
             _audit(db, sid, player_tag, session["user_id"], before, saved, stamp)
             account = current_account_view(snapshot, saved, source)

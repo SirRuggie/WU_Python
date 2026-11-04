@@ -52,10 +52,10 @@ export async function readWarDetail({clanTag, type, scope, warId, signal, onAcce
   const body = await response.json().catch(() => null)
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) onAccessDenied()
-    const message = typeof body?.error === 'string' ? body.error : response.status === 409 ? 'This war changed or is no longer available. Refresh the war list to check again.' : response.status === 503 ? 'Game data is temporarily unavailable. Try again shortly.' : `War details could not be loaded (${response.status}).`
+    const message = typeof body?.error === 'string' ? body.error : response.status === 409 ? 'This war changed or is no longer available. Refresh the war list to check again.' : response.status === 503 ? 'Game data is temporarily unavailable. Try again later.' : `War details could not be loaded (${response.status}).`
     throw new ApiError(message, response.status)
   }
-  if (!validDetail(body)) throw new Error('War details were incomplete or malformed. Try again.')
+  if (!validDetail(body)) throw new Error('The war details are not complete. Try again.')
   if (body.clan_tag !== clanTag || body.kind !== type || body.scope !== scope || body.war_id !== warId) {
     throw new ApiError('This war changed or is no longer available. Refresh the war list to check again.', 409)
   }
@@ -114,13 +114,13 @@ export default function WarDetailPanel({clanTag, type, scope, war, onAccessDenie
       {data.warnings?.length ? <ul className="war-detail-partial" aria-label="War detail notes">{data.warnings.map((warning, index) => <li key={`${index}:${warning}`}>{warning}</li>)}</ul> : null}
       <div className="war-detail-view" role="group" aria-label="War detail view"><button type="button" aria-pressed={view === 'lineup'} onClick={() => {setView('lineup'); setPage(0)}}>Lineup</button><button type="button" aria-pressed={view === 'attacks'} onClick={() => {setView('attacks'); setPage(0)}}>Attack log</button></div>
       {view === 'lineup' ? <>
-        {!data.lineup_complete && <p className="war-detail-partial" role="status">Lineup data is partial; some bases may be missing.</p>}
+        {!data.lineup_complete && <p className="war-detail-partial" role="status">Lineup data is partial. Some bases may be missing.</p>}
         <div className="war-detail-side" role="group" aria-label="Lineup side"><button type="button" aria-pressed={side === 'clan'} onClick={() => {setSide('clan'); setPage(0)}}>{data.clan?.name || 'Your clan'}</button><button type="button" aria-pressed={side === 'opponent'} onClick={() => {setSide('opponent'); setPage(0)}}>{data.opponent?.name || 'Opponent'}</button></div>
         <h3>{side === 'clan' ? data.clan?.name || 'Your clan' : data.opponent?.name || 'Opponent'} lineup <small>{members.length}{data.team_size == null ? '' : `/${data.team_size}`}</small></h3>
         {members.length ? <ol className="war-detail-lineup-list">{visibleMembers.map(memberSummary)}</ol> : <p>Lineup unavailable.</p>}
       </> : <section className="war-detail-attacks" aria-label="Attack log">
         <header><h3>Attack log <small>{attacks.length}{data.attacks_complete ? '' : '+'}</small></h3><span>{data.attacks_per_member == null ? 'Attack limit unknown' : `${data.attacks_per_member} ${data.attacks_per_member === 1 ? 'attack' : 'attacks'} per member`}</span></header>
-        {!data.attacks_complete && <p className="war-detail-partial" role="status">Attack log is partial or capped; the total may be higher.</p>}
+        {!data.attacks_complete && <p className="war-detail-partial" role="status">Attack log is partial or capped. The total may be higher.</p>}
         {!attacks.length ? <p>{data.attacks_complete ? 'No attacks are available in this war log.' : 'No complete attack entries are available.'}</p> : <ol className="war-detail-attack-list">{visibleAttacks.map((attack, index) => <li key={`${page * PAGE_SIZE + index}:${attack.side}`}>
           <div><span className="war-detail-attack-side">{attack.side === 'clan' ? data.clan?.name || 'Your clan' : data.opponent?.name || 'Opponent'}</span> <b>{attack.order == null ? `Attack ${page * PAGE_SIZE + index + 1}` : `#${attack.order}`}</b> {attack.attacker_name || 'Attacker unknown'} <small>{attack.attacker_tag || 'Tag unavailable'}</small>{attack.linked === true && <span className="war-detail-linked">Your account</span>}</div>
           <div><span>→ {attack.defender_name || 'Target unknown'} <small>{attack.defender_tag || 'Tag unavailable'}</small></span><strong>{attack.stars == null ? 'Stars unknown' : `${attack.stars} ★`} · {attack.destruction == null ? 'Destruction unknown' : `${attack.destruction}%`}</strong></div>

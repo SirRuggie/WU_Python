@@ -49,7 +49,7 @@ export function useComparisonLocations(
           return result.updating;
         } catch (cause) {
           if (!signal.aborted || signal.reason?.name === "TimeoutError") {
-            setError("Couldn't update locations · showing last results");
+            setError("Could not update locations · showing last results");
           }
           throw cause;
         }

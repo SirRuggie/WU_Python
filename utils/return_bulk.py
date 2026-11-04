@@ -63,7 +63,7 @@ def summary(parent,rows):
     pending=counts['running']+counts['pending']+counts['held'] or len(rows)<len(parent['items'])
     message=f"{counts['done']} completed · {counts['failed']} failed · {counts['uncertain']} need checking"
     if pending:message+=' · Still working'
-    labels={'done':'Completed','failed':'Failed — review before retry','uncertain':'Check Discord — do not retry','running':'Working','pending':'Waiting','held':'Waiting'}
+    labels={'done':'Completed','failed':'Failed. Review it. Then try again.','uncertain':'Check Discord. Do not try again.','running':'Working','pending':'Waiting','held':'Waiting'}
     details='\n'.join(f"{r.get('clan_name') or r['values']['clan_tag']}: {labels.get(r['status'],r['status'])}"+(f" — {r['message']}" if r.get('message') and r['status']!='done' else '') for r in rows)
     return {'status':'pending' if pending else 'done','message':message,'result':{'message':message,'details':details}}
 

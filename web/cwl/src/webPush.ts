@@ -2,8 +2,8 @@
 export class PushPermissionError extends Error {
   constructor(public readonly permission: 'default' | 'denied') {
     super(permission === 'denied'
-      ? 'Notifications are blocked for this site. Allow them in your browser settings, then recheck permission.'
-      : 'The browser did not grant permission. If no prompt appeared, open this page in your full browser and check its notification settings.')
+      ? 'Notifications are blocked for this dashboard. Allow them in your browser settings, then recheck permission.'
+      : 'The browser did not give permission. If no prompt appeared, open this page in your full browser. Then check its notification settings.')
     this.name = 'PushPermissionError'
   }
 }
@@ -18,7 +18,7 @@ async function workerReady(): Promise<ServiceWorkerRegistration> {
   try {
     return await Promise.race([
       navigator.serviceWorker.ready,
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Notification setup took too long. Check your connection and try enabling again.')), 12000) }),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Notification setup took too long. Check your connection. Then try to turn on notifications again.')), 12000) }),
     ])
   } finally { clearTimeout(timer) }
 }
@@ -27,7 +27,7 @@ export type PushSupport = { supported: boolean; reason: string; permission: Noti
 export function pushSupport(): PushSupport {
   const ios = pushPlatform() === 'ios'
   const installed = window.matchMedia('(display-mode: standalone)').matches || !!(navigator as Navigator & { standalone?: boolean }).standalone
-  if (ios && !installed) return { supported: false, reason: 'On iPhone or iPad, add this dashboard to your Home Screen and open it there to enable reminders.', permission: 'unsupported' }
+  if (ios && !installed) return { supported: false, reason: 'On iPhone or iPad, add this dashboard to your Home Screen. Then open it from there to turn on reminders.', permission: 'unsupported' }
   if (!window.isSecureContext || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     return { supported: false, reason: 'Push reminders need a supported browser and a secure connection. Try Chrome on Android or desktop.', permission: 'unsupported' }
   }
@@ -75,7 +75,7 @@ export async function disableBrowserPush(): Promise<void> {
   if (!('serviceWorker' in navigator)) return
   const registration = await navigator.serviceWorker.getRegistration('/')
   const subscription = await registration?.pushManager.getSubscription()
-  if (subscription && !(await subscription.unsubscribe())) throw new Error('Could not disable notifications on this device. Please try again.')
+  if (subscription && !(await subscription.unsubscribe())) throw new Error('Could not disable notifications on this device. Try again.')
   const notifications = await registration?.getNotifications()
   notifications?.forEach(notification => notification.close())
 }

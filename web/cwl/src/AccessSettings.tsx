@@ -178,7 +178,7 @@ export default function AccessSettings({
           ? "Access changed while you were editing. Your selections are kept. Review the latest access before saving again."
           : e instanceof Error
             ? e.message
-            : "Save could not be confirmed. Reload access before trying again.",
+            : "Save could not be confirmed. Refresh access before trying again.",
       );
     } finally {
       saving.current = false;
@@ -236,7 +236,7 @@ export default function AccessSettings({
         <div>
           <p className="eyebrow">Owner controls</p>
           <h1>Dashboard access</h1>
-          <p>Select a person or role, choose what they can do, then save.</p>
+          <p>Select a person or role, select what they can do, then save.</p>
         </div>
       </div>
       <div className="access-toolbar">
@@ -296,7 +296,7 @@ export default function AccessSettings({
               <p>
                 {data.grants.length
                   ? "No matching entries."
-                  : "No added staff yet. Choose Add access to get started."}
+                  : "No staff added yet. Select Add access."}
               </p>
             )}
             {matches.map((grant) => (
@@ -381,7 +381,7 @@ export default function AccessSettings({
           <section className="access-editor" aria-label="Permission editor">
             {!editing ? (
               <div className="access-empty">
-                <h2>Choose whose access to manage</h2>
+                <h2>Select whose access to manage</h2>
                 <p>
                   Select an existing person or role, or add someone by searching
                   their Discord name.
@@ -401,7 +401,7 @@ export default function AccessSettings({
                   ← Back to people &amp; roles
                 </button>
                 <h2 ref={heading} tabIndex={-1}>
-                  {choosing ? "Choose a person or role" : title}
+                  {choosing ? "Select a person or role" : title}
                 </h2>
                 {choosing ? (
                   <>
@@ -536,7 +536,7 @@ export default function AccessSettings({
                         requestAnimationFrame(() => heading.current?.focus());
                       }}
                     >
-                      Choose permissions →
+                      Select permissions →
                     </button>
                   </>
                 ) : (
@@ -583,8 +583,7 @@ export default function AccessSettings({
                       </a>
                     )}
                     <p>
-                      CWL includes Main and Lazy. Clan permissions apply to all
-                      clans. User and role grants add together.
+                      CWL includes Main and Lazy. Clan permissions apply to all clans. A person gets the access given to the person and the access given to their roles.
                     </p>
                     {dirty && (
                       <div className="access-change-summary" role="status">
@@ -622,8 +621,7 @@ export default function AccessSettings({
                       onChange={setSelected}
                     />
                     <p className="small">
-                      Access management stays owner-only. Section controls grant
-                      only the actions currently listed.
+                      Only owners can manage access. The controls in this section give only the actions listed here.
                     </p>
                     {current && (
                       <button

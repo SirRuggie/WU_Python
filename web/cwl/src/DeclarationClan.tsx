@@ -129,7 +129,7 @@ export default function DeclarationClan({
                 Copy mentions
               </Button>
               {!!mentions.unlinked.length && (
-                <small>Can't mention: {mentions.unlinked.join(", ")}</small>
+                <small>Cannot mention: {mentions.unlinked.join(", ")}</small>
               )}
               <span role="status">{copied}</span>
               {fallback !== null && (

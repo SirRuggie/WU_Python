@@ -45,7 +45,7 @@ async def check(request):
     _require(request, "editor")
     source = request.query.get("source", "published")
     if source not in ("published", "draft"):
-        raise web.HTTPBadRequest(text="Choose the shown roster source")
+        raise web.HTTPBadRequest(text="Select the shown roster source")
     accounts, clans, basis = snapshot(request, source)
     current_accounts, _, current_revision = snapshot(request, "draft")
     expected = request.query.get("basis")

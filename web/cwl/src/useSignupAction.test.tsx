@@ -221,7 +221,7 @@ it("a failed visibility read is discoverable and Retry performs only a read", as
         </DashboardPermissions.Provider>,
       ),
     );
-    expect(host.textContent).toContain("Couldn't check signup visibility");
+    expect(host.textContent).toContain("Could not check signup visibility");
     await act(async () => host.querySelector("button")!.click());
     expect(host.textContent).toBe("Hidden");
     expect(api.mock.calls).toEqual([["/seasons"], ["/seasons"]]);

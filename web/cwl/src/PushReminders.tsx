@@ -226,7 +226,7 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
             </>
           ) : (
             <button disabled={busy} onClick={() => void act(() => load())}>
-              Reload settings
+              Refresh settings
             </button>
           )}
         </div>
@@ -358,14 +358,14 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
         )}
         {!validTimes && (
           <p className="notice" role="status">
-            Choose at least one time from 1 minute to 24 hours. Each time must
+            Select at least one time from 1 minute to 24 hours. Each time must
             be different.
           </p>
         )}
       </fieldset>
       <details className="push-account-picker">
         <summary>
-          Accounts · {tags.length} selected <span>Choose accounts</span>
+          Accounts · {tags.length} selected <span>Select accounts</span>
         </summary>
         <fieldset
           disabled={busy}
@@ -398,7 +398,7 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
               Clear
             </button>
           </div>
-          {!accountsComplete && <p>Some accounts haven’t loaded. Your saved selections are kept.</p>}
+          {!accountsComplete && <p>Some accounts have not loaded. Your saved selections are kept.</p>}
           <div className="push-accounts">
             {visible.map((account) => (
               <label key={account.tag}>
@@ -431,12 +431,12 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
       </details>
       {!war && !cwl && (
         <p className="small" role="status">
-          Choose War, CWL, or both.
+          Select War, CWL, or both.
         </p>
       )}
       {!tags.length && (
         <p className="small">
-          Choose at least one account to enable reminders.
+          Select at least one account to enable reminders.
         </p>
       )}
       <div className="push-actions">

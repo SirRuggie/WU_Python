@@ -24,9 +24,9 @@ class ScreenErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.failed) {
       return <section className="panel" role="alert">
-        <h2>This screen couldn’t load</h2>
-        <p>Try another screen from the menu, or reload the dashboard. Reloading may discard unsaved edits.</p>
-        <button type="button" onClick={() => window.location.reload()}>Reload dashboard</button>
+        <h2>This screen could not load</h2>
+        <p>Select another screen from the menu, or reload the dashboard. If you reload, you can lose unsaved changes.</p>
+        <button type="button" onClick={() => window.location.reload()}>Reload the page</button>
       </section>
     }
     return this.props.children

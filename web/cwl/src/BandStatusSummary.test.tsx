@@ -91,7 +91,7 @@ describe('BAND status summary', () => {
     )
     expect(html).toContain('Status unavailable')
     expect(html).not.toContain('Configured')
-    expect(html).toContain('are historical')
+    expect(html).toContain('show past results')
   })
 
   it('preserves all fields from an older response without known BAND keys', () => {

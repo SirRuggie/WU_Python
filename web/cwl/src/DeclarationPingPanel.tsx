@@ -147,7 +147,7 @@ export default function DeclarationPingPanel({
   const chosen = state?.channels.find((c) => c.id === channel);
   const reason =
     state?.warning ||
-    (!chosen?.can_send ? chosen?.reason || "Choose an available channel" : "");
+    (!chosen?.can_send ? chosen?.reason || "Select an available channel" : "");
   async function mutate(run: () => Promise<void>) {
     if (locked.current) return;
     locked.current = true;
@@ -228,7 +228,7 @@ export default function DeclarationPingPanel({
     (active?.state === "uncertain" || uncertain
       ? active?.error ||
         receipt?.error ||
-        "Ping delivery is uncertain. Check confirmed chunks before further action."
+        "We do not know if the pings were sent. Check the confirmed messages in Discord first."
       : "");
   const revealAttention = useCallback(() => {
     const target = errorStatus.current || receiptStatus.current;
@@ -308,7 +308,7 @@ export default function DeclarationPingPanel({
           <p ref={errorStatus} tabIndex={-1} role="alert">
             {error}{" "}
             <button disabled={busy} onClick={() => void load()}>
-              Reload latest settings
+              Refresh latest settings
             </button>
           </p>
         )}
@@ -406,7 +406,7 @@ export default function DeclarationPingPanel({
           )
         )}
         {(active?.state === "sending" || state?.test_running) && (
-          <p role="status">Sending reviewed chunks… You may leave this page.</p>
+          <p role="status">Sending the reviewed messages… You can leave this page.</p>
         )}
         {state?.can_send && active?.state === "uncertain" && (
           <button disabled={busy} onClick={() => setClosing(true)}>
@@ -416,7 +416,7 @@ export default function DeclarationPingPanel({
         {closing && (
           <ConfirmDialog
             heading="Close interrupted receipt?"
-            text="This sends nothing. Inspect the confirmed message IDs and the unconfirmed chunk in Discord. No chunk will be retried; a deliberate new review is required after cooldown."
+            text="This sends nothing. Check the confirmed message IDs and the message that is not confirmed in Discord. The bot will not try it again. Wait for the cooldown to end. Then review again before you send a new message."
             confirmLabel="Close receipt"
             onCancel={() => setClosing(false)}
             onConfirm={() => {
@@ -448,10 +448,10 @@ export default function DeclarationPingPanel({
               variant="compact"
             />{" "}
             at {new Date(last.created_at * 1000).toLocaleString()} ·{" "}
-            {last.count} players · {last.posted.length}/{last.chunks} chunks
+            {last.count} players · {last.posted.length}/{last.chunks} messages
             confirmed
             {last.attempting !== null
-              ? ` · chunk ${last.attempting + 1} unconfirmed`
+              ? ` · message ${last.attempting + 1} not confirmed`
               : ""}
             . {last.error}
           </p>
@@ -462,7 +462,7 @@ export default function DeclarationPingPanel({
             <ul>
               {last.posted.map((p) => (
                 <li key={p.message_id}>
-                  Chunk {p.chunk + 1}: {p.message_id}
+                  Message {p.chunk + 1}: {p.message_id}
                 </li>
               ))}
             </ul>

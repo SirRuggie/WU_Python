@@ -98,7 +98,7 @@ describe("roster account card", () => {
     expect(html).not.toContain("<Alpha & Beta>");
     expect(html).toContain('aria-label="Select &lt;Alpha &amp; Beta&gt;"');
     expect(html).toContain("No weight");
-    expect(html).toContain("Kept unplaced");
+    expect(html).toContain("Stays unplaced");
     expect(html).toContain("location not checked yet");
     expect(html).not.toContain("Unavailable");
     expect(html).toContain("Main CWL");
@@ -127,7 +127,7 @@ describe("roster account card", () => {
         ...account,
         kept: false,
         auto_placement_note:
-          "Hosting clans need a 15- or 30-player capacity in Clan settings.",
+          "Set Clan size to 15 or 30 in Clan settings.",
       },
     });
     expect(capacity).not.toContain("Hosting clans need");
@@ -160,7 +160,7 @@ describe("roster account card", () => {
     expect(host.querySelector(".roster-player-note")?.textContent).toBe(
       "Needs review",
     );
-    expect(render()).toContain("Kept unplaced");
+    expect(render()).toContain("Stays unplaced");
   });
   it("keeps the full location in a title and ellipsizes only the current clan", () => {
     const html = render({

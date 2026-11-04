@@ -16,7 +16,7 @@ vi.mock("./useSignupAction", () => ({
     begin: vi.fn(),
     visibilityCheck: (
       <p>
-        Couldn't check signup visibility ·{" "}
+        Could not check signup visibility ·{" "}
         <button onClick={retry}>Retry</button>
       </p>
     ),
@@ -66,13 +66,13 @@ it.each(["staff", "seasons"])(
       );
       if (consumer === "seasons") {
         expect(host.textContent).not.toContain(
-          "Couldn't check signup visibility",
+          "Could not check signup visibility",
         );
         expect(host.textContent).toContain("Next: Build roster");
         expect(retry).not.toHaveBeenCalled();
         return;
       }
-      expect(host.textContent).toContain("Couldn't check signup visibility");
+      expect(host.textContent).toContain("Could not check signup visibility");
       const button = [...host.querySelectorAll("button")].find(
         (b) => b.textContent === "Retry",
       )!;

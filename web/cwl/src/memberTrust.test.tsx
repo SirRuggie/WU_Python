@@ -128,13 +128,13 @@ it("keeps the clan list through failed refresh and recovers; denied access clear
   failure = new Error("upstream secret unavailable");
   await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
-  expect(host.textContent).toContain("Couldn't refresh. Showing last update.");
+  expect(host.textContent).toContain("Could not refresh. Showing last update.");
   expect(host.textContent).toContain("Elsewhere");
   expect(host.textContent).not.toContain("upstream secret");
   failure = null;
   await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
-  expect(host.textContent).not.toContain("Couldn't refresh");
+  expect(host.textContent).not.toContain("Could not refresh");
   failure = new ApiError("Access changed", 403);
   await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
@@ -296,11 +296,11 @@ it("retains Home account and signup data through refresh failure, then recovers 
   await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).toContain("Retained player");
-  expect(host.textContent).toContain("Couldn't refresh. Showing last update.");
+  expect(host.textContent).toContain("Could not refresh. Showing last update.");
   failure = null;
   await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
-  expect(host.textContent).not.toContain("Couldn't refresh");
+  expect(host.textContent).not.toContain("Could not refresh");
   failure = new ApiError("Sign in again", 401);
   await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
@@ -332,12 +332,12 @@ it("keeps the known Home season after a failed focus refresh and recovers", asyn
   await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
   expect(host.textContent).toContain("November");
-  expect(host.textContent).toContain("Couldn't refresh. Showing last update.");
+  expect(host.textContent).toContain("Could not refresh. Showing last update.");
   expect(host.textContent).not.toContain("private upstream");
   fail = false;
   await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(resolve => setTimeout(resolve, 40)); });
   await flush();
-  expect(host.textContent).not.toContain("Couldn't refresh");
+  expect(host.textContent).not.toContain("Could not refresh");
 });
 it("puts linking help before the pool choice when a completed read has no linked accounts", async () => {
   history.replaceState({}, "", "/signup");
@@ -360,7 +360,7 @@ it("puts linking help before the pool choice when a completed read has no linked
   const text = host.textContent!;
   expect(text).toContain("Link an account");
   expect(text.indexOf("Link an account")).toBeLessThan(
-    text.indexOf("Choose Main CWL"),
+    text.indexOf("Select Main CWL"),
   );
 });
 
@@ -590,7 +590,7 @@ it("shows link help only once after an empty read and hides it during an explici
   await render(<App />);
   expect(host.querySelectorAll(".account-link-help")).toHaveLength(1);
   const choose = [...host.querySelectorAll("button")].find((b) =>
-    b.textContent?.includes("Choose Lazy CWL"),
+    b.textContent?.includes("Select Lazy CWL"),
   )!;
   await act(async () => choose.click());
   await flush();
@@ -679,7 +679,7 @@ it("keeps a known signup season warning small while an explicit stale signup rem
   expect(host.textContent).not.toContain("private season failure");
   await act(async () =>
     [...host.querySelectorAll("button")]
-      .find((b) => b.textContent?.includes("Choose Lazy CWL"))!
+      .find((b) => b.textContent?.includes("Select Lazy CWL"))!
       .click(),
   );
   await flush();

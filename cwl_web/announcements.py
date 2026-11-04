@@ -171,7 +171,7 @@ async def set_channel(request):
     session = _require(request, "editor")
     body = await _json(request)
     if set(body) != {"channel_id"}:
-        _fail(400, "Expected channel_id")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     pool = _pool(request)
     channel_id = body["channel_id"]
     channel = None
@@ -225,7 +225,7 @@ async def send_announcement(request):
     session = _require(request, "editor")
     body = await _json(request)
     if set(body) != {"version", "channel_id"} or type(body["version"]) is not int or body["version"] < 1:
-        _fail(400, "Expected published version and channel_id")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     version = body["version"]
     try:
         channel_id = _snowflake(body["channel_id"])
@@ -244,12 +244,12 @@ async def send_announcement(request):
             (sid,),
         ).fetchone()
         if latest is None or latest["version"] != version:
-            _fail(409, "Published roster changed; refresh before sending")
+            _fail(409, "The published roster changed. Refresh before you send.")
         setting = db.execute(
             "SELECT * FROM announcement_channels WHERE season_id=? AND pool=?", (sid, pool)
         ).fetchone()
         if setting is None or setting["channel_id"] != channel_id:
-            _fail(409, "Announcement channel changed; refresh before sending")
+            _fail(409, "The announcement channel changed. Refresh before you send.")
         other = "lazy" if pool == "main" else "main"
         if db.execute("SELECT 1 FROM announcement_channels WHERE season_id=? AND pool=? AND channel_id=?",
                       (sid, other, channel_id)).fetchone():
@@ -265,7 +265,7 @@ async def send_announcement(request):
             if existing["status"] == "sent":
                 return web.json_response({"delivery": _delivery(existing)})
             if existing["status"] != "failed":
-                _fail(409, "Prior delivery is unresolved; do not resend blindly")
+                _fail(409, "The earlier delivery is not final. Check Discord before you send again.")
         content = _content(season["label"], latest, pool, counts, site_url)
     try:
         channel = await _transport(request).get_channel(channel_id)
@@ -283,7 +283,7 @@ async def send_announcement(request):
         setting = db.execute("SELECT channel_id FROM announcement_channels WHERE season_id=? AND pool=?",
                              (sid, pool)).fetchone()
         if latest is None or latest["version"] != version or setting is None or setting["channel_id"] != channel_id:
-            _fail(409, "Publication or channel changed; refresh before sending")
+            _fail(409, "The publication or channel changed. Refresh before you send.")
         existing = db.execute(
             "SELECT * FROM announcement_deliveries WHERE season_id=? AND publication_version=? "
             "AND pool=? AND channel_id=?", (sid, version, pool, channel_id),
@@ -292,7 +292,7 @@ async def send_announcement(request):
             if existing["status"] == "sent":
                 return web.json_response({"delivery": _delivery(existing)})
             if existing["status"] != "failed":
-                _fail(409, "Prior delivery is unresolved; do not resend blindly")
+                _fail(409, "The earlier delivery is not final. Check Discord before you send again.")
             changed = db.execute(
                 "UPDATE announcement_deliveries SET status='sending',failure=NULL,"
                 "message_id=NULL,sent_at=NULL,content=?,requested_by=?,requested_at=?,attempts=attempts+1 "
@@ -300,7 +300,7 @@ async def send_announcement(request):
                 (content, session["user_id"], _now(), existing["id"]),
             )
             if changed.rowcount != 1:
-                _fail(409, "Delivery changed; refresh before retrying")
+                _fail(409, "The delivery changed. Refresh before you try again.")
             _audit(db, sid, None, session["user_id"], "announcement_retry", _delivery(existing),
                    {"status": "sending", "attempts": existing["attempts"] + 1})
         else:
@@ -313,7 +313,7 @@ async def send_announcement(request):
     try:
         message_id = await transport.send(channel_id, content, nonce)
     except AnnouncementRejected:
-        status, failure = "failed", "Discord rejected the message or bot permissions"
+        status, failure = "failed", "Discord did not accept the message, or the bot does not have permission."
         message_id = None
     except (AnnouncementUncertain, AnnouncementUnavailable, aiohttp.ClientError, asyncio.TimeoutError):
         status, failure = "uncertain", "Discord result is uncertain; do not resend"

@@ -177,7 +177,7 @@ def _bump(db, sid):
 
 def _check_revision(db, sid, supplied):
     if type(supplied) is not int or supplied != _revision(db, sid):
-        _fail(409, "Roster changed; refresh before editing")
+        _fail(409, "The roster changed. Refresh before you edit.")
 
 
 def _audit(db, sid, tag_value, actor_id, action, before, after):
@@ -544,7 +544,7 @@ async def create_season(request):
         logging.getLogger("cwl.seasons").error(
             "Hosting clan copy failed (%s): %s", type(error).__name__, str(error)
         )
-        return web.json_response({"error": "Couldn't copy hosting clans; nothing was created."}, status=500)
+        return web.json_response({"error": "Could not copy hosting clans; nothing was created."}, status=500)
     return web.json_response({**_season_dict(row), "copied_clan_count": copied}, status=201)
 
 
@@ -602,7 +602,7 @@ async def create_clan(request):
     session = _require(request, "editor")
     body = await _json(request)
     if set(body) - {"tag", "pool"} or body.get("pool") not in (None, "main", "lazy"):
-        _fail(400, "Choose Main or Lazy CWL")
+        _fail(400, "Select Main or Lazy CWL")
     try:
         value = tag(body.get("tag"))
     except ValueError:
@@ -627,7 +627,7 @@ async def archive_clan(request):
     if not body or set(body) - {"archived", "pool"}:
         _fail(400, "Expected archive status or CWL pool")
     if "pool" in body and body["pool"] not in ("main", "lazy"):
-        _fail(400, "Choose Main or Lazy CWL")
+        _fail(400, "Select Main or Lazy CWL")
     archived = _body_bool(body, "archived") if "archived" in body else None
     try:
         value = tag(request.match_info["tag"])
@@ -886,7 +886,7 @@ async def staff_signup_members(request):
     if batch is not None:
         values = batch.split(',')
         if selected or not 1 <= len(values) <= 100 or any(not re.fullmatch(r'[1-9][0-9]{14,21}', value) for value in values):
-            _fail(400, 'Choose up to 100 valid member identities')
+            _fail(400, "Select up to 100 valid member identities")
         selected_ids = set(values)
     signup_ids = None
     if "season_id" in request.query:
@@ -936,11 +936,11 @@ async def staff_add_signup(request):
     pool = body.get("pool")
     choices = body.get("accounts")
     if pool not in ("main", "lazy") or not isinstance(choices, list) or not 1 <= len(choices) <= 100:
-        _fail(400, "Choose Main or Lazy and at least one account")
+        _fail(400, "Select Main or Lazy and at least one account")
     requested = {}
     for choice in choices:
         if not isinstance(choice, dict) or type(choice.get("prefer_crystal_1_or_lower")) is not bool:
-            _fail(400, "Choose a league preference for each account")
+            _fail(400, "Select a league preference for each account")
         try:
             value = tag(choice.get("tag"))
         except ValueError:
@@ -979,7 +979,7 @@ async def staff_remove_signup(request):
     actor = _require(request, "editor")
     body = await _json(request)
     if set(body) != {"revision"}:
-        _fail(400, "Expected roster revision")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     sid = _sid(request)
     try:
         value = tag(request.match_info["tag"])
@@ -1198,13 +1198,13 @@ async def update_lineup_rules(request):
         if rule["pool"] not in (None, "main", "lazy"):
             _fail(400, "Invalid pool rule")
         if type(rule["capacity"]) is not int and rule["capacity"] is not None or rule["capacity"] not in (None, 15, 30):
-            _fail(400, "Capacity must be 15 or 30")
+            _fail(400, "Clan size must be 15 or 30.")
         for field in ("min_weight", "max_weight"):
             value = rule[field]
             if value is not None and (type(value) is not int or value <= 0 or value > 1_000_000_000):
                 _fail(400, "Invalid weight range")
         if rule["min_weight"] is not None and rule["max_weight"] is not None and rule["min_weight"] >= rule["max_weight"]:
-            _fail(400, "Maximum weight must exceed minimum")
+            _fail(400, "The maximum weight must be more than the minimum weight.")
         db.execute("INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight) "
                    "VALUES (?,?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET "
                    "pool=excluded.pool,capacity=excluded.capacity,min_weight=excluded.min_weight,"
@@ -1229,7 +1229,7 @@ async def update_roster_filler(request):
     session = _require(request, 'editor')
     body = await _json(request)
     if set(body) != {'revision', 'roster_filler', 'mark_revision'}:
-        _fail(400, 'Expected revision, roster_filler and mark_revision')
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     try:
         player_tag = tag(request.match_info['tag'])
     except ValueError:
@@ -1262,7 +1262,7 @@ async def bulk_assign_roster(request):
     session = _require(request, "editor")
     body = await _json(request)
     if not {"revision", "tags", "assigned_clan_tag"} <= set(body) or not set(body) <= {"revision", "tags", "assigned_clan_tag", "include_locked"}:
-        _fail(400, "Expected revision, tags, and assigned_clan_tag")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     supplied = body["tags"]
     if not isinstance(supplied, list) or not 1 <= len(supplied) <= 50:
         _fail(400, "Select 1 to 50 accounts")
@@ -1298,7 +1298,7 @@ async def bulk_assign_roster(request):
                 f"SELECT 1 FROM roster_entries WHERE season_id=? AND kept=1 AND tag IN ({placeholders})",
                 (sid, *tags),
             ).fetchone():
-                _fail(409, "Locked placements changed; refresh and select again")
+                _fail(409, "The locked placements changed. Refresh, then select the accounts again.")
         if destination is not None:
             capacity = _active_destination_capacity(db, sid, destination)
             selected_already = db.execute(
@@ -1353,7 +1353,7 @@ async def update_roster_account(request):
         from .clan_weight_trial import authorize
         authorize(request)
         if type(body.get("weight_revision")) is not int or not 0 <= body["weight_revision"] < 2**63:
-            _fail(400, "Expected weight revision")
+            _fail(400, "The request is not complete. Refresh the page and try again.")
     elif "weight_revision" in body or "weight_storages" in body:
         _fail(400, "Weight metadata requires a weight")
     try:
@@ -1419,14 +1419,14 @@ async def swap_roster(request):
     session = _require(request, "editor")
     body = await _json(request)
     if set(body) != {"revision", "left_tag", "right_tag"}:
-        _fail(400, "Expected revision, left_tag, and right_tag")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     try:
         left_tag = tag(body["left_tag"])
         right_tag = tag(body["right_tag"])
     except ValueError:
         _fail(400, "Invalid player tag")
     if left_tag == right_tag:
-        _fail(400, "Choose two different accounts")
+        _fail(400, "Select two different accounts")
     sid = _sid(request)
     with _store(request).tx() as db:
         season = _season(db, sid)
@@ -1452,7 +1452,7 @@ async def swap_roster(request):
             occupancy, fillers = roster_player_marks.assigned_counts(db, sid, host)
             incoming = left_tag if host == right_host else right_tag
             if occupancy - fillers > capacity and roster_player_marks.incoming_regular(db, [incoming]):
-                _fail(409, "Hosting clan exceeds capacity")
+                _fail(409, "This clan is full.")
         changes = []
         for player_tag, target in ((left_tag, right_host), (right_tag, left_host)):
             before = rows[player_tag]
@@ -1472,7 +1472,7 @@ async def undo_roster(request):
     session = _require(request, "editor")
     body = await _json(request)
     if set(body) != {"revision", "undo_id"} or type(body["undo_id"]) is not int or body["undo_id"] < 1:
-        _fail(400, "Expected revision and undo_id")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     sid = _sid(request)
     with _store(request).tx() as db:
         season = _season(db, sid)
@@ -1614,7 +1614,7 @@ def _requested_plan(db, sid, body, pool):
     def tags_field(field):
         values = body.get(field)
         if not isinstance(values, list) or not 1 <= len(values) <= 50:
-            _fail(400, "Choose 1 to 50 accounts or clans")
+            _fail(400, "Select 1 to 50 accounts or clans")
         try:
             result = [tag(value) for value in values]
         except (ValueError, TypeError):
@@ -1627,9 +1627,9 @@ def _requested_plan(db, sid, body, pool):
         _fail(400, "Invalid lock option")
     accounts, clans = _roster_rows(db, sid), _rule_rows(db, sid)
     if not set(selected) <= {a['tag'] for a in accounts}:
-        _fail(409, "Selected accounts changed; refresh the roster")
+        _fail(409, "Selected accounts changed. Refresh the roster.")
     if not set(destinations) <= {c['tag'] for c in clans if not c['archived']}:
-        _fail(409, "Selected hosting clans changed; refresh the roster")
+        _fail(409, "Selected hosting clans changed. Refresh the roster.")
     return balance_accounts(accounts, clans, selected, destinations, body.get("include_locked", False))
 
 
@@ -1638,7 +1638,7 @@ async def auto_preview(request):
     body = await _json(request)
     pool = body.get("pool")
     if pool not in (None, "main", "lazy"):
-        _fail(400, "Choose Main or Lazy CWL")
+        _fail(400, "Select Main or Lazy CWL")
     sid = _sid(request)
     with _store(request).tx() as db:
         season = _season(db, sid)
@@ -1658,7 +1658,7 @@ async def auto_apply(request):
         _fail(400, "Preview placements are required")
     pool = body.get("pool")
     if pool not in (None, "main", "lazy"):
-        _fail(400, "Choose Main or Lazy CWL")
+        _fail(400, "Select Main or Lazy CWL")
     sid = _sid(request)
     with _store(request).tx() as db:
         season = _season(db, sid)
@@ -1667,7 +1667,7 @@ async def auto_apply(request):
         _check_revision(db, sid, body.get("revision"))
         placements, _ = _requested_plan(db, sid, body, pool)
         if submitted != placements:
-            _fail(409, "Preview changed; refresh before applying")
+            _fail(409, "The preview changed. Refresh before you apply.")
         changes = []
         for placement in placements:
             player_tag = placement["tag"]
@@ -1820,14 +1820,14 @@ async def publish_roster(request):
     session = _require(request, "editor")
     body = await _json(request)
     if set(body) != {"revision", "acknowledge_unassigned", "joining_instructions"}:
-        _fail(400, "Expected revision, acknowledge_unassigned, and joining_instructions")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     revision = body["revision"]
     if type(revision) is not int or revision < 0:
         _fail(400, "Invalid roster revision")
     acknowledged = _body_bool(body, "acknowledge_unassigned")
     instructions = body["joining_instructions"]
     if not isinstance(instructions, str) or len(instructions) > 2000:
-        _fail(400, "Joining instructions must be at most 2000 characters")
+        _fail(400, "Joining instructions must not be more than 2,000 characters.")
     sid = _sid(request)
     with _store(request).tx() as db:
         season = _season(db, sid)
@@ -1884,14 +1884,14 @@ async def withdraw_publication(request):
     if set(body) != {"revision", "version"} or any(
         type(body[key]) is not int or body[key] < 0 for key in ("revision", "version")
     ):
-        _fail(400, "Expected roster revision and publication version")
+        _fail(400, "The request is not complete. Refresh the page and try again.")
     sid = _sid(request)
     with _store(request).tx() as db:
         _season(db, sid)
         _check_revision(db, sid, body["revision"])
         latest = _latest_publication(db, sid)
         if latest is None or latest["version"] != body["version"]:
-            _fail(409, "Publication changed; refresh before withdrawing")
+            _fail(409, "The publication changed. Refresh before you hide the roster.")
         # Withdraw all visible versions so an older publication cannot reappear.
         db.execute("UPDATE roster_publications SET withdrawn_at=? "
                    "WHERE season_id=? AND withdrawn_at IS NULL",

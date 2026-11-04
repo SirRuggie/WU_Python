@@ -24,15 +24,15 @@ def disable_actions(value):
 async def send(request):
     actor=await require_manage(request,'text_commands',write=True)
     body=await (request.clone(client_max_size=256*1024) if isinstance(request,web.Request) else request).json()
-    if not isinstance(body,dict):raise web.HTTPBadRequest(text='Choose a channel and review the message.')
+    if not isinstance(body,dict):raise web.HTTPBadRequest(text="Select a channel and review the message.")
     channel=body.get('channel_id','');nonce=body.get('request_id','')
-    if not isinstance(channel,str) or not re.fullmatch(r'\d{15,22}',channel):raise web.HTTPBadRequest(text='Choose a channel.')
+    if not isinstance(channel,str) or not re.fullmatch(r'\d{15,22}',channel):raise web.HTTPBadRequest(text="Select a channel.")
     if not isinstance(nonce,str) or not re.fullmatch(r'[a-f0-9]{24}',nonce):raise web.HTTPBadRequest(text='Reopen the test controls.')
     try:values=validate(body.get('values'))
     except ValueError as exc:raise web.HTTPBadRequest(text=str(exc)) from None
     fingerprint=hashlib.sha256(json.dumps({'channel_id':channel,'values':values},sort_keys=True,separators=(',',':')).encode()).hexdigest()
     destination=await discord(request,'GET',f'/channels/{channel}')
-    if str(destination.get('guild_id'))!=str(GUILD_ID) or destination.get('type') not in (0,5):raise web.HTTPBadRequest(text='Choose a text channel in this server.')
+    if str(destination.get('guild_id'))!=str(GUILD_ID) or destination.get('type') not in (0,5):raise web.HTTPBadRequest(text="Select a text channel in this server.")
     async with mongo(request) as db:
         try:rendered=payload(values,await load_files(db,values))
         except ValueError as exc:raise web.HTTPBadRequest(text=str(exc)) from None

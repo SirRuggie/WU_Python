@@ -69,11 +69,11 @@ export function scheduleValues(start: string, end: string) {
     Number.isNaN(first.getTime()) ||
     Number.isNaN(last.getTime())
   )
-    throw new Error("Choose both start and end dates.");
+    throw new Error("Select both start and end dates.");
   if (last <= first || last.getTime() <= Date.now())
     throw new Error("End must be after start and still in the future.");
   if (last.getTime() - first.getTime() > 7 * 86400000)
-    throw new Error("Choose a window of up to seven days.");
+    throw new Error("Select a window of up to seven days.");
   return {
     schedule_start: first.toISOString(),
     schedule_end: last.toISOString(),

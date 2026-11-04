@@ -76,6 +76,6 @@ export default function WarsWorkspace({canEdit, onTasks, userId = 'anonymous', v
     {data && clans.length > 0 && !active.length && <p>No active {type === 'cwl' ? 'CWL rounds' : 'wars'}{query ? ' match this search' : scope === 'mine' ? ' in your clans' : ''}.</p>}
     <div className="activity-card-grid">{active.map(card)}</div>
     {quiet.length > 0 && <details className="war-inactive"><summary>No active war · {quiet.length} {quiet.length === 1 ? 'clan' : 'clans'}</summary><div className="activity-card-grid">{quiet.map(card)}</div></details>}
-    <p className="small">Refreshes every minute while visible. Game updates may take a little longer.</p>
+    <p className="small">This page refreshes each minute while you can see it. Game data can be late.</p>
   </section>
 }

@@ -5,7 +5,7 @@ def explain(account, clans, reason):
         'kept': 'Held unassigned. Release keep to allow auto-placement.',
         'missing_weight': 'No weight available. Add a weight or place manually.',
         'source_unavailable': 'Weight source unavailable. Refresh or confirm a manual weight.',
-        'full': 'All matching clans are full. Choose another clan manually.',
+        'full': "All matching clans are full. Select another clan manually.",
     }
     if reason in fixed:
         return fixed[reason]

@@ -16,7 +16,7 @@ async def change(request):
     # tags across members. A supplied user_id remains an ownership constraint.
     uid = body.get('user_id')
     if action not in ('main', 'lazy', 'remove') or ('user_id' in body and not isinstance(uid, str)):
-        _fail(400, 'Choose an action and member')
+        _fail(400, "Select an action and member")
     if not isinstance(values, list) or not 1 <= len(values) <= 50:
         _fail(400, 'Select between 1 and 50 accounts')
     try:

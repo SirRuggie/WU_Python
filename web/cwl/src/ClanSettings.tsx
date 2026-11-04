@@ -292,7 +292,7 @@ export function ClanSettingsEditor({
     min.value !== null &&
     max.value !== null &&
     min.value >= max.value
-      ? "Maximum weight must be greater than minimum weight."
+      ? "The maximum weight must be more than the minimum weight."
       : "";
   const invalid = !!(min.error || max.error || rangeError);
   const poolError = draft.pool
@@ -440,7 +440,7 @@ export function ClanSettingsEditor({
       ) : (
         <>
           <p className="clan-settings-description">
-            Auto-place uses these settings. Existing assignments don't change.
+            Auto-place uses these settings. Existing assignments do not change.
           </p>
           <RosterMenu
             label="Pool"

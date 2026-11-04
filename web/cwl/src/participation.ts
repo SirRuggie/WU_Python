@@ -157,7 +157,7 @@ export function syncStatusLabel(
       month: "long",
       timeZone: "UTC",
     });
-    return `${month} CWL hasn't started in Clash yet`;
+    return `${month} CWL has not started in Clash yet`;
   }
   const labels: Record<string, string> = {
     never: "Not checked",

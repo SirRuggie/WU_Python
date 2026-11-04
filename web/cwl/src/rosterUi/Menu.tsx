@@ -101,7 +101,7 @@ export default function RosterMenu({
         <span className="roster-menu-trigger-copy">
           <span className="roster-menu-label">{label}</span>
           <span className="roster-menu-current">
-            {selected?.label || "Choose an option"}
+            {selected?.label || "Select an option"}
           </span>
         </span>
         <ChevronDown className="roster-menu-chevron" aria-hidden="true" />

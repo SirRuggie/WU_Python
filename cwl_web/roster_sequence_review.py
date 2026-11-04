@@ -14,7 +14,7 @@ async def frozen_plan(request, sid, pool, version):
     storage = RosterImageStore(request.app['store'])
     publication = storage.publication(sid)
     if not publication or publication[1]['version'] != version:
-        raise web.HTTPConflict(text='Published roster changed; refresh and review')
+        raise web.HTTPConflict(text="Published roster changed. Refresh and review.")
     season, _, groups = groups_for(publication)
     clans = ordered_roster_clans(group for group in groups.values() if group['pool'] == pool)
     await enrich(request, clans)
@@ -102,7 +102,7 @@ async def resume(request):
     job = storage.pool_sequence(_sid(request), _pool(request))
     _not_active(request, job)
     if set(body) != {'sequence_id'} or not job or body['sequence_id'] != job['sequence_id']:
-        raise web.HTTPConflict(text='Sequence changed; refresh before resuming')
+        raise web.HTTPConflict(text="The sequence changed. Refresh before you resume.")
     import json
     plan = json.loads(job['plan_json'])
     receipts = [storage.receipt(item['request_id']) for item in plan['clans']]
@@ -156,11 +156,11 @@ async def repair_closing(request):
     sid, pool = _sid(request), _pool(request)
     job = storage.pool_sequence(sid, pool)
     if not job or job['sequence_id'] != body['sequence_id'] or not storage.publication(sid):
-        raise web.HTTPConflict(text='Published sequence changed; refresh first')
+        raise web.HTTPConflict(text="Published sequence changed. Refresh first.")
     _not_active(request, job)
     receipt = storage.closing_receipt(job['sequence_id'])
     if not receipt or receipt['status'] != 'posted' or receipt['message_id'] != body['message_id']:
-        raise web.HTTPConflict(text='Closing message changed; refresh before updating')
+        raise web.HTTPConflict(text="The closing message changed. Refresh before you update.")
     if not await deleted_in_discord(request, receipt):
         return web.json_response({'reposted': False})
     try:

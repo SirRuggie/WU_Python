@@ -104,12 +104,12 @@ async def save(request):
     sub = _subscription(body.get('subscription'))
     for key in ('enabled', 'war', 'cwl'):
         if type(body.get(key)) is not bool:
-            raise web.HTTPBadRequest(text='Choose reminder settings')
+            raise web.HTTPBadRequest(text="Select reminder settings")
     tags, offsets = body.get('tags'), body.get('offsets')
     if not isinstance(tags, list) or not tags or len(tags) > 100 or any(not isinstance(t, str) for t in tags):
         raise web.HTTPBadRequest(text='Select linked accounts')
     if not isinstance(offsets, list) or not offsets or len(offsets) > MAX_REMINDER_TIMES or len(set(str(n) for n in offsets)) != len(offsets) or any(type(n) is not int or not 1 <= n <= MAX_OFFSET_MINUTES for n in offsets):
-        raise web.HTTPBadRequest(text='Choose up to 5 different reminder times, from 1 minute to 24 hours')
+        raise web.HTTPBadRequest(text="Select up to 5 different reminder times, from 1 minute to 24 hours")
     if body['enabled'] and not (body['war'] or body['cwl']):
         raise web.HTTPBadRequest(text='Select War or CWL')
     try:

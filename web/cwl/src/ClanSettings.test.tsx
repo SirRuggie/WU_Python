@@ -232,7 +232,7 @@ it("explains disabled pool choices and never submits via a disabled option", asy
   ].find((e) => e.textContent?.includes("Lazy CWL"))!;
   expect(option.getAttribute("aria-disabled")).toBe("true");
   expect(option.textContent).toContain(
-    "Can't move to Lazy CWL: 16 players are assigned here. Assign them elsewhere first.",
+    "Cannot move to Lazy CWL: 16 players are assigned here. Assign them elsewhere first.",
   );
   await act(async () => option.click());
   expect(save).not.toHaveBeenCalled();
@@ -336,7 +336,7 @@ it("validates ranges live and shows changed-only impact with missing weights exc
   expect(document.querySelector(".clan-settings-impact")).toBeNull();
   await type("Maximum weight", "150");
   expect(button("Save settings").disabled).toBe(true);
-  expect(document.body.textContent).toContain("Maximum weight must be greater");
+  expect(document.body.textContent).toContain("The maximum weight must be more than");
   await type("Maximum weight", "169");
   expect(document.body.textContent).toContain(
     "1 more assigned player would be outside the range",
@@ -439,7 +439,7 @@ it("blocks a previously chosen pool if assigned players arrive during editing", 
   expect(
     document.querySelector(".clan-settings-panel > .action-panel-content")
       ?.textContent,
-  ).toContain("Can't move to Lazy CWL: 16 players are assigned here.");
+  ).toContain("Cannot move to Lazy CWL: 16 players are assigned here.");
   expect(props.onSave).not.toHaveBeenCalled();
 });
 

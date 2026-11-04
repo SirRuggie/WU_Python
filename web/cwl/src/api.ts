@@ -145,7 +145,7 @@ export async function api<T>(
       404: "This item is no longer available.",
       409: "This account is already signed up for the other CWL pool for this season.",
       423: "Signups are closed for this season.",
-      503: "Linked accounts or game data are temporarily unavailable. Try again shortly.",
+      503: "Linked accounts or game data are temporarily unavailable. Try again later.",
     };
     throw new ApiError(
       (message ||

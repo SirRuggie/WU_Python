@@ -404,7 +404,7 @@ export default function ArrivalCheck({
           </p>
           {fillerQueue.unknownOutcome && (
             <p>
-              A save may have reached the server. Refresh to learn its outcome.
+              The save may have worked. Refresh to see the result.
             </p>
           )}
           <ul>
@@ -417,7 +417,7 @@ export default function ArrivalCheck({
       {error && (
         <p role="alert">
           {error}
-          {error === "Couldn't check locations" && (
+          {error === "Could not check locations" && (
             <Button onClick={refresh}>Retry</Button>
           )}
         </p>
@@ -478,16 +478,16 @@ export default function ArrivalCheck({
               )}
               {" · "}
               {extras.error
-                ? "Couldn't check clan members"
+                ? "Could not check clan members"
                 : extras.loading || !extras.data
                   ? "Checking clan members…"
-                  : `${extras.data.clans.reduce((n, c) => n + (c.count || 0), 0)} ${failedExtras ? "confirmed " : ""}not on roster`}
+                  : `${extras.data.clans.reduce((n, c) => n + (c.count || 0), 0)} ${failedExtras ? "confirmed " : ""}players not on the roster`}
               {!!extras.data?.clans.some(
                 (c) => (c.unpublished_count || 0) > 0,
               ) &&
                 ` · ${extras.data.clans.reduce((n, c) => n + (c.unpublished_count || 0), 0)} ${failedExtras ? "confirmed " : ""}not published yet`}
               {failedExtras > 0 &&
-                ` · ${failedExtras} ${failedExtras === 1 ? "clan" : "clans"} couldn't be checked`}
+                ` · ${failedExtras} ${failedExtras === 1 ? "clan" : "clans"} could not be checked`}
               <button
                 type="button"
                 className="declaration-info"
@@ -513,19 +513,19 @@ export default function ArrivalCheck({
                   checked={onlyExtras}
                   onChange={(e) => setOnlyExtras(e.target.checked)}
                 />
-                Clans with not-on-roster players
+                Clans with players who are not on the roster
               </label>
             )}
             {helpOpen && (
               <p className="declaration-help">
                 Ready = clan is full, checked in the last 5 minutes.
-                Not-on-roster checks cover Lazy hosting clans only.
+                This check works only for Lazy hosting clans.
               </p>
             )}
             {data.arrival.publication_outdated && (
               <p className="declaration-help">
                 Checking published version {data.arrival.version} · the draft
-                has changes members can't see yet
+                has changes members cannot see yet
               </p>
             )}
             {pingAttention && (
@@ -672,7 +672,7 @@ export default function ArrivalCheck({
             <p>
               {pool === "lazy" && onlyExtras ? (
                 <>
-                  No checked clans have not-on-roster players.{" "}
+                  No checked clans have players who are not on the roster.{" "}
                   {(extras.error ||
                     extras.data?.clans.some((c) => c.status !== "current")) &&
                     "Some checks are unavailable. "}

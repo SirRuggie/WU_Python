@@ -112,7 +112,7 @@ async def save(request):
     if body["role_id"] is not None and body["role_id"] not in {
         r["id"] for r in (options or [])
     }:
-        _fail(400, "Choose an available role below the bot.")
+        _fail(400, "Select an available role below the bot.")
     try:
         with _store(request).tx() as db:
             result = service.save(

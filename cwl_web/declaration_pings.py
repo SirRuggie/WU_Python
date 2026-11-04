@@ -21,7 +21,7 @@ def context(request, *, send=False):
     actor = staff(request, send=send)
     pool = request.match_info["pool"]
     if pool not in ("main", "lazy"):
-        raise web.HTTPBadRequest(text="Choose Main or Lazy")
+        raise web.HTTPBadRequest(text="Select Main or Lazy")
     sid = _sid(request)
     with request.app["store"].tx() as db:
         _season(db, sid)
@@ -117,7 +117,7 @@ async def configure(request):
     actor, _, pool = context(request, send=True)
     body = await _json(request)
     if set(body) != {"channel_id", "revision"}:
-        raise web.HTTPBadRequest(text="Choose a channel and its revision")
+        raise web.HTTPBadRequest(text="Select a channel and its revision")
     channel = await destinations.destination(request, body["channel_id"])
     async with mongo(request) as client:
         lane = await DeclarationPingStore(client, GUILD_ID).configure(
@@ -136,7 +136,7 @@ async def preview(request):
         or body["mode"] not in ("live", "test")
         or type(body["revision"]) is not int
     ):
-        raise web.HTTPBadRequest(text="Choose a ping or no-ping test review")
+        raise web.HTTPBadRequest(text="Select a ping or no-ping test review")
     groups, version, unknown, _ = await fresh_groups(request, pool)
     if not groups:
         raise PingConflict(
@@ -148,7 +148,7 @@ async def preview(request):
         channel = test_channel(request) if body["mode"] == "test" else lane["channel"]
         if not channel or not channel["id"]:
             raise PingConflict(
-                "Choose a posting channel first"
+                "Select a posting channel first"
                 if body["mode"] == "live"
                 else "Set the shared Test channel in Announcements first"
             )

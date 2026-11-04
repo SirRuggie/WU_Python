@@ -262,7 +262,7 @@ export default function CompareClans({
           disabled={busy || !allClans.length}
           onClick={(event) => openPanel("clans", event.currentTarget)}
         >
-          Choose clans ({clans.length})
+          Select clans ({clans.length})
         </Button>
       </header>
       <div
@@ -390,14 +390,14 @@ export default function CompareClans({
         <p>No active {pool === "main" ? "Main" : "Lazy"} hosting clans.</p>
       )}
       {!!allClans.length && !visibleClans.length && (
-        <p>Choose clans or reset filters to start comparing.</p>
+        <p>Select clans or reset filters to start comparing.</p>
       )}
       {!!visibleClans.length && (
         <>
           <div
             className="compare-mobile-rail"
             ref={rail}
-            aria-label="Choose a clan to view"
+            aria-label="Select a clan to view"
           >
             {visibleClans.map((tag) => {
               const clan = available.find((c) => c.tag === tag)!;

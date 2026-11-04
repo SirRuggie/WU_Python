@@ -22,7 +22,7 @@ type Props = {
 };
 
 const poolOptions = [
-  { value: "", label: "Choose Main or Lazy" },
+  { value: "", label: "Select Main or Lazy" },
   { value: "main", label: "Main CWL" },
   { value: "lazy", label: "Lazy CWL" },
 ];
@@ -109,7 +109,7 @@ export default function StaffTagSignup({
 
   return (
     <div className="staff-tag-signup">
-      <p>Enter a player tag. We’ll check for a linked Discord account.</p>
+      <p>Enter a player tag. The dashboard checks for a linked Discord account.</p>
       <div className="staff-tag-lookup">
         <Input
           label="Player tag"

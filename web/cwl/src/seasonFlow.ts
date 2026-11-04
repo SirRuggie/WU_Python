@@ -26,9 +26,9 @@ export function signupPlan(
     text: close
       ? `Close Main and Lazy signups for ${season.label}? Existing signups will stay saved. The season stays visible to members.`
       : fix
-        ? `Signups for ${season.label} are open, but members can't see the season. Show it to members?`
+        ? `Signups for ${season.label} are open, but members cannot see the season. Show it to members?`
         : hidden
-          ? `Members can't see ${season.label} yet. Show it to members and open signups?`
+          ? `Members cannot see ${season.label} yet. Show it to members and open signups?`
           : `Open Main and Lazy signups for ${season.label}?`,
   };
 }
