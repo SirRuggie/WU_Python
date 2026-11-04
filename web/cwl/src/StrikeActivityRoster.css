@@ -10,7 +10,7 @@
   position: sticky;
   top: 0;
   z-index: 5;
-  background: #18191b;
+  background: var(--wu-surface);
   padding: 4px 0;
   gap: 8px;
 }
@@ -99,15 +99,15 @@
   text-align: left;
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid #3e3c38;
+  border: 1px solid var(--wu-border-subtle);
   border-radius: 12px;
-  background: #18191b;
+  background: var(--wu-surface);
   color: inherit;
   min-width: 0;
 }
 .strike-activity-row:hover {
   border-color: #8a7449;
-  background: #202125;
+  background: var(--wu-surface-raised);
 }
 .strike-activity-row:focus-visible {
   outline: 2px solid #f1cf79;
@@ -225,7 +225,7 @@
   display: grid;
   gap: 4px;
   padding: 4px;
-  background: #222326;
+  background: var(--wu-surface-raised);
   border: 1px solid #59503d;
   border-radius: 8px;
 }
@@ -319,7 +319,7 @@
   position: sticky;
   top: 54px;
   z-index: 4;
-  background: #18191b;
+  background: var(--wu-surface);
   text-align: left;
 }
 .strike-activity-table th:first-child {
@@ -343,7 +343,7 @@
 }
 .strike-activity-table td {
   padding: 0 4px;
-  border-bottom: 1px solid #383734;
+  border-bottom: 1px solid var(--wu-border-subtle);
   font-size: 12px;
   min-width: 0;
 }
@@ -352,7 +352,7 @@
   height: 44px;
 }
 .strike-activity-table tbody tr:hover {
-  background: #242423;
+  background: var(--wu-surface-raised);
 }
 .strike-activity-table .strike-activity-row {
   padding: 0;
@@ -416,7 +416,7 @@
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 0 6px;
-    border-bottom: 1px solid #383734;
+    border-bottom: 1px solid var(--wu-border-subtle);
     padding: 4px 0;
     height: auto;
   }
@@ -505,7 +505,7 @@
   padding: 12px 18px;
   border: 1px solid #a89564;
   border-radius: 10px;
-  background: #24231f;
+  background: var(--wu-surface-raised);
   box-shadow: 0 4px 24px #0008;
 }
 .strike-tab-predicate {

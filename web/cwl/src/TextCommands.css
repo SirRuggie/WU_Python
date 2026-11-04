@@ -149,9 +149,9 @@
   overflow: visible;
 }
 .command-block {
-  border: 1px solid #45454d;
+  border: 1px solid var(--wu-border);
   border-radius: 10px;
-  background: #151519;
+  background: var(--wu-surface);
   min-width: 0;
 }
 .command-block-heading {
@@ -178,7 +178,7 @@
 }
 .command-block-summary {
   font-size: 0.8rem;
-  color: #b6becb;
+  color: var(--wu-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -224,7 +224,7 @@
 .mention-picker {
   margin-top: 10px;
   padding: 12px;
-  border: 1px solid #45454d;
+  border: 1px solid var(--wu-border);
   border-radius: 10px;
 }
 .mention-picker > div {
@@ -273,7 +273,7 @@
 }
 .markdown-help {
   margin-top: 10px;
-  border: 1px solid #45454d;
+  border: 1px solid var(--wu-border);
   border-radius: 8px;
   padding: 10px;
 }
@@ -363,7 +363,7 @@
 .command-add-menu {
   margin: 12px 0;
   padding: 10px;
-  border: 1px solid #45454d;
+  border: 1px solid var(--wu-border);
   border-radius: 9px;
 }
 .command-add-menu > summary {
@@ -385,7 +385,7 @@
 
 .command-activity {
   margin-top: 16px;
-  border: 1px solid #45454d;
+  border: 1px solid var(--wu-border);
   border-radius: 10px;
   padding: 12px;
 }
@@ -402,11 +402,11 @@
   display: grid;
   gap: 5px;
   padding: 12px 0;
-  border-bottom: 1px solid #45454d;
+  border-bottom: 1px solid var(--wu-border);
   overflow-wrap: anywhere;
 }
 .command-activity small {
-  color: #b6becb;
+  color: var(--wu-text-muted);
 }
 
 /* Explicit selection colors remain readable in dark browser themes. */

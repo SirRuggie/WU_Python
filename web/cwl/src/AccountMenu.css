@@ -13,7 +13,7 @@
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
-  color: #f5f4f0;
+  color: var(--wu-text);
   text-align: left;
 }
 
@@ -23,7 +23,7 @@
 
 .account-menu-trigger:hover,
 .account-menu-trigger[data-hovered] {
-  background: #29292e;
+  background: var(--wu-surface-soft);
 }
 
 .account-menu-trigger:focus-visible,
@@ -93,9 +93,9 @@
   width: 44px;
   height: 44px;
   padding: 4px;
-  border-color: #38383e;
+  border-color: var(--wu-border-subtle);
   border-radius: 50%;
-  background: #242428;
+  background: var(--wu-surface-raised);
 }
 
 .account-menu-avatar-trigger .user-pill {
@@ -143,8 +143,8 @@
   padding: 8px;
   border: 1px solid #505158;
   border-radius: 14px;
-  background: #202126;
-  color: #eee;
+  background: var(--wu-surface-raised);
+  color: var(--wu-text);
   box-shadow: 0 12px 30px #0008;
 }
 
@@ -200,7 +200,7 @@
 
 .account-menu-signout[data-focused],
 .account-menu-signout[data-hovered] {
-  background: #473033;
+  background: var(--wu-danger-surface);
   color: #ffe0e0;
 }
 

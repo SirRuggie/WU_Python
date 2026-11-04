@@ -209,8 +209,8 @@
 navigation uses the shared rail. */
 .reminder-status {
   padding: 14px 16px;
-  background: #181818;
-  border: 1px solid #393939;
+  background: var(--wu-surface);
+  border: 1px solid var(--wu-border-subtle);
   border-radius: 12px;
 }
 .reminder-control-actions {
@@ -233,7 +233,7 @@ navigation uses the shared rail. */
 }
 .reminder-disclosure {
   min-width: 0;
-  border: 1px solid #393939;
+  border: 1px solid var(--wu-border-subtle);
   border-radius: 10px;
   padding: 0 16px;
   align-self: start;
@@ -245,7 +245,7 @@ navigation uses the shared rail. */
   margin-top: 16px;
 }
 .reminder-context {
-  color: #bbb;
+  color: var(--wu-text-muted);
 }
 .reminder-save:not(.has-changes) {
   position: static;

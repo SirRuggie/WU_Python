@@ -37,7 +37,7 @@
 .roster-ui-button.is-primary {
   border-color: var(--roster-gold);
   background: var(--roster-gold);
-  color: #201b10;
+  color: var(--wu-accent-ink);
 }
 .roster-ui-button.is-primary:hover:not(:disabled) {
   background: var(--roster-gold-strong);
@@ -81,8 +81,8 @@
 }
 .roster-ui-status.is-warning,
 .roster-ui-chip.is-warning {
-  border-color: #76602e;
-  background: #302817;
+  border-color: var(--wu-warning-border);
+  background: var(--wu-warning-surface);
   color: var(--roster-warning);
 }
 .roster-ui-status.is-danger,
@@ -390,5 +390,9 @@
   border-radius: 50%;
   align-self: center;
 }
-.roster-menu-status-dot.is-success { background: #83d99b; }
-.roster-menu-status-dot.is-warning { background: #f3ca56; }
+.roster-menu-status-dot.is-success {
+  background: #83d99b;
+}
+.roster-menu-status-dot.is-warning {
+  background: #f3ca56;
+}

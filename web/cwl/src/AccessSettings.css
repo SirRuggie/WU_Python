@@ -23,13 +23,13 @@
 .access-layout {
   display: grid;
   grid-template-columns: minmax(220px, 290px) minmax(0, 1fr);
-  border: 1px solid #3b3b42;
+  border: 1px solid var(--wu-border-subtle);
   border-radius: 12px;
-  background: #171719;
+  background: var(--wu-surface);
 }
 .access-directory {
   padding: 20px;
-  border-right: 1px solid #3b3b42;
+  border-right: 1px solid var(--wu-border-subtle);
   min-width: 0;
 }
 .access-directory > label {
@@ -49,13 +49,13 @@
   display: block;
 }
 .access-workspace small {
-  color: #bbc1cd;
+  color: var(--wu-text-muted);
   font-size: 13px;
 }
 .access-person[aria-pressed="true"],
 .access-role-results button[aria-pressed="true"] {
   border-color: #f1cb56;
-  background: #302916;
+  background: var(--wu-accent-soft);
 }
 .access-editor {
   min-width: 0;
@@ -123,7 +123,7 @@
   gap: 16px;
   min-height: 64px;
   padding: 12px 0;
-  border-bottom: 1px solid #3b3b42;
+  border-bottom: 1px solid var(--wu-border-subtle);
   cursor: pointer;
 }
 .access-switch-row span {
@@ -183,7 +183,7 @@
   gap: 12px;
   align-items: center;
   justify-content: space-between;
-  background: #24252b;
+  background: var(--wu-surface-raised);
   border: 1px solid #777c88;
   border-radius: 10px;
   padding: 12px;
@@ -295,7 +295,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  border-top: 1px solid #34343b;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 .access-owner > div {
   min-width: 0;
@@ -309,7 +309,7 @@
   margin-top: 20px;
 }
 .access-permission-section {
-  border-bottom: 1px solid #3b3b42;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 .access-permission-section > summary {
   justify-content: space-between;

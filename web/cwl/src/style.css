@@ -264,7 +264,8 @@ small {
 .workspace {
   min-width: 0;
   background:
-    radial-gradient(ellipse at top right, #2a2316 0, transparent 480px), #0c0c0e;
+    radial-gradient(ellipse at top right, #2a2316 0, transparent 480px),
+    var(--wu-bg);
 }
 .topbar {
   height: 74px;
@@ -964,7 +965,7 @@ small {
   margin: 25px auto 50px;
   padding: clamp(24px, 4vw, 42px);
   border-color: #9a7726;
-  background: linear-gradient(145deg, #292315, #19191b 55%);
+  background: linear-gradient(145deg, #292315, var(--wu-surface) 55%);
   box-shadow: 0 18px 54px #0004;
 }
 .completion-mark {
@@ -1769,7 +1770,7 @@ textarea:focus-visible {
   z-index: 8;
   max-height: 320px;
   overflow: auto;
-  background: #232327;
+  background: var(--wu-surface-raised);
   border: 1px solid #76602f;
   border-radius: 10px;
   box-shadow: 0 15px 40px #000a;

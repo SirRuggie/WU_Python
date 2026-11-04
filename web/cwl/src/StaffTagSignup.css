@@ -19,7 +19,7 @@
 }
 .staff-tag-result {
   padding: 12px;
-  border: 1px solid #42464d;
+  border: 1px solid var(--wu-border);
   border-radius: 8px;
 }
 .staff-tag-player {

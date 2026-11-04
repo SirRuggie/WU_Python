@@ -19,7 +19,7 @@
   background-clip: padding-box;
 }
 .shell .cwl-step-strip > button[aria-current="step"] {
-  background-color: var(--roster-gold-tint, #302916);
+  background-color: var(--roster-gold-tint, var(--wu-accent-soft));
   color: var(--roster-gold, #e2bd50);
 }
 .shell .cwl-step-strip .cwl-step-changes {
@@ -30,7 +30,7 @@
   display: block;
   margin-top: 16px;
   min-height: 44px;
-  color: var(--roster-text-muted, #b9bbc4);
+  color: var(--roster-text-muted, var(--wu-text-muted));
   font-size: 13px;
 }
 

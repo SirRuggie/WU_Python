@@ -1,7 +1,7 @@
 .cwl-pool-roles {
   margin-block: 24px;
   padding-top: 16px;
-  border-top: 1px solid var(--roster-border, #45464d);
+  border-top: 1px solid var(--roster-border, var(--wu-border));
 }
 .cwl-pool-role-heading {
   display: flex;

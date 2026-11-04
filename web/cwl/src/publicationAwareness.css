@@ -7,7 +7,7 @@
   gap: 8px;
   margin: 0;
   padding: 0 10px;
-  border: 1px solid #79633d;
+  border: 1px solid var(--wu-warning-border);
   border-left: 4px solid var(--roster-gold);
   border-radius: 14px;
   background: var(--roster-card);
@@ -22,7 +22,7 @@
 }
 .publication-change-list h3,
 .publication-change-list li strong {
-  color: #f5f4f0;
+  color: var(--wu-text);
   font-size: 15px;
   font-weight: 700;
 }
@@ -55,12 +55,12 @@
   flex-wrap: wrap;
   gap: 4px 8px;
   padding: 8px 0;
-  border-bottom: 1px solid #44444c;
+  border-bottom: 1px solid var(--wu-border);
 }
 .publication-change-list li strong::after {
   content: ":";
 }
 .publication-change-caveat {
-  color: #b9bbc4;
+  color: var(--wu-text-muted);
   font-size: 12px;
 }

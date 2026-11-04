@@ -5,7 +5,7 @@
   overflow-x: auto;
   margin-bottom: 8px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #35353c;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 
 .shell .roster-workspace .roster-workflow-nav > button {
@@ -17,7 +17,7 @@
 }
 
 .roster-workspace .roster-workflow-nav button.active {
-  background: #352b17;
+  background: var(--wu-accent-soft);
   border-color: #c49b45;
   color: #f5d27b;
 }
@@ -30,7 +30,7 @@
   min-height: 48px;
   margin: 0;
   padding: 3px 14px;
-  border: 1px solid #393b42;
+  border: 1px solid var(--wu-border-subtle);
   color: #c6d5e8;
   font-size: 12px;
   scroll-margin-top: 80px;
@@ -59,10 +59,10 @@
 .roster-workspace .roster-account-list {
   display: block;
   overflow: hidden;
-  border: 1px solid #393b42;
+  border: 1px solid var(--wu-border-subtle);
   border-top: 0;
   border-radius: 0 0 12px 12px;
-  background: #171719;
+  background: var(--wu-surface);
 }
 
 .roster-load-more {
@@ -90,7 +90,7 @@
 
 .roster-member-heading {
   padding: 10px 14px;
-  background: #1b1b1f;
+  background: var(--wu-surface);
   border-block: 1px solid #ffffff20;
 }
 
@@ -103,7 +103,7 @@
 .roster-member-heading > small {
   display: block;
   margin-top: 4px;
-  color: #b7bac3;
+  color: var(--wu-text-muted);
 }
 
 .shell .roster-workspace .roster-list-pool-tabs {

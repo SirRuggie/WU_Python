@@ -1,3 +1,4 @@
+import "../../src/tokens.css";
 import { createRoot } from "react-dom/client";
 import CwlPoolRoles from "../../src/CwlPoolRoles";
 import { DashboardPermissions } from "../../src/DashboardPermissions";

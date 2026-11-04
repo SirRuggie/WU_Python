@@ -12,8 +12,8 @@
   padding-bottom: max(18px, env(safe-area-inset-bottom));
   border: 1px solid var(--roster-border);
   border-radius: 0;
-  background: var(--roster-surface, #19191d);
-  color: var(--roster-text, #f5f4f0);
+  background: var(--roster-surface, var(--wu-surface));
+  color: var(--roster-text, var(--wu-text));
   z-index: 100;
 }
 .details-frame-navigation {

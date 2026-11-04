@@ -13,7 +13,7 @@
   min-height: 44px;
   padding: 8px 12px;
   font: inherit;
-  color: var(--text, #eee);
+  color: var(--text, var(--wu-text));
   background: var(--panel, #18212d);
   border: 1px solid var(--border, #596374);
   border-radius: 8px;
