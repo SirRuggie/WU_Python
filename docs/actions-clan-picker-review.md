@@ -180,5 +180,5 @@ READY for review on the local frozen commit; `.local/actions157/final-provenance
 records its revision and retained evidence hashes. Owner-controlled release,
 public asset comparison, clean tagged checkout,
 backup/rollback evidence, pushed revision verification, and runtime health checks
-remain separate release work. No merge, tag, push, service switch, production data
+remain separate release work. No PR merge, tag, push, service switch, production data
 write, or live message was performed by this task.
