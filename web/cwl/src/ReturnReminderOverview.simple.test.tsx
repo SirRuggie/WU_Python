@@ -74,9 +74,9 @@ async function press(element: Element) {
 async function click(label: string) {
   const direct = button(label);
   if (direct) return press(direct);
-  await press(
-    document.querySelector('[aria-label="Actions for Return reminders"]')!,
-  );
+  const selectionMenu = Object.values(actionLabels).includes(label)
+    ? document.querySelector('[aria-label="More actions"]') : null;
+  await press(selectionMenu || document.querySelector('[aria-label="Actions for Return reminders"]')!);
   const item = [...document.querySelectorAll('[role="menuitem"]')].find(
     (node) => node.textContent?.trim() === label,
   )!;
@@ -400,3 +400,37 @@ it("selection has no preselected action and survives a filter edit without an au
   );
   expect(host.querySelector(".return-batch")).toBeNull();
 });
+
+it.each(["frequency", "pause", "resume", "send", "away", "start", "replace", "clear", "save"] as const)(
+  "%s keeps review/cancel protection and writes once for visible applicable permitted clans only",
+  async (action) => {
+    const state = action === "resume" ? "paused" : action === "save" ? "not_saved" : "scheduled";
+    const label = state === "paused" ? "Paused" : state === "not_saved" ? "No saved list" : "Running";
+    const clans = [row("A", state, label), row("B", state, label), row("C", state, label), row("D", "expired", "Expired")];
+    const done = vi.fn();
+    vi.mocked(api).mockImplementation(async (_path, method) => method === "POST"
+      ? { status: "done", message: "Saved" }
+      : ({ revision: "scope-r1", fields: [{ key: "clans", options: [{ value: "FWA:#A" }, { value: "FWA:#B" }] }] } as never));
+    await act(async () => root.render(<ReturnBatch action={action} clans={clans} hiddenIds={[clans[1].id]} onClose={vi.fn()} onDone={done} />));
+    const writes = () => vi.mocked(api).mock.calls.filter(call => call[1] === "POST");
+    expect(writes()).toHaveLength(0);
+    expect(host.textContent).toContain("B · Hidden by the current filters; not changed.");
+    expect(host.textContent).toContain("C · No longer available for this action; not changed.");
+    expect(host.textContent).toContain("D · Expired");
+    await click("Review action");
+    expect(writes()).toHaveLength(0);
+    const dialog = document.querySelector("dialog")!;
+    expect(dialog.textContent).toContain(`${actionLabels[action]} for A?`);
+    const cancel = [...dialog.querySelectorAll("button")].find(node => node.textContent === "Cancel")!;
+    await press(cancel);
+    expect(document.querySelector("dialog")).toBeNull();
+    expect(writes()).toHaveLength(0);
+    expect(done).not.toHaveBeenCalled();
+    await click("Review action");
+    await click(`${actionLabels[action]} for 1 clan`);
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0][0]).toBe(`/manage/return-bulk/${action === "frequency" ? "resume" : action}/run`);
+    expect(writes()[0][2]).toMatchObject({ revision: "scope-r1", values: { clans: ["FWA:#A"] } });
+    expect(done).toHaveBeenCalledTimes(1);
+  },
+);

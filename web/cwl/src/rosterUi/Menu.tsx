@@ -13,6 +13,7 @@ export type RosterMenuOption = {
   disabled?: boolean;
   description?: string;
   icon?: LucideIcon;
+  statusTone?: "success" | "warning";
 };
 
 export type RosterMenuProps = {
@@ -24,6 +25,8 @@ export type RosterMenuProps = {
   autoFocus?: boolean;
   searchable?: boolean;
   searchLabel?: string;
+  placeholder?: string;
+  panelClassName?: string;
   id?: string;
   "aria-label"?: string;
 };
@@ -53,6 +56,8 @@ export default function RosterMenu({
   autoFocus = false,
   searchable = false,
   searchLabel = "Find a clan",
+  placeholder = "Select an option",
+  panelClassName = "",
   id,
   "aria-label": ariaLabel,
 }: RosterMenuProps) {
@@ -101,7 +106,7 @@ export default function RosterMenu({
         <span className="roster-menu-trigger-copy">
           <span className="roster-menu-label">{label}</span>
           <span className="roster-menu-current">
-            {selected?.label || "Select an option"}
+            {selected?.label || placeholder}
           </span>
         </span>
         <ChevronDown className="roster-menu-chevron" aria-hidden="true" />
@@ -111,7 +116,7 @@ export default function RosterMenu({
           title={label}
           trigger={trigger}
           onClose={() => setOpen(false)}
-          className="roster-ui"
+          className={`roster-ui ${panelClassName}`}
           expandOnSearchFocus={searchable}
         >
           <div className="roster-ui roster-menu-panel">
@@ -144,6 +149,9 @@ export default function RosterMenu({
                     className="roster-menu-item"
                     onAction={() => activate(option.value)}
                   >
+                    {option.statusTone && (
+                      <span className={`roster-menu-status-dot is-${option.statusTone}`} aria-hidden="true" />
+                    )}
                     {Icon && (
                       <Icon className="roster-ui-icon" aria-hidden="true" />
                     )}

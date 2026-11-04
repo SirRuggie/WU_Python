@@ -103,12 +103,28 @@ async function render() {
     root.render(<WeightTrial onDirty={onDirty} seasonId="1" />),
   );
 }
+async function openClanPicker() {
+  if (document.querySelector('.weight-clan-picker-panel')) return;
+  const trigger = host.querySelector<HTMLButtonElement>('.weight-trial-header .roster-menu-trigger');
+  expect(trigger).toBeTruthy();
+  await act(async () => trigger!.click());
+}
 async function click(text: string, scope: ParentNode = document) {
-  const button = Array.from(
-    scope.querySelectorAll<HTMLButtonElement>("button"),
-  ).find((node) => node.textContent?.includes(text));
-  expect(button).toBeTruthy();
-  await act(async () => button!.click());
+  let target: HTMLElement | undefined = Array.from(scope.querySelectorAll<HTMLButtonElement>("button"))
+    .find(node => node.textContent?.includes(text));
+  if (!target && scope === document) {
+    await openClanPicker();
+    target = [...document.querySelectorAll<HTMLElement>('.weight-clan-picker-panel [role="menuitem"]')]
+      .find(node => node.textContent?.includes(text));
+  }
+  expect(target).toBeTruthy();
+  await act(async () => {
+    target!.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true,pointerType:'mouse',pointerId:1,button:0}));
+    target!.dispatchEvent(new MouseEvent('mousedown', {bubbles:true,button:0}));
+    target!.dispatchEvent(new PointerEvent('pointerup', {bubbles:true,pointerType:'mouse',pointerId:1,button:0}));
+    target!.dispatchEvent(new MouseEvent('mouseup', {bubbles:true,button:0}));
+    target!.click();
+  });
 }
 async function input(node: HTMLInputElement, text: string) {
   await act(async () => {
@@ -122,8 +138,9 @@ async function input(node: HTMLInputElement, text: string) {
 }
 it("opens with progress list, collapsed help and no member fanout", async () => {
   await render();
-  expect(host.textContent).toContain("2/4 weighed");
-  expect(host.textContent).toContain("50/50 weighed");
+  await openClanPicker();
+  expect(document.body.textContent).toContain("2/4 weighed");
+  expect(document.body.textContent).toContain("50/50 weighed");
   expect(host.querySelector(".weight-trial-note")?.hasAttribute("open")).toBe(
     false,
   );
@@ -402,11 +419,12 @@ it("polls loading progress with bounded backoff and stops when loaded", async ()
       })
       .mockResolvedValue(complete);
     await render();
-    expect(host.textContent).toContain("Loading progress…");
+    await openClanPicker();
+    expect(document.body.textContent).toContain("Loading progress…");
     await act(async () => vi.advanceTimersByTimeAsync(999));
     expect(api).toHaveBeenCalledTimes(1);
     await act(async () => vi.advanceTimersByTimeAsync(1));
-    expect(host.textContent).toContain("50/50 weighed");
+    expect(document.body.textContent).toContain("50/50 weighed");
     await act(async () => vi.advanceTimersByTimeAsync(120000));
     expect(api).toHaveBeenCalledTimes(2);
   } finally {
@@ -489,7 +507,8 @@ it("shows a plain last-check date when cached membership needs checking", async 
     outside_fwa_missing_count: null,
   });
   await render();
-  expect(host.textContent).toContain("members checked");
+  await openClanPicker();
+  expect(document.body.textContent).toContain("members checked");
   expect(host.textContent).not.toContain("stale membership");
 });
 it("disposes pending progress timers when navigating away", async () => {
@@ -854,4 +873,39 @@ it("does not relabel an unchanged verified war after saving a weight", async () 
   expect(host.querySelector(".weight-trial-order")?.textContent).toContain(
     "Current war · Battle day order",
   );
+});
+
+it("restores the last clan for its viewer without sharing it with another viewer", async () => {
+  localStorage.clear();
+  localStorage.setItem("wu-clan-weights:last-clan:viewer-one", "#R2Y");
+  await act(async () => root.render(<WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-one" />));
+  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.textContent).toContain("Needs work");
+  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.textContent).not.toContain("weighed");
+  expect(localStorage.getItem("wu-clan-weights:last-clan:viewer-one")).toBe("#R2Y");
+  await act(async () => root.render(null));
+  vi.mocked(api).mockClear();
+  await act(async () => root.render(<WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-two" />));
+  expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("/clans/"))).toBe(false);
+  expect(localStorage.getItem("wu-clan-weights:last-clan:viewer-two")).toBeNull();
+  localStorage.clear();
+});
+
+it("keeps an explicit clan deep link ahead of remembered selection", async () => {
+  localStorage.clear();
+  localStorage.setItem("wu-clan-weights:last-clan:viewer-link", "#J2Y");
+  await act(async () => root.render(<WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-link" targetClan="#R2Y" />));
+  const requests = vi.mocked(api).mock.calls.map(([path]) => path);
+  expect(requests.some(path => path.includes("/clans/%23R2Y"))).toBe(true);
+  expect(requests.some(path => path.includes("/clans/%23J2Y"))).toBe(false);
+  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.textContent).toContain("Needs work");
+  localStorage.clear();
+});
+
+it("ignores a remembered clan absent from the current permitted directory", async () => {
+  localStorage.clear();
+  localStorage.setItem("wu-clan-weights:last-clan:viewer-missing", "#NOTVISIBLE");
+  await act(async () => root.render(<WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-missing" />));
+  expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("/clans/"))).toBe(false);
+  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.textContent).toContain("Choose a clan");
+  localStorage.clear();
 });

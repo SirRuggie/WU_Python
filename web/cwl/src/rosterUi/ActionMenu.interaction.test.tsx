@@ -123,3 +123,20 @@ it("tapping the sheet heading keeps it open, but outside the sheet closes", asyn
   await click(document.getElementById("outside")!);
   expect(document.querySelector('[role="menu"]')).toBeNull();
 });
+
+it("separates destructive actions semantically without activating them on open", async () => {
+  await act(async () => root.render(<ActionMenu name="Review" label="More actions" items={[
+    { id: "send", label: "Send now", onAction: action },
+    { id: "replace", label: "Replace saved lists", separatorBefore: true, danger: true, onAction: action },
+    { id: "clear", label: "Clear lists", danger: true, onAction: action },
+  ]} />));
+  await click(document.querySelector('[aria-label="More actions"]')!);
+  expect([...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent?.trim()))
+    .toEqual(["Send now", "Replace saved lists", "Clear lists"]);
+  expect(document.querySelectorAll('[role="separator"]')).toHaveLength(1);
+  expect(document.querySelectorAll('[role="menuitem"].roster-action-danger')).toHaveLength(2);
+  expect(action).not.toHaveBeenCalled();
+  await click([...document.querySelectorAll('[role="menuitem"]')].find(item => item.textContent === "Clear lists")!);
+  expect(action).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+});

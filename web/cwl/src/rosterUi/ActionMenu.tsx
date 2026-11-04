@@ -5,6 +5,7 @@ import {
   Menu,
   MenuTrigger,
   Popover,
+  Separator,
 } from "react-aria-components";
 import { MoreHorizontal, type LucideIcon } from "lucide-react";
 import {
@@ -22,6 +23,8 @@ export type ActionMenuItem = {
   href?: string;
   disabled?: boolean;
   title?: string;
+  separatorBefore?: boolean;
+  danger?: boolean;
 };
 export default function ActionMenu({
   name,
@@ -102,12 +105,13 @@ export default function ActionMenu({
             aria-label={label || `Actions for ${name}`}
             className="roster-action-list"
           >
-            {items.map((item) => (
+            {items.flatMap((item) => [
+              ...(item.separatorBefore ? [<Separator key={`${item.id}-separator`} className="roster-action-separator" />] : []),
               <RosterMenuItem
                 key={item.id}
                 id={item.id}
                 textValue={item.label}
-                className="roster-action-item"
+                className={`roster-action-item${item.danger ? " roster-action-danger" : ""}`}
                 isDisabled={item.disabled}
                 href={item.href}
                 target={item.href ? "_blank" : undefined}
@@ -119,8 +123,8 @@ export default function ActionMenu({
               >
                 {item.icon && <item.icon size={18} aria-hidden="true" />}
                 <span title={item.title}>{item.label}</span>
-              </RosterMenuItem>
-            ))}
+              </RosterMenuItem>,
+            ])}
           </Menu>
         </Popover>
       </MenuTrigger>

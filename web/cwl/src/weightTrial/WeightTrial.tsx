@@ -1,3 +1,5 @@
+import CwlPageHeader from "../CwlPageHeader";
+import RosterMenu from "../rosterUi/Menu";
 import DiscordIdentity from "../DiscordIdentity";
 import { fetchReadWithRetry } from "../readRetry";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
@@ -35,12 +37,18 @@ type Clan = {
   status: string;
   membership_checked_at?: string | null;
 };
-const clanLabel = (clan: Clan) =>
-  `${clan.name} · ${clan.weighed_count == null ? (clan.status === "loading" ? "Loading progress…" : "Progress unavailable") : `${clan.weighed_count}/${clan.members_count} weighed`} · ${clan.last_saved_at ? `saved ${new Date(clan.last_saved_at).toLocaleDateString()}` : "not saved yet"}${clan.status === "stale" ? (clan.membership_checked_at ? ` · members checked ${new Date(clan.membership_checked_at).toLocaleString()}` : " · members need checking") : ""}`;
+const clanProgress = (clan: Clan) =>
+  `${clan.weighed_count == null || clan.members_count == null
+    ? (clan.status === "loading" ? "Loading progress…" : "Progress unavailable")
+    : `${clan.weighed_count}/${clan.members_count} weighed`}${clan.status === "stale"
+      ? clan.membership_checked_at ? ` · members checked ${new Date(clan.membership_checked_at).toLocaleString()}` : " · members need checking"
+      : ""}`;
+const rememberedClanKey = (viewerId: string) => `wu-clan-weights:last-clan:${viewerId}`;
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Could not complete this action.";
 export default function WeightTrial({
   onDirty,
+  viewerId,
   onState,
   targetClan,
   targetPlayer,
@@ -48,6 +56,7 @@ export default function WeightTrial({
   onRoster,
 }: {
   onDirty: (dirty: boolean) => void;
+  viewerId?: string;
   onState?: (state: { count: number; busy: boolean }) => void;
   targetClan?: string;
   targetPlayer?: string;
@@ -67,8 +76,6 @@ export default function WeightTrial({
   const editFocus = useRef<HTMLElement | null>(null);
   const [clans, setClans] = useState<Clan[]>([]);
   const [selected, setSelected] = useState(targetClan || "");
-  const [search, setSearch] = useState("");
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [roster, setRoster] = useState<Roster | null>(null);
   const [selectedWar, setSelectedWar] = useState("");
   const [values, setValues] = useState<Record<string, Draft>>({});
@@ -85,7 +92,6 @@ export default function WeightTrial({
   useEffect(() => {
     if (error) errorPanel.current?.focus();
   }, [error]);
-  const pickerButton = useRef<HTMLButtonElement | null>(null);
   const request = useRef(0);
   const directoryRequest = useRef(0);
   const saving = useRef(false);
@@ -107,7 +113,6 @@ export default function WeightTrial({
     request.current++;
     directoryRequest.current++;
     setPendingAction(null);
-    setPickerOpen(false);
     setNotice("");
     setLoading(false);
     setDirectoryLoading(false);
@@ -269,10 +274,7 @@ export default function WeightTrial({
   const select = (tag: string) =>
     guard(() => {
       setSelected(tag);
-      setPickerOpen(false);
-      setSearch("");
       setFilter("all");
-      pickerButton.current?.focus();
     });
   const refresh = () => guard(() => setAttempt((value) => value + 1));
   const nextMissing = () => {
@@ -367,11 +369,18 @@ export default function WeightTrial({
       setBusy(false);
     }
   };
-  const filtered = clans.filter((clan) =>
-    `${clan.name} ${clan.tag} ${clan.type || ""}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
+  useEffect(() => {
+    if (!viewerId || targetClan || targetPlayer || selected || directoryLoading || accessDenied) return;
+    try {
+      const remembered = localStorage.getItem(rememberedClanKey(viewerId));
+      if (remembered && clans.some(clan => clan.tag === remembered)) setSelected(remembered);
+    } catch { /* Storage is optional; the picker remains usable. */ }
+  }, [viewerId, targetClan, targetPlayer, selected, directoryLoading, accessDenied, clans]);
+  useEffect(() => {
+    if (!viewerId || !selected || roster?.clan.tag !== selected || accessDenied) return;
+    try { localStorage.setItem(rememberedClanKey(viewerId), selected); }
+    catch { /* A storage failure must not block editing weights. */ }
+  }, [viewerId, selected, roster, accessDenied]);
   return (
     <div
       className="weight-trial"
@@ -402,13 +411,27 @@ export default function WeightTrial({
           }}
         />
       )}
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">Clan management</p>
-          <h1>Clan weights</h1>
-          <p>Type each player's loot. Full weight = loot × storages.</p>
-        </div>
-      </div>
+      <CwlPageHeader className="weight-trial-header" title={<h1>Clan weights</h1>}>
+        {!accessDenied && <RosterMenu
+          label="Clan"
+          aria-label={clans.find(clan => clan.tag === selected)?.name || "Choose a clan"}
+          placeholder="Choose a clan"
+          value={selected}
+          onValueChange={select}
+          disabled={anyBusy}
+          searchable
+          searchLabel="Find a clan"
+          panelClassName="weight-clan-picker-panel"
+          options={clans.map(clan => ({
+            value: clan.tag,
+            label: clan.name,
+            description: clanProgress(clan),
+            statusTone: clan.weighed_count == null || clan.members_count == null
+              ? undefined : clan.weighed_count >= clan.members_count ? "success" : "warning",
+          }))}
+        />}
+      </CwlPageHeader>
+      <p>Type each player's loot. Full weight = loot × storages.</p>
       <details className="weight-trial-note">
         <summary>How weights are used ›</summary>
         <p>Clan weights and roster Details share the same saved weight.</p>
@@ -463,66 +486,9 @@ export default function WeightTrial({
       )}
       {!accessDenied && (
         <div className="weight-trial-layout">
-          <div className="weight-trial-picker">
-            <button
-              ref={pickerButton}
-              aria-expanded={pickerOpen}
-              aria-controls="weight-clan-options"
-              disabled={busy}
-              onClick={() => setPickerOpen(!pickerOpen)}
-            >
-              {(clans.find((clan) => clan.tag === selected)
-                ? clanLabel(clans.find((clan) => clan.tag === selected)!)
-                : "") || "Select a clan"}{" "}
-              ▾
-            </button>
-            {(pickerOpen || !selected) && (
-              <div
-                id="weight-clan-options"
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    setPickerOpen(false);
-                    pickerButton.current?.focus();
-                  }
-                }}
-              >
-                <label>
-                  Find a clan
-                  <input
-                    autoFocus
-                    type="search"
-                    placeholder="Type a name or tag"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </label>
-                <div
-                  className="weight-trial-clan-list"
-                  aria-label="Family clans"
-                >
-                  {filtered.map((clan) => (
-                    <button
-                      key={clan.tag}
-                      aria-pressed={selected === clan.tag}
-                      disabled={busy}
-                      onClick={() => select(clan.tag)}
-                    >
-                      {clanLabel(clan)}
-                    </button>
-                  ))}
-                </div>
-                {!filtered.length && (
-                  <p>
-                    {directoryLoading ? "Loading clans…" : "No matching clans."}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
           <section className="weight-trial-members" aria-label="Member weights">
             <div className="weight-trial-toolbar">
               <div>
-                {roster && <h2>{roster.clan.name}</h2>}
                 {roster && (
                   <small>
                     {roster.current_members_count ??

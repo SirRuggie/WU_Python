@@ -994,6 +994,8 @@ function App() {
             }}
           >
             <WeightTrial
+              key={session.user.id}
+              viewerId={session.user.id}
               onDirty={setManageDirty}
               onState={setWeightState}
               targetPlayer={weightTarget.player}
