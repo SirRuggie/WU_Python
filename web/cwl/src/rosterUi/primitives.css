@@ -382,3 +382,13 @@
   opacity: 1;
   color: var(--roster-text-muted);
 }
+
+.roster-menu-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  align-self: center;
+}
+.roster-menu-status-dot.is-success { background: #83d99b; }
+.roster-menu-status-dot.is-warning { background: #f3ca56; }
