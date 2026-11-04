@@ -1,8 +1,8 @@
 # Participation status review (160)
 
 Development candidate on `codex/participation-status-160`, based on main
-`9552757eae8ebb2c7bd5a779f058aab26cc75f97`. Frozen full backend and exact owned
-boot are pending. Task159 is accepted separately and its release remains held.
+`9552757eae8ebb2c7bd5a779f058aab26cc75f97`. The frozen full backend and exact owned
+boot passed on `fb57b66feebdf6aa8f2b52439e36ffba0a704b00`. Task159 is accepted separately and its release remains held.
 No production writes, forced capture jobs, notifications or service changes
 were performed for 160.
 
@@ -140,7 +140,31 @@ identity-loss protections remain; response metadata is excluded from internal
 fingerprints, policy and saved receipts. No notification path or retry changed.
 Mocked fixtures are not live Discord delivery evidence.
 
-Remaining before READY: clean source freeze, one full backend on that exact
-HEAD with reviewed startup network guard and empty production connections,
-new exact-artifact owned boot, final provenance and remote-head verification.
-No deployment, merge, tag or production service action is part of these checks.
+One full backend on clean frozen `fb57b66f` passed:6881 tests,123 skipped,
+270subtests,592.23s. The reviewed c02 network guard loaded before imports;
+production Mongo/Healthcheck settings were explicitly empty, native test opt-ins
+cleared and temporary output private. No source edits, exports, boots or other
+suites ran during architecture collection. Source remained clean afterward.
+
+The new exact-artifact owned boot passed on the same SHA:51 production routes,
+native async pool plus owned ping, real MongoDashboardState with retained copied
+SQLite, config200/auth401,18 artifact module origins including all seven touched
+Participation/Bonus/Exports status modules. The network boundary preceded
+application imports, Healthchecks were empty, and the fresh owned27168 process's
+executable/cwd/dbpath/listener were verified before any Mongo client. Database,
+owned process, data and export were cleaned. The private frontend is bound by
+actual source hashes to the frozen archive; no tautological tree assertion or
+159-only modules were reused. These are owned fixtures, not production health
+or Discord-delivery claims.
+
+Two freeze-audit failures are preserved: an inherited unmeasured195 dependency
+count was wrongly treated as a directory assertion, and a later receipt tried
+to hash docs/unused-code.md from the wrong branch.584/585 approved the narrow
+audit corrections. Only the owned dependency symlink was unlinked; the actual
+target's183 entry-name snapshot remained unchanged. The unrelated document was
+not created or copied. All11 changed Python modules compiled before the unlink.
+No code/test behavior was changed by these corrections.
+
+Final documentation-only provenance and remote-head verification complete the
+review handoff. No deployment, merge, tag or production service action is part
+of these checks. Manual bonus staff-reason behavior remains unchanged per579.
