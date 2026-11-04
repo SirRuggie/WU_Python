@@ -277,11 +277,53 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         row, data = await self.account()
         self.assertIsNone(row["source_attacks"])
         self.assertEqual(data["sync"]["status"], "season_mismatch")
+        self.assertIn(row["source_status"], {"never", "unavailable"})
+        self.assertEqual(row["display_status"]["code"], "season_mismatch")
         self.assertEqual(self.league.war_calls, [])
         self.assertFalse(self.app["store"].rows(
             "SELECT * FROM participation_war_observations WHERE season_id=?",
             (self.sid,),
         ))
+
+    async def test_mismatch_with_saved_results_decorates_get_patch_and_reset(self):
+        await self.setup_published()
+        self.set_group([["#Y2Y"]])
+        self.set_war("#Y2Y")
+        self.assertEqual((await self.sync()).status, 200)
+        saved, _ = await self.account()
+        self.set_group([["#Y2Y"]], season="2026-09")
+        self.assertEqual((await self.sync()).status, 200)
+        row, data = await self.account()
+        self.assertEqual(data['sync']['status'], 'season_mismatch')
+        self.assertEqual(row['source_status'], 'stale')
+        self.assertEqual((row['source_attacks'], row['source_stars']),
+                         (saved['source_attacks'], saved['source_stars']))
+        self.assertEqual(row['display_status']['code'], 'season_mismatch')
+
+        response = await self.call('PATCH', self.base + '/%23P2Y', self.owner, json={
+            'publication_version': data['publication_version'], 'revision': row['revision'],
+            'attacks': 2, 'stars': 5, 'notes': '', 'source_checked_at': row['source_checked_at'],
+        })
+        self.assertEqual(response.status, 200, await response.text())
+        edited = (await response.json())['account']
+        self.assertEqual(edited['display_status']['code'], 'season_mismatch')
+        self.assertEqual(edited['source_status'], 'stale')
+        self.assertTrue(edited['attacks_override'])
+        current, _ = await self.account()
+        self.assertEqual(edited['display_status'], current['display_status'])
+
+        response = await self.call('POST', self.base + '/%23P2Y/reset-to-source', self.owner, json={
+            'publication_version': data['publication_version'], 'revision': edited['revision'],
+            'source_checked_at': edited['source_checked_at'],
+        })
+        self.assertEqual(response.status, 200, await response.text())
+        reset = (await response.json())['account']
+        self.assertEqual(reset['display_status']['code'], 'season_mismatch')
+        self.assertEqual(reset['source_status'], 'stale')
+        self.assertEqual((reset['attacks'], reset['stars']),
+                         (saved['source_attacks'], saved['source_stars']))
+        current, _ = await self.account()
+        self.assertEqual(reset['display_status'], current['display_status'])
 
     async def test_preparation_unknown_then_observed_zero_in_war(self):
         await self.setup_published()

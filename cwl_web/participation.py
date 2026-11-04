@@ -235,6 +235,7 @@ async def get_participation(request):
             account["in_latest_publication"] = account["tag"] in published_tags
         accounts = decorate_participation_accounts(
             accounts, participation_evidence(db, season_id, settings['cycle'], accounts=accounts),
+            sync_status=None if history else settings['status'],
         )
         scope_counts = {'current_signups': len(current), 'saved_history': len(saved)}
     return web.json_response({
@@ -318,8 +319,10 @@ async def patch_participation(request):
             saved = _record(db, season_id, player_tag)
             _audit(db, season_id, player_tag, session["user_id"], before, saved, stamp)
             account = current_account_view(snapshot, saved, source)
+        settings = settings_view(db, season_id)
         account = decorate_participation_accounts(
-            [account], participation_evidence(db, season_id, settings_view(db, season_id)['cycle'], accounts=[account]),
+            [account], participation_evidence(db, season_id, settings['cycle'], accounts=[account]),
+            sync_status=settings['status'],
         )[0]
     return web.json_response({"account": account})
 
@@ -373,8 +376,10 @@ async def reset_to_source(request):
             saved = _record(db, sid, player_tag)
             _audit(db, sid, player_tag, session["user_id"], before, saved, stamp)
             account = current_account_view(snapshot, saved, source)
+        settings = settings_view(db, sid)
         account = decorate_participation_accounts(
-            [account], participation_evidence(db, sid, settings_view(db, sid)['cycle'], accounts=[account]),
+            [account], participation_evidence(db, sid, settings['cycle'], accounts=[account]),
+            sync_status=settings['status'],
         )[0]
     return web.json_response({"account": account})
 

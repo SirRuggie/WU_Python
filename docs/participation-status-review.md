@@ -1,6 +1,7 @@
 # Participation status review (160 / rework164)
 
-DRAFT: current work on `codex/participation-status-160` is not READY. PR199 began
+Implementation is complete; the final route-fix full validation and Shaka review
+remain. PR199 on `codex/participation-status-160` began
 on main955. PR198 is live as `strikes-activity-2` at maina1a8b937. Rework checkpoint
 1323099f was merged locally with that exact released tree, without conflicts,
 at54c7d745b662588ec4e9cfbdb4d5b261857320f4. No root pull/reset or production
@@ -152,16 +153,39 @@ The first combined run hit EDQUOT in /tmp (232files passed,65failed); the598
 reviewed rerun changed only TMPDIR to private disk and passed. Both logs remain.
 Archive599 is a separate maintenance job and does not change this feature.
 
-## Remaining gates
+## Final validation and review boundary
 
-Released159 is integrated in this feature worktree. Its changed frontend files
-are disjoint from the Participation layouts; their component fixture remains
-valid. The combined full frontend, TypeScript and private build passed. Complete
-clean freeze, ONE full backend
-with the startup network guard/empty connections/private temp directory, NEW
-exact-artifact owned boot and cleanup, final evidence/remote verification/READY.
-No source edits/exports/boot/other suite during full architecture collection.
-160 release remains separate from159 and requires its own review acceptance.
+The frozen combined candidate ee2b908a03e498d870e46f4ac7ca4b0f3cc05420 passed
+ONE full backend run:6961 tests,134 skips,270 subtests in594.59s. The c02 network
+guard loaded before imports; Mongo/Healthcheck keys were empty and temp files
+stayed on private disk. No edits, exports, boot or other suites ran in this
+worktree during architecture collection.
+
+A NEW exact-artifact startup check passed all51 routes,25 module origins
+(including Participation and released159), real native pool ping on owned Mongo,
+real DashboardState with retained copied SQLite, config200 and anonymous auth401.
+External network was blocked before application imports; Healthchecks stayed
+empty. The owned Mongo process, database/data directory and exported artifact
+were cleaned. This is isolated startup evidence, not production or Discord
+message-delivery evidence.
+
+The archive maintenance job completed between validation and startup, per owner
+instruction:2218 old entries/13,897,123,286 bytes copied and verified, then replaced
+by symlinks;88 entries skipped (68 open,19 other owner or symlink,1 recent).
+/tmp used bytes fell from24,807,342,080 to10,057,535,488. The manifest remains at
+`/nvme0n1-disk/wu-evidence-archive/tmp-20261104/MANIFEST.json`.
+This maintenance changed no feature source or production data.
+
+Final documentation changes beyond the tested/booted ee2b are recorded separately;
+runtime, tests and frontend must remain byte-identical. Parent owns integration,
+handoff and release; Sol independently refutes this candidate. Original164 code
+was implemented before the standing agent requirement; it is not described as an
+agent-built implementation. Task157 is now built/refuted by Sol,161 by Terra with
+Luna scouting. Separate worktree ownership is preserved.
+
+This workflow performed no deployment; current public deployment state was not assessed. Release remains separate from159 and requires
+Shaka acceptance under the owner's authorization. Retained sample previews are
+component fixtures, not deployable or full-backend artifacts.
 
 
 Owner593 documentation follow-through: after integration supplied the real
@@ -172,3 +196,24 @@ no runtime file was removed or reworded. All other backlog entries are unchanged
 Required unchanged war validation under602 passed:213 backend tests,1 skip
 in25.82s;35 frontend tests across8files; TypeScript, diff check and private
 Vite build passed. Failed sandbox run131passed/7failed is retained separately.
+
+## Independent refutation and route follow-up
+
+Sol found a material integration gap before READY: current Participation GET,
+PATCH and reset did not pass the existing sync status to the shared decorator.
+The capture summary masked the omission, while account rows still showed stale
+or unchecked labels during a month mismatch. The pure payload-helper test did
+not exercise these routes. No production action followed the earlier validation.
+
+Terra wired the existing current-cycle settings snapshot into all three response
+decorations; history explicitly passes no current sync status. Actual HTTP
+regressions now cover unchecked and saved-stale mismatches, retained source
+scores, editing and reset response parity. Both changed Python files compiled,
+65 focused tests passed in22.18s, and Sol's bounded read-only recheck found the
+gap closed with no policy, authorization, provider or storage-write change.
+
+The6961-test full run and51-route startup above remain accurate PRE-FIX evidence.
+A new frozen full backend and exact-artifact startup are required for the final
+route-fixed candidate. Frontend source is unchanged, so its existing full tests,
+TypeScript, private build and layouts remain applicable. Builder for this fix:
+Terra; independent refuter: Sol. Parent coordinates integration and release.
