@@ -2005,6 +2005,9 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app = web.Application(middlewares=[diagnostics, errors, canonical_host, access_context, auth_diagnostics], client_max_size=32 * 1024)
     from .mongo_client import lifecycle as mongo_lifecycle
     app.cleanup_ctx.append(mongo_lifecycle)
+    from .strike_activity_cache import lifecycle as strike_activity_cache_lifecycle, snapshots as activity_snapshots
+    activity_snapshots(app)
+    app.cleanup_ctx.append(strike_activity_cache_lifecycle)
     from .declaration_delivery import lifecycle as declaration_lifecycle
     app.cleanup_ctx.append(declaration_lifecycle)
     from .roster_sequence_jobs import lifecycle as roster_sequence_lifecycle

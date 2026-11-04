@@ -24,7 +24,7 @@ async def capture_raids(store, client, clan_tags, *, now=None):
     now = timestamp(now or datetime.now(timezone.utc))
     latest_end = latest_raid_end(now)
     expected = [(latest_end-timedelta(days=7*index)).isoformat() for index in range(8)]
-    rows = await store.all_players()
+    rows = await store.all_players(view='raids')
     pending = [row for row in rows if (not set(expected).issubset(row.get('raid_logs_reviewed', []))
                or any(end in expected and end not in row.get('raid_checked_weekends', [])
                       for end in row.get('raid_membership_ends', [])))]

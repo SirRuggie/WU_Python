@@ -45,6 +45,9 @@ type Response = {
   activity_warning?: string;
   history_warning?: string;
   identity_updating?: boolean;
+  activity_updating?: boolean;
+  activity_checked_at?: string | null;
+  activity_as_of?: string | null;
 };
 export default function StrikeActivityRoster({
   state,
@@ -117,8 +120,10 @@ export default function StrikeActivityRoster({
   const [selecting, setSelecting] = useState(false),
     [selected, setSelected] = useState<string[]>([]),
     [bulkBusy, setBulkBusy] = useState(false);
+  const writeEpoch = useRef(0);
   const bulkWorking = useCallback(
     (value: boolean) => {
+      if (value) writeEpoch.current++;
       setBulkBusy(value);
       onWorking?.(value);
     },
@@ -177,15 +182,25 @@ export default function StrikeActivityRoster({
     };
   }, [read, reload]);
   useActivityIdentityRefresh({
-    enabled: !!data.identity_updating || !!data.identity_warning,
+    enabled: !!data.identity_updating || !!data.identity_warning || !!data.activity_updating,
     generation: request.current,
     busy: () => pending.current || bulkBusy,
+    readVersion: () => `${request.current}:${writeEpoch.current}:${selectionReset}`,
     onResult: (result) =>
       setData((current) => ({
         ...current,
         identity_warning: result.identity_warning ?? undefined,
         identity_updating: result.identity_updating,
-        accounts: mergeIdentityAccounts(current.accounts, result.accounts),
+        ...(current.activity_updating ? {
+          accounts: result.accounts,
+          clans: result.clans ?? current.clans,
+          activity_updating: result.activity_updating,
+          activity_checked_at: result.activity_checked_at,
+          activity_as_of: result.activity_as_of,
+          activity_warning: result.activity_warning ?? undefined,
+          history_warning: result.history_warning ?? undefined,
+          weight_warning: result.weight_warning ?? undefined,
+        } : { accounts: mergeIdentityAccounts(current.accounts, result.accounts) }),
       })),
     onDenied: () => {
       setData({ accounts: [], clans: [] });
@@ -455,6 +470,7 @@ export default function StrikeActivityRoster({
       {data.history_warning && (
         <p className="notice error">{data.history_warning}</p>
       )}
+      {data.activity_as_of && <p className="notice">{data.activity_as_of}</p>}
       {data.activity_warning && (
         <p className="notice error">{data.activity_warning}</p>
       )}

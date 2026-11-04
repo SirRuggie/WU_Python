@@ -17,6 +17,7 @@ from pymongo.errors import PyMongoError
 
 from . import server_management as shared
 from .providers import ProviderUnavailable, tag
+from .strike_activity_cache import changing_observations
 from utils import recruit_links
 from utils.strike_store import StrikeConflict, StrikeService, utc
 from utils.strike_tracking import StrikeTracking
@@ -350,28 +351,19 @@ async def accounts(request):
 
 
 async def activity_accounts(request):
-    from utils.player_activity_store import PlayerActivityStore
     from utils.player_activity_overview import family_activity_rows
+    from .strike_activity_reads import read_activity
 
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
-        activity_warning = None
-        try:
-            activity = await PlayerActivityStore(db).overview()
-        except PyMongoError:
-            activity = []
-            activity_warning = "Activity unavailable. Strike rows remain available."
-        context = await ledger.activity_context(
-            GUILD_ID, [row["tag"] for row in activity]
-        )
-        try:
-            failed_clans = sorted(set(await PlayerActivityStore(db).history_report()) & {row["tag"] for row in context["clans"]})
-        except PyMongoError:
-            failed_clans = []
-        clan_names = {row["tag"]: str(row.get("name") or row["tag"])[:100] for row in context["clans"]}
-        history_warning = ("Some war reads unavailable for clans: " + ", ".join(clan_names[tag] for tag in failed_clans)) if failed_clans else None
+        read = await read_activity(request, db, ledger, GUILD_ID)
+        activity, context = read.activity, read.context
+        activity_warning, history_warning = read.warning, read.history_warning
+        activity_as_of = activity_warning if activity_warning and activity_warning.startswith('Activity as of ') else None
+        if activity_as_of:
+            activity_warning = None
     rows = family_activity_rows(activity, **context)
-    if activity_warning:
+    if read.unavailable:
         for row in rows:
             row.update(
                 activity_unavailable=True,
@@ -381,7 +373,7 @@ async def activity_accounts(request):
                 no_attack_wars=0,
                 skipped_raid_weekends=0,
             )
-    elif rows and all(row.get("activity_tracking_behind") for row in rows):
+    elif not activity_warning and rows and all(row.get("activity_tracking_behind") for row in rows):
         activity_warning = "Activity tracking is behind. Quiet indicators are paused."
     from .strike_activity_identity import account_identities, identity_updating
     identities, link_warning = await account_identities(request, [row["player_tag"] for row in rows])
@@ -395,7 +387,7 @@ async def activity_accounts(request):
 
         weights = {}
         try:
-            async with asyncio.timeout(8):
+            async with asyncio.timeout(.5):
                 weights = await source_weights(
                     request.app["store"],
                     request.app["providers"],
@@ -436,6 +428,9 @@ async def activity_accounts(request):
                 "identity_warning": identity_warning,
                 "identity_updating": names_pending,
                 "activity_warning": activity_warning,
+                "activity_updating": read.updating,
+                "activity_checked_at": read.checked_at,
+                "activity_as_of": activity_as_of,
                 "history_warning": history_warning,
                 "clans": [
                     {"tag": row["tag"], "name": row.get("name") or row["tag"]}
@@ -536,8 +531,9 @@ async def manual(request):
     from .app import _session
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
-        row = await ledger.add_manual(GUILD_ID, player, reason, int(_session(request)['user_id']),
-                                      member_id=owners.owners.get(player), clan_tag=account.get('current_clan_tag'), player_name=account['name'], request_id=request_id)
+        async with changing_observations(request.app, GUILD_ID):
+            row = await ledger.add_manual(GUILD_ID, player, reason, int(_session(request)['user_id']),
+                                          member_id=owners.owners.get(player), clan_tag=account.get('current_clan_tag'), player_name=account['name'], request_id=request_id)
     return web.json_response({'id': row['_id']}, status=201)
 
 
@@ -549,7 +545,8 @@ async def remove(request):
     from .app import _session
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
-        await ledger.revoke(GUILD_ID, request.match_info['strike_id'], int(_session(request)['user_id']), data['reason'])
+        async with changing_observations(request.app, GUILD_ID):
+            await ledger.revoke(GUILD_ID, request.match_info['strike_id'], int(_session(request)['user_id']), data['reason'])
     return web.json_response({'ok': True})
 
 
@@ -1048,7 +1045,8 @@ async def _apply_work(app, actor_id, preview_id, exclusions, actor=None):
         if actor is not None and not await shared.allowed(actor, 'strikes_add', db, write=True):
             raise ValueError('Strike access changed. Start again from the dashboard.')
         ledger = await service(background, db)
-        result = await ledger.apply_import(GUILD_ID, preview_id, actor_id, excluded_keys=exclusions)
+        async with changing_observations(app, GUILD_ID):
+            result = await ledger.apply_import(GUILD_ID, preview_id, actor_id, excluded_keys=exclusions)
     return {'applied': result['applied'], 'strikes': result.get('strikes', 0),
             'added_strikes': result['added_strikes'], 'history_only': result['history_only'],
             'duplicates': result['duplicates'], 'excluded': result.get('excluded', 0),

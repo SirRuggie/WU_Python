@@ -592,31 +592,74 @@ class StrikeService:
                 excluded.setdefault(row["player_tag"], set()).add(row["war_key"])
         return excluded
 
-    async def activity_context(self, guild_id, activity_tags):
-        """Bounded family snapshot for the read-only activity overview."""
+
+    async def activity_observations(self, guild_id):
+        """Fresh optional war dispositions; never reuse across ledger edits."""
+        from utils.strike_activity_summary import record_query, observation_query
+        from utils.strike_activity_projection import observation_pipeline, decode_observations
+        query = observation_query(record_query(guild_id, None, datetime.now(timezone.utc)))
+        data = await (await self.mongo.strike_records.aggregate(observation_pipeline(query))).to_list(length=1)
+        return decode_observations(data[0]) if data else []
+
+    async def activity_core(self, guild_id):
+        """Fresh counts/profiles/settings; only clan display metadata is optional."""
+        import asyncio
+        from pymongo.errors import PyMongoError
         from utils.player_activity_polling import active_clan
-        clans = [row for row in await self.mongo.clans.find({}).to_list(length=None)
-                 if active_clan(row) and row.get('tag')]
-        family = [row['tag'] for row in clans]
-        players = [tag(value) for value in activity_tags]
+        from utils.strike_activity_summary import record_query, count_pipeline, decode_counts
         now = datetime.now(timezone.utc)
-        profiles = await self.mongo.strike_profiles.find({
-            'guild_id': int(guild_id), '$or': [{'current_clan_tag': {'$in': family}},
-                                              {'player_tag': {'$in': players}},
-                                              {'departed_clan_tag': {'$in': family},
-                                               'departed_last_seen_at': {'$gte': now-timedelta(days=90)}}]}).to_list(length=None)
-        players = list(set(players) | {row['player_tag'] for row in profiles})
-        now = datetime.now(timezone.utc)
-        records = await self.mongo.strike_records.find({
-            'guild_id': int(guild_id), 'player_tag': {'$in': players},
-            '$or': [{'occurred_at': {'$gte': now-timedelta(days=90)}},
-                    {'kind': 'strike', 'expires_at': {'$gt': now}}]},
-            {'player_tag': 1, 'war_key': 1, 'kind': 1, 'source': 1, 'war_type': 1,
-             'occurred_at': 1, 'missed_attacks': 1, 'expires_at': 1, 'revoked_at': 1,
-             'capture_source': 1, 'import_id': 1, 'exemption': 1}).to_list(length=None)
-        return {'profiles': profiles, 'records': records, 'clans': clans,
-                'replacements': await self.replacement(guild_id, limit=None),
-                'strike_limit': (await self.settings(guild_id))['strike_limit']}
+        profile_fields = {name: 1 for name in (
+            'player_tag', 'player_name', 'member_id', 'discord_name', 'town_hall', 'weight',
+            'current_clan_tag', 'departed_clan_tag', 'departed_last_seen_at', 'roster_seen_at',
+            'replacement_listed', 'replacement_clan_tag', 'replacement_priority', 'replacement_note',
+            'filler', 'filler_clan_tag', 'revision')}
+        profile_fields['_id'] = 0
+        clan_fields = {name: 1 for name in ('tag', 'name', 'archived', 'removed', 'deleted',
+            'removed_at', 'deleted_at', 'active', 'status')}
+        clan_fields['_id'] = 0
+        async def counts():
+            return decode_counts(await (await self.mongo.strike_records.aggregate(
+                count_pipeline(record_query(guild_id, None, now), now))).to_list(length=None))
+        async def clans():
+            return await asyncio.wait_for(
+                self.mongo.clans.find({}, clan_fields).to_list(length=None), timeout=.75)
+        tasks = [asyncio.create_task(self.mongo.strike_profiles.find(
+                    {'guild_id': int(guild_id)}, profile_fields).to_list(length=None)),
+                 asyncio.create_task(counts()), asyncio.create_task(self.settings(guild_id)),
+                 asyncio.create_task(clans())]
+        try:
+            values = await asyncio.gather(*tasks, return_exceptions=True)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        for value in values[:3]:
+            if isinstance(value, BaseException):
+                raise value  # Missing core data is an error, never zero strikes.
+        profiles, totals, settings, clan_rows = values
+        if any(not profile.get('player_tag') for profile in profiles):
+            raise ValueError('Invalid strike profile identity')
+        clan_warning = isinstance(clan_rows, (PyMongoError, TimeoutError))
+        if isinstance(clan_rows, BaseException) and not clan_warning:
+            raise clan_rows
+        if clan_warning:
+            tags = {profile.get(field) for profile in profiles
+                    for field in ('current_clan_tag', 'departed_clan_tag') if profile.get(field)}
+            clan_rows = [{'tag': value, 'name': value} for value in sorted(tags)]
+        all_tags = {row['tag'] for row in clan_rows if row.get('tag')}
+        replacement_profiles = [profile for profile in profiles
+            if profile.get('current_clan_tag') in all_tags or (
+                profile.get('departed_clan_tag') in all_tags
+                and isinstance(profile.get('departed_last_seen_at'), datetime)
+                and utc(profile['departed_last_seen_at']) >= now-REPLACEMENT_GRACE)]
+        replacements = self._replacement_rows(replacement_profiles,
+            {player: value['replacement_active'] for player, value in totals.items()},
+            now=now, limit=None)
+        return {'profiles': profiles, 'record_totals': totals,
+                'clans': [row for row in clan_rows if active_clan(row) and row.get('tag')],
+                'replacements': replacements, 'strike_limit': settings['strike_limit'],
+                'clan_warning': clan_warning, 'read_at': now}
 
     async def account_list(self, guild_id: int, *, query=None, clan_tag=None,
                            status='active', limit=25, skip=0, action='all') -> dict:
@@ -975,7 +1018,6 @@ class StrikeService:
                  'departed_last_seen_at': {'$gte': now - REPLACEMENT_GRACE}},
             ]
         profiles = await self.mongo.strike_profiles.find(query).to_list(length=None)
-        rows = []
         player_tags = [profile['player_tag'] for profile in profiles]
         counts = {}
         if player_tags:
@@ -986,6 +1028,17 @@ class StrikeService:
                 {'$group': {'_id': '$player_tag', 'count': {'$sum': 1}}},
             ])
             counts = {row['_id']: row['count'] for row in await cursor.to_list(length=None)}
+        return self._replacement_rows(profiles, counts, now=now, recruit_weight=recruit_weight,
+                                      clan_tag=clan_tag, limit=limit, weights=weights, browse_all=browse_all)
+
+    @staticmethod
+    def _replacement_rows(profiles, counts, *, now, recruit_weight=None,
+                          clan_tag=None, limit=100, weights=None, browse_all=False):
+        """Same eligibility rules for live reads and the activity snapshot."""
+        rows = []
+        cutoff = now - timedelta(minutes=30)
+        matching = recruit_weight is not None
+        chosen = tag(clan_tag) if clan_tag else None
         for profile in profiles:
             old_clan = profile.get('departed_clan_tag')
             marked_departure = old_clan and old_clan in (

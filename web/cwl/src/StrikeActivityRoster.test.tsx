@@ -70,6 +70,38 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+it("keeps known strikes on a cold activity view and fills signals when refresh completes", async () => {
+  vi.useFakeTimers();
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(new Response(JSON.stringify({
+      accounts: [{ ...row, active_strikes: 3, total_strikes: 5, quiet_days: null,
+        activity_unavailable: true }], clans: [{ tag: "#PQQ", name: "Family" }],
+      activity_updating: true,
+      activity_warning: "Activity unavailable. Strike rows remain available.",
+    })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({
+      accounts: [{ ...row, active_strikes: 3, total_strikes: 5, quiet_days: 7 }],
+      clans: [{ tag: "#PQQ", name: "Family" }], activity_updating: false,
+      activity_checked_at: "2026-11-04T06:00:00Z", activity_warning: null,
+      activity_as_of: "Activity as of 06:00 UTC",
+    })));
+  const choose = vi.fn();
+  await act(async () => root.render(<StrikeActivityRoster onChoose={choose} />));
+  expect(host.textContent).toContain("Activity unavailable");
+  expect(host.textContent).not.toContain("Quiet 0d");
+  expect(host.textContent).not.toContain("No activity yet");
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  expect(host.textContent).not.toContain("Activity unavailable");
+  expect(host.textContent).toContain("Quiet 7d");
+  expect(host.querySelector(".notice:not(.error)")?.textContent).toBe("Activity as of 06:00 UTC");
+  await act(async () => host.querySelector<HTMLButtonElement>(".strike-activity-row")!.click());
+  expect(choose.mock.calls[0][0].active_strikes).toBe(3);
+  expect(choose.mock.calls[0][0].total_strikes).toBe(5);
+  await act(async () => vi.advanceTimersByTimeAsync(20000));
+  expect(fetch).toHaveBeenCalledTimes(2);
 });
 it("loads the family once, keeps weight tool closed, and row selection only navigates", async () => {
   const choose = vi.fn();

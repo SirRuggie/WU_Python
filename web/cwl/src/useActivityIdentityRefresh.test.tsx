@@ -31,11 +31,13 @@ function Fixture({
   denied,
   generation = 1,
   busy = () => false,
+  readVersion = () => 0,
 }: {
   result: (value: IdentitySnapshot) => void;
   denied: () => void;
   generation?: number;
   busy?: () => boolean;
+  readVersion?: () => string | number;
 }) {
   useRefresh({
     enabled: true,
@@ -43,6 +45,7 @@ function Fixture({
     busy,
     onResult: result,
     onDenied: denied,
+    readVersion,
   });
   return null;
 }
@@ -218,4 +221,41 @@ it("continues the slow retry for a partial response that already contains names"
   await act(async () => vi.advanceTimersByTimeAsync(120000));
   expect(api).toHaveBeenCalledTimes(2);
   expect(result.mock.calls[1][0].accounts[0].discord_name).toBe("Recovered");
+});
+
+it("refreshes pending activity even when all Discord identities are complete", async () => {
+  vi.mocked(api)
+    .mockResolvedValueOnce({ accounts: [], activity_updating: true })
+    .mockResolvedValueOnce({ accounts: [], activity_updating: false, activity_checked_at: "fresh" });
+  const result = vi.fn();
+  await act(async () => root.render(<Fixture result={result} denied={vi.fn()} />));
+  await act(async () => vi.advanceTimersByTimeAsync(4000));
+  expect(api).toHaveBeenCalledTimes(2);
+  expect(result.mock.calls.at(-1)![0].activity_checked_at).toBe("fresh");
+  await act(async () => vi.advanceTimersByTimeAsync(120000));
+  expect(api).toHaveBeenCalledTimes(2);
+});
+
+it("discards a response that crossed a completed mutation without a rerender", async () => {
+  let resolve!: (value: unknown) => void;
+  let version = 1;
+  vi.mocked(api).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const result = vi.fn();
+  await act(async () => root.render(<Fixture result={result} denied={vi.fn()} readVersion={() => version} />));
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  version++;
+  await act(async () => resolve({ accounts: [{ player_tag: "#PYY", active_strikes: 99 }], activity_updating: false }));
+  expect(result).not.toHaveBeenCalled();
+});
+
+it("discards an in-flight response while an edit is busy", async () => {
+  let resolve!: (value: unknown) => void;
+  let busy = false;
+  vi.mocked(api).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const result = vi.fn();
+  await act(async () => root.render(<Fixture result={result} denied={vi.fn()} busy={() => busy} />));
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  busy = true;
+  await act(async () => resolve({ accounts: [], activity_updating: false }));
+  expect(result).not.toHaveBeenCalled();
 });

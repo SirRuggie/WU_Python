@@ -4,7 +4,7 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 from tests.test_player_activity import NOW
-from tests.test_strike_streaks import Collection, matches
+from tests.test_strike_streaks import Collection, Cursor, matches
 from utils.player_activity_store import PlayerActivityStore
 
 PLAYER = '#PC9YGL0JL'
@@ -12,6 +12,16 @@ CLAN = '#2UVGQU9'
 
 
 class ActivityCollection(Collection):
+    async def aggregate(self, pipeline):
+        # Tag-only response adapter for this in-memory store fixture. The real
+        # nested codec, ordering and optional values have owned Mongo coverage.
+        if any('players' in stage.get('$facet', {}) for stage in pipeline):
+            assert pipeline[1]['$project']['tag'] == 1
+            players = [{'tag': row['tag']} for row in self.rows.values()
+                       if matches(row, pipeline[0]['$match'])]
+            return Cursor([{'players': players, 'war_keys': [], 'raid_keys': []}])
+        return await super().aggregate(pipeline)
+
     async def replace_one(self, query, document):
         row = next((row for row in self.rows.values() if matches(row, query)), None)
         if row is None:
