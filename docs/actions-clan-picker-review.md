@@ -1,5 +1,38 @@
 # Return actions and clan picker — task 157 review
 
+## Task 166 rework — November 4
+
+The empty picker now says “Select a clan”; the accessible trigger and menu
+include the clan context without adding text to the visible selected name. The
+existing discard guard now retains the edited input as its focus target when the
+picker's portal search is focused. It does not change values, writes, or the
+confirmation decision. Shaka approved this narrow focus correction in 611 after
+the new regression exposed the issue.
+
+Overview tests now cover all-paused and mixed selections, desktop and phone menu
+order, the separator and danger styling, and the hidden-selection handoff into
+batch review. A picker test checks that cancel retains the draft and restores
+settled focus, while discard performs the selected switch. Six isolated source
+mutants were killed: pause `every`→`some` (3 failures), missing divider (2),
+missing danger (2), capture after replace (2), bypassed picker guard (1), and
+omitted hidden IDs (1). A separate danger-only mutant preserves the divider and
+fails the danger assertions (2). No production source was mutated for these runs.
+
+After the correction, 56 focused tests and 1,799 tests across 296 frontend files
+passed; TypeScript and an isolated Vite build passed. Private logs and mutant
+copies are retained in `.local/actions166/`. Earlier 157 evidence remains historical.
+The first focused run exposed the portal focus issue and a filter fixture problem
+(54 passed, 2 failed). The second passed focus but exposed React's tracked input
+fixture assignment (55 passed, 1 failed); the fixture now uses the native value
+setter and retains its hidden-target and review assertions. Both logs and original
+test snapshots are retained.
+
+Isolated fictional-data screenshots at 360 and 1440 pixels show the empty picker;
+neither page overflowed, and the component preview's GET-only and CSP checks
+denied writes and external requests. The screenshots were visually inspected.
+The preview and mocked tests do not establish live delivery, production state,
+physical-device behavior, or screen-reader speech output.
+
 Prepared November 4, 2026 on `codex/actions-clan-picker-157`. The task started
 from `9552757eae8ebb2c7bd5a779f058aab26cc75f97` and was fast-forwarded to released
 main `a1a8b937` before final integrated checks. Task 159's released implementation
@@ -144,6 +177,9 @@ ignored. The existing width-transition warning remains visible (P2 performance
 follow-up); it is not introduced or amplified by this task. A future
 `$impeccable optimize` / `$impeccable polish` pass may assess that separate progress
 component. No new blocking task-157 design defect was identified.
+
+The file-scoped side-tab waiver remains in place. Any future side-tab rule added
+to `WeightTrial.css` must be reviewed manually because the waiver covers that file.
 
 ## Fixture/setup corrections retained for review
 

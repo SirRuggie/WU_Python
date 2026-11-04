@@ -385,7 +385,7 @@ export default function WeightTrial({
     <div
       className="weight-trial"
       onFocusCapture={(event) => {
-        if (event.target instanceof HTMLInputElement)
+        if (event.target instanceof HTMLInputElement && event.currentTarget.contains(event.target))
           editFocus.current = event.target;
       }}
     >
@@ -414,8 +414,8 @@ export default function WeightTrial({
       <CwlPageHeader className="weight-trial-header" title={<h1>Clan weights</h1>}>
         {!accessDenied && <RosterMenu
           label="Clan"
-          aria-label={clans.find(clan => clan.tag === selected)?.name || "Choose a clan"}
-          placeholder="Choose a clan"
+          aria-label={selected && clans.find(clan => clan.tag === selected) ? `Clan: ${clans.find(clan => clan.tag === selected)!.name}` : "Select a clan"}
+          placeholder="Select a clan"
           value={selected}
           onValueChange={select}
           disabled={anyBusy}

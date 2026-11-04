@@ -906,6 +906,34 @@ it("ignores a remembered clan absent from the current permitted directory", asyn
   localStorage.setItem("wu-clan-weights:last-clan:viewer-missing", "#NOTVISIBLE");
   await act(async () => root.render(<WeightTrial onDirty={onDirty} seasonId="1" viewerId="viewer-missing" />));
   expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("/clans/"))).toBe(false);
-  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.textContent).toContain("Choose a clan");
+  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.textContent).toContain("Select a clan");
+  expect(host.querySelector(".weight-trial-header .roster-menu-trigger")?.getAttribute("aria-label")).toBe("Select a clan");
   localStorage.clear();
+});
+
+it("guards unsaved edits when changing clans through the picker", async () => {
+  await render();
+  await click("Needs work");
+  const trigger = host.querySelector<HTMLButtonElement>(".weight-trial-header .roster-menu-trigger")!;
+  expect(trigger.getAttribute("aria-label")).toBe("Clan: Needs work");
+  expect(trigger.textContent).not.toContain("Clan:");
+  await openClanPicker();
+  expect(document.querySelector('.weight-clan-picker-panel [role="menu"]')?.getAttribute('aria-label')).toBe('Clan: Needs work');
+  await act(async () => {
+    document.querySelector<HTMLButtonElement>('.weight-clan-picker-panel header button')!.click();
+  });
+  const loot = host.querySelector<HTMLInputElement>(".weight-trial-loot input")!;
+  await act(async () => loot.focus());
+  await input(loot, "35.8k");
+  await click("Complete");
+  expect(document.querySelector("dialog")?.textContent).toContain("You have 1 unsaved weight.");
+  await click("Keep editing");
+  await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+  expect(loot.isConnected).toBe(true);
+  expect(document.activeElement).toBe(loot);
+  expect(loot.value.replace(/[, ]/g, "")).toMatch(/^(35\.8k|35800)$/);
+  expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("%23J2Y"))).toBe(false);
+  await click("Complete");
+  await click("Discard");
+  expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("%23J2Y"))).toBe(true);
 });
