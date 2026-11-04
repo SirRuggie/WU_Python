@@ -27,6 +27,9 @@ Use full forms in dashboard copy: could not, cannot, will not, do not,
 you are and you will. Separate instructions into sentences. Keep the owner’s
 section names with `&`, Chopping Block, Ghosted, Flew the Coop and Not loyal to WU.
 The FWA phrase, Main/Lazy rules, member tour and prank wording stay unchanged.
+Do not use **campaign** in visible dashboard, staff-error or Discord copy. Use
+CWL month, automatic messages and time zone. Internal code names, storage fields,
+transport keys, docstrings and journals keep their existing names.
 Discord defaults use copy version 128; saved version 127 and unversioned legacy
 text remain unchanged, including legacy typos needed to recognize stored copy.
 

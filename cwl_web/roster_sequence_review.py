@@ -40,7 +40,7 @@ async def prepare(request, sid, pool, cycle, body, actor, previous):
     storage = RosterImageStore(request.app['store'])
     existing = storage.pool_sequence(sid, pool)
     if existing and existing['cycle'] != cycle:
-        raise web.HTTPConflict(text='The sequence belongs to a different campaign month')
+        raise web.HTTPConflict(text="The sequence belongs to a different CWL month")
     plan = await frozen_plan(request, sid, pool, body['version'])
     try:
         if existing:

@@ -33,7 +33,7 @@ def _now() -> str:
 
 def request_id(guild_id: int, cycle: str, pool: str) -> str:
     if not _CYCLE.fullmatch(cycle) or pool not in _POOLS:
-        raise ValueError("A valid campaign month and pool are required")
+        raise ValueError("Select a valid CWL month and Main or Lazy.")
     return f"cwl:web-send:{int(guild_id)}:{cycle}:{pool}"
 
 
@@ -96,10 +96,10 @@ async def queue_roster_send(
         raise ValueError("A published roster, actor, and channel are required")
     loaded = await cwl_campaign.load_campaign(mongo, guild_id, cycle)
     if campaign_generation(loaded) != expected_generation:
-        raise BridgeConflict("Native campaign settings changed; review again")
+        raise BridgeConflict("The automatic message settings changed. Review again.")
     channel = int(_variant(loaded, pool)["destination_channel_id"])
     if channel != expected_channel_id:
-        raise BridgeConflict("Native campaign channel changed; review again")
+        raise BridgeConflict("The automatic message channel changed. Review again.")
     if native_receipt(loaded, pool) or await _pending_ledger_receipt(
         mongo, guild_id, cycle, pool,
     ):
@@ -112,7 +112,7 @@ async def queue_roster_send(
     existing = await mongo.bot_config.find_one({"_id": key})
     if existing:
         if not retry_failed or existing.get("status") not in {"failed", "stale"}:
-            raise BridgeConflict("A request for this pool and campaign month already exists")
+            raise BridgeConflict("A request for this pool and CWL month already exists")
         result = await mongo.bot_config.update_one(
             {"_id": key, "status": existing["status"]},
             {"$set": {
@@ -140,9 +140,9 @@ async def queue_roster_send(
                 upsert=True,
             )
         except DuplicateKeyError as exc:
-            raise BridgeConflict("A request for this pool and campaign month already exists") from exc
+            raise BridgeConflict("A request for this pool and CWL month already exists") from exc
         if not result.upserted_id:
-            raise BridgeConflict("A request for this pool and campaign month already exists")
+            raise BridgeConflict("A request for this pool and CWL month already exists")
     return await mongo.bot_config.find_one({"_id": key})
 
 
@@ -280,12 +280,12 @@ async def process_roster_request(
     ):
         status, detail = "uncertain", {"error": "Native delivery is uncertain; reconcile before retrying"}
     elif campaign_generation(loaded) != row["generation"]:
-        status, detail = "stale", {"error": "Native campaign settings changed"}
+        status, detail = "stale", {"error": "The automatic message settings changed."}
     else:
         try:
             channel = int(_variant(loaded, row["pool"])["destination_channel_id"])
             if channel != row["channel_id"]:
-                raise BridgeConflict("Native campaign channel changed")
+                raise BridgeConflict("The automatic message channel changed.")
         except BridgeConflict as exc:
             status, detail = "stale", {"error": str(exc)}
         else:

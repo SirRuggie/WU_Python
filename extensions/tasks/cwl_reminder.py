@@ -956,7 +956,7 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
         item = loaded["campaign"]["messages"][message_id]["variants"][variant]
         channel_id = int(item["destination_channel_id"])
         if not await _campaign_channel_belongs_to_guild(channel_id, guild_id):
-            raise ValueError("Configured destination is outside the campaign guild")
+            raise ValueError("The configured channel is outside this Discord server")
         components = await cwl_campaign.render_message(
             {"campaign": loaded["campaign"], "deadline": loaded["deadline"]},
             message_id, variant, preview=False,
@@ -1181,7 +1181,7 @@ async def _deliver_campaign_message(
                 channel_id, guild_id
             ):
                 raise ValueError(
-                    "Configured destination is outside the campaign guild"
+                    "The configured channel is outside this Discord server"
                 )
             components = await cwl_campaign.render_message(
                 {"campaign": campaign, "deadline": loaded["deadline"]},

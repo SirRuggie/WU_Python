@@ -91,6 +91,8 @@ Implementation sweep of the owner-approved 86 items. Validation is incomplete un
 | STE-85 | Done: All three exact diagnostic reason-map keys changed with their exception messages; category/reason codes preserved and tested. | `cwl_web/participation_sync.py:245`, `cwl_web/participation_sync.py:248`, `cwl_web/participation_sync.py:253`, `cwl_web/participation_sync.py:262` |
 | STE-86 | Done: Other backend wording · error text. | `cwl_web/manage_operations.py:132`, `cwl_web/manage_reminders.py:81`, `cwl_web/strikes.py:837` |
 
+| Owner542 addition | Done: no visible campaign term; use CWL month, automatic messages and time zone. Code/storage names unchanged. Syntax-position guards include positive machine cases and negative visible reply/embed/HTTP/label cases. | `web/cwl/src/ReminderWorkspace.tsx:848`, `utils/cwl_forms.py:60`, `utils/cwl_sequence.py:39`, `utils/cwl_campaign.py:548`, `utils/cwl_web_bridge.py:36`, `cwl_web/manage_bridge.py:51` |
+
 ## Saved-copy and visibility boundaries
 
 Per Shaka541, the raw matching strings in `utils/cwl_campaign.py:103–110`, `_legacy_dashboard_signup_body`, and `new_copy=False` output stay exact. `your in` (103), `less then` (104,110) and `we got ya` (308) are **kept on purpose: legacy compatibility**. The fixture comes from deployed base3bc; old-body normalization and version127 sparse/full baselines match that fixture. Fresh128 defaults change only body/title/label and the version marker. No stored campaign is rewritten.
@@ -139,3 +141,33 @@ legible. Remote image origins were blocked in this fixture, so a missing remote
 logo is expected. This is a wording review, not a claim of screen-reader testing
 or live Discord delivery. Keyboard/focus/confirmation behavior remains covered by
 the unchanged interaction assertions in the frontend suite.
+
+## Follow-up542/543/544 validation
+
+The exact initial542 inventory has42 source literal edits across8 files and33
+distinct old messages (including4 Select producer sentences), plus8 test
+wording/reference edits. `ReminderWorkspace` additionally changes only the
+multiline label to Current CWL month, still displaying `state.cycle`.
+The old full run stopped at7 failed/2026 passed/29 skipped; it is not full
+validation. All seven were prose/reference mismatches. The approved targeted
+resolution passed86 tests with3 subtests. The strengthened visible-sink guard
+then passed19 tests, including a reply inside the internal-purpose branch.
+The new full frontend passed1776 tests in296 files and the new private build
+passed tsc/Vite. Fourteen new360/1440 layout samples include the Schedule view and its Current CWL month label; both widths were visually inspected. No page errors or horizontal overflow. Full backend and owned boot remain pending.
+
+The first new guard run is retained: it detected a real multiline visible label
+and also incorrectly classified22 machine expressions. The corrected guard
+exempts syntax positions only, not matching prose strings. It checks visible
+reply/embed/form/label/button/HTTP/error sinks before considering wire/storage
+positions. Internal `new_draft` purpose-enum validation remains unchanged because
+its purpose is supplied by code before data loading; internal print journals
+remain unchanged. Both exceptions are distinguished by syntax. No Mongo kind,
+query, field path or request shape changed.
+
+Every changed existing assertion/control/fixture text is listed as old to new
+with its current location in [ste155-assertion-wording.md](ste155-assertion-wording.md).
+The original no-write, status, data, delivery ledger and stored127 assertions
+remain exact. Fresh128 recurring-save expectations use CURRENT_SIGNUP_CHECK_LINE;
+the side-by-side test also pins stored127 to its original line.
+
+Final544 required unchanged war gate passed:213 backend,1 skipped;35 frontend in8 files; tsc/private build. No source change followed those checks apart from this review record.

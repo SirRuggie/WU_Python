@@ -545,15 +545,15 @@ def _safe_url(value: str, *, media=False):
 
 def validate_campaign(campaign: dict) -> None:
     if not isinstance(campaign, dict) or not isinstance(campaign.get("messages"), dict):
-        raise ValueError("Campaign messages are missing")
+        raise ValueError("Automatic messages are missing")
     if not 1 <= len(campaign["messages"]) <= 25:
-        raise ValueError("A campaign must contain between 1 and 25 messages")
+        raise ValueError("Use between 1 and 25 automatic messages.")
     from utils import cwl_sequence
     cwl_sequence.validate(campaign)
     try:
         pendulum.timezone(campaign.get("timezone", DEFAULT_TIMEZONE))
     except Exception as exc:
-        raise ValueError("Campaign timezone is invalid") from exc
+        raise ValueError("The time zone is not valid.") from exc
     timezone_name = campaign.get("timezone", DEFAULT_TIMEZONE)
     deadline_rule = campaign.get("signup_deadline", {})
     try:
@@ -582,10 +582,10 @@ def validate_campaign(campaign: dict) -> None:
         raise ValueError("Signup deadline is invalid") from exc
     transitional_schedules = campaign.get("schedules")
     if transitional_schedules is not None and not isinstance(transitional_schedules, dict):
-        raise ValueError("Legacy campaign schedules are invalid")
+        raise ValueError("The saved automatic message times are not valid.")
     for message_id, message in campaign["messages"].items():
         if not isinstance(message_id, str) or not re.fullmatch(r"[A-Za-z0-9:_-]{1,64}", message_id):
-            raise ValueError("A campaign message id is invalid")
+            raise ValueError("An automatic message ID is not valid.")
         if not isinstance(message, dict) or not isinstance(message.get("variants"), dict):
             raise ValueError(f"{message_id} variants are missing")
         for variant, item in message["variants"].items():
@@ -1203,7 +1203,7 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
     else:
         wanted_revision = int(expected_revision)
     if current_revision != wanted_revision:
-        raise RuntimeError("CWL campaign changed while this draft was open")
+        raise RuntimeError("The automatic messages changed while this draft was open.")
     candidate = copy.deepcopy(candidate_campaign if candidate_campaign is not None else row["campaign"])
     recurring_candidate = monthly_campaign(candidate, cycle) if repeat_monthly else None
     if recurring_candidate:
@@ -1279,13 +1279,13 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
             upsert=current_revision == 0,
         )
     except DuplicateKeyError as exc:
-        raise RuntimeError("CWL campaign changed while this draft was being applied") from exc
+        raise RuntimeError("The automatic messages changed while this draft was being saved.") from exc
     matched = getattr(write, "matched_count", None)
     upserted = getattr(write, "upserted_id", None)
     modified = getattr(write, "modified_count", None)
     won = matched == 1 or upserted is not None or (matched is None and modified == 1)
     if not won:
-        raise RuntimeError("CWL campaign changed while this draft was being applied")
+        raise RuntimeError("The automatic messages changed while this draft was being saved.")
     if not keep_draft:
         await mongo.bot_config.delete_one({"_id": row["_id"]})
     result = await load_campaign(mongo, guild_id, cycle)
@@ -1345,7 +1345,7 @@ def validate_roster_copy(candidate: dict) -> dict:
         raise ValueError("Check the roster text length")
     buttons = candidate["buttons"]
     if not isinstance(buttons, list) or len(buttons) > 5:
-        raise ValueError("Choose up to five link buttons")
+        raise ValueError("Select up to five link buttons")
     cleaned = []
     for button in buttons:
         if (
@@ -1410,7 +1410,7 @@ async def save_updated_roster_variant(
     loaded = await load_campaign(mongo, guild_id, cycle)
     if campaign_generation(loaded) != expected_generation:
         raise RuntimeError(
-            "The campaign changed. The saved copy of the updated post was not overwritten."
+            "The automatic messages changed. The saved copy of the updated post was not overwritten."
         )
     reviewed = copy.deepcopy(loaded["campaign"])
     reviewed["messages"]["roster"]["variants"][pool].update(copy.deepcopy(candidate))
@@ -1479,7 +1479,7 @@ async def save_updated_roster_variant(
     )
     if getattr(write, "matched_count", 0) != 1:
         raise RuntimeError(
-            "The campaign changed. The saved copy of the updated post was not overwritten."
+            "The automatic messages changed. The saved copy of the updated post was not overwritten."
         )
     return {"campaign_saved": True, "recurring_saved": future_months}
 
@@ -1580,7 +1580,7 @@ async def set_paused(
         )
     except DuplicateKeyError as exc:
         raise RuntimeError(
-            "CWL campaign changed while pause state was updating"
+            "The automatic messages changed while the pause setting was being saved."
         ) from exc
     if not (
         getattr(write, "matched_count", 0)
@@ -1590,7 +1590,7 @@ async def set_paused(
             and getattr(write, "modified_count", 0)
         )
     ):
-        raise RuntimeError("CWL campaign changed while pause state was updating")
+        raise RuntimeError("The automatic messages changed while the pause setting was being saved.")
     result = await load_campaign(mongo, guild_id, loaded["cycle"])
     try:
         from extensions.tasks import cwl_reminder
@@ -1683,7 +1683,7 @@ async def queue_manual_occurrence(
     if audience not in message.get("variants", {}):
         raise ValueError("That message has no configured audience version")
     if loaded["campaign"].get("paused"):
-        raise ValueError("Resume the campaign before sending a manual message")
+        raise ValueError("Resume automatic messages before you send a manual message.")
     from extensions.tasks import cwl_reminder
     if getattr(cwl_reminder, "mongo_client", None) is not mongo:
         raise RuntimeError("CWL scheduler is not ready")

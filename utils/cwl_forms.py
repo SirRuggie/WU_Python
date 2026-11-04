@@ -57,7 +57,7 @@ def schedule_form(schedule):
         at = str(schedule.get("at", ""))
         return "Date and time · repeats monthly", [
             _field("date", "Date (YYYY-MM-DD)", at[:10]),
-            _field("time", "Time in campaign timezone", at[11:16] if len(at) > 15 else "17:00"),
+            _field("time", "Time in time zone", at[11:16] if len(at) > 15 else "17:00"),
         ]
     if mode in {"before_close", "after_open", "legacy_chain"}:
         minutes = int(schedule.get("offset_minutes", 1440))

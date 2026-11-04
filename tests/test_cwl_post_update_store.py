@@ -297,7 +297,7 @@ def test_queued_update_has_atomic_five_minute_start_deadline(
     [
         ({"pool": "other"}, "Select Main or Lazy and which months"),
         ({"future_months": 1}, "Select Main or Lazy and which months"),
-        ({"cycle": "2026-13"}, "Choose the month"),
+        ({"cycle": "2026-13"}, "Select the month"),
         ({"season_id": "invalid"}, "Invalid season or saved settings"),
         ({"generation": ""}, "Invalid season or saved settings"),
         ({"generation": []}, "Invalid season or saved settings"),

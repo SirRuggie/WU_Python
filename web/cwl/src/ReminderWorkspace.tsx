@@ -846,7 +846,7 @@ export default function ReminderWorkspace({
                     <legend>Signup window &amp; reminder timing</legend>
                     <p className="small">
                       All dates and times below use {draft.timezone}. Current
-                      campaign: {state.cycle}.
+                      CWL month: {state.cycle}.
                     </p>
                     <div className="signup-date-grid">
                       <SignupDateField

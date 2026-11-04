@@ -42,7 +42,7 @@ class ImageChannelTests(fixtures.RosterTests):
         self.assertEqual(await response.json(), {
             'posts': [], 'published': None, 'last_publication': None, 'clans': [],
             'closings': {}, 'destinations': {
-                pool: {'channel_id': None, 'reason': 'Select the matching Manage campaign month first'}
+                pool: {'channel_id': None, 'reason': "Select the matching Manage CWL month first"}
                 for pool in ('main', 'lazy')
             },
         })

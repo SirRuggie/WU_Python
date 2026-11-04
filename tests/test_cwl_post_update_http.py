@@ -330,7 +330,7 @@ class PostUpdateHTTPTests(unittest.IsolatedAsyncioTestCase):
         original = PostUpdateStore.create
         cases = [
             ({"future_months": 1}, "Select Main or Lazy and which months"),
-            ({"cycle": "2026-13"}, "Choose the month"),
+            ({"cycle": "2026-13"}, "Select the month"),
             ({"generation": ""}, "Invalid season or saved settings"),
         ]
         for changes, message in cases:

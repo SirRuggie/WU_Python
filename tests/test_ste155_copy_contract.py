@@ -55,3 +55,17 @@ def test_wording_version_changes_no_schedule_destination_role_or_button():
                 old['messages'][mid]['variants'][pool].pop(field)
                 new['messages'][mid]['variants'][pool].pop(field)
     assert old == new
+
+
+def test_same_custom_body_uses_the_stored127_and_current128_check_lines_side_by_side():
+    bodies = {}
+    for version, line in [(127, campaign.SIGNUP_CHECK_LINE), (128, campaign.CURRENT_SIGNUP_CHECK_LINE)]:
+        saved = campaign.default_campaign(copy_version=version)
+        saved['messages']['signup']['variants']['main']['body'] = 'Custom signup text'
+        original = deepcopy(saved)
+        result = campaign.normalize_signup_entry(saved)
+        bodies[version] = result['messages']['signup']['variants']['main']['body']
+        assert bodies[version] == 'Custom signup text\n\n' + line
+        assert saved == original
+    assert campaign.CURRENT_SIGNUP_CHECK_LINE not in bodies[127]
+    assert campaign.SIGNUP_CHECK_LINE not in bodies[128]

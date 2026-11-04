@@ -181,7 +181,7 @@ def test_stale_generation_never_saves_or_changes_delivery_ledger(monkeypatch):
     mongo.bot_config.update_one = writes
 
     async def run():
-        with pytest.raises(RuntimeError, match="Campaign changed"):
+        with pytest.raises(RuntimeError, match="The automatic messages changed"):
             await campaign.save_updated_roster_variant(
                 mongo,
                 guild_id=GUILD,
