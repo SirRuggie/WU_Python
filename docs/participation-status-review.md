@@ -1,6 +1,6 @@
 # Participation status review (160 / rework164 / rework167)
 
-The 160/164 evidence below is historical. Rework167 is in validation; its final full backend and owned startup evidence are pending. Release is gated on Shaka acceptance under existing owner authorization558. This workflow performed no deployment; public deployment state was not assessed. PR199 on `codex/participation-status-160` began
+The 160/164 evidence below is historical. Rework167 validation is complete and ready for Shaka review; its new evidence is recorded at the end of this document. Release is gated on Shaka acceptance under existing owner authorization558. This workflow performed no deployment; public deployment state was not assessed. PR199 on `codex/participation-status-160` began
 on main955. PR198 is live as `strikes-activity-2` at maina1a8b937. Rework checkpoint
 1323099f was merged locally with that exact released tree, without conflicts,
 at54c7d745b662588ec4e9cfbdb4d5b261857320f4. No root pull/reset or production
@@ -304,5 +304,56 @@ retained-preview.json and retained-preview-readiness.json.
 Private167 evidence lives in.local/status167: focused logs, frontend/tsc/build
 logs, fixture before/after sources, policy-write-invariants.json and
 weight-status-parity.json. Full backend, retained preview and fresh owned startup
-must bind the final frozen source and use new output directories. No live Clash,
+bind the frozen167 source with new output directories. No live Clash,
 Discord, notification or public production verification is claimed.
+
+
+### Final167 freeze and evidence
+
+Runtime/test freeze: `ededf5aef810b3e192731a13a7e067807306baf4`.
+The final documentation follow-through changes only this review. Runtime and
+frontend/test files remain byte-equal to that validated revision. No source or
+other167 suite/export/startup ran during full backend collection. Startup ran
+only after the full backend command returned terminal0.
+
+| Check | New167 result | Private evidence |
+| --- | --- | --- |
+| Changed Python and runners | Compiled before focused checks and final freeze | compile-freeze.json |
+| Focused backend | 93 passed,5 subtests,23.40s | focused-raw-projection.log |
+| Full backend, guarded HOST | 6968 passed,134 skipped,275 subtests,625.95s | full-be.log; run-full.py |
+| Frontend | 25 focused;1789 full across298 files,31.28s | focused-fe-initial.log; full-fe.log |
+| TypeScript and private build | Pass;6.32s; existing chunk-size warning | tsc.log; build.log; frontend-proof.json |
+| Final layouts | 16 passed:360/1440, both pages, saved/none/mixed/old; no overflow, page errors, external or non-GET requests | layout-d/proof.json;16 screenshots |
+| Weight fields | 21 projected cases byte-equal to prior reviewed00d | weight-status-parity.json |
+| Policy/storage | Capture/route/storage/raffle owners unchanged;8 capture and12 bonus write ASTs unchanged; view/fingerprint unchanged | policy-write-invariants.json |
+| New exact owned startup | 51 routes,25 artifact module origins;config200/auth401; native pool owned ping; real owner/copied SQLite; canonical schema before workers | boot/boot-readiness.json; boot/adapter-manifest.json |
+| Owned binding and cleanup | 27168 listener belongs to the new PID before clients; inner cleanup passed; process/data/artifact removed | boot/client-binding.json; boot/outer-cleanup.json |
+| Retained preview | Detached local static GET-only server, fake API, CSP connect-src none; no backend/Mongo/Discord/provider | retained-preview.json; retained-preview-readiness.json |
+
+The full backend interpreter loaded the verifiedc02 guard at startup and used
+explicit empty Mongo, Healthcheck and native-test opt-ins with private disk
+temporary files. The owned boot used a new isolated27168 database and bound
+frontend/source hashes to the frozen artifact. Its25 module origins include
+participation display/status/exports as well as the previously released159
+activity/strike modules. No active provider, production database, live Discord
+message or push delivery is proved by these fixtures. Public state was not
+assessed and this workflow performed no deployment.
+
+### Corrections retained for review
+
+| Finding | Correction and retained boundary |
+| --- | --- |
+| New cross-export byte comparison saw different generated timestamps | Freeze only exports.datetime.now in that test; keep every field/status/value/database assertion. Initial failed log and before-clock test source retained. |
+| Refuter found effective overrides differ from raw source results | Withdraw initial effective-value inference; consume raw evidence privately and test both override directions across actual HTTP boundaries. No visible values/columns/policy change. |
+| Chrome socket path exceeded the Unix limit before rendering | Short symlink to owned disk browser temp; failed source/build/log retained; no product or assertion change. |
+| Bonus Main has no candidate list; Bonus scope is the selected clan | Review615 approved .bonus-context readiness and Alpha4 versus Participation8; all Participation guards retained, with Bonus Beta exclusion and mixed2/2 assertions. Failed layout-b retained. |
+| Layout-c showed a fake incomplete DTO as eligible | Approved605 fixture metadata correction supplies actual588 incomplete exclusion/recommended=false. No test/product failure or participation status/score/assertion change; layout-c16PASS retained and layout-d16PASS is final. |
+| Private21-case audit omitted the repo import path | Add repo sys.path before imports; initial import failure occurred before helper execution. All equality/database assertions retained. |
+
+Builder: Sol. Independent refuter: Terra; its material raw-source finding is
+closed in the frozen implementation and focused regressions. The distinct-clan
+adapter test verifies prefixed participation identity without changing visible
+Accounts identity/weight fields. Existing published/current roster mismatch
+nulling remains in force; that synthetic adapter case is not claimed as a
+reproduced production bug. Parent owns remote review/handoff and the existing
+release authorization after Shaka ACCEPT558. No fresh owner decision is implied.
