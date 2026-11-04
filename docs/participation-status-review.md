@@ -1,7 +1,6 @@
 # Participation status review (160 / rework164)
 
-Implementation is complete; the final route-fix full validation and Shaka review
-remain. PR199 on `codex/participation-status-160` began
+Implementation and validation are complete; submitted for Shaka review. PR199 on `codex/participation-status-160` began
 on main955. PR198 is live as `strikes-activity-2` at maina1a8b937. Rework checkpoint
 1323099f was merged locally with that exact released tree, without conflicts,
 at54c7d745b662588ec4e9cfbdb4d5b261857320f4. No root pull/reset or production
@@ -155,7 +154,7 @@ Archive599 is a separate maintenance job and does not change this feature.
 
 ## Final validation and review boundary
 
-The frozen combined candidate ee2b908a03e498d870e46f4ac7ca4b0f3cc05420 passed
+The prior PRE-FIX combined candidate ee2b908a03e498d870e46f4ac7ca4b0f3cc05420 passed
 ONE full backend run:6961 tests,134 skips,270 subtests in594.59s. The c02 network
 guard loaded before imports; Mongo/Healthcheck keys were empty and temp files
 stayed on private disk. No edits, exports, boot or other suites ran in this
@@ -176,7 +175,7 @@ by symlinks;88 entries skipped (68 open,19 other owner or symlink,1 recent).
 `/nvme0n1-disk/wu-evidence-archive/tmp-20261104/MANIFEST.json`.
 This maintenance changed no feature source or production data.
 
-Final documentation changes beyond the tested/booted ee2b are recorded separately;
+Final documentation changes beyond the tested/booted402cd are recorded separately;
 runtime, tests and frontend must remain byte-identical. Parent owns integration,
 handoff and release; Sol independently refutes this candidate. Original164 code
 was implemented before the standing agent requirement; it is not described as an
@@ -213,7 +212,12 @@ scores, editing and reset response parity. Both changed Python files compiled,
 gap closed with no policy, authorization, provider or storage-write change.
 
 The6961-test full run and51-route startup above remain accurate PRE-FIX evidence.
-A new frozen full backend and exact-artifact startup are required for the final
-route-fixed candidate. Frontend source is unchanged, so its existing full tests,
+The final frozen route-fixed402cd572db641217f3192617ed4261a7c2f9de5d passed
+6962 backend tests,134 skips and270 subtests in614.83s. A NEW exact-artifact
+startup passed51routes/25module origins, including the corrected Participation
+module hash247a599eac9e75ea83370d7850102ffa4d816f694e8da7f157e55839d006a4e3.
+Native owned Mongo ping, real DashboardState and copied SQLite, config200,
+anonymous auth401, closed network boundary and empty Healthchecks passed.
+The owned database/process/data and exported artifact were all cleaned. Frontend source is unchanged, so its existing full tests,
 TypeScript, private build and layouts remain applicable. Builder for this fix:
 Terra; independent refuter: Sol. Parent coordinates integration and release.
