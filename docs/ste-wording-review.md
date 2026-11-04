@@ -1,6 +1,6 @@
 # STE155 wording review
 
-Implementation sweep of the owner-approved 86 items. Validation is incomplete until the full backend, required war check, exact-artifact boot, layout review and final review below are recorded. No production change is made by this document.
+Implementation sweep of the owner-approved86 items plus owner542. Validation completed on1a839733:6845 backend passed,123 skipped,270 subtests;1776 frontend passed; tsc/build, required war gate and14 isolated360/1440 layouts passed. Exact-artifact owned boot passed51 production route mappings/native pool/config200/auth401 with complete cleanup. No production change is made by this document.
 
 | Item | Implementation | Current source locations |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ The visible schedule error preserves both possible causes (a dependency loop or 
 - Backend focused:996 passed,16 skipped,62 subtests. External DNS/connect/UDP/defaultports blocked by reviewed c02 guard.
 - Source AST:125 frontend source files differ only in visible literals/JSX text and the paired saved-view copy regex; identifiers/numbers/operators/JSX structure remain unchanged.
 - Initial FE assertion failures and the saved-view regex mismatch are retained. The latter was a real local wording regression: expanded you-will text no longer matched the old you’ll removal regex. Both sides now match, and the existing saved-view regression passes without weakening its no-duplicate-label assertion.
-- Required unchanged war check:213 backend passed,1 skipped;35 frontend passed in8 files; tsc/private build passed. Fourteen360/1440 layout samples passed with no horizontal page overflow/page errors. Remaining before READY: clean frozen full backend, exact-artifact owned boot, final review/provenance and retained preview. No live notification delivery is claimed.
+- Required unchanged war check:213 backend passed,1 skipped;35 frontend passed in8 files; tsc/private build passed. Fourteen360/1440 layout samples passed with no horizontal page overflow/page errors. Those full-backend and owned-boot checks subsequently passed; see final validation below. No live notification delivery is claimed.
 
 ## Completion review scope
 
@@ -153,7 +153,7 @@ validation. All seven were prose/reference mismatches. The approved targeted
 resolution passed86 tests with3 subtests. The strengthened visible-sink guard
 then passed19 tests, including a reply inside the internal-purpose branch.
 The new full frontend passed1776 tests in296 files and the new private build
-passed tsc/Vite. Fourteen new360/1440 layout samples include the Schedule view and its Current CWL month label; both widths were visually inspected. No page errors or horizontal overflow. Full backend and owned boot remain pending.
+passed tsc/Vite. Fourteen new360/1440 layout samples include the Schedule view and its Current CWL month label; both widths were visually inspected. No page errors or horizontal overflow. This was a pre-full checkpoint; the final full backend and owned boot subsequently passed.
 
 The first new guard run is retained: it detected a real multiline visible label
 and also incorrectly classified22 machine expressions. The corrected guard
@@ -191,4 +191,27 @@ no alternate executor or bypass was used.
 
 The explicit stored127 original-line/nonmutation/idempotence case also passed independently; no old127 fixture or assertion was edited.
 
-Post546 unchanged war gate passed213 backend/1 skipped,35 frontend in8 files, tsc and private Vite build. Frontend source is unchanged from b84de52a/64e97b8e; original1776-test/14-layout evidence remains exact. Fresh full backend and owned boot are still required before READY.
+Post546 unchanged war gate passed213 backend/1 skipped,35 frontend in8 files, tsc and private Vite build. Frontend source is unchanged from b84de52a/64e97b8e; original1776-test/14-layout evidence remains exact. The subsequent full backend and owned boot passed on the same frozen revision.
+
+## Final validation on1a839733
+
+- Full backend:6845 passed,123 skipped,270 subtests,568.01 seconds; exit0.
+- Exact archived artifact:51 production Mongo route mappings on fresh owned
+  localhost27168; PID/exe/cwd/dbpath/listener verified before any client. Real
+  storage owner and retained copied SQLite, native async pool plus owned ping,
+  config200, unauthenticated auth/me401,12 module origins within the artifact.
+- Network boundary installed before application/provider imports; Healthchecks
+  explicitly empty. No production database read or service operation. Owned
+  database/process/data/export cleaned; source and build manifests retained.
+- The boot used the new validated private frontend with tree equality to64e97b8e,
+  not the old production frontend. Entry index-BbximZq9.js SHA256
+  519cc0d0ee9fae96d387a3eb9cde5110b2572ca1f66748032e374e41c2f9aaca.
+- Full frontend1776/296 files, tsc/private build, required war213+1skip/35FE,
+ 14-layout review and current-copy checks above remain exact source evidence.
+
+Previous failed/interrupted runs are retained as failures, including the genuine
+current128/old-check-line duplicate issue. They are never counted as full passes.
+Any final review-record-only commit has the same runtime and tests as the tested
+revision. Delivery tests use fake transports; they do not prove live Discord
+or push-notification delivery. Production release still requires feature ACCEPT,
+a reviewed coordinator and fresh operational gates.
