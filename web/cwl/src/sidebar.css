@@ -47,7 +47,7 @@ div.shell {
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
-  scrollbar-color: var(--wu-border) #151517;
+  scrollbar-color: var(--wu-text-muted) #151517;
   padding: 12px 10px 18px;
 }
 
@@ -55,7 +55,7 @@ div.shell {
   width: 7px;
 }
 .shell .sidebar > nav::-webkit-scrollbar-thumb {
-  background: var(--wu-border);
+  background: var(--wu-text-muted);
   border: 2px solid #151517;
   border-radius: 8px;
 }
