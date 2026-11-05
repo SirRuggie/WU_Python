@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock
 
 import hikari
 
+from extensions.commands.content import text_nodes
+from utils.dashboard_urls import SIGNUP_URL
 from extensions.commands.setup import setup
 from extensions.commands.setup import (
     recruit_aboutus,
@@ -20,6 +22,22 @@ from utils.recruit_setup_checks import (
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def test_family_particulars_cwl_field_uses_exact_signup_url_and_copy():
+    fields = [node.content for node in text_nodes(recruit_familyparticulars.build_familyparticulars())]
+    cwl = next(field for field in fields if "CWL is our biggest team event." in field)
+    assert cwl == (
+        "CWL is our biggest team event. Your clan counts on you. Help the whole team to win. "
+        "We split into different clans for this event. Three factors determine the "
+        "league in which you'll be placed:\n"
+        "1) War activity\n2) War performance\n3) Account strength.\n\n"
+        f"You do not have to take part in CWL. To take part, sign up on the dashboard before the deadline: {SIGNUP_URL}. "
+        "We make no exceptions. The signup information allows clan "
+        "Leaders and War Generals to produce clan rosters. We have several clans in the family, so everyone can have "
+        "a shot at some medals. If you have multiple accounts, only three are allotted to be in one clan roster.\n\n"
+        "No signup, no play."
+    )
 
 
 def _role(role_id, position, permissions=hikari.Permissions.NONE, *, managed=False):

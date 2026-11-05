@@ -200,7 +200,7 @@ def _leave_review(state: dict, *, management: bool, home: bool = False) -> list:
                 f"manage_fwa:{state['manage_token']}" if management else f"fwa_war_back:{sid}")
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Message Templates", VARIANT_LABELS[state["variant"]])),
-        hikari.impl.TextDisplayComponentBuilder(content=f"## Return to {destination}?"),
+        hikari.impl.TextDisplayComponentBuilder(content=f"## Leave and go to {destination}?"),
         hikari.impl.TextDisplayComponentBuilder(content="Unsaved changes in this draft will not be restored. Save them first if you want future war posts to use them."),
         _buttons(
             (f"fwa_war_back_editor:{sid}", "Keep editing", hikari.ButtonStyle.PRIMARY, False),

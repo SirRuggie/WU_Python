@@ -96,7 +96,20 @@ def test_war_home_route_requires_review_only_for_dirty_draft(monkeypatch):
     manage.home.assert_awaited_once()
     state["template"]["sections"][0] += " changed"
     review = asyncio.run(fwa_war_messages.leave_home(context, "draft", mongo=object()))
+    assert "## Leave and go to Management Home?" in _text(_built(review))
     assert "Unsaved changes" in str(review[0].build())
     assert "manage_home:home" in str(review[0].build())
     assert "fwa_war_back_editor:draft" in str(review[0].build())
     manage.home.assert_awaited_once()
+
+
+def test_war_leave_review_uses_approved_heading_for_each_destination():
+    state = {"_id": "draft", "manage_token": "home", "variant": "win"}
+    for management, home, destination, leave_id in (
+        (False, False, "War Message Templates", "fwa_war_back:draft"),
+        (True, False, "FWA", "manage_fwa:home"),
+        (False, True, "Management Home", "manage_home:home"),
+    ):
+        rows = _built(fwa_war_messages._leave_review(state, management=management, home=home))
+        assert f"## Leave and go to {destination}?" in _text(rows)
+        assert leave_id in repr(rows)

@@ -556,7 +556,7 @@ def native_base_result(*, recruit_mention: str, recruiter_mention: str,
                             components=[
                                 LinkButton(
                                     url=base_link,
-                                    label="Select Me!",
+                                    label="Open base link",
                                 )
                             ]
                         ),

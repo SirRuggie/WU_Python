@@ -1,7 +1,7 @@
 {
   "kind": "R owner-item disposition ledger; independently reviewed static scope; final commit validation separate",
   "owner_inventory_sha256": "28e3f49a0827ad5452643e606558228bf89668c79fcb3a1dc9a93383f1572723",
-  "source_working_sha256": "efa277b3102aaa3510776a7deeeb97d949cb88de35e6a5b8718714800123573d",
+  "source_working_sha256": "85550449047a07856379f4626f7cc1f99781791d94079a266cdbf6476d267b43",
   "base": "82400fbfafad39d003c85d64085b1473f5778c54",
   "count": 133,
   "rows": [
@@ -104,7 +104,7 @@
           "line": 538,
           "before": "Choose a supported recruitment question.",
           "exact_template": "Select a supported recruitment question.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "authority": "170 §3.3"
         },
         {
@@ -216,7 +216,7 @@
           "line": 538,
           "source_token_before": "\"Choose a supported recruitment question.\"",
           "source_token_after": "\"Select a supported recruitment question.\"",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "authority": "170 §3.3"
         }
       ],
@@ -226,10 +226,10 @@
         "path": "utils/recruit_question_native.py",
         "function": "native_base_result",
         "before": "Click Me!",
-        "after": "Select Me!",
-        "authority": "170 §3.3 and parent adjudication for this live link label",
-        "evidence": ".local/wording161r/select-me-proof.json",
-        "test_result": "focus-06: 1 passed; focus-05 fixture failure retained"
+        "after": "Open base link",
+        "authority": "172 / CL-2 supersedes the earlier lexical-only Select Me! label",
+        "test_result": "172 focused suite passed; historical Select Me! proof remains private",
+        "test": "tests/test_recruit_question_expanded.py::test_native_base_result_preserves_link_destination_and_approved_label"
       },
       "war_weight_lexical_correction": {
         "path": "extensions/commands/fwa/links.py",
@@ -247,7 +247,7 @@
       "proposed": "\"Open base link\"",
       "prior_status": "partially mapped; completion requires item-by-item review",
       "prior_proposal_locations": [],
-      "reconciliation": "WORKING: cited source text/interpolation checked against current candidate; prior owner overrides and excluded legacy scope require final per-item evidence review. No tests run in 169.",
+      "reconciliation": "172 applies the approved Open base link label to native_base_result while preserving its destination and style; clan/list.py remains held.",
       "candidate_exact_fields": [
         {
           "path": "extensions/commands/fwa/bases.py",
@@ -269,7 +269,13 @@
       ],
       "candidate_validation": "Preliminary R focus passed; independent review and final-commit validation pending.",
       "excluded_subscope": "Named clan/list.py path is held as unused; its bytes remain unchanged.",
-      "status": "applied"
+      "status": "applied",
+      "native_base_result": {
+        "path": "utils/recruit_question_native.py",
+        "label": "Open base link",
+        "authority": "172 / CL-2",
+        "test": "tests/test_recruit_question_expanded.py::test_native_base_result_preserves_link_destination_and_approved_label"
+      }
     },
     {
       "id": "CL-3",
@@ -428,7 +434,7 @@
           "line": 122,
           "before": "Choose a war result",
           "exact_template": "Select a war result",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8",
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209",
           "authority": "170 §3.3"
         },
         {
@@ -436,7 +442,7 @@
           "line": 156,
           "before": "Choose message or copy text",
           "exact_template": "Select message or copy text",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8",
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209",
           "authority": "170 §3.3"
         },
         {
@@ -444,7 +450,7 @@
           "line": 258,
           "before": "Choose one supported war result.",
           "exact_template": "Select one supported war result.",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8",
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209",
           "authority": "170 §3.3"
         },
         {
@@ -452,7 +458,7 @@
           "line": 288,
           "before": "Choose one editable text block.",
           "exact_template": "Select one editable text block.",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8",
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209",
           "authority": "170 §3.3"
         },
         {
@@ -460,7 +466,7 @@
           "line": 340,
           "before": "Choose one supported block and enter text.",
           "exact_template": "Select one supported block and enter text.",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8",
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209",
           "authority": "170 §3.3"
         },
         {
@@ -845,14 +851,14 @@
           "line": 76,
           "literal_segment": "The FWA Clan Rep role is required to manage war messages.",
           "matched_approved_fragment": "FWA Clan Rep",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8"
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209"
         },
         {
           "path": "extensions/commands/fwa_war_messages.py",
           "line": 214,
           "literal_segment": "The FWA Clan Rep role is required to manage war messages.",
           "matched_approved_fragment": "FWA Clan Rep",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8"
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209"
         }
       ],
       "scope_note": "Named live fields use the approved FWA Clan Rep label; no universal future-surface claim.",
@@ -913,8 +919,8 @@
           ]
         }
       ],
-      "reconciliation": "WORKING HOLD: owner-choice question heading vs statement has no located explicit decision; current question unchanged, owner mapping requested.",
-      "current_source_recheck_675": "Shaka 675 owner choice: recruitment_questions.py:227 exact ## Leave and go to {destination}?; paired draft test checks both destinations, warning, and button IDs. Cited Back to FWA, Back to Main / FWA and Management Home already match. No test run.",
+      "reconciliation": "697 clarifies 675: both cited confirmation headings use the owner-selected Leave and go to {destination}? wording.",
+      "current_source_recheck_675": "Both recruitment_questions.py:227 and fwa_war_messages.py:203 use the approved heading; paired test covers all three FWA editor destinations and preserved navigation.",
       "candidate_exact_fields": [
         {
           "location": "extensions/commands/fwa_weight_dashboard.py:61",
@@ -935,8 +941,8 @@
         },
         {
           "location": "extensions/commands/fwa_war_messages.py:203",
-          "final": "## Return to {destination}?",
-          "authority": "675 explicitly targets recruitment_questions.py; this heading retained"
+          "final": "## Leave and go to {destination}?",
+          "authority": "697 clarifies 675"
         }
       ],
       "candidate_validation": "Draft exact both-destination/button-ID test compiled; not run.",
@@ -1083,7 +1089,8 @@
         }
       ],
       "candidate_validation": "Preliminary R focus passed; final commit-bound validation and independent review pending.",
-      "status": "applied"
+      "status": "applied",
+      "capture_count_ownership": "At lazycwl_dashboard.py:623 CL-7 owns exact Saved lists captured: {saved}.; CL-142 owns the separate failure clause on the same line."
     },
     {
       "id": "CL-9",
@@ -1345,7 +1352,7 @@
           "path": "extensions/commands/fwa_war_messages.py",
           "line": 572,
           "matched_approved_fragment": "PNG, JPG, GIF or WEBP. Maximum 10 MB.",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8",
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209",
           "literal_segment": "PNG, JPG, GIF or WEBP. Maximum 10 MB."
         },
         {
@@ -1501,7 +1508,7 @@
           "path": "utils/recruit_question_native.py",
           "line": 308,
           "matched_approved_fragment": "The goal is to get the most loot and clan XP, not only to win wars.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "\n\nFWA, or Farm War Alliance, is a unique concept in Clash of Clans. The goal is to get the most loot and clan XP, not only to win wars.\n\n### **__<a:FWA:1398229188363948055> What are the benefits?__**\n**<a:Gold_Coins:1398229429892808745> Maximized Loot and XP**\nFWA clans give a steady supply of resources and XP. Use them to upgrade bases, troops and heroes.\n\n**<a:sleep_zzz:1398229533617946646> War Participation with Upgrading Heroes**\nIn FWA you can take part in a war even when your heroes are down for upgrades. So you can upgrade all the time.\n\n**<:CoolOP:1398229909339508839> Fair Wars**\nA lottery decides the war winner. Both sides have a fair chance and get a lot of loot.\n\n**<:Waiting:1398229981003382815> Is it against the rules?**\nNo. FWA clans follow the game rules and do not use hacks or exploits. They stay within the game's terms of service. It is a different but accepted way to play."
         }
       ],
@@ -1520,7 +1527,7 @@
           "path": "utils/recruit_question_native.py",
           "line": 352,
           "matched_approved_fragment": "Each Town Hall level is similar. The main difference is at TH12 and above, where the Town Hall is separate. The layout is simple. You can attack for a set number of stars and still get a lot of loot.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "## 🏰 Default FWA Base 🏰\nBelow is a picture of a TH13 default FWA War Base. Each Town Hall level is similar. The main difference is at TH12 and above, where the Town Hall is separate. The layout is simple. You can attack for a set number of stars and still get a lot of loot."
         }
       ],
@@ -1586,7 +1593,7 @@
             214
           ],
           "exact_text": "Select the Town Hall level of the recruit in the menu below.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447"
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa"
         }
       ],
       "candidate_validation": "Preliminary R focus passed; independent review and final-commit validation pending.",
@@ -2302,14 +2309,14 @@
           "line": 135,
           "literal_segment": "-# Submitted edits are saved for future posts.",
           "matched_approved_fragment": "-# Submitted edits are saved for future posts.",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8"
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209"
         },
         {
           "path": "extensions/commands/fwa_war_messages.py",
           "line": 166,
           "literal_segment": "Edits apply to future `/fwa war-plans` messages. To post a message, use `/fwa war-plans`.",
           "matched_approved_fragment": "Edits apply to future `/fwa war-plans` messages. To post a message, use `/fwa war-plans`.",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8"
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209"
         }
       ],
       "scope_note": "Named held fwa_war_save slice remains unchanged; only live fields are included.",
@@ -2337,7 +2344,7 @@
             167
           ],
           "exact_text": "Use `{opponent}`, `{author}`, `{clan_role}` and `{fwa_rep_role}` for values that are added when a war plan is posted.",
-          "source_sha256": "da83244e1806382125e15f141e14e72a849558bb3424cb156e9eb80fa62eb3c8"
+          "source_sha256": "7f63df95d367f04cea9243a1c5d430266499340e7eb11d500e49791d2ed1b209"
         }
       ],
       "candidate_validation": "Preliminary R focus passed; independent review and final-commit validation pending.",
@@ -2936,7 +2943,7 @@
           "path": "utils/recruit_question_native.py",
           "line": 36,
           "matched_approved_fragment": "FWA is one of the easiest ways to get loot in the game. It suits players who are less active than players who play for social contact or for competition. So our clans are not very chatty.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "Here’s what to expect from activity and chat in our FWA clans. FWA is one of the easiest ways to get loot in the game. It suits players who are less active than players who play for social contact or for competition. So our clans are not very chatty. Clan chat is quiet most of the time, and donations can take longer. You still get them, but they do not always come fast. Our Discord server is a good place to talk if you want more conversation.\n\n**Would any of this be an issue for you?**"
         }
       ],
@@ -2962,14 +2969,14 @@
           "path": "utils/recruit_question_native.py",
           "line": 62,
           "matched_approved_fragment": "We need your **current war weight** to make fair matchups. Follow these steps:",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "We need your **current war weight** to make fair matchups. Follow these steps:\n\n"
         },
         {
           "path": "utils/recruit_question_native.py",
           "line": 65,
           "matched_approved_fragment": "**Select** your Town Hall. Then select **Info**.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": " **Select** your Town Hall. Then select **Info**.\n"
         }
       ],
@@ -3004,7 +3011,7 @@
           "path": "utils/recruit_question_native.py",
           "line": 372,
           "matched_approved_fragment": "Our goal is a fun and flexible war clan. Heroes can be down here. Every member can make war attacks, and nobody sits out because of hero upgrades.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "### Concept\nWe are a laid-back farm/war clan — **NOT A CAMPING CLAN**. All Town Hall levels are welcome, and heroes are not required for war. You may not feel sure about attacking without heroes. This is normal. Our simple default war plan is Drop 2. Everyone must make at least the first war attack. We do not judge the result. Do your best. Our ultimate goal is a stress-free, fun and flexible experience.\n\n### Purpose\nOur goal is a fun and flexible war clan. Heroes can be down here. Every member can make war attacks, and nobody sits out because of hero upgrades.\n\n### Core Rules\n**No camping:** This clan is for war. Members must take part.\n**Minimum Participation:** Even with heroes down, every member is required to execute at least one war attack. Failure to participate in war earns a strike. If you get enough strikes, we can replace you."
         }
       ],
@@ -3422,7 +3429,7 @@
           "path": "utils/recruit_question_native.py",
           "line": 372,
           "matched_approved_fragment": "**No camping:** This clan is for war. Members must take part.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "### Concept\nWe are a laid-back farm/war clan — **NOT A CAMPING CLAN**. All Town Hall levels are welcome, and heroes are not required for war. You may not feel sure about attacking without heroes. This is normal. Our simple default war plan is Drop 2. Everyone must make at least the first war attack. We do not judge the result. Do your best. Our ultimate goal is a stress-free, fun and flexible experience.\n\n### Purpose\nOur goal is a fun and flexible war clan. Heroes can be down here. Every member can make war attacks, and nobody sits out because of hero upgrades.\n\n### Core Rules\n**No camping:** This clan is for war. Members must take part.\n**Minimum Participation:** Even with heroes down, every member is required to execute at least one war attack. Failure to participate in war earns a strike. If you get enough strikes, we can replace you."
         }
       ],
@@ -3441,7 +3448,7 @@
           "path": "utils/recruit_question_native.py",
           "line": 308,
           "matched_approved_fragment": "FWA clans give a steady supply of resources and XP. Use them to upgrade bases, troops and heroes.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "\n\nFWA, or Farm War Alliance, is a unique concept in Clash of Clans. The goal is to get the most loot and clan XP, not only to win wars.\n\n### **__<a:FWA:1398229188363948055> What are the benefits?__**\n**<a:Gold_Coins:1398229429892808745> Maximized Loot and XP**\nFWA clans give a steady supply of resources and XP. Use them to upgrade bases, troops and heroes.\n\n**<a:sleep_zzz:1398229533617946646> War Participation with Upgrading Heroes**\nIn FWA you can take part in a war even when your heroes are down for upgrades. So you can upgrade all the time.\n\n**<:CoolOP:1398229909339508839> Fair Wars**\nA lottery decides the war winner. Both sides have a fair chance and get a lot of loot.\n\n**<:Waiting:1398229981003382815> Is it against the rules?**\nNo. FWA clans follow the game rules and do not use hacks or exploits. They stay within the game's terms of service. It is a different but accepted way to play."
         }
       ],
@@ -3616,7 +3623,7 @@
           ]
         }
       ],
-      "reconciliation": "WORKING: cited exact visible text or rendered interpolation checked in current source; full item scope/reachability and test evidence still require independent review. No tests run in 169.",
+      "reconciliation": "172 retains EzPz unchanged; owner choice remains pending in 161-X.",
       "candidate_exact_fields": [
         {
           "path": "extensions/commands/setup/recruit_aboutus.py",
@@ -3634,7 +3641,7 @@
         }
       ],
       "candidate_validation": "Preliminary R focus passed; branch, complete item scope and independent exactness review pending.",
-      "status": "applied"
+      "status": "applied except \"EzPz\" kept, owner choice pending (161-X)"
     },
     {
       "id": "CL-118",
@@ -3838,7 +3845,7 @@
           "path": "utils/recruit_question_native.py",
           "line": 36,
           "matched_approved_fragment": "Clan chat is quiet most of the time, and donations can take longer. You still get them, but they do not always come fast. Our Discord server is a good place to talk if you want more conversation.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "Here’s what to expect from activity and chat in our FWA clans. FWA is one of the easiest ways to get loot in the game. It suits players who are less active than players who play for social contact or for competition. So our clans are not very chatty. Clan chat is quiet most of the time, and donations can take longer. You still get them, but they do not always come fast. Our Discord server is a good place to talk if you want more conversation.\n\n**Would any of this be an issue for you?**"
         }
       ],
@@ -3857,14 +3864,14 @@
           "path": "utils/recruit_question_native.py",
           "line": 87,
           "matched_approved_fragment": "**Lazy CWL** is our relaxed way to play Clan War Leagues. It gives you fun, flexibility and no stress.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "Have you ever heard of **Lazy CWL** before? 🤔\n\n**Lazy CWL** is our relaxed way to play Clan War Leagues. It gives you fun, flexibility and no stress.\n\n"
         },
         {
           "path": "utils/recruit_question_native.py",
           "line": 90,
           "matched_approved_fragment": "**If yes, what do you know about it?**",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": " **If yes, what do you know about it?**\n\n"
         }
       ],
@@ -3883,7 +3890,7 @@
           "path": "utils/recruit_question_native.py",
           "line": 372,
           "matched_approved_fragment": "You may not feel sure about attacking without heroes. This is normal. Our simple default war plan is Drop 2. Everyone must make at least the first war attack. We do not judge the result. Do your best.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "### Concept\nWe are a laid-back farm/war clan — **NOT A CAMPING CLAN**. All Town Hall levels are welcome, and heroes are not required for war. You may not feel sure about attacking without heroes. This is normal. Our simple default war plan is Drop 2. Everyone must make at least the first war attack. We do not judge the result. Do your best. Our ultimate goal is a stress-free, fun and flexible experience.\n\n### Purpose\nOur goal is a fun and flexible war clan. Heroes can be down here. Every member can make war attacks, and nobody sits out because of hero upgrades.\n\n### Core Rules\n**No camping:** This clan is for war. Members must take part.\n**Minimum Participation:** Even with heroes down, every member is required to execute at least one war attack. Failure to participate in war earns a strike. If you get enough strikes, we can replace you."
         }
       ],
@@ -3902,7 +3909,7 @@
           "path": "utils/recruit_question_native.py",
           "line": 401,
           "matched_approved_fragment": "We always aim for 3 ⭐ in war. Do not worry if you get fewer stars. Nobody is perfect. We expect members to follow the war format and to work as a team to win every war.",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "Our Tactical/Competitive War Clans are divided into two groups.\n\n**High Level:** TH13+ Non-Rushed\n\nWe always aim for 3 ⭐ in war. Do not worry if you get fewer stars. Nobody is perfect. We expect members to follow the war format and to work as a team to win every war.\n\n**__WE WIN AS A TEAM. WE LOSE AS A TEAM.__**\n\nAttack at full strength. Use your heroes. Do not upgrade anything big that makes your attack weaker."
         }
       ],
@@ -3924,7 +3931,7 @@
             439
           ],
           "exact_source_context": "                                \"2nd hit: ⭐ on BASE 1 for loot, or wait for the 8-hour cleanup call in Discord. The goal is 100 stars!\\n\\n\"\n                                \"There are two other plans, \\\"Blacklisted War\\\" and \\\"Mismatch War\\\". We use the two plans above most of the time.\\n\\n\"\n                                \"War Plans are posted via Discord and Clan Mail. Don't hesitate to ping me in your Clan's Chat Channel \"\n                                \"with any questions you may have.\\n\\n\"\n                                \"Follow the posted war plans. This is an important part of FWA. If you do not follow them, you can cause problems and harm the clan. \"\n                                \"**Don't be \\\"that guy\\\"**...🫡\"\n                            )),\n                            Media(\n                                items=[",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447"
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa"
         }
       ],
       "candidate_validation": "Owner-cited producer branches manually matched against approved proposal; static source evidence, not runtime proof.",
@@ -3949,7 +3956,7 @@
           "path": "utils/recruit_question_native.py",
           "line": 450,
           "matched_approved_fragment": "✅ **Check Discord and Clan Mail for instructions.**",
-          "source_sha256": "dd9cb38b8d9d48614a12e481352a20246ab8edb59cad85b94f35ddfb96e05447",
+          "source_sha256": "d1bc38d527bfc3541f6fc660b20759b4a170575792f8fc5fc614dae322ffc0fa",
           "literal_segment": "✅ **Attack in wars. Every. Single. Time.**\n✅ **Follow posted war plans. They're not suggestions—they're the playbook.**\n✅ **Check Discord and Clan Mail for instructions.**\n\nWondering what happens if you ghost a war?\n👻 **You land on the Naughty List.**\nThat means we look for a replacement. No hard feelings, just FWA business.\n\nLet's keep it fun, but let's keep it serious too. 💥"
         }
       ],
@@ -4221,7 +4228,8 @@
       ],
       "candidate_validation": "Owner-cited live producer branches manually matched against approved proposal; static source evidence only.",
       "preserved_subscope": "The send-result logic at owner-cited 478 is unchanged against 82400.",
-      "status": "applied"
+      "status": "applied",
+      "capture_count_ownership": "CL-142 owns exact failure clause {failed} could not be captured. Refresh the page to check.; CL-7 owns preceding saved count."
     },
     {
       "id": "CL-143",
@@ -4592,5 +4600,19 @@
       "status": "superseded-by"
     }
   ],
-  "source_working_sha256_method": "SHA-256 of git diff --binary 82400 against working Python files"
+  "source_working_sha256_method": "SHA-256 of git diff --binary 82400 against working Python files",
+  "followups_161x": [
+    {
+      "path": "extensions/commands/manage.py",
+      "line": 162,
+      "exact_text": "FWA Representative role",
+      "reason": "172: no exact approved replacement in R; held for 161-X."
+    },
+    {
+      "path": "extensions/commands/setup/recruit_aboutus.py",
+      "line": 114,
+      "exact_text": "EzPz",
+      "reason": "172: keep unchanged; owner choice pending."
+    }
+  ]
 }

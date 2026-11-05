@@ -20,7 +20,7 @@ def run(coro):
 ADDED = tuple(variant for variant in content.VARIANTS if variant not in content.PRIMARY_VARIANTS)
 
 
-def test_native_base_result_preserves_link_destination_and_select_label():
+def test_native_base_result_preserves_link_destination_and_approved_label():
     components = native_base_result(
         recruit_mention="<@22>", recruiter_mention="<@11>",
         friendly_name="Example", th_number="16", base_info="Example status",
@@ -29,7 +29,7 @@ def test_native_base_result_preserves_link_destination_and_select_label():
     )
     built = [component.build()[0] for component in components]
     button = built[1]["components"][2]["components"][0]
-    assert button["label"] == "Select Me!"
+    assert button["label"] == "Open base link"
     assert button["url"] == "https://example.org/base"
     assert button["style"] == hikari.ButtonStyle.LINK
 
