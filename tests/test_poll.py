@@ -593,7 +593,7 @@ def test_custom_duration_opens_the_approved_exact_five_field_modal(monkeypatch):
     assert [node["required"] for node in inputs] == [
         True, False, True, True, False,
     ]
-    assert inputs[0]["placeholder"] == "Which option should we choose?"
+    assert inputs[0]["placeholder"] == "Which option should we select?"
 
 
 @pytest.mark.parametrize(
