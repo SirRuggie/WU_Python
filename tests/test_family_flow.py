@@ -39,10 +39,10 @@ def _run(ctx, bot):
 def test_family_particulars_default_copy_and_target_are_updated():
     parts = family_particulars.build_familyparticulars()
     acknowledgement = content.text_nodes(parts)[-1].content
-    assert "Click **I understand - Continue**" in acknowledgement
+    assert "Select **I understand - Continue**" in acknowledgement
     assert "Reacting" not in acknowledgement
     assert "open an application ticket" in acknowledgement
-    assert "Choose only one application ticket option." in acknowledgement
+    assert "Select only one application ticket option." in acknowledgement
     assert family_particulars.CLAN_RULES_READ_ROLE_ID == 1553110621711634502
     assert family_particulars.APPLY_HERE_CHANNEL_ID == 1547242779711766528
     assert len(content.text_nodes(parts)) == 28
@@ -117,7 +117,7 @@ def test_family_particulars_member_fetch_failure_is_private_and_does_not_grant()
     bot.rest.add_role_to_member.assert_not_awaited()
     sent = ctx.interaction.execute.await_args.kwargs
     assert "do not expose" not in sent["content"]
-    assert "could not verify" in sent["content"]
+    assert "I could not check your member profile. Try again in a few minutes." in sent["content"]
     assert sent["flags"] & hikari.MessageFlag.EPHEMERAL
 
 
@@ -132,3 +132,11 @@ def test_family_particulars_role_grant_failure_is_private_and_keeps_public_post_
     assert "do not expose" not in sent["content"]
     assert "could not grant" in sent["content"]
     assert sent["flags"] & hikari.MessageFlag.EPHEMERAL
+
+
+def test_family_particulars_friendly_challenge_and_games_copy():
+    texts = [node.content for node in content.text_nodes(family_particulars.build_familyparticulars())]
+    assert "Every time you open the game, post a Friendly Challenge. Do this at any Town Hall level. It gives everyone a chance to practice." in texts
+    assert ("The goal is simple: each member must earn at least 1,000 points in Clan Games. "
+            "Builder Base challenges give you these points quickly. For example, 40 members who earn "
+            "1,250 points each make the 50,000 points that we need.") in texts

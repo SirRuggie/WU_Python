@@ -53,7 +53,7 @@ def test_question_editor_status_and_navigation_follow_saved_template():
     rows = _built(recruitment_questions._editor(state))
     assert "Management › Recruitment Questions ›" in _text(rows)
     assert "Saved" in _text(rows)
-    assert "Posting target: Future `/recruit questions`" in _text(rows)
+    assert "Saved changes apply to future `/recruit questions` messages." in _text(rows)
     assert [button["label"] for button in _buttons(rows[-1])] == ["Back to Questions", "Management Home"]
     assert _buttons(rows[-1])[1]["custom_id"] == "manage_home:home"
     state["template"] = copy.deepcopy(template)
@@ -72,7 +72,7 @@ def test_war_editor_status_and_navigation_follow_saved_template():
     rows = _built(fwa_war_messages._editor(state))
     assert "Management › FWA › War Message Templates › Win" in _text(rows)
     assert "Saved" in _text(rows)
-    assert "Posting target: Future `/fwa war-plans`" in _text(rows)
+    assert "Edits apply to future `/fwa war-plans` messages. To post a message, use `/fwa war-plans`." in _text(rows)
     assert [button["label"] for button in _buttons(rows[-1])] == ["Back to War Message Templates", "Back to FWA", "Management Home"]
     assert _buttons(rows[-1])[1]["custom_id"] == "manage_fwa:home"
     assert _buttons(rows[-1])[2]["custom_id"] == "manage_home:home"
@@ -97,7 +97,20 @@ def test_war_home_route_requires_review_only_for_dirty_draft(monkeypatch):
     manage.home.assert_awaited_once()
     state["template"]["sections"][0] += " changed"
     review = asyncio.run(fwa_war_messages.leave_home(context, "draft", mongo=object()))
+    assert "## Leave and go to Management Home?" in _text(_built(review))
     assert "Unsaved changes" in str(review[0].build())
     assert "manage_home:home" in str(review[0].build())
     assert "fwa_war_back_editor:draft" in str(review[0].build())
     manage.home.assert_awaited_once()
+
+
+def test_war_leave_review_uses_approved_heading_for_each_destination():
+    state = {"_id": "draft", "manage_token": "home", "variant": "win"}
+    for management, home, destination, leave_id in (
+        (False, False, "War Message Templates", "fwa_war_back:draft"),
+        (True, False, "FWA", "manage_fwa:home"),
+        (False, True, "Management Home", "manage_home:home"),
+    ):
+        rows = _built(fwa_war_messages._leave_review(state, management=management, home=home))
+        assert f"## Leave and go to {destination}?" in _text(rows)
+        assert leave_id in repr(rows)

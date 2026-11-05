@@ -59,8 +59,8 @@ async def notify(ctx, message: str, *, error: BaseException | None = None, rest=
             )
     except Exception:
         _log.exception('Could not send recruit error alert')
-        return message + '\nI could not notify the Server Dev automatically. Please contact server staff.'
-    return message + '\nThe Server Dev has been notified so they can look into this.'
+        return message + '\nI could not tell the Server Dev. Ask the server staff for help.'
+    return message + '\nThe Server Dev knows about this and will check it.'
 
 
 async def edit_error(ctx, *, content: str, rest=None) -> None:

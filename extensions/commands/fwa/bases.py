@@ -35,7 +35,7 @@ class Bases(
 ):
     user = lightbulb.user(
         "discord-user",
-        "Which user to show this for",
+        "User to show this to",
     )
 
     base_only = lightbulb.boolean(
@@ -70,8 +70,7 @@ class Bases(
                     Text(content="## Select FWA Base Town Hall Level"),
                     Text(
                         content=(
-                            "Use the dropdown menu below to assign the appropriate "
-                            "Town Hall level for the recruit."
+                            "Select the Town Hall level of the recruit in the menu below."
                         )
                     ),
                     ActionRow(
@@ -180,7 +179,7 @@ async def fwa_bases_th_select(
         fwa_data = await get_fwa_base_object(mongo)
         if not fwa_data:
             print(f"[FWA Bases] ERROR: FWA data not found!")
-            await ctx.respond("FWA data not found in database!", ephemeral=True)
+            await ctx.respond("Could not find the FWA data.", ephemeral=True)
             return
 
         # Format display name properly for _new variants
@@ -198,7 +197,7 @@ async def fwa_bases_th_select(
 
         if not base_link:
             print(f"[FWA Bases] ERROR: No base link found for {choice}")
-            await ctx.respond(f"No base link found for {choice}!", ephemeral=True)
+            await ctx.respond(f"No base link is set for {choice}.", ephemeral=True)
             return
 
         # Get base information for this TH level
@@ -210,8 +209,8 @@ async def fwa_bases_th_select(
         return
     if not base_info:
         base_info = (
-            "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
-            "Once you have made the switch, please send us a screenshot like below to confirm the update."
+            "To continue, switch your active war base to the link above.\n\n"
+            "Then send a screenshot like the example below."
         )
 
     # Build the response based on base_only flag
@@ -231,7 +230,7 @@ async def fwa_bases_th_select(
                         components=[
                             LinkButton(
                                 url=base_link,
-                                label="Click Me!",
+                                label="Open base link",
                             )
                         ]
                     ),
@@ -255,7 +254,7 @@ async def fwa_bases_th_select(
                         components=[
                             LinkButton(
                                 url=base_link,
-                                label="Click Me!",
+                                label="Open base link",
                             )
                         ]
                     ),

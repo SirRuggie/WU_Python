@@ -358,7 +358,7 @@ async def on_age_button(
 
     if int(ctx.user.id) != user_id:
         await ctx.respond(
-            f"Sorry {ctx.user.mention}, this button is only for {user.mention} to click. Please let them continue!",
+            f"Sorry {ctx.user.mention}, only {user.mention} can use this button. Let them continue!",
             ephemeral=True
         )
         return
@@ -465,7 +465,7 @@ async def on_shield_basics_button(
 
     if int(ctx.user.id) != user_id:
         await ctx.respond(
-            f"Sorry {ctx.user.mention}, this button is only for {user.mention} to click. Please let them continue!",
+            f"Sorry {ctx.user.mention}, only {user.mention} can use this button. Let them continue!",
             ephemeral=True
         )
         return
@@ -487,8 +487,8 @@ async def on_shield_basics_button(
                 Text(
                     content=(
                         "You've proven to be 50% smarter than the average discord user....👍🏻\n\n"
-                        "Now respond with the word Goblin and actually ping the Recruiter helping you with your ticket.\n\n"
-                        "If you don't know how to ping a person/role in Discord, no worries... respond with How to ping."
+                        "Now reply with the word Goblin. Also ping the recruiter who is helping you with your ticket.\n\n"
+                        "If you do not know how to ping a person or a role in Discord, no worries... reply with How to ping."
                     )
                 ),
                 Media(
@@ -575,7 +575,7 @@ async def fwa_questions(
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
     if choice not in question_content.GROUPS["fwa"]["variants"]:
-        await respond_error(ctx, "Choose an available FWA question.", ephemeral=True)
+        await respond_error(ctx, "Select an available FWA question.", ephemeral=True)
         return
     try:
         template = await question_content.load_template(mongo, int(ctx.guild_id), choice)
@@ -617,8 +617,8 @@ async def th_select(
     if not fwa:
         await respond_error(ctx,
             "❌ **FWA Data Not Found**\n\n"
-            "The FWA data is not in the database yet. "
-            "Please use the `/manage section:FWA` command to add all FWA data first.",
+            "The FWA data is not set up yet. "
+            "Use `/manage section:FWA` to add all FWA data first.",
             ephemeral=True
         )
         return
@@ -640,16 +640,16 @@ async def th_select(
     base_info = fwa.base_information.get(choice, "")
     if not base_info:
         base_info = (
-            "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
-            "Once you have made the switch, please send us a screenshot like below to confirm the update."
+            "To continue, switch your active war base to the link above.\n\n"
+            "Then send a screenshot like the example below."
         )
 
     # Check if base_link exists
     if not base_link:
         await respond_error(ctx,
             f"❌ **FWA Base Link Not Found**\n\n"
-            f"The FWA base link for {display_name} is not configured in the database. "
-            "Please use the `/manage section:FWA` command to add all FWA base links.",
+            f"The FWA base link for {display_name} is not set up. "
+            "Use `/manage section:FWA` to add all FWA base links.",
             ephemeral=True
         )
         return
@@ -662,7 +662,7 @@ async def th_select(
         await respond_error(ctx,
             f"❌ **FWA Base Images Not Found**\n\n"
             f"The FWA base images for {display_name} are not configured. "
-            "Please contact an administrator to add the FWA base images.",
+            "Ask an administrator to add the FWA base images.",
             ephemeral=True
         )
         return
@@ -701,7 +701,7 @@ async def explanations(
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
     if choice not in question_content.GROUPS["explanations"]["variants"]:
-        await respond_error(ctx, "Choose an available explanation.", ephemeral=True)
+        await respond_error(ctx, "Select an available explanation.", ephemeral=True)
         return
     try:
         template = await question_content.load_template(mongo, int(ctx.guild_id), choice)
@@ -737,7 +737,7 @@ async def keep_it_moving(
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
     if choice not in question_content.GROUPS["keep_it_moving"]["variants"]:
-        await respond_error(ctx, "Choose an available Keep It Moving message.", ephemeral=True)
+        await respond_error(ctx, "Select an available Keep It Moving message.", ephemeral=True)
         return
     try:
         template = await question_content.load_template(mongo, int(ctx.guild_id), choice)
@@ -765,12 +765,12 @@ async def recruit_questions_page(
             accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=(
-                    "An all-in-one toolkit to efficiently recruit candidates into Warriors United\n\n"
+                    "Tools to recruit people into Warriors United\n\n"
                     f"{emojis.gold_arrow_right} Primary Questions: Send tailored candidate questions.\n"
-                    f"{emojis.gold_arrow_right} Explanations: Summarise FWA\n"
+                    f"{emojis.gold_arrow_right} Explanations: Explain FWA\n"
                     f"{emojis.gold_arrow_right} FWA Questions: Send core FWA questions.\n"
                     f"{emojis.gold_arrow_right} Keep It Moving: Send quick “hurry up” GIFs.\n\n"
-                    "Stay organized, efficient, and aligned with Warriors United recruitment standards.\n\n"
+                    "Follow the Warriors United recruitment standards.\n\n"
                 )),
                 ActionRow(
                     components=[
@@ -798,7 +798,7 @@ async def recruit_questions_page(
                                     value="family_codes"),
                                 SelectOption(
                                     emoji="👀",
-                                    label="Leaders Checking You Out",
+                                    label="Application Under Review",
                                     value="leaders_checking_you_out"),
                                 SelectOption(
                                     emoji="🛡️",
@@ -844,7 +844,7 @@ async def recruit_questions_page(
                                 ),
                                 SelectOption(
                                     emoji=1387844788853801081,
-                                    label="FWA Bases (Upon Approval)",
+                                    label="FWA Bases (After Approval)",
                                     value="fwa_bases_upon_approval"
                                 ),
                             ],
@@ -1145,12 +1145,10 @@ def _family_code_success_components(
                 Separator(divider=True),
                 Text(content=(
                     f"{user_mention} **Thank you for acknowledging!**\n\n"
-                    "We encourage and allow temporary movement within the family, "
-                    "but a permanent move to another clan needs to be discussed "
-                    "with Leadership. The clan you are assigned to is your "
-                    "**Home Clan**—always come back home. 👍🏼\n\n"
-                    f"The **{code_found}** code, or either of the other combinations, "
-                    "will get you into any clan within the Family. Remember it! 💪🏼"
+                    "You can move to other clans in the family for a short time. To move to another clan for good, "
+                    "talk to Leadership first. Your assigned clan is your **Home Clan**. Always come back home. 👍🏼\n\n"
+                    f"The **{code_found}** code, or one of the other two codes, "
+                    "lets you join any clan in the Family. Remember it! 💪🏼"
                 )),
                 Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
                 Text(content=f"-# Confirmation triggered by {moderator_name}"),

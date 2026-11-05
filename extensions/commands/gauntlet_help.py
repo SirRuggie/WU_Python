@@ -53,18 +53,18 @@ def panel(state: dict, settings: dict, notice: str | None = None) -> list:
         hikari.impl.TextDisplayComponentBuilder(content="## Help & reminders"),
         hikari.impl.TextDisplayComponentBuilder(
             content=(
-                f"Recruit help is posted in <#{HELP_CHANNEL_ID}>. When a recruit stops progressing, "
-                f"the bot sends one reminder after **{minutes} minutes** of inactivity."
+                f"Recruit help is in <#{HELP_CHANNEL_ID}>. When a recruit makes no progress, "
+                f"one reminder is sent after **{minutes} minutes**."
             )
         ),
         hikari.impl.TextDisplayComponentBuilder(
             content=(
-                "The reminder deletes after 10 minutes. Completing the next Gauntlet step resets "
-                "its timer, and opening an application ticket ends reminders."
+                "The reminder is deleted after 10 minutes. When a recruit completes the next Gauntlet step, "
+                "the timer starts again. When a recruit opens an application ticket, reminders stop."
             )
         ),
         hikari.impl.TextDisplayComponentBuilder(
-            content="The help sticky returns to the bottom of the channel after 30 minutes of quiet."
+            content="The help message moves to the bottom of the channel after 30 minutes with no messages."
         ),
         hikari.impl.TextDisplayComponentBuilder(content=f"Reminder delay: **{minutes} minutes**"),
     ]

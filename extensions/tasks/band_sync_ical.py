@@ -230,10 +230,10 @@ def build_embed(event, offset_label):
     color = CALENDAR_COLORS.get(event["calendar"], FALLBACK_COLOR)
     if offset_label == DISCOVERY_OFFSET:
         title = "🗓️ New FWA Sync Scheduled"
-        lead = "A new sync has been posted. Get your FWA wars ready to spin."
+        lead = "A new sync is posted. Get your FWA wars ready to spin."
     else:
-        title = f"⚔️ FWA Sync in ~{offset_label} minutes"
-        lead = "**Spin the FWA wars.** Sync is coming up."
+        title = f"⚔️ FWA Sync in about {offset_label} minutes"
+        lead = "**Spin the FWA wars.** The sync is soon."
 
     embed = _base_embed(event, color)
     embed.title = title

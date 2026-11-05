@@ -15,6 +15,7 @@ from hikari.impl import (
 )
 from pymongo.errors import DuplicateKeyError
 from utils.constants import GOLDENROD_ACCENT
+from utils.dashboard_urls import SIGNUP_URL
 from utils.emoji import emojis
 
 VARIANTS = (
@@ -40,42 +41,40 @@ _DEFAULT_FOOTERS = {
 _DEFAULT_SECTIONS = {
     "attack_strategies": (
         "## ⚔️ **Attack Strategy Breakdown** · {recruit}",
-        "Help us understand your go-to attack strategies!\n\n"
+        "Tell us which attack strategies you use most.\n\n"
         f"{emojis.gold_arrow_right} **Main Village strategies**\n"
-        f"{emojis.blank}{emojis.white_arrow_right} _e.g. Hybrid, Queen Charge w/ Hydra, Lalo_\n\n"
+        f"{emojis.blank}{emojis.white_arrow_right} _for example: Hybrid, Queen Charge with Hydra, Lalo_\n\n"
         f"{emojis.gold_arrow_right} **Clan Capital Attack Strategies**\n"
-        f"{emojis.blank}{emojis.white_arrow_right} _e.g. Super Miners w/ Freeze_\n\n"
-        f"{emojis.gold_arrow_right} **Highest Clan Capital Hall level you’ve attacked**\n"
+        f"{emojis.blank}{emojis.white_arrow_right} _for example: Super Miners with Freeze_\n\n"
+        f"{emojis.gold_arrow_right} **Highest Clan Capital Hall level that you attacked**\n"
         f"{emojis.blank}{emojis.white_arrow_right} _e.g. CH 8, CH 9, etc.\n\n_"
-        "*Your detailed breakdown helps us match you to the perfect clan!*",
+        "*Your answers help us find the best clan for you.*",
         "-# Requested by {recruiter}",
     ),
     "discord_basic_skills": (
         "## 🎓 **Discord Basics Check** · {recruit}",
-        "We utilize three main methods to communicate within the Warriors United Server:\n\n"
-        "1️⃣ A comment\n2️⃣ A ping within that comment to a specific person/role.\n"
+        "We use three main ways to communicate in the Warriors United server:\n\n"
+        "1️⃣ A comment\n2️⃣ A ping to a person or a role in that comment.\n"
         "3️⃣ An emoji reaction to a comment.\n\n"
-        "**You've proven #1. Now prove to us you can do #2 and #3...👍🏼**\n\n"
-        "**Click/touch the🛡below to begin.**",
+        "**You did #1. Now show us that you can do #2 and #3...👍🏼**\n\n"
+        "**Select the 🛡 below to begin.**",
         "-# Requested by {recruiter}",
     ),
     "family_codes": (
         "## 🏰 **Keeping it in the Family** · {recruit}",
-        "Warriors United family members may move around the family for donations, "
-        "a Friendly Challenge with an available member, helping with Clan Games, "
-        "or participation in a Family Event. When sending a Clan Request use one "
-        "of these three emoji combos as your request message....\n\n"
+        "You can move between family clans for donations, a Friendly Challenge, help with Clan Games or a Family Event. "
+        "When you send a Clan Request, use one of these three emoji combinations as your request message.\n\n"
         "{family_codes}\n\n"
-        "**DO NOT** use the default join message... I'd like to join your clan.\n\n"
-        "Acknowledge you understand this by sending one of the above three codes "
-        "down below in chat. Just as you would if you were going to request to join!",
+        "**DO NOT** use the default join message: \"I'd like to join your clan.\"\n\n"
+        "To show that you understand, send one of the three codes above in this chat. "
+        "Send it the same way you would send a request to join.",
         "-# Requested by {recruiter}",
     ),
     "leaders_checking_you_out": (
         "## 🔍 **Application Under Review** · {recruit}",
         "Thank you for completing your application! 🎉\n\n"
-        "Our leadership team is now reviewing your responses to find the perfect clan match. "
-        "Please sit tight, we’ll be with you shortly! ⏳\n\n"
+        "Our leadership team is now reading your answers to find the best clan for you. "
+        "Please wait. We will be with you soon! ⏳\n\n"
         "We truly appreciate your interest in Warriors United and can’t wait to welcome you aboard!",
         "-# Requested by {recruiter}",
     ),
@@ -95,17 +94,16 @@ _DEFAULT_SECTIONS = {
     "warriors_united_cwl": (
         "## <:warriorcat:947992348971905035> Warriors United CWL <:warriorcat:947992348971905035> · {recruit}",
         "We use 20 clans for CWL, with leagues ranging from Master 1 to Gold 1. "
-        "All but our High Tactical Clans split up into these clans for CWL.\n\n"
+        "Players in all clans except our High Tactical Clans join these clans for CWL.\n\n"
         "Three factors determine the League you'll be placed in:\n\n"
         "1) War activity\n2) War performance\n3) Account strength\n\n"
-        "All are relative to the League you'll be placed in.\n\n"
-        "If you are new to the family with no war history then your first CWL season "
-        "might be in a lower league for support and/or strength. Nothing personal—you’re "
-        "new, so we don't know you yet. *Exceptions may be granted*\n\n"
-        "Signing up for CWL is mandatory and is done by way of a Google Form. "
-        "Sign-ups go live around Clan Games every month so we can prepare Rosters. "
-        "It's a super easy form that takes less than a minute.\n\n"
-        "## Any issues with filling out a simple form and moving to another clan for CWL?",
+        "We judge each factor against the League that you join.\n\n"
+        "If you are new to the family and have no war history, your first CWL season can be in a lower league. "
+        "This is for support or for strength. It is nothing personal. You are new and we do not know you yet. "
+        "*We can make exceptions.*\n\n"
+        f"You must sign up for CWL on the dashboard: {SIGNUP_URL}. "
+        "Sign-ups open around Clan Games each month so that we can prepare rosters.\n\n"
+        "## Is it a problem for you to sign up on the dashboard and move to another clan for CWL?",
         "-# Requested by {recruiter}",
     ),
 }
@@ -120,7 +118,7 @@ class TemplateConflict(ValueError):
 
 def _primary_default_template(variant: str) -> dict:
     if variant not in VARIANTS:
-        raise ValueError("Choose an active recruitment question.")
+        raise ValueError("Select an active recruitment question.")
     return {"variant": variant, "sections": list(_DEFAULT_SECTIONS[variant]),
             "footer_url": _DEFAULT_FOOTERS[variant], "accent": int(GOLDENROD_ACCENT), "revision": 0}
 
@@ -159,7 +157,7 @@ def _footer_ok(value: str | None, variant: str) -> bool:
 
 def _primary_validate_template(variant: str, template: dict) -> dict:
     if variant not in VARIANTS or not isinstance(template, dict) or template.get("variant") != variant:
-        raise ValueError("Choose an active recruitment question.")
+        raise ValueError("Select an active recruitment question.")
     sections = template.get("sections")
     if not isinstance(sections, list) or len(sections) != len(BLOCK_LABELS[variant]):
         raise ValueError("This question has the wrong number of text blocks.")
@@ -172,10 +170,10 @@ def _primary_validate_template(variant: str, template: dict) -> dict:
             raise ValueError("The family-code list belongs in its question message.")
     footer_url = template.get("footer_url")
     if not _footer_ok(footer_url, variant):
-        raise ValueError("Choose a public HTTPS image URL or the original artwork.")
+        raise ValueError("Select a public HTTPS image URL or the original artwork.")
     accent = template.get("accent")
     if isinstance(accent, bool) or not isinstance(accent, int) or not 0 <= accent <= 0xFFFFFF:
-        raise ValueError("Choose a valid six-digit accent color.")
+        raise ValueError("Select a valid six-digit accent color.")
     values = {"recruit": "<@" + "9" * 20 + ">", "recruiter": "<@" + "8" * 20 + ">", "family_codes": FAMILY_CODES_DISPLAY}
     rendered = [_replace(part, values) for part in sections]
     if any(len(part) > _MAX_BLOCK for part in rendered) or sum(map(len, rendered)) > _MAX_TOTAL_TEXT:
@@ -184,7 +182,7 @@ def _primary_validate_template(variant: str, template: dict) -> dict:
 
 def _row_id(guild_id: int, variant: str) -> str:
     if variant not in VARIANTS or isinstance(guild_id, bool) or not isinstance(guild_id, int) or guild_id <= 0:
-        raise ValueError("Choose an active recruitment question in a server.")
+        raise ValueError("Select an active recruitment question in a server.")
     return f"recruit_question_template:{guild_id}:{variant}"
 
 async def load_template(mongo, guild_id: int, variant: str) -> dict:
@@ -286,13 +284,13 @@ VARIANT_LABELS.update({
     "attack_strategies": "Attack Strategies",
     "discord_basic_skills": "Discord Basic Skills",
     "family_codes": "Family Codes",
-    "leaders_checking_you_out": "Leaders Checking You Out",
+    "leaders_checking_you_out": "Application Under Review",
     "fwa_clan_chat": "FWA Clan Chat",
     "get_war_weight": "Get War Weight",
     "heard_of_lazy_cwl": "Heard of Lazy CWL?",
     "lazy_cwl_explanation": "Lazy CWL Explanation",
     "fwa_leaders_reviewing": "FWA Leaders Reviewing",
-    "fwa_bases_upon_approval": "FWA Bases (Upon Approval)",
+    "fwa_bases_upon_approval": "FWA Bases (After Approval)",
     "what_is_fwa": "What is FWA",
     "fwa_war_plans": "FWA War Plans",
     "what_is_flexible_fun": "What is Flexible Fun",
@@ -380,7 +378,7 @@ def default_template(variant: str) -> dict:
     if variant in PRIMARY_VARIANTS:
         return _primary_default_template(variant)
     if variant not in VARIANTS:
-        raise ValueError("Choose an active recruitment question.")
+        raise ValueError("Select an active recruitment question.")
     return _new_default(variant)
 
 
@@ -422,7 +420,7 @@ def validate_template(variant: str, template: dict) -> dict:
     if variant in PRIMARY_VARIANTS:
         return _primary_validate_template(variant, template)
     if variant not in VARIANTS or not isinstance(template, dict) or template.get("variant") != variant:
-        raise ValueError("Choose an active recruitment question.")
+        raise ValueError("Select an active recruitment question.")
     sections = template.get("sections")
     if variant == "lazy_cwl_explanation" and isinstance(sections, list):
         sections = list(sections)
@@ -440,10 +438,10 @@ def validate_template(variant: str, template: dict) -> dict:
     if not isinstance(media, dict) or set(media) != set(original_media):
         raise ValueError("This question has the wrong number of image slots.")
     if any(not _public_media_ok(media[slot], original) for slot, original in original_media.items()):
-        raise ValueError("Choose a public HTTPS image URL or the original artwork.")
+        raise ValueError("Select a public HTTPS image URL or the original artwork.")
     accent = template.get("accent")
     if isinstance(accent, bool) or not isinstance(accent, int) or not 0 <= accent <= 0xFFFFFF:
-        raise ValueError("Choose a valid six-digit accent color.")
+        raise ValueError("Select a valid six-digit accent color.")
     if variant == "fwa_bases_upon_approval":
         required = {3: "{recruit}", 4: "{town_hall}", 5: "{th_number}",
                     6: "{base_info}", 7: "{recruiter}"}
@@ -532,7 +530,7 @@ def render_template(template: dict, *, user_id: int, recruiter_id: int,
         sections = validated["sections"][:3] if variant == "fwa_bases_upon_approval" else validated["sections"]
         media = validated["media"]
     else:
-        raise ValueError("Choose a supported FWA base preview stage.")
+        raise ValueError("Select a supported FWA base preview stage.")
     rendered = _replace_native(native, sections, media, validated["accent"], replacements, preview=preview)
     texts = [node.content for node in _text_nodes(rendered)]
     if any(len(text) > _MAX_BLOCK for text in texts) or sum(map(len, texts)) > _MAX_TOTAL_TEXT:
@@ -545,7 +543,7 @@ def preview_template(template: dict, *, stage: str = "selector") -> list:
     if template.get("variant") != "fwa_bases_upon_approval" or stage == "selector":
         return render_template(template, **sample)
     if stage != "result":
-        raise ValueError("Choose a supported FWA base preview stage.")
+        raise ValueError("Select a supported FWA base preview stage.")
     return render_template(
         template, **sample, stage="result", town_hall="Town Hall 18", th_number="18",
         base_info="Example FWA base instructions from clan data.",

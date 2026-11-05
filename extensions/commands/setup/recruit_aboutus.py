@@ -71,9 +71,9 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
                 Separator(divider=True),
                 text((
                     "We're an English-speaking clan family based in the USA, with Clashers from around the globe. "
-                    "We've developed a gameplay system that lets you war regardless of your base's upgrade status.\n\n"
-                    "**Note:** None of our clans are Family Friendly Clans. If any of your accounts require a Family "
-                    "Friendly Clan, you will need to look elsewhere. 👍🏼\n\n"
+                    "We use a game system that lets you take part in war while your base is upgrading.\n\n"
+                    "**Note:** None of our clans is a Family Friendly Clan. If one of your accounts needs a Family "
+                    "Friendly Clan, join a clan outside Warriors United.\n\n"
                     "Here's what we provide:\n"
                     ":shield: 2 High-Level Tactical Clans\n"
                     ":shield: 3 Flexible Fun War Clans\n"
@@ -88,9 +88,9 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
                     "**Funnies (#2Q9RLRCG)**\n"
                     "**WeAreBrother (#YQPYJCQ2)**\n\n"
                     "Our High-Level Tactical Clans require TH13+ and a fully maxed previous TH level, and they always strive to earn 3 ⭐ in war. "
-                    "Don't worry if you fail; they can't all be perfect. However, we expect our members to follow the established War Format "
-                    "and commit to winning every war as part of an overall team effort.\n\n"
-                    "Wars are always at full strength, meaning no Heroes may be upgrading."
+                    "Do not worry if you do not 3-star every time. Nobody is perfect. We expect our members to follow the War Format "
+                    "and to work as a team to win every war.\n\n"
+                    "Wars are always at full strength. No Heroes can be upgrading."
                 )),
             ]
         ),
@@ -105,12 +105,12 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
                     "**Noahs Ark (#8VPQCR2R)**\n"
                     "**Morning Woods! (#8VQP9VQ9)**\n\n"
                     "Our \"Flexible Fun\" Clans are relaxed Farm/War Clans that do 50v50 wars or the highest number possible. "
-                    "You will be held accountable for making your first attack here, but we won't hold you liable for performance. "
+                    "You must make your first attack. We do not judge your result. "
                     "No Heroes necessary!\n\n"
                     "These clans are designed for lower-level, more relaxed players. If you're in a Tactical Clan and have one or more heroes "
-                    "upgrading but still want some war loot, slide over to a Flexible Fun Clan and move back to Tactical "
-                    "when upgrades are done.\n\n"
-                    "Don't mistake these for Camping Clans; they are competitive. Like anyone, we strive to win!\n\n"
+                    "upgrading but still want some war loot, move to a Flexible Fun Clan, then move back to Tactical "
+                    "when the upgrades are done.\n\n"
+                    "These are not Camping Clans. They are competitive, and we want to win!\n\n"
                     "No War Activity = No Clan Membership. EzPz"
                 )),
             ]
@@ -127,17 +127,16 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
                     "**Four and Twenty (#8CV0GPPR)**\n"
                     "**The Horde (#2RRCJCI0)**\n"
                     "**PlaneClashers (#9UGQ0GL)**\n\n"
-                    "FWA (Farm War Alliance) is an alliance of clans that have back-to-back organized wars for loot. "
-                    "The war outcome is predetermined, and simple war plans are posted for the needed outcome. "
+                    "FWA (Farm War Alliance) is an alliance of clans. The clans have organized wars, one after the other, for loot. "
+                    "The war result is decided before the war, and simple war plans tell you how to get that result. "
                     "Heroes are not required.\n\n"
-                    "Minimum requirements: TH12 and above, with war weight equal to or greater than 115 and all buildings "
-                    "built for your current TH level."
+                    "Minimum requirements: TH12 or higher, a war weight of 115 or more, and all buildings built for your current TH level."
                 )),
                 Separator(divider=True),
                 text("### **Disclaimer**"),
                 text((
-                    "Each new recruit is evaluated on a case-by-case basis, and more details on each clan category will be "
-                    "provided in your interview. The above requirements are benchmarks and are subject to leadership's discretion."
+                    "We look at each new recruit case by case. We explain each clan type in your interview. "
+                    "The requirements above are guides. Leadership makes the final decision."
                 )),
             ]
         ),
@@ -148,7 +147,7 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
             components=[
                 text("## ⏩ **NEXT STEP**"),
                 text((
-                    "Choose **I understand - Continue** to unlock WU Strike System, then read its rules "
+                    "Select **I understand - Continue** to unlock WU Strike System, then read its rules "
                     "and follow the next step of the Recruit Gauntlet."
                 )),
                 ActionRow(
@@ -286,7 +285,7 @@ async def on_aboutus_acknowledge(
     try:
         target_channel = await observed("channel_check", bot.rest.fetch_channel, next_channel_id)
     except hikari.HTTPError:
-        await _private_error(ctx, "I could not open the next onboarding channel right now. Please try again shortly.")
+        await _private_error(ctx, "I could not open the next onboarding channel. Try again in a few minutes.")
         return
     except Exception:
         await _private_error(ctx, "I could not verify the next onboarding channel right now. Please try again shortly.")
@@ -308,27 +307,27 @@ async def on_aboutus_acknowledge(
         await _private_error(ctx, "I could not find your member profile in this server. Please try again shortly.")
         return
     except Exception:
-        await _private_error(ctx, "I could not verify your member profile right now. Please try again shortly.")
+        await _private_error(ctx, "I could not check your member profile. Try again in a few minutes.")
         return
 
     if role_id in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
         gauntlet_event("role_already_present")
         if guild_id == NEW_GUILD_ID:
             await observed("reminder_tracking", track_progress, mongo, guild_id, user_id, 2)
-        await _private_continue(ctx, guild_id, "You already have access to WU Strike System. Continue to the WU Strike System and work through the required Recruit Gauntlet steps.", bot=bot)
+        await _private_continue(ctx, guild_id, "You already have access to WU Strike System. Go to WU Strike System and do the required Recruit Gauntlet steps.", bot=bot)
         return
 
     try:
         await observed("role_assignment", bot.rest.add_role_to_member, guild=guild_id, user=user_id, role=role_id)
     except hikari.HTTPError:
-        await _private_error(ctx, "I could not grant access to WU Strike System right now. Please try again shortly.")
+        await _private_error(ctx, "I could not give you access to WU Strike System. Try again in a few minutes.")
         return
     except Exception:
-        await _private_error(ctx, "I could not grant access to WU Strike System right now. Please try again shortly.")
+        await _private_error(ctx, "I could not give you access to WU Strike System. Try again in a few minutes.")
         return
 
     if guild_id == NEW_GUILD_ID:
         await observed("reminder_tracking", track_progress, mongo, guild_id, user_id, 2)
-    await _private_continue(ctx, guild_id, "Continue to the WU Strike System and work through the required Recruit Gauntlet steps.", bot=bot)
+    await _private_continue(ctx, guild_id, "Go to WU Strike System and do the required Recruit Gauntlet steps.", bot=bot)
 
 loader.command(setup)

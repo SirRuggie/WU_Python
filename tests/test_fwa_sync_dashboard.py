@@ -161,7 +161,7 @@ def test_feed_check_is_dry_run_and_test_dm_is_explicit(monkeypatch):
     monkeypatch.setattr(sync, "dm_all", send)
     monkeypatch.setattr(sync, "build_embed", build_embed)
     dry = run(dashboard.check(env.ctx, "start", mongo=env.mongo))
-    assert "No DMs sent" in built(dry)
+    assert "This is a test only. No DMs were sent." in built(dry)
     send.assert_not_awaited()
     assert not env.mongo.fwa_sync_config.updates
     tested = run(dashboard.test_dm(env.ctx, "start", mongo=env.mongo))
@@ -253,8 +253,8 @@ def test_band_monitor_panel_reports_runtime_only_status_and_sanitizes(monkeypatc
     assert "BAND key:** Resolved" in text and "private-key-must-not-render" not in text
     assert "Poll health:** unhealthy" in text and "Last successful poll:** <t:" in text
     assert "bad ＠error ‹private›" in text
-    assert "Debug logging:** ON" in text and "resets to the startup default" in text
-    assert "post monitor logging only, not reminders" in text
+    assert "Debug logging:** ON" in text
+    assert "Debug logging returns to the default after a restart. It changes only the logs of the BAND post monitor. It does not change reminders." in text
     assert "fwa_band_monitor_refresh:start" in text
     assert "fwa_sync_refresh:start" in text and "manage_home:home" in text
 
@@ -278,7 +278,7 @@ def test_band_monitor_controls_guard_state_refresh_without_db_write_and_set_debu
     disabled = run(dashboard.band_monitor_debug(env.ctx, "start|off", mongo=env.mongo))
     assert monitor.DEBUG_MODE is False and "set to OFF" in built(disabled)
     invalid = run(dashboard.band_monitor_debug(env.ctx, "start|toggle", mongo=env.mongo))
-    assert "Choose Enable debug or Disable debug" in built(invalid)
+    assert "Select Enable debug or Disable debug." in built(invalid)
     env.ctx.user.id = 2
     denied = run(dashboard.band_monitor_debug(env.ctx, "start|on", mongo=env.mongo))
     assert "Open your own" in built(denied) and monitor.DEBUG_MODE is False

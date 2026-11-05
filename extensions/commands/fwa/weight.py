@@ -174,9 +174,9 @@ class WeightCommand(
         if total_weight >= 56000:  # Only show FWA info for TH9+
             additional_info.append("")  # Add empty line for separator
             if total_weight < 115000:
-                additional_info.append("❌ **War Weight not suitable for FWA Wars.**")
-                additional_info.append("**Minimum weight requirement = 115,000.**")
-                additional_info.append("**Recommend a Flexible Fun Clan.**")
+                additional_info.append("❌ **This war weight is too low for FWA wars.**")
+                additional_info.append("**The minimum weight is 115,000.**")
+                additional_info.append("**We recommend a Flexible Fun clan.**")
             else:
                 additional_info.append("✅ **Suitable weight for FWA clan wars**")
 

@@ -66,7 +66,7 @@ def test_command_missing_baseline_returns_components(monkeypatch):
     kwargs = ctx.interaction.edit_initial_response.call_args.kwargs
     assert 'content' not in kwargs
     assert kwargs['mentions_everyone'] is False
-    assert 'unavailable' in str(kwargs['components'][0].build())
+    assert 'The saved gold loot test data is not available on this host. Ask the owner to restore it. Then run this command again.' in str(kwargs['components'][0].build())
 
 
 def test_wrong_guild_does_not_read_tracker(monkeypatch):

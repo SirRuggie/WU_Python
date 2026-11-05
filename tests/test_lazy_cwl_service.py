@@ -326,14 +326,14 @@ def test_main_manual_reminder_refreshes_links_and_never_enables_schedule(monkeyp
     parts = sent["components"][0].components
     assert parts[0].content == "## ⚔️ Want to join the next war?"
     assert parts[2].content == (
-        "Our next war is coming soon. If you would like to participate and earn "
-        "extra ore and loot, please return to **Alpha**."
+        "Our next war starts soon. To join it and earn extra ore and loot, "
+        "return to **Alpha**."
     )
     assert parts[4].content == "**Players currently away:**"
     assert parts[5].content == "**Away** · `#AWAY` · <@123456789>"
     assert "Home" not in parts[5].content
     assert parts[6].components[0].url == "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23ABC"
-    assert parts[6].components[0].label == "Open Alpha in-Game"
+    assert parts[6].components[0].label == "Open Alpha in the game"
     refreshed = asyncio.run(store.get_by_id(mongo, "main-list"))
     assert refreshed["reminders"]["sent_count"] == 1
     assert refreshed["reminders"]["enabled"] is False
@@ -389,12 +389,12 @@ def test_fwa_reminder_preserves_clan_link_player_tags_and_workflow(monkeypatch):
     components = sent["components"][0].components
     assert components[0].content == "## 📢 FWA Sync War - Return to Alpha"
     assert components[2].content == "⚔️ **FWA SYNC WAR TIME** ⚔️"
-    assert components[3].content == "Please return to **Alpha** `#ABC` for sync war!"
+    assert components[3].content == "Return to **Alpha** `#ABC` before the next FWA sync!"
     assert components[5].content == "**Workflow: Join CWL Clan ⇨ Attack ⇨ Return to FWA Clan (15-30min tops)**"
     assert components[7].content == "**Players to return:**"
     assert components[8].content == "**Two** · `#P2` · <@123456789>"
-    assert components[10].content == "**Players not yet in their clan:** 1/2 players"
-    assert components[12].components[0].label == "Open Alpha in-Game"
+    assert components[10].content == "**Players not yet in their clan:** 1 of 2"
+    assert components[12].components[0].label == "Open Alpha in the game"
     assert components[12].components[0].url == (
         "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23ABC"
     )
@@ -427,7 +427,7 @@ def test_reminder_message_splits_large_roster_and_whitelists_mentions(monkeypatc
         assert "@\u200beveryone" in recipient_text
         assert len(recipient_text) <= 3000
         assert len(components) <= 40
-        assert components[10].content == "**Players not yet in their clan:** 50/50 players"
+        assert components[10].content == "**Players not yet in their clan:** 50 of 50"
         assert components[12].components[0].url.endswith("tag=%23ABC")
         assert all(isinstance(user_id, int) for user_id in message["user_mentions"])
     assert len(rows) == 50
@@ -554,7 +554,7 @@ def test_set_reminders_enabled_without_every_minutes_rejected(monkeypatch):
 
     result = asyncio.run(service.set_reminders("#ABC", True, every_minutes=None))
 
-    assert result == {"ok": False, "error": "Choose how often."}
+    assert result == {"ok": False, "error": "Select how often."}
     assert scheduler.add_job_calls == []
     refreshed = asyncio.run(store.get_by_id(mongo, "list-1"))
     assert refreshed["reminders"]["enabled"] is False

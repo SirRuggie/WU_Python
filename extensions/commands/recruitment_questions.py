@@ -109,7 +109,7 @@ def _home(state: dict, notice: str | None = None) -> list:
     rows = [
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruitment Questions")),
         hikari.impl.TextDisplayComponentBuilder(content="## Recruitment Questions"),
-        hikari.impl.TextDisplayComponentBuilder(content="Choose a question from the same four groups used by `/recruit questions`."),
+        hikari.impl.TextDisplayComponentBuilder(content="Select a question from the same four groups used by `/recruit questions`."),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
     ]
     if notice:
@@ -141,7 +141,7 @@ def _editor(state: dict, notice: str | None = None) -> list:
     selector = hikari.impl.MessageActionRowBuilder()
     menu = selector.add_text_menu(
         f"recruit_question_block:{sid}", min_values=1, max_values=1,
-        placeholder="Choose a text block",
+        placeholder="Select a text block",
     )
     for group in _text_groups(variant):
         menu.add_option(group.label[:100], group.key)
@@ -165,9 +165,9 @@ def _editor(state: dict, notice: str | None = None) -> list:
             f"{'Unsaved changes' if _dirty(state) else 'Saved'} · "
             f"{len(template['sections'])} text blocks · {media_status}"
         )),
-        hikari.impl.TextDisplayComponentBuilder(content="Posting target: Future `/recruit questions` messages after Save changes."),
+        hikari.impl.TextDisplayComponentBuilder(content="Saved changes apply to future `/recruit questions` messages."),
         hikari.impl.TextDisplayComponentBuilder(content=(
-            "Use `{recruit}` and `{recruiter}` for live mentions."
+            "Use `{recruit}` and `{recruiter}` to mention the people."
             + (" Keep `{family_codes}` for the three valid clan codes." if variant == "family_codes" else "")
             + (" Keep the live Town Hall and base placeholders." if variant == "fwa_bases_upon_approval" else "")
         )),
@@ -181,7 +181,7 @@ def _editor(state: dict, notice: str | None = None) -> list:
         media_row = hikari.impl.MessageActionRowBuilder()
         media_menu = media_row.add_text_menu(
             f"recruit_question_media:{sid}", min_values=1, max_values=1,
-            placeholder="Choose an image to edit",
+            placeholder="Select an image to edit",
         )
         for slot, label in content.MEDIA_LABELS[variant].items():
             source = "custom" if template["media"][slot] != native["media"][slot] else "original"
@@ -190,7 +190,7 @@ def _editor(state: dict, notice: str | None = None) -> list:
         if selected_slot in template["media"]:
             rows.append(hikari.impl.TextDisplayComponentBuilder(content=(
                 f"-# Selected: {content.MEDIA_LABELS[variant][selected_slot]}. "
-                "Upload or restore, then Save changes to publish future posts."
+                "Upload or restore an image. Then select Save changes."
             )))
 
     rows.extend([
@@ -224,7 +224,7 @@ def _leave_review(state: dict, *, management: bool) -> list:
     leave_id = f"manage_home:{state['manage_token']}" if management else f"recruit_question_back:{sid}"
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruitment Questions", content.VARIANT_LABELS[state["variant"]])),
-        hikari.impl.TextDisplayComponentBuilder(content=f"## Return to {destination}?"),
+        hikari.impl.TextDisplayComponentBuilder(content=f"## Leave and go to {destination}?"),
         hikari.impl.TextDisplayComponentBuilder(content="Unsaved changes in this draft will not be restored. Save them first if you want future recruitment messages to use them."),
         _buttons(
             (f"recruit_question_back_editor:{sid}", "Keep editing", hikari.ButtonStyle.PRIMARY, False),
@@ -279,7 +279,7 @@ async def group(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
     if problem: return _error(problem)
     definition = content.GROUPS.get(group_key) if sep else None
     key = _selected(ctx, set(definition["variants"]) if definition else set())
-    if key is None: return _home(state, "Choose a question from that group.")
+    if key is None: return _home(state, "Select a question from that group.")
     try: template = await content.load_template(mongo, state["guild_id"], key)
     except ValueError as exc: return _home(state, str(exc))
     draft = await _next(mongo, state, view="editor", variant=key, template=template, saved_template=copy.deepcopy(template))
@@ -293,7 +293,7 @@ async def variant(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.IN
         return _error(problem)
     key = _selected(ctx, set(content.VARIANTS))
     if key is None:
-        return _home(state, "Choose one supported recruitment message.")
+        return _home(state, "Select one supported recruitment message.")
     try:
         template = await content.load_template(mongo, state["guild_id"], key)
     except ValueError as exc:
@@ -317,7 +317,7 @@ async def block(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
     group = by_key(edit_groups, key or "")
     if group is None:
         await _ack_modal(ctx)
-        await _modal_edit(ctx, _editor(state, "Choose one editable text block."))
+        await _modal_edit(ctx, _editor(state, "Select one editable text block."))
         return
     fields = modal_fields(group, state["template"]["sections"])
     await ctx.respond_with_modal(
@@ -346,7 +346,7 @@ async def submit(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
         content.BLOCK_LABELS[state["variant"]], content.default_template(state["variant"])["sections"], key,
     )
     if group is None:
-        await _modal_edit(ctx, _editor(state, "Choose one supported block and enter text."))
+        await _modal_edit(ctx, _editor(state, "Select one supported block and enter text."))
         return
     try:
         sections = apply_modal(group, state["template"]["sections"], {
@@ -393,7 +393,7 @@ async def base_preview(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
         await _modal_edit(ctx, _error(problem))
         return
     if state["variant"] != "fwa_bases_upon_approval":
-        await _modal_edit(ctx, _editor(state, "Choose FWA Bases to view a Town Hall example."))
+        await _modal_edit(ctx, _editor(state, "Select FWA Bases to view a Town Hall example."))
         return
     try:
         components = content.preview_template(state["template"], stage="result")
@@ -459,7 +459,7 @@ async def save(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJEC
             state["template"]["revision"], state["user_id"],
         )
     except content.TemplateConflict:
-        return _editor(state, "This template changed elsewhere. Reopen it before saving.")
+        return _editor(state, "This template changed elsewhere. Reopen it before you save.")
     except ValueError as exc:
         return _editor(state, str(exc))
     draft = await _next(mongo, state, template=saved, saved_template=copy.deepcopy(saved))
@@ -474,7 +474,7 @@ async def reset(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
         return _error(problem)
     return [hikari.impl.ContainerComponentBuilder(accent_color=RED_ACCENT, components=[
         hikari.impl.TextDisplayComponentBuilder(content="## Reset this recruitment message?"),
-        hikari.impl.TextDisplayComponentBuilder(content="This restores the original text, accent, and artwork for future posts. Any unsaved edits in this draft will be discarded."),
+        hikari.impl.TextDisplayComponentBuilder(content="This restores the original text, accent color and artwork for future posts. It removes all unsaved edits in this draft."),
         _buttons(
             (f"recruit_question_reset_confirm:{action_id}", "Reset defaults", hikari.ButtonStyle.DANGER, False),
             (f"recruit_question_back_editor:{action_id}", "Keep editing", hikari.ButtonStyle.SECONDARY, False),
@@ -494,7 +494,7 @@ async def reset_confirm(ctx: Any, action_id: str, mongo: MongoClient = lightbulb
             state["template"]["revision"], state["user_id"],
         )
     except content.TemplateConflict:
-        return _editor(state, "This template changed elsewhere. Reopen it before resetting.")
+        return _editor(state, "This template changed elsewhere. Reopen it before you reset it.")
     draft = await _next(mongo, state, template=saved, saved_template=copy.deepcopy(saved))
     return _editor(draft, "Defaults restored for future posts.")
 
@@ -573,7 +573,7 @@ async def choose_media(
     slots = set(state["template"].get("media", {}))
     selected = _selected(ctx, slots)
     if selected is None:
-        return _editor(state, "Choose one editable image slot.")
+        return _editor(state, "Select one editable image slot.")
     draft = await _next(mongo, state, selected_media_slot=selected)
     return _editor(draft, f"{content.MEDIA_LABELS[state['variant']][selected]} selected.")
 
@@ -588,7 +588,7 @@ async def footer(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
     multi_image = "media" in state["template"]
     slot = state.get("selected_media_slot")
     if multi_image and slot not in state["template"]["media"]:
-        await ctx.respond("Choose an image slot before uploading.", ephemeral=True)
+        await ctx.respond("Select an image slot before uploading.", ephemeral=True)
         return
     if not multi_image and content.default_template(state["variant"])["footer_url"] is None:
         await ctx.respond("This recruitment message has no footer artwork.", ephemeral=True)
@@ -599,7 +599,7 @@ async def footer(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
         custom_id=f"recruit_question_footer_submit:{action_id}",
         components=[FileUploadModalComponentBuilder(
             custom_id="image", label=label,
-            description="PNG, JPG, GIF, or WEBP; maximum 10 MB",
+            description="PNG, JPG, GIF or WEBP. Maximum 10 MB.",
         )],
     )
 
@@ -623,7 +623,7 @@ async def footer_submit(
     multi_image = "media" in state["template"]
     slot = state.get("selected_media_slot")
     if multi_image and slot not in state["template"]["media"]:
-        await _modal_edit(ctx, _editor(state, "Choose an image slot before uploading."))
+        await _modal_edit(ctx, _editor(state, "Select an image slot before uploading."))
         return
     if not multi_image and content.default_template(state["variant"])["footer_url"] is None:
         await _modal_edit(ctx, _editor(state, "This recruitment message has no footer artwork."))
@@ -666,7 +666,7 @@ async def restore_footer(ctx: Any, action_id: str, mongo: MongoClient = lightbul
     if "media" in template:
         slot = state.get("selected_media_slot")
         if slot not in template["media"]:
-            return _editor(state, "Choose an image slot before restoring it.")
+            return _editor(state, "Select an image slot before restoring it.")
         template["media"][slot] = native["media"][slot]
     else:
         if native["footer_url"] is None:

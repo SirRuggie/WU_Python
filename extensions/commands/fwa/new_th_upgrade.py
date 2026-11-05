@@ -35,7 +35,7 @@ class NewThUpgrade(
 ):
     user = lightbulb.user(
         "discord-user",
-        "Which user to show this for",
+        "User to show this to",
     )
 
     @lightbulb.invoke
@@ -63,8 +63,7 @@ class NewThUpgrade(
                     Text(content="## Select FWA Base Town Hall Level"),
                     Text(
                         content=(
-                            "Use the dropdown menu below to assign the appropriate "
-                            "Town Hall level for the recruit."
+                            "Select the Town Hall level of the recruit in the menu below."
                         )
                     ),
                     ActionRow(
@@ -181,7 +180,7 @@ async def fwa_new_th_upgrade_th_select(
         fwa_data = await get_fwa_base_object(mongo)
         if not fwa_data:
             print(f"[FWA New TH Upgrade] ERROR: FWA data not found!")
-            await ctx.respond("FWA data not found in database!", ephemeral=True)
+            await ctx.respond("Could not find the FWA data.", ephemeral=True)
             return
         print(f"[FWA New TH Upgrade] Got FWA data successfully")
 
@@ -201,7 +200,7 @@ async def fwa_new_th_upgrade_th_select(
 
         if not base_link:
             print(f"[FWA New TH Upgrade] ERROR: No base link found for {choice}")
-            await ctx.respond(f"No base link found for {choice}!", ephemeral=True)
+            await ctx.respond(f"No base link is set for {choice}.", ephemeral=True)
             return
 
         # Get base upgrade notes for this TH level
@@ -217,8 +216,8 @@ async def fwa_new_th_upgrade_th_select(
         return
     if not upgrade_notes:
         upgrade_notes = (
-            "No upgrade notes available for this Town Hall level at this time.\n\n"
-            "Please check back later or contact leadership for more information."
+            "There are no upgrade notes for this Town Hall level yet.\n\n"
+            "Check again later or ask leadership."
         )
 
     # Build the response
@@ -237,7 +236,7 @@ async def fwa_new_th_upgrade_th_select(
                     components=[
                         LinkButton(
                             url=base_link,
-                            label="Click Me!",
+                            label="Open base link",
                         )
                     ]
                 ),

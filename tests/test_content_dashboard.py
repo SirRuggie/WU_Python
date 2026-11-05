@@ -15,7 +15,7 @@ def _count_components(items):
 
 def test_native_document_baselines_keep_original_layout_and_text_totals():
     async def check():
-        expected = {"about-us": (12, 2752), "strike-system": (12, 3483), "family-particulars": (28, 3926)}
+        expected = {"about-us": (12, 2579), "strike-system": (12, 3236), "family-particulars": (28, 3710)}
         expected_components = {"about-us": 22, "strike-system": 29, "family-particulars": 40}
         for key in expected:
             document = content.DOCUMENTS[key]
@@ -159,3 +159,75 @@ def test_revoked_clan_dashboard_role_is_refused_before_child_mutation():
     )
     assert asyncio.run(require_dashboard_role(ctx, 993015846442127420, "Clan Management")) is False
     assert ctx.respond.await_args.kwargs["ephemeral"] is True
+
+
+def test_native_document_changed_fields_match_exact_approved_text():
+    expected = [
+        ('about-us', "We're an English-speaking", (
+            "We're an English-speaking clan family based in the USA, with Clashers from around the gl"
+            'obe. We use a game system that lets you take part in war while your base is upgrading.\n\n'
+            '**Note:** None of our clans is a Family Friendly Clan. If one of your accounts needs a F'
+            "amily Friendly Clan, join a clan outside Warriors United.\n\nHere's what we provide:\n:shie"
+            'ld: 2 High-Level Tactical Clans\n:shield: 3 Flexible Fun War Clans\n:shield: 5 Official FW'
+            'A Clans for Farmers\n:shield: CWL opportunities for everyone\n:shield: An Experienced Base'
+            '-Building Team\n:shield: Experienced Attack Trainers'
+        )),
+        ('about-us', 'We look at each new recruit', (
+            'We look at each new recruit case by case. We explain each clan type in your interview. T'
+            'he requirements above are guides. Leadership makes the final decision.'
+        )),
+        ('about-us', '**Clash of Thrones', (
+            '**Clash of Thrones (#Q889GPL)**\n**CoT Wildlings (#2YJVQUCYJ)**\n**Four and Twenty (#8CV0G'
+            'PPR)**\n**The Horde (#2RRCJCI0)**\n**PlaneClashers (#9UGQ0GL)**\n\nFWA (Farm War Alliance) i'
+            's an alliance of clans. The clans have organized wars, one after the other, for loot. Th'
+            'e war result is decided before the war, and simple war plans tell you how to get that re'
+            'sult. Heroes are not required.\n\nMinimum requirements: TH12 or higher, a war weight of 11'
+            '5 or more, and all buildings built for your current TH level.'
+        )),
+        ('strike-system', '🛡️**WARRIORS UNITED**', (
+            '🛡️**WARRIORS UNITED**🛡️ is an adult community with good morals and ethics. A little bant'
+            'er and joking is fine, but we do not allow some things...\n\n**1.** No form of sexism, rac'
+            'ism, religious discrimination, or gender discrimination will be tolerated. We ban you pe'
+            'rmanently, without a warning, if we see this anywhere on this server.\n\n**2.** While cuss'
+            'ing is allowed, do not cuss excessively or at someone. All such instances will be record'
+            'ed. A warning will be issued to you for each instance.\n\n**3.** Do not post advertisement'
+            's for free Nitro. We do not check if they are real, and we ban without a warning.\n\n**4.*'
+            '* Respect other members and their privacy. If you send direct messages to someone again '
+            'and again after they tell you to stop, you get a warning.\n\n**5.** When you post a messag'
+            'e, image, GIF or sticker, always follow the Discord Terms of Service: https://discord.co'
+            'm/terms. Not following Discord ToS will lead to a one-day mute, and a second instance wi'
+            'll lead to a ban from the server.\n\nAfter two warnings: you get a one-day timeout.\nAfter '
+            'three warnings: you get a one-week timeout.\nAfter four warnings: you are banned from the'
+            ' server for good and removed from the family in CoC.'
+        )),
+        ('family-particulars', 'To be included in war', (
+            'To be included in war, you must have GREEN ✅ 🛡️ (opt-in) as your War Status. FWA/No Stre'
+            'ss is explained below.\n\nIf you cannot take part in war for a personal reason, or your He'
+            'roes are upgrading in a clan that needs Heroes in war, set your War Status to RED ❌ 🛡️ ('
+            'opt-out).\n\nIf you do not tell us or do not change your war availability in one of these '
+            'cases, you get a strike in the Warriors United Strike System.\n\nIf you are in one of our '
+            "FWA Clans or one of our No Stress Clans, it's 50v50 wars, so no matter what your base is"
+            ' upgrading, you should be ✅ with your War Status.'
+        )),
+        ('family-particulars', 'Everyone must help fill', (
+            'Everyone must help fill Defensive CCs. Fill the Defensive CC of the member below you wit'
+            'h the troops they ask for. Do not leave one person to fill all of them.'
+        )),
+        ('family-particulars', 'Our Clan War General', (
+            'Our Clan War General will provide a scripted War Plan detailing your war assignment. Do '
+            'not assume that you attack your mirror. Wait for the War Plan before you attack. If ther'
+            'e is no plan after a long time, ping the War General role of your clan and ask. Do not a'
+            'ttack alone without a plan. You have 24 hours to plan and attack. Always attack for star'
+            's, not for loot or Hero status (unless given specific direction by the War General).'
+        )),
+        ('family-particulars', 'Select **I understand - Continue**', (
+            'Select **I understand - Continue** to confirm that you read the Family Particulars. Then'
+            ' select Apply to open an application ticket.\n\nSelect only one application ticket option.'
+        )),
+    ]
+    async def check():
+        for key, prefix, expected_field in expected:
+            nodes = content.text_nodes(await content.baseline(content.DOCUMENTS[key]))
+            matches = [node.content for node in nodes if node.content.startswith(prefix)]
+            assert matches == [expected_field]
+    asyncio.run(check())

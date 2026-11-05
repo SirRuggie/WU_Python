@@ -70,7 +70,7 @@ async def _state(ctx: Any, mongo: MongoClient, token: str) -> tuple[dict | None,
             or state.get("user_id") != user or state.get("guild_id") != guild):
         return None, "Open your own FWA Points Monitor from `/manage`."
     if not _admin(ctx):
-        return None, "Administrator permission is required."
+        return None, "You need Administrator permission."
     return state, None
 
 
@@ -125,7 +125,7 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None, *, 
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         hikari.impl.TextDisplayComponentBuilder(content=(
             f"### Effective watch list · {len(watch)} clans · Page {page + 1}/{pages}\n"
-            "FWA clans are automatic; extras can be removed below."
+            "FWA clans are added automatically. You can remove extra clans below."
         )),
     ]
     if notice:
@@ -167,7 +167,7 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None, *, 
     if extra_options:
         menu_row = hikari.impl.MessageActionRowBuilder()
         select = menu_row.add_text_menu(
-            f"fwa_points_select_extra:{state['_id']}", placeholder="Choose an extra clan to remove",
+            f"fwa_points_select_extra:{state['_id']}", placeholder="Select an extra clan to remove",
             min_values=1, max_values=1,
         )
         for entry in extra_options:
@@ -202,7 +202,7 @@ async def open_dashboard(ctx: Any, mongo: MongoClient, *, manage_token: str,
     user, guild = _identity(ctx)
     if user is None or guild is None or not _admin(ctx):
         await ctx.interaction.edit_initial_response(
-            components=_error("Administrator permission is required."), **NO_MENTIONS,
+            components=_error("You need Administrator permission."), **NO_MENTIONS,
         )
         return
     state = await _new(mongo, user_id=user, guild_id=guild, manage_token=manage_token, page=0)
@@ -243,10 +243,10 @@ async def toggle(ctx: Any, action_id: str,
     if problem:
         return _error(problem)
     if not sep or choice not in {"on", "off"}:
-        return await _panel(mongo, state, "Choose Enable or Disable.")
+        return await _panel(mongo, state, "Select Enable or Disable.")
     cancelled = await monitor.set_monitor_enabled(mongo, choice == "on")
-    notice = ("Monitor enabled. Checks resume on the next detector pass (within 10 minutes)." if choice == "on" else
-              f"Monitor disabled; stopped {cancelled} active retry task(s).")
+    notice = ("Monitor enabled. Checks start again within 10 minutes." if choice == "on" else
+              f"Monitor disabled. Active retry tasks stopped: {cancelled}.")
     return await _panel(mongo, await _next(mongo, state), notice)
 
 
@@ -299,19 +299,19 @@ async def add_submit(ctx: Any, action_id: str,
     name = _modal_value(ctx, "name").strip()
     tag = sanitize_tag(raw_tag)
     if not _RAW_TAG.fullmatch(raw_tag) or not tag or not 1 <= len(name) <= 80:
-        response = await _panel(mongo, state, "Enter a plain clan tag and a name of 1–80 characters.")
+        response = await _panel(mongo, state, "Enter a clan tag and a name of 1 to 80 characters.")
     elif any(char in name for char in "@<>`\n\r"):
-        response = await _panel(mongo, state, "The display name cannot contain mentions or markup.")
+        response = await _panel(mongo, state, "Do not use mentions or formatting in the display name.")
     else:
         try:
             _, watch = await _snapshot(mongo)
         except Exception:
             await ctx.interaction.edit_initial_response(
-                components=_error("Watch list unavailable; no extra was added."), **NO_MENTIONS,
+                components=_error("The watch list is not available. The extra clan was not added."), **NO_MENTIONS,
             )
             return
         if any(entry["tag"] == tag and entry["source"] == "clan_type" for entry in watch):
-            response = await _panel(mongo, state, "That FWA clan is watched automatically; no extra is needed.")
+            response = await _panel(mongo, state, "The monitor already watches this FWA clan. You do not need to add it.")
         else:
             await mongo.fwa_points.update_one(
                 {"_id": "config"}, monitor.watch_list_replacement_pipeline(tag, name), upsert=True,
@@ -329,16 +329,16 @@ async def select_extra(ctx: Any, action_id: str,
         return _error(problem)
     values = getattr(ctx.interaction, "values", ()) or ()
     if len(values) != 1:
-        return await _panel(mongo, state, "Choose one extra clan.")
+        return await _panel(mongo, state, "Select one extra clan.")
     tag = str(values[0])
     try:
         _, watch = await _snapshot(mongo)
     except Exception:
-        return _error("Watch list unavailable; no extra was selected.")
+        return _error("The watch list is not available. No extra clan was selected.")
     if not any(entry["tag"] == tag and entry["source"] == "extra" for entry in watch):
         return await _panel(mongo, state, "Automatic FWA clans cannot be removed here.")
     selected = await _next(mongo, state, selected_extra=tag)
-    return await _panel(mongo, selected, f"Extra clan `{tag}` selected. Choose Remove to confirm.")
+    return await _panel(mongo, selected, f"Extra clan `{tag}` selected. Select Remove to confirm.")
 
 
 @register_action("fwa_points_remove", preload_state=False)
@@ -354,7 +354,7 @@ async def remove(ctx: Any, action_id: str,
     except Exception:
         return _error("Watch list unavailable; no extra was removed.")
     if not tag or not any(entry["tag"] == tag and entry["source"] == "extra" for entry in watch):
-        return await _panel(mongo, state, "Choose an extra clan; automatic FWA clans cannot be removed.")
+        return await _panel(mongo, state, "Select an extra clan. You cannot remove automatic FWA clans.")
     await mongo.fwa_points.update_one(
         {"_id": "config"}, {"$pull": {"watch_list": {"tag": tag}}},
     )

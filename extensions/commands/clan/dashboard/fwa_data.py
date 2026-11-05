@@ -68,7 +68,7 @@ def _home_button(ctx) -> list[Button]:
 
 async def _require_fwa_representative(ctx) -> bool:
     """Recheck the existing FWA Representative role on persistent controls."""
-    return await require_dashboard_role(ctx, FWA_REP_ROLE_ID, "FWA Representative")
+    return await require_dashboard_role(ctx, FWA_REP_ROLE_ID, "FWA Clan Rep")
 
 # TH levels we support for FWA (ordered from highest to lowest)
 from utils.base_bank import FWA_TH_LEVELS
@@ -421,9 +421,9 @@ async def manage_fwa_data(
                     Text(content="## ❌ Access Denied"),
                     Separator(divider=True),
                     Text(content=(
-                        "You do not have permission to access FWA Data Management.\n\n"
-                        "This feature is restricted to users with the FWA Rep role.\n"
-                        "If you believe you should have access, please contact an administrator."
+                        "You cannot use FWA Data Management.\n\n"
+                        "Only users with the FWA Clan Rep role can use it.\n"
+                        "If you need access, ask an administrator."
                     )),
                     Separator(divider=True),
                 ]
@@ -526,7 +526,7 @@ async def fwa_link_submit(
     th_level, _, token = action_id.partition("|")
     baseline = consume(token, ctx.user.id, "fwa_link_submit:" + th_level)
     if baseline is None:
-        await ctx.respond("This edit expired. Open it again before saving.", ephemeral=True)
+        await ctx.respond("This edit expired. Open it again before you save.", ephemeral=True)
         return
     th_num = th_level.upper().replace("TH", "")
 
@@ -542,7 +542,7 @@ async def fwa_link_submit(
     # Validate the link
     if not validate_clash_link(base_link):
         await ctx.respond(
-            "❌ Invalid base link! Please use a valid Clash of Clans layout link.",
+            "❌ This base link is not valid. Use a Clash of Clans layout link.",
             ephemeral=True
         )
         return
@@ -551,7 +551,7 @@ async def fwa_link_submit(
 
     # Update in database
     if not await save_fields(mongo.fwa_data, "fwa_config", baseline, {f"fwa_base_links.{th_level}": base_link}):
-        await ctx.interaction.edit_initial_response(content="This link changed in Discord or the dashboard. Open it again and review the latest value.", components=[])
+        await ctx.interaction.edit_initial_response(content="This link changed in Discord or the dashboard. Open it again. Check the new value.", components=[])
         return
 
     # Success response
@@ -599,13 +599,13 @@ async def fwa_update_images(
             accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=f"## 🖼️ **Update TH{th_num} Images**"),
-                Text(content="Choose how to update the base images:"),
+                Text(content="Select how to update the base images:"),
                 Separator(divider=True),
 
                 Text(content=(
-                    "Upload a war or active base image. Submitting saves the "
-                    "replacement immediately and shows a preview.\n"
-                    "PNG, JPG, GIF or WEBP; maximum 10 MB per image."
+                    "Upload a war base image or an active base image. The new image replaces "
+                    "the old image at once and shows a preview.\n"
+                    "Use PNG, JPG, GIF or WEBP. The maximum size is 10 MB per image."
                 )),
                 ActionRow(components=[
                     Button(style=hikari.ButtonStyle.PRIMARY,
@@ -694,7 +694,7 @@ async def fwa_images_submit(
     th_level, _, token = action_id.partition("|")
     baseline = consume(token, ctx.user.id, "fwa_images_submit:" + th_level)
     if baseline is None:
-        await ctx.respond("This edit expired. Open it again before saving.", ephemeral=True)
+        await ctx.respond("This edit expired. Open it again before you save.", ephemeral=True)
         return
     th_num = th_level.upper().replace("TH", "")
 
@@ -710,7 +710,7 @@ async def fwa_images_submit(
 
     if not war_url and not active_url:
         await ctx.respond(
-            "❌ Please provide at least one image URL!",
+            "❌ Enter at least one image URL.",
             ephemeral=True
         )
         return
@@ -738,7 +738,7 @@ async def fwa_images_submit(
                 accent_color=BLUE_ACCENT,
                 components=[
                     Text(content="## ⏳ Uploading Images..."),
-                    Text(content="Please wait while we fetch and store your images...")
+                    Text(content="Wait. Your images are being saved.")
                 ]
             )
         ]
@@ -773,7 +773,7 @@ async def fwa_images_submit(
             updates.append(f"✅ Active base image uploaded")
 
         if not await save_fields(mongo.fwa_data, "fwa_config", baseline, image_changes):
-            await ctx.interaction.edit_initial_response(content="These images changed in Discord or the dashboard. Open them again before saving.", components=[])
+            await ctx.interaction.edit_initial_response(content="These images changed in Discord or the dashboard. Open them again before you save.", components=[])
             return
         for field, url in image_changes.items():
             target = FWA_WAR_BASE if field.startswith("war_") else FWA_ACTIVE_WAR_BASE
@@ -913,7 +913,7 @@ async def fwa_descriptions_submit(
     th_level, _, token = action_id.partition("|")
     baseline = consume(token, ctx.user.id, "fwa_descriptions_submit:" + th_level)
     if baseline is None:
-        await ctx.respond("This edit expired. Open it again before saving.", ephemeral=True)
+        await ctx.respond("This edit expired. Open it again before you save.", ephemeral=True)
         return
     th_num = th_level.upper().replace("TH", "")
 
@@ -930,7 +930,7 @@ async def fwa_descriptions_submit(
     # Check if at least one field is provided
     if not base_info and not upgrade_notes:
         await ctx.respond(
-            "❌ Please provide at least one description!",
+            "❌ Enter at least one description.",
             ephemeral=True
         )
         return
@@ -945,7 +945,7 @@ async def fwa_descriptions_submit(
         update_fields[f"base_upgrade_notes.{th_level}"] = upgrade_notes
 
     if not await save_fields(mongo.fwa_data, "fwa_config", baseline, update_fields):
-        await ctx.interaction.edit_initial_response(content="These notes changed in Discord or the dashboard. Open them again and review the latest values.", components=[])
+        await ctx.interaction.edit_initial_response(content="These notes changed in Discord or the dashboard. Open them again. Check the new values.", components=[])
         return
 
     # Initial response - show loading screen immediately
@@ -955,7 +955,7 @@ async def fwa_descriptions_submit(
                 accent_color=BLUE_ACCENT,
                 components=[
                     Text(content="## ⏳ Updating Descriptions..."),
-                    Text(content="Please wait while we update the descriptions...")
+                    Text(content="Wait. The descriptions are being saved.")
                 ]
             )
         ]

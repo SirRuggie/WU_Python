@@ -112,6 +112,10 @@ def test_expanded_image_slot_is_selected_and_restored_in_private_draft(monkeypat
     selected = next(item for item in states.values() if item.get("selected_media_slot") == slot)
     assert f"{content.MEDIA_LABELS[variant][slot]} selected" in str(rendered[0].build())
     assert not editor._dirty(selected)
+    texts = [part.content for part in editor._editor(selected)[0].components if hasattr(part, "content")]
+    assert "Saved changes apply to future `/recruit questions` messages." in texts
+    assert "Use `{recruit}` and `{recruiter}` to mention the people." in texts
+    assert f"-# Selected: {content.MEDIA_LABELS[variant][slot]}. Upload or restore an image. Then select Save changes." in texts
 
     changed = content.default_template(variant)
     changed["media"][slot] = "https://example.com/replacement.png"
@@ -143,3 +147,53 @@ def test_fwa_base_preview_is_separate_and_has_no_pings(monkeypatch):
     assert result["user_mentions"] is False and result["role_mentions"] is False
     assert "example.org" in str([part.build() for part in result["components"]])
     assert "recruit_question_preview:base" in str(result["components"][-1].build())
+
+
+def test_invalid_media_selection_keeps_draft_unchanged(monkeypatch):
+    from utils import recruit_question_content as content
+    variant = 'lazy_cwl_explanation'
+    template = content.default_template(variant)
+    state = {'_id': 'draft', 'user_id': 1, 'guild_id': 2, 'manage_token': 'home',
+             'view': 'editor', 'variant': variant, 'template': template, 'saved_template': template}
+    monkeypatch.setattr(editor, '_state', AsyncMock(return_value=(state, None)))
+    advance = AsyncMock()
+    monkeypatch.setattr(editor, '_next', advance)
+    context = ctx()
+    context.interaction.values = ('invalid',)
+    rendered = run(editor.choose_media(context, 'draft', mongo=object()))
+    assert 'Select one editable image slot.' in str(rendered[0].build())
+    advance.assert_not_awaited()
+
+
+def test_conflicting_recruit_template_does_not_advance_draft(monkeypatch):
+    state = {'guild_id': 2, 'variant': 'attack_strategies', 'template': {'revision': 2}, 'user_id': 1}
+    monkeypatch.setattr(editor, '_state', AsyncMock(return_value=(state, None)))
+    monkeypatch.setattr(editor, '_dirty', lambda _state: True)
+    monkeypatch.setattr(editor, '_editor', lambda _state, notice: notice)
+    monkeypatch.setattr(editor, 'save_with_history', AsyncMock(side_effect=editor.content.TemplateConflict()))
+    advance = AsyncMock()
+    monkeypatch.setattr(editor, '_next', advance)
+    assert run(editor.save.__wrapped__._func(ctx(), 'draft', mongo=object())) == 'This template changed elsewhere. Reopen it before you save.'
+    assert run(editor.reset_confirm.__wrapped__._func(ctx(), 'draft', mongo=object())) == 'This template changed elsewhere. Reopen it before you reset it.'
+    advance.assert_not_awaited()
+
+
+def test_leave_review_heading_and_destinations_are_exact():
+    state = {"_id": "draft", "manage_token": "home", "variant": "attack_strategies"}
+    for management, destination, expected_id in (
+        (True, "Management Home", "manage_home:home"),
+        (False, "message list", "recruit_question_back:draft"),
+    ):
+        container = editor._leave_review(state, management=management)[0]
+        texts = [part.content for part in container.components if hasattr(part, "content")]
+        assert texts[1] == f"## Leave and go to {destination}?"
+        assert texts[2] == (
+            "Unsaved changes in this draft will not be restored. Save them first if you want "
+            "future recruitment messages to use them."
+        )
+        payload = container.build()[0]
+        buttons = [b for row in payload["components"] if row["type"] == 1 for b in row["components"]]
+        assert [(b["label"], b["custom_id"]) for b in buttons] == [
+            ("Keep editing", "recruit_question_back_editor:draft"),
+            ("Leave without saving", expected_id),
+        ]

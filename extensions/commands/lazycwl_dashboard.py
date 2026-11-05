@@ -78,7 +78,7 @@ async def _allow(ctx, token: str | None) -> bool:
     if state is None or state["created"] < datetime.now(timezone.utc) - _SESSION_TTL:
         _sessions.pop(token, None)
         if ctx is not None:
-            await ctx.respond("This dashboard has expired. Run /manage and choose CWL Return Pings again.", ephemeral=True)
+            await ctx.respond("This dashboard has expired. Run /manage. Then select CWL Return Pings.", ephemeral=True)
         return False
     guild = getattr(getattr(ctx, "interaction", None), "guild_id", None)
     user = _ctx_user(ctx)
@@ -181,7 +181,7 @@ def _header(clans, lists, chosen, tab, token):
     if isinstance(logo, str) and logo.startswith("https://"):
         heading = Section(components=[heading], accessory=Thumbnail(media=logo))
     body = [heading, _section_buttons(token), Separator(), ActionRow(components=[TextSelectMenu(
-        custom_id=_id("lazycwl_pick", token, tab), placeholder="Choose a clan",
+        custom_id=_id("lazycwl_pick", token, tab), placeholder="Select a clan",
         max_values=1, options=options)]), ActionRow(components=[
             _tab_button(label, key, tab, token, chosen)
             for label, key in (("Overview", "overview"), ("Edit saved members", "players")) if section == "FWA" or key != "reminders"])]
@@ -232,8 +232,8 @@ def _ping_controls(docs, token, tag, now, destination_channel):
         f"Destination: <#{destination_channel}>\n"
         f"Next check: {_fmt_time(min(next_runs)) if next_runs else 'None scheduled'}\n"
         f"{'Stops' if len(set(ends)) == 1 else 'Earliest stop'}: {_fmt_time(min(ends))}\n"
-        "Seven days from first start, or the 16th at 00:00 UTC, whichever comes first. "
-        "Everyone home skips a ping; checks continue. Pausing or changing frequency does not restart the timer.")
+        "Return pings stop 7 days after the first start, or on the 16th at 00:00 UTC, whichever comes first. "
+        "If everyone is home, the ping is skipped and checking continues. Pausing or changing the frequency does not start the timer again.")
     return [Text(content=summary), ActionRow(components=[TextSelectMenu(
         custom_id=_id("lazycwl_frequency_save", token, tag), placeholder="Ping frequency · saves automatically",
         max_values=1, options=[SelectOption(label=label, value=str(minutes), is_default=minutes == frequency) for minutes, label in choices],
@@ -273,21 +273,21 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
             elif missing == 0:
                 capture_label = "All rosters already saved"
                 saved_summary = "This clan already has a saved roster." if len(clans) == 1 else f"All {len(clans)} clans already have a saved roster."
-                summary = f"**{saved_summary}**\nNothing new to capture. Choose a clan above to see its saved players and capture date."
+                summary = f"**{saved_summary}**\nNothing new to capture. Select a clan above to see its saved players and capture date."
             else:
                 capture_label = f"Save Current Members ({missing} clans)"
-                summary = f"Saved rosters: {len(docs)} · **Clans to capture: {missing}.**\nCapture saves the current members of the clans without a roster. Existing rosters are kept."
+                summary = f"Saved rosters: {len(docs)} · **Clans to capture: {missing}.**\nSave Current Members saves the current members of the clans without a roster. Existing rosters are kept."
             if docs:
                 if any(doc.get("legacy_snapshot_id") for doc in docs):
-                    summary += "\nYour previous snapshots were carried over to this dashboard."
-                summary += "\n**Need a fresh roster?** Select that clan and choose **Replace Saved Members** to review the change."
+                    summary += "\nYour previous saved rosters were carried over to this dashboard."
+                summary += "\n**Need a fresh roster?** Select that clan and select **Replace Saved Members** to review the change."
             if section == "FWA" and docs:
                 known_away = [away_counts.get(d.get("clan_tag")) for d in docs]
                 summary += (f"\nPlayers away: {sum(known_away)}" if all(value is not None for value in known_away) else "\nPlayers away: some statuses unavailable")
             body.append(Text(content=f"### All {label} clans\n{summary}"))
         elif not chosen:
-            capture_label = "Choose a clan first"
-            body.append(Text(content="### Choose a clan\nChoose one clan above to inspect its saved-list status."))
+            capture_label = "Select a clan first"
+            body.append(Text(content="### Select a clan\nSelect one clan above to inspect its saved-list status."))
         else:
             doc = docs[0] if docs else None
             if not doc:
@@ -373,12 +373,12 @@ async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None
     docs = _selected_docs(await _active(mongo, token), tag)
     if kind == "replace":
         if tag == "ALL" or len(docs) != 1:
-            return _notice("Choose a roster", "Select one saved roster to replace.", token, tag)
+            return _notice("Select a roster", "Select one saved roster to replace.", token, tag)
         return _confirm("Replace Saved Members?", [f"Section: {SECTION_LABELS[_section(token)]}",
             f"Clan: {_name(docs[0].get('clan_name'))}",
             f"Current capture: {_fmt_time(docs[0].get('saved_at'))}",
-            "This closes the current roster and stops its reminders. A new roster will contain the clan’s current members; manual edits are not copied.",
-            "If the new roster cannot be saved, the current roster is kept."],
+            "This closes the current roster and stops its reminders. The new roster has the current members of the clan. Manual edits are not copied.",
+            "If the new roster does not save, the current roster stays."],
             "lazycwl_replace_yes", token, _bind(token, tag, docs, operation="replace"), GOLDENROD_ACCENT)
     names = [_name(d.get('clan_name') or d.get('clan_tag')) for d in docs]
     if kind == "capture":
@@ -387,7 +387,7 @@ async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None
         targets = [clan for clan in clans if tag == "ALL" or _tag(clan["tag"]) == tag]
         targets = [clan for clan in targets if _tag(clan["tag"]) not in {_tag(doc["clan_tag"]) for doc in await _active(mongo, token)}]
         if not targets or tag not in valid | {"ALL"}:
-            return _notice("Nothing to capture", "Choose a clan without an active saved list.", token, tag)
+            return _notice("Nothing to capture", "Select a clan without an active saved list.", token, tag)
         nonce = _bind(token, tag, [], operation="capture")
         _sessions[token]["pending"][nonce]["capture_tags"] = [_tag(clan["tag"]) for clan in targets]
         return _confirm("Save Current Members?", [f"Affected clans: {len(targets)}", ", ".join(_name(clan.get("name") or clan["tag"]) for clan in targets), "This creates saved lists from members currently in those clans."], "lazycwl_capture_yes", token, nonce, GREEN_ACCENT)
@@ -401,10 +401,10 @@ async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None
         if any(away is None for _, away in recipients):
             return _notice("Could not check recipients", "Nothing was sent. Refresh and try again when player status is available.", token, tag, accent=GOLDENROD_ACCENT)
         destination = await service.effective_reminder_channel(_section(token), mongo=mongo)
-        detail = [f"Destination: <#{destination}>", "Recipients are checked again when you confirm."] + [f"{_name(d.get('clan_name'))}: {len(a)} away · {len({p.get('discord_id') for p in a if p.get('discord_id')})} linked Discord accounts" for d,a in recipients]
+        detail = [f"Destination: <#{destination}>", "The recipients are checked again when you confirm."] + [f"{_name(d.get('clan_name'))}: {len(a)} away · {len({p.get('discord_id') for p in a if p.get('discord_id')})} linked Discord accounts" for d,a in recipients]
         return _confirm("Send reminders?", [f"Affected lists: {len(docs)}"] + detail, "lazycwl_send_yes", token, _bind(token, tag, docs, operation="send", destination=destination), GREEN_ACCENT)
     if kind == "close":
-        return _confirm("Clear saved rosters?", ["This removes the selected rosters from active tracking and stops their return reminders. Their records remain until the retention deadline.", f"Affected rosters: {len(docs)}"] + names, "lazycwl_close_yes", token, _bind(token, tag, docs, operation="close"), RED_ACCENT)
+        return _confirm("Clear saved rosters?", ["This stops the selected rosters and their return reminders. Their records are kept until the deletion date.", f"Affected rosters: {len(docs)}"] + names, "lazycwl_close_yes", token, _bind(token, tag, docs, operation="close"), RED_ACCENT)
     verb = "Enable" if kind == "enable" else "Disable"
     lines = [f"Destination: <#{await service.effective_reminder_channel(_section(token), mongo=mongo)}>", f"Affected lists: {len(docs)}"] + names
     if minutes: lines.insert(0, f"Frequency: every {minutes} minutes. Next run is calculated after applying.")
@@ -441,7 +441,7 @@ def _parse_bound(token: str, value: str) -> dict | None:
 async def _apply_bound(mongo, token, value, operation: str, ctx) -> list:
     bound = _parse_bound(token, value)
     if bound is None:
-        return _notice("Review expired", "This confirmation is no longer valid. Refresh and review again.", token, "", accent=RED_ACCENT)
+        return _notice("Review expired", "This confirmation is not valid now. Refresh the page. Then review the change again.", token, "", accent=RED_ACCENT)
     if bound.get("operation") != operation or bound.get("section", "FWA") != _section(token):
         return _notice("Review expired", "This confirmation does not match that action.", token, "", accent=RED_ACCENT)
     tag, ids, minutes = bound["tag"], bound["ids"], bound["minutes"]
@@ -452,7 +452,7 @@ async def _apply_bound(mongo, token, value, operation: str, ctx) -> list:
     if bound.get("retry"):
         current = {key: value for key, value in current.items() if key in {str(item) for item in ids}}
     if {str(item) for item in ids} != set(current):
-        return _notice("Review expired", "The saved-list scope changed. Nothing was applied; refresh and review again.", token, tag, accent=RED_ACCENT)
+        return _notice("Review expired", "The saved-list scope changed. Nothing was applied. Refresh the page. Then review the change again.", token, tag, accent=RED_ACCENT)
     if operation == "send" and bound.get("destination") != await service.effective_reminder_channel(_section(token), mongo=mongo):
         return _notice("Return channel changed", "Nothing was sent. Refresh and review the new channel before sending.", token, tag, accent=RED_ACCENT)
     results = []
@@ -465,9 +465,9 @@ async def _apply_bound(mongo, token, value, operation: str, ctx) -> list:
             else: result = await service.set_reminders(doc["clan_tag"], False, expected_list_id=doc["_id"], section=_section(token))
         except Exception:
             _log.exception("LazyCWL %s failed for %s", operation, doc["clan_tag"])
-            result = {"ok": False, "uncertain": True, "error": "Result not confirmed. Check Discord and the saved list before doing this again."}
+            result = {"ok": False, "uncertain": True, "error": "Could not confirm the result. Check Discord and the saved list before you try again."}
         if not isinstance(result, dict):
-            result = {"ok": False, "uncertain": True, "error": "Result not confirmed. Check Discord and the saved list before doing this again."}
+            result = {"ok": False, "uncertain": True, "error": "Could not confirm the result. Check Discord and the saved list before you try again."}
         results.append((doc, result))
     failures = [(d, r) for d, r in results if not r.get("ok")]
     successes = len(results) - len(failures)
@@ -485,10 +485,10 @@ async def _apply_bound(mongo, token, value, operation: str, ctx) -> list:
         retryable = [(d, r) for d, r in failures if r.get("error") and not any(
             r.get(key) for key in ("uncertain", "sent", "stale")
         )]
-        detail = "\n".join(f"• {_name(d.get('clan_name'))}: {r.get('error') or 'Result not confirmed. Check Discord before repeating.'}" for d, r in failures)
+        detail = "\n".join(f"• {_name(d.get('clan_name'))}: {r.get('error') or 'Could not confirm the result. Check Discord before you try again.'}" for d, r in failures)
         attention = [Text(content="### Needs attention\n" + detail[:2700])]
         if len(retryable) != len(failures):
-            attention.append(Text(content="Unconfirmed or changed lists are not included in Retry Failed Clans. Check Discord and refresh these lists first."))
+            attention.append(Text(content="Retry Failed Clans does not include unconfirmed or changed lists. Check Discord. Then refresh these lists."))
         if retryable:
             retry = _bind(token, tag, [d for d, _ in retryable], minutes, operation=operation, destination=bound.get("destination"))
             _sessions[token]["pending"][retry]["retry"] = True
@@ -517,7 +517,7 @@ async def _player_page(mongo, token: str, tag: str, page: int, note: str | None 
     body.extend([Text(content=f"### {_name(doc.get('clan_name') or tag)} · {len(players)} players · page {page + 1} of {pages}"), Text(content="\n".join(rows) or "No players captured.")])
     if note: body.append(Text(content=note))
     if page_players:
-        body.append(ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_remove_pick", token, f"{tag},{page}"), placeholder="Choose players to remove", min_values=1, max_values=len(page_players), options=[SelectOption(label=(p.get("name") or p.get("tag"))[:100], value=p.get("tag", "")) for p in page_players])]))
+        body.append(ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_remove_pick", token, f"{tag},{page}"), placeholder="Select players to remove", min_values=1, max_values=len(page_players), options=[SelectOption(label=(p.get("name") or p.get("tag"))[:100], value=p.get("tag", "")) for p in page_players])]))
     nonce = _bind(token, tag, [doc], operation="add")
     _sessions[token]["pending"][nonce]["page"] = page
     body.append(ActionRow(components=[_button(style=hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_add", token, nonce), label="Add player"), _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page - 1}"), label="Previous", is_disabled=page == 0), _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page + 1}"), label="Next", is_disabled=page >= pages - 1), _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page}"), label="Refresh")]))
@@ -542,7 +542,7 @@ async def _handler_ok(ctx, action_id):
 async def handle_section(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, section = await _handler_ok(ctx, action_id)
     if not token or section not in SECTION_LABELS:
-        return _notice("Choose a section", "Run /manage and choose CWL Return Pings again.", "preview", "")
+        return _notice("Select a section", "Run /manage. Then select CWL Return Pings.", "preview", "")
     previous = _sessions.pop(token)
     new_token = _session(previous["owner"], previous["guild"])
     _sessions[new_token]["section"] = section
@@ -556,7 +556,7 @@ async def handle_section(ctx=None, action_id="", mongo: MongoClient = lightbulb.
 async def handle_clans_page(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
     if not token:
-        return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+        return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     try:
         _sessions[token]["clan_page"] = max(0, int(value))
     except ValueError:
@@ -568,7 +568,7 @@ async def handle_clans_page(ctx=None, action_id="", mongo: MongoClient = lightbu
 @lightbulb.di.with_di
 async def handle_pick(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, tab = await _handler_ok(ctx, action_id); values = getattr(ctx.interaction, "values", []) or []
-    return await build_home(mongo, values[0] if values else None, token=token, tab=tab if tab in {"overview", "players", "reminders"} else "overview") if token else _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+    return await build_home(mongo, values[0] if values else None, token=token, tab=tab if tab in {"overview", "players", "reminders"} else "overview") if token else _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
 
 
 @register_action("lazycwl_cancel", preload_state=False)
@@ -576,7 +576,7 @@ async def handle_pick(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.
 async def handle_cancel(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, nonce = await _handler_ok(ctx, action_id)
     if not token:
-        return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+        return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     bound = _sessions[token]["pending"].pop(nonce, {})
     if bound.get("operation") == "remove":
         return await _player_page(mongo, token, bound["tag"], bound.get("page", 0))
@@ -586,32 +586,32 @@ async def handle_cancel(ctx=None, action_id="", mongo: MongoClient = lightbulb.d
 @lightbulb.di.with_di
 async def handle_tab(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     tab, tag = value.split(",", 1); return await build_home(mongo, tag, token=token, tab=tab)
 
 @register_action("lazycwl_home", aliases=("lazycwl_refresh",), preload_state=False)
 @lightbulb.di.with_di
 async def handle_home(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     tab, tag = (value.split(",", 1) if "," in value else ("overview", value)); return await build_home(mongo, tag, token=token, tab=tab)
 
 @register_action("lazycwl_capture", preload_state=False)
 @lightbulb.di.with_di
 async def handle_capture(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
-    token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, "capture") if token else _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+    token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, "capture") if token else _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
 
 @register_action("lazycwl_capture_yes", preload_state=False)
 @lightbulb.di.with_di
 async def handle_capture_yes(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, nonce = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     bound = _sessions.get(token, {}).get("pending", {}).pop(nonce, None)
     if not bound or bound.get("operation") != "capture":
-        return _notice("Review expired", "Refresh and review the capture again.", token, "", accent=RED_ACCENT)
+        return _notice("Review expired", "Refresh the page. Then review the capture again.", token, "", accent=RED_ACCENT)
     valid = {_tag(clan["tag"]) for clan in await _clans(mongo, token)}
     if bound.get("section", "FWA") != _section(token) or any(tag not in valid for tag in bound.get("capture_tags", [])):
-        return _notice("Review expired", "Clan assignments changed. Refresh and review the capture again.", token, bound["tag"])
+        return _notice("Review expired", "Clan assignments changed. Refresh the page. Then review the capture again.", token, bound["tag"])
     results = []
     for tag in bound.get("capture_tags", []):
         try:
@@ -620,14 +620,14 @@ async def handle_capture_yes(ctx=None, action_id="", mongo: MongoClient = lightb
             _log.exception("LazyCWL capture failed for %s", tag)
             results.append({"ok": False, "error": f"Could not capture {tag}"})
     saved = sum(1 for result in results if result.get("ok")); failed = len(results) - saved
-    note = f"Captured {saved} saved list(s)." + (f" {failed} could not be captured; refresh to review." if failed else "")
+    note = f"Saved lists captured: {saved}." + (f" {failed} could not be captured. Refresh the page to check." if failed else "")
     return await build_home(mongo, bound["tag"], note, token=token)
 
 def _review_action(name, kind):
     @register_action(name, preload_state=False)
     @lightbulb.di.with_di
     async def handler(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
-        token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, kind) if token else _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+        token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, kind) if token else _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     return handler
 @register_action("lazycwl_send", preload_state=False)
 @lightbulb.di.with_di
@@ -642,10 +642,10 @@ handle_disable = _review_action("lazycwl_disable", "disable")
 @lightbulb.di.with_di
 async def handle_enable(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, tag = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     if _section(token) != "FWA":
         return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
-    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content="## Enable reminders"), Text(content=f"Destination: <#{await service.effective_reminder_channel(_section(token), mongo=mongo)}>. Choose an explicit frequency."), ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_frequency", token, tag), placeholder="Choose frequency", max_values=1, options=[SelectOption(label=f"Every {m} minutes", value=str(m)) for m in REMINDER_FREQUENCIES])]), Separator(), _back(token, tag, "reminders")])]
+    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content="## Enable reminders"), Text(content=f"Destination: <#{await service.effective_reminder_channel(_section(token), mongo=mongo)}>. Select an explicit frequency."), ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_frequency", token, tag), placeholder="Select frequency", max_values=1, options=[SelectOption(label=f"Every {m} minutes", value=str(m)) for m in REMINDER_FREQUENCIES])]), Separator(), _back(token, tag, "reminders")])]
 
 @register_action("lazycwl_frequency", preload_state=False)
 @lightbulb.di.with_di
@@ -653,7 +653,7 @@ async def handle_frequency(ctx=None, action_id="", mongo: MongoClient = lightbul
     token, tag = await _handler_ok(ctx, action_id); values = getattr(ctx.interaction, "values", []) or []
     try: minutes = int(values[0])
     except (IndexError, ValueError): minutes = 0
-    return await _review(mongo, token, tag, "enable", minutes=minutes) if token and minutes in REMINDER_FREQUENCIES else _notice("Choose a frequency", "Select one of the offered reminder frequencies.", token or "preview", tag or "")
+    return await _review(mongo, token, tag, "enable", minutes=minutes) if token and minutes in REMINDER_FREQUENCIES else _notice("Select a frequency", "Select one of the offered reminder frequencies.", token or "preview", tag or "")
 
 
 async def _direct_ping_action(ctx, action_id, mongo, operation):
@@ -695,7 +695,7 @@ async def handle_frequency_save(ctx=None, action_id="", mongo: MongoClient = lig
     token, tag = await _handler_ok(ctx, action_id)
     values = getattr(ctx.interaction, "values", []) or []
     if not token or len(values) != 1 or values[0] not in {str(v) for v in REMINDER_FREQUENCIES}:
-        return _notice("Choose a frequency", "Use 30 minutes, 1 hour, or 2 hours.", token or "preview", tag or "")
+        return _notice("Select a frequency", "Use 30 minutes, 1 hour, or 2 hours.", token or "preview", tag or "")
     if _section(token) != "FWA":
         return await build_home(mongo, tag, "Main return pings are manual only.", token=token)
     docs = _selected_docs(await _active(mongo, token), tag)
@@ -707,14 +707,14 @@ async def handle_frequency_save(ctx=None, action_id="", mongo: MongoClient = lig
                 errors.append(f"{_name(doc.get('clan_name'))}: {result.get('error')}")
         except Exception:
             errors.append(f"{_name(doc.get('clan_name'))}: Could not save frequency")
-    return await build_home(mongo, tag, "Frequency saved. Running pings updated; paused pings stay paused." if not errors else "Some frequencies could not be saved: " + "; ".join(errors), token=token)
+    return await build_home(mongo, tag, "Frequency saved. Running pings are updated. Paused pings stay paused." if not errors else "Some frequencies could not be saved: " + "; ".join(errors), token=token)
 
 
 def _apply_action(name, operation):
     @register_action(name, preload_state=False)
     @lightbulb.di.with_di
     async def handler(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
-        token, value = await _handler_ok(ctx, action_id); return await _apply_bound(mongo, token, value, operation, ctx) if token else _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+        token, value = await _handler_ok(ctx, action_id); return await _apply_bound(mongo, token, value, operation, ctx) if token else _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     return handler
 handle_send_yes = _apply_action("lazycwl_send_yes", "send")
 handle_replace_yes = _apply_action("lazycwl_replace_yes", "replace")
@@ -753,7 +753,7 @@ async def handle_add_submit(ctx=None, action_id="", mongo: MongoClient = lightbu
 @lightbulb.di.with_di
 async def handle_players_page(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     tag, page = value.rsplit(",", 1)
     try: page = int(page)
     except ValueError: page = 0
@@ -763,7 +763,7 @@ async def handle_players_page(ctx=None, action_id="", mongo: MongoClient = light
 @lightbulb.di.with_di
 async def handle_remove(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     tag, page = value.rsplit(",", 1)
     return await _player_page(mongo, token, tag, int(page))
 
@@ -771,21 +771,21 @@ async def handle_remove(ctx=None, action_id="", mongo: MongoClient = lightbulb.d
 @lightbulb.di.with_di
 async def handle_remove_pick(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     tag, page = value.rsplit(",", 1); values = getattr(ctx.interaction, "values", []) or []
     doc = await store.get_active(mongo, tag, section=_section(token))
-    if not doc or not values: return await _player_page(mongo, token, tag, int(page), "Choose at least one player.")
+    if not doc or not values: return await _player_page(mongo, token, tag, int(page), "Select at least one player.")
     nonce = _bind(token, tag, [doc], operation="remove"); _sessions[token]["pending"][nonce]["players"] = list(values); _sessions[token]["pending"][nonce]["page"] = int(page)
     names = [_name(p.get("name") or player) for p in doc.get("players", []) for player in values if p.get("tag") == player]
-    return _confirm("Remove selected players?", [f"{len(values)} player(s): " + ", ".join(names), "They will be removed from this saved list."], "lazycwl_remove_yes", token, nonce, RED_ACCENT)
+    return _confirm("Remove selected players?", [f"Players selected: {len(values)}. " + ", ".join(names), "They will be removed from this saved list."], "lazycwl_remove_yes", token, nonce, RED_ACCENT)
 
 @register_action("lazycwl_remove_yes", preload_state=False)
 @lightbulb.di.with_di
 async def handle_remove_yes(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, nonce = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "")
     bound = _sessions.get(token, {}).get("pending", {}).pop(nonce, None)
-    if not bound or bound.get("operation") != "remove" or len(bound["ids"]) != 1: return _notice("Review expired", "Refresh and choose the players again.", token, "", accent=RED_ACCENT)
+    if not bound or bound.get("operation") != "remove" or len(bound["ids"]) != 1: return _notice("Review expired", "Refresh the page. Then select the players again.", token, "", accent=RED_ACCENT)
     try:
         removed = await store.remove_players(mongo, bound["tag"], bound.get("players", []), expected_list_id=bound["ids"][0], section=_section(token))
     except store.StaleListError:
