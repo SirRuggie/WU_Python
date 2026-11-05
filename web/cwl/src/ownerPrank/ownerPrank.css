@@ -26,7 +26,7 @@
   width: min(500px, calc(100vw - 28px));
   min-height: 170px;
   transform: translate(-50%, -50%);
-  padding: 24px 20px 18px;
+  padding: var(--wu-space-5);
 }
 
 .owner-prank-card.plain {
@@ -55,7 +55,7 @@
 
 .owner-prank-card.has-art.farewell {
   --art-height: 280px;
-  padding: 165px 20px 18px;
+  padding: 165px var(--wu-space-5) var(--wu-space-5);
 }
 
 .owner-prank-character {
@@ -76,7 +76,7 @@
 }
 
 .owner-prank-card h2 {
-  margin: 9px 42px 10px 0;
+  margin: var(--wu-space-3) var(--wu-space-7) var(--wu-space-3) 0;
   color: #fff3d6;
   font-size: var(--wu-text-xl);
   line-height: 1.2;
@@ -84,7 +84,7 @@
   text-wrap: balance;
 }
 .owner-prank-card p {
-  margin: 9px 0;
+  margin: var(--wu-space-3) 0;
   text-wrap: pretty;
 }
 .owner-prank-card .owner-prank-reassurance {
@@ -99,21 +99,21 @@
   width: min(180px, 100%);
   max-height: 160px;
   object-fit: contain;
-  margin: 10px 0;
+  margin: var(--wu-space-3) 0;
 }
 .owner-prank-card footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin: 16px 0 0;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-4) 0 0;
 }
 .owner-prank-card button {
   min-width: 44px;
   min-height: 44px;
   border: 1px solid #6e6657;
   border-radius: 999px;
-  padding: 8px 15px;
+  padding: var(--wu-space-2) var(--wu-space-3);
   background: var(--wu-accent-soft);
   color: #fff3d6;
   font: inherit;
@@ -172,7 +172,7 @@
   }
   .owner-prank-card.has-art {
     --art-height: 140px;
-    padding: 125px 16px 18px;
+    padding: 125px var(--wu-space-4) var(--wu-space-5);
   }
   .owner-prank-card.has-art.wide-character {
     --art-height: 180px;
@@ -183,7 +183,7 @@
   }
   .owner-prank-card.has-art.farewell {
     --art-height: 220px;
-    padding: 125px 16px 18px;
+    padding: 125px var(--wu-space-4) var(--wu-space-5);
   }
   .owner-prank-card.farewell .owner-prank-character {
     top: -105px;
@@ -202,7 +202,7 @@
 
 @media (max-width: 380px) {
   .owner-prank-card {
-    padding-right: 12px;
+    padding-right: var(--wu-space-3);
   }
   .owner-prank-card h2 {
     font-size: var(--wu-text-xl);
@@ -224,5 +224,11 @@
     from {
       opacity: 0;
     }
+  }
+}
+
+@media (max-width: 650px) {
+  .owner-prank-card {
+    padding: var(--wu-space-4);
   }
 }

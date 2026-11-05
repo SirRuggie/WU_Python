@@ -1,10 +1,10 @@
 .member-signup-summary {
-  margin: 16px 0;
+  margin: var(--wu-space-4) 0;
 }
 .member-signup-success,
 .member-signup-empty,
 .member-signup-remaining {
-  padding: 18px;
+  padding: var(--wu-space-4);
   border: 1px solid #3a7962;
   border-radius: 14px;
   background: #162c23;
@@ -16,7 +16,7 @@
   border-color: var(--wu-border);
 }
 .member-signup-remaining {
-  margin-top: 10px;
+  margin-top: var(--wu-space-3);
   background: var(--roster-card-danger, var(--wu-danger-surface));
   border-color: var(--roster-card-edge-danger, var(--wu-danger-border));
   color: #fbe7e9;
@@ -25,19 +25,19 @@
 .member-signup-remaining h2 {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--wu-space-2);
   font-variant-numeric: tabular-nums;
 }
 .member-signup-remaining h2 svg {
   flex: none;
-  margin-top: 2px;
+  margin-top: var(--wu-space-1);
   color: var(--roster-card-edge-danger, #ff737d);
   font-variant-numeric: tabular-nums;
 }
 .member-signup-summary h2 {
   font-size: var(--wu-text-xl);
   line-height: 1.2;
-  margin: 0 0 10px;
+  margin: 0 0 var(--wu-space-2);
   font-weight: var(--wu-weight-bold);
   text-wrap: balance;
 }
@@ -48,7 +48,7 @@
   text-wrap: pretty;
 }
 .member-signup-summary ul {
-  padding-left: 20px;
+  padding-left: var(--wu-space-4);
 }
 .member-signup-summary .member-signup-date {
   color: #bdc7c2;

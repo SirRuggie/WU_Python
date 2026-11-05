@@ -5,9 +5,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   min-height: 44px;
-  padding: 10px 16px;
+  padding: var(--wu-space-3) var(--wu-space-4);
   border: 1px solid #d8b65a;
   border-radius: 999px;
   background: var(--wu-surface-raised);

@@ -171,6 +171,87 @@ exceptions preserve the incumbent labels without changing padding, height,
 layout or copy. The staff workflow already wraps at 320px in the baseline;
 that existing behavior is not claimed as a new single-line guarantee.
 
+## Spacing scale
+
+Spacing uses the following root tokens. This batch changes spacing and eligible
+control minimum heights only; the type scale, Inter, colors, copy and DOM order
+stay unchanged.
+
+| Token          | Value | Role                                                              |
+| -------------- | ----- | ----------------------------------------------------------------- |
+| `--wu-space-1` | 4px   | Tight related details and eyebrow-to-title spacing                |
+| `--wu-space-2` | 8px   | Title-to-lead spacing and compact controls                        |
+| `--wu-space-3` | 12px  | Related groups, dense inner rows and section-heading bottom space |
+| `--wu-space-4` | 16px  | Phone gutters and card insets                                     |
+| `--wu-space-5` | 24px  | Page-header separation, phone section rhythm and desktop cards    |
+| `--wu-space-6` | 32px  | Desktop gutters and section rhythm                                |
+| `--wu-space-7` | 48px  | Generous outer spacing                                            |
+
+| Role                                                      | Phone (650px and below)         | Desktop                         |
+| --------------------------------------------------------- | ------------------------------- | ------------------------------- |
+| Main top / horizontal gutter                              | 16px / 16px                     | 24px / 32px                     |
+| Main bottom reserve                                       | Existing 80px                   | Existing 72px                   |
+| Eyebrow → title → lead                                    | 4px / 8px                       | 4px / 8px                       |
+| Header → first content                                    | 24px                            | 24px                            |
+| Separate Home sections                                    | 24px                            | 32px                            |
+| Home statistics/heading and toolbar/selection/list groups | 12px                            | 12px                            |
+| Standard card / panel inset                               | 16px                            | 24px                            |
+| Dense related rows                                        | 12px where needed to retain fit | 12px where needed to retain fit |
+| Section-heading top / bottom                              | 24px / 12px                     | 32px / 12px                     |
+| Eligible interactive control minimum                      | 44px                            | 44px                            |
+
+Home keeps its existing block flow and DOM/focus order. Sibling margins implement
+its outer rhythm because adding `display` or wrappers is outside scope; existing
+flex/grid groups continue using gaps. Conditional children do not add empty
+wrappers or a second spacing system.
+
+The named roster stylesheets and roster-workspace rules stay byte-equal, including
+6px card gaps and zero row gaps. The global card spacing rule excludes roster
+cards with a zero-specificity `:where()` filter; their existing 22px fallback
+padding remains unchanged. The exclusive RosterHeader stylesheet also stays byte-equal. Its outer gap remains 2px; the summary keeps a 2px/8px gap and 5px/10px
+inset, while summary content keeps its 6px inset/gap and zero margins. These locks take priority over the general scale.
+
+The Discord sign-in CTA retains its existing padding, gap and minimum height.
+Its welcome-card clamp padding also stays unchanged because that is the winning
+inherited geometry controlling the CTA width. Ordinary controls use the new
+spacing without increasing selector specificity. Shared defaults also retain
+locked roster, Compare, Player card and ActionMenu trigger/portal recipients;
+only other recipients receive the mapped spacing.
+
+Entry 740 preserves exactly the 17 reviewed functional-geometry records: avatar
+insets, trailing action reserves, roster-header widths, walkthrough aside offsets,
+tour clearance, drawer width, artwork heights and brand/menu clearance. Ordinary
+components in their mixed shorthands still use tokens. Visually-hidden -1px
+margins preserve accessibility clipping. Each functional component and retained
+2px hairline inset is enumerated in the batch's declaration ledger.
+
+Native checkbox/radio glyphs keep their existing dimensions; measure their label
+hit area instead. Inline reference links cannot gain a 44px hit area through
+`min-height` without changing their display, so any such remaining controls are
+reported as explicit row-9 exceptions. Apart from the sole entry-742 exception below, no display, width, paragraph
+measure, font, color or wording change is used to make the spacing fit.
+
+The narrow fit exceptions use smaller scale steps: Tasks clan-header padding and
+gap at 320px, Wars card padding at 320px, and My clan assignments' clan-header
+inset and gap at 360px and below. Their measured outcomes are recorded in the
+batch report.
+Entries 741/742 also allow a 12px inline main gutter at 320px and below for
+Activity and Events only; top 16px and bottom 80px remain unchanged.
+
+Entry 742 authorizes one non-spacing exception: at 320px and below,
+`.member-status-line strong` uses `white-space: normal`. Its existing nowrap
+status title already extended the baseline page to 334px; the exception permits
+that specific title to wrap while its font, color and wording remain unchanged.
+All other non-spacing declarations remain equal to the baseline.
+
+Entry 743 defines the wrapping guard at the visible text-block level: no extra
+line or increased text-block height. Inline phrase/code breaks may move when
+the containing block keeps the same line count and height; the report preserves
+those raw observations. It also distinguishes authored/fixed roster spacing
+from unchanged auto-margin or JavaScript free-space results that naturally vary
+with the approved outer gutter. Those formulas are not changed to force old
+computed free-space numbers.
+
 ## Shape rule
 
 - **Pill (999)** ONLY for single-line, short elements: buttons, status pills, stat chips, filter/tag chips.

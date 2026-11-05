@@ -13,28 +13,28 @@
 }
 .todo-refresh .status-dot {
   display: inline-block;
-  margin-right: 8px;
+  margin-right: var(--wu-space-2);
 }
 .todo-refresh button {
   font-size: var(--wu-text-md);
 }
 .todo-freshness {
   font-size: var(--wu-text-xs);
-  margin: 10px 0 22px;
+  margin: var(--wu-space-3) 0 var(--wu-space-4);
   color: var(--roster-text-muted);
 }
 .todo-tabs {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin: 20px 0;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-4) 0;
 }
 .todo-tabs button {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   text-align: left;
-  padding: 17px;
+  padding: var(--wu-space-4);
   background: var(--roster-surface-raised);
   border-color: var(--roster-border);
   min-height: 112px;
@@ -55,25 +55,25 @@
   border: 1px solid var(--roster-border);
   background: var(--roster-surface);
   border-radius: 13px;
-  margin-bottom: 26px;
-  padding: 16px;
+  margin-bottom: var(--wu-space-5);
+  padding: var(--wu-space-4);
 }
 .todo-account-picker summary {
   font-weight: var(--wu-weight-bold);
   cursor: pointer;
-  min-height: 28px;
+  min-height: 44px;
 }
 .todo-account-picker summary > span {
   float: right;
   font-size: var(--wu-text-sm);
   color: var(--roster-gold);
-  padding-top: 3px;
+  padding-top: var(--wu-space-1);
 }
 .todo-picker-tools {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-3);
   align-items: end;
-  margin: 18px 0 14px;
+  margin: var(--wu-space-4) 0 var(--wu-space-4);
 }
 .todo-picker-tools label {
   flex: 1;
@@ -81,16 +81,16 @@
 .todo-picker-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--wu-space-2);
   max-height: 260px;
   overflow: auto;
-  padding: 4px;
+  padding: var(--wu-space-1);
 }
 .todo-picker-list > label {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-2);
   border: 1px solid var(--roster-border-subtle);
   background: var(--roster-surface-raised);
   border-radius: 9px;
@@ -104,15 +104,15 @@
 }
 .todo-picker-list small {
   display: block;
-  margin-top: 4px;
+  margin-top: var(--wu-space-1);
   color: var(--roster-text-muted);
 }
 .todo-section-head {
   display: flex;
   justify-content: space-between;
   align-items: end;
-  gap: 20px;
-  margin-bottom: 15px;
+  gap: var(--wu-space-4);
+  margin-bottom: var(--wu-space-4);
 }
 .todo-section-head h2 {
   font-size: var(--wu-text-xl);
@@ -130,7 +130,7 @@
   min-width: 210px;
 }
 .todo-search {
-  margin-bottom: 18px;
+  margin-bottom: var(--wu-space-4);
   max-width: 520px;
 }
 .todo-warning {
@@ -143,8 +143,8 @@
   border-left: 4px solid var(--roster-warning);
   border-radius: 10px;
   color: var(--roster-warning);
-  padding: 15px 18px;
-  margin: 14px 0;
+  padding: var(--wu-space-4) var(--wu-space-4);
+  margin: var(--wu-space-4) 0;
   font-size: var(--wu-text-sm);
 }
 .todo-warning p {
@@ -163,18 +163,18 @@
   font-size: var(--wu-text-sm);
   color: var(--roster-text-muted);
   border-left: 2px solid var(--roster-border);
-  padding-left: 14px;
-  margin: 18px 0;
+  padding-left: var(--wu-space-4);
+  margin: var(--wu-space-4) 0;
 }
 .todo-notes p {
   color: inherit;
-  margin: 6px 0;
+  margin: var(--wu-space-2) 0;
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
 .todo-clan-list {
   display: grid;
-  gap: 18px;
+  gap: var(--wu-space-4);
 }
 .todo-clan {
   border: 1px solid var(--roster-border);
@@ -186,7 +186,7 @@
   display: flex;
   align-items: center;
   gap: var(--roster-space-3);
-  padding: 17px 20px;
+  padding: var(--wu-space-4) var(--wu-space-4);
   background: var(--roster-surface-raised);
   border-bottom: 1px solid var(--roster-border);
 }
@@ -202,7 +202,7 @@
   min-width: 0;
 }
 .todo-clan h3 {
-  margin: 0 0 5px;
+  margin: 0 0 var(--wu-space-1);
   overflow-wrap: anywhere;
 }
 .todo-clan > header a {
@@ -211,7 +211,8 @@
   color: var(--roster-gold);
   font-weight: var(--wu-weight-bold);
   text-decoration: none;
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
+  min-height: 44px;
 }
 .todo-clan > header a:hover {
   text-decoration: underline;
@@ -222,9 +223,9 @@
       160px,
       0.8fr
     );
-  gap: 20px;
+  gap: var(--wu-space-4);
   align-items: center;
-  padding: 18px 20px;
+  padding: var(--wu-space-4) var(--wu-space-4);
   border-bottom: 1px solid var(--roster-surface-soft);
 }
 .todo-task:last-child {
@@ -247,7 +248,7 @@
 }
 .todo-task-name small {
   display: block;
-  margin-top: 5px;
+  margin-top: var(--wu-space-1);
   color: var(--roster-text-muted);
 }
 .todo-task-name > a {
@@ -263,14 +264,14 @@
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .todo-state {
   display: inline-block;
   border: 1px solid var(--roster-success);
   background: var(--roster-card-success);
   color: var(--roster-success);
-  padding: 5px 9px;
+  padding: var(--wu-space-2) var(--wu-space-3);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-bold);
   border-radius: 6px;
@@ -308,7 +309,7 @@
 }
 .todo-task-time > strong {
   font-size: var(--wu-text-xs);
-  margin: 5px 0;
+  margin: var(--wu-space-2) 0;
   color: var(--roster-warning);
 }
 .todo-task-time time {
@@ -327,29 +328,29 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 16px;
-  margin: 20px 0;
+  gap: var(--wu-space-4);
+  margin: var(--wu-space-4) 0;
 }
 .todo-workspace .notice small {
   display: block;
-  margin-top: 7px;
+  margin-top: var(--wu-space-1);
 }
 .todo-loading {
-  margin: 24px 0;
+  margin: var(--wu-space-5) 0;
 }
 .todo-loading p {
-  margin: 10px 0 0;
+  margin: var(--wu-space-3) 0 0;
   text-wrap: pretty;
 }
 .todo-home-link {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--wu-space-4);
   background: var(--roster-card-success);
   border: 1px solid var(--roster-success);
   border-radius: 14px;
-  margin: 0 0 22px;
-  padding: 18px 22px;
+  margin: 0 0 var(--wu-space-4);
+  padding: var(--wu-space-4) var(--wu-space-4);
 }
 .todo-home-link > span {
   font-size: var(--wu-text-xl);
@@ -359,7 +360,7 @@
 }
 .todo-home-link h2 {
   font-size: var(--wu-text-xl);
-  margin: 0 0 5px;
+  margin: 0 0 var(--wu-space-2);
   font-weight: var(--wu-weight-bold);
   line-height: 1.2;
   text-wrap: balance;
@@ -382,7 +383,7 @@
   }
   .todo-task {
     grid-template-columns: 1fr 1fr;
-    gap: 14px;
+    gap: var(--wu-space-4);
   }
   .todo-task-name {
     grid-column: 1/-1;
@@ -391,17 +392,17 @@
 @media (max-width: 650px) {
   .todo-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: var(--wu-space-2);
   }
   .todo-tabs button {
     min-height: 95px;
-    padding: 13px;
+    padding: var(--wu-space-3);
   }
   .todo-tabs button:last-child {
     grid-column: 1/-1;
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 4px 12px;
+    gap: var(--wu-space-1) var(--wu-space-3);
   }
   .todo-tabs button:last-child > span {
     grid-row: 1/3;
@@ -421,17 +422,17 @@
   .todo-account-picker summary > span {
     float: none;
     display: block;
-    padding: 6px 0 0 20px;
+    padding: var(--wu-space-1) 0 0 var(--wu-space-4);
   }
   .todo-section-head {
     display: block;
   }
   .todo-section-head label {
-    margin-top: 14px;
+    margin-top: var(--wu-space-3);
   }
   .todo-clan > header {
-    padding: 14px 12px;
-    gap: 8px;
+    padding: var(--wu-space-3) var(--wu-space-3);
+    gap: var(--wu-space-2);
   }
   .todo-clan h3 {
     font-size: var(--wu-text-lg);
@@ -443,8 +444,8 @@
     font-size: var(--wu-text-xs);
   }
   .todo-task {
-    padding: 16px 12px;
-    gap: 14px;
+    padding: var(--wu-space-4) var(--wu-space-3);
+    gap: var(--wu-space-4);
   }
   .todo-task-time > strong {
     font-size: var(--wu-text-xs);
@@ -455,7 +456,7 @@
   }
   .todo-home-link {
     flex-wrap: wrap;
-    padding: 17px;
+    padding: var(--wu-space-4);
   }
   .todo-home-link > div {
     min-width: 180px;
@@ -466,7 +467,7 @@
 }
 
 .todo-fwa {
-  margin: 8px 0;
+  margin: var(--wu-space-2) 0;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -491,9 +492,9 @@
 .todo-event-timer {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 16px 18px;
-  margin: 12px 0 18px;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-4) var(--wu-space-4);
+  margin: var(--wu-space-3) 0 var(--wu-space-4);
   border: 1px solid var(--roster-attention-border);
   border-left: 3px solid var(--roster-gold);
   border-radius: 10px;
@@ -502,7 +503,7 @@
 }
 .todo-event-timer > div {
   display: grid;
-  gap: 5px;
+  gap: var(--wu-space-2);
   flex: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -530,7 +531,7 @@
 }
 .todo-event-timer small {
   display: block;
-  margin-top: 6px;
+  margin-top: var(--wu-space-1);
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 650px) {
@@ -546,7 +547,7 @@
   display: flex;
   align-items: end;
   gap: var(--roster-space-3);
-  margin-bottom: 16px;
+  margin-bottom: var(--wu-space-4);
 }
 .todo-search-row .todo-search {
   flex: 1;
@@ -566,7 +567,15 @@
   background: transparent;
   border: 0;
   color: var(--roster-gold);
-  padding: 0 4px;
+  padding: 0 var(--wu-space-1);
   min-height: 44px;
   text-align: left;
+}
+
+@media (max-width: 320px) {
+  .todo-clan > header {
+    padding-left: var(--wu-space-2);
+    padding-right: var(--wu-space-2);
+    gap: var(--wu-space-1);
+  }
 }

@@ -5,10 +5,10 @@
 .activity-card-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--wu-space-4);
 }
 .activity-card {
-  padding: 22px;
+  padding: var(--wu-space-5);
   border: 1px solid var(--wu-border-subtle);
   border-radius: 18px;
   background: var(--wu-surface);
@@ -18,10 +18,10 @@
   display: flex;
   align-items: start;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--wu-space-4);
 }
 .activity-card :is(h2, h3) {
-  margin: 0 0 5px;
+  margin: 0 0 var(--wu-space-2);
   overflow-wrap: anywhere;
 }
 .activity-card h3 {
@@ -45,7 +45,7 @@
   color: #b8b3a9;
 }
 .activity-state {
-  padding: 4px 9px;
+  padding: var(--wu-space-1) var(--wu-space-3);
   border-radius: 14px;
   font-size: var(--wu-text-xs);
   color: #ded8ca;
@@ -69,7 +69,7 @@
 .calendar-title {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .calendar-event-icon {
   display: inline-flex;
@@ -97,7 +97,7 @@
   font-size: var(--wu-text-xl);
   font-weight: var(--wu-weight-medium);
   color: var(--wu-text);
-  margin: 18px 0 12px;
+  margin: var(--wu-space-4) 0 var(--wu-space-3);
   font-variant-numeric: tabular-nums;
 }
 .activity-card progress {
@@ -107,7 +107,7 @@
   border: 0;
   border-radius: 6px;
   overflow: hidden;
-  margin: 10px 0 18px;
+  margin: var(--wu-space-3) 0 var(--wu-space-4);
   background: var(--wu-surface-soft);
   accent-color: #e7b338;
 }
@@ -123,13 +123,13 @@
 .activity-dates {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-  padding-top: 14px;
+  gap: var(--wu-space-4);
+  padding-top: var(--wu-space-4);
   border-top: 1px solid #333;
 }
 .activity-dates div {
   display: grid;
-  gap: 4px;
+  gap: var(--wu-space-1);
   font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
@@ -137,9 +137,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
-  margin-top: 16px;
+  margin-top: var(--wu-space-4);
 }
 .activity-card a,
 .calendar-sources a {
@@ -155,33 +155,33 @@
   background: transparent;
   color: var(--wu-accent);
   text-align: left;
-  padding: 12px 0 0;
+  padding: var(--wu-space-3) 0 0;
   min-height: 44px;
 }
 .activity-timezone {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   min-height: 44px;
 }
 .activity-timezone input {
   width: 18px;
 }
 .calendar-sources {
-  margin: 20px 0 32px;
+  margin: var(--wu-space-4) 0 var(--wu-space-6);
   font-size: var(--wu-text-sm);
   color: #b8b3a9;
 }
 .calendar-sources summary {
   cursor: pointer;
   min-height: 44px;
-  padding-top: 12px;
+  padding-top: var(--wu-space-3);
 }
 .activity-toolbar {
   display: flex;
   align-items: end;
-  gap: 16px;
-  margin: 20px 0;
+  gap: var(--wu-space-4);
+  margin: var(--wu-space-4) 0;
 }
 .activity-toolbar > label:first-child {
   flex: 1;
@@ -193,15 +193,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin: 16px 0;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-4) 0;
   color: #b8b3a9;
   font-size: var(--wu-text-md);
 }
 .raid-totals {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--wu-space-3);
   font-variant-numeric: tabular-nums;
 }
 .raid-totals dt {
@@ -210,7 +210,7 @@
   font-variant-numeric: tabular-nums;
 }
 .raid-totals dd {
-  margin: 8px 0;
+  margin: var(--wu-space-2) 0;
   font-size: var(--wu-text-xl);
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
@@ -222,18 +222,18 @@
 }
 @media (max-width: 480px) {
   .activity-card {
-    padding: 16px;
+    padding: var(--wu-space-5);
   }
   .activity-card header {
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--wu-space-2);
   }
   .activity-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
   .activity-dates {
-    gap: 12px;
+    gap: var(--wu-space-3);
   }
 }
 .shell .clan-activity-workspace > .workflow-tabs {
@@ -253,13 +253,13 @@
   align-items: start;
 }
 .war-card {
-  padding: 18px 20px 8px;
+  padding: var(--wu-space-5);
 }
 .war-card .war-card-meta {
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 18px;
+  gap: var(--wu-space-2);
+  margin-bottom: var(--wu-space-4);
   color: #c3bfb6;
   font-size: var(--wu-text-xs);
 }
@@ -267,26 +267,26 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: var(--wu-space-2);
 }
 .war-card-kind > svg {
   width: 16px;
   height: 16px;
 }
 .war-card .activity-state {
-  padding: 3px 7px;
+  padding: var(--wu-space-1) var(--wu-space-2);
 }
 .war-matchup {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .war-team {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 4px 8px;
+  gap: var(--wu-space-1) var(--wu-space-2);
   overflow-wrap: anywhere;
 }
 .war-team img {
@@ -309,7 +309,7 @@
 .war-matchup-score {
   display: grid;
   text-align: center;
-  gap: 3px;
+  gap: var(--wu-space-1);
   font-variant-numeric: tabular-nums;
 }
 .war-matchup-score strong {
@@ -324,21 +324,21 @@
 .war-attacks {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  margin: 16px 0;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-4) 0;
   font-size: var(--wu-text-sm);
   color: #c3bfb6;
   font-variant-numeric: tabular-nums;
 }
 .war-personal {
   border-top: 1px solid #333;
-  padding-top: 12px;
+  padding-top: var(--wu-space-3);
 }
 .war-personal h3 {
   font-size: var(--wu-text-lg);
   color: #b8b3a9;
   font-weight: var(--wu-weight-medium);
-  margin-bottom: 8px;
+  margin-bottom: var(--wu-space-2);
   line-height: 1.3;
   text-wrap: balance;
 }
@@ -350,8 +350,8 @@
 .war-personal li {
   display: flex;
   justify-content: space-between;
-  gap: 14px;
-  margin: 7px 0;
+  gap: var(--wu-space-4);
+  margin: var(--wu-space-2) 0;
   font-size: var(--wu-text-sm);
 }
 .war-personal li span {
@@ -371,7 +371,7 @@
 }
 .war-personal > small {
   display: block;
-  margin-top: 8px;
+  margin-top: var(--wu-space-2);
 }
 .war-details > summary,
 .war-inactive > summary {
@@ -379,7 +379,7 @@
   min-height: 44px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   color: #c3bfb6;
   font-size: var(--wu-text-sm);
 }
@@ -392,30 +392,30 @@
   content: "▾";
 }
 .war-details footer {
-  margin-top: 8px;
+  margin-top: var(--wu-space-2);
 }
 .shell .war-text-action {
   background: transparent;
   border: 0;
-  padding: 8px 0;
+  padding: var(--wu-space-2) 0;
   color: var(--wu-accent);
   min-height: 44px;
 }
 .war-inactive {
-  margin-top: 16px;
+  margin-top: var(--wu-space-4);
 }
 @media (max-width: 480px) {
   .war-card {
-    padding: 14px 14px 4px;
+    padding: var(--wu-space-5);
   }
   .war-matchup {
-    gap: 8px;
+    gap: var(--wu-space-2);
   }
   .war-team {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 5px;
+    gap: var(--wu-space-2);
   }
   .war-team:last-child {
     align-items: flex-end;
@@ -428,17 +428,17 @@
     font-variant-numeric: tabular-nums;
   }
   .war-personal li {
-    gap: 8px;
+    gap: var(--wu-space-2);
   }
 }
 
 /* Events hierarchy stays scoped so Wars and raid cards retain their layout. */
 .events-workspace .calendar-card {
-  padding: 20px;
+  padding: var(--wu-space-5);
 }
 .events-workspace .calendar-title {
   min-width: 0;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .events-workspace .calendar-title h2 {
   margin: 0;
@@ -449,7 +449,7 @@
 }
 .events-workspace .calendar-card > header {
   align-items: center;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .events-workspace .calendar-games .calendar-event-icon {
   background: #20362d;
@@ -461,8 +461,8 @@
 }
 .events-workspace .calendar-countdown {
   display: grid;
-  gap: 4px;
-  margin: 22px 0 12px;
+  gap: var(--wu-space-1);
+  margin: var(--wu-space-4) 0 var(--wu-space-3);
   line-height: 1.3;
   font-variant-numeric: tabular-nums;
 }
@@ -478,17 +478,17 @@
   font-variant-numeric: tabular-nums;
 }
 .events-workspace .calendar-description {
-  margin: 0 0 18px;
+  margin: 0 0 var(--wu-space-4);
   font-size: var(--wu-text-sm);
   line-height: 1.5;
   color: #c3bfb6;
 }
 .events-workspace .calendar-card progress {
-  margin: 0 0 16px;
+  margin: 0 0 var(--wu-space-4);
   height: 4px;
 }
 .events-workspace .calendar-card .activity-dates {
-  gap: 16px;
+  gap: var(--wu-space-4);
 }
 .events-workspace .calendar-card .activity-dates small {
   color: #aaa69d;
@@ -499,11 +499,11 @@
   color: #c3bfb6;
 }
 .events-workspace .clan-event-status {
-  margin-top: 28px;
+  margin-top: var(--wu-space-5);
 }
 @media (max-width: 480px) {
   .events-workspace .calendar-card {
-    padding: 16px;
+    padding: var(--wu-space-5);
   }
   .events-workspace .calendar-title h2 {
     font-size: var(--wu-text-xl);
@@ -512,7 +512,7 @@
     text-wrap: balance;
   }
   .events-workspace .calendar-countdown {
-    margin-top: 18px;
+    margin-top: var(--wu-space-4);
     font-variant-numeric: tabular-nums;
   }
   .events-workspace .calendar-countdown > strong {
@@ -523,22 +523,22 @@
 
 /* War details mount only while open and keep the long records paged. */
 .war-detail-panel {
-  margin-top: 16px;
-  padding-top: 14px;
+  margin-top: var(--wu-space-4);
+  padding-top: var(--wu-space-4);
   border-top: 1px solid #333;
   min-width: 0;
 }
 .war-detail-freshness {
   color: #b8b3a9;
   font-size: var(--wu-text-xs);
-  margin: 0 0 12px;
+  margin: 0 0 var(--wu-space-3);
 }
 .war-detail-view,
 .war-detail-side {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 10px 0;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-3) 0;
 }
 .shell .war-detail-view button,
 .shell .war-detail-side button,
@@ -552,7 +552,7 @@
   color: var(--wu-accent);
 }
 .war-detail-panel h3 {
-  margin: 12px 0 8px;
+  margin: var(--wu-space-3) 0 var(--wu-space-2);
   font-size: var(--wu-text-lg);
   font-weight: var(--wu-weight-medium);
   line-height: 1.3;
@@ -571,8 +571,8 @@
 .war-detail-member,
 .war-detail-attack-list > li {
   display: grid;
-  gap: 5px;
-  padding: 10px 0;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-2) 0;
   border-top: 1px solid #303030;
   font-size: var(--wu-text-sm);
   min-width: 0;
@@ -586,7 +586,7 @@
 .war-detail-member-title small,
 .war-detail-attack-list small {
   color: #aaa69d;
-  margin-left: 5px;
+  margin-left: var(--wu-space-1);
 }
 .war-detail-member-meta,
 .war-detail-attack-list strong {
@@ -595,8 +595,8 @@
 }
 .war-detail-linked {
   display: inline-flex;
-  margin-left: 8px;
-  padding: 2px 7px;
+  margin-left: var(--wu-space-2);
+  padding: var(--wu-space-1) var(--wu-space-2);
   border: 1px solid #566b50;
   border-radius: 12px;
   color: #b9dfa8;
@@ -608,7 +608,7 @@
   justify-content: space-between;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--wu-space-2);
   font-variant-numeric: tabular-nums;
 }
 .war-detail-attacks > header > span {
@@ -620,7 +620,7 @@
   display: flex;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 5px 12px;
+  gap: var(--wu-space-1) var(--wu-space-3);
 }
 .war-detail-attack-list strong {
   text-align: right;
@@ -629,15 +629,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin: 10px 0;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-3) 0;
 }
 .war-detail-pages span {
   color: #c3bfb6;
   font-size: var(--wu-text-sm);
 }
 .war-detail-error {
-  padding: 8px 0;
+  padding: var(--wu-space-2) 0;
 }
 .war-detail-error p,
 .war-detail-partial {
@@ -646,10 +646,10 @@
   text-wrap: pretty;
 }
 .war-detail-error button + button {
-  margin-left: 8px;
+  margin-left: var(--wu-space-2);
 }
 .war-detail-partial {
-  padding-left: 20px;
+  padding-left: var(--wu-space-4);
 }
 @media (max-width: 480px) {
   .war-detail-view,
@@ -672,5 +672,17 @@
 .war-detail-attack-side {
   color: #b8b3a9;
   font-size: var(--wu-text-xs);
-  margin-right: 6px;
+  margin-right: var(--wu-space-2);
+}
+@media (max-width: 650px) {
+  .activity-card,
+  .war-card,
+  .events-workspace .calendar-card {
+    padding: var(--wu-space-4);
+  }
+}
+@media (max-width: 320px) {
+  .wars-workspace .war-card {
+    padding: var(--wu-space-3);
+  }
 }

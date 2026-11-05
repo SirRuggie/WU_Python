@@ -1,16 +1,16 @@
 .reminders-workspace {
   display: grid;
-  gap: 16px;
+  gap: var(--wu-space-4);
 }
 .reminders-workspace .section-heading {
-  margin: 0;
+  margin: var(--wu-space-6) 0 var(--wu-space-3);
 }
 .reminders-workspace .notice {
   margin: 0;
 }
 .reminder-fields {
   display: flex;
-  gap: 16px;
+  gap: var(--wu-space-4);
   flex-wrap: wrap;
   align-items: end;
 }
@@ -21,7 +21,7 @@
 .reminder-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--wu-space-4);
 }
 .reminders-workspace fieldset {
   border: 0;
@@ -31,16 +31,16 @@
 }
 .reminders-workspace legend {
   font-weight: var(--wu-weight-bold);
-  margin-bottom: 16px;
+  margin-bottom: var(--wu-space-4);
 }
 .reminders-workspace label {
-  margin-bottom: 14px;
+  margin-bottom: var(--wu-space-3);
 }
 .reminders-workspace h3 {
-  margin: 20px 0 12px;
+  margin: var(--wu-space-4) 0 var(--wu-space-3);
 }
 .reminders-workspace details > summary {
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   cursor: pointer;
   font-weight: var(--wu-weight-bold);
 }
@@ -51,7 +51,7 @@
 .reminder-save {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
 }
 .reminder-status button {
@@ -63,10 +63,10 @@
   line-height: 1.6;
 }
 .reminder-locked-link {
-  padding: 12px;
+  padding: var(--wu-space-3);
   border: 1px solid #444;
   border-radius: 8px;
-  margin: 8px 0;
+  margin: var(--wu-space-2) 0;
 }
 .reminder-locked-link span {
   display: block;
@@ -78,7 +78,7 @@
   position: sticky;
   bottom: 0;
   z-index: 2;
-  padding: 14px;
+  padding: var(--wu-space-4);
   background: var(--wu-surface);
   border: 1px solid #515968;
   border-radius: 12px;
@@ -90,8 +90,8 @@
 .reminder-history-row {
   display: grid;
   grid-template-columns: 2fr 1fr 2fr 1fr;
-  gap: 12px;
-  padding: 12px 0;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3) 0;
   border-bottom: 1px solid var(--wu-border-subtle);
   overflow-wrap: anywhere;
 }
@@ -125,6 +125,7 @@
   .reminders-workspace .section-heading {
     align-items: start;
     flex-wrap: wrap;
+    margin: var(--wu-space-6) 0 var(--wu-space-3);
   }
   .reminders-workspace .tabs button {
     min-width: 0;
@@ -143,16 +144,16 @@
 }
 .reminder-month .reminder-fields button {
   min-height: 44px;
-  margin-bottom: 14px;
+  margin-bottom: var(--wu-space-3);
 }
 .reminders-workspace .tabs button {
   min-height: 44px;
 }
 .reminder-selected-roles {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: var(--wu-space-3);
 }
 .reminder-selected-roles button {
   min-height: 44px;
@@ -169,19 +170,19 @@
   scroll-margin-block: 100px 180px;
 }
 .signup-date-field {
-  margin: 20px 0;
+  margin: var(--wu-space-4) 0;
 }
 .signup-date-field > label {
   display: grid;
-  gap: 8px;
+  gap: var(--wu-space-2);
   max-width: 32rem;
 }
 .signup-date-field > .check-label {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--wu-space-2);
   min-height: 44px;
-  margin-bottom: 10px;
+  margin-bottom: var(--wu-space-2);
 }
 .signup-date-field .check-label input {
   flex: 0 0 auto;
@@ -190,7 +191,7 @@
 .signup-date-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: var(--wu-space-4);
 }
 .signup-date-grid > section {
   min-width: 0;
@@ -208,7 +209,7 @@
 /* Keep actions attached to their status or editor;
 navigation uses the shared rail. */
 .reminder-status {
-  padding: 14px 16px;
+  padding: var(--wu-space-3) var(--wu-space-4);
   background: var(--wu-surface);
   border: 1px solid var(--wu-border-subtle);
   border-radius: 12px;
@@ -235,14 +236,14 @@ navigation uses the shared rail. */
   min-width: 0;
   border: 1px solid var(--wu-border-subtle);
   border-radius: 10px;
-  padding: 0 16px;
+  padding: 0 var(--wu-space-4);
   align-self: start;
 }
 .reminder-disclosure[open] {
-  padding-bottom: 16px;
+  padding-bottom: var(--wu-space-4);
 }
 .reminder-disclosure + label {
-  margin-top: 16px;
+  margin-top: var(--wu-space-4);
 }
 .reminder-context {
   color: var(--wu-text-muted);
@@ -284,11 +285,11 @@ only editing opens the long forms. */
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: var(--wu-space-3);
+  margin-bottom: var(--wu-space-3);
 }
 .reminder-overview-head h3 {
-  margin: 0 0 3px;
+  margin: 0 0 var(--wu-space-1);
   font-size: var(--wu-text-lg);
   font-weight: var(--wu-weight-medium);
   line-height: 1.3;
@@ -313,7 +314,7 @@ only editing opens the long forms. */
 }
 .reminder-overview-note,
 .reminder-lookup-warning {
-  margin: 10px 0 0;
+  margin: var(--wu-space-3) 0 0;
   font-size: var(--wu-text-sm);
 }
 .reminder-lookup-warning {
@@ -337,8 +338,8 @@ only editing opens the long forms. */
 }
 .reminders-workspace .reminder-status {
   display: flex;
-  gap: 6px 16px;
-  padding: 10px 12px;
+  gap: var(--wu-space-1) var(--wu-space-4);
+  padding: var(--wu-space-2) var(--wu-space-3);
   border-radius: 9px;
 }
 .reminders-workspace .reminder-status > span {
@@ -374,10 +375,10 @@ only editing opens the long forms. */
 .signup-reminder-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .signup-reminder-shared {
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
 }
 .signup-reminder-shared > div,
 .signup-reminder-pool {
@@ -385,7 +386,7 @@ only editing opens the long forms. */
   overflow-wrap: anywhere;
 }
 .signup-reminder-row {
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   border-bottom: 1px solid #ffffff28;
 }
 .signup-reminder-row h4 {
@@ -395,11 +396,11 @@ only editing opens the long forms. */
 .signup-reminder-pool {
   display: grid;
   align-content: start;
-  gap: 5px;
+  gap: var(--wu-space-2);
 }
 .signup-reminder-pool p,
 .signup-reminder-shared p {
-  margin: 4px 0;
+  margin: var(--wu-space-1) 0;
   font-size: var(--wu-text-sm);
   text-wrap: pretty;
 }

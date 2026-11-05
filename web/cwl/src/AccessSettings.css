@@ -17,8 +17,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-block: 16px;
+  gap: var(--wu-space-3);
+  margin-block: var(--wu-space-4);
 }
 .access-layout {
   display: grid;
@@ -28,20 +28,20 @@
   background: var(--wu-surface);
 }
 .access-directory {
-  padding: 20px;
+  padding: var(--wu-space-5);
   border-right: 1px solid var(--wu-border-subtle);
   min-width: 0;
 }
 .access-directory > label {
   display: block;
-  margin-block: 16px;
+  margin-block: var(--wu-space-4);
 }
 .access-person {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 12px;
-  margin-block: 8px;
+  padding: var(--wu-space-3);
+  margin-block: var(--wu-space-2);
   overflow-wrap: anywhere;
 }
 .access-person strong,
@@ -59,7 +59,7 @@
 }
 .access-editor {
   min-width: 0;
-  padding: 24px;
+  padding: var(--wu-space-5);
 }
 .access-editor h2,
 .access-identity {
@@ -71,41 +71,41 @@
   overflow-wrap: anywhere;
 }
 .access-back {
-  margin-bottom: 12px;
+  margin-bottom: var(--wu-space-3);
 }
 .access-empty {
-  padding-block: 32px;
+  padding-block: var(--wu-space-6);
 }
 .access-subject {
   display: flex;
-  gap: 20px;
-  margin-block: 12px;
+  gap: var(--wu-space-4);
+  margin-block: var(--wu-space-3);
 }
 .access-subject label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .access-role-results {
   max-height: 360px;
   overflow-y: auto;
-  margin-block: 12px;
+  margin-block: var(--wu-space-3);
 }
 .access-role-results button {
   display: block;
   text-align: left;
   width: 100%;
-  margin-block: 8px;
+  margin-block: var(--wu-space-2);
   overflow-wrap: anywhere;
 }
 .access-role-results small {
   display: block;
 }
 .access-permissions {
-  margin-block: 24px;
+  margin-block: var(--wu-space-5);
 }
 .access-permissions fieldset {
-  margin-bottom: 24px;
+  margin-bottom: var(--wu-space-5);
 }
 .access-permissions legend {
   font-size: var(--wu-text-lg);
@@ -120,9 +120,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: var(--wu-space-4);
   min-height: 64px;
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   border-bottom: 1px solid var(--wu-border-subtle);
   cursor: pointer;
 }
@@ -131,7 +131,7 @@
 }
 .access-switch-row small {
   display: block;
-  margin-top: 4px;
+  margin-top: var(--wu-space-1);
 }
 .access-group-switch {
   background: #ffffff05;
@@ -141,7 +141,7 @@
   flex: 0 0 48px;
   width: 48px;
   height: 28px;
-  margin: 8px 2px;
+  margin: var(--wu-space-2) var(--wu-space-1);
   padding: 0;
   border: 2px solid var(--wu-text-muted);
   border-radius: 16px;
@@ -180,25 +180,25 @@
   z-index: 2;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--wu-space-3);
   align-items: center;
   justify-content: space-between;
   background: var(--wu-surface-raised);
   border: 1px solid #777c88;
   border-radius: 10px;
-  padding: 12px;
-  margin-top: 20px;
+  padding: var(--wu-space-3);
+  margin-top: var(--wu-space-4);
 }
 .access-savebar > div {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .access-savebar > small {
   flex-basis: 100%;
 }
 .access-history {
-  margin-top: 20px;
+  margin-top: var(--wu-space-4);
 }
 .access-workspace summary {
   display: flex;
@@ -211,11 +211,11 @@
   }
   .access-directory {
     border-right: 0;
-    padding: 16px;
+    padding: var(--wu-space-5);
   }
   .access-editor {
     display: none;
-    padding: 16px;
+    padding: var(--wu-space-5);
   }
   .access-editing .access-directory {
     display: none;
@@ -227,7 +227,7 @@
     flex-wrap: wrap;
   }
   .access-switch-row {
-    gap: 10px;
+    gap: var(--wu-space-2);
   }
 }
 @media (max-height: 600px) {
@@ -245,7 +245,7 @@
 .access-person {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .access-person-info {
   min-width: 0;
@@ -253,7 +253,7 @@
 .access-identity-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .access-identity-header p {
   min-width: 0;
@@ -263,17 +263,17 @@
 .access-workspace .access-remove-confirm {
   display: block;
   min-width: 0;
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
   overflow-wrap: anywhere;
 }
 .access-remove-confirm p {
-  margin: 0 0 16px;
+  margin: 0 0 var(--wu-space-4);
   text-wrap: pretty;
 }
 .access-remove-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .access-remove-actions button {
   min-width: 0;
@@ -295,8 +295,8 @@
 .access-owner {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 0;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3) 0;
   border-top: 1px solid var(--wu-border-subtle);
 }
 .access-owner > div {
@@ -308,15 +308,15 @@
   display: block;
 }
 .access-owners {
-  margin-top: 20px;
+  margin-top: var(--wu-space-4);
 }
 .access-permission-section {
   border-bottom: 1px solid var(--wu-border-subtle);
 }
 .access-permission-section > summary {
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3) 0;
 }
 .access-permission-section > summary::before {
   content: "▸";
@@ -331,14 +331,14 @@
   flex-shrink: 0;
 }
 .access-change-summary {
-  margin-top: 16px;
+  margin-top: var(--wu-space-4);
   border-left: 3px solid #f1cb56;
-  padding: 8px 12px;
+  padding: var(--wu-space-2) var(--wu-space-3);
   background: #f1cb560a;
   overflow-wrap: anywhere;
 }
 .access-change-summary p {
-  margin: 5px 0;
+  margin: var(--wu-space-1) 0;
   font-size: var(--wu-text-sm);
   text-wrap: pretty;
 }
@@ -361,4 +361,11 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+@media (max-width: 650px) {
+  .access-directory,
+  .access-editor {
+    padding: var(--wu-space-4);
+  }
 }

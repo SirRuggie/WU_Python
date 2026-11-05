@@ -3,7 +3,7 @@
 }
 .member-search {
   display: grid;
-  gap: 8px;
+  gap: var(--wu-space-2);
   font-weight: var(--wu-weight-medium);
 }
 .member-search input {
@@ -11,7 +11,7 @@
   min-height: 44px;
 }
 .member-picker .member-options {
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
   padding: 0;
   border: 1px solid var(--wu-border);
   border-radius: 10px;
@@ -28,8 +28,8 @@
 .member-options label {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3);
   border-bottom: 1px solid var(--wu-border-subtle);
   cursor: pointer;
   min-height: 56px;
@@ -61,7 +61,7 @@
 .member-selected-row > div {
   min-width: 0;
   display: grid;
-  gap: 3px;
+  gap: var(--wu-space-1);
   overflow-wrap: anywhere;
 }
 .member-picker small {
@@ -72,8 +72,8 @@
 }
 .member-picker img,
 .member-selected {
-  margin-top: 12px;
-  padding: 12px;
+  margin-top: var(--wu-space-3);
+  padding: var(--wu-space-3);
   background: var(--wu-accent-soft);
   border: 1px solid var(--wu-accent);
   border-radius: 10px;
@@ -87,8 +87,8 @@
 .member-selected-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 8px;
+  gap: var(--wu-space-2);
+  margin-top: var(--wu-space-2);
 }
 .member-selected-row > button {
   margin-left: auto;
@@ -99,23 +99,23 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  margin-top: 10px;
+  gap: var(--wu-space-3);
+  margin-top: var(--wu-space-2);
   font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
 }
 .member-clear {
-  margin-top: 10px;
+  margin-top: var(--wu-space-3);
 }
 .member-error {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3);
   background: #3b2528;
   border-radius: 8px;
-  margin-top: 10px;
+  margin-top: var(--wu-space-3);
 }
 .member-picker button {
   min-height: 44px;

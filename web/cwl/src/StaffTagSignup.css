@@ -4,8 +4,8 @@
 .staff-tag-lookup {
   display: flex;
   align-items: end;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: var(--wu-space-3);
+  margin-bottom: var(--wu-space-3);
 }
 .staff-tag-lookup .roster-ui-input {
   flex: 1 1 auto;
@@ -18,15 +18,15 @@
   flex: 0 0 auto;
 }
 .staff-tag-result {
-  padding: 12px;
+  padding: var(--wu-space-3);
   border: 1px solid var(--wu-border);
   border-radius: 8px;
 }
 .staff-tag-player {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: var(--wu-space-2);
+  margin-bottom: var(--wu-space-3);
 }
 .staff-tag-player div {
   min-width: 0;
@@ -37,7 +37,7 @@
 }
 .staff-tag-result fieldset {
   display: grid;
-  gap: 10px;
+  gap: var(--wu-space-3);
 }
 .staff-tag-result fieldset .check-label {
   display: flex;
@@ -48,7 +48,7 @@
   text-wrap: pretty;
 }
 .staff-tag-result .roster-ui-status {
-  margin-right: 7px;
+  margin-right: var(--wu-space-1);
 }
 .staff-tag-result .roster-ui-input {
   margin: 0;

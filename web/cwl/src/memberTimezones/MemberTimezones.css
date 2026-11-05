@@ -3,16 +3,16 @@
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 12px;
-  margin-block: 16px;
+  gap: var(--wu-space-3);
+  margin-block: var(--wu-space-4);
 }
 .mt-editor {
   max-width: 560px;
 }
 .mt-editor label {
   display: grid;
-  gap: 6px;
-  margin-block: 10px;
+  gap: var(--wu-space-1);
+  margin-block: var(--wu-space-2);
 }
 .mt-editor input:not([type="checkbox"]),
 .mt-editor select {
@@ -28,7 +28,7 @@
   display: flex;
   align-items: center;
   min-height: 44px;
-  gap: 10px;
+  gap: var(--wu-space-3);
 }
 .mt-check input {
   width: 22px;
@@ -44,8 +44,8 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px 0;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3) 0;
   border-bottom: 1px solid var(--wu-border-subtle);
   overflow-wrap: anywhere;
 }
@@ -53,7 +53,7 @@
   min-width: 0;
 }
 .mt-list p {
-  margin: 5px 0;
+  margin: var(--wu-space-1) 0;
   text-wrap: pretty;
 }
 .mt-pagination {
@@ -61,7 +61,7 @@
   align-items: center;
   justify-content: space-between;
   flex: none;
-  gap: 4px;
+  gap: var(--wu-space-1);
   font-size: var(--wu-text-sm);
 }
 .mt-pagination button {
@@ -86,8 +86,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 10px;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-3);
   background: var(--wu-surface-raised);
   border: 1px solid #59503d;
   border-radius: 8px;
@@ -102,7 +102,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 4px 8px;
+  gap: var(--wu-space-1) var(--wu-space-2);
 }
 .mt-review-entry .link-button {
   grid-column: 1 / -1;
@@ -121,7 +121,7 @@
   grid-column: 1 / -1;
   grid-row: 2;
   min-width: 0;
-  margin: 4px 0;
+  margin: var(--wu-space-1) 0;
   font-size: var(--wu-text-sm);
   line-height: 1.5;
   max-width: 70ch;
@@ -131,8 +131,8 @@
 }
 .mt-nickname-review label:has(input[type="search"]) {
   display: grid;
-  gap: 4px;
-  margin-block: 10px;
+  gap: var(--wu-space-1);
+  margin-block: var(--wu-space-2);
   font-size: var(--wu-text-md);
 }
 .mt-nickname-review input[type="search"] {
@@ -143,7 +143,7 @@
 .mt-nickname-review .mt-check {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--wu-space-3);
   min-height: 44px;
 }
 .mt-nickname-review .mt-list li {

@@ -6,9 +6,9 @@
     auto;
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  gap: var(--wu-space-4);
   max-width: min(36rem, calc(100vw - 2rem));
-  padding: 0.7rem 0.85rem;
+  padding: var(--wu-space-3) var(--wu-space-4);
   border: 1px solid var(--roster-gold);
   border-radius: var(--roster-radius-card);
   background: var(--roster-surface-raised);

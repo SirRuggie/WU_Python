@@ -16,7 +16,7 @@
   flex-wrap: wrap;
   gap: 0;
   padding: 0;
-  margin: 12px 0 20px;
+  margin: var(--wu-space-3) 0 var(--wu-space-4);
   border: 0;
   border-bottom: 1px solid #46433a;
   border-radius: 0;
@@ -48,6 +48,28 @@
   color: #d4d0c6;
   -webkit-text-fill-color: currentColor;
   white-space: normal;
+}
+.shell
+  :is(
+    .todo-tabs,
+    .member-nav-tabs,
+    .signup-panel-tabs,
+    .workflow-tabs,
+    .clan-tabs,
+    .cwl-pool-tabs,
+    .roster-workflow-nav,
+    .bonus-tabs,
+    .cwl-roster-tabs,
+    .cwl-result-nav
+  )
+  > button:where(
+    :not(.welcome-screen .primary):not(.roster-workspace *):not(
+        .compare-workspace *
+      ):not(.player-card *):not(.roster-action-trigger):not(
+        .roster-action-popover *
+      )
+  ) {
+  padding: var(--wu-space-3) var(--wu-space-4);
 }
 .shell
   :is(
@@ -94,22 +116,22 @@
 .clan-category-filters span {
   font-size: var(--wu-text-sm);
   opacity: 0.8;
-  margin-left: 5px;
+  margin-left: var(--wu-space-1);
 }
 .return-status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
-  gap: 12px;
-  margin: 16px 0;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-4) 0;
 }
 .return-status-grid article {
-  padding: 16px;
+  padding: var(--wu-space-4);
   border: 1px solid #46433a;
   border-radius: 12px;
 }
 .return-status-grid article > * {
   display: block;
-  margin: 5px 0;
+  margin: var(--wu-space-1) 0;
   overflow-wrap: anywhere;
 }
 @media (max-width: 600px) {
@@ -129,13 +151,35 @@
     > button {
     padding: 10px 12px;
   }
+  .shell
+    :is(
+      .todo-tabs,
+      .member-nav-tabs,
+      .signup-panel-tabs,
+      .workflow-tabs,
+      .clan-tabs,
+      .cwl-pool-tabs,
+      .roster-workflow-nav,
+      .bonus-tabs,
+      .cwl-roster-tabs,
+      .cwl-result-nav
+    )
+    > button:where(
+      :not(.welcome-screen .primary):not(.roster-workspace *):not(
+          .compare-workspace *
+        ):not(.player-card *):not(.roster-action-trigger):not(
+          .roster-action-popover *
+        )
+    ) {
+    padding: var(--wu-space-2) var(--wu-space-3);
+  }
 }
 #clan-directory-picker .clan-category-filters {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 #clan-directory-picker .clan-category-filters button {
-  padding: 8px;
+  padding: var(--wu-space-2);
   overflow-wrap: anywhere;
 }
 
@@ -143,7 +187,7 @@
 .shell .todo-tabs > button {
   flex-direction: row;
   align-items: center;
-  gap: 7px;
+  gap: var(--wu-space-1);
 }
 .shell .todo-tabs > button > span {
   display: inline-flex;
@@ -159,12 +203,12 @@
   flex-wrap: wrap;
   width: fit-content;
   max-width: 100%;
-  gap: 2px;
-  padding: 4px;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-1);
   border: 1px solid var(--wu-border-subtle);
   border-radius: 24px;
   background: var(--wu-surface);
-  margin: 12px 0;
+  margin: var(--wu-space-3) 0;
 }
 .shell
   :is(.overview-filters, .clan-category-filters, .search-kind-filters)
@@ -172,11 +216,11 @@
   display: inline-flex;
   align-items: center;
   flex-direction: row;
-  gap: 6px;
+  gap: var(--wu-space-1);
   min-height: 44px;
   border: 0;
   border-radius: 20px;
-  padding: 8px 14px;
+  padding: var(--wu-space-2) var(--wu-space-3);
   background: transparent;
   box-shadow: none;
   color: #c6c3bb;
@@ -197,11 +241,11 @@
 .shell .home-search-entry {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--wu-space-3);
   width: 100%;
   text-align: left;
   border-radius: 24px;
-  margin: 20px 0 8px;
+  margin: var(--wu-space-4) 0 var(--wu-space-2);
   background: var(--wu-surface);
   color: #c6c3bb;
   min-height: 48px;
@@ -216,13 +260,13 @@
 .home-activity-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 24px;
+  gap: var(--wu-space-1);
+  margin-bottom: var(--wu-space-5);
 }
 .shell .home-activity-links button {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   background: transparent;
   border-color: transparent;
   min-height: 44px;
@@ -234,8 +278,8 @@
 .global-search-field {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px;
+  gap: var(--wu-space-3);
+  padding: 0 var(--wu-space-4);
   background: var(--wu-surface);
   border: 1px solid #444;
   border-radius: 24px;
@@ -265,8 +309,8 @@
 .search-result {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 18px 0;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-4) 0;
   border-bottom: 1px solid var(--wu-border-subtle);
 }
 .search-result > div:first-of-type {
@@ -279,14 +323,14 @@
   overflow-wrap: anywhere;
 }
 .search-result small {
-  margin-top: 6px;
+  margin-top: var(--wu-space-1);
   color: #bcb8af;
 }
 .search-result-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .search-result-actions a {
   display: inline-flex;
@@ -298,8 +342,8 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 12px;
-  margin-top: 20px;
+  gap: var(--wu-space-3);
+  margin-top: var(--wu-space-4);
 }
 @media (max-width: 600px) {
   .home-search-entry kbd {
@@ -310,11 +354,11 @@
   }
   .search-result-actions {
     flex-basis: 100%;
-    margin-left: 32px;
+    margin-left: var(--wu-space-6);
   }
   .shell .todo-tabs > button {
     flex-wrap: wrap;
-    padding: 10px;
+    padding: var(--wu-space-2);
   }
   .shell .todo-tabs small {
     font-size: var(--wu-text-xs);
@@ -325,7 +369,7 @@
   box-shadow: none;
 }
 .shell .todo-refresh {
-  margin-bottom: 18px;
+  margin-bottom: var(--wu-space-4);
 }
 /* Keep activity sections on a single rail; keyboard focus scrolls each tab into view. */
 .shell .todo-tabs {

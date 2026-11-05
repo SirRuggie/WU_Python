@@ -11,8 +11,8 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px 16px;
-  margin: 10px 0 16px;
+  gap: var(--wu-space-2) var(--wu-space-4);
+  margin: var(--wu-space-2) 0 var(--wu-space-4);
 }
 .finalize-review h2,
 .finalize-review .publication-summary strong,
@@ -31,17 +31,17 @@
   text-wrap: balance;
 }
 .finalize-review h2 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--wu-space-2);
 }
 .finalize-review .publication-change-list {
-  margin: 0 0 14px;
+  margin: 0 0 var(--wu-space-3);
 }
 .finalize-review .publication-change-list ul {
-  margin: 6px 0;
+  margin: var(--wu-space-1) 0;
 }
 .finalize-review .publication-change-list li {
   display: block;
-  padding: 3px 0;
+  padding: var(--wu-space-1) 0;
   font-size: var(--wu-text-sm);
   line-height: 1.3;
 }
@@ -55,13 +55,13 @@
 .finalize-review .publication-check-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 14px;
+  gap: var(--wu-space-1);
+  margin-bottom: var(--wu-space-3);
 }
 .finalize-review .publication-check-chips .roster-ui-button {
   font-size: var(--wu-text-md);
   min-height: 44px;
-  padding: 6px 12px;
+  padding: var(--wu-space-1) var(--wu-space-3);
 }
 .finalize-review .publication-capacity-warning {
   color: var(--roster-warning);
@@ -69,23 +69,23 @@
   font-variant-numeric: tabular-nums;
 }
 .finalize-review .publication-finalize {
-  margin: 0 0 16px;
+  margin: 0 0 var(--wu-space-4);
 }
 .finalize-review .publication-section-heading {
-  margin-bottom: 8px;
+  margin-bottom: var(--wu-space-2);
 }
 .finalize-review .joining-instructions-editor label {
   font-size: var(--wu-text-sm);
   color: var(--roster-text);
 }
 .finalize-review .joining-instructions-editor > p {
-  margin: 4px 0;
+  margin: var(--wu-space-1) 0;
   text-wrap: pretty;
 }
 .finalize-review .joining-instructions-editor textarea {
   width: 100%;
   min-height: 72px;
-  padding: 8px 10px;
+  padding: var(--wu-space-2) var(--wu-space-2);
   font-size: var(--wu-text-md);
   line-height: 1.4;
   resize: vertical;
@@ -101,16 +101,16 @@
 .finalize-review .publication-ack {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  margin: 8px 0 12px;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-2) 0 var(--wu-space-3);
   font-size: var(--wu-text-sm);
 }
 .finalize-review .publication-ack input {
   flex: 0 0 auto;
 }
 .finalize-review .publication-preview {
-  padding: 0 12px;
-  margin: 16px 0;
+  padding: 0 var(--wu-space-3);
+  margin: var(--wu-space-4) 0;
   border: 1px solid var(--roster-border);
   border-radius: var(--roster-radius-card);
 }
@@ -118,7 +118,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 10px;
+  gap: var(--wu-space-2);
 }
 .finalize-review .publication-preview-filters label {
   flex: 1 1 200px;
@@ -129,16 +129,16 @@
 }
 .finalize-review .publication-groups {
   display: grid;
-  gap: 8px;
-  margin: 12px 0;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-3) 0;
 }
 .finalize-review .publication-group {
   border: 1px solid var(--roster-border-subtle);
   border-radius: var(--roster-radius-card);
-  padding: 0 10px;
+  padding: 0 var(--wu-space-3);
 }
 .finalize-review .publication-group summary {
-  gap: 6px 12px;
+  gap: var(--wu-space-1) var(--wu-space-3);
   flex-wrap: wrap;
 }
 .finalize-review .publication-group summary strong {
@@ -152,7 +152,7 @@
 .finalize-review .publication-row {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: var(--wu-space-2);
   align-items: center;
   min-height: 56px;
   border-top: 1px solid var(--roster-border-subtle);
@@ -166,7 +166,7 @@
   box-sizing: border-box;
   width: 40px;
   max-width: 100%;
-  padding: 2px;
+  padding: var(--wu-space-1);
   font-size: var(--wu-text-xl);
   line-height: 16px;
   text-align: center;
@@ -185,7 +185,7 @@
 }
 .finalize-review .publication-hide {
   border-top: 1px solid var(--roster-border-subtle);
-  padding-top: 14px;
+  padding-top: var(--wu-space-4);
 }
 .publication-visually-hidden {
   position: absolute;
@@ -196,10 +196,10 @@
   white-space: nowrap;
 }
 .finalize-review > .page-head {
-  margin-bottom: 12px;
+  margin-bottom: var(--wu-space-5);
 }
 .finalize-review .publication-change-list > p {
-  margin: 5px 0;
+  margin: var(--wu-space-1) 0;
   line-height: 1.55;
   text-wrap: pretty;
 }
@@ -235,7 +235,7 @@
 }
 
 .finalize-review .publication-change-list li strong {
-  margin-right: 0.4em;
+  margin-right: var(--wu-space-1);
 }
 .finalize-review .publication-change-list li strong::after {
   content: none;
@@ -249,30 +249,30 @@
     grid-template-columns: 1fr 1fr;
   }
   .publication-steps button {
-    padding: 8px;
+    padding: var(--wu-space-2);
     font-size: var(--wu-text-md);
   }
   .publication-group summary {
     align-items: start;
     flex-wrap: wrap;
-    gap: 3px 8px;
+    gap: var(--wu-space-1) var(--wu-space-2);
   }
   .publication-group summary > span {
     width: 100%;
     text-align: left;
-    padding-left: 20px;
+    padding-left: var(--wu-space-4);
   }
 }
 
 .readiness-checks {
-  margin: 18px 0;
+  margin: var(--wu-space-4) 0;
 }
 .readiness-filter {
   display: flex;
   align-items: end;
-  gap: 12px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
-  margin: 15px 0;
+  margin: var(--wu-space-3) 0;
 }
 .readiness-filter label {
   flex: 1;
@@ -309,8 +309,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 16px 20px;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-4) var(--wu-space-5);
   border-bottom: 1px solid #4b4433;
 }
 .announcement-preview-dialog h2 {
@@ -321,7 +321,7 @@
   text-wrap: balance;
 }
 .announcement-preview-body {
-  padding: 24px;
+  padding: var(--wu-space-5);
   overflow-wrap: anywhere;
 }
 body:has(.announcement-preview-dialog[open]) {
@@ -333,10 +333,10 @@ body:has(.announcement-preview-dialog[open]) {
     max-height: 95dvh;
   }
   .announcement-preview-body {
-    padding: 12px;
+    padding: var(--wu-space-3);
   }
   .announcement-preview-dialog > header {
-    padding: 12px;
+    padding: var(--wu-space-3);
   }
 }
 

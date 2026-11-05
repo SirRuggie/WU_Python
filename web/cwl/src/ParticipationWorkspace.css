@@ -3,15 +3,15 @@
   min-width: 0;
 }
 .participation-page-head {
-  margin-bottom: 16px;
+  margin-bottom: var(--wu-space-4);
 }
 .participation-page-head p {
   margin-bottom: 0;
   text-wrap: pretty;
 }
 .participation-capture {
-  margin: 0 0 16px;
-  padding: 12px 14px;
+  margin: 0 0 var(--wu-space-4);
+  padding: var(--wu-space-3) var(--wu-space-4);
   border: 1px solid var(--wu-border);
   border-radius: 10px;
   background: var(--wu-surface);
@@ -20,7 +20,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .participation-capture-main > div:first-child {
   min-width: 0;
@@ -34,13 +34,13 @@
   font-size: var(--wu-text-sm);
 }
 .participation-capture-main span {
-  margin-top: 3px;
+  margin-top: var(--wu-space-1);
   font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
 }
 .participation-capture-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--wu-space-2);
   flex: 0 0 auto;
 }
 .participation-capture-actions button {
@@ -48,12 +48,12 @@
   font-size: var(--wu-text-md);
 }
 .participation-capture-warning {
-  margin: 9px 0 0;
+  margin: var(--wu-space-3) 0 0;
   color: #e6c78c;
   font-size: var(--wu-text-sm);
 }
 .participation-capture-settings {
-  margin-top: 9px;
+  margin-top: var(--wu-space-3);
   border-top: 1px solid #ffffff20;
 }
 .participation-capture-settings > summary {
@@ -68,13 +68,13 @@
   display: grid;
   grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
   align-items: end;
-  gap: 12px;
-  margin: 9px 0;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-3) 0;
 }
 .participation-sync-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   min-height: 44px;
 }
 .participation-sync-toggle input {
@@ -83,20 +83,20 @@
 .participation-sync-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
+  gap: var(--wu-space-1) var(--wu-space-4);
   color: var(--wu-text-muted);
 }
 .participation-settings-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
-  margin-top: 10px;
+  margin-top: var(--wu-space-3);
 }
 .participation-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
-  gap: 9px;
-  margin: 12px 0;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-3) 0;
 }
 .participation-toolbar label {
   min-width: 0;
@@ -105,8 +105,8 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  padding: 9px 1px;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-2) 0;
   border-bottom: 1px solid #ffffff2b;
 }
 .participation-list-heading strong {
@@ -128,15 +128,15 @@
     minmax(0, 2fr) minmax(95px, 0.7fr) minmax(110px, 1fr)
     auto;
   align-items: center;
-  gap: 8px 14px;
-  padding: 8px 3px;
+  gap: var(--wu-space-2) var(--wu-space-3);
+  padding: var(--wu-space-2) var(--wu-space-1);
   border-bottom: 1px solid #ffffff1b;
   min-width: 0;
 }
 .participation-row-changed {
   box-shadow: inset 3px 0 #ca8080;
   background: #ca80800a;
-  padding-left: 9px;
+  padding-left: var(--wu-space-2);
 }
 .participation-identity,
 .participation-state {
@@ -154,7 +154,7 @@
 }
 .participation-identity small,
 .participation-state small {
-  margin-top: 2px;
+  margin-top: var(--wu-space-1);
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
 }
@@ -168,7 +168,7 @@
 }
 .participation-values {
   display: flex;
-  gap: 16px;
+  gap: var(--wu-space-4);
 }
 .participation-values span {
   min-width: 31px;
@@ -188,7 +188,7 @@
 .participation-row-action {
   min-width: 44px;
   min-height: 44px;
-  padding: 6px 4px;
+  padding: var(--wu-space-1) var(--wu-space-1);
   border: 0;
   background: transparent;
   color: var(--wu-text-muted);
@@ -211,7 +211,7 @@
   border: 0;
 }
 .participation-empty {
-  margin: 15px 0;
+  margin: var(--wu-space-4) 0;
   font-size: var(--wu-text-sm);
 }
 .participation-dialog {
@@ -220,7 +220,7 @@
   max-height: calc(100dvh - 24px);
   overflow: auto;
   margin: auto;
-  padding: 16px;
+  padding: var(--wu-space-5);
   border: 1px solid #53575f;
   border-radius: 14px;
   background: var(--wu-surface);
@@ -234,13 +234,13 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .participation-dialog-head > div {
   min-width: 0;
 }
 .participation-dialog-head h2 {
-  margin: 0 0 3px;
+  margin: 0 0 var(--wu-space-1);
   overflow-wrap: anywhere;
 }
 .participation-dialog-head small {
@@ -251,14 +251,14 @@
   flex: 0 0 auto;
 }
 .participation-dialog .roster-discord-identity {
-  margin-top: 10px;
+  margin-top: var(--wu-space-3);
 }
 .participation-dialog-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px 18px;
-  margin: 13px 0;
-  padding-block: 9px;
+  gap: var(--wu-space-1) var(--wu-space-4);
+  margin: var(--wu-space-3) 0;
+  padding-block: var(--wu-space-2);
   border-block: 1px solid #ffffff20;
 }
 .participation-dialog-summary div {
@@ -290,35 +290,35 @@
 }
 .participation-source p,
 .participation-previous p {
-  margin: 4px 0 9px;
+  margin: var(--wu-space-1) 0 var(--wu-space-3);
   font-size: var(--wu-text-xs);
   text-wrap: pretty;
 }
 .participation-source button {
-  margin-bottom: 10px;
+  margin-bottom: var(--wu-space-2);
   min-height: 44px;
 }
 .participation-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin: 13px 0;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-4) 0;
 }
 .participation-notes {
   display: block;
 }
 .participation-notes textarea {
   display: block;
-  margin-top: 7px;
+  margin-top: var(--wu-space-1);
 }
 .participation-error {
-  margin: 9px 0;
+  margin: var(--wu-space-3) 0;
   color: #f2b2b2;
   font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
 .participation-saved-at {
-  margin: 10px 0;
+  margin: var(--wu-space-3) 0;
   font-size: var(--wu-text-xs);
   overflow-wrap: anywhere;
 }
@@ -327,9 +327,10 @@
   bottom: -16px;
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin: 13px -16px -16px;
-  padding: 10px 16px;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-4) calc(-1 * var(--wu-space-4))
+    calc(-1 * var(--wu-space-4));
+  padding: var(--wu-space-3) var(--wu-space-4);
   border-top: 1px solid #ffffff24;
   background: var(--wu-surface);
 }
@@ -337,7 +338,7 @@
   min-height: 44px;
 }
 .participation-history {
-  margin: 20px 0;
+  margin: var(--wu-space-4) 0;
   border-top: 1px solid #ffffff28;
 }
 .participation-history > summary {
@@ -349,7 +350,7 @@
   font-size: var(--wu-text-sm);
 }
 .participation-history > p {
-  margin: 8px 0;
+  margin: var(--wu-space-2) 0;
   font-size: var(--wu-text-sm);
   text-wrap: pretty;
 }
@@ -357,15 +358,15 @@
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr) auto;
   align-items: center;
-  gap: 5px 12px;
-  padding: 10px 0;
+  gap: var(--wu-space-1) var(--wu-space-3);
+  padding: var(--wu-space-2) 0;
   border-top: 1px solid #ffffff1c;
   font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
 .participation-history-row p {
   grid-column: 1 / -1;
-  margin: 2px 0;
+  margin: var(--wu-space-1) 0;
   font-size: var(--wu-text-sm);
   text-wrap: pretty;
 }
@@ -388,7 +389,7 @@
   }
   .participation-row {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 4px 8px;
+    gap: var(--wu-space-1) var(--wu-space-2);
   }
   .participation-values {
     grid-column: 1;
@@ -417,12 +418,13 @@
     grid-column: 1 / -1;
   }
   .participation-dialog {
-    padding: 13px;
+    padding: var(--wu-space-5);
   }
   .participation-dialog-actions {
     bottom: -13px;
-    margin: 13px -13px -13px;
-    padding: 10px 13px;
+    margin: var(--wu-space-4) calc(-1 * var(--wu-space-4))
+      calc(-1 * var(--wu-space-4));
+    padding: var(--wu-space-3) var(--wu-space-4);
   }
 }
 /* Native disclosure markers disappear with flex summaries; restore a consistent cue. */
@@ -432,7 +434,7 @@
 .participation-history > summary::before {
   content: "▸";
   display: inline-block;
-  margin-right: 7px;
+  margin-right: var(--wu-space-1);
   color: var(--wu-text-muted);
 }
 .participation-capture-settings[open] > summary::before,
@@ -444,5 +446,10 @@
 @media (max-height: 540px) {
   .participation-dialog-actions {
     position: static;
+  }
+}
+@media (max-width: 650px) {
+  .participation-dialog {
+    padding: var(--wu-space-4);
   }
 }

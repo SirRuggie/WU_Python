@@ -1,11 +1,11 @@
 .push-reminders {
-  margin: 18px 0;
+  margin: var(--wu-space-4) 0;
 }
 .push-reminders > summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--wu-space-3);
   cursor: pointer;
   font-weight: var(--wu-weight-bold);
   min-height: 44px;
@@ -23,7 +23,7 @@
 }
 .push-reminders fieldset {
   border: 0;
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   margin: 0;
   min-width: 0;
 }
@@ -34,28 +34,28 @@
 .push-options,
 .push-actions {
   display: flex;
-  gap: 12px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
 }
 .push-options label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   min-height: 44px;
 }
 .push-accounts {
   max-height: 280px;
   overflow: auto;
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
   border: 1px solid var(--wu-border);
   border-radius: 10px;
-  padding: 8px;
+  padding: var(--wu-space-2);
 }
 .push-accounts > label {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-2);
   margin: 0;
   border-bottom: 1px solid var(--wu-border-subtle);
   cursor: pointer;
@@ -74,14 +74,14 @@
   display: block;
 }
 .push-reminders .notice button {
-  margin-left: 12px;
+  margin-left: var(--wu-space-3);
 }
 .push-device {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  margin: 12px 0;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-3) 0;
 }
 .push-device small {
   display: block;
@@ -89,7 +89,7 @@
 .push-reminders > details > summary {
   cursor: pointer;
   min-height: 44px;
-  padding-top: 16px;
+  padding-top: var(--wu-space-4);
 }
 @media (max-width: 600px) {
   .push-actions button {
@@ -102,20 +102,20 @@
     font-size: var(--wu-text-xs);
   }
   .push-options {
-    gap: 8px;
+    gap: var(--wu-space-2);
   }
 }
 
 .push-times {
   display: grid;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: var(--wu-space-3);
+  margin-bottom: var(--wu-space-3);
 }
 .push-time-row {
   display: flex;
   align-items: end;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3);
   background: var(--wu-surface-soft);
   border: 1px solid var(--wu-border);
   border-radius: 12px;
@@ -139,17 +139,17 @@
 }
 @media (max-width: 480px) {
   .push-time-row {
-    gap: 8px;
-    padding: 10px;
+    gap: var(--wu-space-2);
+    padding: var(--wu-space-2);
   }
   .push-time-row button {
-    padding: 10px;
+    padding: var(--wu-space-2);
     font-size: var(--wu-text-md);
   }
 }
 
 .push-help {
-  margin: 12px 0;
+  margin: var(--wu-space-3) 0;
 }
 .push-help summary {
   min-height: 44px;
@@ -158,12 +158,12 @@
   align-items: center;
 }
 .push-help li {
-  margin: 10px 0;
+  margin: var(--wu-space-3) 0;
   line-height: 1.5;
 }
 .push-reminders .notice button {
   min-height: 44px;
-  margin: 8px 8px 0 0;
+  margin: var(--wu-space-2) var(--wu-space-2) 0 0;
 }
 @media (max-width: 360px) {
   .push-time-row {
@@ -176,28 +176,28 @@
 }
 
 .push-account-picker {
-  margin: 12px 0 20px;
+  margin: var(--wu-space-3) 0 var(--wu-space-4);
   border-top: 1px solid var(--wu-border-subtle);
   border-bottom: 1px solid var(--wu-border-subtle);
 }
 .push-reminders .push-account-picker > summary {
   min-height: 44px;
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   cursor: pointer;
   overflow-wrap: anywhere;
 }
 .push-account-picker > summary > span {
   color: var(--wu-text-muted);
-  margin-left: 12px;
+  margin-left: var(--wu-space-3);
   font-size: var(--wu-text-sm);
 }
 .push-tools {
-  margin-top: 16px;
+  margin-top: var(--wu-space-4);
   border-top: 1px solid var(--wu-border-subtle);
 }
 .push-reminders .push-tools > summary {
   min-height: 44px;
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   cursor: pointer;
   color: var(--wu-text-muted);
 }

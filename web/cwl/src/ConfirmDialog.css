@@ -2,7 +2,7 @@
   width: min(32rem, calc(100% - 2rem));
   max-height: calc(100dvh - 2rem);
   overflow: auto;
-  padding: 24px;
+  padding: var(--wu-space-5);
   border: 1px solid var(--wu-border);
   border-radius: 14px;
   background: var(--wu-surface-raised);
@@ -18,7 +18,7 @@
 .confirm-dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
 }
 .confirm-dialog-actions button {
@@ -30,4 +30,10 @@
   background: #452626;
   color: #ffe0e0;
   -webkit-text-fill-color: currentColor;
+}
+
+@media (max-width: 650px) {
+  .confirm-dialog {
+    padding: var(--wu-space-4);
+  }
 }

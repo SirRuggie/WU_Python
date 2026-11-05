@@ -1,13 +1,13 @@
 .weight-queue {
-  margin-top: 18px;
+  margin-top: var(--wu-space-4);
   color: var(--roster-text);
 }
 .weight-queue .weight-queue-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--wu-space-2);
+  margin-bottom: var(--wu-space-2);
 }
 .weight-queue .weight-queue-heading h2 {
   margin: 0;
@@ -17,13 +17,13 @@
   text-wrap: balance;
 }
 .weight-queue-heading .roster-ui-button {
-  padding: 0 12px;
+  padding: 0 var(--wu-space-3);
   white-space: nowrap;
   font-size: var(--wu-text-md);
 }
 .weight-queue-search {
   display: grid;
-  gap: 4px;
+  gap: var(--wu-space-1);
   font-size: var(--wu-text-sm);
   font-weight: var(--wu-weight-regular);
 }
@@ -49,19 +49,19 @@
   font-size: var(--wu-text-xs);
 }
 .weight-queue-help {
-  margin: 4px 0;
+  margin: var(--wu-space-1) 0;
 }
 .weight-queue-unit-picker {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
-  margin: 8px 0 12px;
+  margin: var(--wu-space-2) 0 var(--wu-space-3);
   font-size: var(--wu-text-sm);
 }
 .weight-queue-unit-buttons {
   display: flex;
-  gap: 4px;
+  gap: var(--wu-space-1);
 }
 .weight-queue-unit-buttons .roster-ui-button {
   min-width: 58px;
@@ -76,8 +76,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 390px);
   align-items: center;
-  gap: 12px;
-  padding: 8px 0;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-2) 0;
   border-top: 1px solid var(--roster-border);
 }
 .weight-queue-identity {
@@ -86,7 +86,7 @@
 .weight-queue-name {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--wu-space-2);
   min-width: 0;
 }
 .weight-queue-name .town-hall-icon {
@@ -102,7 +102,7 @@
   border: 0;
   background: transparent;
   padding: 0;
-  min-height: 24px;
+  min-height: 44px;
   min-width: 0;
   overflow: hidden;
   text-align: left;
@@ -120,7 +120,7 @@
 .compact-weight-controls {
   display: grid;
   grid-template-columns: minmax(65px, 1fr) auto auto;
-  gap: 6px;
+  gap: var(--wu-space-2);
 }
 .compact-weight-controls.single-unit {
   grid-template-columns: minmax(65px, 1fr) auto;
@@ -129,17 +129,17 @@
   min-width: 0;
   width: 100%;
   min-height: 44px;
-  padding: 0 10px;
+  padding: 0 var(--wu-space-2);
   font-size: var(--wu-text-md);
 }
 .compact-weight-controls .roster-ui-button {
   min-height: 44px;
-  padding: 0 10px;
+  padding: 0 var(--wu-space-2);
   font-size: var(--wu-text-md);
 }
 .compact-weight-units {
   display: flex;
-  gap: 2px;
+  gap: var(--wu-space-1);
 }
 .shell .compact-weight-units button {
   min-width: 44px;
@@ -155,7 +155,7 @@
   display: none;
 }
 .compact-weight-feedback:not(:empty) {
-  margin-top: 4px;
+  margin-top: var(--wu-space-1);
 }
 .weight-queue .compact-weight-feedback.is-error {
   color: var(--roster-danger);
@@ -164,25 +164,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin-top: 12px;
+  gap: var(--wu-space-3);
+  margin-top: var(--wu-space-3);
   font-size: var(--wu-text-sm);
 }
 @media (max-width: 650px) {
   .weight-queue-row {
     grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
+    gap: var(--wu-space-1);
   }
 }
 /* Override the roster-wide button height only for the compact name link. */
 .roster-workspace.roster-ui .weight-queue .weight-queue-name button {
-  min-height: 24px !important;
+  min-height: 44px !important;
   display: block;
   text-align: left;
 }
 @media (max-width: 650px) {
   .roster-workspace .card.weight-queue {
-    padding: 12px;
+    padding: var(--wu-space-5);
   }
   .weight-queue .weight-queue-heading h2 {
     font-size: var(--wu-text-xl);
@@ -192,5 +192,10 @@
   }
   .weight-queue-search input {
     margin: 0;
+  }
+}
+@media (max-width: 650px) {
+  .roster-workspace .card.weight-queue {
+    padding: var(--wu-space-4);
   }
 }

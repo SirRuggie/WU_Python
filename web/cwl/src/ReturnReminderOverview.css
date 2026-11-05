@@ -2,8 +2,8 @@
 .return-about-panel .return-context {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  padding: 10px 0;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3) 0;
   border-block: 1px solid #ffffff24;
   font-size: var(--wu-text-sm);
 }
@@ -15,12 +15,12 @@
   display: block;
   color: var(--wu-text);
   font-size: var(--wu-text-xs);
-  margin-bottom: 3px;
+  margin-bottom: var(--wu-space-1);
 }
 .return-overview .return-destination-warning {
   color: #efcd96;
   font-size: var(--wu-text-sm);
-  margin: 8px 0;
+  margin: var(--wu-space-2) 0;
 }
 .return-destination-warning button {
   border: 0;
@@ -36,14 +36,14 @@
   border-radius: 0;
 }
 .return-overview .return-clan-row {
-  gap: 8px 12px;
-  padding: 9px 2px;
+  gap: var(--wu-space-2) var(--wu-space-3);
+  padding: var(--wu-space-2) var(--wu-space-1);
 }
 .return-overview .return-clan-row + .return-clan-row {
   border-color: #ffffff1b;
 }
 .return-overview .return-clan-row small {
-  margin-top: 2px;
+  margin-top: var(--wu-space-1);
   font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
 }
@@ -63,7 +63,7 @@
   background: #ffffff10;
 }
 .return-overview .return-health-note {
-  margin: 9px 0;
+  margin: var(--wu-space-3) 0;
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
 }
@@ -78,7 +78,7 @@
 }
 .return-overview .return-maintenance summary::before {
   content: "▸";
-  margin-right: 7px;
+  margin-right: var(--wu-space-1);
 }
 .return-overview .return-maintenance[open] summary::before {
   content: "▾";
@@ -90,7 +90,7 @@
 @media (max-width: 700px) {
   .return-about-panel .return-context {
     grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
+    gap: var(--wu-space-2);
   }
   .return-overview .return-clan-row {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -117,12 +117,12 @@
 }
 
 .return-overview .return-cycle {
-  margin: 0 0 8px;
+  margin: 0 0 var(--wu-space-2);
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
 }
 .return-overview .return-search-line {
-  margin: 8px 0;
+  margin: var(--wu-space-2) 0;
 }
 .return-search-line .members-more-filters summary {
   display: flex;
@@ -155,7 +155,7 @@
   align-items: center;
 }
 .return-selection-bar .members-bulk-desktop > button:nth-child(-n + 2) {
-  padding-inline: 6px;
+  padding-inline: var(--wu-space-1);
   background: none;
   border-color: transparent;
   text-decoration: underline;

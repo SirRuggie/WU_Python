@@ -5,7 +5,7 @@
   left: 8px;
   z-index: 100;
   transform: translateY(-200%);
-  padding: 12px 16px;
+  padding: var(--wu-space-3) var(--wu-space-4);
   min-height: 44px;
   border: 2px solid var(--wu-accent);
   border-radius: 8px;
@@ -34,12 +34,12 @@ summary:focus-visible,
 .shell .notice {
   overflow-wrap: anywhere;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 @media (max-width: 900px) {
   .shell .sidebar {
     height: 100dvh;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0);
   }
   .shell textarea {
     font-size: var(--wu-text-md);

@@ -2,9 +2,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding: 15px 18px;
-  margin-bottom: 18px;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-3) var(--wu-space-4);
+  margin-bottom: var(--wu-space-4);
   border-color: var(--roster-attention-border);
 }
 .member-assignments .member-compact-status.is-provisional {
@@ -15,7 +15,7 @@
   min-width: 0;
 }
 .member-compact-status .eyebrow {
-  margin: 0 0 4px;
+  margin: 0 0 var(--wu-space-1);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
 }
@@ -26,7 +26,7 @@
   line-height: 1.3;
 }
 .member-compact-status p {
-  margin: 4px 0 0;
+  margin: var(--wu-space-1) 0 0;
   font-size: var(--wu-text-xs);
   text-wrap: pretty;
 }
@@ -35,30 +35,31 @@
 }
 .member-assignment-count {
   font-size: var(--wu-text-xs);
-  margin: 0 0 14px;
+  margin: 0 0 var(--wu-space-4);
   color: var(--roster-text-muted);
   font-variant-numeric: tabular-nums;
 }
 .member-clan-jumps {
   display: flex;
-  gap: 7px;
+  gap: var(--wu-space-1);
   flex-wrap: wrap;
-  margin: 0 0 17px;
+  margin: 0 0 var(--wu-space-4);
 }
 .member-clan-jumps a {
   display: inline-flex;
   align-items: center;
-  padding: 7px 10px;
+  padding: var(--wu-space-1) var(--wu-space-2);
   border: 1px solid var(--roster-attention-border);
   border-radius: 8px;
   color: var(--roster-gold);
   text-decoration: none;
   font-size: var(--wu-text-sm);
+  min-height: 44px;
 }
 .member-clan-list {
   display: grid;
-  gap: 13px;
-  margin-bottom: 45px;
+  gap: var(--wu-space-3);
+  margin-bottom: var(--wu-space-7);
 }
 .member-clan-card {
   min-width: 0;
@@ -69,8 +70,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 17px 18px;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-4) var(--wu-space-4);
   border-bottom: 1px solid var(--roster-border-subtle);
 }
 .member-clan-head > div {
@@ -78,7 +79,7 @@
 }
 .member-clan-head h2 {
   font-size: var(--wu-text-xl);
-  margin: 0 0 3px;
+  margin: 0 0 var(--wu-space-1);
   overflow-wrap: anywhere;
   font-weight: var(--wu-weight-bold);
   line-height: 1.2;
@@ -95,7 +96,7 @@
   text-align: center;
 }
 .member-clan-rows {
-  padding: 0 18px;
+  padding: 0 var(--wu-space-4);
 }
 .member-clan-row {
   display: flex;
@@ -103,7 +104,7 @@
   justify-content: space-between;
   gap: var(--roster-space-3);
   min-width: 0;
-  padding: 10px 0;
+  padding: var(--wu-space-2) 0;
   border-bottom: 1px solid var(--roster-surface-soft);
 }
 .member-clan-row:last-child {
@@ -133,7 +134,7 @@
 }
 .member-awaiting-note {
   font-size: var(--wu-text-xs);
-  margin: 10px 18px 0;
+  margin: var(--wu-space-3) var(--wu-space-4) 0;
   color: var(--roster-warning);
 }
 @media (max-width: 650px) {
@@ -142,14 +143,14 @@
   }
   .member-compact-status button {
     width: 100%;
-    margin-top: 12px;
+    margin-top: var(--wu-space-3);
   }
   .member-clan-head {
     display: block;
   }
   .member-clan-head .button {
     display: block;
-    margin-top: 12px;
+    margin-top: var(--wu-space-3);
     width: 100%;
   }
   .member-clan-row {
@@ -161,10 +162,10 @@
 }
 /* Keep the first account near the top of the mobile viewport. */
 .workspace main:has(> .member-assignments) {
-  padding-top: 16px;
+  padding-top: var(--wu-space-4);
 }
 .workspace main:has(> .member-assignments) .member-nav-tabs {
-  margin-bottom: 13px;
+  margin-bottom: var(--wu-space-3);
 }
 .member-assignments > .cwl-page-description {
   font-size: var(--wu-text-sm);
@@ -172,19 +173,19 @@
 }
 .member-assignments .member-compact-status {
   display: block;
-  padding: 10px 13px;
-  margin-bottom: 9px;
+  padding: var(--wu-space-2) var(--wu-space-3);
+  margin-bottom: var(--wu-space-2);
 }
 .member-status-line {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .member-status-line > div {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--wu-space-2);
   min-width: 0;
 }
 .member-status-line strong {
@@ -194,8 +195,8 @@
   line-height: 1.3;
 }
 .member-status-line button {
-  min-height: 36px;
-  padding: 6px 10px;
+  min-height: 44px;
+  padding: var(--wu-space-1) var(--wu-space-2);
   font-size: var(--wu-text-md);
 }
 .member-status-badge {
@@ -208,7 +209,7 @@
   color: var(--roster-success);
 }
 .member-compact-status details {
-  margin-top: 5px;
+  margin-top: var(--wu-space-1);
 }
 .member-compact-status summary {
   color: var(--roster-text-muted);
@@ -217,31 +218,31 @@
 }
 .member-compact-status details p {
   font-size: var(--wu-text-xs);
-  margin: 6px 0 0;
+  margin: var(--wu-space-1) 0 0;
   text-wrap: pretty;
 }
 .member-assignments .member-assignment-count {
-  margin-bottom: 8px;
+  margin-bottom: var(--wu-space-2);
   font-variant-numeric: tabular-nums;
 }
 .member-clan-head .button {
-  padding: 8px 10px;
+  padding: var(--wu-space-2) var(--wu-space-2);
 }
 .member-clan-head {
-  padding: 12px 14px;
+  padding: var(--wu-space-3) var(--wu-space-3);
 }
 .member-clan-rows {
-  padding: 0 14px;
+  padding: 0 var(--wu-space-3);
 }
 @media (max-width: 650px) {
   .workspace main:has(> .member-assignments) {
-    padding-top: 12px;
+    padding-top: var(--wu-space-3);
   }
   .workspace main:has(> .member-assignments) .member-nav-tabs {
-    margin-bottom: 10px;
+    margin-bottom: var(--wu-space-2);
   }
   .member-assignments .member-compact-status {
-    padding: 9px 11px;
+    padding: var(--wu-space-2) var(--wu-space-2);
   }
   .member-compact-status button {
     width: auto;
@@ -250,7 +251,7 @@
   .member-clan-head {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: var(--wu-space-2);
   }
   .member-clan-head h2 {
     font-size: var(--wu-text-xl);
@@ -264,10 +265,10 @@
     margin: 0;
     flex: none;
     font-size: var(--wu-text-xs);
-    padding: 7px 8px;
+    padding: var(--wu-space-1) var(--wu-space-2);
   }
   .member-clan-row {
-    padding: 8px 0;
+    padding: var(--wu-space-2) 0;
   }
 }
 
@@ -279,8 +280,8 @@
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 20px;
+  gap: var(--wu-space-5);
+  padding: var(--wu-space-5);
   background: linear-gradient(
     110deg,
     var(--roster-surface-raised),
@@ -293,12 +294,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--wu-space-2);
   min-height: 48px;
   min-width: 0;
   max-width: 100%;
   margin: 0;
-  padding: 11px 16px;
+  padding: var(--wu-space-2) var(--wu-space-4);
   border: 2px solid var(--roster-gold);
   border-radius: 12px;
   background: var(--roster-selection-surface);
@@ -332,8 +333,8 @@
     width: auto;
     min-width: 0;
     font-size: var(--wu-text-md);
-    padding: 10px 12px;
-    gap: 8px;
+    padding: var(--wu-space-2) var(--wu-space-3);
+    gap: var(--wu-space-2);
     white-space: nowrap;
   }
   .member-assignments
@@ -342,7 +343,7 @@
     flex-direction: row;
     align-items: center;
     gap: var(--roster-space-3);
-    padding: 16px 14px;
+    padding: var(--wu-space-5);
   }
 }
 
@@ -350,23 +351,23 @@
   padding: 0;
 }
 .member-assignments .member-clan-rows {
-  padding: 4px 20px;
+  padding: var(--wu-space-1) var(--wu-space-4);
 }
 .member-assignments .member-clan-row {
-  padding: 14px 0;
+  padding: var(--wu-space-3) 0;
 }
 @media (max-width: 650px) {
   .member-assignments .member-clan-rows {
-    padding: 2px 14px;
+    padding: var(--wu-space-1) var(--wu-space-3);
   }
 }
 
 .member-unpublished-status p {
-  margin: 6px 0;
+  margin: var(--wu-space-1) 0;
   text-wrap: pretty;
 }
 .member-unpublished-status button {
-  margin-top: 4px;
+  margin-top: var(--wu-space-1);
 }
 
 .member-unpublished-status a {
@@ -382,7 +383,7 @@
   .member-assignments .member-status-line > div {
     flex-direction: column;
     align-items: flex-start;
-    gap: 3px;
+    gap: var(--wu-space-1);
   }
   .member-assignments .member-status-line p {
     margin: 0;
@@ -398,4 +399,29 @@
 .member-assignments summary {
   display: list-item;
   align-content: center;
+}
+@media (max-width: 650px) {
+  .member-assignments
+    .member-clan-card:not(.member-awaiting-card)
+    .member-clan-head,
+  .member-assignments
+    .member-clan-card:not(.member-awaiting-card)
+    .member-clan-head {
+    padding: var(--wu-space-4);
+  }
+}
+@media (max-width: 360px) {
+  .member-assignments
+    .member-clan-card:not(.member-awaiting-card)
+    .member-clan-head {
+    padding: var(--wu-space-3);
+    gap: var(--wu-space-2);
+  }
+}
+
+/* Entry 742: the existing nowrap status title overflowed the 320px page. */
+@media (max-width: 320px) {
+  .member-status-line strong {
+    white-space: normal;
+  }
 }

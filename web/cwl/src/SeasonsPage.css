@@ -1,6 +1,6 @@
 .seasons-page .staff-row {
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .seasons-page .staff-row .roster-ui-status {
   max-width: 100%;

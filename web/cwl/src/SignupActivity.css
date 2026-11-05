@@ -8,10 +8,10 @@
 .roster-ui .signup-activity-line {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--wu-space-2);
   min-height: 44px;
   max-width: 100%;
-  padding: 4px 10px;
+  padding: var(--wu-space-1) var(--wu-space-3);
   border: 1px solid var(--wu-warning-border);
   border-left: 4px solid #ffb85c;
   border-radius: 14px;
@@ -40,6 +40,11 @@
   display: grid;
   gap: 6px;
 }
+.signup-activity:where(
+  :not(.roster-workspace *):not(.roster-header *):not(.compare-workspace *)
+) {
+  gap: var(--wu-space-2);
+}
 .signup-activity-load-error {
   color: var(--roster-text-muted);
   font-size: var(--wu-text-sm);
@@ -53,14 +58,14 @@
   margin-top: 0;
 }
 .signup-activity-row {
-  padding: 16px 0;
+  padding: var(--wu-space-4) 0;
   border-top: 1px solid var(--roster-border);
 }
 .signup-activity-identity {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .signup-activity-identity strong {
   color: var(--roster-text);
@@ -83,14 +88,14 @@
 .signup-activity-row p {
   font-size: var(--wu-text-sm);
   color: var(--roster-text-muted);
-  margin: 6px 0 10px;
+  margin: var(--wu-space-1) 0 var(--wu-space-2);
   text-wrap: pretty;
 }
 .signup-activity-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .signup-activity-actions .roster-ui-button {
   height: 44px;
@@ -113,7 +118,7 @@
   }
   .signup-activity-identity {
     flex-wrap: wrap;
-    gap: 4px;
+    gap: var(--wu-space-1);
   }
 }
 

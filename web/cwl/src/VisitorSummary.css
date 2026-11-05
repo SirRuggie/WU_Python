@@ -1,17 +1,17 @@
 .visitor-summary {
   border: 1px solid var(--wu-border);
   border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 20px;
+  padding: var(--wu-space-4);
+  margin-bottom: var(--wu-space-4);
 }
 .visitor-counts {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
+  gap: var(--wu-space-5);
   font-variant-numeric: tabular-nums;
 }
 .visitor-counts dd {
-  margin: 6px 0 0;
+  margin: var(--wu-space-2) 0 0;
   font-variant-numeric: tabular-nums;
 }
 .visitor-counts strong {
@@ -35,7 +35,7 @@
 .visitor-summary summary,
 .visitor-summary button {
   min-height: 44px;
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   cursor: pointer;
 }
 .visitor-summary table {
@@ -45,6 +45,6 @@
 }
 .visitor-summary th,
 .visitor-summary td {
-  padding: 8px 4px;
+  padding: var(--wu-space-2) var(--wu-space-1);
   text-align: left;
 }

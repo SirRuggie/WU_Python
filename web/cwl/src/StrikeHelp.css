@@ -6,7 +6,7 @@
 
 .strike-help-copy {
   margin: 0;
-  padding-left: 1.25rem;
+  padding-left: var(--wu-space-4);
   color: var(--wu-text);
   font-size: var(--wu-text-md);
   line-height: 1.5;
@@ -14,7 +14,7 @@
 }
 
 .strike-help-copy li + li {
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 
 .strike-help-panel .action-panel-close {

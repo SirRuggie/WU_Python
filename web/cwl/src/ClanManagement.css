@@ -1,12 +1,12 @@
 .clan-layout {
   display: grid;
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
-  gap: 18px;
+  gap: var(--wu-space-4);
   align-items: start;
 }
 .clan-management label {
   display: grid;
-  gap: 7px;
+  gap: var(--wu-space-1);
   min-width: 0;
 }
 .clan-management input,
@@ -19,16 +19,16 @@
   border: 0;
   padding: 0;
   display: grid;
-  gap: 18px;
+  gap: var(--wu-space-4);
   min-width: 0;
 }
 .clan-directory {
   display: grid;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .clan-directory button {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-2);
   text-align: left;
   align-items: center;
   overflow-wrap: anywhere;
@@ -44,9 +44,9 @@
 }
 .clan-tabs {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
-  margin: 14px 0;
+  margin: var(--wu-space-3) 0;
 }
 .shell .clan-tabs button[aria-pressed="true"]:not(:disabled),
 .shell .clan-tabs button[aria-selected="true"]:not(:disabled),
@@ -60,28 +60,28 @@
   max-width: 100%;
   max-height: 180px;
   object-fit: contain;
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 .clan-actions {
   position: sticky;
   bottom: 10px;
   background: var(--wu-surface);
-  padding: 12px;
+  padding: var(--wu-space-3);
   border: 1px solid var(--wu-border);
   border-radius: 10px;
   display: flex;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--wu-space-2);
   align-items: center;
-  margin-top: 18px;
+  margin-top: var(--wu-space-4);
 }
 .clan-remove {
-  margin-top: 24px;
+  margin-top: var(--wu-space-5);
 }
 .clan-add {
-  margin-bottom: 18px;
+  margin-bottom: var(--wu-space-4);
   display: flex;
-  gap: 12px;
+  gap: var(--wu-space-3);
   align-items: end;
 }
 .clan-management button {
@@ -119,8 +119,8 @@
 .clan-danger-zone {
   border: 1px solid #e17878;
   border-radius: 12px;
-  padding: 16px;
-  margin-top: 24px;
+  padding: var(--wu-space-4);
+  margin-top: var(--wu-space-5);
 }
 .clan-danger-zone h3 {
   color: #ffb1b1;
@@ -141,13 +141,13 @@
   }
   .clan-all-link {
     display: block;
-    margin-bottom: 12px;
+    margin-bottom: var(--wu-space-3);
   }
   .clan-tabs[aria-label="Clan settings"] {
     display: none;
   }
   .clan-section-card {
-    margin-top: 12px;
+    margin-top: var(--wu-space-3);
     border: 1px solid var(--wu-border);
     border-radius: 10px;
     overflow: hidden;
@@ -155,12 +155,12 @@
   .clan-section-toggle {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--wu-space-2);
     width: 100%;
     text-align: left;
     border: 0;
     border-radius: 0;
-    padding: 12px;
+    padding: var(--wu-space-3);
   }
   .clan-section-toggle span {
     overflow: hidden;
@@ -171,55 +171,55 @@
     font-size: var(--wu-text-sm);
   }
   .clan-section-card > [role="tabpanel"]:not([hidden]) {
-    padding: 12px;
+    padding: var(--wu-space-3);
   }
 }
 
 .clan-history-filters {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: var(--wu-space-4);
+  margin-bottom: var(--wu-space-4);
 }
 .clan-history-list {
   display: grid;
-  gap: 14px;
+  gap: var(--wu-space-3);
 }
 .clan-history-heading {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--wu-space-3);
   align-items: start;
 }
 .clan-history-heading h3 {
-  margin: 0 0 5px;
+  margin: 0 0 var(--wu-space-1);
 }
 .clan-history details {
-  margin: 14px 0;
+  margin: var(--wu-space-3) 0;
 }
 .clan-history summary {
   cursor: pointer;
-  min-height: 32px;
+  min-height: 44px;
 }
 .clan-history-values {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--wu-space-3);
 }
 .clan-history-values dt {
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
 }
 .clan-history-values dd {
-  margin: 4px 0;
+  margin: var(--wu-space-1) 0;
   overflow-wrap: anywhere;
 }
 .clan-restore {
   border: 1px solid var(--wu-border);
   background: var(--wu-surface-soft);
   border-radius: 12px;
-  padding: 16px;
-  margin-top: 16px;
+  padding: var(--wu-space-4);
+  margin-top: var(--wu-space-4);
 }
 .clan-restore h4 {
   margin-top: 0;
@@ -242,7 +242,7 @@
   }
 }
 .clan-restore .clan-tabs button {
-  padding: 10px;
+  padding: var(--wu-space-2);
   font-size: var(--wu-text-md);
   white-space: nowrap;
 }
@@ -259,7 +259,7 @@
   }
 }
 .clan-layout > aside label + label {
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 .clan-directory button {
   width: 100%;
@@ -272,7 +272,7 @@
   display: block;
 }
 .clan-directory small {
-  margin-top: 4px;
+  margin-top: var(--wu-space-1);
   color: var(--wu-text-muted);
 }
 
@@ -280,12 +280,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
-  padding: 14px;
+  padding: var(--wu-space-3);
   border: 1px solid #e6a640;
   border-radius: 10px;
-  margin: 14px 0;
+  margin: var(--wu-space-3) 0;
 }
 .clan-management [role="tabpanel"] {
   min-width: 0;
@@ -321,7 +321,7 @@
 .clan-leader-identity {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .clan-leader-identity img {
   border-radius: 50%;
@@ -340,5 +340,5 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  padding: 8px 10px;
+  padding: var(--wu-space-2) var(--wu-space-2);
 }

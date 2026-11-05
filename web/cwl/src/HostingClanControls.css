@@ -1,7 +1,7 @@
 .hosting-clan-choices {
   display: grid;
-  gap: 8px;
-  margin-block: 12px;
+  gap: var(--wu-space-2);
+  margin-block: var(--wu-space-3);
 }
 .hosting-clan-choices .roster-ui-button {
   border-radius: var(--roster-radius-card);

@@ -9,11 +9,11 @@
 }
 .base-bank-levels {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   flex-wrap: nowrap;
   overflow-x: auto;
-  padding-bottom: 6px;
-  margin-block: 24px;
+  padding-bottom: var(--wu-space-2);
+  margin-block: var(--wu-space-5);
 }
 .base-bank-levels button {
   min-width: 48px;
@@ -31,7 +31,7 @@
 .base-bank-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: var(--wu-space-4);
   align-items: start;
 }
 .base-bank-card {
@@ -56,24 +56,24 @@
 .base-bank-image p {
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
-  padding: 16px;
+  padding: var(--wu-space-4);
   text-wrap: pretty;
 }
 .base-bank-card-body {
-  padding: 20px;
+  padding: var(--wu-space-5);
 }
 .base-bank-tags {
   display: flex;
   flex-wrap: nowrap;
   overflow-x: auto;
-  padding-bottom: 6px;
-  gap: 8px;
-  margin-bottom: 16px;
+  padding-bottom: var(--wu-space-2);
+  gap: var(--wu-space-2);
+  margin-bottom: var(--wu-space-4);
 }
 .base-bank-tags span {
   background: var(--wu-surface-soft);
   border-radius: 18px;
-  padding: 6px 12px;
+  padding: var(--wu-space-2) var(--wu-space-3);
   font-size: var(--wu-text-sm);
 }
 .base-bank-copy {
@@ -85,7 +85,7 @@
   font-weight: var(--wu-weight-medium);
 }
 .base-bank-card details {
-  margin-top: 14px;
+  margin-top: var(--wu-space-4);
   font-size: var(--wu-text-sm);
 }
 .base-bank-card summary {
@@ -110,6 +110,6 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .base-bank-card-body {
-    padding: 16px;
+    padding: var(--wu-space-4);
   }
 }
