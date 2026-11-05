@@ -147,3 +147,57 @@ it("does not call intentionally inactive schedules pending", async () => {
     host.remove();
   }
 });
+
+it.each([
+  ["absent", false, undefined],
+  ["current", true, 128],
+  ["newer", true, 129],
+  ["older", true, 127],
+  ["zero", true, 0],
+  ["null", true, null],
+  ["boolean", true, false],
+] as const)("saves the 128 marker only when the loaded campaign marker is absent: %s", async (_label, present, version) => {
+  const value = state();
+  if (present) Object.assign(value.campaign, { default_copy_version: version });
+  vi.mocked(api).mockReset();
+  vi.mocked(api).mockImplementation(async (path) =>
+    path.includes("manage-reminders")
+      ? (value as never)
+      : path.includes("roles")
+        ? ({ roles: [] } as never)
+        : ({ channels: [] } as never),
+  );
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const button = (text: string) => [...host.querySelectorAll("button")].find((item) => item.textContent === text)!;
+  try {
+    await act(async () => root.render(<ReminderWorkspace seasonId="42" archived={false} onDirty={() => {}} />));
+    await act(async () => button("Messages").click());
+    const title = [...host.querySelectorAll("label")].find((label) => label.firstChild?.textContent === "Title")!.querySelector("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(title, "Fixture reminder title");
+      title.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(button("Save changes").disabled).toBe(false);
+    await act(async () => button("Save changes").click());
+    expect(vi.mocked(api).mock.calls.filter(([, method]) => method === "PATCH")).toHaveLength(0);
+    const confirm = [...document.querySelectorAll("dialog button")].find((item) => item.textContent === "Save") as HTMLButtonElement;
+    expect(confirm).toBeTruthy();
+    await act(async () => confirm.click());
+    const editPatch = { messages: { signup: { variants: { main: { title: "Fixture reminder title" } } } } };
+    const previews = vi.mocked(api).mock.calls.filter(([, method]) => method === "POST");
+    expect(previews).toEqual([["/seasons/42/manage-reminders/preview", "POST", { generation: "1:0", patch: editPatch, repeat_monthly: true }]]);
+    const saves = vi.mocked(api).mock.calls.filter(([, method]) => method === "PATCH");
+    expect(saves).toEqual([["/seasons/42/manage-reminders", "PATCH", {
+      generation: "1:0",
+      patch: present ? editPatch : { ...editPatch, default_copy_version: 128 },
+      repeat_monthly: true,
+    }]]);
+    expect(Object.hasOwn(value.campaign, "default_copy_version")).toBe(present);
+    if (present) expect((value.campaign as unknown as Record<string, unknown>).default_copy_version).toBe(version);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

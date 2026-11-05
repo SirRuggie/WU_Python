@@ -1062,7 +1062,17 @@ export default function ReminderWorkspace({
                             const result = await api<CampaignState>(
                               base,
                               "PATCH",
-                              body,
+                              {
+                                ...body,
+                                patch:
+                                  state?.campaign &&
+                                  !Object.hasOwn(
+                                    state.campaign,
+                                    "default_copy_version",
+                                  )
+                                    ? { ...patch, default_copy_version: 128 }
+                                    : patch,
+                              },
                             );
                             await load();
                             setNotice(
