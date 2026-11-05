@@ -132,7 +132,7 @@
 .overview-empty {
   padding: 32px 20px;
   text-align: center;
-  border: 1px dashed var(--wu-border);
+  border: 1px dashed #637083;
   border-radius: 12px;
 }
 .overview-note {

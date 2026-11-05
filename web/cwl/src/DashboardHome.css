@@ -101,8 +101,8 @@
   gap: 4px 12px;
   text-align: left;
   padding: 11px 14px;
-  background: var(--wu-surface-soft);
-  border-color: var(--wu-border);
+  background: #1a1e24;
+  border-color: #3a4149;
   border-radius: 10px;
   min-height: 72px;
 }

@@ -140,7 +140,7 @@
 .strikes-candidate-facts span {
   min-width: 95px;
   padding: 9px 12px;
-  border: 1px solid var(--wu-border);
+  border: 1px solid #414958;
   background: var(--wu-surface-soft);
   border-radius: 9px;
   color: var(--wu-text-muted);
@@ -204,7 +204,7 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid var(--wu-border);
+  border: 1px solid #414958;
   border-radius: 9px;
 }
 .strikes-role-list span {
@@ -838,7 +838,7 @@
   width: fit-content;
   max-width: 100%;
   background: var(--wu-surface-soft);
-  border: 1px solid var(--wu-border);
+  border: 1px solid #4c5461;
   border-radius: 10px;
 }
 .strikes-action-chips button {
@@ -953,7 +953,7 @@
 }
 .strikes-list:has(> .strike-compact-row) {
   gap: 0;
-  border: 1px solid var(--wu-border);
+  border: 1px solid #414958;
   border-radius: 10px;
   overflow: hidden;
 }

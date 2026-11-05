@@ -1978,7 +1978,7 @@ img.discord-server-icon {
   min-height: 145px;
   padding: 20px;
   gap: 9px;
-  border-color: var(--wu-border);
+  border-color: #586477;
   background: #1b2029;
   color: #fff;
 }

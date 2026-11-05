@@ -323,7 +323,7 @@
 }
 
 .command-option {
-  border: 1px solid var(--wu-border);
+  border: 1px solid #414149;
   border-radius: 8px;
   padding: 10px;
 }
@@ -509,7 +509,7 @@
 .command-recipient-settings {
   padding: 14px;
   margin: 14px 0;
-  border: 1px solid var(--wu-border);
+  border: 1px solid #52657c;
   border-radius: 10px;
   background: var(--wu-surface);
 }

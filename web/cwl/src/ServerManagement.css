@@ -46,7 +46,7 @@
   padding: 20px;
   text-align: left;
   background: var(--wu-surface-soft);
-  border: 1px solid var(--wu-border);
+  border: 1px solid #495563;
   min-height: 96px;
   white-space: normal;
 }
@@ -169,7 +169,7 @@
 .manage-preview,
 .manage-action {
   padding: 20px;
-  border: 1px solid var(--wu-border);
+  border: 1px solid #495563;
   background: var(--wu-surface);
   border-radius: 12px;
   margin-top: 20px;
@@ -242,7 +242,7 @@
 .manage-option-checks {
   max-height: 220px;
   overflow: auto;
-  border: 1px solid var(--wu-border);
+  border: 1px solid #495563;
   border-radius: 8px;
   padding: 8px;
 }
