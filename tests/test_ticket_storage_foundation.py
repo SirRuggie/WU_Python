@@ -4025,6 +4025,7 @@ def test_fresh_denial_card_has_no_marker_text_and_recovers_by_checkpointed_id(
     ))
     assert result.won
     assert len(created) == 1
+    assert resolve._is_notification_card(created[0], resolve.KIND_DENY_CUSTOM)
     assert not any(
         "ticket-resolution:" in str(getattr(message, "content", "") or "")
         or any(
@@ -4694,7 +4695,7 @@ def test_denial_followups_reject_a_different_recruiter_before_any_action(monkeyp
     )
     asyncio.run(handler(ctx, "state", mongo=SimpleNamespace(), bot=SimpleNamespace()))
     assert len(responses) == 1
-    assert responses[0][0] == "This denial session belongs to another recruiter."
+    assert responses[0][0] == "Another recruiter started this denial."
 
 
 def test_custom_denial_opener_sends_modal_without_state_or_permission_work(monkeypatch):
@@ -4821,7 +4822,7 @@ def test_slash_approve_on_a_decided_ticket_names_the_decision_maker_no_overturn(
     # and the send must suppress notifications since it now mentions someone.
     assert "Already approved by <@999>" in content
     assert "Lead Recruiter" not in content
-    assert "Use the console to overturn" in content
+    assert "Use the console to change it." in content
     assert kwargs["user_mentions"] is False
     assert kwargs["role_mentions"] is False
     assert kwargs["mentions_everyone"] is False
@@ -4929,7 +4930,7 @@ def test_approval_message_tells_the_applicant_what_happens_next_and_how_to_retur
         )
 
     assert has_text(resolve.APPROVAL_CARD_TITLE)
-    assert has_text("A recruiter will contact you with your clan invite")
+    assert has_text("A recruiter will send you your clan invite")
     assert has_text("This ticket stays open")
     assert has_text("My ticket")
     assert not has_text("Stand by for further instructions")
@@ -4970,7 +4971,7 @@ def test_custom_denial_modal_label_matches_the_console_wording(monkeypatch):
 
     assert len(modals) == 1
     field = modals[0]["components"][0].components[0]
-    assert field.label == "Reason shown to the applicant"
+    assert field.label == "Reason the applicant will see"
     assert field.custom_id == "denial_reason"
 
 
@@ -5159,3 +5160,119 @@ def test_current_inactivity_prompt_can_commit_denial(revision):
     assert result.doc["status"] == "denied"
     assert result.doc["denial_reason"] == "Recruit stopped responding"
     assert result.doc["audit"][-1]["inactivity_token"] == "pending-prompt"
+
+
+@pytest.mark.parametrize(('kind', 'text'), [
+    (resolve.KIND_APPROVE, 'Warriors United accepted you.'),
+    (resolve.KIND_APPROVE, 'You have been accepted to Warriors United.'),
+    (resolve.KIND_APPROVE, 'Congratulations on being accepted to Warriors United!'),
+    (resolve.KIND_APPROVE, 'TEST MODE: Simulated approval.'),
+    (resolve.KIND_DENY_CUSTOM, 'we are sorry to tell you that we denied your application.'),
+    (resolve.KIND_DENY_CUSTOM, 'we regret to inform you that currently your application has been denied.'),
+    (resolve.KIND_DENY_CUSTOM, 'TEST MODE: Simulated denial.'),
+])
+def test_decision_card_recognition_keeps_exact_current_and_historical_markers(kind, text):
+    message = SimpleNamespace(content='', components=[SimpleNamespace(
+        content='', components=[SimpleNamespace(content=f'<@30> {text}')],
+    )])
+    assert resolve._is_notification_card(message, kind)
+    unrelated = SimpleNamespace(content='A different message', components=[])
+    assert not resolve._is_notification_card(unrelated, kind)
+
+
+@pytest.mark.parametrize(('kind', 'status', 'old_text'), [
+    (resolve.KIND_APPROVE, 'approved', 'You have been accepted to Warriors United.'),
+    (resolve.KIND_DENY_CUSTOM, 'denied', 'we regret to inform you that currently your application has been denied.'),
+])
+def test_retry_finds_old_decision_card_without_sending_again(monkeypatch, kind, status, old_text):
+    ticket = _ticket(status=status, source={'guild_id': 1, 'channel_id': 2})
+    ticket.update({
+        'handled_by_name': 'Recruiter', 'denial_type': 'custom', 'denial_reason': 'Not eligible',
+        'resolution_effects': {
+            'marker': f'ticket-resolution:{ticket["_id"]}:1:{status}', 'kind': kind,
+            'notification': {'state': 'pending'}, 'staff_context': {'state': 'delivered'},
+            'hub': {'state': 'pending'}, 'complete': False,
+        },
+    })
+    mongo = _mongo(ticket)
+    rest = EffectRest()
+    rest.messages.append(SimpleNamespace(
+        id=900, author=SimpleNamespace(id=7), content='',
+        components=[SimpleNamespace(content='', components=[SimpleNamespace(content=old_text)])],
+    ))
+    sends = []
+
+    async def send(*args, **kwargs):
+        sends.append((args, kwargs))
+        raise AssertionError('An existing decision card must not be sent again')
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve, 'run_side_effects', send)
+    monkeypatch.setattr(console, 'request_hub_refresh_best_effort', refresh)
+    first = asyncio.run(resolve.process_resolution_effects(_effect_bot(rest), mongo, ticket))
+    assert first.won
+    assert first.doc['resolution_effects']['notification']['state'] == 'delivered'
+    assert len(sends) == 0
+    latest = deepcopy(mongo.tickets.documents[ticket['_id']])
+    again = asyncio.run(resolve.process_resolution_effects(_effect_bot(rest), mongo, latest))
+    assert again.won
+    assert len(sends) == 0
+    assert len(rest.messages) == 1
+
+
+def test_console_denial_modals_use_approved_fields_and_preserve_submit_contract():
+    from unittest.mock import AsyncMock
+
+    for action, submit_id in (
+        (console.ticket_hub_deny, 'ticket_v2_hub_deny_submit:state'),
+        (console.ticket_overturn_deny_open, 'ticket_v2_overturn_deny_submit:state'),
+        (console.ticket_console_deny, 'ticket_v2_console_deny_submit:state'),
+    ):
+        ctx = SimpleNamespace(respond_with_modal=AsyncMock())
+        asyncio.run(action(ctx, 'state'))
+        args = ctx.respond_with_modal.await_args.kwargs
+        assert args['title'] == 'Reason for denial'
+        assert args['custom_id'] == submit_id
+        field = args['components'][0].components[0]
+        assert field.label == 'Reason the applicant will see'
+        assert field.placeholder == 'Write a clear reason'
+        assert field.custom_id == 'reason'
+        assert field.min_length == 5 and field.max_length == 1000 and field.is_required
+
+
+def test_invalid_hub_closure_selection_has_exact_guidance_without_action(monkeypatch):
+    from unittest.mock import AsyncMock
+    interaction = SimpleNamespace(values=['invalid'], edit_initial_response=AsyncMock())
+    ctx = SimpleNamespace(interaction=interaction, defer=AsyncMock())
+    approve = AsyncMock()
+    deny = AsyncMock()
+    monkeypatch.setattr(console, 'ticket_hub_approve', approve)
+    monkeypatch.setattr(console, 'ticket_hub_deny', deny)
+    asyncio.run(console.ticket_hub_closure(ctx, 'state', mongo=object()))
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
+    components = interaction.edit_initial_response.await_args.kwargs['components']
+    assert [node.content for node in components[0].components] == [
+        '## Select an option', 'Select Approve, Deny, or Close for this ticket.'
+    ]
+    approve.assert_not_awaited()
+    deny.assert_not_awaited()
+
+
+@pytest.mark.parametrize('expire_after_authorization', [False, True])
+def test_expired_flag_manager_uses_exact_recovery_and_no_mutation(monkeypatch, expire_after_authorization):
+    from unittest.mock import AsyncMock
+    envelope = {'type': 'ticket_v2_console_flag_manager', 'owner_id': 1, 'guild_id': 2}
+    reads = AsyncMock(side_effect=[envelope, None] if expire_after_authorization else [None])
+    recruiter = AsyncMock(return_value=True)
+    monkeypatch.setattr(console, 'get_state', reads)
+    monkeypatch.setattr(console.perms, 'is_recruiter', recruiter)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=1), guild_id=2, member=object())
+    state, notice = asyncio.run(console._authorized_flag_manager_state(ctx, object(), 'expired'))
+    assert state is None
+    assert [node.content for node in notice[0].components] == [
+        '## Flag panel expired', 'Open the ticket and select **Manage flags** again.'
+    ]
+    assert reads.await_count == (2 if expire_after_authorization else 1)
+    assert recruiter.await_count == (1 if expire_after_authorization else 0)

@@ -37,7 +37,7 @@ class FlagArt:
 
 FLAG_ART = MappingProxyType({
     "blacklisted": FlagArt("Blacklisted", "⛔", "flag_blacklisted.png", "#dd1c1d"),
-    "denied_before": FlagArt("Previously denied", "⚠️", "flag_denied_before.png", "#ffcc00", "DENIED BEFORE"),
+    "denied_before": FlagArt("Previously denied", "⚠️", "flag_denied_before.png", "#ffcc00", "PREVIOUSLY DENIED"),
     "not_loyal": FlagArt("Not loyal to WU", "💔", "flag_not_loyal.png", "#f17511"),
     "ghosted": FlagArt("Ghosted", "👻", "flag_ghosted.png", "#08c3fa"),
     "flew_the_coop": FlagArt("Flew the Coop", "🐔", "flag_flew_the_coop.png", "#bd00df"),

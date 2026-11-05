@@ -28,9 +28,9 @@ def account_line(account):
 def warnings(snapshot):
     lines = []
     if snapshot.unavailable_sources:
-        lines.append('⚠️ Lookup incomplete: ' + ', '.join(snapshot.unavailable_sources) + ' unavailable. Previously recorded accounts may be stale.')
+        lines.append('⚠️ Lookup incomplete: ' + ', '.join(snapshot.unavailable_sources) + ' unavailable. Previously saved accounts may be old.')
     if snapshot.conflicting_tags:
-        lines.append('⚠️ Conflicting link ownership: ' + ', '.join(snapshot.conflicting_tags[:10]) + '. Resolve the links before approval.')
+        lines.append('⚠️ Conflicting link ownership: ' + ', '.join(snapshot.conflicting_tags[:10]) + '. Fix the links before you approve.')
     return '\n'.join(lines)
 
 
@@ -75,7 +75,7 @@ async def show(ctx, action_id: str, mongo: MongoClient=lightbulb.di.INJECTED, **
     ticket_id, _, page = action_id.partition('|')
     ticket = await _get_ticket(ctx,mongo,ticket_id)
     if ticket is None:
-        await ctx.interaction.edit_initial_response(content='Recruiter access and an existing ticket are required.')
+        await ctx.interaction.edit_initial_response(content='You must be a recruiter, and the ticket must exist.')
         return
     await ctx.interaction.edit_initial_response(components=panel(ticket,int(page) if page.isdigit() else 1),user_mentions=False,role_mentions=False,mentions_everyone=False)
 
@@ -86,11 +86,11 @@ async def refresh(ctx, action_id: str, mongo: MongoClient=lightbulb.di.INJECTED,
     await ctx.defer(ephemeral=True)
     ticket = await _get_ticket(ctx,mongo,action_id)
     if ticket is None:
-        await ctx.interaction.edit_initial_response(content='Recruiter access and an existing ticket are required.')
+        await ctx.interaction.edit_initial_response(content='You must be a recruiter, and the ticket must exist.')
         return
     client = account_sync.configured_coc_client()
     if client is None:
-        await ctx.interaction.edit_initial_response(content='Player service is starting. Please retry shortly.')
+        await ctx.interaction.edit_initial_response(content='The player service is starting. Try again soon.')
         return
     lock = _refresh_locks.setdefault(action_id,asyncio.Lock())
     if lock.locked():
@@ -104,7 +104,7 @@ async def refresh(ctx, action_id: str, mongo: MongoClient=lightbulb.di.INJECTED,
                 return
             from extensions.commands.tickets.resolve import _queue_and_deliver_latest_staff_context
             delivered = await _queue_and_deliver_latest_staff_context(bot,mongo,result.ticket,result.snapshot)
-            await ctx.interaction.edit_initial_response(components=panel(result.ticket),content=None if delivered else 'Staff summary update is pending; the saved account lookup is shown below.',user_mentions=False,role_mentions=False,mentions_everyone=False)
+            await ctx.interaction.edit_initial_response(components=panel(result.ticket),content=None if delivered else 'The staff summary update is waiting. The saved account lookup is below.',user_mentions=False,role_mentions=False,mentions_everyone=False)
     finally:
         if not lock.locked():
             _refresh_locks.pop(action_id,None)

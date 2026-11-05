@@ -37,16 +37,16 @@ def _already_decided_message(doc: dict) -> str:
         who = f"<@{int(actor_id)}>" if actor_id else "someone"
     except (TypeError, ValueError):
         who = "someone"
-    return f"Already {status} by {who} {when}. Use the console to overturn."
+    return f"Already {status} by {who} {when}. Use the console to change it."
 
 
 async def _validate_denial_actor(ctx, mongo: MongoClient, data: dict) -> bool:
     """Fail closed unless the initiating recruiter is still acting."""
     if int(data.get("denier_id") or 0) != int(ctx.user.id):
-        await ctx.respond("This denial session belongs to another recruiter.", ephemeral=True)
+        await ctx.respond("Another recruiter started this denial.", ephemeral=True)
         return False
     if not await perms.is_recruiter(ctx.member, mongo):
-        await ctx.respond("You are no longer authorized to deny tickets.", ephemeral=True)
+        await ctx.respond("You cannot deny tickets now.", ephemeral=True)
         return False
     return True
 
@@ -114,23 +114,23 @@ class Deny(
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"ticket_v2_deny_fwa_default:{action_id}",
-                    label="Use FWA default"
+                    label="Use the FWA message"
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"ticket_v2_deny_main_default:{action_id}",
-                    label="Use Main default"
+                    label="Use the Main message"
                 ),
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
                     custom_id=f"ticket_v2_deny_custom:{action_id}",
-                    label="Write custom reason"
+                    label="Write your own reason"
                 )
             ]
         )
         
         await ctx.respond(
-            "Select a denial option:",
+            "Select how to deny:",
             components=[row],
             ephemeral=True
         )
@@ -184,7 +184,7 @@ class Approve(
         if result.outcome == store.LOST:
             if (result.doc or {}).get("status") == "open":
                 await ctx.respond(
-                    "The ticket changed before approval finished. Run `/tickets approve` again."
+                    "The ticket changed. Run `/tickets approve` again."
                 )
                 return
             await ctx.respond(
@@ -204,13 +204,13 @@ class Approve(
             return
         if result.outcome == store.BLOCKED:
             if result.blocker:
-                await ctx.respond("⛔ Approval blocked: this applicant is blacklisted.")
+                await ctx.respond("⛔ You cannot approve this applicant: they are blacklisted.")
             else:
-                reason = result.reason or "Applicant identity is being updated; try again."
-                await ctx.respond(f"⏳ Approval not completed: {reason}")
+                reason = result.reason or "We are updating the applicant. Try again."
+                await ctx.respond(f"⏳ Not approved: {reason}")
             return
         if result.outcome == store.UNAUTHORIZED:
-            await ctx.respond("❌ You are no longer authorized to approve tickets.")
+            await ctx.respond("❌ You cannot approve tickets now.")
             return
         if result.outcome == store.EFFECT_FAILED:
             await ctx.respond(f"⚠️ {resolve.RESOLUTION_EFFECT_RETRY_MESSAGE}")
@@ -254,7 +254,7 @@ async def deny_fwa_default_handler(
             await delete_state(mongo, action_id)
             await ctx.interaction.edit_initial_response(
                 content=(
-                    "The ticket changed before denial finished. Run `/tickets deny` again."
+                    "The ticket changed. Run `/tickets deny` again."
                 ),
                 components=[],
             )
@@ -271,7 +271,7 @@ async def deny_fwa_default_handler(
     if result.outcome in {store.MISSING, store.UNAUTHORIZED}:
         await delete_state(mongo, action_id)
         await ctx.interaction.edit_initial_response(
-            content="❌ Nothing changed: the ticket is missing or you are no longer authorized.",
+            content="❌ Nothing changed. The ticket is missing, or you cannot do this.",
             components=[],
         )
         return
@@ -322,7 +322,7 @@ async def deny_main_default_handler(
             await delete_state(mongo, action_id)
             await ctx.interaction.edit_initial_response(
                 content=(
-                    "The ticket changed before denial finished. Run `/tickets deny` again."
+                    "The ticket changed. Run `/tickets deny` again."
                 ),
                 components=[],
             )
@@ -339,7 +339,7 @@ async def deny_main_default_handler(
     if result.outcome in {store.MISSING, store.UNAUTHORIZED}:
         await delete_state(mongo, action_id)
         await ctx.interaction.edit_initial_response(
-            content="❌ Nothing changed: the ticket is missing or you are no longer authorized.",
+            content="❌ Nothing changed. The ticket is missing, or you cannot do this.",
             components=[],
         )
         return
@@ -371,8 +371,8 @@ async def deny_custom_handler(
     """Open modal for custom denial reason"""
     reason_input = ModalActionRow().add_text_input(
         "denial_reason",
-        "Reason shown to the applicant",
-        placeholder="Please provide a clear reason for the denial",
+        "Reason the applicant will see",
+        placeholder="Write a clear reason",
         required=True,
         style=hikari.TextInputStyle.PARAGRAPH,
         min_length=5,
@@ -380,7 +380,7 @@ async def deny_custom_handler(
     )
     
     await ctx.interaction.create_modal_response(
-        title="Custom Denial Reason",
+        title="Reason for denial",
         custom_id=f"ticket_v2_process_custom_denial:{action_id}",
         components=[reason_input]
     )
@@ -413,7 +413,7 @@ async def process_custom_denial_handler(
     denier_id = int(envelope.get("denier_id") or 0)
     if denier_id != int(ctx.user.id):
         await ctx.interaction.edit_initial_response(
-            content="This denial session belongs to another recruiter."
+            content="Another recruiter started this denial."
         )
         return
     guild_id = int(envelope.get("guild_id") or 0)
@@ -422,7 +422,7 @@ async def process_custom_denial_handler(
         return
     if not await perms.is_recruiter(ctx.member, mongo):
         await ctx.interaction.edit_initial_response(
-            content="You are no longer authorized to deny tickets."
+            content="You cannot deny tickets now."
         )
         return
     data = await get_state(mongo, action_id)
@@ -458,7 +458,7 @@ async def process_custom_denial_handler(
             await delete_state(mongo, action_id)
             await ctx.interaction.edit_initial_response(
                 content=(
-                    "The ticket changed before denial finished. Run `/tickets deny` again."
+                    "The ticket changed. Run `/tickets deny` again."
                 )
             )
             return
@@ -476,7 +476,7 @@ async def process_custom_denial_handler(
         await ctx.interaction.edit_initial_response(
             content=(
                 result.reason
-                or "❌ Nothing changed: the ticket is missing or unauthorized."
+                or "❌ Nothing changed. The ticket is missing, or you cannot do this."
             ),
         )
         return

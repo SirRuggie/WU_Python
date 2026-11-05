@@ -43,12 +43,12 @@ def panel(state):
         min_values=1,
         max_values=1,
     )
-    heading = "## Create for Recruit\nChoose a recruit, clan type, and ticket mode.\nLive tickets count normally. Isolated test tickets are excluded."
+    heading = "## Create for Recruit\nSelect a recruit, a clan type, and a ticket mode.\nLive tickets count. Isolated test tickets do not count."
     if state.get("recruit_id"):
         heading += f"\nSelected recruit: <@{state['recruit_id']}>"
     type_menu = Select(
         custom_id=f"ticket_v2_staff_pick:{key}|type",
-        placeholder="Choose Main or FWA",
+        placeholder="Select Main or FWA",
         min_values=1,
         max_values=1,
         options=[
@@ -145,7 +145,7 @@ async def open_setup(
         or not await perms.is_recruiter(getattr(ctx, "member", None), mongo)
     ):
         await notice(
-            ctx, "Recruiter access from the current shared console is required."
+            ctx, "Use the shared console. You must be a recruiter."
         )
         return
     state = {
@@ -180,7 +180,7 @@ async def pick(
     state = await owned_state(ctx, mongo, key)
     if state is None:
         await notice(
-            ctx, "This private setup has expired or belongs to another recruiter."
+            ctx, "This setup expired, or it belongs to another recruiter."
         )
         return
     values = list(getattr(ctx.interaction, "values", ()) or ())
@@ -191,7 +191,7 @@ async def pick(
     if field == "user":
         value = store.as_int(value)
         if not value:
-            await notice(ctx, "Choose a guild member.")
+            await notice(ctx, "Select a guild member.")
             return
         target = "recruit_id"
     else:
@@ -238,7 +238,7 @@ async def show_ticket(ctx, ticket):
                 components=(
                     [Text(content="✅ Ticket available."), Row(components=links)]
                     if links
-                    else [Text(content="Ticket saved; links are pending recovery.")]
+                    else [Text(content="The ticket is saved. The links will be fixed later.")]
                 ),
             )
         ],
@@ -433,7 +433,7 @@ async def submit(
     ):
         await notice(
             ctx,
-            "This setup is unavailable. Choose a recruit and ticket type in a new setup.",
+            "This setup is unavailable. Select a recruit and ticket type in a new setup.",
         )
         return
     await notice(ctx, "Creating the recruit ticket…")
@@ -461,7 +461,7 @@ async def submit(
         else:
             await notice(
                 ctx,
-                "Ticket creation could not finish safely. The saved attempt can resume; try again shortly.",
+                "We could not finish the ticket. We saved your attempt. Try again soon.",
             )
         return
     await update_state(mongo, action_id, {"$set": {"closed": True}})
@@ -481,8 +481,8 @@ async def cancel(
     await ctx.defer(edit=True)
     if not await owned_state(ctx, mongo, action_id):
         await notice(
-            ctx, "This private setup has expired or belongs to another recruiter."
+            ctx, "This setup expired, or it belongs to another recruiter."
         )
         return
     await update_state(mongo, action_id, {"$set": {"closed": True}})
-    await notice(ctx, "Ticket setup cancelled.")
+    await notice(ctx, "Ticket setup canceled.")

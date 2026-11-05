@@ -59,12 +59,12 @@ _log = logging.getLogger(__name__)
 
 RESOLUTION_EFFECT_LEASE = timedelta(minutes=10)
 RESOLUTION_EFFECT_RETRY_MESSAGE = (
-    "The decision is recorded and will not be lost. Remaining Discord and console "
-    "updates are retrying automatically. Ask an admin to inspect only if this persists."
+    "We saved the decision, so it will not be lost. The Discord and console updates "
+    "will try again automatically. Ask an admin to check only if the problem stays."
 )
 OVERRIDE_EFFECT_PENDING_MESSAGE = (
-    "The earlier decision is still finishing its applicant and console updates. "
-    "Nothing was changed. Try this override again in a moment."
+    "The earlier decision is still updating the applicant and the console. "
+    "Nothing was changed. Try this change again in a moment."
 )
 KIND_APPROVE = "approve"
 KIND_DENY_FWA = "deny_fwa"
@@ -74,14 +74,14 @@ KIND_DENY_CUSTOM = "deny_custom"
 # Kept verbatim from the original handlers - this is copy the applicant reads.
 _DENIAL_BODY = {
     KIND_DENY_FWA: (
-        "I am sorry but unfortunately, you do not meet the criteria for Warriors United. "
-        "Here's a resource link to other FWA Clans that may have a spot for you.\n\n"
+        "We are sorry, but you do not meet the criteria for Warriors United. "
+        "This link lists other FWA clans that may have a spot for you.\n\n"
         "https://band.us/@reqfwa\n\n"
         "Good luck!"
     ),
     KIND_DENY_MAIN: (
-        "I am sorry but unfortunately, you do not meet the criteria for Warriors United. "
-        "Here's a resource link to other Clans that may have a spot for you.\n\n"
+        "We are sorry, but you do not meet the criteria for Warriors United. "
+        "This link lists other clans that may have a spot for you.\n\n"
         "https://discord.com/invite/clashofclans\n\n"
         "Good luck!"
     ),
@@ -120,12 +120,16 @@ def _thread_identity(ticket: dict) -> tuple[int, int]:
 # Fixed card text used to identify a decision notification structurally,
 # instead of a hidden marker line. Kept independent of the applicant mention
 # and (for denial) the reason, both of which vary per ticket.
-APPROVAL_CARD_TITLE = "You have been accepted to Warriors United."
+APPROVAL_CARD_TITLE = "Warriors United accepted you."
+_PREVIOUS_APPROVAL_CARD_TITLE = "You have been accepted to Warriors United."
 # The approval card's copy changed from a plain-text message to a matching
 # Components V2 card. A card posted before that change still carries this
 # older sentence -- kept so it is still recognised structurally.
 _LEGACY_APPROVAL_CARD_TITLE = "Congratulations on being accepted to Warriors United!"
 DENIAL_CARD_TITLE = (
+    "we are sorry to tell you that we denied your application."
+)
+_LEGACY_DENIAL_CARD_TITLE = (
     "we regret to inform you that currently your application has been denied."
 )
 TEST_APPROVAL_CARD_TITLE = "TEST MODE: Simulated approval."
@@ -161,8 +165,8 @@ async def apply_denial(
                             f"This decision affects only the test ticket.\n\n"
                             f"## **Reason:**\n{body}"
                             if testing_service.is_test_ticket(ticket) else
-                            f"<@{user_id}>, we regret to inform you that currently your "
-                            f"application has been denied.\n\n"
+                            f"<@{user_id}>, we are sorry to tell you that we denied your "
+                            f"application.\n\n"
                             f"## **Reason:**\n{body}"
                         ))
                     ],
@@ -208,12 +212,10 @@ async def apply_approval(
                             f"{TEST_APPROVAL_CARD_TITLE}\n<@{user_id}> "
                             "No role, membership, invitation, or permanent history was changed."
                             if testing_service.is_test_ticket(ticket) else
-                            f"<@{user_id}> **Congratulations!** You have been "
-                            f"accepted to Warriors United. A recruiter will "
-                            f"contact you with your clan invite. This ticket "
-                            f"stays open if you have questions. You can "
-                            f"always find it again with the **My ticket** "
-                            f"button on the panel."
+                            f"<@{user_id}> **Congratulations!** Warriors United accepted you. "
+                            f"A recruiter will send you your clan invite. This ticket "
+                            f"stays open, so you can ask questions here. To find it "
+                            f"again, use the **My ticket** button on the panel."
                         ))
                     ],
                     accessory=Thumbnail(media=APPROVAL_THUMB),
@@ -280,14 +282,15 @@ def _is_notification_card(message, kind: str) -> bool:
 
     Identified by its fixed card text -- no bookkeeping text is posted to
     Discord for it -- rather than a hidden marker line. An approval checks
-    both the current and legacy title so a card from before the card's
-    copy changed is still recognised.
+    current and historical titles so cards posted before a wording change
+    remain recognisable.
     """
 
     titles = (
-        (APPROVAL_CARD_TITLE, _LEGACY_APPROVAL_CARD_TITLE, TEST_APPROVAL_CARD_TITLE)
+        (APPROVAL_CARD_TITLE, _PREVIOUS_APPROVAL_CARD_TITLE,
+         _LEGACY_APPROVAL_CARD_TITLE, TEST_APPROVAL_CARD_TITLE)
         if kind == KIND_APPROVE
-        else (DENIAL_CARD_TITLE, TEST_DENIAL_CARD_TITLE)
+        else (DENIAL_CARD_TITLE, _LEGACY_DENIAL_CARD_TITLE, TEST_DENIAL_CARD_TITLE)
     )
     content = str(getattr(message, "content", "") or "")
     if any(title in content for title in titles):
@@ -637,7 +640,7 @@ def _staff_decision_components(ticket: dict, kind: str) -> list:
     decision = "Approved" if approved else "Denied"
     number = testing_service.number_label(int(ticket.get("ticket_number") or 0)) if testing_service.is_test_ticket(ticket) else ticket.get("ticket_number")
     title = f"## {'✅' if approved else '❌'} {str(ticket.get('ticket_type') or 'main').upper()} #{number} · {decision}"
-    body = "The recruit has been accepted to Warriors United." if approved else (
+    body = "Warriors United accepted the recruit." if approved else (
         ticket.get("denial_reason") if kind == KIND_DENY_CUSTOM else _DENIAL_BODY[kind]
     )
     if testing_service.is_test_ticket(ticket):
@@ -651,7 +654,7 @@ def _staff_decision_components(ticket: dict, kind: str) -> list:
                 f"**Decision time:** {ts(ticket.get('handled_at'), 'F')}"
             ))], accessory=Thumbnail(media=APPROVAL_THUMB if approved else DENIED_THUMB)),
             Text(content=str(body or "No denial reason recorded.")),
-            *([Text(content="This decision replaces the earlier decision. The earlier staff record is retained.")]
+            *([Text(content="This decision replaces the earlier decision. We kept the earlier staff record.")]
               if (ticket.get("resolution_effects") or {}).get("overturn") else []),
             Media(items=[MediaItem(media="assets/Green_Footer.png" if approved else "assets/Red_Footer.png")]),
         ],

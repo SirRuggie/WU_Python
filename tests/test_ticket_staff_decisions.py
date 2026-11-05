@@ -84,7 +84,7 @@ def test_staff_retry_finds_same_decision_and_overturn_posts_new_record(monkeypat
             bot, updated, resolve.KIND_APPROVE, "decision2"
         )
         assert len(messages) == 2 and rest.create_message.await_count == 2
-        assert "earlier staff record is retained" in repr(
+        assert "This decision replaces the earlier decision. We kept the earlier staff record." in repr(
             resolve._staff_decision_components(updated, resolve.KIND_APPROVE)
         )
         assert rest.edit_channel.await_args_list[0].kwargs["archived"] is False
