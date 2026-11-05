@@ -11,13 +11,34 @@ from .manage_content import fingerprint
 def snapshot(components):
     """Equivalent snapshot for Discord JSON and Hikari component objects."""
     from extensions.commands import content
-    if components and isinstance(components[0], dict):
-        children = [node for parent in components for node in parent.get('components', [])]
-        texts = [node['content'] for node in children if node.get('type') == 10]
-        media = [content.canonical_media_url(item['media']['url']) for node in children if node.get('type') == 12 for item in node.get('items', [])]
-    else:
-        texts = [node.content for node in content.text_nodes(components)]
-        media = [content.canonical_media_url(url) for url in content.media_snapshot(components)]
+
+    def value(node, key, default=None):
+        return node.get(key, default) if isinstance(node, dict) else getattr(node, key, default)
+
+    def walk(nodes):
+        for node in nodes:
+            yield node
+            yield from walk(value(node, 'components', ()) or ())
+            accessory = value(node, 'accessory')
+            if accessory is not None:
+                yield from walk((accessory,))
+
+    texts, media = [], []
+    for node in walk(components):
+        kind = value(node, 'type')
+        if kind == hikari.ComponentType.TEXT_DISPLAY:
+            text = value(node, 'content')
+            if not isinstance(text, str):
+                raise ValueError('The Discord post has invalid text')
+            texts.append(text)
+        elif kind in (hikari.ComponentType.MEDIA_GALLERY, hikari.ComponentType.THUMBNAIL):
+            items = value(node, 'items', ()) if kind == hikari.ComponentType.MEDIA_GALLERY else (node,)
+            for item in items:
+                resource = value(item, 'media')
+                url = value(resource, 'url', resource)
+                if url is None or not str(url):
+                    raise ValueError('The Discord post has invalid media')
+                media.append(content.canonical_media_url(str(url)))
     return {'text': texts, 'media': media}
 
 
