@@ -54,6 +54,7 @@
 }
 .mt-list p {
   margin: 5px 0;
+  text-wrap: pretty;
 }
 .mt-pagination {
   display: flex;
@@ -61,7 +62,7 @@
   justify-content: space-between;
   flex: none;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .mt-pagination button {
   width: 44px;
@@ -121,7 +122,7 @@
   grid-row: 2;
   min-width: 0;
   margin: 4px 0;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   line-height: 1.5;
   max-width: 70ch;
 }
@@ -132,7 +133,7 @@
   display: grid;
   gap: 4px;
   margin-block: 10px;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 .mt-nickname-review input[type="search"] {
   width: 100%;
@@ -146,11 +147,11 @@
   min-height: 44px;
 }
 .mt-nickname-review .mt-list li {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
 .mt-nickname-review .mt-list small {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .mt-nickname-review .mt-standardize-actions {
   top: 64px;
@@ -172,5 +173,5 @@
   border: 0;
   background: none;
   text-decoration: underline;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }

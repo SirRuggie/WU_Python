@@ -13,8 +13,8 @@
   background: var(--wu-surface-raised);
   color: #f6df9b;
   box-shadow: 0 4px 16px #0006;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
 }
 
 .roster-workspace .roster-back-to-top:focus-visible {

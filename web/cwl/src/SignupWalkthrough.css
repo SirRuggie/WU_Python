@@ -51,7 +51,7 @@
   text-align: left;
   white-space: normal;
   box-shadow: none;
-  font-size: 13px;
+  font-size: var(--wu-text-md);
   line-height: 1.35;
 }
 .shell .signup-walkthrough h2 button:disabled {
@@ -66,13 +66,13 @@
   outline-offset: 4px;
 }
 .signup-walkthrough .walkthrough-step {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-bold);
   text-transform: uppercase;
 }
 .signup-walkthrough .walkthrough-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-medium);
 }
 .signup-walkthrough .current .walkthrough-step,
 .signup-walkthrough .current .walkthrough-title,
@@ -80,14 +80,14 @@
   display: block;
 }
 .signup-walkthrough .current .walkthrough-title {
-  font-size: 24px;
-  font-weight: 800;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-bold);
   line-height: 1.2;
   margin-block: 5px;
 }
 .signup-walkthrough .walkthrough-summary {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
 }
 .signup-walkthrough .walkthrough-art {
   position: absolute;
@@ -119,7 +119,7 @@
     width: 96px;
   }
   .signup-walkthrough .current .walkthrough-title {
-    font-size: 24px;
+    font-size: var(--wu-text-md);
   }
 }
 @media (forced-colors: active) {
@@ -131,7 +131,7 @@
 
 .signup-walkthrough .walkthrough-instruction {
   margin: 6px -124px 0 0;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   line-height: 1.35;
   color: inherit;
 }

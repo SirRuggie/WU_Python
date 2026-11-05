@@ -78,15 +78,18 @@
 .owner-prank-card h2 {
   margin: 9px 42px 10px 0;
   color: #fff3d6;
-  font-size: 20px;
+  font-size: var(--wu-text-xl);
   line-height: 1.2;
+  font-weight: var(--wu-weight-bold);
+  text-wrap: balance;
 }
 .owner-prank-card p {
   margin: 9px 0;
+  text-wrap: pretty;
 }
 .owner-prank-card .owner-prank-reassurance {
   color: #f9cf84;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .owner-prank-card .owner-prank-error {
   color: #ffb0ad;
@@ -115,12 +118,13 @@
   color: #fff3d6;
   font: inherit;
   cursor: pointer;
+  font-weight: var(--wu-weight-medium);
 }
 .owner-prank-card button.primary {
   background: #fac775;
   border-color: #fac775;
   color: #30220b;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .owner-prank-card button:disabled {
   cursor: default;
@@ -185,7 +189,8 @@
     top: -105px;
   }
   .owner-prank-card p {
-    font-size: 13px;
+    font-size: var(--wu-text-md);
+    text-wrap: pretty;
   }
   @keyframes owner-prank-mobile-enter {
     from {
@@ -200,7 +205,10 @@
     padding-right: 12px;
   }
   .owner-prank-card h2 {
-    font-size: 17px;
+    font-size: var(--wu-text-xl);
+    font-weight: var(--wu-weight-bold);
+    line-height: 1.2;
+    text-wrap: balance;
   }
 }
 

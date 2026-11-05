@@ -7,13 +7,13 @@
   justify-content: space-between;
   gap: 12px;
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   min-height: 44px;
 }
 .push-reminders > summary::before {
   content: "›";
   color: var(--wu-text-muted);
-  font-size: 22px;
+  font-size: var(--wu-text-xl);
 }
 .push-reminders[open] > summary::before {
   content: "⌄";
@@ -28,7 +28,7 @@
   min-width: 0;
 }
 .push-reminders legend {
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   color: var(--wu-text);
 }
 .push-options,
@@ -96,10 +96,10 @@
     width: 100%;
   }
   .push-reminders > summary {
-    font-size: 14px;
+    font-size: var(--wu-text-sm);
   }
   .push-reminders .badge {
-    font-size: 10px;
+    font-size: var(--wu-text-xs);
   }
   .push-options {
     gap: 8px;
@@ -128,7 +128,7 @@
 .push-time-row select {
   width: 100%;
   min-height: 44px;
-  font-size: 16px;
+  font-size: var(--wu-text-md);
 }
 .push-time-row button {
   min-height: 44px;
@@ -144,7 +144,7 @@
   }
   .push-time-row button {
     padding: 10px;
-    font-size: 13px;
+    font-size: var(--wu-text-md);
   }
 }
 
@@ -189,7 +189,7 @@
 .push-account-picker > summary > span {
   color: var(--wu-text-muted);
   margin-left: 12px;
-  font-size: 0.875rem;
+  font-size: var(--wu-text-sm);
 }
 .push-tools {
   margin-top: 16px;

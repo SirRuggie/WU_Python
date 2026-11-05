@@ -11,8 +11,8 @@
   border-radius: 9px;
   background: transparent;
   color: var(--wu-text);
-  font-size: 13px;
-  font-weight: 580;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
   text-align: left;
 }
 .tour-launcher:hover {
@@ -88,25 +88,27 @@
 }
 .tour-card h2 {
   color: #fff3d6;
-  font-size: 18px;
-  line-height: 1.25;
-  font-weight: 700;
+  font-size: var(--wu-text-xl);
+  line-height: 1.2;
+  font-weight: var(--wu-weight-bold);
   margin: 10px 18px 8px 0;
+  text-wrap: balance;
 }
 .tour-card h2:focus {
   outline: none;
 }
 .tour-card p {
   color: #d4cebf;
-  font-size: 14px;
-  line-height: 1.45;
+  font-size: var(--wu-text-sm);
+  line-height: 1.55;
   margin: 6px 0;
+  text-wrap: pretty;
 }
 .tour-card .tour-step {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   color: #fac775;
 }
 .member-tour button {
@@ -166,7 +168,7 @@
 .member-tour .tour-next {
   background: #fac775;
   color: #30220b;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   border-color: transparent;
   white-space: nowrap;
 }
@@ -184,7 +186,7 @@
   align-items: center;
   min-height: 44px;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   color: #d4cebf;
 }
 .tour-remember input {
@@ -320,7 +322,8 @@
     top: -25px;
   }
   .tour-card p {
-    font-size: 13px;
+    font-size: var(--wu-text-sm);
+    text-wrap: pretty;
   }
   .shell.tour-active .sidebar nav {
     max-height: calc(100dvh - 390px);

@@ -10,7 +10,7 @@
 }
 .fwa-signup-slogan {
   color: var(--roster-gold);
-  font-weight: 800;
+  font-weight: var(--wu-weight-bold);
 }
 
 @media (prefers-reduced-motion: reduce) {

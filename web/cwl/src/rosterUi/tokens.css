@@ -1,8 +1,8 @@
 .roster-ui {
-  --roster-font-small: 12px;
-  --roster-font-body: 14px;
-  --roster-font-title: 24px;
-  --roster-font-title-small: 20px;
+  --roster-font-small: var(--wu-text-xs);
+  --roster-font-body: var(--wu-text-sm);
+  --roster-font-title: var(--wu-text-xl);
+  --roster-font-title-small: var(--wu-text-lg);
   --roster-space-1: 4px;
   --roster-space-2: 8px;
   --roster-space-3: 12px;

@@ -71,6 +71,7 @@
 .strikes-form p {
   margin: 0;
   color: var(--wu-text-muted);
+  text-wrap: pretty;
 }
 .strikes-form > button {
   justify-self: start;
@@ -101,7 +102,7 @@
 }
 .strikes-list-head span {
   color: var(--wu-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .strikes-empty {
   padding: 28px;
@@ -128,7 +129,7 @@
   margin: 18px 0;
 }
 .strikes-pages span {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
 }
 .strikes-candidate-facts {
@@ -144,19 +145,19 @@
   background: var(--wu-surface-soft);
   border-radius: 9px;
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .strikes-candidate-facts strong {
   display: block;
   color: #fff;
-  font-size: 18px;
+  font-size: var(--wu-text-md);
 }
 .strikes-check {
   display: flex !important;
   align-items: center;
   gap: 9px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .strikes-check input,
 .strikes-account-checks input {
@@ -170,7 +171,7 @@
   gap: 8px;
 }
 .strikes-account-checks > span {
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
 }
 .strikes-account-checks label {
   display: flex;
@@ -191,7 +192,7 @@
   gap: 3px;
 }
 .strikes-leave > div span {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
 }
 .strikes-role-list {
@@ -219,7 +220,7 @@
 .strikes-coverage summary {
   cursor: pointer;
   min-height: 44px;
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
 }
 .strikes-coverage > div {
   display: flex;
@@ -227,7 +228,7 @@
   gap: 12px;
   border-top: 1px solid var(--wu-border-subtle);
   padding: 9px 0;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .strikes-import-row {
   display: flex;
@@ -240,7 +241,7 @@
   gap: 4px;
 }
 .strikes-import-row span {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: var(--wu-text);
 }
 .strikes-import-apply {
@@ -290,7 +291,7 @@
     grid-column: auto;
   }
   .strikes-tabs button {
-    font-size: 13px;
+    font-size: var(--wu-text-sm);
     padding: 9px 11px;
   }
   .strikes-candidate,
@@ -328,7 +329,7 @@
   min-height: 44px;
   margin-top: 6px;
   padding: 4px 9px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   border-color: var(--wu-accent);
   color: var(--wu-text);
   background: var(--wu-accent-soft);
@@ -357,7 +358,7 @@
   min-height: 42px;
 }
 .strikes-search-matches small {
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
 }
 .strikes-toolbar > .strikes-history-search {
   grid-column: span 1;
@@ -379,7 +380,7 @@
   border-radius: 10px;
   background: var(--wu-info-surface);
   color: var(--wu-info);
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
 }
 .strikes-job-status {
   display: flex;
@@ -387,6 +388,7 @@
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+  font-size: var(--wu-text-sm);
 }
 .strikes-job-status button {
   min-height: 44px;
@@ -415,8 +417,8 @@
   border-radius: 10px;
   background: var(--wu-accent-soft);
   color: var(--wu-text);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
   -webkit-text-fill-color: var(--wu-text);
 }
 .strikes-selected-war span {
@@ -442,6 +444,7 @@
 }
 .strikes-war-search p {
   margin: 12px 0 0;
+  text-wrap: pretty;
 }
 .strikes-war-results {
   display: grid;
@@ -462,9 +465,9 @@
   overflow-wrap: anywhere;
 }
 .strikes-war-results button span {
-  font-size: 12px;
+  font-size: var(--wu-text-md);
   color: var(--wu-text-muted);
-  font-weight: 450;
+  font-weight: var(--wu-weight-medium);
 }
 @media (max-width: 480px) {
   .strikes-war-tools {
@@ -511,27 +514,29 @@
   min-width: 0;
 }
 .strikes-account-name strong {
-  font-size: 16px;
+  font-size: var(--wu-text-md);
   overflow-wrap: anywhere;
 }
 .strikes-account-count {
   min-width: 94px;
   text-align: center;
   color: #e8d59e;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
+  font-variant-numeric: tabular-nums;
 }
 .strikes-account-count strong {
-  font-size: 22px;
+  font-size: var(--wu-text-xl);
+  font-variant-numeric: tabular-nums;
 }
 .strikes-account-more {
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-md);
   white-space: nowrap;
 }
 .strikes-detail-context {
   margin: 2px 0 6px;
   color: var(--wu-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-xs);
 }
 .strikes-toolbar:has(> .strikes-history-search) {
   grid-template-columns: minmax(200px, 2fr) minmax(140px, 1fr) auto;
@@ -574,9 +579,11 @@
   }
   .strikes-account-count {
     min-width: 72px;
+    font-variant-numeric: tabular-nums;
   }
   .strikes-account-count strong {
     display: block;
+    font-variant-numeric: tabular-nums;
   }
   .strikes-toolbar:has(> .strikes-history-search) {
     grid-template-columns: 1fr;
@@ -616,7 +623,7 @@
 .strikes-needs-review summary {
   cursor: pointer;
   min-height: 44px;
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
 }
 .strikes-review-list {
   display: grid;
@@ -630,7 +637,7 @@
 }
 .strikes-review-list small,
 .strikes-review-list span {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
 }
 .strikes-review-list strong {
@@ -652,13 +659,13 @@
   gap: 9px;
   min-height: 44px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .strikes-tracking summary span {
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .strikes-tracking summary strong {
-  font-weight: 500;
+  font-weight: var(--wu-weight-medium);
   color: var(--wu-text-muted);
 }
 .strikes-tracking.warning summary strong {
@@ -699,11 +706,11 @@
 }
 .strikes-tracking-facts strong {
   color: var(--wu-text);
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
 }
 .strikes-tracking-clan small {
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .strikes-tracking-clan button {
   justify-self: start;
@@ -711,7 +718,7 @@
   padding: 5px 11px;
 }
 .strikes-tracking-state {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   color: #b5d5bb;
 }
 .strikes-tracking-state.behind,
@@ -733,7 +740,7 @@
   cursor: pointer;
   min-height: 52px;
   padding: 15px 18px;
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
 }
 .strikes-import-content {
   padding: 0 18px 18px;
@@ -747,10 +754,14 @@
   margin: 0;
 }
 .strikes-import-content > .strikes-form h2 {
-  font-size: 17px;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .strikes-import-content > .strikes-form p {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
 }
 @media (max-width: 480px) {
   .strikes-tracking {
@@ -797,7 +808,7 @@
 }
 .strike-review dt {
   color: var(--wu-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-xs);
 }
 .strike-review dd {
   margin: 4px 0 0;
@@ -830,8 +841,8 @@
 .strikes-action-summary,
 .strikes-import-summary {
   color: #f4d078;
-  font-size: 15px;
-  font-weight: 650;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-medium);
   margin: 12px 0;
 }
 .strikes-action-chips {
@@ -847,7 +858,7 @@
 }
 .strikes-action-chips button {
   min-height: 44px;
-  font-size: 13px;
+  font-size: var(--wu-text-md);
 }
 .strikes-action-chips button[aria-pressed="true"] {
   color: #ffe296;
@@ -870,7 +881,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 12px 4px;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
   color: #f4d078;
 }
 .strike-account-action a {
@@ -897,7 +908,7 @@
 .strike-compact-copy {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   line-height: 16px;
 }
 .strike-compact-facts {
@@ -905,11 +916,11 @@
 }
 .strike-war-player {
   display: block;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .strike-inline-status {
   display: inline;
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
   white-space: normal;
 }
 .strike-inline-status svg {
@@ -924,18 +935,19 @@
   min-width: 44px;
   min-height: 44px;
   padding: 4px;
-  font-size: 22px;
+  font-size: var(--wu-text-xl);
   align-self: start;
 }
 .strike-row-details {
   grid-column: 1/-1;
   border-top: 1px solid var(--wu-border-subtle);
   padding: 8px 0;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
 .strike-row-details p {
   margin: 4px 0;
+  text-wrap: pretty;
 }
 .strike-row-details button {
   min-height: 44px;
@@ -964,7 +976,10 @@
 .strikes-detail-context h2 {
   color: var(--wu-text);
   margin: 8px 0;
-  font-size: 21px;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .strikes-role-options {
   display: grid;
@@ -1012,7 +1027,7 @@
   outline-offset: 2px;
 }
 .strikes-workspace small {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .strikes-search-matches button {
   min-height: 44px;
@@ -1035,7 +1050,8 @@
 }
 
 .strikes-workspace .eyebrow {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
 }
 
 .strikes-workspace .notice button {
@@ -1055,7 +1071,7 @@
   }
   .strikes-toolbar.strikes-toolbar-player > button {
     padding-inline: 8px;
-    font-size: 13px;
+    font-size: var(--wu-text-md);
   }
 }
 .strike-replacement-row {
@@ -1068,6 +1084,7 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  text-wrap: pretty;
 }
 .strike-replacement-row form {
   display: flex;
@@ -1099,6 +1116,7 @@
   }
   .strikes-player-detail .page-head > div > p:not(.eyebrow) {
     display: none;
+    text-wrap: pretty;
   }
 }
 .strike-review-resolution {
@@ -1128,7 +1146,11 @@
 }
 .strikes-activity-overview .page-head h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: var(--wu-text-2xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.15;
+  text-wrap: balance;
+  letter-spacing: -0.02em;
 }
 .strikes-navigation {
   display: flex;
@@ -1179,7 +1201,7 @@
   }
   .strikes-navigation .strikes-tracking summary {
     gap: 0;
-    font-size: 12px;
+    font-size: var(--wu-text-sm);
   }
   .strikes-navigation .strikes-tracking summary > span {
     display: none;
@@ -1206,5 +1228,10 @@
 @media (min-width: 1100px) {
   .strikes-activity-overview {
     row-gap: 0;
+  }
+}
+@media (max-width: 480px) {
+  .strikes-activity-overview .page-head h1 {
+    font-size: var(--wu-text-xl);
   }
 }

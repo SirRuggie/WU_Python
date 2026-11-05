@@ -21,7 +21,7 @@
   border-radius: 20px;
   padding: 2px 7px;
   background: #ffffff18;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 .staff-section-tools {
   display: flex;
@@ -53,7 +53,7 @@
 .staff-create-season summary {
   cursor: pointer;
   min-height: 40px;
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
 }
 .staff-create-season form {
   max-width: 520px;
@@ -73,8 +73,9 @@
 }
 .staff-page-controls p,
 .staff-page-controls span {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
+  text-wrap: pretty;
 }
 .staff-section-content .staff-row > div {
   min-width: 0;
@@ -89,7 +90,7 @@
     gap: 7px;
   }
   .staff-section-menu button {
-    font-size: 13px;
+    font-size: var(--wu-text-md);
     padding: 9px 7px;
   }
   .staff-section-tools {
@@ -114,6 +115,7 @@
 }
 .staff-workspace .page-head p:last-child {
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .staff-section-content > .card {
   padding: 20px;
@@ -140,10 +142,19 @@
     gap: 12px;
   }
   .staff-workspace .page-head h1 {
-    font-size: 26px;
+    font-size: var(--wu-text-2xl);
     margin-bottom: 8px;
+    font-weight: var(--wu-weight-bold);
+    line-height: 1.15;
+    text-wrap: balance;
+    letter-spacing: -0.02em;
   }
   .staff-section-menu {
     margin-bottom: 12px;
+  }
+}
+@media (max-width: 480px) {
+  .staff-workspace .page-head h1 {
+    font-size: var(--wu-text-xl);
   }
 }

@@ -9,7 +9,10 @@
 .attention-summary h2 {
   margin: 0 0 8px;
   color: #f5d584;
-  font-size: 15px;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .attention-summary ul {
   margin: 0;
@@ -36,15 +39,17 @@
 .attention-summary p {
   margin: 3px 0 0;
   color: var(--wu-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .attention-summary details {
   margin-top: 5px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .attention-summary details p {
   white-space: pre-line;
+  text-wrap: pretty;
 }
 .attention-summary summary {
   min-height: 44px;

@@ -28,7 +28,7 @@
   min-height: 44px;
   padding: 5px 10px;
   color: var(--roster-text);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   line-height: 1.3;
   cursor: pointer;
   list-style: none;
@@ -65,7 +65,7 @@
 .roster-header-working .roster-ui-button {
   min-height: 44px;
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 .roster-capacity-alert {
   grid-column: 1 / -1;
@@ -79,11 +79,13 @@
   border-radius: var(--roster-radius-control);
   background: var(--roster-surface-raised);
   color: var(--roster-warning);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
+  font-variant-numeric: tabular-nums;
 }
 .roster-capacity-alert span {
   flex: 1 1 100px;
   min-width: 0;
+  font-variant-numeric: tabular-nums;
 }
 .roster-capacity-alert button {
   flex-shrink: 0;

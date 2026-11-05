@@ -88,7 +88,7 @@
   min-height: 44px;
 }
 .clan-management .clan-artwork input[type="file"] {
-  font-size: 0.85rem;
+  font-size: var(--wu-text-md);
 }
 @media (max-width: 800px) {
   .clan-layout {
@@ -168,7 +168,7 @@
     white-space: nowrap;
     min-width: 0;
     color: var(--wu-text-muted);
-    font-size: 12px;
+    font-size: var(--wu-text-sm);
   }
   .clan-section-card > [role="tabpanel"]:not([hidden]) {
     padding: 12px;
@@ -208,7 +208,7 @@
 }
 .clan-history-values dt {
   color: var(--wu-text-muted);
-  font-size: 0.85rem;
+  font-size: var(--wu-text-xs);
 }
 .clan-history-values dd {
   margin: 4px 0;
@@ -243,7 +243,7 @@
 }
 .clan-restore .clan-tabs button {
   padding: 10px;
-  font-size: 0.9rem;
+  font-size: var(--wu-text-md);
   white-space: nowrap;
 }
 

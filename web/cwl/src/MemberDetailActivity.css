@@ -10,7 +10,7 @@
   display: flex;
   align-items: center;
   cursor: pointer;
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
 }
 
 .member-detail-activity > summary::-webkit-details-marker {
@@ -35,7 +35,8 @@
 
 .member-detail-activity p {
   margin: 0.35rem 0;
-  font-size: 0.9rem;
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
 }
 
 .member-detail-activity-checked {
@@ -53,5 +54,8 @@
 
 .member-detail-war h3 {
   margin: 0.45rem 0 0.2rem;
-  font-size: 0.95rem;
+  font-size: var(--wu-text-lg);
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
 }

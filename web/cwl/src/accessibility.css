@@ -42,7 +42,7 @@ summary:focus-visible,
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .shell textarea {
-    font-size: 16px;
+    font-size: var(--wu-text-md);
   }
 }
 @media (max-height: 500px) and (max-width: 900px) {

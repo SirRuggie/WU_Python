@@ -48,15 +48,19 @@
 }
 .player-clan-details-identity .eyebrow {
   margin: 0 0 0.2rem;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
 }
 .player-clan-details-identity h2 {
   margin: 0;
-  font-size: 1.25rem;
-  line-height: 1.25;
+  font-size: var(--wu-text-xl);
+  line-height: 1.2;
+  font-weight: var(--wu-weight-bold);
+  text-wrap: balance;
 }
 .player-clan-details-identity > span {
   color: var(--wu-text-muted);
-  font-size: 0.85rem;
+  font-size: var(--wu-text-sm);
 }
 .player-clan-details-close {
   flex: 0 0 auto;
@@ -65,7 +69,7 @@
 .player-clan-details-freshness {
   margin: 1rem 0;
   color: var(--wu-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--wu-text-xs);
 }
 
 .player-clan-details-facts {
@@ -83,26 +87,30 @@
 }
 .player-clan-details-facts dt {
   color: var(--wu-text-muted);
-  font-size: 0.8rem;
+  font-size: var(--wu-text-xs);
 }
 .player-clan-details-facts dd {
   margin: 0.2rem 0 0;
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
 }
 .player-clan-details-clan-meta {
   margin: 0;
   color: var(--wu-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--wu-text-xs);
 }
 .player-clan-details-section {
   margin-top: 1.1rem;
 }
 .player-clan-details-section h3 {
   margin: 0 0 0.35rem;
-  font-size: 1rem;
+  font-size: var(--wu-text-lg);
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
 }
 .player-clan-details-section p {
   margin: 0;
+  text-wrap: pretty;
 }
 .player-clan-details-section small {
   color: var(--wu-text-muted);
@@ -145,7 +153,7 @@
 .player-clan-details-note {
   margin: 1.1rem 0 0;
   color: var(--wu-text-muted);
-  font-size: 0.8rem;
+  font-size: var(--wu-text-sm);
 }
 
 @media (max-width: 390px) {
@@ -187,10 +195,11 @@
   place-items: center;
   background: #4b3b19;
   color: #f5d77d;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .player-clan-details-discord p {
   min-width: 0;
+  text-wrap: pretty;
 }
 .player-clan-details-footer {
   margin-top: 1.1rem;

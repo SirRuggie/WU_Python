@@ -117,6 +117,60 @@ colors, selection surface, strong gold, type, spacing, radius, and shadow values
   - amber = warning (full clan, outside family)
   - green pill = "Signups open"
 
+## Type scale
+
+The dashboard self-hosts one Latin variable **WU Inter** face at weights 400–700.
+`tokens.css` loads its hashed Vite asset and a local, metric-adjusted Arial
+fallback. The root stack does not use the bare Inter family name; synthetic
+weights remain disabled. See `web/cwl/src/assets/fonts/README.md` for the source,
+license, subset and fallback metrics.
+
+| Token                 | Value | Role                                                           |
+| --------------------- | ----- | -------------------------------------------------------------- |
+| `--wu-text-xs`        | 12px  | Metadata, captions, eyebrows, nav groups, badges; minimum size |
+| `--wu-text-sm`        | 14px  | Dense rows, tables, secondary lines, chips, helpers            |
+| `--wu-text-md`        | 16px  | Body copy, form controls, buttons, primary row text            |
+| `--wu-text-lg`        | 20px  | Card titles and h3                                             |
+| `--wu-text-xl`        | 24px  | Section headings and h2; h1 at 480px and below                 |
+| `--wu-text-2xl`       | 32px  | Page h1 above 480px; sign-in h1 at every width                 |
+| `--wu-weight-regular` | 400   | Body and metadata                                              |
+| `--wu-weight-medium`  | 600   | Labels, emphasis, buttons, eyebrows and nav labels             |
+| `--wu-weight-bold`    | 700   | Headings, key numbers and names                                |
+
+1. Map by the content's role, never by the nearest size. Below-12px metadata
+   moves to the 12px floor. Dense/helper copy uses 14px; primary text uses 16px.
+   Existing intermediate sizes map to the appropriate heading, row or body role.
+2. Use 400, 600 and 700 for the three weight roles. Former 450/500 declarations
+   become body 400 or emphasis 600; 580/650 become 600; 750/800/900 become 700.
+3. Page h1 uses 32px/700, line-height 1.15 and tracking -0.02em, or 24px at
+   480px and below. Sign-in h1 remains 32px. H2 uses 24px/700/1.2; h3 uses
+   20px/600/1.3. Headings use balanced wrapping rather than fluid clamps.
+4. Eyebrows and nav group labels use 12px/600. Keep their existing uppercase
+   treatment and limit tracking to 0.08em without changing their color.
+5. Paragraphs use line-height 1.55 and pretty wrapping. Inputs, selects and
+   textareas use at least 16px outside the locked roster exceptions. Keep
+   existing reading measures, control geometry and spacing.
+6. Counts, scores, stat numbers, numeric table columns and countdowns use
+   tabular numerals.
+7. Keep repeated roles consistent across pages. Preserve the locked roster,
+   Player card and Compare type: 16px/700 names, 15px/700 clan headings,
+   14px/700 Total and 12px/400 details. The four roster size aliases reference
+   root tokens only at their identical 12/14/20/24px values. Dedicated moderation,
+   member activity history and Discord preview styles remain outside this batch.
+   Any measured narrow-screen type exception belongs in the batch evidence;
+   do not change layout to compensate for a size increase.
+
+Semantic roles take precedence over legacy markup: `.manage-heading h2` is the
+Server management view's page title, so it uses the h1 role without changing its
+heading element. Home's `Your tasks` h2 is a compact card title and uses
+20px/600/1.3. The MAIN/LAZY roster pool captions are 12px/600 group labels.
+At 480px and below, the staff CWL workflow buttons use 12px: the intermediate
+14px size still introduced a second line at 360px. The member CWL step-strip
+buttons and Strikes Accounts/Leave/Settings tabs use 14px. These fitting
+exceptions preserve the incumbent labels without changing padding, height,
+layout or copy. The staff workflow already wraps at 320px in the baseline;
+that existing behavior is not claimed as a new single-line guarantee.
+
 ## Shape rule
 
 - **Pill (999)** ONLY for single-line, short elements: buttons, status pills, stat chips, filter/tag chips.

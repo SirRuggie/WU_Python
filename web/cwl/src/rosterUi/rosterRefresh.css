@@ -189,7 +189,7 @@
 }
 @media (max-width: 400px) {
   .roster-workspace .staff-signup-bar .roster-ui-status {
-    font-size: 11px;
+    font-size: var(--wu-text-xs);
   }
   .roster-workspace .staff-signup-bar-actions .roster-ui-button {
     padding-inline: 8px;

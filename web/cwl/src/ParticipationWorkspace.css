@@ -7,6 +7,7 @@
 }
 .participation-page-head p {
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .participation-capture {
   margin: 0 0 16px;
@@ -30,11 +31,11 @@
   overflow-wrap: anywhere;
 }
 .participation-capture-main strong {
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
 }
 .participation-capture-main span {
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
 }
 .participation-capture-actions {
@@ -44,12 +45,12 @@
 }
 .participation-capture-actions button {
   min-height: 44px;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 .participation-capture-warning {
   margin: 9px 0 0;
   color: #e6c78c;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .participation-capture-settings {
   margin-top: 9px;
@@ -61,7 +62,7 @@
   min-height: 44px;
   cursor: pointer;
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .participation-sync-fields {
   display: grid;
@@ -109,11 +110,11 @@
   border-bottom: 1px solid #ffffff2b;
 }
 .participation-list-heading strong {
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
 }
 .participation-list-heading span {
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .participation-list {
   min-width: 0;
@@ -149,17 +150,17 @@
   overflow-wrap: anywhere;
 }
 .participation-identity strong {
-  font-size: 14px;
+  font-size: var(--wu-text-md);
 }
 .participation-identity small,
 .participation-state small {
   margin-top: 2px;
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .participation-state strong {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
   color: #ced6df;
 }
 .participation-row-changed .participation-state strong {
@@ -178,11 +179,11 @@
   display: block;
 }
 .participation-values strong {
-  font-size: 15px;
+  font-size: var(--wu-text-md);
   font-variant-numeric: tabular-nums;
 }
 .participation-values small {
-  font-size: 10px;
+  font-size: var(--wu-text-xs);
 }
 .participation-row-action {
   min-width: 44px;
@@ -191,7 +192,7 @@
   border: 0;
   background: transparent;
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-md);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -211,7 +212,7 @@
 }
 .participation-empty {
   margin: 15px 0;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .participation-dialog {
   width: min(540px, calc(100vw - 24px));
@@ -268,10 +269,10 @@
   display: block;
 }
 .participation-dialog-summary strong {
-  font-size: 15px;
+  font-size: var(--wu-text-md);
 }
 .participation-dialog-summary span {
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
 }
 .participation-source,
@@ -285,12 +286,13 @@
   min-height: 44px;
   cursor: pointer;
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .participation-source p,
 .participation-previous p {
   margin: 4px 0 9px;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
+  text-wrap: pretty;
 }
 .participation-source button {
   margin-bottom: 10px;
@@ -312,12 +314,12 @@
 .participation-error {
   margin: 9px 0;
   color: #f2b2b2;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
 .participation-saved-at {
   margin: 10px 0;
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
   overflow-wrap: anywhere;
 }
 .participation-dialog-actions {
@@ -344,11 +346,12 @@
   min-height: 44px;
   cursor: pointer;
   color: var(--wu-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .participation-history > p {
   margin: 8px 0;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
 }
 .participation-history-row {
   display: grid;
@@ -357,13 +360,14 @@
   gap: 5px 12px;
   padding: 10px 0;
   border-top: 1px solid #ffffff1c;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
 .participation-history-row p {
   grid-column: 1 / -1;
   margin: 2px 0;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
 }
 @media (max-width: 760px) {
   .participation-capture-main {

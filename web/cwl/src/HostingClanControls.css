@@ -13,7 +13,7 @@
   border-color: transparent;
   border-radius: var(--roster-radius-control);
   color: var(--roster-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   text-align: left;
   text-decoration: underline;
   padding-inline: 0;

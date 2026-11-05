@@ -43,8 +43,8 @@
   gap: 16px;
 }
 .text-command-editor legend {
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: var(--wu-text-lg);
+  font-weight: var(--wu-weight-bold);
   margin-bottom: 18px;
 }
 .text-command-editor label {
@@ -74,7 +74,7 @@
 }
 .text-command-editor summary {
   cursor: pointer;
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
 }
 .text-command-save {
   display: flex;
@@ -141,7 +141,7 @@
 }
 .command-add-blocks button {
   padding: 8px 10px;
-  font-size: 0.85rem;
+  font-size: var(--wu-text-md);
 }
 .command-block-list {
   display: grid;
@@ -177,7 +177,7 @@
   padding: 8px;
 }
 .command-block-summary {
-  font-size: 0.8rem;
+  font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -201,7 +201,7 @@
   flex-wrap: wrap;
 }
 .command-block-tools button {
-  font-size: 0.85rem;
+  font-size: var(--wu-text-md);
 }
 
 @media (max-width: 700px) {
@@ -219,7 +219,7 @@
 }
 .mention-tools button {
   padding: 7px 12px;
-  font-size: 0.85rem;
+  font-size: var(--wu-text-md);
 }
 .mention-picker {
   margin-top: 10px;
@@ -278,7 +278,7 @@
   padding: 10px;
 }
 .markdown-help summary {
-  font-size: 0.85rem;
+  font-size: var(--wu-text-sm);
 }
 .markdown-help dl {
   display: grid;
@@ -291,7 +291,7 @@
   white-space: pre-wrap;
 }
 .markdown-help dt {
-  font-size: 0.8rem;
+  font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
 }
 .command-block-order {
@@ -344,7 +344,7 @@
 }
 .command-file input[type="file"] {
   max-width: 100%;
-  font-size: 0.85rem;
+  font-size: var(--wu-text-md);
 }
 .command-block-fields .command-builder {
   min-width: 0;
@@ -391,7 +391,7 @@
 }
 .command-activity summary {
   cursor: pointer;
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
   margin-bottom: 10px;
 }
 .command-activity > div {
@@ -447,24 +447,25 @@
   min-width: 0;
   flex: 1;
   max-width: 100%;
-  font-size: 0.9rem;
+  font-size: var(--wu-text-sm);
 }
 .command-image-upload input[type="file"] {
   max-width: 100%;
-  font-size: 0.8rem;
+  font-size: var(--wu-text-md);
 }
 .command-image-tools button {
   min-height: 44px;
 }
 .command-image-field p {
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .command-test {
   margin-top: 16px;
 }
 .command-test summary {
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .command-test > button {
   margin-top: 12px;
@@ -631,7 +632,7 @@
 .text-commands summary {
   min-height: 44px;
   align-content: center;
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
   cursor: pointer;
 }
 .text-commands .command-scope button {
@@ -639,7 +640,7 @@
   margin: 4px;
 }
 .text-commands small {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .text-command-rows small {
   display: block;

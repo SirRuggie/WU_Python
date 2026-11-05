@@ -160,7 +160,13 @@ it("archived settings are view-only with no save or inputs", async () => {
   expect(button("Save settings")).toBeUndefined();
 });
 it("shows inclusive wording and a non-blocking same-pool shared-boundary note", async () => {
-  const peer = { ...clan, tag: "#PEER", name: "Lazy.128", min_weight: 170000, max_weight: 179000 };
+  const peer = {
+    ...clan,
+    tag: "#PEER",
+    name: "Lazy.128",
+    min_weight: 170000,
+    max_weight: 179000,
+  };
   await act(async () =>
     root.render(
       <ClanSettingsEditor
@@ -176,7 +182,9 @@ it("shows inclusive wording and a non-blocking same-pool shared-boundary note", 
     ),
   );
   expect(document.body.textContent).toContain("Includes 150k to 170k.");
-  expect(document.body.textContent).toContain("170k fits both Lazy.127 and Lazy.128.");
+  expect(document.body.textContent).toContain(
+    "170k fits both Lazy.127 and Lazy.128.",
+  );
   expect(button("Save settings").disabled).toBe(true);
   await type("Maximum weight", "171");
   expect(document.body.textContent).not.toContain("fits both");
@@ -336,7 +344,9 @@ it("validates ranges live and shows changed-only impact with missing weights exc
   expect(document.querySelector(".clan-settings-impact")).toBeNull();
   await type("Maximum weight", "150");
   expect(button("Save settings").disabled).toBe(true);
-  expect(document.body.textContent).toContain("The maximum weight must be more than");
+  expect(document.body.textContent).toContain(
+    "The maximum weight must be more than",
+  );
   await type("Maximum weight", "169");
   expect(document.body.textContent).toContain(
     "1 more assigned player would be outside the range",
@@ -464,8 +474,15 @@ it("puts the archived notice first in the list at muted 12px", async () => {
   ).toBe("Archived season · settings are read-only.");
   const css = readFileSync("src/ClanSettings.css", "utf8");
   expect(css).toMatch(
-    /\.clan-settings-panel \.clan-settings-archived\s*\{\s*font-size: 12px;\s*color: var\(--roster-text-muted\)/,
+    /\.clan-settings-panel \.clan-settings-archived\s*\{\s*font-size: var\(--wu-text-xs\);\s*color: var\(--roster-text-muted\)/,
   );
+  const tokens = readFileSync("src/tokens.css", "utf8");
+  expect(tokens).toMatch(/--wu-text-xs:\s*12px\s*;/);
+  expect(
+    readFileSync("src/main.tsx", "utf8").match(
+      /^import\s+["']([^"']+)["'];?/m,
+    )?.[1],
+  ).toBe("./tokens.css");
 });
 
 it("hides the weight-unit description using always-imported roster CSS, without the Bonus chunk", async () => {

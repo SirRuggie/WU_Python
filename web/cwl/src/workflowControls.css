@@ -92,7 +92,7 @@
   outline-offset: -3px;
 }
 .clan-category-filters span {
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   opacity: 0.8;
   margin-left: 5px;
 }
@@ -151,8 +151,8 @@
 }
 .shell .todo-tabs small {
   color: inherit;
-  font-size: 11px;
-  font-weight: 400;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-regular);
 }
 .shell :is(.overview-filters, .clan-category-filters, .search-kind-filters) {
   display: flex;
@@ -210,7 +210,7 @@
   flex: 1;
 }
 .home-search-entry kbd {
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
   white-space: nowrap;
 }
 .home-activity-links {
@@ -317,7 +317,7 @@
     padding: 10px;
   }
   .shell .todo-tabs small {
-    font-size: 10px;
+    font-size: var(--wu-text-xs);
   }
 }
 .shell .global-search-field input:focus {
@@ -353,7 +353,7 @@
   border-radius: 4px;
 }
 .shell .overview-filters button strong {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-medium);
   margin: 0;
 }

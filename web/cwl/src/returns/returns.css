@@ -82,6 +82,7 @@
 }
 .return-batch > p {
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .return-batch fieldset > button {
   margin-top: 16px;

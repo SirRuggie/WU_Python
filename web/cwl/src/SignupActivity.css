@@ -18,7 +18,7 @@
   background: var(--wu-warning-surface);
   color: #ffca85;
   -webkit-text-fill-color: currentColor;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   text-align: left;
 }
 .signup-activity-line span {
@@ -42,14 +42,14 @@
 }
 .signup-activity-load-error {
   color: var(--roster-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .signup-activity-panel .action-panel-heading {
   border-bottom-color: #94723d;
 }
 .signup-activity-panel .signup-activity-intro {
   color: var(--roster-warning);
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
   margin-top: 0;
 }
 .signup-activity-row {
@@ -64,26 +64,27 @@
 }
 .signup-activity-identity strong {
   color: var(--roster-text);
-  font-size: 15px;
+  font-size: var(--wu-text-md);
 }
 .signup-activity-identity time {
   color: var(--roster-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   flex-shrink: 0;
 }
 .roster-ui .signup-activity-name {
   color: var(--roster-text);
-  font-weight: 700;
-  font-size: 15px;
+  font-weight: var(--wu-weight-bold);
+  font-size: var(--wu-text-md);
   padding: 0;
   min-height: 44px;
   background: transparent;
   border: 0;
 }
 .signup-activity-row p {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: var(--roster-text-muted);
   margin: 6px 0 10px;
+  text-wrap: pretty;
 }
 .signup-activity-actions {
   display: flex;

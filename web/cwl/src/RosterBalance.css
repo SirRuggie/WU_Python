@@ -4,6 +4,7 @@
 }
 .roster-balance-panel p {
   margin: 0;
+  text-wrap: pretty;
 }
 .roster-balance-panel fieldset {
   border: 0;
@@ -12,7 +13,7 @@
   min-width: 0;
 }
 .roster-balance-panel legend {
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
   margin-bottom: 8px;
 }
 .roster-balance-panel small {
@@ -50,6 +51,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 10px;
+  font-variant-numeric: tabular-nums;
 }
 .roster-plan-totals > div {
   display: grid;
@@ -57,6 +59,7 @@
   padding: 12px;
   border: 1px solid #ffffff26;
   border-radius: 10px;
+  font-variant-numeric: tabular-nums;
 }
 .roster-balance-panel ul {
   list-style: none;

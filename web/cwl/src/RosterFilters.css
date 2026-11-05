@@ -54,7 +54,8 @@
 .roster-filters-fields > p {
   margin: 0;
   color: var(--roster-text-muted);
-  line-height: 1.45;
+  line-height: 1.55;
+  text-wrap: pretty;
 }
 
 .roster-filters-fields fieldset {
@@ -67,7 +68,7 @@
 .roster-filters-fields legend {
   margin-bottom: 8px;
   color: var(--roster-text);
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 
 .roster-filters-fields fieldset > small,
@@ -75,6 +76,7 @@
   display: block;
   margin: 8px 0 0;
   color: var(--roster-text-muted);
+  text-wrap: pretty;
 }
 
 .roster-filters-options {

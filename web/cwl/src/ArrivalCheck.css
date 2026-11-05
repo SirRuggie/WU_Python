@@ -5,16 +5,17 @@
 }
 .arrival-check p {
   margin: 0;
+  text-wrap: pretty;
 }
 .arrival-check .declaration-summary {
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
   line-height: 20px;
 }
 .arrival-check .declaration-help,
 .declaration-refresh,
 .declaration-copy small {
   color: var(--roster-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   line-height: 16px;
 }
 .declaration-refresh,
@@ -37,7 +38,10 @@
 }
 .declaration-clan h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .arrival-check .declaration-clan-toggle {
   display: flex;
@@ -60,12 +64,12 @@
   color: #a3e7bc;
 }
 .declaration-clan-toggle span:first-child {
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .declaration-clan-toggle small {
   width: 100%;
-  font-size: 12px;
-  font-weight: 400;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-regular);
 }
 .declaration-clan-toggle:focus-visible {
   outline: 2px solid white;
@@ -115,8 +119,8 @@
   background: transparent;
   color: var(--roster-text);
   -webkit-text-fill-color: currentColor;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-bold);
   text-align: left;
 }
 .declaration-player .town-hall-icon {
@@ -142,11 +146,11 @@
   min-width: 44px;
   min-height: 44px;
   color: var(--roster-text);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .declaration-player-top small {
   color: var(--roster-card-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .declaration-player .compare-tag {
   display: inline-flex;
@@ -154,7 +158,7 @@
   padding: 0 7px;
   border: 1px solid var(--roster-warning);
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   color: #ffe4a0;
 }
 .declaration-player.is-match {
@@ -181,7 +185,7 @@
     gap: 2px;
   }
   .arrival-check .declaration-summary {
-    font-size: 12px;
+    font-size: var(--wu-text-sm);
     line-height: 16px;
   }
   .arrival-check .roster-ui-input > label {
@@ -231,8 +235,6 @@
 .declaration-player .player-card-meta {
   padding-right: 54px;
 }
-@media (max-width: 767px) {
-}
 .declaration-overview {
   display: grid;
   gap: 4px;
@@ -240,7 +242,7 @@
 }
 .declaration-last-checked {
   color: var(--roster-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .declaration-toolbar {
   display: grid;

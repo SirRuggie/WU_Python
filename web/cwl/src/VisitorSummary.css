@@ -8,18 +8,22 @@
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
+  font-variant-numeric: tabular-nums;
 }
 .visitor-counts dd {
   margin: 6px 0 0;
+  font-variant-numeric: tabular-nums;
 }
 .visitor-counts strong {
   display: block;
-  font-size: 1.7rem;
+  font-size: var(--wu-text-xl);
+  font-variant-numeric: tabular-nums;
 }
 .visitor-counts span,
 .visitor-note {
-  font-size: 0.85rem;
+  font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 .visitor-summary svg {
   display: block;
@@ -37,7 +41,7 @@
 .visitor-summary table {
   width: 100%;
   max-width: 600px;
-  font-size: 0.85rem;
+  font-size: var(--wu-text-sm);
 }
 .visitor-summary th,
 .visitor-summary td {

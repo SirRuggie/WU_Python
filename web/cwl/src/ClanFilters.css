@@ -29,10 +29,10 @@
   justify-content: space-between;
   min-height: 44px;
   padding: 10px 12px;
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
 }
 .filter-picker summary span {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-sm);
   color: var(--roster-gold);
 }
 .filter-picker-options {

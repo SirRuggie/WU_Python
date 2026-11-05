@@ -63,8 +63,8 @@
 .account-menu-profile-trigger .user-display-name {
   display: block;
   overflow: hidden;
-  font-size: 13px;
-  font-weight: 750;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-bold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -75,7 +75,7 @@
   bottom: 2px;
   overflow: hidden;
   color: var(--wu-text-muted);
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -157,7 +157,7 @@
 
 .account-menu-summary > span {
   color: var(--wu-text-muted);
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
 }
 
 .account-menu-summary > strong,
@@ -168,12 +168,12 @@
 }
 
 .account-menu-summary > strong {
-  font-size: 13px;
+  font-size: var(--wu-text-md);
 }
 
 .account-menu-summary > small {
   color: var(--wu-text-muted);
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
 }
 
 .account-menu-separator {
