@@ -28,7 +28,7 @@ def test_publication_sends_saved_both_and_blocks_ambiguous_retry(monkeypatch):
         assert live["campaign"]["paused"] is True
         panel = await ui.publish_send(modal_context(), saved["token"] + "|both", mongo=mongo)
         rendered = str([c.build()[0] for c in panel])
-        assert "Delivery uncertain" in rendered and "View post" in rendered
+        assert "Not sure if the post was sent · Check the channel before you try again." in rendered and "View post" in rendered
         assert "Retry failed announcement" not in rendered
         assert len(rest.sent) == 1
         assert "Fresh saved announcement" in str([c.build()[0] for c in rest.sent[0]["components"]])
