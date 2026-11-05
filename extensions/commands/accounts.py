@@ -319,7 +319,7 @@ def render_accounts(
                 f"Discord ID: `{discord_id}`\n"
                 f"Unavailable: {', '.join(data.unavailable_sources)}. "
                 "No accounts were returned by the available sources. "
-                "Try `/user-accounts` again shortly.",
+                "Try `/user-accounts` again in a few minutes.",
             )
         return _notice(
             "No linked accounts",
@@ -392,8 +392,8 @@ def render_accounts(
             )
         else:
             notes.append(
-                f"⚠️ **{data.error_count} accounts couldn't be loaded this time.** "
-                "Their linked tags are still shown above; try again shortly."
+                f"⚠️ **Could not load {data.error_count} accounts.** "
+                "Their linked tags are shown above. Try again in a few minutes."
             )
     if data.not_found_count:
         notes.append(

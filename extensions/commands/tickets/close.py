@@ -285,7 +285,7 @@ async def deny_fwa_default_handler(
     await delete_state(mongo, action_id)
 
     await ctx.interaction.edit_initial_response(
-        content="✅ Ticket denied with the FWA default message.",
+        content="✅ Ticket denied with the FWA message.",
         component=None
     )
 
@@ -353,7 +353,7 @@ async def deny_main_default_handler(
     await delete_state(mongo, action_id)
 
     await ctx.interaction.edit_initial_response(
-        content="✅ Ticket denied with the Main default message.",
+        content="✅ Ticket denied with the Main message.",
         component=None
     )
 

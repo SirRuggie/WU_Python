@@ -1755,8 +1755,7 @@ async def configure_hub_here(
             ) from exc
         except hikari.ForbiddenError as exc:
             raise ConsoleConfigurationError(
-                f"saved console channel ID {existing_channel_id} is inaccessible "
-                "to the bot; restore access before retrying because relocation is disabled"
+                f"Saved console channel {existing_channel_id} cannot be opened. Restore channel access, then try again."
             ) from exc
         except Exception as exc:
             raise ConsoleConfigurationError(
@@ -6502,7 +6501,7 @@ async def _transition_result_panel(
             if "try again" not in reason.casefold():
                 reason += " Try again."
             return _notice(
-                "Approval not completed" if verb == "approved" else "Not completed",
+                "Not approved" if verb == "approved" else "Not completed",
                 reason,
                 accent=ACCENT_YELLOW,
             )

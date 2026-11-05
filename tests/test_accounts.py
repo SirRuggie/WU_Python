@@ -427,4 +427,4 @@ def test_multiple_account_failures_keep_baseline_text_and_count():
         accounts.AccountEntry('#SECOND', accounts.STATUS_ERROR),
     ))
     contents = [node['content'] for node in _walk(_payload(data)) if 'content' in node]
-    assert "⚠️ **2 accounts couldn't be loaded this time.** Their linked tags are still shown above; try again shortly." in contents
+    assert "⚠️ **Could not load 2 accounts.** Their linked tags are shown above. Try again in a few minutes." in contents
