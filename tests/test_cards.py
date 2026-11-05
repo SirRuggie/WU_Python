@@ -14282,6 +14282,8 @@ def test_one_index_failure_does_not_skip_the_rest(monkeypatch, caplog):
     index must now be created independently."""
     import logging
 
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+
     inventories = _FakeIndexCollection(failing_names={"uniq_open_card_proposal"})
     trades = inventories
     component_state = _FakeIndexCollection()

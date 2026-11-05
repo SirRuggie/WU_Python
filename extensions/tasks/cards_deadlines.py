@@ -39,6 +39,7 @@ import hikari
 import lightbulb
 
 from extensions.commands import cards as cards_command
+from utils import cards_config
 from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
@@ -621,6 +622,8 @@ async def _drain_pending_channel_edits(mongo, bot, *, edit_budget) -> int:
 
 
 async def sweep_once() -> None:
+    if cards_config.cards_guild_id() is None:
+        return
     if not bot_instance or not mongo_client:
         return
     now = datetime.now(timezone.utc)
@@ -674,6 +677,10 @@ async def on_bot_started(
     mongo: MongoClient = lightbulb.di.INJECTED,
 ) -> None:
     global bot_instance, mongo_client, sweep_task
+
+    if cards_config.cards_guild_id() is None:
+        print("[Cards Deadlines] Card trading is turned off.")
+        return
 
     bot_instance = bot
     mongo_client = mongo
