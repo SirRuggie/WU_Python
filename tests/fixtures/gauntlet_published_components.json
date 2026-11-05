@@ -1,0 +1,66 @@
+[
+  {
+    "type": 12,
+    "id": 1,
+    "items": [
+      {
+        "media": {
+          "url": "https://cdn.discordapp.com/attachments/123/456/banner.png?ex=111&is=222&hm=333"
+        },
+        "description": null,
+        "spoiler": false
+      }
+    ]
+  },
+  {
+    "type": 17,
+    "id": 2,
+    "accent_color": 15658666,
+    "components": [
+      {
+        "type": 10,
+        "id": 3,
+        "content": "Onboarding text block 1: read this message before continuing."
+      },
+      {
+        "type": 14,
+        "id": 4,
+        "spacing": 1,
+        "divider": true
+      },
+      {
+        "type": 10,
+        "id": 5,
+        "content": "Onboarding text block 2: read this message before continuing."
+      },
+      {
+        "type": 10,
+        "id": 6,
+        "content": "Onboarding text block 3: read this message before continuing."
+      },
+      {
+        "type": 10,
+        "id": 7,
+        "content": "Onboarding text block 4: read this message before continuing."
+      },
+      {
+        "type": 1,
+        "id": 8,
+        "components": [
+          {
+            "type": 2,
+            "id": 9,
+            "custom_id": "test_acknowledge",
+            "style": 3,
+            "label": "Continue",
+            "emoji": {
+              "id": "1397096942907166831",
+              "name": "Yes"
+            }
+          }
+        ]
+      }
+    ],
+    "spoiler": false
+  }
+]
