@@ -350,7 +350,7 @@ blocks approval:
 | Not loyal to WU | No — caution only | Warriors United recruiter note |
 | Ghosted | No — caution only | Warriors United recruiter ghosting report |
 
-The chart uses **Previously denied** for the
+The chart uses **PREVIOUSLY DENIED** for the
 `Previously denied` count. **Blacklisted**, not “On blacklist,” is the
 authoritative blacklist label. Blacklist state is binary, not tiered; the bot
 never renders a “maybe” verdict.

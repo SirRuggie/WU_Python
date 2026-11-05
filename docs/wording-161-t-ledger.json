@@ -1795,6 +1795,12 @@
       "owner_changed_locations": [
         {
           "path": "extensions/commands/tickets/settings.py",
+          "line": 45,
+          "exact_source_line": "raise ValueError('You must be an administrator in the ticket server.')",
+          "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
           "line": 98,
           "exact_source_line": "body.append(Text(content='Select what to manage. Only server administrators can use these settings.'))",
           "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
@@ -1815,12 +1821,6 @@
           "path": "extensions/commands/tickets/settings.py",
           "line": 126,
           "exact_source_line": "body.append(Text(content='Select each setting below, then **Save channel & role changes**. These selections apply to new tickets. Existing tickets stay where they are.'))",
-          "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
-        },
-        {
-          "path": "extensions/commands/tickets/settings.py",
-          "line": 129,
-          "exact_source_line": "('staff_parent', 'Staff channel', 'New staff discussion threads are created here. Only authorized staff should be able to view this channel.'),",
           "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
         },
         {
@@ -1858,6 +1858,15 @@
           "line": 180,
           "exact_source_line": "await ctx.interaction.edit_initial_response(content='You must be an administrator in the ticket server.',**NO_MENTIONS)",
           "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        }
+      ],
+      "owner_cited_unchanged_locations": [
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 129,
+          "exact_source_line": "('staff_parent', 'Staff channel', 'New staff discussion threads are created here. Only authorized staff should be able to view this channel.'),",
+          "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323",
+          "comparison": "byte-equal to 82400"
         }
       ]
     },
