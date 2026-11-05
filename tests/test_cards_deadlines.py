@@ -1,9 +1,16 @@
 import asyncio
+
+import pytest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from extensions.commands import cards as cards_command
 from extensions.tasks import cards_deadlines as sweeper
+
+
+@pytest.fixture(autouse=True)
+def _enabled_card_feature(monkeypatch):
+    monkeypatch.setenv("CARDS_GUILD_ID", "1")
 
 
 class _Trades:

@@ -10,6 +10,11 @@ from extensions.tasks import cards_sticky as sticky
 from utils.emoji import emojis
 
 
+@pytest.fixture(autouse=True)
+def _enabled_card_feature(monkeypatch):
+    monkeypatch.setenv("CARDS_GUILD_ID", "1")
+
+
 class _Rest:
     def __init__(self, *, newest_id=None, post_id=999, fetch_error=None):
         self.newest_id = newest_id

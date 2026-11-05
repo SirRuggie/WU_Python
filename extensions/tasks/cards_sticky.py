@@ -449,6 +449,8 @@ async def _delete_previous(
 
 async def refresh_sticky() -> None:
     """Move the notice back to the bottom, if something has been said under it."""
+    if cards_config.cards_guild_id() is None:
+        return
     if not bot_instance or not mongo_client:
         print("[Cards Sticky] bot or MongoDB not initialized")
         return
@@ -587,6 +589,10 @@ async def on_bot_started(
     mongo: MongoClient = lightbulb.di.INJECTED,
 ) -> None:
     global bot_instance, mongo_client, sticky_task
+
+    if cards_config.cards_guild_id() is None:
+        print("[Cards Sticky] Card trading is turned off.")
+        return
 
     bot_instance = bot
     mongo_client = mongo

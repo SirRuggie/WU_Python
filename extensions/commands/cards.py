@@ -170,6 +170,7 @@ _parse_snowflake_env = cards_config.parse_snowflake_env
 # them.
 CARDS_GUILD_ID = cards_config.cards_guild_id()
 CARDS_CHANNEL_ID = cards_config.cards_channel_id()
+CARDS_DISABLED_MESSAGE = "Card trading is turned off."
 
 # The four category emoji uploaded to the bot. `CardCategory.emoji` keeps its
 # plain unicode, which is still what select placeholders and the rendered board
@@ -376,11 +377,12 @@ def _guild_scope_error(ctx) -> str | None:
     the server could see a trade id, and nobody outside it can guess one.
     """
     if _configured_cards_guild_id() is None:
-        return (
-            "The Card Hub is not configured yet. An operator must set "
-            "`CARDS_GUILD_ID` to the Warriors United Discord server ID."
-        )
+        return CARDS_DISABLED_MESSAGE
     return None
+
+
+def _disabled_notice() -> list[Container]:
+    return [Container(components=[Text(content=CARDS_DISABLED_MESSAGE)])]
 
 
 def _escape_markdown(value: object, *, limit: int = 100) -> str:
@@ -1920,11 +1922,7 @@ def _scan_guild_problem(ctx) -> list[Container] | None:
     """
     configured = _configured_cards_guild_id()
     if configured is None:
-        return _notice(
-            "Open Card Hub in its family server",
-            "The Card Hub is not configured yet. An operator must set "
-            "`CARDS_GUILD_ID` to the family Discord server ID.",
-        )
+        return _disabled_notice()
     here = _guild_id(ctx)
     if here is not None and int(here) != int(configured):
         return _notice(
@@ -2267,7 +2265,7 @@ async def _load_target(
 ) -> tuple[object | None, dict | None, list[Container] | None]:
     scope_error = _guild_scope_error(ctx)
     if scope_error:
-        return None, None, _notice("Open Card Hub in its family server", scope_error)
+        return None, None, _disabled_notice()
     account, _data = await _owned_account(coc_client, int(ctx.user.id), tag)
     if account is None:
         data = _data
@@ -11038,6 +11036,8 @@ async def cards_scan_dm_upload(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
 ) -> None:
     """Consume screenshots only while the member has a live upload session."""
+    if _configured_cards_guild_id() is None:
+        return
     await _handle_card_scan_dm_upload(
         event,
         coc_client=coc_client,
@@ -11068,9 +11068,8 @@ async def prepare_card_inventory_storage(
 ) -> None:
     """Install only the indexes used by the 500-player matching queries."""
     if _configured_cards_guild_id() is None:
-        _log.critical(
-            "Card Hub disabled: CARDS_GUILD_ID must be a valid Discord server ID"
-        )
+        _log.info(CARDS_DISABLED_MESSAGE)
+        return
     channel_id = _configured_cards_channel_id()
     if channel_id is None:
         _log.warning(
@@ -11228,7 +11227,7 @@ async def cards_account_page(
 ):
     scope_error = _guild_scope_error(ctx)
     if scope_error:
-        return _notice("Open Card Hub in its family server", scope_error)
+        return _disabled_notice()
     page, back_tag = _parse_account_page(action_id)
     data = await load_accounts(coc_client, int(ctx.user.id))
     return _account_picker(data, page, back_tag=back_tag)
@@ -11246,7 +11245,7 @@ async def cards_account_select(
     """Open the collection for the account chosen from the picker."""
     scope_error = _guild_scope_error(ctx)
     if scope_error:
-        return _notice("Open Card Hub in its family server", scope_error)
+        return _disabled_notice()
     values = list(getattr(ctx.interaction, "values", ()) or ())
     account, data = await _owned_account(
         coc_client, int(ctx.user.id), _normalize_tag(values[0] if values else "")
@@ -16024,7 +16023,7 @@ async def cards_req_close(
     """Close the member's own want-ad: owner-only, CAS on status:"open"."""
     scope_error = _guild_scope_error(ctx)
     if scope_error:
-        return _notice("Open Card Hub in its family server", scope_error)
+        return _disabled_notice()
     request = await mongo.card_trades.find_one({
         "_id": str(action_id or ""),
         "kind": "open_request",
@@ -16329,7 +16328,7 @@ async def _perform_open_request_claim(
     """
     scope_error = _guild_scope_error(ctx)
     if scope_error:
-        return _notice("Open Card Hub in its family server", scope_error)
+        return _disabled_notice()
     request = await mongo.card_trades.find_one({
         "_id": str(request_id or ""),
         "kind": "open_request",
@@ -16658,7 +16657,7 @@ async def _perform_trade_accept(
     """
     scope_error = _guild_scope_error(ctx)
     if scope_error:
-        return _notice("Open Card Hub in its family server", scope_error)
+        return _disabled_notice()
     trade = await mongo.card_trades.find_one({
         "_id": action_id,
         "kind": "trade",
@@ -17299,7 +17298,7 @@ async def cards_trade_decline(
 ):
     scope_error = _guild_scope_error(ctx)
     if scope_error:
-        return _notice("Open Card Hub in its family server", scope_error)
+        return _disabled_notice()
     trade = await mongo.card_trades.find_one({
         "_id": action_id,
         "kind": "trade",
@@ -17349,7 +17348,7 @@ async def cards_trade_cancel(
 ):
     scope_error = _guild_scope_error(ctx)
     if scope_error:
-        return _notice("Open Card Hub in its family server", scope_error)
+        return _disabled_notice()
     trade = await mongo.card_trades.find_one({
         "_id": action_id,
         "kind": "trade",
@@ -17434,7 +17433,7 @@ async def cards_trade_complete(
 ):
     scope_error = _guild_scope_error(ctx)
     if scope_error:
-        return _notice("Open Card Hub in its family server", scope_error)
+        return _disabled_notice()
     trade = await mongo.card_trades.find_one({
         "_id": action_id,
         "kind": "trade",
