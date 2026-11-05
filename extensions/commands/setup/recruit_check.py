@@ -44,10 +44,10 @@ def check_panel(checks, *, media_configured: bool) -> list:
     rows.append(Text(content=(
         "✅ **Recruit content image storage:** configured"
         if media_configured
-        else "❌ **Recruit content image storage:** R2 is not configured; image uploads are unavailable."
+        else "❌ **Recruit content image storage:** R2 is not set up. Image uploads are not available."
     )))
     rows.append(Text(content=(
-        "This check confirms bot prerequisites only; it does not inspect member channel overwrites."
+        "This check shows only what is needed. It does not check the channel permissions of members."
     )))
     return [Container(accent_color=0xEEEEAA, components=rows)]
 

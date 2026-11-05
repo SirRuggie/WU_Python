@@ -65,6 +65,7 @@ def test_aboutus_grants_the_configured_role_after_rest_guild_check():
     sent = ctx.interaction.execute.await_args.kwargs
     assert sent["flags"] & hikari.MessageFlag.EPHEMERAL
     assert sent["flags"] & hikari.MessageFlag.IS_COMPONENTS_V2
+    assert any(child.content == "Go to WU Strike System and do the required Recruit Gauntlet steps." for child in sent["components"][0].components if hasattr(child, "content"))
     assert any("Next step unlocked" in child.content for child in sent["components"][0].components if hasattr(child, "content"))
     button = sent["components"][0].components[-1].components[0]
     assert button.url == f"https://discord.com/channels/{GUILD_ID}/{join_family.STRIKE_SYSTEM_CHANNEL_ID}"
@@ -90,6 +91,7 @@ def test_aboutus_is_idempotent_for_existing_role():
 
     bot.rest.add_role_to_member.assert_not_awaited()
     assert any("already have" in child.content for child in ctx.interaction.execute.await_args.kwargs["components"][0].components if hasattr(child, "content"))
+    assert any(child.content == "You already have access to WU Strike System. Go to WU Strike System and do the required Recruit Gauntlet steps." for child in ctx.interaction.execute.await_args.kwargs["components"][0].components if hasattr(child, "content"))
 
 
 def test_aboutus_role_grant_failure_is_private_and_keeps_public_post_unchanged():
@@ -101,5 +103,5 @@ def test_aboutus_role_grant_failure_is_private_and_keeps_public_post_unchanged()
 
     sent = ctx.interaction.execute.await_args.kwargs
     assert "do not expose" not in sent["content"]
-    assert "could not grant" in sent["content"]
+    assert "I could not give you access to WU Strike System. Try again in a few minutes." in sent["content"]
     assert sent["flags"] & hikari.MessageFlag.EPHEMERAL

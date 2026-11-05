@@ -34,12 +34,11 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             Separator(divider=True),
                             Text(content=(
                                 "Here’s what to expect from activity and chat in our FWA clans. "
-                                "FWA offers one of the easiest ways to gain loot in the game, "
-                                "which often appeals to players who aren't as active as those who play "
-                                "socially or competitively. As a result, our clans generally aren't very chatty. "
-                                "Clan chat is quiet most of the time, and donations can take a little longer. "
-                                "That doesn't mean you won't receive them—just that they won't always arrive lightning fast. "
-                                "Our Discord server is a good place to socialize if you’d like more conversation.\n\n"
+                                "FWA is one of the easiest ways to get loot in the game. "
+                                "It suits players who are less active than players who play for social contact or for competition. "
+                                "So our clans are not very chatty. "
+                                "Clan chat is quiet most of the time, and donations can take longer. You still get them, but they do not always come fast. "
+                                "Our Discord server is a good place to talk if you want more conversation.\n\n"
                                 "**Would any of this be an issue for you?**"
                             )),
                             Media(
@@ -60,10 +59,10 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             Text(content=f"## ⚖️ **War Weight Check** · {recruit_mention}"),
                             Separator(divider=True),
                             Text(content=(
-                                "We need your **current war weight** to ensure fair matchups. Please:\n\n"
+                                "We need your **current war weight** to make fair matchups. Follow these steps:\n\n"
                                 f"{emojis.red_arrow_right} **Post** a Friendly Challenge in-game.\n"
                                 f"{emojis.red_arrow_right} **Scout** the challenge you posted.\n"
-                                f"{emojis.red_arrow_right} **Tap** on your Town Hall, then hit **Info**.\n"
+                                f"{emojis.red_arrow_right} **Select** your Town Hall. Then select **Info**.\n"
                                 f"{emojis.red_arrow_right} **Upload** a screenshot of the Town Hall information popup here.\n\n"
                                 "*See the example below for reference.*"
                             )),
@@ -86,10 +85,9 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             Separator(divider=True),
                             Text(content=(
                                 "Have you ever heard of **Lazy CWL** before? 🤔\n\n"
-                                "**Lazy CWL** is our laid-back twist on Clan War Leagues,\n"
-                                "designed for fun, flexibility, and zero stress.\n\n"
+                                "**Lazy CWL** is our relaxed way to play Clan War Leagues. It gives you fun, flexibility and no stress.\n\n"
                                 f"{emojis.white_arrow_right} **Have you played Lazy CWL?**\n"
-                                f"{emojis.white_arrow_right} **If so, what's your experience or understanding of it?**\n\n"
+                                f"{emojis.white_arrow_right} **If yes, what do you know about it?**\n\n"
                             )),
                             Media(
                                 items=[
@@ -134,7 +132,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             )),
                             ActionRow(components=[LinkButton(
                                 url=LAZY_CWL_RULES_URL,
-                                label="Deep-Dive Lazy CWL Rules",
+                                label="Lazy CWL Rules",
                             )]),
                             Media(
                                 items=[
@@ -194,8 +192,8 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                                 content=(
                                     "Thank you for applying! Our **FWA leadership team** is now reviewing your submission. "
                                     "This can take a little time as we adjust rosters to accommodate your application.\n\n"
-                                    "We kindly ask that you **do not ping anyone** during this time.\n"
-                                    "Rest assured, we are aware of your presence and will update you as soon as possible."
+                                    "**Do not ping anyone** during this time.\n"
+                                    "We know that you are here. We will update you as soon as we can."
                                 )
                             ),
                             Media(
@@ -213,7 +211,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                         components=[
                             Text(content="## Select FWA Base Town Hall Level"),
                             Text(
-                                content="Use the dropdown menu below to assign the appropriate Town Hall level for the recruit."),
+                                content="Select the Town Hall level of the recruit in the menu below."),
                             ActionRow(
                                 components=[
                                     TextSelectMenu(
@@ -308,16 +306,16 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             Text(content=(
                                 "## 📌 FWA Clans in Clash of Clans: A Quick Overview\n"
                                 f"> Minimum TH for FWA: TH13 {emojis.TH13}\n\n"
-                                "FWA, or Farm War Alliance, is a unique concept in Clash of Clans. It's all about maximizing loot and clan XP, rather than focusing solely on winning wars.\n\n"
+                                "FWA, or Farm War Alliance, is a unique concept in Clash of Clans. The goal is to get the most loot and clan XP, not only to win wars.\n\n"
                                 "### **__<a:FWA:1398229188363948055> What are the benefits?__**\n"
                                 "**<a:Gold_Coins:1398229429892808745> Maximized Loot and XP**\n"
-                                "FWA clans aim to ensure a steady stream of resources and XP, perfect for upgrading bases, troops, and heroes.\n\n"
+                                "FWA clans give a steady supply of resources and XP. Use them to upgrade bases, troops and heroes.\n\n"
                                 "**<a:sleep_zzz:1398229533617946646> War Participation with Upgrading Heroes**\n"
-                                "Unlike traditional wars, in FWA you can participate even if your heroes are down for upgrades, making continuous progress possible.\n\n"
+                                "In FWA you can take part in a war even when your heroes are down for upgrades. So you can upgrade all the time.\n\n"
                                 "**<:CoolOP:1398229909339508839> Fair Wars**\n"
-                                "War winners are decided via a lottery system, ensuring fair chances and significant loot for both sides.\n\n"
+                                "A lottery decides the war winner. Both sides have a fair chance and get a lot of loot.\n\n"
                                 "**<:Waiting:1398229981003382815> Is it against the rules?**\n"
-                                "No, as long as FWA clans follow the game rules and don't use any hacks or exploits, they are within the game's terms of service. It's a unique and accepted way of playing the game."
+                                "No. FWA clans follow the game rules and do not use hacks or exploits. They stay within the game's terms of service. It is a different but accepted way to play."
                             )),
                             Media(
                                 items=[
@@ -352,7 +350,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                         components=[
                             Text(content=(
                                 "## 🏰 Default FWA Base 🏰\n"
-                                "Below is a picture of a TH13 default FWA War Base. Each TH Level is similar with the major difference being TH12+ where the TH is separate. It's a simple layout that allows you to strategically attack for a certain star count but still maximize the available loot."
+                                "Below is a picture of a TH13 default FWA War Base. Each Town Hall level is similar. The main difference is at TH12 and above, where the Town Hall is separate. The layout is simple. You can attack for a set number of stars and still get a lot of loot."
                             )),
                             Media(
                                 items=[
@@ -373,16 +371,16 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             Text(content=(
                                 "### Concept\n"
                                 "We are a laid-back farm/war clan — **NOT A CAMPING CLAN**. All Town Hall levels are welcome, and heroes are not required for war. "
-                                "We understand that you may not feel confident attacking without heroes. Our simple default war plan is Drop 2. "
-                                "Everyone must make at least their first war attack. There is no judgment of the result—just do your best. "
+                                "You may not feel sure about attacking without heroes. This is normal. Our simple default war plan is Drop 2. "
+                                "Everyone must make at least the first war attack. We do not judge the result. Do your best. "
                                 "Our ultimate goal is a stress-free, fun and flexible experience.\n\n"
                                 "### Purpose\n"
-                                "Our goal is to cultivate a fun and flexible war environment. Here, heroes can be down, ensuring every member has the chance to partake "
-                                "in war attacks, freeing the mind from the stress of sitting out due to hero upgrades.\n\n"
+                                "Our goal is a fun and flexible war clan. Heroes can be down here. "
+                                "Every member can make war attacks, and nobody sits out because of hero upgrades.\n\n"
                                 "### Core Rules\n"
-                                "**No Camping Allowed:** This clan is dedicated to warring. Active participation is a must.\n"
+                                "**No camping:** This clan is for war. Members must take part.\n"
                                 "**Minimum Participation:** Even with heroes down, every member is required to execute at least one war attack. "
-                                "Failure to participate in war earns a strike. Accumulate enough strikes, and you risk replacement."
+                                "Failure to participate in war earns a strike. If you get enough strikes, we can replace you."
                             )),
                             Media(
                                 items=[
@@ -402,11 +400,10 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             Text(content=(
                                 "Our Tactical/Competitive War Clans are divided into two groups.\n\n"
                                 "**High Level:** TH13+ Non-Rushed\n\n"
-                                "We always aim for 3 ⭐ in war. Don’t worry if you fall short—not every attack will be perfect. "
-                                "We expect members to follow the established war format and commit to winning every "
-                                "war as part of an overall team effort.\n\n"
+                                "We always aim for 3 ⭐ in war. Do not worry if you get fewer stars. Nobody is perfect. "
+                                "We expect members to follow the war format and to work as a team to win every war.\n\n"
                                 "**__WE WIN AS A TEAM. WE LOSE AS A TEAM.__**\n\n"
-                                "Attack at full strength, with heroes available and no major upgrades that weaken your attack."
+                                "Attack at full strength. Use your heroes. Do not upgrade anything big that makes your attack weaker."
                             )),
                             Media(
                                 items=[
@@ -432,11 +429,11 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                                 "**❌ __LOSE WAR__ ❌**\n"
                                 "1st hit: ⭐⭐ on your mirror.\n"
                                 "2nd hit: ⭐ on BASE 1 for loot, or wait for the 8-hour cleanup call in Discord. The goal is 100 stars!\n\n"
-                                "There are two other plans \"Blacklisted War\" and \"Mismatch War\" but the above two are the most used.\n\n"
+                                "There are two other plans, \"Blacklisted War\" and \"Mismatch War\". We use the two plans above most of the time.\n\n"
                                 "War Plans are posted via Discord and Clan Mail. Don't hesitate to ping me in your Clan's Chat Channel "
                                 "with any questions you may have.\n\n"
-                                "Following the posted war plans is an important part of FWA. Deviating from them can cause headaches and potentially "
-                                "harm the clan. **Don't be \"that guy\"**...🫡"
+                                "Follow the posted war plans. This is an important part of FWA. If you do not follow them, you can cause problems and harm the clan. "
+                                "**Don't be \"that guy\"**...🫡"
                             )),
                             Media(
                                 items=[
@@ -452,10 +449,10 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             Text(content=(
                                 "✅ **Attack in wars. Every. Single. Time.**\n"
                                 "✅ **Follow posted war plans. They're not suggestions—they're the playbook.**\n"
-                                "✅ **Check Discord & Clan Mail for instructions.**\n\n"
+                                "✅ **Check Discord and Clan Mail for instructions.**\n\n"
                                 "Wondering what happens if you ghost a war?\n"
                                 "👻 **You land on the Naughty List.**\n"
-                                "That means we start looking for a replacement. No hard feelings, just FWA business.\n\n"
+                                "That means we look for a replacement. No hard feelings, just FWA business.\n\n"
                                 "Let's keep it fun, but let's keep it serious too. 💥"
                             )),
                             Media(
@@ -538,7 +535,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                         ]
                     ),
                 ]
-    raise ValueError("Choose a supported recruitment question.")
+    raise ValueError("Select a supported recruitment question.")
 
 
 def native_base_result(*, recruit_mention: str, recruiter_mention: str,
@@ -559,7 +556,7 @@ def native_base_result(*, recruit_mention: str, recruiter_mention: str,
                             components=[
                                 LinkButton(
                                     url=base_link,
-                                    label="Click Me!",
+                                    label="Open base link",
                                 )
                             ]
                         ),

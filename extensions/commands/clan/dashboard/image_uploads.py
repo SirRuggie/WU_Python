@@ -202,7 +202,7 @@ async def _open(ctx: Any, action_id: str, mongo: MongoClient, kind: str) -> None
         return
     parsed = _parse_target(kind, action_id)
     identity = _identity(ctx)
-    label = "Clan Management" if kind == "clan" else "FWA Representative"
+    label = "Clan Management" if kind == "clan" else "FWA Clan Rep"
     if not _role_present(ctx):
         await ctx.respond(f"❌ {label} role required.", ephemeral=True)
         return
@@ -231,7 +231,7 @@ async def _open(ctx: Any, action_id: str, mongo: MongoClient, kind: str) -> None
         custom_id=f"dashboard_image_submit:{token}",
         components=[FileUploadModalComponentBuilder(
             custom_id="image", label=title,
-            description="PNG, JPG, GIF, or WEBP; maximum 10 MB. This saves the replacement immediately.",
+            description="PNG, JPG, GIF or WEBP. Maximum 10 MB. The new image is saved at once.",
         )],
     )
 
@@ -309,7 +309,7 @@ async def dashboard_image_submit(
     if (guild_id, user_id, channel_id) != (target.guild_id, target.owner_id, target.source_channel_id) or not source_matches:
         await _edit(interaction, _problem_panel("This upload belongs to another dashboard editor."))
         return
-    label = "Clan Management" if target.kind == "clan" else "FWA Representative"
+    label = "Clan Management" if target.kind == "clan" else "FWA Clan Rep"
     if not _role_present(ctx):
         await _edit(interaction, _problem_panel(f"{label} role required."))
         return
@@ -332,16 +332,16 @@ async def dashboard_image_submit(
         name = FWA_WAR_BASE_NAME if target.slot == "war" else FWA_ACTIVE_BASE_NAME
         uploaded_url = await media.upload_bytes(data, folder=folder, name=name)
     except (requests.RequestException, asyncio.TimeoutError, ValueError, OSError, MediaStoreError):
-        await _edit(interaction, _problem_panel("I could not validate and store that image. Nothing was changed; try again shortly.", target))
+        await _edit(interaction, _problem_panel("I could not check and save that image. Nothing changed. Try again later.", target))
         return
     try:
         saved = await _persist(target, mongo, uploaded_url)
     except Exception:
         LOG.exception("dashboard image Mongo write failed kind=%s slot=%s key=%s", target.kind, target.slot, target.key)
-        await _edit(interaction, _problem_panel("The image uploaded, but I could not confirm its dashboard save. Reopen the editor to check before retrying.", target))
+        await _edit(interaction, _problem_panel("The image uploaded, but I could not confirm the save. Open the editor again. Check the image before you try again.", target))
         return
     if not saved:
-        await _edit(interaction, _problem_panel("This image changed while the upload was open. Nothing was saved; reopen the editor and try again.", target))
+        await _edit(interaction, _problem_panel("This image changed during the upload. Nothing was saved. Open the editor again and try again.", target))
         return
     _update_memory(target, uploaded_url)
     await _edit(interaction, _success_panel(target, uploaded_url))

@@ -31,7 +31,7 @@ def test_exact_exception_and_only_developer_ping():
     assert 'ValueError: non-recruiter role 1004254963721060452' in kw['content']
     assert 'ticket_v2_create:public:main' in kw['content']
     assert '<@123>' in kw['content']
-    assert 'Server Dev has been notified' in result
+    assert 'The Server Dev knows about this and will check it.' in result
 
 
 def test_failed_notification_still_answers_without_false_success():
@@ -39,7 +39,9 @@ def test_failed_notification_still_answers_without_false_success():
     asyncio.run(reporting.edit_error(ctx, content='Ticketing unavailable.'))
     answer = ctx.interaction.edit_initial_response.call_args.kwargs['content']
     assert 'has been notified' not in answer
-    assert 'could not notify' in answer
+    assert 'knows about this' not in answer
+    assert answer == 'Ticketing unavailable.\nI could not tell the Server Dev. Ask the server staff for help.'
+    assert ctx.interaction.app.rest.create_message.await_count == 1
 
 
 def test_secrets_redacted_and_message_bounded(monkeypatch):
@@ -78,7 +80,7 @@ def test_dispatcher_recruit_failure_sends_alert():
             await components._refuse(ctx, 'Something went wrong.')
     asyncio.run(run())
     assert 'RuntimeError: database unavailable' in ctx.interaction.app.rest.create_message.call_args.kwargs['content']
-    assert 'has been notified' in ctx.respond.call_args.args[0]
+    assert 'The Server Dev knows about this and will check it.' in ctx.respond.call_args.args[0]
 
 
 def test_onboarding_private_error_reports_underlying_exception():
@@ -92,4 +94,4 @@ def test_onboarding_private_error_reports_underlying_exception():
             await _private_error(ctx, 'I could not grant family access.')
     asyncio.run(run())
     assert 'Missing Manage Roles' in ctx.interaction.app.rest.create_message.call_args.kwargs['content']
-    assert 'has been notified' in ctx.interaction.execute.call_args.kwargs['content']
+    assert 'The Server Dev knows about this and will check it.' in ctx.interaction.execute.call_args.kwargs['content']

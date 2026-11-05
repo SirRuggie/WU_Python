@@ -40,7 +40,7 @@ def test_rosters_command_opens_fwa_dashboard_directly(monkeypatch):
 
 def test_dashboard_starts_without_a_clan_or_implicit_bulk_scope():
     rendered = dashboard.render_home([_doc()], [_clan(1)], None, NOW, token="preview")
-    assert "Choose a clan" in _text(rendered)
+    assert "Select a clan" in _text(rendered)
     assert "Captured:" not in _text(rendered)
 
 def test_overview_has_explicit_capture_facts_and_no_internal_list_id():
@@ -135,7 +135,7 @@ def test_capture_reports_partial_failure_without_claiming_success(monkeypatch):
     monkeypatch.setattr(dashboard, "_clans", clans)
     token, nonce, ctx = _bound_session("capture", [], capture_tags=["#A1", "#A2"])
     result = asyncio.run(dashboard.handle_capture_yes(ctx=ctx, action_id=f"{token}|{nonce}", mongo=object()))
-    assert "1" in result[0] and "could not" in result[0]
+    assert result[0] == "Saved lists captured: 1. 1 could not be captured. Refresh the page to check."
 
 
 def test_apply_confirmation_passes_raw_expected_list_ids_and_keeps_per_clan_results(monkeypatch):
@@ -263,6 +263,7 @@ def test_main_send_review_and_confirmation_are_section_scoped(monkeypatch):
     review = asyncio.run(dashboard._review(object(), token, "#A1", "send"))
     assert f"Destination: <#{dashboard.service.MAIN_CWL_CHANNEL}>" in _text(review)
     assert "1 linked Discord accounts" in _text(review)
+    assert "The recipients are checked again when you confirm." in _text(review)
     nonce = next(iter(dashboard._sessions[token]["pending"]))
     result = asyncio.run(dashboard._apply_bound(object(), token, nonce, "send", _Ctx(token)))
     assert calls == [("#A1", doc["_id"], "MAIN")]
@@ -332,3 +333,164 @@ def test_send_confirmation_rejects_changed_destination(monkeypatch):
     result = asyncio.run(dashboard._apply_bound(object(), token, nonce, "send", ctx))
     assert "Return channel changed" in _text(result)
     send.assert_not_awaited()
+
+
+def test_invalid_reminder_frequency_does_not_open_review(monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(dashboard, '_handler_ok', AsyncMock(return_value=('token', '#CLAN')))
+    review = AsyncMock()
+    monkeypatch.setattr(dashboard, '_review', review)
+    ctx = SimpleNamespace(interaction=SimpleNamespace(values=['invalid']))
+    result = asyncio.run(dashboard.handle_frequency(ctx=ctx, action_id='token|#CLAN', mongo=object()))
+    assert 'Select a frequency' in _text(result)
+    assert 'Select one of the offered reminder frequencies.' in _text(result)
+    review.assert_not_awaited()
+
+
+def test_replace_review_exactly_explains_preserving_old_roster(monkeypatch):
+    from unittest.mock import AsyncMock
+    token = dashboard._session(44, 55)
+    monkeypatch.setattr(dashboard, '_active', AsyncMock(return_value=[_doc()]))
+    review = asyncio.run(dashboard._review(object(), token, '#A1', 'replace'))
+    assert 'If the new roster does not save, the current roster stays.' in _text(review).splitlines()
+    assert any(getattr(node, 'label', '') == 'Confirm' for node in _nodes(review))
+
+
+def test_expired_capture_exactly_requests_new_review(monkeypatch):
+    from unittest.mock import AsyncMock
+    token = dashboard._session(44, 55)
+    monkeypatch.setattr(dashboard, '_handler_ok', AsyncMock(return_value=(token, 'old')))
+    save = AsyncMock()
+    monkeypatch.setattr(dashboard.service, 'save_list', save)
+    result = asyncio.run(dashboard.handle_capture_yes(ctx=_Ctx(token), action_id='ignored', mongo=object()))
+    assert 'Refresh the page. Then review the capture again.' in _text(result).splitlines()
+    save.assert_not_awaited()
+
+
+def test_uncertain_reminder_result_uses_exact_guidance_without_retry(monkeypatch):
+    from unittest.mock import AsyncMock
+    doc = _doc()
+    token, nonce, ctx = _bound_session('send', [doc])
+    monkeypatch.setattr(dashboard, '_active', AsyncMock(return_value=[doc]))
+    monkeypatch.setattr(dashboard.service, 'effective_reminder_channel', AsyncMock(return_value=dashboard._sessions[token]['pending'][nonce]['destination']))
+    monkeypatch.setattr(dashboard.service, 'remind_now', AsyncMock(side_effect=OSError('offline')))
+    monkeypatch.setattr(dashboard, 'build_home', AsyncMock(return_value=[]))
+    result = asyncio.run(dashboard._apply_bound(object(), token, nonce, 'send', ctx))
+    assert '• Clan 1: Could not confirm the result. Check Discord and the saved list before you try again.' in _text(result).splitlines()
+    assert not any(getattr(node, 'label', '') == 'Retry Failed Clans' for node in _nodes(result))
+
+
+def test_frequency_copy_keeps_enabled_and_paused_states(monkeypatch):
+    from unittest.mock import AsyncMock
+    token = dashboard._session(44, 55)
+    docs = [_doc(1), _doc(2)]
+    docs[0]['reminders']['enabled'] = True
+    monkeypatch.setattr(dashboard, '_handler_ok', AsyncMock(return_value=(token, 'ALL')))
+    monkeypatch.setattr(dashboard, '_active', AsyncMock(return_value=docs))
+    save = AsyncMock(return_value={'ok': True})
+    monkeypatch.setattr(dashboard.service, 'set_reminders', save)
+    home = AsyncMock(return_value=['home'])
+    monkeypatch.setattr(dashboard, 'build_home', home)
+    ctx = _Ctx(token, ['60'])
+    assert asyncio.run(dashboard.handle_frequency_save(ctx=ctx, action_id='ignored', mongo=object())) == ['home']
+    assert [call.args[:3] for call in save.await_args_list] == [('#A1', True, 60), ('#A2', False, 60)]
+    assert [call.kwargs['expected_list_id'] for call in save.await_args_list] == ['saved-1', 'saved-2']
+    assert home.await_args.args[2] == 'Frequency saved. Running pings are updated. Paused pings stay paused.'
+
+
+def test_bulk_overview_names_save_action_and_existing_rosters():
+    doc = _doc()
+    doc['legacy_snapshot_id'] = 'old-roster'
+    rendered = dashboard.render_home([doc], [_clan(1), _clan(2)], 'ALL', NOW, {'#A1': 1}, token='preview')
+    summary = next(node.content for node in _nodes(rendered)
+                   if getattr(node, 'content', '').startswith('### All FWA clans'))
+    assert summary == (
+        '### All FWA clans\nSaved rosters: 1 · **Clans to capture: 1.**\n'
+        'Save Current Members saves the current members of the clans without a roster. Existing rosters are kept.\n'
+        'Your previous saved rosters were carried over to this dashboard.\n'
+        '**Need a fresh roster?** Select that clan and select **Replace Saved Members** to review the change.\n'
+        'Players away: 1'
+    )
+    assert any(getattr(node, 'label', '') == 'Save Current Members (1 clans)' for node in _nodes(rendered))
+
+
+def test_unselected_roster_views_preserve_existing_scope_copy():
+    empty = dashboard.render_home([], [_clan(1)], None, NOW, token='preview')
+    assert '### Select a clan\nSelect one clan above to inspect its saved-list status.' in [n.content for n in _nodes(empty) if hasattr(n, 'content')]
+    players = dashboard.render_home([], [_clan(1)], None, NOW, token='preview', tab='players')
+    assert 'Select one clan with a saved list to view or edit players.' in [n.content for n in _nodes(players) if hasattr(n, 'content')]
+    reminders = dashboard.render_home([], [_clan(1)], None, NOW, token='preview', tab='reminders')
+    assert 'No saved lists are selected.' in [n.content for n in _nodes(reminders) if hasattr(n, 'content')]
+
+
+def test_capture_review_preserves_scope_and_never_saves_before_confirmation(monkeypatch):
+    from unittest.mock import AsyncMock
+    token = dashboard._session(44, 55)
+    active = AsyncMock(return_value=[])
+    monkeypatch.setattr(dashboard, '_active', active)
+    monkeypatch.setattr(dashboard, '_clans', AsyncMock(return_value=[_clan(1)]))
+    save = AsyncMock()
+    monkeypatch.setattr(dashboard.service, 'save_list', save)
+    review = asyncio.run(dashboard._review(object(), token, '#A1', 'capture'))
+    assert 'This creates saved lists from members currently in those clans.' in _text(review).splitlines()
+    assert any(getattr(node, 'label', '') == 'Confirm' for node in _nodes(review))
+    active.return_value = [_doc()]
+    unavailable = asyncio.run(dashboard._review(object(), token, '#A1', 'capture'))
+    assert 'Select a clan without an active saved list.' in _text(unavailable).splitlines()
+    active.return_value = []
+    missing = asyncio.run(dashboard._review(object(), token, '#A1', 'send'))
+    assert 'There are no active saved lists in this scope.' in _text(missing).splitlines()
+    save.assert_not_awaited()
+
+
+def test_expired_player_roster_is_not_edited(monkeypatch):
+    from unittest.mock import AsyncMock
+    token = dashboard._session(44, 55)
+    monkeypatch.setattr(dashboard.store, 'get_active', AsyncMock(return_value=None))
+    home = AsyncMock(return_value=['home'])
+    monkeypatch.setattr(dashboard, 'build_home', home)
+    assert asyncio.run(dashboard._player_page(object(), token, '#A1', 0)) == ['home']
+    assert home.await_args.args[2] == 'The saved list is no longer active.'
+
+
+def test_remove_roster_review_and_stale_confirmation_keep_list_identity(monkeypatch):
+    from unittest.mock import AsyncMock
+    token = dashboard._session(44, 55)
+    ctx = _Ctx(token, ['#P1'])
+    monkeypatch.setattr(dashboard, '_handler_ok', AsyncMock(return_value=(token, '#A1,0')))
+    monkeypatch.setattr(dashboard.store, 'get_active', AsyncMock(return_value=_doc()))
+    remove = AsyncMock(side_effect=dashboard.store.StaleListError())
+    monkeypatch.setattr(dashboard.store, 'remove_players', remove)
+    review = asyncio.run(dashboard.handle_remove_pick(ctx=ctx, action_id='ignored', mongo=object()))
+    assert 'They will be removed from this saved list.' in _text(review).splitlines()
+    remove.assert_not_awaited()
+    nonce = next(iter(dashboard._sessions[token]['pending']))
+    monkeypatch.setattr(dashboard, '_handler_ok', AsyncMock(return_value=(token, nonce)))
+    page = AsyncMock(return_value=['stale'])
+    monkeypatch.setattr(dashboard, '_player_page', page)
+    assert asyncio.run(dashboard.handle_remove_yes(ctx=ctx, action_id='ignored', mongo=object())) == ['stale']
+    assert remove.await_args.kwargs['expected_list_id'] == 'saved-1'
+    assert page.await_args.args[4] == 'The saved list changed. Refresh and try again.'
+
+
+def test_expired_roster_actions_give_exact_recovery_without_writes(monkeypatch):
+    from unittest.mock import AsyncMock
+    ctx = _Ctx('expired')
+    assert not asyncio.run(dashboard._allow(ctx, 'expired'))
+    assert ctx.responses == [('This dashboard has expired. Run /manage. Then select CWL Return Pings.', True)]
+    monkeypatch.setattr(dashboard, '_handler_ok', AsyncMock(return_value=(None, None)))
+    save = AsyncMock()
+    remove = AsyncMock()
+    monkeypatch.setattr(dashboard.service, 'save_list', save)
+    monkeypatch.setattr(dashboard.store, 'remove_players', remove)
+    for action in (dashboard.handle_section, dashboard.handle_clans_page, dashboard.handle_pick,
+                   dashboard.handle_cancel, dashboard.handle_tab, dashboard.handle_home,
+                   dashboard.handle_capture, dashboard.handle_capture_yes, dashboard.handle_replace,
+                   dashboard.handle_close, dashboard.handle_disable, dashboard.handle_enable,
+                   dashboard.handle_send_yes, dashboard.handle_replace_yes, dashboard.handle_close_yes,
+                   dashboard.handle_enable_yes, dashboard.handle_disable_yes, dashboard.handle_players_page,
+                   dashboard.handle_remove, dashboard.handle_remove_pick, dashboard.handle_remove_yes):
+        result = asyncio.run(action(ctx=ctx, action_id='expired', mongo=object()))
+        assert 'Run /manage. Then select CWL Return Pings.' in _text(result).splitlines()
+    save.assert_not_awaited()
+    remove.assert_not_awaited()

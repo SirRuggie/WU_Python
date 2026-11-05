@@ -35,7 +35,7 @@ async def dashboard_page(
     icon_url = guild.make_icon_url(size=256) if guild else None
     heading = Text(content=(
         "### Clan Management Dashboard\n"
-        "Welcome to Warrior's United Clan Management Dashboard\n\n"
+        "Welcome to the Warriors United Clan Management Dashboard\n\n"
         f"{emojis.white_arrow_right}**Clans in System:** `{clan_count}`\n"
     ))
     components = [
@@ -56,22 +56,22 @@ async def dashboard_page(
                         TextSelectMenu(
                             max_values=1,
                             custom_id=f"clan_database:",
-                            placeholder="Make a Selection...",
+                            placeholder="Select an option",
                             options=[
                                 SelectOption(
                                     emoji=emojis.view.partial_emoji,
                                     label="View Clan List",
-                                    description="View all clans & their IDs",
+                                    description="View all clans and their IDs",
                                     value="view_clan_list"),
                                 SelectOption(
                                     emoji=emojis.edit.partial_emoji,
                                     label="Update Clan Information",
-                                    description="Edit or Manage Clan Details",
+                                    description="Edit clan details",
                                     value="update_clan_information"),
                                 SelectOption(
                                     emoji=1387882523358527608,
                                     label="Manage FWA Data",
-                                    description="Update FWA Links & Images",
+                                    description="Update FWA links and images",
                                     value="manage_fwa_data"),
                             ]),
                     ]),

@@ -139,7 +139,7 @@ def page(data, notice=""):
             Row().add_interactive_button(
                 hikari.ButtonStyle.SECONDARY,
                 f"stafftpl:{token}:home",
-                label="Return to Main / FWA",
+                label="Back to Main / FWA",
             ),
         ]
     else:
@@ -157,7 +157,7 @@ def page(data, notice=""):
         Row().add_interactive_button(
             hikari.ButtonStyle.SECONDARY,
             f'manage_home:{data["manage_token"]}',
-            label="Return to Management Home",
+            label="Management Home",
         ),
     ]
     return [Container(accent_color=GOLDENROD_ACCENT, components=items)]
@@ -201,7 +201,7 @@ async def action(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_
         data = await state(ctx, mongo, token)
         if is_edit:
             if not data.get("kind"):
-                raise ValueError("Choose Main or FWA first.")
+                raise ValueError("Select Main or FWA first.")
             key = "new" if verb == "add" else verb.split(":", 1)[1]
             if verb == "add":
                 if len(data["template"]["sections"]) >= content.MAX_SECTIONS:
@@ -273,7 +273,7 @@ async def action(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_
             role = int(config.get(f"{data['kind']}_thread_recruiter_role") or 0)
             await ctx.interaction.edit_initial_response(
                 components=page(
-                    data, "Preview below is private to you; no roles will be pinged."
+                    data, "Only you can see this preview. It does not ping any role."
                 ),
                 **NO_MENTIONS,
             )
@@ -330,7 +330,7 @@ async def form(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
         )
         await ctx.interaction.edit_initial_response(
             components=page(
-                data, "Draft updated. Choose Save template to use these changes."
+                data, "Draft updated. Select Save template to use these changes."
             ),
             **NO_MENTIONS,
         )

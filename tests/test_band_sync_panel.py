@@ -68,10 +68,10 @@ def test_panel_container_exact_layout_zero_responses():
     assert _texts(container) == [
         panel.POSTED_TITLE,
         f"<@&{band_monitor.ALLOWED_ROLE_ID}>",
-        "Review the **FWA Sync Time** and select your availability below.",
-        f"{str(emojis.yes)} - Available to Start",
-        f"{str(emojis.maybe)} - Maybe Available to Start",
-        f"{str(emojis.no)} - Unavailable to Start",
+        "Check the **FWA Sync Time**. Then select your availability below.",
+        f"{str(emojis.yes)} - I can start",
+        f"{str(emojis.maybe)} - I may be able to start",
+        f"{str(emojis.no)} - I cannot start",
         "## Rep Availability",
         "*No responses yet...*",
         panel.CHANGED_NOTE,
@@ -600,7 +600,7 @@ def test_status_rows_buttons_and_select():
 
     select = row2.components[0]
     assert select.custom_id == "fwa_sync_reminders:sync-1"
-    assert select.placeholder == "Reminders (choose Yes or Maybe first)…"
+    assert select.placeholder == "Reminders (select Yes or Maybe first)…"
     assert [option.value for option in select.options] == ["60", "10", "0", "all"]
 
 

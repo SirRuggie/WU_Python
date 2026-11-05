@@ -1324,10 +1324,10 @@ def test_config_read_failure_exactly_cancels_untouched_slot(monkeypatch):
     }]
     assert handlers.user_cooldowns == {}
     assert "❌ Test tickets are not available now. No ticket was created." in edits[-1]["content"]
-    assert "Server Dev has been notified" in edits[-1]["content"]
+    assert "The Server Dev knows about this and will check it." in edits[-1]["content"]
     assert edits[-1]["content"] == (
         "❌ Test tickets are not available now. No ticket was created.\n"
-        "The Server Dev has been notified so they can look into this."
+        "The Server Dev knows about this and will check it."
     )
 
 

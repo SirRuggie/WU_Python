@@ -48,10 +48,10 @@ def test_panel_explains_fixed_channel_and_reminder_lifecycle():
     text = _text(components)
     assert f"<#{gauntlet_help.HELP_CHANNEL_ID}>" in text
     assert "30 minutes" in text
-    assert "deletes after 10 minutes" in text
-    assert "next Gauntlet step resets" in text
+    assert "The reminder is deleted after 10 minutes." in text
+    assert "When a recruit completes the next Gauntlet step, the timer starts again." in text
     assert "application ticket" in text
-    assert "30 minutes of quiet" in text
+    assert "The help message moves to the bottom of the channel after 30 minutes with no messages." in text
     buttons = _buttons(components)
     assert {button["custom_id"] for button in buttons} == {
         "gauntlet_help_edit:draft", "content_back_root:draft", "manage_home:home",
@@ -102,3 +102,9 @@ def test_save_persists_valid_delay_and_confirms(monkeypatch):
     ctx.defer.assert_awaited_once_with(ephemeral=True)
     rendered = ctx.interaction.edit_initial_response.await_args.kwargs["components"]
     assert "Reminder delay saved: 45 minutes." in _text(rendered)
+
+
+def test_panel_uses_approved_reminder_explanation():
+    rows = _built(gauntlet_help.panel({'_id': 'draft'}, {'reminder_minutes': 30, 'enabled': True}))
+    assert f'Recruit help is in <#{gauntlet_help.HELP_CHANNEL_ID}>. When a recruit makes no progress, one reminder is sent after **30 minutes**.' in [item['content'] for item in rows if 'content' in item]
+    assert 'The reminder is deleted after 10 minutes. When a recruit completes the next Gauntlet step, the timer starts again. When a recruit opens an application ticket, reminders stop.' in [item['content'] for item in rows if 'content' in item]

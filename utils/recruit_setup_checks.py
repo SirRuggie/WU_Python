@@ -181,7 +181,7 @@ async def inspect_recruit_setup(
     except hikari.HTTPError:
         issues.append("I could not read my server roles. Check my server access and try again.")
     except Exception:
-        issues.append("I could not verify my server roles right now. Try again shortly.")
+        issues.append("I could not check my server roles. Try again in a few minutes.")
     else:
         issues.extend(_role_issues(
             guild_id=guild_id,
@@ -195,7 +195,7 @@ async def inspect_recruit_setup(
     except hikari.HTTPError:
         issues.append("I could not read the next onboarding channel. Check its server access and try again.")
     except Exception:
-        issues.append("I could not verify the next onboarding channel right now. Try again shortly.")
+        issues.append("I could not check the next onboarding channel. Try again in a few minutes.")
     else:
         if _as_int(getattr(next_channel, "guild_id", 0)) != guild_id:
             issues.append("The next onboarding channel is not in this server.")

@@ -332,3 +332,18 @@ def test_edit_save_then_war_command_posts_saved_content(monkeypatch):
     assert send.await_count == 1
     assert "Edited loss against Enemy" in str(send.await_args.kwargs["components"][0].build())
     assert send.await_args.kwargs["role_mentions"] == [12345]
+
+
+def test_conflict_copy_preserves_cas_and_does_not_advance_draft(monkeypatch):
+    state = {'guild_id': 20, 'variant': 'win', 'template': {'revision': 2}, 'user_id': 10}
+    monkeypatch.setattr(ui, '_state', AsyncMock(return_value=(state, None)))
+    monkeypatch.setattr(ui, '_dirty', lambda _state: True)
+    monkeypatch.setattr(ui, '_editor', lambda _state, notice: notice)
+    monkeypatch.setattr(ui, 'save_with_history', AsyncMock(side_effect=ui.content.TemplateConflict()))
+    advance = AsyncMock()
+    monkeypatch.setattr(ui, '_next', advance)
+    assert run(ui.reset_confirm.__wrapped__._func(Context(), 'draft', mongo=object())) == 'This template changed elsewhere. Reopen it before you reset it.'
+    returned, notice = run(ui._autosave(object(), state, state['template']))
+    assert returned is state
+    assert notice == 'Not saved: . Reopen this template before you try again.'
+    advance.assert_not_awaited()

@@ -57,9 +57,9 @@ def parse_eastern_start(date, time):
         raise ValueError('Use a date like 10/10/2026 and a time like 6:00 PM.') from None
     start = naive.replace(tzinfo=EASTERN)
     if start.astimezone(timezone.utc).astimezone(EASTERN).replace(tzinfo=None) != naive:
-        raise ValueError('That time is skipped by daylight saving. Choose another time.')
+        raise ValueError('That time is skipped by daylight saving. Select another time.')
     if start.utcoffset() != start.replace(fold=1).utcoffset():
-        raise ValueError('That time occurs twice when daylight saving ends. Choose a time before 1 AM or after 2 AM.')
+        raise ValueError('That time occurs twice when daylight saving ends. Select a time before 1 AM or after 2 AM.')
     return start
 
 
@@ -154,11 +154,11 @@ def render(data):
               Text(content='\n\n'.join(lines) or ('No gold recorded yet.' if data['entrants'] else '**Be the first to join!**'))]
     if data.get('warning'):
         parts.append(Text(content='⚠️ Some battle data could not refresh. Scores may be incomplete.'))
-    footer = f"-# {data['entrants']} joined • {data['accounts']} accounts • Tie: first to reach the score."
+    footer = f"-# {data['entrants']} joined • {data['accounts']} accounts • In a tie, the first account to reach the score wins."
     if data.get('refreshed'):
         footer += f"\n-# Last refreshed: {discord_time(data['refreshed'])}"
     if not final:
-        footer += '\n-# Auto-refresh: every 10 min'
+        footer += '\n-# Refreshes every 10 minutes'
     parts += [Separator(divider=True),Text(content=footer),ActionRow(components=[
         Button(style=hikari.ButtonStyle.SUCCESS,label='Join Gold Rush',emoji='💰',
                custom_id=f"goldrush_join:{event['id']}",is_disabled=bool(ended or final)),
@@ -172,7 +172,7 @@ def render(data):
         if not rows:
             result = 'No entered account recorded gold. There is no winner this time.'
         elif len(rows)>1 and (rows[0]['gold'],rows[0]['reached_at']) == (rows[1]['gold'],rows[1]['reached_at']):
-            result = 'Exact tie! Staff will review the tied accounts before announcing a winner.'
+            result = 'Exact tie! Staff will review the tied accounts before they announce a winner.'
         else:
             winner = rows[0]
             label = data.get('labels',{}).get(winner['user_id'],'Discord profile')
@@ -246,7 +246,7 @@ async def join(ctx,action_id,**kwargs):
             raise ValueError('No eligible linked account found. Link your Clash account and ask staff to check the family roster.')
         added=await database(store.join_event,action_id,str(ctx.user.id),tags)
         count=await database(lambda db: db.execute('SELECT count(*) FROM goldrush_entries WHERE event_id=? AND user_id=?',(action_id,str(ctx.user.id))).fetchone()[0])
-        notice='\nSome links could not load. Tap Join again later to add them.' if links.unavailable else ''
+        notice='\nSome links could not load. Select Join again later to add them.' if links.unavailable else ''
         await ctx.respond(f"{'✅ You joined Gold Rush!' if added else '✅ You are already entered.'}\n"
                           f"**{count} accounts entered.** Each ranks separately.\n"
                           + ('You are entered. Gold starts counting at '+discord_time(event['starts_at'])+'.' if event['starts_at'] and store.utcnow()<datetime.fromisoformat(event['starts_at']) else 'Gold counts from the event start.')+notice,ephemeral=True,
@@ -293,7 +293,7 @@ def render_personal(data, user_id, page=0):
     lines = [f"**{safe_name(r['name'])} — {r['gold']:,} gold**\n-# `{r['tag']}` • {r['status']}" for r in rows[page*12:(page+1)*12]]
     parts.append(Text(content='\n\n'.join(lines) or 'No linked family accounts found.'))
     if any(r['status']=='Not entered' for r in rows):
-        parts.append(Text(content='Tap **Join Gold Rush** on the event post to enter.'))
+        parts.append(Text(content='Select **Join Gold Rush** on the event post to enter.'))
     if data.get('unavailable'):
         parts.append(Text(content='Some account links could not load. Showing available accounts.'))
     if rows:
@@ -389,7 +389,7 @@ async def schedule(ctx,action_id,**kwargs):
                 Text(content=f"**Start:** {discord_time(change['starts_at'])}\n**End:** {discord_time(change['ends_at'])}\n\n"
                      + ('**All current event scores will reset to 0 until the new start.**\n' if future else '**Scores will be recalculated for this time window.**\n')
                      + 'Signups stay. Saved battle history stays. Only gold inside this window counts.\nThis confirmation expires in 10 minutes.'),
-                ActionRow(components=[Button(style=hikari.ButtonStyle.DANGER,label='Confirm schedule & reset scores',
+                ActionRow(components=[Button(style=hikari.ButtonStyle.DANGER,label='Confirm schedule and reset scores',
                     custom_id=f"goldrush_confirm:{change['id']}")]),
             ])])
         except ValueError as error:

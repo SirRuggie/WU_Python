@@ -143,7 +143,11 @@ def test_command_records_only_confirmed_post_and_never_retries(monkeypatch, fail
         assert send.await_count == 1
         assert len(db.fwa_war_plans.rows) == (1 if failure == 'none' else 0)
         if failure == 'receipt':
-            assert 'Message posted, but' in str(ctx.events)
+            response = next(event[2] for event in reversed(ctx.events) if event[0] == 'respond')
+            assert response['content'].splitlines()[-1] == ('The message was posted, but its war plan record could not be saved. '
+                                                       'Strikes use only saved, confirmed war plans. If no record is saved, the normal rules apply.')
+            assert response['ephemeral'] is True
+            assert response['user_mentions'] is False and response['role_mentions'] is False and response['mentions_everyone'] is False
             assert 'Error Posting Message' not in str(ctx.events)
         if failure == 'none':
             receipt = db.fwa_war_plans.rows['20:555']

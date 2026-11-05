@@ -50,8 +50,8 @@ def _sticky_components():
     return [Container(accent_color=GOLDENROD_ACCENT, components=[
         Text(content="**Recruit Gauntlet help**"),
         Text(content=(
-            "If you need assistance with any Gauntlet step, ask your question here "
-            f"and please ping <@&{RECRUIT_ROLE_ID}>. A recruiter can help you continue."
+            "If you need help with a Gauntlet step, ask your question here. "
+            f"Ping <@&{RECRUIT_ROLE_ID}>. A recruiter can help you."
         )),
     ])]
 
@@ -60,8 +60,8 @@ def _reminder_components(user_id: int, stage: int):
     return [Container(accent_color=GOLDENROD_ACCENT, components=[
         Text(content=f"**Recruit Gauntlet step {stage}**"),
         Text(content=(
-            f"<@{user_id}> — do you need assistance with the next step? "
-            f"Ask here and please ping <@&{RECRUIT_ROLE_ID}>. A recruiter can help you continue."
+            f"<@{user_id}> — do you need help with the next step? "
+            f"Ask here. Ping <@&{RECRUIT_ROLE_ID}>. A recruiter can help you."
         )),
     ])]
 
@@ -115,7 +115,9 @@ async def _reconcile_unknown(bot, mongo, now: datetime) -> None:
     # its progress row advanced before the REST response was persisted.
     for message in messages:
         body = _message_text(message)
-        if "**Recruit Gauntlet step " not in body or "do you need assistance" not in body:
+        if "**Recruit Gauntlet step " not in body or not any(
+            phrase in body for phrase in ("do you need assistance", "do you need help")
+        ):
             continue
         created = _aware(getattr(message, "created_at", None))
         if created:

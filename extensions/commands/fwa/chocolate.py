@@ -26,7 +26,7 @@ from hikari.impl import (
 class ChocolateCommand(
     lightbulb.SlashCommand,
     name="chocolate",
-    description="Look up player or clan on FWA chocolate site",
+    description="Find a player or clan on the FWA Chocolate site",
 ):
     player_tag = lightbulb.string(
         "player-tag",
@@ -56,7 +56,7 @@ class ChocolateCommand(
                     components=[
                         Text(content="## ❌ **Invalid Usage**"),
                         Text(content=(
-                            "Please provide **either** a player tag **or** a clan tag, not both.\n\n"
+                            "Enter a player tag or a clan tag. Do not enter both.\n\n"
                             "**Examples:**\n"
                             "• `/fwa chocolate player-tag:#Y2Q8R0GQ`\n"
                             "• `/fwa chocolate clan-tag:#9LLUR8`"
@@ -95,8 +95,8 @@ class ChocolateCommand(
                     components=[
                         Text(content="## ❌ **Invalid Tag Format**"),
                         Text(content=(
-                            f"The tag `{tag}` appears to be invalid.\n\n"
-                            "Please check that you've entered a valid Clash of Clans tag."
+                            f"The tag `{tag}` is not valid.\n\n"
+                            "Check that it is a Clash of Clans tag."
                         )),
                         Media(items=[MediaItem(media="assets/Red_Footer.png")])
                     ]
@@ -137,8 +137,8 @@ class ChocolateCommand(
                     Separator(divider=True),
                     Text(content=(
                         f"{emoji} **{type_text} Tag:** `#{normalized_tag}`\n"
-                        f"🔗 **FWA Status:** Click below to check\n\n"
-                        f"This will open the FWA Chocolate site to show:\n"
+                        f"🔗 **FWA Status:** Select the button below to check\n\n"
+                        f"The FWA Chocolate site shows:\n"
                     )),
                     Text(content=type_info),
                     ActionRow(

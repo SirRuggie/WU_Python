@@ -196,7 +196,7 @@ def test_add_validates_raw_tag_and_looks_up_name_when_blank(harness):
     ctx.interaction.components = ((SimpleNamespace(custom_id="tag", value="#ABC.123"),
                                    SimpleNamespace(custom_id="name", value="Spoof")),)
     call(ui.add_submit, ctx, state["_id"], db, coc_client=coc_client)
-    assert "plain clan tag" in text(ctx.interaction.edit_initial_response.await_args.kwargs["components"])
+    assert "Enter a clan tag of 3 to 15 letters or digits." in text(ctx.interaction.edit_initial_response.await_args.kwargs["components"])
     assert "ABC123" not in docs
     ctx.interaction.components = ((SimpleNamespace(custom_id="tag", value="#ABC123"),
                                    SimpleNamespace(custom_id="name", value="")),)
@@ -213,6 +213,7 @@ def test_remove_requires_page_selection_confirmation_and_fresh_role(harness):
     chosen = call(ui.select, editor, state["_id"], db)
     selected = states[next(reversed(states))]
     assert selected["selected_tag"] == "TAG000"
+    assert '-# #TAG000 is selected. Select Remove selected clan to review.' in text(chosen).splitlines()
     assert "Remove selected clan" in [item.get("label") for item in controls(chosen)]
     review = call(ui.remove, editor, selected["_id"], db)
     confirmation = states[next(reversed(states))]
@@ -237,7 +238,7 @@ def test_stale_selection_cannot_remove_readded_or_off_page_clan(harness):
     db, states, docs, state = harness
     editor = Context(editor=True, values=("TAG025",))
     off_page = call(ui.select, editor, state["_id"], db)
-    assert "Choose a clan shown on this page" in text(off_page)
+    assert "Select a clan shown on this page." in text(off_page)
     editor.interaction.values = ("TAG000",)
     call(ui.select, editor, state["_id"], db)
     selected = states[next(reversed(states))]
@@ -245,7 +246,7 @@ def test_stale_selection_cannot_remove_readded_or_off_page_clan(harness):
     confirmation = states[next(reversed(states))]
     docs["TAG000"]["added_at"] = "2026-10-01T00:00:00+00:00"
     result = call(ui.confirm, editor, confirmation["_id"], db)
-    assert "changed" in text(result)
+    assert "-# That clan entry changed. Select it again before you remove it." in text(result).splitlines()
     assert "TAG000" in docs
 
 

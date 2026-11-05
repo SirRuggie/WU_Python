@@ -92,6 +92,10 @@ def test_full_panel_fits_discord_text_limit(monkeypatch):
     panel=command.render(dict(event=event,rows=rows,entrants=10,accounts=200,labels=labels,refreshed=START.isoformat()))[0]
     size=sum(len(c.content) for c in panel.components if hasattr(c,'content'))
     assert size<=4000
+    footer = next(c.content for c in panel.components if hasattr(c, "content") and c.content.startswith("-# 10 joined"))
+    assert footer == ("-# 10 joined • 200 accounts • In a tie, the first account to reach the score wins.\n"
+                      f"-# Last refreshed: <t:{int(START.timestamp())}:f>\n"
+                      "-# Refreshes every 10 minutes")
 
 
 @pytest.mark.parametrize('conflict', ['#THREE', '#OUTSIDE'])

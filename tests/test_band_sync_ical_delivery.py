@@ -1041,3 +1041,8 @@ def test_maybe_user_gets_due_reminder_end_to_end_after_reopting_in(monkeypatch):
     asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(minutes=60)))
     reminders = [d for d in _deliveries(mongo) if d["delivery_type"] == "reminder"]
     assert [d["recipient_id"] for d in reminders] == [78]
+
+
+def test_scheduled_sync_title_uses_approved_minutes_copy():
+    embed = sync.build_embed(_event(), 10)
+    assert embed.title == "⚔️ FWA Sync in about 10 minutes"

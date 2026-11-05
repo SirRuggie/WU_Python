@@ -133,7 +133,7 @@ def test_disable_cancels_retry_but_detector_lifecycle_stays_loaded(monkeypatch):
         monitor.active_catchups["EXTRA1"] = task
         result = await dashboard.toggle(env.ctx, "start|off", mongo=env.mongo)
         assert task.cancelled()
-        assert "stopped 1 active retry" in built(result)
+        assert "Monitor disabled. Active retry tasks stopped: 1." in built(result)
 
     run(scenario())
     assert env.mongo.fwa_points.config["enabled"] is False
@@ -209,7 +209,7 @@ def test_clan_source_outage_blocks_extra_mutations(monkeypatch):
         [SimpleNamespace(custom_id="name", value="Extra Two")],
     ]
     run(dashboard.add_submit(env.ctx, "start", mongo=env.mongo))
-    assert "no extra was added" in built(
+    assert "The watch list is not available. The extra clan was not added." in built(
         env.ctx.interaction.edit_initial_response.await_args.kwargs["components"]
     )
     assert not env.mongo.fwa_points.updates

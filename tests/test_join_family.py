@@ -77,6 +77,7 @@ def test_join_family_grants_the_configured_role_after_rest_guild_check():
     assert sent["flags"] & hikari.MessageFlag.EPHEMERAL
     assert sent["flags"] & hikari.MessageFlag.IS_COMPONENTS_V2
     assert any("Gauntlet access unlocked" in child.content for child in sent["components"][0].components if hasattr(child, "content"))
+    assert any(child.content == "Go to About Us to start the Recruit Gauntlet. Do the required steps." for child in sent["components"][0].components if hasattr(child, "content"))
     button = sent["components"][0].components[-1].components[0]
     assert button.url == f"https://discord.com/channels/{GUILD_ID}/{join_family.ABOUT_US_CHANNEL_ID}"
     assert button.label == "Continue to About Us"
@@ -101,6 +102,7 @@ def test_join_family_is_idempotent_for_existing_role():
 
     bot.rest.add_role_to_member.assert_not_awaited()
     assert any("already have" in child.content for child in ctx.interaction.execute.await_args.kwargs["components"][0].components if hasattr(child, "content"))
+    assert any(child.content == "You already have access to the Recruit Gauntlet. Go to About Us and do the required steps." for child in ctx.interaction.execute.await_args.kwargs["components"][0].components if hasattr(child, "content"))
 
 
 def test_join_family_role_grant_failure_is_private_and_keeps_public_post_unchanged():
