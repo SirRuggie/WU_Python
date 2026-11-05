@@ -69,7 +69,7 @@ div.shell {
 .shell .sidebar .navigation-label {
   margin: 0 11px 4px;
   padding-top: 5px;
-  color: #a7a7ae;
+  color: var(--wu-text-muted);
   font-size: 10px;
   font-weight: 750;
   letter-spacing: 0.08em;
@@ -97,7 +97,7 @@ div.shell {
   border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
-  color: #d1d1d7;
+  color: var(--wu-text);
   font-size: 13px;
   font-weight: 580;
   line-height: 1.25;
@@ -118,13 +118,13 @@ div.shell {
   justify-content: center;
   width: 19px;
   flex: 0 0 19px;
-  color: #aeb0b9;
+  color: var(--wu-text-muted);
 }
 .shell .sidebar .navigation-chevron {
   display: inline-flex;
   align-items: center;
   margin-left: auto;
-  color: #aeb0b9;
+  color: var(--wu-text-muted);
 }
 .shell .sidebar .navigation-chevron .dashboard-icon {
   width: 16px;
@@ -210,7 +210,7 @@ div.shell {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #aeb0b9;
+  color: var(--wu-text-muted);
   font-size: 11px;
 }
 .shell .sidebar-foot > button {
@@ -241,7 +241,7 @@ div.shell {
 }
 .shell .topbar .crumb {
   font-size: 11px;
-  color: #a9a9b1;
+  color: var(--wu-text-muted);
 }
 .shell .topbar .user-pill {
   display: none;

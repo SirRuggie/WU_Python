@@ -13,7 +13,7 @@
 .member-picker .member-options {
   margin-top: 12px;
   padding: 0;
-  border: 1px solid #536173;
+  border: 1px solid var(--wu-border);
   border-radius: 10px;
   max-height: 320px;
   overflow: auto;
@@ -30,7 +30,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border-bottom: 1px solid #35404e;
+  border-bottom: 1px solid var(--wu-border-subtle);
   cursor: pointer;
   min-height: 56px;
 }
@@ -51,7 +51,7 @@
   accent-color: #8abaff;
 }
 .member-options label:focus-within {
-  outline: 2px solid #91bcff;
+  outline: 2px solid var(--wu-focus);
   outline-offset: -2px;
 }
 .member-options label > span:last-child,
@@ -63,7 +63,7 @@
 }
 .member-picker small {
   display: block;
-  color: #becada;
+  color: var(--wu-text-muted);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -97,7 +97,7 @@
   gap: 12px;
   margin-top: 10px;
   font-size: 13px;
-  color: #c2cbd7;
+  color: var(--wu-text-muted);
 }
 .member-clear {
   margin-top: 10px;
@@ -116,6 +116,6 @@
   min-height: 44px;
 }
 .member-picker strong {
-  color: #f4f7fc;
+  color: var(--wu-text);
   font-size: 14px;
 }

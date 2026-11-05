@@ -14,8 +14,8 @@
   padding: 8px 12px;
   font: inherit;
   color: var(--text, var(--wu-text));
-  background: var(--panel, #18212d);
-  border: 1px solid var(--border, #596374);
+  background: var(--panel, var(--wu-surface-soft));
+  border: 1px solid var(--border, var(--wu-border));
   border-radius: 8px;
   overflow-wrap: anywhere;
 }

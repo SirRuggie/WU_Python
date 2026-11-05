@@ -135,7 +135,7 @@
   max-width: calc(100vw - 24px);
   max-height: 85dvh;
   box-sizing: border-box;
-  border: 1px solid #626b7a;
+  border: 1px solid var(--wu-border);
   border-radius: 16px;
   background: var(--wu-surface);
   color: var(--wu-text);
@@ -156,7 +156,7 @@
   margin: 0;
 }
 .command-image-library button:focus-visible {
-  outline: 3px solid #9bc7ff;
+  outline: 3px solid var(--wu-focus);
   outline-offset: 2px;
 }
 @media (max-width: 650px) {

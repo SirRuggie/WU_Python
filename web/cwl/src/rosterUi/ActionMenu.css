@@ -21,7 +21,7 @@
   z-index: 100;
   min-width: 220px;
   max-width: calc(100vw - 24px);
-  border: 1px solid #505158;
+  border: 1px solid var(--wu-border);
   border-radius: 14px;
   background: var(--wu-surface-raised);
   color: var(--wu-text);

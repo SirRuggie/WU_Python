@@ -64,9 +64,9 @@
 .clan-actions {
   position: sticky;
   bottom: 10px;
-  background: #191c24;
+  background: var(--wu-surface);
   padding: 12px;
-  border: 1px solid #505766;
+  border: 1px solid var(--wu-border);
   border-radius: 10px;
   display: flex;
   justify-content: space-between;
@@ -147,7 +147,7 @@
   }
   .clan-section-card {
     margin-top: 12px;
-    border: 1px solid #505766;
+    border: 1px solid var(--wu-border);
     border-radius: 10px;
     overflow: hidden;
   }
@@ -166,7 +166,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
-    color: #c3cee0;
+    color: var(--wu-text-muted);
     font-size: 12px;
   }
   .clan-section-card > [role="tabpanel"]:not([hidden]) {
@@ -206,7 +206,7 @@
   gap: 14px;
 }
 .clan-history-values dt {
-  color: #b6c4d9;
+  color: var(--wu-text-muted);
   font-size: 0.85rem;
 }
 .clan-history-values dd {
@@ -272,7 +272,7 @@
 }
 .clan-directory small {
   margin-top: 4px;
-  color: #c3cee0;
+  color: var(--wu-text-muted);
 }
 
 .clan-pending {
@@ -290,7 +290,7 @@
   min-width: 0;
 }
 .clan-management h2:focus-visible {
-  outline: 2px solid #80b2ff;
+  outline: 2px solid var(--wu-focus);
   outline-offset: 4px;
 }
 .clan-management [role="tab"]:focus-visible {

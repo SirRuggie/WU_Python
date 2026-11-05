@@ -184,7 +184,7 @@
   align-items: center;
   justify-content: space-between;
   background: var(--wu-surface-raised);
-  border: 1px solid #777c88;
+  border: 1px solid var(--wu-border);
   border-radius: 10px;
   padding: 12px;
   margin-top: 20px;
@@ -236,7 +236,7 @@
   }
 }
 .access-editor a {
-  color: #b7d5ff;
+  color: var(--wu-text);
 }
 .access-editor a:focus-visible {
   outline: 3px solid #f1cb56;

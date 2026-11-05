@@ -141,6 +141,6 @@
   font-size: 0.85rem;
 }
 .server-settings-index summary:focus-visible {
-  outline: 3px solid #a6c8ff;
+  outline: 3px solid var(--wu-focus);
   outline-offset: 3px;
 }

@@ -36,13 +36,13 @@
 .base-bank-card {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #444750;
+  border: 1px solid var(--wu-border);
   border-radius: 16px;
   background: var(--wu-surface);
 }
 .base-bank-image {
   aspect-ratio: 1;
-  background: #101216;
+  background: var(--wu-surface);
   display: grid;
   place-items: center;
 }
@@ -69,7 +69,7 @@
   margin-bottom: 16px;
 }
 .base-bank-tags span {
-  background: #292c33;
+  background: var(--wu-surface-soft);
   border-radius: 18px;
   padding: 6px 12px;
   font-size: 14px;
@@ -90,7 +90,7 @@
   cursor: pointer;
   min-height: 44px;
   align-content: center;
-  color: #c1c4cc;
+  color: var(--wu-text-muted);
 }
 .base-bank-details p {
   white-space: pre-wrap;

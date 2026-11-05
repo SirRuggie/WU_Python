@@ -93,9 +93,9 @@
 }
 .roster-ui-status.is-info,
 .roster-ui-chip.is-info {
-  border-color: #3e5a75;
-  background: #1c2936;
-  color: #a9cff3;
+  border-color: var(--wu-info-border);
+  background: var(--wu-info-surface);
+  color: var(--wu-info);
 }
 .roster-ui-chip {
   min-height: 34px;

@@ -56,7 +56,7 @@
   margin: 8px 0;
 }
 .staff-signup-form > p {
-  color: #cbd3df;
+  color: var(--wu-text-muted);
 }
 .staff-add-modes.workflow-tabs {
   margin: 0 0 12px;

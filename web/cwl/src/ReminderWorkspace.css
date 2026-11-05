@@ -72,15 +72,15 @@
   display: block;
   font-size: 12px;
   overflow-wrap: anywhere;
-  color: #b7c2d7;
+  color: var(--wu-text-muted);
 }
 .reminder-save {
   position: sticky;
   bottom: 0;
   z-index: 2;
   padding: 14px;
-  background: #1d2029;
-  border: 1px solid #515968;
+  background: var(--wu-surface);
+  border: 1px solid var(--wu-border);
   border-radius: 12px;
 }
 .reminder-save > span {
@@ -92,11 +92,11 @@
   grid-template-columns: 2fr 1fr 2fr 1fr;
   gap: 12px;
   padding: 12px 0;
-  border-bottom: 1px solid #41444d;
+  border-bottom: 1px solid var(--wu-border-subtle);
   overflow-wrap: anywhere;
 }
 .reminder-schedule small {
-  color: #bbcae3;
+  color: var(--wu-text-muted);
 }
 .reminder-preview > small {
   display: block;
@@ -325,7 +325,7 @@ only editing opens the long forms. */
   border-radius: 0;
   border-bottom: 3px solid transparent;
   background: transparent;
-  color: #c3c8d0;
+  color: var(--wu-text-muted);
 }
 .reminders-workspace .workflow-tabs > button.active {
   border-bottom-color: #e2b541;
@@ -410,6 +410,6 @@ only editing opens the long forms. */
   font-size: 12px;
 }
 .reminder-overview-note a {
-  color: #bdd4f3;
+  color: var(--wu-text);
   text-underline-offset: 3px;
 }

@@ -31,7 +31,7 @@
   margin: 0;
   padding: 3px 14px;
   border: 1px solid var(--wu-border-subtle);
-  color: #c6d5e8;
+  color: var(--wu-text-muted);
   font-size: 12px;
   scroll-margin-top: 80px;
 }
@@ -76,7 +76,7 @@
 
 .roster-selection-hint {
   margin: 10px 0;
-  color: #c6c8cf;
+  color: var(--wu-text-muted);
   font-size: 13px;
 }
 

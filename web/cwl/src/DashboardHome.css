@@ -21,7 +21,7 @@
 
 .hub-sync {
   margin: 0 0 20px;
-  color: #c0cbd9;
+  color: var(--wu-text-muted);
   font-size: 13px;
 }
 
@@ -42,7 +42,11 @@
   gap: 16px;
   border: 1px solid #756039;
   border-radius: 14px;
-  background: linear-gradient(110deg, var(--wu-accent-soft), #1b2029 65%);
+  background: linear-gradient(
+    110deg,
+    var(--wu-accent-soft),
+    var(--wu-surface) 65%
+  );
   padding: 20px 22px;
   margin-bottom: 20px;
 }
@@ -72,7 +76,7 @@
 
 .hub-next p:last-child {
   margin: 0;
-  color: #c3ccdc;
+  color: var(--wu-text-muted);
   font-size: 14px;
   max-width: 670px;
 }
@@ -97,8 +101,8 @@
   gap: 4px 12px;
   text-align: left;
   padding: 11px 14px;
-  background: #1a1e24;
-  border-color: #3a4149;
+  background: var(--wu-surface-soft);
+  border-color: var(--wu-border);
   border-radius: 10px;
   min-height: 72px;
 }
@@ -116,7 +120,7 @@
 }
 
 .hub-stats small {
-  color: #c2ccdc;
+  color: var(--wu-text-muted);
   font-size: 12px;
 }
 
@@ -151,19 +155,19 @@
       240px
     );
   gap: 12px;
-  background: #15191f;
-  border: 1px solid #333d4b;
+  background: var(--wu-surface);
+  border: 1px solid var(--wu-border);
   border-radius: 14px;
   padding: 16px;
 }
 
 .hub-toolbar label {
-  color: #c6d0de;
+  color: var(--wu-text-muted);
 }
 
 .hub-selection {
   font-size: 13px;
-  color: #c0cbd9;
+  color: var(--wu-text-muted);
   padding: 12px 0;
 }
 
@@ -178,10 +182,10 @@
 }
 
 .hub-clan {
-  border: 1px solid #394351;
+  border: 1px solid var(--wu-border);
   border-radius: 16px;
   overflow: hidden;
-  background: #15191f;
+  background: var(--wu-surface);
   min-width: 0;
 }
 
@@ -190,8 +194,8 @@
   align-items: center;
   gap: 12px;
   padding: 16px 18px;
-  border-bottom: 1px solid #394351;
-  background: #1b232e;
+  border-bottom: 1px solid var(--wu-border-subtle);
+  background: var(--wu-surface);
 }
 
 .hub-clan > header > div {
@@ -205,7 +209,7 @@
 }
 
 .hub-clan small {
-  color: #b7c6d7;
+  color: var(--wu-text-muted);
 }
 
 .hub-clan-badge {
@@ -223,7 +227,7 @@
 }
 
 .hub-clan-link {
-  color: #c0d9ff;
+  color: var(--wu-text);
   font-weight: 700;
   font-size: 13px;
   text-decoration: none;
@@ -240,7 +244,7 @@
   align-items: center;
   gap: 16px;
   padding: 15px 18px;
-  border-bottom: 1px solid #2b3440;
+  border-bottom: 1px solid var(--wu-border-subtle);
   min-height: 84px;
 }
 
@@ -367,8 +371,8 @@
 .hub-help,
 .hub-staff {
   padding: 20px;
-  background: #14181e;
-  border: 1px solid #303b49;
+  background: var(--wu-surface);
+  border: 1px solid var(--wu-border);
   border-radius: 14px;
 }
 
@@ -587,9 +591,9 @@
   align-items: center;
   gap: 14px;
   padding: 15px 18px;
-  border: 1px solid #3b424b;
+  border: 1px solid var(--wu-border);
   border-radius: 12px;
-  background: #1a2028;
+  background: var(--wu-surface);
 }
 
 .home-task-entry > .dashboard-icon {
@@ -610,7 +614,7 @@
 .home-task-entry p {
   margin: 0;
   font-size: 13px;
-  color: #c3ccda;
+  color: var(--wu-text-muted);
 }
 
 .dashboard-home .home-task-entry button {

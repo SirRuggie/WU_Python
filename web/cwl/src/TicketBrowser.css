@@ -175,7 +175,7 @@
   overflow: auto;
 }
 .ticket-message a {
-  color: #a7cfff;
+  color: var(--wu-text);
   text-decoration: underline;
 }
 .ticket-attachments {

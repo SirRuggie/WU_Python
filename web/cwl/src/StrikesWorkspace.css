@@ -70,7 +70,7 @@
 }
 .strikes-form p {
   margin: 0;
-  color: #bdc7d6;
+  color: var(--wu-text-muted);
 }
 .strikes-form > button {
   justify-self: start;
@@ -100,13 +100,13 @@
   margin: 0;
 }
 .strikes-list-head span {
-  color: #abbacd;
+  color: var(--wu-text-muted);
   font-size: 13px;
 }
 .strikes-empty {
   padding: 28px;
   text-align: center;
-  color: #bdc7d6;
+  color: var(--wu-text-muted);
 }
 .strikes-list {
   display: grid;
@@ -117,7 +117,7 @@
   padding: 16px 18px;
 }
 .strikes-workspace small {
-  color: #b8c5d6;
+  color: var(--wu-text-muted);
   overflow-wrap: anywhere;
 }
 .strikes-pages {
@@ -129,7 +129,7 @@
 }
 .strikes-pages span {
   font-size: 13px;
-  color: #b8c5d6;
+  color: var(--wu-text-muted);
 }
 .strikes-candidate-facts {
   display: flex;
@@ -140,10 +140,10 @@
 .strikes-candidate-facts span {
   min-width: 95px;
   padding: 9px 12px;
-  border: 1px solid #414958;
-  background: #1a212b;
+  border: 1px solid var(--wu-border);
+  background: var(--wu-surface-soft);
   border-radius: 9px;
-  color: #bdc7d6;
+  color: var(--wu-text-muted);
   font-size: 12px;
 }
 .strikes-candidate-facts strong {
@@ -192,7 +192,7 @@
 }
 .strikes-leave > div span {
   font-size: 13px;
-  color: #bac6d7;
+  color: var(--wu-text-muted);
 }
 .strikes-role-list {
   display: grid;
@@ -204,7 +204,7 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid #414958;
+  border: 1px solid var(--wu-border);
   border-radius: 9px;
 }
 .strikes-role-list span {
@@ -225,7 +225,7 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid #414958;
+  border-top: 1px solid var(--wu-border-subtle);
   padding: 9px 0;
   font-size: 13px;
 }
@@ -241,7 +241,7 @@
 }
 .strikes-import-row span {
   font-size: 13px;
-  color: #d1dded;
+  color: var(--wu-text);
 }
 .strikes-import-apply {
   position: sticky;
@@ -263,7 +263,7 @@
 .strikes-workspace button:focus-visible,
 .strikes-workspace input:focus-visible,
 .strikes-workspace select:focus-visible {
-  outline: 2px solid #a9ccff;
+  outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
 @media (max-width: 760px) {
@@ -372,10 +372,10 @@
 .strikes-job-status {
   margin: 0 0 16px;
   padding: 12px 15px;
-  border: 1px solid #5b789a;
+  border: 1px solid var(--wu-info-border);
   border-radius: 10px;
-  background: #1d2c3d;
-  color: #d8e8ff;
+  background: var(--wu-info-surface);
+  color: var(--wu-info);
   font-size: 14px;
 }
 .strikes-job-status {
@@ -459,7 +459,7 @@
 }
 .strikes-war-results button span {
   font-size: 12px;
-  color: #b6c9e2;
+  color: var(--wu-text-muted);
   font-weight: 450;
 }
 @media (max-width: 480px) {
@@ -520,13 +520,13 @@
   font-size: 22px;
 }
 .strikes-account-more {
-  color: #acbacb;
+  color: var(--wu-text-muted);
   font-size: 12px;
   white-space: nowrap;
 }
 .strikes-detail-context {
   margin: 2px 0 6px;
-  color: #bdcce0;
+  color: var(--wu-text-muted);
   font-size: 13px;
 }
 .strikes-toolbar:has(> .strikes-history-search) {
@@ -622,12 +622,12 @@
   display: grid;
   gap: 3px;
   padding: 10px 0;
-  border-top: 1px solid #414958;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 .strikes-review-list small,
 .strikes-review-list span {
   font-size: 12px;
-  color: #b8c5d6;
+  color: var(--wu-text-muted);
 }
 .strikes-review-list strong {
   overflow-wrap: anywhere;
@@ -635,7 +635,7 @@
 .strikes-tracking {
   margin: 2px 0 16px;
   padding: 12px 16px;
-  border-color: #435064;
+  border-color: var(--wu-border);
 }
 .strikes-tracking.warning {
   border-color: #ae8750;
@@ -655,7 +655,7 @@
 }
 .strikes-tracking summary strong {
   font-weight: 500;
-  color: #b7c6d9;
+  color: var(--wu-text-muted);
 }
 .strikes-tracking.warning summary strong {
   color: #ffd697;
@@ -669,7 +669,7 @@
   display: grid;
   gap: 5px;
   padding: 10px 0;
-  border-top: 1px solid #414958;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 .strikes-tracking-clan > div {
   display: flex;
@@ -694,11 +694,11 @@
   gap: 2px;
 }
 .strikes-tracking-facts strong {
-  color: #e8edf4;
+  color: var(--wu-text);
   font-weight: 650;
 }
 .strikes-tracking-clan small {
-  color: #b8c5d6;
+  color: var(--wu-text-muted);
   font-size: 12px;
 }
 .strikes-tracking-clan button {
@@ -733,7 +733,7 @@
 }
 .strikes-import-content {
   padding: 0 18px 18px;
-  border-top: 1px solid #414958;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 .strikes-import-content > .strikes-form {
   border: 0;
@@ -792,7 +792,7 @@
   gap: 14px;
 }
 .strike-review dt {
-  color: #b8c5d6;
+  color: var(--wu-text-muted);
   font-size: 13px;
 }
 .strike-review dd {
@@ -837,8 +837,8 @@
   padding: 4px;
   width: fit-content;
   max-width: 100%;
-  background: #20252c;
-  border: 1px solid #4c5461;
+  background: var(--wu-surface-soft);
+  border: 1px solid var(--wu-border);
   border-radius: 10px;
 }
 .strikes-action-chips button {
@@ -851,7 +851,7 @@
   border-color: #e7b338;
 }
 .strike-account-item {
-  border-bottom: 1px solid #414958;
+  border-bottom: 1px solid var(--wu-border-subtle);
   min-width: 0;
 }
 .strike-account-item:last-child {
@@ -882,8 +882,8 @@
   gap: 0 6px;
   align-items: center;
   padding: 4px 8px;
-  border-bottom: 1px solid #414958;
-  background: #20252c;
+  border-bottom: 1px solid var(--wu-border-subtle);
+  background: var(--wu-surface);
 }
 .strike-compact-row.expired,
 .strike-compact-row.removed {
@@ -925,7 +925,7 @@
 }
 .strike-row-details {
   grid-column: 1/-1;
-  border-top: 1px solid #414958;
+  border-top: 1px solid var(--wu-border-subtle);
   padding: 8px 0;
   font-size: 13px;
   overflow-wrap: anywhere;
@@ -953,7 +953,7 @@
 }
 .strikes-list:has(> .strike-compact-row) {
   gap: 0;
-  border: 1px solid #414958;
+  border: 1px solid var(--wu-border);
   border-radius: 10px;
   overflow: hidden;
 }

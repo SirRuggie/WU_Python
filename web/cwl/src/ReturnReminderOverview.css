@@ -13,7 +13,7 @@
 }
 .return-context strong {
   display: block;
-  color: #bdc6d0;
+  color: var(--wu-text);
   font-size: 11px;
   margin-bottom: 3px;
 }
@@ -25,7 +25,7 @@
 .return-destination-warning button {
   border: 0;
   background: transparent;
-  color: #bdd4f3;
+  color: var(--wu-text);
   text-decoration: underline;
   min-height: 44px;
 }
@@ -54,7 +54,7 @@
   min-height: 44px;
   border: 0;
   background: transparent;
-  color: #bdd4f3;
+  color: var(--wu-text);
   font-size: 12px;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -74,7 +74,7 @@
   display: flex;
   align-items: center;
   min-height: 44px;
-  color: #bdd4f3;
+  color: var(--wu-text-muted);
 }
 .return-overview .return-maintenance summary::before {
   content: "▸";

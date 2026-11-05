@@ -106,3 +106,68 @@ it("retains the winning primary fill and readable ink after the contrast fold", 
     contrast(color("color")!, color("background")!),
   ).toBeGreaterThanOrEqual(4.5);
 });
+
+const dashboardSurfaces = [
+  "bg",
+  "surface",
+  "surface-raised",
+  "surface-soft",
+  "card",
+  "accent-soft",
+  "success-surface",
+  "warning-surface",
+  "danger-surface",
+  "info-surface",
+];
+it.each(
+  ["accent", "info"].flatMap((foreground) =>
+    dashboardSurfaces.map((background) => [foreground, background]),
+  ),
+)(
+  "1b %s text on every %s surface meets normal-text contrast4.5:1",
+  (foreground, background) => {
+    expect(
+      contrast(
+        resolveToken("wu-" + foreground),
+        resolveToken("wu-" + background),
+      ),
+    ).toBeGreaterThanOrEqual(4.5);
+  },
+);
+
+it("keeps card metadata readable across the whole green success glow", () => {
+  const glow = values
+    .get("roster-card-glow-success")
+    ?.match(/^rgb\((\d+) (\d+) (\d+) \/ (\d+(?:\.\d+)?)%\)$/);
+  expect(glow, "The actual success-glow token must be measurable").toBeTruthy();
+  const background = resolveToken("roster-card-success");
+  const foreground = resolveToken("roster-card-text-muted");
+  const base = [1, 3, 5].map((start) =>
+    parseInt(background.slice(start, start + 2), 16),
+  );
+  const channels = glow!.slice(1, 4).map(Number);
+  const alpha = Number(glow![4]) / 100;
+  expect(alpha).toBeGreaterThan(0);
+  expect(alpha).toBeLessThanOrEqual(1);
+  // Every glow channel brightens the surface, so its maximum is the worst
+  // background for this light foreground. No glyph-position exception applies.
+  expect(channels.every((channel, index) => channel >= base[index])).toBe(true);
+  const rgbLuminance = (rgb: number[]) =>
+    rgb
+      .map((channel) => channel / 255)
+      .map((value) =>
+        value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4,
+      )
+      .reduce(
+        (total, value, index) =>
+          total + value * [0.2126, 0.7152, 0.0722][index],
+        0,
+      );
+  const brightest = channels.map(
+    (channel, index) => channel * alpha + base[index] * (1 - alpha),
+  );
+  expect(luminance(foreground)).toBeGreaterThan(rgbLuminance(brightest));
+  expect(
+    (luminance(foreground) + 0.05) / (rgbLuminance(brightest) + 0.05),
+  ).toBeGreaterThanOrEqual(4.5);
+});

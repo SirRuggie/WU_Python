@@ -35,7 +35,7 @@
 }
 .attention-summary p {
   margin: 3px 0 0;
-  color: #d5d9df;
+  color: var(--wu-text-muted);
   font-size: 13px;
   overflow-wrap: anywhere;
 }

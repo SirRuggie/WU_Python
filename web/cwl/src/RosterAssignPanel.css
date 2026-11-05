@@ -40,7 +40,7 @@
   font-size: 16px;
 }
 .roster-assign-destinations-heading small {
-  color: #bdc9db;
+  color: var(--wu-text-muted);
   white-space: nowrap;
 }
 .roster-assign-destinations ul,
@@ -57,9 +57,9 @@
   gap: 7px;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #526075;
+  border: 1px solid var(--wu-border);
   border-radius: 9px;
-  background: #202936;
+  background: var(--wu-surface-soft);
   color: var(--wu-text);
   text-align: left;
   white-space: normal;
@@ -75,8 +75,8 @@
   transform: translateY(1px);
 }
 .roster-assign-unassign {
-  border-color: #4a5060;
-  background: #1d222a;
+  border-color: var(--wu-border);
+  background: var(--wu-surface-soft);
 }
 .roster-assign-unassign .roster-assign-clan-name {
   display: flex;
@@ -87,10 +87,10 @@
   flex: 0 0 auto;
   width: 18px;
   height: 18px;
-  color: #cbd4e1;
+  color: var(--wu-text-muted);
 }
 .roster-assign-clan:focus-visible {
-  outline: 3px solid #a6c8ff;
+  outline: 3px solid var(--wu-focus);
   outline-offset: 2px;
 }
 .roster-assign-clan:disabled {
@@ -118,7 +118,7 @@
 }
 .roster-assign-clan-name small {
   margin-left: 5px;
-  color: #bdc9db;
+  color: var(--wu-text-muted);
   font-size: 12px;
 }
 .roster-assign-clan-count {
@@ -128,7 +128,7 @@
   white-space: nowrap;
 }
 .roster-assign-clan-meta {
-  color: #cbd4e1;
+  color: var(--wu-text-muted);
   font-size: 12px;
 }
 .roster-assign-clan-meta .roster-assign-warning {
@@ -141,7 +141,7 @@
 .roster-assign-accounts {
   margin: 6px 0;
   padding: 8px 10px;
-  border: 1px solid #4a5060;
+  border: 1px solid var(--wu-border);
   border-radius: 8px;
 }
 .roster-assign-accounts summary {
@@ -156,7 +156,7 @@
   padding: 6px 0;
 }
 .roster-assign-accounts small {
-  color: #bdc9db;
+  color: var(--wu-text-muted);
 }
 .roster-assign-accounts .roster-assign-hidden {
   color: #f5cb83;

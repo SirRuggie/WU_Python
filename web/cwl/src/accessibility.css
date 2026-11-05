@@ -9,7 +9,7 @@
   min-height: 44px;
   border: 2px solid var(--wu-accent);
   border-radius: 8px;
-  background: #191b22;
+  background: var(--wu-surface-soft);
   color: #fff;
 }
 .skip-to-content:focus {

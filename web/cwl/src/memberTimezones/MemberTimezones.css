@@ -46,7 +46,7 @@
   flex-wrap: wrap;
   gap: 12px;
   padding: 14px 0;
-  border-bottom: 1px solid #657080;
+  border-bottom: 1px solid var(--wu-border-subtle);
   overflow-wrap: anywhere;
 }
 .mt-list li > div {

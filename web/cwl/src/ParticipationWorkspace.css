@@ -11,7 +11,7 @@
 .participation-capture {
   margin: 0 0 16px;
   padding: 12px 14px;
-  border: 1px solid #3c4147;
+  border: 1px solid var(--wu-border);
   border-radius: 10px;
   background: var(--wu-surface);
 }
@@ -60,7 +60,7 @@
   align-items: center;
   min-height: 44px;
   cursor: pointer;
-  color: #bdcfe5;
+  color: var(--wu-text-muted);
   font-size: 12px;
 }
 .participation-sync-fields {
@@ -190,7 +190,7 @@
   padding: 6px 4px;
   border: 0;
   background: transparent;
-  color: #bdd4f3;
+  color: var(--wu-text-muted);
   font-size: 12px;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -220,7 +220,7 @@
   overflow: auto;
   margin: auto;
   padding: 16px;
-  border: 1px solid #53575f;
+  border: 1px solid var(--wu-border);
   border-radius: 14px;
   background: var(--wu-surface);
   color: var(--wu-text);
@@ -284,7 +284,7 @@
   align-items: center;
   min-height: 44px;
   cursor: pointer;
-  color: #bdd4f3;
+  color: var(--wu-text-muted);
   font-size: 12px;
 }
 .participation-source p,
@@ -343,7 +343,7 @@
   align-items: center;
   min-height: 44px;
   cursor: pointer;
-  color: #bdd4f3;
+  color: var(--wu-text-muted);
   font-size: 13px;
 }
 .participation-history > p {
@@ -429,7 +429,7 @@
   content: "▸";
   display: inline-block;
   margin-right: 7px;
-  color: #b7c8df;
+  color: var(--wu-text-muted);
 }
 .participation-capture-settings[open] > summary::before,
 .participation-source[open] summary::before,
