@@ -336,3 +336,28 @@ def test_legacy_other_kind_reused_before_claim(monkeypatch):
     )
     assert result == legacy
     assert claim.await_count == 0
+
+
+def test_staff_setup_selection_copy_preserves_values_and_no_write_on_invalid(monkeypatch):
+    state = {'_id': 'x'}
+    payload = staff.panel(state)[0].build()[0]
+    menu = payload['components'][2]['components'][0]
+    assert menu['placeholder'] == 'Select Main or FWA'
+    assert menu['custom_id'] == 'ticket_v2_staff_pick:x|type'
+    assert [(x['label'], x['value']) for x in menu['options']] == [('Main', 'main'), ('FWA', 'fwa')]
+    assert payload['components'][-1]['components'][0]['disabled']
+    owned = AsyncMock(return_value=state)
+    notice = AsyncMock()
+    update = AsyncMock()
+    monkeypatch.setattr(staff, 'owned_state', owned)
+    monkeypatch.setattr(staff, 'notice', notice)
+    monkeypatch.setattr(staff, 'update_state', update)
+    ctx = SimpleNamespace(defer=AsyncMock(), interaction=SimpleNamespace(values=['0']))
+    asyncio.run(staff.pick(ctx, 'x|user', mongo=object()))
+    notice.assert_awaited_once_with(ctx, 'Select a guild member.')
+    update.assert_not_awaited()
+    notice.reset_mock()
+    asyncio.run(staff.submit(ctx, 'x', bot=object(), mongo=object()))
+    notice.assert_awaited_once_with(ctx,
+        'This setup is unavailable. Select a recruit and ticket type in a new setup.')
+    update.assert_not_awaited()

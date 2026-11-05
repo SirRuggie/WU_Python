@@ -89,9 +89,8 @@ def _panel(state_id: str, window: dict | None, *, admin: bool, notice: str | Non
     body: list[Any] = [
         Text(content="## Ticket testing"),
         Text(content=(
-            "This opens isolated test tickets only. Test threads are cleaned up after "
-            "the configured window. Use the normal questions and staff controls; "
-            "approval and denial are simulated."
+            "This opens test tickets only. Test threads are removed after the test window ends. "
+            "Use the normal questions and staff controls. Approval and denial are simulated."
         )),
         Separator(divider=True),
         Text(content=f"**Test window:** {status} · expires {expires}"),

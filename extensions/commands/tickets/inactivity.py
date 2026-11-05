@@ -77,7 +77,7 @@ def card(ticket, token, role, period=PERIOD):
     for choice, label, emoji in (("yes", "Close as Ghosted", "👻"), ("no", "Wait", "🫶")):
         row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id(ticket, token, choice), label=label, emoji=emoji)
     wording = f"There has been no activity within the last {period_label(period)}. Apply Ghosted and close this ticket?"
-    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nYou will be prompted for a closing reason."), row])]
+    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nYou will be asked for a reason to close."), row])]
 
 
 async def record_human_activity(mongo, ticket, message):
@@ -302,7 +302,7 @@ async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None
         return
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
     if now() - activity_baseline(ticket) < configured_period(config):
-        await ctx.interaction.edit_initial_response(content="This ticket is not due for inactivity review under the current timer.")
+        await ctx.interaction.edit_initial_response(content="This ticket does not need an inactivity review yet.")
         return
     query = {"_id": ticket_id, **store.RUNTIME_FILTER, "status": "open", "inactivity.prompt.token": token,
         "inactivity.prompt.state": "ready", "activity_revision": store._rev_filter(int(prompt.get("activity_revision") or 0))}
@@ -331,10 +331,10 @@ async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None
                     _log.exception("Ghosted flag pending after won inactivity denial ticket=%s", ticket_id)
                     complete = False
                 wording = ("Ghosted applied and ticket closed with the reason you provided." if complete else
-                           "Ticket closed; Ghosted flag update is pending and will retry automatically.")
+                           "The ticket is closed. The Ghosted flag update is waiting. It will try again automatically.")
             else:
                 await mongo.tickets.update_one({"_id": ticket_id, "inactivity.prompt.token": token}, {"$unset": {"inactivity.prompt": ""}})
-                wording = "The ticket changed; no inactivity closure was applied."
+                wording = "The ticket changed. We did not close it."
     await retire_prompt(bot, ticket, wording)
     await ctx.interaction.edit_initial_response(content=wording)
 

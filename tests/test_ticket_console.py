@@ -283,7 +283,7 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
         index for index, child in enumerate(container["components"])
         if child["type"] == hikari.ComponentType.MEDIA_GALLERY
         and child["items"][0]["description"].startswith((
-            "Blacklisted:", "Denied before:", "Not loyal to WU:",
+            "Blacklisted:", "Previously denied:", "Not loyal to WU:",
             "Ghosted:", "Flew the Coop:",
         ))
     ]
@@ -2034,6 +2034,7 @@ def test_lock_contention_panel_does_not_claim_a_blacklist_exists():
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
     assert "Approval not completed" in content
+    assert "## Approval not completed" in content.splitlines()
     assert "try again" in content
     assert "blacklist" not in content.casefold()
 
@@ -2074,7 +2075,7 @@ def test_effect_failure_panel_reports_durable_automatic_retry():
     content = "\n".join(
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
-    assert "Decision recorded; updates retrying" in content
+    assert "Decision saved. Updates will try again" in content
     assert resolve.RESOLUTION_EFFECT_RETRY_MESSAGE in content
     assert "notification failed" not in content.casefold()
 

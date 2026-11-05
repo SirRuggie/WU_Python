@@ -110,7 +110,7 @@ def test_chocolate_checklist_is_a_single_message_identified_by_its_title():
     contents = _contents(view)
     assert sum(map(len, contents)) <= console.DISCORD_MESSAGE_TEXT_LIMIT
     assert sum(content.count("cc.fwafarm.com") for content in contents) == 1
-    assert "No Chocolate blacklist verdict was checked automatically" in "\n".join(contents)
+    assert "The Chocolate blacklist was not checked. To record a verified concern, use Manage Flags." in "\n".join(contents)
 
 
 @pytest.mark.parametrize("count", [1, 16, 20])
@@ -179,7 +179,7 @@ def test_chocolate_excludes_observed_but_no_longer_linked_tag():
     [
         (_ticket(count=0, state="empty"), "No accounts are currently linked", 0),
         (_ticket(count=0, state="failed"), "latest linked-account refresh failed", 0),
-        (_ticket(count=1, state="failed"), "last confirmed current snapshot", 1),
+        (_ticket(count=1, state="failed"), "The latest linked-account refresh failed. The last confirmed list is below. Try the lookup again.", 1),
     ],
 )
 def test_chocolate_zero_and_failure_states_are_truthful(ticket, needle, expected_links):
@@ -187,7 +187,7 @@ def test_chocolate_zero_and_failure_states_are_truthful(ticket, needle, expected
     copy = "\n".join(_contents(view))
     assert needle in copy
     assert copy.count("cc.fwafarm.com") == expected_links
-    assert "No Chocolate blacklist verdict was checked automatically" in copy
+    assert "The Chocolate blacklist was not checked. To record a verified concern, use Manage Flags." in copy
 
 
 def test_main_ticket_never_builds_chocolate_content():

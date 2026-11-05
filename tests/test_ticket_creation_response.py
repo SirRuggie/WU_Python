@@ -30,4 +30,5 @@ def test_ticket_link_shown_before_post_commit_work_and_retained_on_failure(monke
     assert 'Creating your ticket' not in edits[-1]['content']
     assert edits[-1]['components'][0].components[0].label=='Open your ticket'
     assert 'could not be completed' not in edits[-1]['content']
+    assert 'We could not finish your ticket' not in edits[-1]['content']
     handlers.user_cooldowns.clear()

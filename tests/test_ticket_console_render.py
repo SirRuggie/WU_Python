@@ -215,3 +215,14 @@ def test_missing_font_raises_a_clear_error_naming_the_file(monkeypatch, tmp_path
 
     with pytest.raises(OSError, match="DejaVuSans.ttf"):
         console_render._font(16)
+
+
+def test_previously_denied_label_fits_flag_pill_with_five_digit_count():
+    # The overview uses a fixed 1400px canvas and reserves an icon and count.
+    # Measure the actual bundled bold fonts so the longer TK-4 label stays
+    # separate from a representative large count.
+    pill_width = (1364 - 24 - (36 + 24) - 2 * 16) // 3
+    scale = console_render.SCALE
+    label_width = console_render._font(14, bold=True).getlength('PREVIOUSLY DENIED')
+    count_width = console_render._font(16, bold=True).getlength('99999')
+    assert label_width + count_width + 8 * scale <= (pill_width - 62 - 14) * scale

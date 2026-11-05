@@ -1,0 +1,1989 @@
+{
+  "title": "161-T ticket wording item ledger",
+  "base": "82400fbfafad39d003c85d64085b1473f5778c54",
+  "inventory_sha256": "28e3f49a0827ad5452643e606558228bf89668c79fcb3a1dc9a93383f1572723",
+  "apply_count": 43,
+  "rows": [
+    {
+      "id": "TK-1",
+      "status": "applied",
+      "approved_proposal": "\"Select the button again to start a new one.\" / \"Select Main or FWA to start a new one.\" / \"You have no ticket yet. Select Main or FWA to start one.\" / \"A recruiter will reply in your ticket. Select the button to open it.\" / \"This review expired or is not yours. Select Approve again.\" / \"Your selections are not saved until you select Save. If you go back to all settings, you lose unsaved changes.\"",
+      "note": "All named approved fields match. 170 permits direct Select substitutions; unlisted Rite-of-Passage copy without an exact item is separately on 161-X.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 477,
+          "exact_text": "⚠️ Your earlier ticket's thread was removed. Select the button again to start a new one.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 664,
+          "exact_text": "⚠️ Your earlier ticket's thread was removed. Select Main or FWA to start a new one.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 712,
+          "exact_text": "You have no ticket yet. Select Main or FWA to start one.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/thread_service.py",
+          "line": 1755,
+          "exact_text": "A recruiter will reply in your ticket. Select the button to open it.",
+          "source_sha256": "432ed924c0a8af831f0371eb651015feb0206ac1d18817a776e6722ff8a58008"
+        },
+        {
+          "path": "extensions/commands/tickets/link_review.py",
+          "line": 61,
+          "exact_text": "This review expired or is not yours. Select Approve again.",
+          "source_sha256": "e007e4c364c00668d49f943b0f62aa56b8f6883c2274b2560cba664c4426be47"
+        },
+        {
+          "path": "extensions/commands/tickets/link_review.py",
+          "line": 74,
+          "exact_text": "This review expired or is not yours. Select Approve again.",
+          "source_sha256": "e007e4c364c00668d49f943b0f62aa56b8f6883c2274b2560cba664c4426be47"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 160,
+          "exact_text": "Your selections are not saved until you select Save. If you go back to all settings, you lose unsaved changes.",
+          "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 51,
+          "exact_text": "Select Main or FWA"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 194,
+          "exact_text": "Select a guild member."
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 436,
+          "exact_text": "This setup is unavailable. Select a recruit and ticket type in a new setup."
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7303,
+          "exact_text": "Select an option"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 5079,
+          "exact_text": "Open the ticket and select **Manage flags** again."
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 5111,
+          "exact_text": "Open the ticket and select **Manage flags** again."
+        }
+      ],
+      "rule_170_select_substitutions": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "before": "Choose an option",
+          "after": "Select an option",
+          "old_lines": [
+            7308
+          ],
+          "current_lines": [
+            7303
+          ],
+          "count": 1,
+          "authority": "170 §3.3 and §2(c); parent adjudication"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "before": "Open the ticket and choose **Manage flags** again.",
+          "after": "Open the ticket and select **Manage flags** again.",
+          "old_lines": [
+            5080,
+            5112
+          ],
+          "current_lines": [
+            5079,
+            5111
+          ],
+          "count": 2,
+          "authority": "170 §3.3 and §2(c); parent adjudication"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "before": "Choose Main or FWA",
+          "after": "Select Main or FWA",
+          "old_lines": [
+            51
+          ],
+          "current_lines": [
+            51
+          ],
+          "count": 1,
+          "authority": "170 §3.3 and §2(c); parent adjudication"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "before": "Choose a guild member.",
+          "after": "Select a guild member.",
+          "old_lines": [
+            194
+          ],
+          "current_lines": [
+            194
+          ],
+          "count": 1,
+          "authority": "170 §3.3 and §2(c); parent adjudication"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "before": "This setup is unavailable. Choose a recruit and ticket type in a new setup.",
+          "after": "This setup is unavailable. Select a recruit and ticket type in a new setup.",
+          "old_lines": [
+            436
+          ],
+          "current_lines": [
+            436
+          ],
+          "count": 1,
+          "authority": "170 §3.3 and §2(c); parent adjudication"
+        }
+      ],
+      "earlier_settings_lexical_substitutions": [
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "old_lines": [
+            104
+          ],
+          "current_lines": [
+            104
+          ],
+          "before": "Choose where tickets go",
+          "after": "Select where tickets go",
+          "literal_fragment": false,
+          "authority": "170 §3.3 and §2(c) direct lexical replacement"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "old_lines": [
+            105
+          ],
+          "current_lines": [
+            105
+          ],
+          "before": "Set the recruit and staff channels for Main and FWA applications, choose recruiters, or allow extra staff viewers.",
+          "after": "Set the recruit and staff channels for Main and FWA applications, select recruiters, or allow extra staff viewers.",
+          "literal_fragment": false,
+          "authority": "170 §3.3 and §2(c) direct lexical replacement"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "old_lines": [
+            119
+          ],
+          "current_lines": [
+            119
+          ],
+          "before": "Choose where Main recruit and staff threads are created, and which role handles these applications.",
+          "after": "Select where Main recruit and staff threads are created, and which role handles these applications.",
+          "literal_fragment": false,
+          "authority": "170 §3.3 and §2(c) direct lexical replacement"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "old_lines": [
+            121
+          ],
+          "current_lines": [
+            121
+          ],
+          "before": "Choose where FWA recruit and staff threads are created, and which role handles these applications.",
+          "after": "Select where FWA recruit and staff threads are created, and which role handles these applications.",
+          "literal_fragment": false,
+          "authority": "170 §3.3 and §2(c) direct lexical replacement"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "old_lines": [
+            154
+          ],
+          "current_lines": [
+            154
+          ],
+          "before": "\nRefresh or recreate the staff ticket console. Select its current channel, or choose a channel for first-time setup. This cannot move an existing console. Clicking Restore applies immediately.",
+          "after": "\nRefresh or recreate the staff ticket console. Select its current channel, or select a channel for first-time setup. This cannot move an existing console. Selecting Restore applies immediately.",
+          "literal_fragment": true,
+          "authority": "170 §3.3 and §2(c) direct lexical replacement"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "old_lines": [
+            142
+          ],
+          "current_lines": [
+            142
+          ],
+          "before": "Choose all additional viewer roles",
+          "after": "Select all additional viewer roles",
+          "literal_fragment": false,
+          "authority": "170 §3.3 and §2(c) direct lexical replacement"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "old_lines": [
+            136
+          ],
+          "current_lines": [
+            136
+          ],
+          "before": "Choose ",
+          "after": "Select ",
+          "literal_fragment": true,
+          "authority": "170 §3.3 and §2(c) direct lexical replacement"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "old_lines": [
+            155
+          ],
+          "current_lines": [
+            155
+          ],
+          "before": "Choose the staff console channel",
+          "after": "Select the staff console channel",
+          "literal_fragment": false,
+          "authority": "170 §3.3 and §2(c) direct lexical replacement"
+        }
+      ]
+    },
+    {
+      "id": "TK-2",
+      "status": "applied",
+      "approved_proposal": "\"ask a recruiter\" / \"ask an administrator\" / \"Ask recruitment staff if you want to continue.\" / \"A recruiter will send you your clan invite.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 382,
+          "exact_text": "❌ This test panel is not active for you. Use the current public ticket panel or ask a recruiter.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 385,
+          "exact_text": "❌ This ticket panel is not active. Use the current panel or ask a recruiter.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 578,
+          "exact_text": "❌ We could not finish your ticket. We saved your attempt. Try again. We will not make a second ticket. If it fails again, ask an administrator.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/lifecycle.py",
+          "line": 24,
+          "exact_text": "Staff closed this application. They did not approve or deny it. Ask recruitment staff if you want to continue.",
+          "source_sha256": "87a7b3394409654bb2122477947b7018d4d9e0daef22d3d62e0c03f7c35ff363"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 215,
+          "exact_text": "> **Congratulations!** Warriors United accepted you. A recruiter will send you your clan invite. This ticket stays open, so you can ask questions here. To find it again, use the **My ticket** button on the panel.",
+          "source_sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        }
+      ]
+    },
+    {
+      "id": "TK-3",
+      "status": "applied",
+      "approved_proposal": "\"Try again soon.\" / \"Try again in a moment.\" / \"The player service is starting. Try again soon.\" / \"Open the ticket again. Then try again.\" / \"Open the ticket details again. Check the current status before you try again.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 336,
+          "exact_text": "❌ Tickets are not ready yet. No ticket was created. Try again soon.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/player_info.py",
+          "line": 93,
+          "exact_text": "The player service is starting. Try again soon.",
+          "source_sha256": "48a5ec411484a0843743d7d119037dcf0fdf24d0ade4c30c52d5929f65760732"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 464,
+          "exact_text": "We could not finish the ticket. We saved your attempt. Try again soon.",
+          "source_sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 505,
+          "exact_text": "⏳ We are already creating your ticket. Try again in a moment.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 553,
+          "exact_text": "⏳ We are already creating your ticket. Try again in a moment.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6624,
+          "exact_text": "The decision was not saved. Open the ticket again. Then try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6739,
+          "exact_text": "The decision was not saved. Open the ticket again. Then try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4867,
+          "exact_text": "Open the ticket again. Then try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6867,
+          "exact_text": "The decision was not saved. Open the ticket again. Then try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7005,
+          "exact_text": "The decision was not saved. Open the ticket again. Then try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7325,
+          "exact_text": "Open the ticket details again. Check the current status before you try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7272,
+          "exact_text": "Open the ticket details again. Check the current status before you try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ]
+    },
+    {
+      "id": "TK-4",
+      "status": "applied",
+      "approved_proposal": "\"Previously denied\" everywhere; image text \"PREVIOUSLY DENIED\" (check that it fits the image width: UNVERIFIED).",
+      "note": "Both text labels and PREVIOUSLY DENIED artwork metadata updated; measured bold-font fit with a five-digit count is covered by test_ticket_console_render.py.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 96,
+          "exact_text": "Previously denied",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 172,
+          "exact_text": "Previously denied",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 2047,
+          "exact_text": "Previously denied",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 41,
+          "exact_text": "Previously denied",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        },
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 135,
+          "exact_text": " Previously denied",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        },
+        {
+          "path": "utils/ticket_flag_art.py",
+          "line": 40,
+          "exact_text": "Previously denied",
+          "source_sha256": "f14e092878a8cbdbfd1d9b519772d3989ece4d4041a97d3a1338a4bcda062542"
+        },
+        {
+          "path": "extensions/commands/tickets/console_render.py",
+          "line": 292,
+          "exact_text": "PREVIOUSLY DENIED",
+          "source_sha256": "3b8b56e8387953473ce5df9e3bcf7f8cb11c48316d0577faf4b08f70cc572f9d"
+        },
+        {
+          "path": "utils/ticket_flag_art.py",
+          "line": 40,
+          "exact_text": "PREVIOUSLY DENIED",
+          "source_sha256": "f14e092878a8cbdbfd1d9b519772d3989ece4d4041a97d3a1338a4bcda062542"
+        }
+      ]
+    },
+    {
+      "id": "TK-6",
+      "status": "applied",
+      "approved_proposal": "\"Close without a decision\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7242,
+          "exact_text": "Close without a decision",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7293,
+          "exact_text": "Close without a decision",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 2877,
+          "exact_text": "Close without a decision",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 853,
+          "exact_text": "Close without a decision",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ]
+    },
+    {
+      "id": "TK-7",
+      "status": "applied",
+      "approved_proposal": "\"Change this decision?\" / \"Already {status} by {who} {when}. Use the console to change it.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 658,
+          "exact_text": "Change this decision?",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 40,
+          "exact_template": "Already {status} by {who} {when}. Use the console to change it."
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 40,
+          "exact_source": "return f\"Already {status} by {who} {when}. Use the console to change it.\"",
+          "sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 657,
+          "exact_source": "return _confirm_panel(\n        \"Change this decision?\",\n        f\"This person was {verb} by {who} {when}. {ask}\",\n        confirm_id=confirm_id,\n        cancel_id=f\"ticket_v2_console_confirm_cancel:{action_id}\",\n        confirm_label=\"Continue\",\n        confirm_style=style,\n        accent=ACCENT_YELLOW,\n    )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ]
+    },
+    {
+      "id": "TK-8",
+      "status": "applied",
+      "approved_proposal": "\"Time zone\" / \"Not set\" in both files.",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 2488,
+          "exact_text": "Time zone",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 62,
+          "exact_text": "Not set"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 66,
+          "exact_text": "Not set"
+        },
+        {
+          "path": "extensions/commands/tickets/config.py",
+          "line": 15,
+          "exact_text": "Not set"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 2481,
+          "exact_source": "_INTAKE_LABELS = {\n    \"in_game_name\": \"In-game name\",\n    \"player_name\": \"In-game name\",\n    \"town_hall\": \"Town Hall\",\n    \"townhall\": \"Town Hall\",\n    \"age\": \"Age\",\n    \"age_group\": \"Age\",\n    \"timezone\": \"Time zone\",\n    \"country\": \"Country\",\n    \"multiple_accounts\": \"Multiple accounts\",\n    \"other_accounts\": \"Other accounts\",\n    \"all_player_tags\": \"All player tags\",\n    \"looking_for\": \"What they want from a clan\",\n    \"clan_goal\": \"What they want from a clan\",\n    \"fwa_process\": \"FWA process\",\n    \"war_process\": \"War process\",\n    \"how_heard\": \"How they heard about WU\",\n}",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 62,
+          "exact_source": "return f'<#{value}>' if value else 'Not set'",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 66,
+          "exact_source": "return f'<@&{value}>' if value else 'Not set'",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/config.py",
+          "line": 15,
+          "exact_source": "return f\"<#{int(value)}>\" if value else \"Not set\"",
+          "sha256": "a6402c99b0d4625e55e1489a3a492aab96f3208fe7b593fe9970d3395c1e97ea"
+        }
+      ]
+    },
+    {
+      "id": "TK-9",
+      "status": "applied",
+      "approved_proposal": "\"Ticket setup canceled.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 488,
+          "exact_text": "Ticket setup canceled.",
+          "source_sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        }
+      ]
+    },
+    {
+      "id": "TK-10",
+      "status": "blocked: no exact item",
+      "approved_proposal": "split into two sentences.",
+      "note": "Broad semicolon rule has no standalone exact replacement for unmatched contexts; individually specified fields follow their more specific TK items. See 161-X.",
+      "source_fields": []
+    },
+    {
+      "id": "TK-11",
+      "status": "applied",
+      "approved_proposal": "\"❌ Tickets are not available now. No ticket was created.\" / \"❌ Test tickets are not available now. No ticket was created.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 377,
+          "exact_text": "❌ Tickets are not available now. No ticket was created.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 442,
+          "exact_text": "❌ Tickets are not available now. No ticket was created.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 526,
+          "exact_text": "❌ Test tickets are not available now. No ticket was created.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        }
+      ]
+    },
+    {
+      "id": "TK-12",
+      "status": "applied",
+      "approved_proposal": "\"❌ Tickets are not ready yet. No ticket was created. Try again soon.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 336,
+          "exact_text": "❌ Tickets are not ready yet. No ticket was created. Try again soon.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        }
+      ]
+    },
+    {
+      "id": "TK-13",
+      "status": "applied",
+      "approved_proposal": "\"❌ This test panel is not active for you. Use the current public ticket panel or ask a recruiter.\" / \"❌ This ticket panel is not active. Use the current panel or ask a recruiter.\"",
+      "note": "641 chooses the test-panel wording, without renaming staff rollout terminology.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 382,
+          "exact_text": "❌ This test panel is not active for you. Use the current public ticket panel or ask a recruiter.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 385,
+          "exact_text": "❌ This ticket panel is not active. Use the current panel or ask a recruiter.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        }
+      ]
+    },
+    {
+      "id": "TK-14",
+      "status": "applied",
+      "approved_proposal": "\"Open it here: https://discord.com/channels/{slot_guild_id}/{location_id}\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 458,
+          "exact_template": "Open it here: https://discord.com/channels/{slot_guild_id}/{location_id}"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 457,
+          "exact_source": "sentences.append(\n                    \"Open it here: \"\n                    f\"https://discord.com/channels/{slot_guild_id}/{location_id}\"\n                )",
+          "sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        }
+      ]
+    },
+    {
+      "id": "TK-15",
+      "status": "applied",
+      "approved_proposal": "\"⏳ We are already creating your ticket. Try again in a moment.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 505,
+          "exact_text": "⏳ We are already creating your ticket. Try again in a moment.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 553,
+          "exact_text": "⏳ We are already creating your ticket. Try again in a moment.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        }
+      ]
+    },
+    {
+      "id": "TK-17",
+      "status": "applied",
+      "approved_proposal": "\"❌ Tickets are not ready: {error}. Ask an administrator.\" / \"❌ We could not finish your ticket. We saved your attempt. Try again. We will not make a second ticket. If it fails again, ask an administrator.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 578,
+          "exact_text": "❌ We could not finish your ticket. We saved your attempt. Try again. We will not make a second ticket. If it fails again, ask an administrator.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        },
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 559,
+          "exact_template": "❌ Tickets are not ready: {error}. Ask an administrator."
+        }
+      ]
+    },
+    {
+      "id": "TK-18",
+      "status": "applied",
+      "approved_proposal": "\"Use the button below to continue your application.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/handlers.py",
+          "line": 694,
+          "exact_text": "Use the button below to continue your application.",
+          "source_sha256": "61de89979cc09dbdd6f680a52e55013f42768fb356a5b992f3a85b782f500a72"
+        }
+      ]
+    },
+    {
+      "id": "TK-19",
+      "status": "skipped-unused",
+      "approved_proposal": "\"Set the channels for candidate and recruiter threads (Admin only)\" / \"Text channel for private candidate threads\" / \"Text channel for recruiter threads (recruiters only)\" / \"Role that can enter staff threads\" / \"Check the thread ticket settings (Admin only)\"",
+      "note": "Unregistered/retired operator command paths; preserved at baseline. See excluded-symbol proof and docs/unused-code.md.",
+      "source_fields": []
+    },
+    {
+      "id": "TK-20",
+      "status": "skipped-unused",
+      "approved_proposal": "\"❌ You must be an administrator.\" / \"🛑 Tickets already use a different guild. Nothing was saved.\" / \"🛑 Only the owner can set the ticket guild. Nothing was saved.\" / \"🛑 Candidate threads must use the public-v2 channel that is set. Nothing was saved.\" / \"❌ Cannot read the account of this application. Nothing was saved.\" / \"🛑 Use this command in the ticket guild only.\"",
+      "note": "Unregistered/retired operator command paths; preserved at baseline. See excluded-symbol proof and docs/unused-code.md.",
+      "source_fields": []
+    },
+    {
+      "id": "TK-26",
+      "status": "applied",
+      "approved_proposal": "\"This is a private thread for the candidate. They cannot see this thread. Do not mention them, because that adds them.\\n\\n\" / \"Hello there 👋🏻... How did you hear about \" + \"Warriors United?\" / \"Donations are better since the update that lets you use loot. Clan chat can be quiet at times.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "utils/ticket_staff_content.py",
+          "line": 24,
+          "exact_text": "Hello there 👋🏻... How did you hear about ",
+          "source_sha256": "3d8fb0e422e5f457bdc43407f493c069679b29a8bae092bbbdce45ee6b03918c"
+        },
+        {
+          "path": "utils/ticket_staff_content.py",
+          "line": 25,
+          "exact_text": "Warriors United?",
+          "source_sha256": "3d8fb0e422e5f457bdc43407f493c069679b29a8bae092bbbdce45ee6b03918c"
+        },
+        {
+          "path": "utils/ticket_staff_content.py",
+          "line": 18,
+          "exact_text": "Donations are better since the update that lets you use loot. Clan chat can be quiet at times.",
+          "source_sha256": "3d8fb0e422e5f457bdc43407f493c069679b29a8bae092bbbdce45ee6b03918c"
+        },
+        {
+          "path": "utils/ticket_staff_content.py",
+          "line": 16,
+          "exact_text": "This is a private thread for the candidate. They cannot see this thread. Do not mention them, because that adds them.\n\n",
+          "source_sha256": "3d8fb0e422e5f457bdc43407f493c069679b29a8bae092bbbdce45ee6b03918c"
+        },
+        {
+          "path": "utils/ticket_staff_content.py",
+          "line": 18,
+          "exact_text": "Donations are better since the update that lets you use loot. Clan chat can be quiet at times.",
+          "source_sha256": "3d8fb0e422e5f457bdc43407f493c069679b29a8bae092bbbdce45ee6b03918c"
+        },
+        {
+          "path": "utils/ticket_staff_content.py",
+          "line": 24,
+          "exact_text": "Hello there 👋🏻... How did you hear about Warriors United?",
+          "branch": "main"
+        },
+        {
+          "path": "utils/ticket_staff_content.py",
+          "line": 24,
+          "exact_text": "Hello there 👋🏻... How did you hear about our FWA Operation?",
+          "branch": "fwa unchanged"
+        }
+      ]
+    },
+    {
+      "id": "TK-27",
+      "status": "applied",
+      "approved_proposal": "\"We are sorry, but you do not meet the criteria for Warriors United. This link lists other FWA clans that may have a spot for you.\\n\\nhttps://band.us/@reqfwa\\n\\nGood luck!\" / \"…This link lists other clans that may have a spot for you…\" / \"we are sorry to tell you that we denied your application.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 130,
+          "exact_text": "we are sorry to tell you that we denied your application.",
+          "source_sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 168,
+          "exact_text": ">, we are sorry to tell you that we denied your application.\n\n## **Reason:**\n",
+          "source_sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 77,
+          "exact_text": "We are sorry, but you do not meet the criteria for Warriors United. This link lists other FWA clans that may have a spot for you.\n\nhttps://band.us/@reqfwa\n\nGood luck!",
+          "branch": "KIND_DENY_FWA",
+          "source_sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 83,
+          "exact_text": "We are sorry, but you do not meet the criteria for Warriors United. This link lists other clans that may have a spot for you.\n\nhttps://discord.com/invite/clashofclans\n\nGood luck!",
+          "branch": "KIND_DENY_MAIN",
+          "source_sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 75,
+          "exact_source": "_DENIAL_BODY = {\n    KIND_DENY_FWA: (\n        \"We are sorry, but you do not meet the criteria for Warriors United. \"\n        \"This link lists other FWA clans that may have a spot for you.\\n\\n\"\n        \"https://band.us/@reqfwa\\n\\n\"\n        \"Good luck!\"\n    ),\n    KIND_DENY_MAIN: (\n        \"We are sorry, but you do not meet the criteria for Warriors United. \"\n        \"This link lists other clans that may have a spot for you.\\n\\n\"\n        \"https://discord.com/invite/clashofclans\\n\\n\"\n        \"Good luck!\"\n    ),\n}",
+          "sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 75,
+          "exact_source": "_DENIAL_BODY = {\n    KIND_DENY_FWA: (\n        \"We are sorry, but you do not meet the criteria for Warriors United. \"\n        \"This link lists other FWA clans that may have a spot for you.\\n\\n\"\n        \"https://band.us/@reqfwa\\n\\n\"\n        \"Good luck!\"\n    ),\n    KIND_DENY_MAIN: (\n        \"We are sorry, but you do not meet the criteria for Warriors United. \"\n        \"This link lists other clans that may have a spot for you.\\n\\n\"\n        \"https://discord.com/invite/clashofclans\\n\\n\"\n        \"Good luck!\"\n    ),\n}",
+          "sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 129,
+          "exact_source": "DENIAL_CARD_TITLE = (\n    \"we are sorry to tell you that we denied your application.\"\n)",
+          "sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 157,
+          "exact_source": "components = [\n        Container(\n            accent_color=RED_ACCENT,\n            components=[\n                Section(\n                    components=[\n                        Text(content=(\n                            f\"{TEST_DENIAL_CARD_TITLE}\\n<@{user_id}> \"\n                            f\"This decision affects only the test ticket.\\n\\n\"\n                            f\"## **Reason:**\\n{body}\"\n                            if testing_service.is_test_ticket(ticket) else\n                            f\"<@{user_id}>, we are sorry to tell you that we denied your \"\n                            f\"application.\\n\\n\"\n                            f\"## **Reason:**\\n{body}\"\n                        ))\n                    ],\n                    accessory=Thumbnail(media=DENIED_THUMB),\n                ),\n                Media(items=[MediaItem(media=\"assets/Red_Footer.png\")]),\n            ],\n        )\n    ]",
+          "sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        }
+      ]
+    },
+    {
+      "id": "TK-28",
+      "status": "applied",
+      "approved_proposal": "\"**Congratulations!** Warriors United accepted you. A recruiter will send you your clan invite. This ticket stays open, so you can ask questions here. To find it again, use the **My ticket** button on the panel.\" / \"Warriors United accepted the recruit.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 215,
+          "exact_text": "> **Congratulations!** Warriors United accepted you. A recruiter will send you your clan invite. This ticket stays open, so you can ask questions here. To find it again, use the **My ticket** button on the panel.",
+          "source_sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 643,
+          "exact_text": "Warriors United accepted the recruit.",
+          "source_sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 205,
+          "exact_source": "components = [\n        Container(\n            accent_color=GREEN_ACCENT,\n            components=[\n                Section(\n                    components=[\n                        Text(content=(\n                            f\"{TEST_APPROVAL_CARD_TITLE}\\n<@{user_id}> \"\n                            \"No role, membership, invitation, or permanent history was changed.\"\n                            if testing_service.is_test_ticket(ticket) else\n                            f\"<@{user_id}> **Congratulations!** Warriors United accepted you. \"\n                            f\"A recruiter will send you your clan invite. This ticket \"\n                            f\"stays open, so you can ask questions here. To find it \"\n                            f\"again, use the **My ticket** button on the panel.\"\n                        ))\n                    ],\n                    accessory=Thumbnail(media=APPROVAL_THUMB),\n                ),\n                Media(items=[MediaItem(media=\"assets/Green_Footer.png\")]),\n            ],\n        )\n    ]",
+          "sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 640,
+          "exact_source": "decision = \"Approved\" if approved else \"Denied\"",
+          "sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        }
+      ]
+    },
+    {
+      "id": "TK-29",
+      "status": "applied",
+      "approved_proposal": "\"We saved the decision, so it will not be lost. The Discord and console updates will try again automatically. Ask an admin to check only if the problem stays.\" / \"The earlier decision is still updating the applicant and the console. Nothing was changed. Try this change again in a moment.\" / \"This decision replaces the earlier decision. We kept the earlier staff record.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 62,
+          "exact_text": "We saved the decision, so it will not be lost. The Discord and console updates will try again automatically. Ask an admin to check only if the problem stays.",
+          "source_sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 66,
+          "exact_text": "The earlier decision is still updating the applicant and the console. Nothing was changed. Try this change again in a moment.",
+          "source_sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 657,
+          "exact_text": "This decision replaces the earlier decision. We kept the earlier staff record.",
+          "source_sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 61,
+          "exact_source": "RESOLUTION_EFFECT_RETRY_MESSAGE = (\n    \"We saved the decision, so it will not be lost. The Discord and console updates \"\n    \"will try again automatically. Ask an admin to check only if the problem stays.\"\n)",
+          "sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 65,
+          "exact_source": "OVERRIDE_EFFECT_PENDING_MESSAGE = (\n    \"The earlier decision is still updating the applicant and the console. \"\n    \"Nothing was changed. Try this change again in a moment.\"\n)",
+          "sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        },
+        {
+          "path": "extensions/commands/tickets/resolve.py",
+          "line": 648,
+          "exact_source": "return [Container(\n        accent_color=GREEN_ACCENT if approved else RED_ACCENT,\n        components=[\n            Section(components=[Text(content=title), Text(content=(\n                f\"**Recruit:** <@{ticket['user_id']}>\\n\"\n                f\"**Handled by:** <@{ticket.get('handled_by')}>\\n\"\n                f\"**Decision time:** {ts(ticket.get('handled_at'), 'F')}\"\n            ))], accessory=Thumbnail(media=APPROVAL_THUMB if approved else DENIED_THUMB)),\n            Text(content=str(body or \"No denial reason recorded.\")),\n            *([Text(content=\"This decision replaces the earlier decision. We kept the earlier staff record.\")]\n              if (ticket.get(\"resolution_effects\") or {}).get(\"overturn\") else []),\n            Media(items=[MediaItem(media=\"assets/Green_Footer.png\" if approved else \"assets/Red_Footer.png\")]),\n        ],\n    )]",
+          "sha256": "044182c14010da58a61f901af119c8422e777bdfa8e04a0daccb716d736c6a99"
+        }
+      ]
+    },
+    {
+      "id": "TK-30",
+      "status": "applied",
+      "approved_proposal": "\"Another recruiter started this denial.\" / \"You cannot deny tickets now.\" / \"❌ You cannot approve tickets now.\" / \"❌ Nothing changed. The ticket is missing, or you cannot do this.\" (also use for :479)",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 46,
+          "exact_text": "Another recruiter started this denial.",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 416,
+          "exact_text": "Another recruiter started this denial.",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 49,
+          "exact_text": "You cannot deny tickets now.",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 425,
+          "exact_text": "You cannot deny tickets now.",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 213,
+          "exact_text": "❌ You cannot approve tickets now.",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 274,
+          "exact_text": "❌ Nothing changed. The ticket is missing, or you cannot do this.",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 342,
+          "exact_text": "❌ Nothing changed. The ticket is missing, or you cannot do this.",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 479,
+          "exact_text": "❌ Nothing changed. The ticket is missing, or you cannot do this.",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        }
+      ]
+    },
+    {
+      "id": "TK-31",
+      "status": "applied",
+      "approved_proposal": "\"The ticket changed. Run `/tickets deny` again.\" / \"The ticket changed. Run `/tickets approve` again.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 187,
+          "exact_text": "The ticket changed. Run `/tickets approve` again."
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 257,
+          "exact_text": "The ticket changed. Run `/tickets deny` again."
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 325,
+          "exact_text": "The ticket changed. Run `/tickets deny` again."
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 461,
+          "exact_text": "The ticket changed. Run `/tickets deny` again."
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 186,
+          "exact_source": "await ctx.respond(\n                    \"The ticket changed. Run `/tickets approve` again.\"\n                )",
+          "sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 255,
+          "exact_source": "await ctx.interaction.edit_initial_response(\n                content=(\n                    \"The ticket changed. Run `/tickets deny` again.\"\n                ),\n                components=[],\n            )",
+          "sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 323,
+          "exact_source": "await ctx.interaction.edit_initial_response(\n                content=(\n                    \"The ticket changed. Run `/tickets deny` again.\"\n                ),\n                components=[],\n            )",
+          "sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 459,
+          "exact_source": "await ctx.interaction.edit_initial_response(\n                content=(\n                    \"The ticket changed. Run `/tickets deny` again.\"\n                )\n            )",
+          "sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        }
+      ]
+    },
+    {
+      "id": "TK-32",
+      "status": "applied",
+      "approved_proposal": "\"Use the FWA message\" / \"Use the Main message\" / \"Write your own reason\" / \"Select how to deny:\"",
+      "note": "Four specified denial menu labels match; two uncited result notices retain default-message wording and are recorded separately on 161-X.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 117,
+          "exact_text": "Use the FWA message",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 122,
+          "exact_text": "Use the Main message",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 127,
+          "exact_text": "Write your own reason",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 133,
+          "exact_text": "Select how to deny:",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        }
+      ]
+    },
+    {
+      "id": "TK-33",
+      "status": "applied",
+      "approved_proposal": "\"⛔ You cannot approve this applicant: they are blacklisted.\" / \"We are updating the applicant. Try again.\" / \"⏳ Not approved: {reason}\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant. The separate console title Approval not completed is retained at 82400 because no exact item authorizes its replacement; see 161-X.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 207,
+          "exact_text": "⛔ You cannot approve this applicant: they are blacklisted.",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 209,
+          "exact_text": "We are updating the applicant. Try again.",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6501,
+          "exact_text": "We are updating the applicant. Try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 210,
+          "exact_template": "⏳ Not approved: {reason}"
+        }
+      ]
+    },
+    {
+      "id": "TK-34",
+      "status": "applied",
+      "approved_proposal": "title \"Reason for denial\" / label \"Reason the applicant will see\" / placeholder \"Write a clear reason\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 383,
+          "exact_text": "Reason for denial",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4799,
+          "exact_text": "Reason for denial",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6762,
+          "exact_text": "Reason for denial",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6899,
+          "exact_text": "Reason for denial",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 374,
+          "exact_text": "Reason the applicant will see",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4804,
+          "exact_text": "Reason the applicant will see",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6766,
+          "exact_text": "Reason the applicant will see",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6903,
+          "exact_text": "Reason the applicant will see",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/close.py",
+          "line": 375,
+          "exact_text": "Write a clear reason",
+          "source_sha256": "52632755ac472a8c58604f014b79894e89ddbd9361fb1f60849b7a1920f22c1a"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4838,
+          "exact_text": "Write a clear reason with 5 to 1000 characters.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6846,
+          "exact_text": "Write a clear reason with at least 5 characters.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6983,
+          "exact_text": "Write a clear reason with at least 5 characters.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4805,
+          "exact_text": "Write a clear reason",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6767,
+          "exact_text": "Write a clear reason",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6904,
+          "exact_text": "Write a clear reason",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ]
+    },
+    {
+      "id": "TK-35",
+      "status": "applied",
+      "approved_proposal": "\"Add or change an applicant flag (Recruiter only)\" / \"Short staff reason. Staff see it on every matching ticket\" / \"Discord IDs. Leave both ID fields empty to use this ticket's applicant\" / \"Player tags. Leave both ID fields empty to use this ticket's applicant\" / \"Turn off one applicant flag (Recruiter only)\" / \"Flag ID from /tickets flags or the ticket details\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 128,
+          "exact_text": "Add or change an applicant flag (Recruiter only)",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        },
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 143,
+          "exact_text": "Short staff reason. Staff see it on every matching ticket",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        },
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 149,
+          "exact_text": "Discord IDs. Leave both ID fields empty to use this ticket's applicant",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        },
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 155,
+          "exact_text": "Player tags. Leave both ID fields empty to use this ticket's applicant",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        },
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 219,
+          "exact_text": "Turn off one applicant flag (Recruiter only)",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        },
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 223,
+          "exact_text": "Flag ID from /tickets flags or the ticket details",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        }
+      ]
+    },
+    {
+      "id": "TK-36",
+      "status": "applied",
+      "approved_proposal": "\"Check the flag ID. Then try again.\" / \"The flag is off. We kept its history.\" / \"Use a Discord ID, or a player tag that starts with #.\" / \"No flag matches that Discord ID or player tag.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 266,
+          "exact_text": "Check the flag ID. Then try again.",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        },
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 286,
+          "exact_text": "The flag is off. We kept its history.",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        },
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 337,
+          "exact_text": "Use a Discord ID, or a player tag that starts with #.",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        },
+        {
+          "path": "extensions/commands/tickets/flags.py",
+          "line": 354,
+          "exact_text": "No flag matches that Discord ID or player tag.",
+          "source_sha256": "481243dac8e260541fab85a72f1383923a84ea0e8cfbd0855ca0f8ac3cb771f3"
+        }
+      ]
+    },
+    {
+      "id": "TK-37",
+      "status": "applied",
+      "approved_proposal": "\"…The first account check is not done. We did not record a result of zero accounts. It will try again automatically.\" / \"…The latest account lookup failed, so we do not know the current linked count.{retained_copy} Try again before you make the final decision.\" / \"…Finish linking in private if needed. The check runs again automatically at the final decision.\" / \"The latest linked-account refresh failed. The last confirmed list is below. Try the lookup again.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3205,
+          "exact_text": "The latest linked-account refresh failed. The last confirmed list is below. Try the lookup again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3117,
+          "exact_source": "return (\n            \"### 🔄 Linked Clash accounts\\n\"\n            \"The first account check is not done. We did not record a result of zero accounts. \"\n            \"It will try again automatically.\"\n        )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3129,
+          "exact_source": "return (\n            \"### ⚠️ Linked Clash accounts\\n\"\n            \"The latest account lookup failed, so we do not know the current linked count.\"\n            f\"{retained_copy} Try again before you make the final decision.\"\n        )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3141,
+          "exact_source": "return (\n            \"### 🔗 Linking required\\n\"\n            \"No Clash accounts are currently linked to this Discord ID.\"\n            f\"{retained_copy} Finish linking in private if needed. \"\n            \"The check runs again automatically at the final decision.\"\n        )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3200,
+          "exact_source": "state_copy = {\n        account_sync.STATE_PENDING: (\n            \"The linked-account check is pending. No blacklist result was guessed.\"\n        ),\n        account_sync.STATE_FAILED: (\n            \"The latest linked-account refresh failed. The last confirmed list is below. \"\n            \"Try the lookup again.\"\n        ),\n        account_sync.STATE_EMPTY: (\n            \"No accounts are currently linked. Complete linking privately if needed.\"\n        ),\n        account_sync.STATE_READY: (\n            \"Open each link to review the account on FWA Chocolate.\"\n        ),\n    }[snapshot.state]",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ]
+    },
+    {
+      "id": "TK-38",
+      "status": "applied",
+      "approved_proposal": "\"-# These links are for review only. The Chocolate blacklist was not checked. To record a verified concern, use Manage Flags.\" / \"These accounts were on this checklist before. They are not in the current linked-account list now. We keep their tags in the ticket history for search and flags.\" / \"The linked-account check is pending. No blacklist result was guessed.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3216,
+          "exact_text": "-# These links are for review only. The Chocolate blacklist was not checked. To record a verified concern, use Manage Flags.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3960,
+          "exact_text": "These accounts were on this checklist before. They are not in the current linked-account list now. We keep their tags in the ticket history for search and flags.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3202,
+          "exact_text": "The linked-account check is pending. No blacklist result was guessed.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3200,
+          "exact_source": "state_copy = {\n        account_sync.STATE_PENDING: (\n            \"The linked-account check is pending. No blacklist result was guessed.\"\n        ),\n        account_sync.STATE_FAILED: (\n            \"The latest linked-account refresh failed. The last confirmed list is below. \"\n            \"Try the lookup again.\"\n        ),\n        account_sync.STATE_EMPTY: (\n            \"No accounts are currently linked. Complete linking privately if needed.\"\n        ),\n        account_sync.STATE_READY: (\n            \"Open each link to review the account on FWA Chocolate.\"\n        ),\n    }[snapshot.state]",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3200,
+          "exact_source": "state_copy = {\n        account_sync.STATE_PENDING: (\n            \"The linked-account check is pending. No blacklist result was guessed.\"\n        ),\n        account_sync.STATE_FAILED: (\n            \"The latest linked-account refresh failed. The last confirmed list is below. \"\n            \"Try the lookup again.\"\n        ),\n        account_sync.STATE_EMPTY: (\n            \"No accounts are currently linked. Complete linking privately if needed.\"\n        ),\n        account_sync.STATE_READY: (\n            \"Open each link to review the account on FWA Chocolate.\"\n        ),\n    }[snapshot.state]",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3215,
+          "exact_source": "disclaimer = (\n        \"-# These links are for review only. The Chocolate blacklist was not checked. \"\n        \"To record a verified concern, use Manage Flags.\"\n    )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3954,
+          "exact_source": "components = [\n        Container(\n            accent_color=ACCENT_GREY,\n            components=[\n                Text(content=f\"## {CHOCOLATE_TITLE_PREFIX} · retired\"),\n                Text(content=(\n                    \"These accounts were on this checklist before. They are not in the current linked-account list now. \"\n                    \"We keep their tags in the ticket history for search and flags.\"\n                )),\n            ],\n        ),\n    ]",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ]
+    },
+    {
+      "id": "TK-39",
+      "status": "applied",
+      "approved_proposal": "\"-# A change applies to the latest saved Discord ID and to every saved player tag. Names are for display only.\" / \"Select a flag type to add it or change its reason. To remove a flag, select it below and write why.\" / \"Write a reason that staff can check\" / \"This reason is kept in the permanent history\" / \"This ticket has no saved Discord ID or player tag.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3007,
+          "exact_text": "-# A change applies to the latest saved Discord ID and to every saved player tag. Names are for display only.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3011,
+          "exact_text": "Select a flag type to add it or change its reason. To remove a flag, select it below and write why.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 5263,
+          "exact_text": "Write a reason that staff can check",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 5289,
+          "exact_text": "This reason is kept in the permanent history",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 5358,
+          "exact_text": "This ticket has no saved Discord ID or player tag.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3006,
+          "exact_source": "footer = (\n        \"-# A change applies to the latest saved Discord ID and to every saved player tag. \"\n        \"Names are for display only.\"\n    )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 3010,
+          "exact_source": "guidance = (\n        \"Select a flag type to add it or change its reason. \"\n        \"To remove a flag, select it below and write why.\"\n    )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 5257,
+          "exact_source": "await ctx.respond_with_modal(\n        title=f\"Add or update {label}\"[:45],\n        custom_id=f\"ticket_v2_flag_set_submit:{manager_id}|{kind}\",\n        components=[ModalActionRow().add_text_input(\n            \"reason\",\n            \"Why this flag applies\",\n            placeholder=\"Write a reason that staff can check\",\n            required=True,\n            style=hikari.TextInputStyle.PARAGRAPH,\n            min_length=2,\n            max_length=500,\n        )],\n    )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 5283,
+          "exact_source": "await ctx.respond_with_modal(\n        title=\"Remove applicant flag\",\n        custom_id=f\"ticket_v2_flag_remove_submit:{action_id}|{slot}\",\n        components=[ModalActionRow().add_text_input(\n            \"reason\",\n            \"Why this flag no longer applies\",\n            placeholder=\"This reason is kept in the permanent history\",\n            required=True,\n            style=hikari.TextInputStyle.PARAGRAPH,\n            min_length=2,\n            max_length=500,\n        )],\n    )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 5356,
+          "exact_source": "await _edit_flag_modal(ctx, _notice(\n            \"Flag not saved\",\n            \"This ticket has no saved Discord ID or player tag.\",\n            accent=ACCENT_RED,\n        ))",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ]
+    },
+    {
+      "id": "TK-40",
+      "status": "applied",
+      "approved_proposal": "\"You must be a recruiter, and the ticket must be open.\" / \"The decision is saved. The applicant is being told now. You can open the permanent thread from the console.\" / \"Decision saved. Updates will try again\" / \"The decision was not saved. Open the ticket again. Then try again.\" / \"This ticket has no decision now. Open it again from the console.\" / \"This test window is closed, or you are not on the test list.\" / \"Select a ticket ({shown} of {total_open} shown, oldest first. Use Find for the rest)\"",
+      "note": "Live decision/permission notices match. Dynamic picker text belongs to explicitly held definition-only helper and is skipped-unused.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4761,
+          "exact_text": "You must be a recruiter, and the ticket must be open.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4783,
+          "exact_text": "You must be a recruiter, and the ticket must be open.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4834,
+          "exact_text": "You must be a recruiter, and the ticket must be open.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7315,
+          "exact_text": "You must be a recruiter, and the ticket must be open.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6485,
+          "exact_text": "The decision is saved. The applicant is being told now. You can open the permanent thread from the console.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6491,
+          "exact_text": "Decision saved. Updates will try again",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6624,
+          "exact_text": "The decision was not saved. Open the ticket again. Then try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6739,
+          "exact_text": "The decision was not saved. Open the ticket again. Then try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6867,
+          "exact_text": "The decision was not saved. Open the ticket again. Then try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7005,
+          "exact_text": "The decision was not saved. Open the ticket again. Then try again.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6682,
+          "exact_text": "This ticket has no decision now. Open it again from the console.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4996,
+          "exact_text": "This test window is closed, or you are not on the test list.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4754,
+          "exact_source": "components = (\n        await _ticket_detail_panel(\n            mongo, doc, owner_id=int(ctx.user.id), guild_id=_int(ctx.guild_id)\n        )\n        if doc\n        else _notice(\n            \"Ticket unavailable\",\n            \"You must be a recruiter, and the ticket must be open.\",\n        )\n    )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4776,
+          "exact_source": "components = (\n        _approve_confirm_panel(\n            doc, action_id=await _shared_detail_state(ctx, mongo, doc)\n        )\n        if doc\n        else _notice(\n            \"Ticket unavailable\",\n            \"You must be a recruiter, and the ticket must be open.\",\n        )\n    )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 4832,
+          "exact_source": "components = _notice(\n            \"Ticket unavailable\",\n            \"You must be a recruiter, and the ticket must be open.\",\n        )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6483,
+          "exact_source": "return _notice(\n            f\"Ticket {verb}\",\n            \"The decision is saved. The applicant is being told now. \"\n            \"You can open the permanent thread from the console.\",\n            accent=ACCENT_GREEN if verb == \"approved\" else ACCENT_RED,\n        )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6490,
+          "exact_source": "return _notice(\n            \"Decision saved. Updates will try again\",\n            resolve.RESOLUTION_EFFECT_RETRY_MESSAGE,\n            accent=ACCENT_YELLOW,\n        )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6622,
+          "exact_source": "return _notice(\n            \"Decision not saved\",\n            \"The decision was not saved. Open the ticket again. Then try again.\",\n            accent=ACCENT_RED,\n        )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 6680,
+          "exact_source": "return _notice(\n            \"Ticket changed\",\n            \"This ticket has no decision now. Open it again from the console.\",\n            accent=ACCENT_YELLOW,\n        )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ],
+      "excluded_fields": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 691,
+          "function": "_hub_picker_placeholder",
+          "status": "skipped-unused",
+          "reason": "docs/unused-code.md §B and independent definition-only caller check; source held byte-equal to a1a8",
+          "approved_but_not_applied": "Select a ticket ({shown} of {total_open} shown, oldest first. Use Find for the rest)"
+        }
+      ]
+    },
+    {
+      "id": "TK-41",
+      "status": "applied",
+      "approved_proposal": "\"Set up, check, or fix the shared ticket console (Admin only)\" / \"Private recruiter text channel. Leave empty to check the current setup\" / \"You must be an administrator in the ticket guild.\" / \"Could not post the console. Check the log and the channel permissions.\" / \"Discord ID, #player tag, or username. Leave empty to use the form\"",
+      "note": "Registered ConsoleCommand fields match; FindCommand query field is unregistered and retained unchanged.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7030,
+          "exact_text": "Set up, check, or fix the shared ticket console (Admin only)",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7034,
+          "exact_text": "Private recruiter text channel. Leave empty to check the current setup",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7050,
+          "exact_text": "You must be an administrator in the ticket guild.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7078,
+          "exact_text": "Could not post the console. Check the log and the channel permissions.",
+          "source_sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7032,
+          "exact_source": "channel = lightbulb.channel(\n        \"channel\",\n        \"Private recruiter text channel. Leave empty to check the current setup\",\n        default=None,\n        channel_types=[hikari.ChannelType.GUILD_TEXT],\n    )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7049,
+          "exact_source": "await ctx.respond(\n                \"You must be an administrator in the ticket guild.\",\n                ephemeral=True,\n            )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        },
+        {
+          "path": "extensions/commands/tickets/console.py",
+          "line": 7077,
+          "exact_source": "await ctx.respond(\n                \"Could not post the console. Check the log and the channel permissions.\",\n                ephemeral=True,\n            )",
+          "sha256": "0a272562d605ff740d5c0d1e945b18095e1e8c97daf1c1a9ae3a4435533db715"
+        }
+      ]
+    },
+    {
+      "id": "TK-42",
+      "status": "applied",
+      "approved_proposal": "\"Select what to manage. Only server administrators can use these settings.\" / \"…If the recruit thread has no human message for this time, recruiters are asked to deny the ticket as Ghosted or to keep waiting. The ticket is not denied or archived by itself. Messages in the staff thread do not reset the timer.\" / \"…This applies only to approved, denied, or closed tickets. Each day, both threads are archived if neither has a human message for this time. A new decision starts the wait again. Messages from bots do not reset it. The history is kept and no new locks are added.\" / \"…These selections apply to new tickets. Existing tickets stay where they are.\" / \"Add extra staff roles that already have access to the staff channel. This does not change Discord permissions. It does not let them approve or deny.\\n\\nFirst give the role access in the Discord channel permissions. Then select it here and save.\" / \"Check both ticket types: channel access, recruiter permissions, and whether ticket storage is ready. This check does not change your settings.\" / \"Update the recruit application message or the staff console, or make it again. The saved layout is used.\" / \"…Update the saved application message, or make it again if someone deleted it. When you select the button below, the repair starts at once.\" / \"You must be an administrator in the ticket server.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 98,
+          "exact_text": "Select what to manage. Only server administrators can use these settings.",
+          "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 145,
+          "exact_text": "Check both ticket types: channel access, recruiter permissions, and whether ticket storage is ready. This check does not change your settings.",
+          "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 147,
+          "exact_text": "Update the recruit application message or the staff console, or make it again. The saved layout is used.",
+          "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 45,
+          "exact_text": "You must be an administrator in the ticket server.",
+          "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 180,
+          "exact_text": "You must be an administrator in the ticket server.",
+          "source_sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 98,
+          "exact_source": "body.append(Text(content='Select what to manage. Only server administrators can use these settings.'))",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 111,
+          "exact_source": "section('1 · Open tickets — ask staff to review',\n                f'**Current wait: {review}.**\\nIf the recruit thread has no human message for this time, recruiters are asked to deny the ticket as Ghosted or to keep waiting. The ticket is not denied or archived by itself. Messages in the staff thread do not reset the timer.',\n                [direct('ticket_settings_interval', 'Change open-ticket review wait')])",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 114,
+          "exact_source": "section('2 · Resolved tickets — archive quiet chats',\n                f'**Current wait: {archive}.**\\nThis applies only to approved, denied, or closed tickets. Each day, both threads are archived if neither has a human message for this time. A new decision starts the wait again. Messages from bots do not reset it. The history is kept and no new locks are added.',\n                [direct('ticket_settings_archive', 'Change resolved-ticket archive wait')])",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 126,
+          "exact_source": "body.append(Text(content='Select each setting below, then **Save channel & role changes**. These selections apply to new tickets. Existing tickets stay where they are.'))",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 127,
+          "exact_source": "for key, label, explanation in (\n            ('candidate_parent', 'Recruit channel', 'New private recruit threads are created here. This must be the channel containing the application entry message.'),\n            ('staff_parent', 'Staff channel', 'New staff discussion threads are created here. Only authorized staff should be able to view this channel.'),\n            ('thread_recruiter_role', 'Recruiter role', 'Members of this role handle these applications and receive recruiter notifications.'),\n        ):\n            is_role = key.endswith('role')\n            value = role(cfg.get(view+'_'+key)) if is_role else channel(cfg.get(view+'_'+key))\n            section(label, f'**Selected:** {value}\\n{explanation}', [Row(components=[Select(\n                type=hikari.ComponentType.ROLE_SELECT_MENU if is_role else hikari.ComponentType.CHANNEL_SELECT_MENU,\n                custom_id=f'ticket_settings:{token}:select:{view}_{key}', placeholder=f'Select {label.lower()}', min_values=1, max_values=1)])])",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 139,
+          "exact_source": "body.append(Text(content='Add extra staff roles that already have access to the staff channel. This does not change Discord permissions. It does not let them approve or deny.\\n\\nFirst give the role access in the Discord channel permissions. Then select it here and save.'))",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 145,
+          "exact_source": "section('Check for setup problems', 'Check both ticket types: channel access, recruiter permissions, and whether ticket storage is ready. This check does not change your settings.',\n                [button(token, 'validate', 'Run setup check')])",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 147,
+          "exact_source": "section('Restore a missing or outdated message', 'Update the recruit application message or the staff console, or make it again. The saved layout is used.',\n                [button(token, 'panels', 'Manage ticket messages')])",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 152,
+          "exact_source": "section('Recruit application message', f'**Channel:** {channel(data.get(\"entry_channel\"))}\\nUpdate the saved application message, or make it again if someone deleted it. When you select the button below, the repair starts at once.',\n                [button(token, 'repair_entry', 'Restore application message')])",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 154,
+          "exact_source": "section('Staff console', f'**Channel:** {channel(data.get(\"console_channel\"))}\\nRefresh or recreate the staff ticket console. Select its current channel, or select a channel for first-time setup. This cannot move an existing console. Selecting Restore applies immediately.',\n                [Row(components=[Select(type=hikari.ComponentType.CHANNEL_SELECT_MENU, custom_id=f'ticket_settings:{token}:select:console_channel', placeholder='Select the staff console channel',min_values=1,max_values=1)]),\n                 button(token, 'repair_console', 'Restore staff console')])",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        },
+        {
+          "path": "extensions/commands/tickets/settings.py",
+          "line": 180,
+          "exact_source": "await ctx.interaction.edit_initial_response(content='You must be an administrator in the ticket server.',**NO_MENTIONS)",
+          "sha256": "b7caecbd72f7d86ff820a2ade0c3c52d48aef2756387acd97097dbe146ba2323"
+        }
+      ]
+    },
+    {
+      "id": "TK-44",
+      "status": "applied",
+      "approved_proposal": "\"This opens test tickets only. Test threads are removed after the test window ends. Use the normal questions and staff controls. Approval and denial are simulated.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/testing.py",
+          "line": 92,
+          "exact_text": "This opens test tickets only. Test threads are removed after the test window ends. Use the normal questions and staff controls. Approval and denial are simulated.",
+          "source_sha256": "d110023fdf69becdc842e79c61151626edc10d122315566ee539d4b1e6c161be"
+        }
+      ]
+    },
+    {
+      "id": "TK-45",
+      "status": "applied",
+      "approved_proposal": "\"…You will be asked for a reason to close.\" / \"This ticket does not need an inactivity review yet.\" / \"The ticket is closed. The Ghosted flag update is waiting. It will try again automatically.\" / \"The ticket changed. We did not close it.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/inactivity.py",
+          "line": 305,
+          "exact_text": "This ticket does not need an inactivity review yet.",
+          "source_sha256": "13e4b129b6c8b442d56bd594229a6021d37c427d8769cbbae686a2896588d369"
+        },
+        {
+          "path": "extensions/commands/tickets/inactivity.py",
+          "line": 334,
+          "exact_text": "The ticket is closed. The Ghosted flag update is waiting. It will try again automatically.",
+          "source_sha256": "13e4b129b6c8b442d56bd594229a6021d37c427d8769cbbae686a2896588d369"
+        },
+        {
+          "path": "extensions/commands/tickets/inactivity.py",
+          "line": 337,
+          "exact_text": "The ticket changed. We did not close it.",
+          "source_sha256": "13e4b129b6c8b442d56bd594229a6021d37c427d8769cbbae686a2896588d369"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/inactivity.py",
+          "line": 80,
+          "exact_source": "return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f\"## Inactivity review · {period_label(period)}\\n<@&{role}> · <#{ticket['location']['id']}>\\n\\n{wording}\\n\\nYou will be asked for a reason to close.\"), row])]",
+          "sha256": "13e4b129b6c8b442d56bd594229a6021d37c427d8769cbbae686a2896588d369"
+        },
+        {
+          "path": "extensions/commands/tickets/inactivity.py",
+          "line": 305,
+          "exact_source": "await ctx.interaction.edit_initial_response(content=\"This ticket does not need an inactivity review yet.\")",
+          "sha256": "13e4b129b6c8b442d56bd594229a6021d37c427d8769cbbae686a2896588d369"
+        },
+        {
+          "path": "extensions/commands/tickets/inactivity.py",
+          "line": 333,
+          "exact_source": "wording = (\"Ghosted applied and ticket closed with the reason you provided.\" if complete else\n                           \"The ticket is closed. The Ghosted flag update is waiting. It will try again automatically.\")",
+          "sha256": "13e4b129b6c8b442d56bd594229a6021d37c427d8769cbbae686a2896588d369"
+        },
+        {
+          "path": "extensions/commands/tickets/inactivity.py",
+          "line": 337,
+          "exact_source": "wording = \"The ticket changed. We did not close it.\"",
+          "sha256": "13e4b129b6c8b442d56bd594229a6021d37c427d8769cbbae686a2896588d369"
+        }
+      ]
+    },
+    {
+      "id": "TK-46",
+      "status": "applied",
+      "approved_proposal": "\"Staff closed this application. They did not approve or deny it. Ask recruitment staff if you want to continue.\" / \"This recruit already has an active ticket, or we are creating one.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/lifecycle.py",
+          "line": 24,
+          "exact_text": "Staff closed this application. They did not approve or deny it. Ask recruitment staff if you want to continue.",
+          "source_sha256": "87a7b3394409654bb2122477947b7018d4d9e0daef22d3d62e0c03f7c35ff363"
+        },
+        {
+          "path": "extensions/commands/tickets/lifecycle.py",
+          "line": 206,
+          "exact_text": "This recruit already has an active ticket, or we are creating one.",
+          "source_sha256": "87a7b3394409654bb2122477947b7018d4d9e0daef22d3d62e0c03f7c35ff363"
+        }
+      ]
+    },
+    {
+      "id": "TK-47",
+      "status": "applied",
+      "approved_proposal": "\"…Yes opens a reason form for all these accounts. We will not change external links or existing flags.\" / \"Old Discord account. The linking tools are not available. I reviewed all listed accounts.\" / \"## Review first\\nReview and fix the linked-account conflicts. Then select Approve again and write your reason. Nothing was changed.\" / \"The review expired or was already sent, or the ticket or accounts changed. Select Approve again to see the latest information.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/link_review.py",
+          "line": 65,
+          "exact_text": "Old Discord account. The linking tools are not available. I reviewed all listed accounts.",
+          "source_sha256": "e007e4c364c00668d49f943b0f62aa56b8f6883c2274b2560cba664c4426be47"
+        },
+        {
+          "path": "extensions/commands/tickets/link_review.py",
+          "line": 109,
+          "exact_text": "The review expired or was already sent, or the ticket or accounts changed. Select Approve again to see the latest information.",
+          "source_sha256": "e007e4c364c00668d49f943b0f62aa56b8f6883c2274b2560cba664c4426be47"
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/link_review.py",
+          "line": 41,
+          "exact_source": "return [Container(accent_color=0xF1C40F,components=[\n        Text(content='## Review linked-account conflicts\\nHave you reviewed these linked-account conflicts?'),\n        Text(content=f'**Accounts:** {tags}\\nYes opens a reason form for all these accounts. We will not change external links or existing flags.'),\n        Row(components=[Button(style=hikari.ButtonStyle.SECONDARY,label='Yes — Reviewed',custom_id=f'ticket_link_review_yes:{token}'),\n            Button(style=hikari.ButtonStyle.SECONDARY,label='No — Review First',custom_id=f'ticket_link_review_no:{token}')]),\n    ])]",
+          "sha256": "e007e4c364c00668d49f943b0f62aa56b8f6883c2274b2560cba664c4426be47"
+        },
+        {
+          "path": "extensions/commands/tickets/link_review.py",
+          "line": 61,
+          "exact_source": "await ctx.respond('This review expired or is not yours. Select Approve again.',ephemeral=True)",
+          "sha256": "e007e4c364c00668d49f943b0f62aa56b8f6883c2274b2560cba664c4426be47"
+        },
+        {
+          "path": "extensions/commands/tickets/link_review.py",
+          "line": 74,
+          "exact_source": "await ctx.interaction.edit_initial_response(components=notice('This review expired or is not yours. Select Approve again.'))",
+          "sha256": "e007e4c364c00668d49f943b0f62aa56b8f6883c2274b2560cba664c4426be47"
+        },
+        {
+          "path": "extensions/commands/tickets/link_review.py",
+          "line": 76,
+          "exact_source": "await ctx.interaction.edit_initial_response(components=[Container(accent_color=0xF1C40F,components=[\n        Text(content='## Review first\\nReview and fix the linked-account conflicts. Then select Approve again and write your reason. Nothing was changed.'),\n        Row(components=[Button(style=hikari.ButtonStyle.SECONDARY,label='Review Player Info',custom_id=f\"ticket_player_info:{data['ticket_id']}|1\")]),\n    ])])",
+          "sha256": "e007e4c364c00668d49f943b0f62aa56b8f6883c2274b2560cba664c4426be47"
+        },
+        {
+          "path": "extensions/commands/tickets/link_review.py",
+          "line": 109,
+          "exact_source": "await ctx.interaction.edit_initial_response(components=notice('The review expired or was already sent, or the ticket or accounts changed. Select Approve again to see the latest information.'))",
+          "sha256": "e007e4c364c00668d49f943b0f62aa56b8f6883c2274b2560cba664c4426be47"
+        }
+      ]
+    },
+    {
+      "id": "TK-48",
+      "status": "applied",
+      "approved_proposal": "\" unavailable. Previously saved accounts may be old.\" / \". Fix the links before you approve.\" / \"You must be a recruiter, and the ticket must exist.\" / \"The staff summary update is waiting. The saved account lookup is below.\"",
+      "note": "Current source fields are listed below; dynamic and excluded fields have separate notes where relevant.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/player_info.py",
+          "line": 31,
+          "exact_text": " unavailable. Previously saved accounts may be old.",
+          "source_sha256": "48a5ec411484a0843743d7d119037dcf0fdf24d0ade4c30c52d5929f65760732"
+        },
+        {
+          "path": "extensions/commands/tickets/player_info.py",
+          "line": 33,
+          "exact_text": ". Fix the links before you approve.",
+          "source_sha256": "48a5ec411484a0843743d7d119037dcf0fdf24d0ade4c30c52d5929f65760732"
+        },
+        {
+          "path": "extensions/commands/tickets/player_info.py",
+          "line": 78,
+          "exact_text": "You must be a recruiter, and the ticket must exist.",
+          "source_sha256": "48a5ec411484a0843743d7d119037dcf0fdf24d0ade4c30c52d5929f65760732"
+        },
+        {
+          "path": "extensions/commands/tickets/player_info.py",
+          "line": 89,
+          "exact_text": "You must be a recruiter, and the ticket must exist.",
+          "source_sha256": "48a5ec411484a0843743d7d119037dcf0fdf24d0ade4c30c52d5929f65760732"
+        },
+        {
+          "path": "extensions/commands/tickets/player_info.py",
+          "line": 107,
+          "exact_text": "The staff summary update is waiting. The saved account lookup is below.",
+          "source_sha256": "48a5ec411484a0843743d7d119037dcf0fdf24d0ade4c30c52d5929f65760732"
+        }
+      ]
+    },
+    {
+      "id": "TK-49",
+      "status": "applied",
+      "approved_proposal": "\"## Create for Recruit\\nChoose a recruit, a clan type, and a ticket mode.\\nLive tickets count. Isolated test tickets do not count.\" / \"Use the shared console. You must be a recruiter.\" / \"This setup expired, or it belongs to another recruiter.\" / \"The ticket is saved. The links will be fixed later.\" / \"We could not finish the ticket. We saved your attempt. Try again soon.\"",
+      "note": "Owner 169 override Select a recruit supersedes item’s Choose wording.",
+      "source_fields": [
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 148,
+          "exact_text": "Use the shared console. You must be a recruiter.",
+          "source_sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 183,
+          "exact_text": "This setup expired, or it belongs to another recruiter.",
+          "source_sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 484,
+          "exact_text": "This setup expired, or it belongs to another recruiter.",
+          "source_sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 241,
+          "exact_text": "The ticket is saved. The links will be fixed later.",
+          "source_sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 464,
+          "exact_text": "We could not finish the ticket. We saved your attempt. Try again soon.",
+          "source_sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 46,
+          "exact_text": "## Create for Recruit\nSelect a recruit, a clan type, and a ticket mode.\nLive tickets count. Isolated test tickets do not count."
+        }
+      ],
+      "source_context": [
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 46,
+          "exact_source": "heading = \"## Create for Recruit\\nSelect a recruit, a clan type, and a ticket mode.\\nLive tickets count. Isolated test tickets do not count.\"",
+          "sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 147,
+          "exact_source": "await notice(\n            ctx, \"Use the shared console. You must be a recruiter.\"\n        )",
+          "sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 182,
+          "exact_source": "await notice(\n            ctx, \"This setup expired, or it belongs to another recruiter.\"\n        )",
+          "sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 230,
+          "exact_source": "await ctx.interaction.edit_initial_response(\n        content=None,\n        user_mentions=False,\n        role_mentions=False,\n        mentions_everyone=False,\n        components=[\n            Container(\n                accent_color=GOLDENROD_ACCENT,\n                components=(\n                    [Text(content=\"✅ Ticket available.\"), Row(components=links)]\n                    if links\n                    else [Text(content=\"The ticket is saved. The links will be fixed later.\")]\n                ),\n            )\n        ],\n    )",
+          "sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        },
+        {
+          "path": "extensions/commands/tickets/staff_creation.py",
+          "line": 462,
+          "exact_source": "await notice(\n                ctx,\n                \"We could not finish the ticket. We saved your attempt. Try again soon.\",\n            )",
+          "sha256": "5d698c625a29fc2a87e8928004d5267d8447bd417c5e9c6f3ba8558ff1ea1313"
+        }
+      ]
+    },
+    {
+      "id": "TK-50",
+      "status": "skipped-unused",
+      "approved_proposal": "\"✅ Pilot readiness passed. Run the command again with `confirm: true` to stage it.\" / \"…Run it again to continue.\" / \"Write the copy. If you leave this out or set it to false, this command does a dry run.\" / \"🛑 Give `tester` or `tester-role` for the first test list. Nothing was posted.\"",
+      "note": "Unregistered/retired operator command paths; preserved at baseline. See excluded-symbol proof and docs/unused-code.md.",
+      "source_fields": []
+    },
+    {
+      "id": "TK-51",
+      "status": "skipped-unconfirmed",
+      "approved_proposal": "\"✅ Pilot user access updated. Users: **{len(updated.pilot_user_ids)}**. Roles: **{len(updated.pilot_role_ids)}**.\" / \"Could not check or restore the guild binding automatically. Check the rollout status first. Then try again. \" / \"❌ Could not list the active threads, so the ticket rows cannot be checked safely. **Nothing was written.** Try again soon.\"",
+      "note": "Operator rollout/setup/migration and manage paths held; remaining reachability not established. No additional dead-path research.",
+      "source_fields": []
+    }
+  ],
+  "declined_items": [
+    "TK-5",
+    "TK-16",
+    "TK-25",
+    "TK-43"
+  ],
+  "limits": "Independent static matching reviewed the exact source diff; final commit-bound backend, war and owned-boot checks are required before READY. Skipped and blocked fields remain as recorded."
+}
