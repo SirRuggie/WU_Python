@@ -87,7 +87,7 @@ def test_overview_shows_edited_signup_time_without_competing_send_times(monkeypa
     assert dashboard._discord_time(live_time) in content
     assert "Next reminder" in content
     assert "CWL announcements" in content
-    assert "Last delivery" in content
+    assert "**Last message:** No messages sent yet" in content
 
 
 def test_default_dashboard_open_does_not_resume_a_draft_from_an_old_cycle(monkeypatch):
@@ -118,10 +118,10 @@ def test_overview_shows_one_next_message_only_for_settings_already_in_use(monkey
     }
     monkeypatch.setattr(dashboard.cwl_campaign, "load_campaign", AsyncMock(return_value=saved))
     content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
-    assert "Saved settings never reset" in content
+    assert "Repeats each month · Saved settings are never reset." in content
     assert content.count("**Next reminder:**") == 1
     assert dashboard._discord_time(when) in content
-    assert "Last delivery" in content
+    assert "**Last message:** No messages sent yet" in content
     saved["campaign"]["paused"] = True
     item["campaign"]["paused"] = True
     content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
@@ -284,7 +284,7 @@ def test_review_routes_temporarily_invalid_sequence_back_to_timing_steps(monkeyp
     content = "\n".join(text_content(output))
     assert "review is not ready" in content.lower()
     assert "signups" in content.lower()
-    assert "previous sending schedule stays unchanged" in content.lower()
+    assert "the old schedule was kept." in content.lower()
     insert.assert_not_awaited()
 
 

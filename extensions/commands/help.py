@@ -58,7 +58,7 @@ def _category_select(
         components=[
             TextSelectMenu(
                 custom_id="help_category_select:menu",
-                placeholder="Choose a command category...",
+                placeholder="Select a command category...",
                 max_values=1,
                 options=options,
             )
@@ -83,9 +83,8 @@ async def create_help_view(guild_id: int | None = None) -> list:
             components=[
                 Text(content="# 🧭 Warriors United Command Guide"),
                 Text(content=(
-                    f"Browse **{total_commands} slash commands** by what you want to do. "
-                    "Choose a category below; Discord will show each command's required "
-                    "options when you select it."
+                    f"Find **{total_commands} slash commands** by task. Select a category below. "
+                    "Discord shows the options of each command when you select it."
                 )),
                 Separator(divider=True),
                 Text(content=category_lines),

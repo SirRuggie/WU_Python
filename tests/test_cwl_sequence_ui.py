@@ -153,7 +153,7 @@ def test_stale_numbered_schedule_submit_redirects_without_saving(monkeypatch):
     asyncio.run(dashboard.submit_schedule(context, "a" * 32 + "|reminder:1|before_close", mongo=object()))
 
     save.assert_not_awaited()
-    assert "Numbered reminders are timed by the reminder sequence" in _component_text(
+    assert "The reminder sequence sets the times of numbered reminders. Change the sequence, not each reminder." in _component_text(
         context.interaction.edit_initial_response.call_args.kwargs["components"]
     )
 
@@ -191,7 +191,7 @@ def test_sequence_schedule_redirects_numbered_reminders_and_lists_each_time_once
     context = _ctx()
     context.interaction.values = ("reminder:1",)
     redirected = asyncio.run(dashboard.choose_schedule(context, "a" * 32, mongo=object()))
-    assert "Numbered reminders are timed by the reminder sequence" in _component_text(redirected)
+    assert "The reminder sequence sets the times of numbered reminders. Change the sequence, not each reminder." in _component_text(redirected)
 
     listed = asyncio.run(dashboard.sequence_times(context, "a" * 32, mongo=object()))
     text = _component_text(listed)

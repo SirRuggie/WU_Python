@@ -109,7 +109,7 @@ def test_incomplete_empty_view_never_renders_all_caught_up():
         for node in _walk(payload)
         if "description" in node
     ]
-    assert "some accounts couldn't be checked" in descriptions
+    assert "Could not check some accounts" in descriptions
 
 
 def test_unstarted_raid_weekend_never_renders_all_caught_up():
@@ -154,13 +154,14 @@ def test_navigation_uses_hits_left_and_keeps_private_logs_separate():
     assert all("owe attacks" not in description for description in descriptions)
 
 
-def test_account_failures_mark_empty_and_nonempty_views_incomplete():
+def test_account_failures_mark_empty_and_nonempty_views_incomplete(monkeypatch):
+    monkeypatch.setattr(todo.coc_maintenance, 'in_maintenance', lambda: False)
     empty = todo._with_account_failures(todo_data.ViewData(), 2)
     populated = todo._with_account_failures(
         todo_data.ViewData(rows=_private_rows(1)), 2
     )
 
-    assert empty.incomplete.startswith("2 linked account(s)")
+    assert empty.incomplete == "Could not load 2 linked account(s). The results can be incomplete."
     assert empty.notes == []
     assert populated.incomplete == empty.incomplete
     assert populated.notes == [f"⚠️ {empty.incomplete}"]
@@ -187,7 +188,7 @@ def test_footer_explains_automatic_checks_are_dm_only():
         todo.VIEW_WAR, 0, data, checked_at=1_725_000_000, auto_refresh=False
     )]
 
-    assert "DM /todo for auto-checks" in _payload_text(payload)
+    assert "Send /todo in a DM for automatic checks" in _payload_text(payload)
 
 
 def test_automatic_footer_treats_naive_mongo_deadline_as_utc():
@@ -2285,3 +2286,20 @@ def test_load_fwa_records_clears_stale_blacklisted_flag():
     text = _payload_text(payload)
 
     assert "BLACKLISTED" not in text
+
+
+def test_empty_links_notice_uses_approved_link_instructions(monkeypatch):
+    async def no_links(_discord_id):
+        return []
+
+    todo_data._cache.clear()
+    monkeypatch.setattr(todo, 'resolve_tags', no_links)
+    try:
+        data, problem, fwa_map = asyncio.run(todo._load(object(), object(), 77, mongo=None))
+    finally:
+        todo_data._cache.clear()
+    assert data is None and fwa_map is None
+    contents = [child.content for container in problem for child in getattr(container, 'components', ()) if hasattr(child, 'content')]
+    assert ('No Clash of Clans accounts are linked to your Discord.\n\n'
+            'Link an account with the ClashKing `/link` command. You need your in-game API token. '
+            'Find it in **Settings → More Settings → API Token**. Then use `/todo` again.') in contents

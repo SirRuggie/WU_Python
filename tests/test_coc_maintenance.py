@@ -215,10 +215,12 @@ def test_a_plain_http_error_is_not_maintenance():
 # ---------------------------------------------------------------------------
 
 def test_gap_note_swaps_to_the_banner_during_maintenance():
-    assert "could not be checked" in todo_data._gap_note(4, "war")
+    assert "⚠️ Could not check 4 account(s). The war lookup failed." in todo_data._gap_note(4, "war")
 
     coc_maintenance.note_maintenance()
     assert "Clash is in maintenance" in todo_data._gap_note(4, "war")
+    assert "⚠️ Could not check 4 account(s). The war lookup failed." not in todo_data._gap_note(4, "war")
+    assert "Could not check" not in todo_data._gap_note(4, "war")
     assert "could not be checked" not in todo_data._gap_note(4, "war")
 
 
@@ -230,6 +232,7 @@ def test_unreadable_section_says_maintenance_not_couldnt_read():
     text = _text([c.build() for c in todo.render_dashboard(todo.VIEW_WAR, 0, data)])
 
     assert "Clash is in maintenance" in text
+    assert "Could not read this section" not in text
     assert "Couldn't read this section" not in text
     # Rule 2 of todo_data still holds: never "all caught up" on unread data.
     assert "All caught up" not in text
@@ -264,7 +267,7 @@ def test_healthy_path_keeps_the_original_counts():
 
     merged = todo._with_account_failures(view, 36)
 
-    assert any("36 linked account(s) could not be loaded" in n for n in merged.notes)
+    assert "⚠️ Could not load 36 linked account(s). The results can be incomplete." in merged.notes
     assert not any("maintenance" in n.lower() for n in merged.notes)
 
 

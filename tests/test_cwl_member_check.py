@@ -28,7 +28,7 @@ def test_shared_button_opens_private_signups_without_edit_or_write():
         assert response['flags'] & hikari.MessageFlag.EPHEMERAL
         assert not response['user_mentions'] and not response['role_mentions'] and not response['mentions_everyone']
         rendered = str(response['components'][0].build()[0])
-        assert "You're signed up · 2 of 5 accounts" in rendered
+        assert "✓ You are signed up · 2 of 5 accounts" in rendered
         assert 'Aurora · Main CWL' in rendered and 'Ace · Lazy CWL' in rendered
         assert '3 accounts not signed up' in rendered
         assert 'Birch' in rendered and 'Dawn' in rendered
@@ -38,14 +38,14 @@ def test_shared_button_opens_private_signups_without_edit_or_write():
 
 def test_zero_all_closed_unknown_and_pagination():
     session = member.MemberSession(123, member.WARRIORS_UNITED_GUILD_ID, 0, view=view(0), screen='my_signups')
-    assert "You haven't signed up any accounts yet." in member._main_text(session)
+    assert "You have not signed up any accounts yet." in member._main_text(session)
     assert member._components('token', session)[0].components[0].url.endswith('/signup')
     session.view = view(1)
     session.view['accounts'] = session.view['accounts'][:1]
     assert 'all 1 account' in member._main_text(session)
     session.view = view()
     session.view['season']['signup_open'] = False
-    assert "3 accounts weren't signed up · signups are closed" in member._main_text(session)
+    assert "3 accounts were not signed up · signups are closed" in member._main_text(session)
     assert 'signup_pick' not in str(member._components('token', session))
     session.view['accounts_status'] = 'unavailable'
     assert 'of 5' not in member._main_text(session)
@@ -67,6 +67,10 @@ def test_bad_identity_or_service_failure_stays_private():
                 await member.check_signups(ctx, 'open')
             assert not ctx.interaction.edits
             assert ctx.followups[0][1]['flags'] & hikari.MessageFlag.EPHEMERAL
+            if ctx.interaction.guild_id == member.WARRIORS_UNITED_GUILD_ID and ctx.interaction.member is not None:
+                response = ctx.followups[0][1]
+                assert response['components'][0].components[0].content == ('The CWL service is not available now. Your signups did not change. Try again in a few minutes.')
+                assert not response['user_mentions'] and not response['role_mentions'] and not response['mentions_everyone']
     asyncio.run(run())
 
 
@@ -87,7 +91,7 @@ def test_published_and_partly_placed_match_web_wording():
     assert 'Your published clan assignments are ready to view.' in member._main_text(session)
     session.view['assignments'] = session.view['assignments'][:1]
     text = member._main_text(session)
-    assert "You're signed up · waiting for your clan" in text
+    assert "✓ You are signed up · waiting for your clan" in text
     assert 'Ace · Lazy CWL' in text and 'Aurora · Main CWL' not in text
 
 

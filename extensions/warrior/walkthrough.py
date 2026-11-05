@@ -45,17 +45,17 @@ def plan(run):
     return [
         (
             channel,
-            f'## Welcome to {clan["name"]}! 🎉\nYour recruiter has assigned your clan role. Ask them to begin your server walkthrough when your set-up is ready.',
+            f'## Welcome to {clan["name"]}! 🎉\nYour recruiter gave you your clan role. Ask them to start your server walkthrough when your setup is ready.',
             0,
         ),
         (
             channel,
-            "## 🚀 Walkthrough started\nWe’ll guide you through the important channels for your clan. For members joining multiple clans, the same channel layout applies.",
+            "## 🚀 Walkthrough started\nWe guide you through the main channels of your clan. If you join more than one clan, the channels are the same.",
             0,
         ),
         (
             int(clan["announcement_id"]),
-            "**📢 Clan Announcements**\nWar announcements and special instructions will be made here in this channel.",
+            "**📢 Clan Announcements**\nThis channel shows war announcements and special instructions.",
             10,
         ),
         (int(clan["chat_channel_id"]), content.TEXT_6 + "\n" + content.TEXT_7, 20),
@@ -108,7 +108,7 @@ async def validate_destination(bot, c, channel_id):
     channel = await bot.rest.fetch_channel(channel_id)
     if int(channel.guild_id) != int(c["guild"].id):
         raise core.SetupError(
-            "A walkthrough destination belongs to a different server."
+            "A walkthrough channel is in a different server."
         )
     parent = (
         await bot.rest.fetch_channel(channel.parent_id)
@@ -151,11 +151,11 @@ async def prepare(bot, mongo, c, clan, cfg):
     c = await core.context(bot, mongo, c["guild"].id, c["actor"].id, c["member"].id)
     if int(clan["role_id"]) not in c["member"].role_ids:
         raise core.SetupError(
-            "Assign this clan’s role before starting its walkthrough."
+            "Give the member this clan’s role, then start the walkthrough."
         )
     if not clan.get("announcement_id") or not clan.get("chat_channel_id"):
         raise core.SetupError(
-            "This clan needs announcement and chat channel IDs configured."
+            "Set the announcement channel ID and the chat channel ID for this clan."
         )
     run = {
         "_id": run_id(c["guild"].id, c["member"].id),
@@ -195,7 +195,7 @@ async def prepare(bot, mongo, c, clan, cfg):
     if existing:
         if existing.get("state") == "complete":
             raise core.SetupError(
-                "This member’s walkthrough is already complete. Use Advanced to explicitly restart it."
+                "This member’s walkthrough is complete. To start it again, use Advanced."
             )
         return existing
     try:
@@ -217,7 +217,7 @@ async def begin(bot, mongo, run, actor_id, channel_id):
     )
     if ticket["_id"] != run["ticket_id"]:
         raise core.SetupError(
-            "The walkthrough must remain attached to its original open or approved ticket."
+            "The walkthrough must stay with its first ticket. The ticket must be open or approved."
         )
     updated = await mongo.warrior_walkthroughs.find_one_and_update(
         {"_id": run["_id"], "token": run["token"], "state": "awaiting"},
@@ -244,7 +244,7 @@ async def deliver(bot, mongo, run, owner):
         )
         if ticket["_id"] != run["ticket_id"]:
             raise core.SetupError(
-                "The walkthrough’s original ticket is no longer available for onboarding."
+                "The first ticket of this walkthrough is not available now."
             )
     await validate_destination(bot, c, channel_id)
     # If a process stopped after sending but before saving, recognize its own

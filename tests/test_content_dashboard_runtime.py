@@ -280,7 +280,7 @@ def test_adoption_rejects_real_model_with_noncanonical_type_tree(monkeypatch):
 
         assert created
         edited = next(event for event in ctx.events if event[0] == "edit_initial_response")
-        assert "That post's structure is not a supported content document." in "\n".join(
+        assert "The content dashboard does not support the layout of that post." in "\n".join(
             item.content for item in edited[2]["components"][0].components
             if isinstance(item, hikari.impl.TextDisplayComponentBuilder)
         )
@@ -357,7 +357,11 @@ def test_real_hikari_model_publish_updates_linked_post_without_mentions(monkeypa
         assert content.acknowledgement_id(kwargs["components"], document)
         assert published[-1]["target"]["original_media"] == content.media_snapshot(models)
         assert config.deletes and config.deletes[-1]["token"]
-        assert any("Selected post updated." in text for text in _panel_texts(panel))
+        assert "-# Published post updated." in _panel_texts(panel)
+        assert "Published post to update: [View post](https://discord.com/channels/20/30/40) in <#30>." in _panel_texts(panel)
+        saved_panel = await content.publish_state(ctx, state, SimpleNamespace(bot_config=config), SimpleNamespace(rest=rest), saved_template=True)
+        assert "-# Template saved and published post updated." in _panel_texts(saved_panel)
+        assert edit_message.await_count == 2
 
     _run(check())
 
@@ -379,7 +383,7 @@ def test_publish_refuses_cross_guild_and_active_lease_without_edit(monkeypatch):
         edit = AsyncMock()
         cross = _ConfigCollection()
         ctx = _Context()
-        await content.publish.__wrapped__._func(
+        cross_result = await content.publish.__wrapped__._func(
             ctx=ctx, action_id="x", mongo=SimpleNamespace(bot_config=cross),
             bot=SimpleNamespace(rest=SimpleNamespace(
                 fetch_channel=AsyncMock(return_value=SimpleNamespace(guild_id=21)),
@@ -387,6 +391,7 @@ def test_publish_refuses_cross_guild_and_active_lease_without_edit(monkeypatch):
             )),
         )
         assert edit.await_count == 0
+        assert '-# The published post is not in this server. Your draft is still available.' in _panel_texts(cross_result)
         assert cross.deletes, "cross-guild refusal must release its lease"
 
         busy = _ConfigCollection(lease_busy=True)
@@ -709,6 +714,7 @@ def test_document_select_and_back_edit_the_same_ephemeral_panel(monkeypatch):
         back = _PanelContext("content_back_root:document")
         await components._dispatch(back, mongo=mongo)
         root_panel = back.events[-1][2]["components"]
+        assert "## :shield: Warriors United Content Dashboard\nSelect an onboarding document to edit." in _panel_texts(root_panel)
         root_ids = _custom_ids(root_panel)
         assert any(custom_id.startswith("content_document:root-next") for custom_id in root_ids)
         assert not any(custom_id.startswith("content_block:") for custom_id in root_ids)
@@ -944,3 +950,22 @@ def test_hikari_edit_payload_retains_existing_attachments_with_reset_local_media
         {"id": 0, "filename": "WU_FamilyParticulars.gif"},
     ]
     assert form is not None
+
+
+
+
+def test_unset_posting_channel_uses_approved_explanation():
+    async def check():
+        document = content.DOCUMENTS['about-us']
+        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        state = {'_id': 'draft', 'user_id': 10, 'guild_id': 20, 'view': 'document',
+                 'document': document.key, 'sections': sections, 'revision': 0}
+        panel = content.panel(state)
+        texts = [node.content for node in content.text_nodes(panel)]
+        assert ('Posting channel: No channel selected. Select a channel below to send this draft. '
+                'Save template keeps it so you can edit it later.') in texts
+        state['destination_channel_id'] = 30
+        texts = [node.content for node in content.text_nodes(content.panel(state))]
+        assert ('Posting channel: <#30>. Send to channel posts this draft. '
+                'Save template keeps it so you can edit it later.') in texts
+    _run(check())

@@ -114,13 +114,12 @@ def _confirmation(action_id: str) -> list:
             components=[
                 Text(content="## Delete WUBOT messages from this DM?"),
                 Text(content=(
-                    "This permanently deletes **all messages authored by WUBOT** "
-                    "in this private DM, including the oldest messages and this "
-                    "confirmation. Your messages are preserved.\n\n"
-                    "The active automatic `/todo` panel will be stopped first. "
-                    "Future reminders and a future `/todo` command remain enabled. "
-                    "This can take time for a long history and cannot be undone. "
-                    "A temporary completion receipt follows after the sweep."
+                    "This deletes **all messages from WUBOT** in this private DM. "
+                    "This includes the oldest messages and this confirmation. "
+                    "Your messages are not deleted.\n\n"
+                    "First, the active automatic `/todo` panel is stopped. "
+                    "Future reminders and `/todo` stay on. A long history takes time. "
+                    "You cannot undo this. When this is done, a short receipt is shown."
                 )),
                 Separator(divider=True),
                 ActionRow(components=[
@@ -293,7 +292,7 @@ async def clear_my_dms_confirm(
         )
         await _temporary_receipt(
             bot, channel_id,
-            f"The clear stopped after deleting {exc.deleted} WUBOT-authored message{'s' if exc.deleted != 1 else ''}. Run `/clear-my-dms` again to finish the remaining history.",
+            f"Deleting stopped after {exc.deleted} WUBOT message{'s' if exc.deleted != 1 else ''}. Use `/clear-my-dms` again to delete the rest.",
         )
         return
     if not stopped:
@@ -304,7 +303,7 @@ async def clear_my_dms_confirm(
         )
         await _temporary_receipt(
             bot, channel_id,
-            "I could not safely stop the active `/todo` panel, so no messages were deleted.",
+            "Could not stop the active `/todo` panel. No messages were deleted.",
         )
         return
     deleted = outcome

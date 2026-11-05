@@ -79,13 +79,13 @@ SERVER_ROLES = [
     {
         "emoji": "😴",
         "label": "LazyCWL Participant",
-        "description": "Grab this role to see the LazyCWL sign-ups channel.",
+        "description": "Get this role to see the LazyCWL signups channel.",
         "role_id": 772313841090297886
     },
     {
         "emoji": "🎤",
         "label": "VC Participant",
-        "description": "A ping for those that want to chat",
+        "description": "A ping for members who want to talk.",
         "role_id": 1148955348598788166
     }
 ]
@@ -95,7 +95,7 @@ SERVER_ROLES = [
 class FamilyLinks(
     lightbulb.SlashCommand,
     name="family-links",
-    description="Access the Family Clan Links panel to manage your roles and view clan information"
+    description="Open the Family Links panel to manage your roles and see clan information."
 ):
     @lightbulb.invoke
     @lightbulb.di.with_di
@@ -184,7 +184,7 @@ async def build_family_links_panel(
                 
                 # Town Hall Roles Section
                 Text(content="## 🏰 Town Hall Roles"),
-                Text(content="Select your current Town Hall Level **NOTE:** You are able to select multiple levels."),
+                Text(content="Select your current Town Hall level. **NOTE:** You can select more than one level."),
                 ActionRow(
                     components=[
                         TextSelectMenu(
@@ -200,7 +200,7 @@ async def build_family_links_panel(
                 
                 # Server Roles Section
                 Text(content="## ⚔️ Warriors United Server Roles"),
-                Text(content="Please select the role that you would like to have. Click on Make a selection and select the role you would like accordingly. **NOTE:** You are able to add multiple roles."),
+                Text(content="Select the roles you want from the menu. **NOTE:** You can select more than one role."),
                 ActionRow(
                     components=[
                         TextSelectMenu(
@@ -338,7 +338,7 @@ async def family_links_th_handler(
         if removed_names:
             message_parts.append(f"**Removed:** {', '.join(removed_names)}")
         if not added_names and not removed_names:
-            message_parts = ["✅ No changes made - selected roles were already assigned."]
+            message_parts = ["✅ No change. You already have the selected roles."]
         
         await ctx.respond("\n".join(message_parts), ephemeral=True)
         
@@ -418,7 +418,7 @@ async def family_links_server_roles_handler(
         if removed_names:
             message_parts.append(f"**Removed:** {', '.join(removed_names)}")
         if not added_names and not removed_names:
-            message_parts = ["✅ No changes made - selected roles were already assigned."]
+            message_parts = ["✅ No change. You already have the selected roles."]
         
         await ctx.respond("\n".join(message_parts), ephemeral=True)
         
@@ -492,7 +492,7 @@ async def family_links_war_clans_handler(
         )
     
     if not options:
-        await ctx.respond("No War clans found in the database.", ephemeral=True)
+        await ctx.respond("No War clans were found.", ephemeral=True)
         return
     
     # Build component
@@ -562,7 +562,7 @@ async def family_links_fwa_clans_handler(
         )
     
     if not options:
-        await ctx.respond("No FWA clans found in the database.", ephemeral=True)
+        await ctx.respond("No FWA clans were found.", ephemeral=True)
         return
     
     # Build component
@@ -632,7 +632,7 @@ async def family_links_cwl_clans_handler(
         )
     
     if not options:
-        await ctx.respond("No CWL clans found in the database.", ephemeral=True)
+        await ctx.respond("No CWL clans were found.", ephemeral=True)
         return
     
     # Build component
@@ -641,7 +641,7 @@ async def family_links_cwl_clans_handler(
             accent_color=GOLD_ACCENT,
             components=[
                 Text(content="## 🏆 **CWL Clans**"),
-                Text(content="Clan War League focused clans competing for league medals and rewards"),
+                Text(content="Clans that focus on Clan War League. They compete for league medals and rewards."),
                 Separator(divider=True),
                 ActionRow(
                     components=[
@@ -680,7 +680,7 @@ async def view_clan_info_handler(
     # Fetch clan data from MongoDB
     clan_doc = await mongo.clans.find_one({"tag": selected_clan_tag})
     if not clan_doc:
-        await ctx.respond("❌ Clan not found in database.", ephemeral=True)
+        await ctx.respond("❌ This clan was not found.", ephemeral=True)
         return
     
     # Build clan link

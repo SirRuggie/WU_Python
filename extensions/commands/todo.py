@@ -618,7 +618,7 @@ def _nav_block(view: str, counts: dict, pager=None, *,
             f"Stops <t:{int(until.timestamp())}:R>"
         )
     else:
-        stamp = f"-# Updated <t:{checked_at}:R> · DM /todo for auto-checks"
+        stamp = f"-# Updated <t:{checked_at}:R> · Send /todo in a DM for automatic checks"
 
     return [
         Separator(divider=True, spacing=hikari.SpacingType.LARGE),
@@ -674,13 +674,13 @@ def _nav_select(view: str, counts: dict, *,
     def describe(key: str) -> str:
         value = counts.get(key)
         if value is None:
-            return "couldn't be checked — try Check now"
+            return "not checked. Select Check now"
         if key in unchecked:
             if value:
                 noun = "account" if value == 1 else "accounts"
                 verb = "has" if value == 1 else "have"
                 return f"{value} {noun} {verb} hits left · some unchecked"
-            return "some accounts couldn't be checked"
+            return "Could not check some accounts"
         if value == 0 and unavailable.get(key):
             return unavailable[key].rstrip(".")
         if value == 0:
@@ -1037,7 +1037,7 @@ def _reason_blocks(rows: list) -> list:
         "private": (U_PRIVATE, "Private war logs",
                     "these clans have their war log set to private"),
         "failed": (U_FAILED, "Lookup failed",
-                   "couldn't reach the API for these — try Check now"),
+                   "the API could not be reached for these. Select Check now"),
     }
 
     out: list = []
@@ -1102,9 +1102,9 @@ def render_dashboard(view: str, page: int, data: dict, *,
         body.append(Separator(divider=True))
         body.append(Text(content=(
             coc_maintenance.banner() if coc_maintenance.in_maintenance() else (
-                "⚠️ **Couldn't read this section.**\n"
-                "The Clash API or the proxy didn't answer. This is not the same as "
-                "having nothing to do — press Check now in a minute."
+                "⚠️ **Could not read this section.**\n"
+                "The Clash API did not answer. This does not mean you have nothing to do. "
+                "Wait one minute. Then select Check now."
             )
         )))
         pages = 1
@@ -1386,8 +1386,8 @@ def _with_account_failures(view_data: todo_data.ViewData, error_count: int) -> t
         warning = coc_maintenance.banner()
     else:
         warning = (
-            f"{error_count} linked account(s) could not be loaded — "
-            "these results may be incomplete"
+            f"Could not load {error_count} linked account(s). "
+            "The results can be incomplete."
         )
     notes = list(view_data.notes)
     if view_data.rows and warning not in notes:
@@ -1437,10 +1437,9 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
             # Lookup FAILED. Not the same as having no accounts, and the user
             # must not be sent off to fix a problem they do not have.
             return None, _notice(
-                "Couldn't reach the link service",
-                "The Clash↔Discord link service didn't answer, so I can't tell "
-                "which accounts are yours.\n\n"
-                "This is a problem on their end, not yours — try again shortly.",
+                "Link service not available",
+                "The Clash↔Discord link service did not answer. Your accounts cannot be found. "
+                "The problem is not on your side. Try again in a few minutes.",
                 checked_at=int(time.time()), auto_refresh=auto_refresh,
                 refresh_until=refresh_until,
             ), None
@@ -1449,10 +1448,9 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
     if not tags:
         return None, _notice(
             "No linked accounts",
-            "I couldn't find any Clash of Clans accounts linked to your Discord.\n\n"
-            "Link one with ClashKing's `/link` command (you'll need your in-game "
-            "API token from **Settings → More Settings → API Token**), then run "
-            "`/todo` again.",
+            "No Clash of Clans accounts are linked to your Discord.\n\n"
+            "Link an account with the ClashKing `/link` command. You need your in-game API token. "
+            "Find it in **Settings → More Settings → API Token**. Then use `/todo` again.",
             checked_at=int(time.time()), auto_refresh=auto_refresh,
             refresh_until=refresh_until,
         ), None
@@ -1493,19 +1491,17 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
         if coc_maintenance.in_maintenance():
             return None, _notice(
                 f"{U_MAINTENANCE} Clash is in maintenance",
-                "The game's API stopped answering "
-                f"<t:{int(coc_maintenance.started_at().timestamp())}:R>, so "
-                "there's nothing I can check right now.\n\n"
-                "Nothing is wrong with your accounts, and nothing is lost. "
-                "Supercell doesn't publish an end time — press Check now again "
-                "in a few minutes.",
+                "The game API stopped answering "
+                f"<t:{int(coc_maintenance.started_at().timestamp())}:R>. Cannot check now.\n\n"
+                "Your accounts are correct. No data was lost. Supercell does not give an end time. "
+                "In a few minutes, select Check now again.",
                 checked_at=int(time.time()), auto_refresh=auto_refresh,
                 refresh_until=refresh_until,
             ), None
         return None, _notice(
             "Couldn't load your accounts",
             "Your accounts are linked, but the Clash API didn't answer for any "
-            "of them. Try again shortly.",
+            "of them. Try again in a few minutes.",
             checked_at=int(time.time()), auto_refresh=auto_refresh,
             refresh_until=refresh_until,
         ), None

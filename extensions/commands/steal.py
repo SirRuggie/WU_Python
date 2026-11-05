@@ -40,7 +40,7 @@ class StealEmoji(
         try:
             source: hikari.CustomEmoji = hikari.emojis.Emoji.parse(self.emoji)
         except Exception:
-            await ctx.respond("❌ Invalid emoji format—make sure it looks like `<:name:id>` or `<a:name:id>`.")
+            await ctx.respond("❌ The emoji format is not correct. Use `<:name:id>` or `<a:name:id>`.")
             return
 
         # Verify it's a custom emoji
@@ -97,8 +97,7 @@ class StealEmoji(
             error_msg = str(e)
             if "File cannot be larger than" in error_msg:
                 await ctx.respond(
-                    "❌ The emoji is too large (>256KB). "
-                    "Try running the command again with `compress: True`."
+                    "❌ The emoji is larger than 256KB. Use the command again with `compress: True`."
                 )
             elif "Maximum number of emojis reached" in error_msg:
                 await ctx.respond("❌ The bot has reached the maximum number of application emojis (2000).")

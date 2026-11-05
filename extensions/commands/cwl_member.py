@@ -79,7 +79,7 @@ def _member_identity(ctx) -> tuple[int, int]:
     # Discord's interaction.member is the server membership proof. Refuse DMs,
     # malformed contexts and interactions without the hydrated guild member.
     if guild_id is None or getattr(interaction, "member", None) is None:
-        raise ValueError("Open this private CWL flow from inside the server.")
+        raise ValueError("Use this private CWL panel in the server.")
     if int(guild_id) != WARRIORS_UNITED_GUILD_ID:
         raise ValueError("This CWL signup is available in the Warriors United server.")
     return int(user_id), int(guild_id)
@@ -95,7 +95,7 @@ def _session_from(action_id: str, ctx) -> tuple[str, MemberSession, int]:
         raise StaleSession
     user_id, guild_id = _member_identity(ctx)
     if user_id != session.user_id or guild_id != session.guild_id:
-        raise ValueError("This CWL panel belongs to another member. Run `/cwl signup` for your own private panel.")
+        raise ValueError("This CWL panel belongs to another member. Use `/cwl signup` to get your own private panel.")
     if int(version) != session.version:
         raise StaleSession
     return token, session, int(version)
@@ -150,28 +150,28 @@ def _saved_text(session: MemberSession) -> str:
     signed, remaining = _signups(session), _remaining(session)
     season = session.view.get("season") or {}
     if not signed:
-        heading = "You haven't signed up any accounts yet."
+        heading = "You have not signed up any accounts yet."
     elif session.view.get("accounts_status") == "ok":
         total = len({row['tag'] for row in _accounts(session) + signed})
         count = f"all {total} account{'s' if total != 1 else ''}" if total == len(signed) else f"{len(signed)} of {total} accounts"
-        heading = f"✓ You're signed up · {count}"
+        heading = f"✓ You are signed up · {count}"
     else:
-        heading = f"✓ You're signed up · {len(signed)} account{'s' if len(signed) != 1 else ''}"
+        heading = f"✓ You are signed up · {len(signed)} account{'s' if len(signed) != 1 else ''}"
     lines = ["## My signups", heading]
     published = bool(session.view.get('published'))
     assignments = {row['tag']: row for row in session.view.get('assignments') or []}
     waiting = [row for row in signed if not assignments.get(row['tag'], {}).get('assigned_clan_tag')]
     partial = published and 0 < len(waiting) < len(signed)
     if partial:
-        lines[1] = "✓ You're signed up · waiting for your clan"
+        lines[1] = "✓ You are signed up · waiting for your clan"
     if signed:
-        lines.append("Your published clan assignments are ready to view." if published and not waiting else "We've got your signup. Your clan will show here once staff finish the roster.")
+        lines.append("Your published clan assignments are ready to view." if published and not waiting else "Your signup was saved. Your clan shows here when staff finish the roster.")
     start = session.page * PAGE_SIZE
     lines.extend(f"• {_safe(row.get('player_name') or row['tag'], 45)} · {'Main' if row.get('pool') == 'main' else 'Lazy'} CWL" for row in (waiting if partial else signed)[start:start + PAGE_SIZE])
     lines.extend(timing_lines(season, bool(session.view.get('published'))))
     if remaining:
         n = len(remaining)
-        state = 'not signed up' if _signup_is_open(session) else ("wasn't" if n == 1 else "weren't") + ' signed up · signups are closed'
+        state = 'not signed up' if _signup_is_open(session) else ("was not" if n == 1 else "were not") + ' signed up · signups are closed'
         lines.append(f"\n{n} account{'s' if n != 1 else ''} {state}")
         lines.extend(f"• {_safe(row.get('name') or row['tag'], 45)}" for row in remaining[:6])
         if n > 6:
@@ -179,7 +179,7 @@ def _saved_text(session: MemberSession) -> str:
     if _signup_pages(session) > 1:
         lines.append(f"Page {session.page + 1} of {_signup_pages(session)}")
     if signed:
-        lines.append("Choose an account to change its pool or withdraw." if _signup_is_open(session) else "Signups are closed; saved accounts are view only.")
+        lines.append("Select an account to change its pool or withdraw." if _signup_is_open(session) else "Signups are closed. You can only view your saved accounts.")
     return '\n'.join(lines)
 
 
@@ -215,42 +215,42 @@ def _main_text(session: MemberSession) -> str:
     if session.screen == "home":
         season = session.view.get("season") or {}
         if not season.get("id"):
-            return "## CWL signups\nCWL is not set up for this season yet. Check back later or ask staff."
+            return "## CWL signups\nStaff did not set up CWL for this season yet. Try again later, or ask staff."
         label = _safe(season.get("label") or "CWL season", 60)
         is_open = _signup_is_open(session)
         status = "Signups open" if is_open else "Signups closed"
-        signup_help = "Choose accounts for Main or Lazy CWL." if is_open else "Closed for this season. Check back next month."
-        saved_help = "View, change, or cancel your signups." if is_open else "View your saved signups."
+        signup_help = "Select accounts for Main or Lazy CWL." if is_open else "Signups are closed for this season. Try again next month."
+        saved_help = "View, change or withdraw your signups." if is_open else "View your saved signups."
         return (f"## CWL · {label}\n{status}.\n\n"
                 f"**Sign up** — {signup_help}\n"
                 f"**My signups** — {saved_help}\n"
                 "**My clan assignments** — See your clans when staff publish the roster.")
     if session.screen == "signup_pool":
         season = _safe((session.view.get("season") or {}).get("label") or "CWL season", 45)
-        return (f"## Choose your CWL · {season}\n"
-                "**Main:** Play at full strength and try to win; no heroes upgrading.\n"
+        return (f"## Select your CWL · {season}\n"
+                "**Main:** Play at full strength. No hero upgrades.\n"
                 "**Lazy:** Relaxed CWL. You can upgrade during the event. FWA accounts use Lazy.\n"
-                "You can choose a different pool for each account.")
+                "You can select a different pool for each account.")
     if session.screen == "select_accounts":
         accounts = _eligible_accounts(session)
         pages = max(1, (len(accounts) + PAGE_SIZE - 1) // PAGE_SIZE)
         season = _safe((session.view.get("season") or {}).get("label") or "CWL season", 45)
-        lines = [f"## {('Main' if session.pool == 'main' else 'Lazy')} CWL · {season} · Choose accounts",
-                 "Choose one or more accounts from the list.",
+        lines = [f"## {('Main' if session.pool == 'main' else 'Lazy')} CWL · {season} · Select accounts",
+                 "Select one or more accounts from the list.",
                  f"Highest TH first · {len(session.selected)} selected total."]
         if pages > 1:
             lines.append(f"**Page {session.page + 1} of {pages}**")
             if session.page < pages - 1:
-                lines.append("Use **Next page** to see more accounts. Your choices stay selected.")
+                lines.append("Select **Next page** to see more accounts. Accounts you selected stay selected.")
             else:
                 lines.append("This is the last page.")
-        lines.append("When you have chosen all your accounts, use **Review signup**.")
+        lines.append("Then select **Review signup**.")
         if session.pool == "main" and any(str(row.get("current_clan_type") or "").casefold() == "fwa" for row in _accounts(session)):
             lines.append("FWA accounts use Lazy CWL.")
         if session.pool == "main" and any(main_signup_error(row) and row.get("current_clan_type") != "FWA" for row in _accounts(session)):
-            lines.append("Some accounts need a current-clan refresh before choosing Main.")
+            lines.append("Some accounts need a clan check before you can select Main. Select **Refresh accounts** to check them.")
         if not accounts:
-            lines.append("No eligible linked accounts found. Link or refresh accounts.")
+            lines.append("No linked accounts that can sign up were found. Link an account, or select Refresh accounts.")
         return "\n".join(lines)
     if session.screen == "review":
         labels = {str(row["tag"]): _account_label(row) for row in _accounts(session)}
@@ -266,46 +266,46 @@ def _main_text(session: MemberSession) -> str:
             for tag in visible if tag in moves
         )
         if moves:
-            page_note = f"Changes on this page:\n{move_details}" if move_details else "See another review page for the account moves."
-            note = f"\n\n{len(moves)} pool change(s) mean staff must assign a clan again. {page_note}"
+            page_note = f"Changes on this page:\n{move_details}" if move_details else "Go to another page to see the pool changes."
+            note = f"\n\nPool changes: {len(moves)}. Staff must assign a clan again. {page_note}"
         else:
             note = ""
         if already and len(already) == len(selected):
-            note = "\nThese accounts are already signed up for this pool; no change is needed."
+            note = "\nThese accounts are already signed up for this pool. You do not need to change anything."
         page_label = f" · Page {session.page + 1} of {pages}" if pages > 1 else ""
-        listing = "\n".join(f"• {labels.get(tag, _safe(tag))}" for tag in visible) or "Choose at least one account."
+        listing = "\n".join(f"• {labels.get(tag, _safe(tag))}" for tag in visible) or "Select at least one account."
         season = _safe((session.view.get("season") or {}).get("label") or "CWL season", 45)
-        return f"## Review {('Main' if session.pool == 'main' else 'Lazy')} signup · {season} · {len(selected)} account(s){page_label}\n{listing}\n\nConfirm to save.{note}"
+        return f"## Review {('Main' if session.pool == 'main' else 'Lazy')} signup · {season} · Accounts: {len(selected)}{page_label}\n{listing}\n\nConfirm to save.{note}"
     if session.screen == "my_signups":
         return _saved_text(session)
     if session.screen == "signup_action":
         row = next((row for row in _signups(session) if row.get("tag") == session.pending_tag), {})
         pool = "Main" if row.get("pool") == "main" else "Lazy"
-        return f"## {_safe(row.get('player_name') or session.pending_tag)}\n{_safe(session.pending_tag)} · {pool} CWL. Choose a change."
+        return f"## {_safe(row.get('player_name') or session.pending_tag)}\n{_safe(session.pending_tag)} · {pool} CWL. Select a change."
     if session.screen == "change_pool":
         account = next((row for row in _accounts(session) if str(row.get("tag")) == session.pending_tag), {})
         reason = main_signup_error(account) if account else None
-        warning = "\nMain is unavailable for this account until its current clan category is verified." if reason else ""
-        return "## Change pool\nChoose the destination for this account. You will review before saving." + warning
+        warning = "\nYou cannot select Main for this account until its current clan is checked." if reason else ""
+        return "## Change pool\nSelect the new pool for this account. You review the change before it is saved." + warning
     if session.screen == "pool_change_confirm":
         row = next((row for row in _signups(session) if str(row.get("tag")) == session.pending_tag), {})
         source = "Main" if session.source_pools.get(session.pending_tag) == "main" else "Lazy"
         destination = "Main" if session.pending_pool == "main" else "Lazy"
-        return f"## Confirm pool change\n{_safe(row.get('player_name') or session.pending_tag)} ({_safe(session.pending_tag)}): {source} → {destination}. Staff will need to assign a clan again."
+        return f"## Confirm pool change\n{_safe(row.get('player_name') or session.pending_tag)} ({_safe(session.pending_tag)}): {source} → {destination}. Staff must assign a clan again."
     if session.screen == "withdraw_confirm":
         row = next((row for row in _signups(session) if str(row.get("tag")) == session.pending_tag), {})
         pool = "Main" if row.get("pool") == "main" else "Lazy"
         return (f"## Withdraw signup?\nRemove **{_safe(row.get('player_name') or session.pending_tag)}** "
-                f"({_safe(session.pending_tag)}) from {pool} CWL? You can sign up again while registration is open.")
+                f"({_safe(session.pending_tag)}) from {pool} CWL? You can sign up again while signups are open.")
     if session.screen == "assignments":
         publication = session.view.get("published")
         if not publication:
             if _signups(session):
-                return "## My clan assignments\nYour signup is saved. Staff have not published assignments yet."
-            return "## My clan assignments\nYou have no saved signup for the current season. Staff have not published assignments yet."
+                return "## My clan assignments\nYour signup is saved. Staff must publish the assignments first."
+            return "## My clan assignments\nYou have no saved signup for the current season. Staff must publish the assignments first."
         rows = _published_assignments(session)
         if not rows:
-            return "## My clan assignments\nNo accounts are included in the published assignments for you."
+            return "## My clan assignments\nThe published assignments do not include any of your accounts."
         pages = max(1, (len(rows) + ASSIGNMENT_PAGE_SIZE - 1) // ASSIGNMENT_PAGE_SIZE)
         page_label = f" · Page {session.page + 1} of {pages}" if pages > 1 else ""
         lines = [f"## My clan assignments{page_label}"]
@@ -324,9 +324,9 @@ def _main_text(session: MemberSession) -> str:
     if session.screen == "instructions":
         pages = _instruction_pages(session)
         if not pages:
-            return "## Joining instructions\nNo joining instructions were included with this publication."
+            return "## Joining instructions\nStaff did not add joining instructions."
         return f"## Joining instructions · {session.page + 1} of {len(pages)}\n{pages[session.page]}"
-    return "This panel is out of date. Run `/cwl signup` to open a fresh one."
+    return "This panel is old. Use `/cwl signup` to open a new one."
 
 
 def _components(token: str, session: MemberSession) -> list:
@@ -360,7 +360,7 @@ def _components(token: str, session: MemberSession) -> list:
         visible = accounts[session.page * PAGE_SIZE:(session.page + 1) * PAGE_SIZE]
         rows = []
         if visible:
-            menu = c.TextSelectMenuBuilder(custom_id=_id("select", token, version), placeholder="Choose one or more accounts", min_values=0,
+            menu = c.TextSelectMenuBuilder(custom_id=_id("select", token, version), placeholder="Select one or more accounts", min_values=0,
                                            max_values=min(len(visible), 20))
             signups = {str(row["tag"]): row for row in _signups(session)}
             for account in visible:
@@ -376,7 +376,7 @@ def _components(token: str, session: MemberSession) -> list:
                                 is_default=tag in session.selected)
             rows.append(c.MessageActionRowBuilder().add_component(menu))
         else:
-            rows.append(c.MessageActionRowBuilder().add_interactive_button(hikari.ButtonStyle.SECONDARY, _id("refresh", token, version), label="Refresh linked accounts"))
+            rows.append(c.MessageActionRowBuilder().add_interactive_button(hikari.ButtonStyle.SECONDARY, _id("refresh", token, version), label="Refresh accounts"))
         more_pages = session.page < pages - 1
         if pages > 1:
             rows.append(_row(
@@ -412,7 +412,7 @@ def _components(token: str, session: MemberSession) -> list:
         signups = _signups(session)
         visible = signups[session.page * PAGE_SIZE:(session.page + 1) * PAGE_SIZE]
         if visible and _signup_is_open(session):
-            menu = c.TextSelectMenuBuilder(custom_id=_id("signup_pick", token, version), placeholder="Choose a saved signup", min_values=1, max_values=1)
+            menu = c.TextSelectMenuBuilder(custom_id=_id("signup_pick", token, version), placeholder="Select a saved signup", min_values=1, max_values=1)
             for row in signups[session.page * PAGE_SIZE:(session.page + 1) * PAGE_SIZE]:
                 menu.add_option(_clip(f"{_safe(row.get('player_name') or row['tag'], 45)} · {_safe(row['tag'], 18)} · {row['pool'].title()}", 100), str(row["tag"]))
             rows.append(c.MessageActionRowBuilder().add_component(menu))
@@ -455,7 +455,7 @@ def _components(token: str, session: MemberSession) -> list:
         pages = max(1, (len(_published_assignments(session)) + ASSIGNMENT_PAGE_SIZE - 1) // ASSIGNMENT_PAGE_SIZE)
         buttons = [(hikari.ButtonStyle.SECONDARY, _id("home", token, version), "Back", False)]
         if _instruction_pages(session):
-            buttons.insert(0, (hikari.ButtonStyle.SECONDARY, _id("instructions", token, version), "How to join", False))
+            buttons.insert(0, (hikari.ButtonStyle.SECONDARY, _id("instructions", token, version), "Joining instructions", False))
         rows = [_row(*buttons)]
         if pages > 1:
             rows.append(_row(
@@ -479,14 +479,14 @@ def _season_id(session: MemberSession) -> int:
     season = session.view.get("season") or {}
     value = season.get("id")
     if type(value) is not int or value < 1:
-        raise ValueError("CWL signups are not available right now. Your saved signups have not been changed.")
+        raise ValueError("CWL signups are not available now. Your saved signups did not change.")
     return value
 
 
 def _revision(session: MemberSession) -> int:
     revision = session.view.get("revision")
     if type(revision) is not int or revision < 0:
-        raise ValueError("CWL data changed. Refresh the panel before saving.")
+        raise ValueError("The CWL data changed. Use `/cwl signup` to open the panel again before you save.")
     return revision
 
 
@@ -527,7 +527,7 @@ async def _edit(ctx, token: str, session: MemberSession, note: str | None = None
         # The screen generation has already advanced. A followup must not
         # restore the old confirmation or invite a duplicate write.
         try:
-            await ctx.respond("This panel could not update. Run `/cwl signup` for a fresh private panel and check My signups before retrying a save.",
+            await ctx.respond("Could not update this panel. Use `/cwl signup` to get a new private panel. Check My signups before you save again.",
                               ephemeral=True, user_mentions=False, role_mentions=False, mentions_everyone=False)
         except Exception:
             pass
@@ -606,7 +606,7 @@ async def check_signups(ctx, action_id: str, **_):
     """The shared post is never edited: reply with a private follow-up."""
     try:
         if action_id != "open":
-            raise ValueError("Open Check my signups from the signup post.")
+            raise ValueError("Select Check my signups on the signup post.")
         token, session = _new_session(ctx)
         async with session.lock:
             await _refresh(session, session.user_id, session.guild_id, include_accounts=True)
@@ -616,7 +616,7 @@ async def check_signups(ctx, action_id: str, **_):
     except ValueError as exc:
         components = _panel(str(exc), [])
     except Exception:
-        components = _panel("CWL is temporarily unavailable. Your signups have not been changed. Try again shortly.", [])
+        components = _panel("The CWL service is not available now. Your signups did not change. Try again in a few minutes.", [])
     await ctx.respond(components=components,
                       flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
                       user_mentions=False, role_mentions=False, mentions_everyone=False)
@@ -626,7 +626,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
     try:
         token, session, _ = _session_from(action_id, ctx)
     except StaleSession:
-        await ctx.respond("This CWL panel expired or changed. Run `/cwl signup` to start again.", ephemeral=True,
+        await ctx.respond("This CWL panel expired or changed. Use `/cwl signup` to start again.", ephemeral=True,
                           user_mentions=False, role_mentions=False, mentions_everyone=False)
         return
     except ValueError as exc:
@@ -638,7 +638,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
             _, current, _ = _session_from(action_id, ctx)
             assert current is session
         except (StaleSession, ValueError):
-            await ctx.respond("This CWL panel changed. Run `/cwl signup` to start again.", ephemeral=True,
+            await ctx.respond("This CWL panel changed. Use `/cwl signup` to start again.", ephemeral=True,
                               user_mentions=False, role_mentions=False, mentions_everyone=False)
             return
         user_id, guild_id = _member_identity(ctx)
@@ -657,50 +657,50 @@ async def _handle(ctx, action_id: str, action: str) -> None:
         }
         note = None
         if action not in allowed_actions.get(session.screen, set()):
-            note = "That action is out of date. Use the controls shown in this panel."
+            note = "That action is old. Use the controls in this panel."
         elif action == "home":
             session.screen = "home"
         elif action == "signup":
             if not _signup_is_open(session):
-                note = "Signups are closed for this season. Your saved signups remain available to view."
+                note = "Signups are closed for this season. You can still view your saved signups."
             else:
                 try:
                     previous_season = (session.view.get("season") or {}).get("id")
                     await _refresh(session, user_id, guild_id, include_accounts=True)
                     if previous_season != (session.view.get("season") or {}).get("id"):
-                        note = "The CWL season changed. Review the current season here, then choose Sign up again."
+                        note = "The CWL season changed. Check the new season here. Then select Sign up again."
                         session.screen = "home"
                     elif _signup_is_open(session):
                         session.screen = "signup_pool"
                         if session.view.get("accounts_status") == "unavailable":
-                            note = "Linked accounts are temporarily unavailable. Refresh accounts before choosing a pool."
+                            note = "Linked accounts are not available now. Select Refresh accounts before you select a pool."
                     else:
-                        note = "Signups closed while this panel was open. Your saved signups remain available to view."
+                        note = "Signups closed while this panel was open. You can still view your saved signups."
                 except Exception:
-                    note = "Linked accounts could not be loaded. Run `/cwl signup` again shortly; no signup was changed."
+                    note = "Could not load your linked accounts. Use `/cwl signup` again in a few minutes. No signup was changed."
         elif action == "pool_main" or action == "pool_lazy":
             session.pool = "main" if action.endswith("main") else "lazy"
             session.selected.clear()
             session.page = 0
             if session.view.get("accounts_status") == "unavailable":
-                note = "Linked accounts are temporarily unavailable. Your saved signups are still safe."
+                note = "Linked accounts are temporarily unavailable. Your saved signups did not change."
             elif not _accounts(session):
-                note = "No linked accounts were found. Use ClashKing /link (or link through ClashPerk), then choose Refresh accounts."
+                note = "No linked accounts were found. Link an account with ClashKing `/link` or with ClashPerk. Then select Refresh accounts."
             elif not _eligible_accounts(session):
                 note = ("Your FWA accounts can sign up for Lazy CWL only." if all(
                     str(row.get("current_clan_type") or "").casefold() == "fwa" for row in _accounts(session)
-                ) else "Current clan category could not be verified for Main. Refresh accounts or choose Lazy CWL.")
+                ) else "Could not check the current clan category for Main. Select Refresh accounts, or select Lazy CWL.")
             else:
                 session.screen = "select_accounts"
         elif action == "select":
             values = list(getattr(ctx.interaction, "values", ()) or ())
             allowed = {str(row["tag"]) for row in _eligible_accounts(session)[session.page * PAGE_SIZE:(session.page + 1) * PAGE_SIZE]}
             if len(values) > PAGE_SIZE or not set(values) <= allowed:
-                note = "Those account choices are out of date. Review the current page and try again."
+                note = "Those account selections are old. Check the current page. Then try again."
             else:
                 candidate = (session.selected - allowed) | set(values)
                 if len(candidate) > 100:
-                    note = "Select up to 100 accounts per signup. Clear some choices before adding more."
+                    note = "The limit is 100 accounts for each signup. Clear some selections. Then add more."
                 else:
                     session.selected = candidate & {str(row["tag"]) for row in _eligible_accounts(session)}
                 session.screen = "select_accounts"
@@ -721,17 +721,17 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 session.page = 0
                 session.screen = "review"
             else:
-                note = "Choose at least one account first."
+                note = "Select at least one account first."
         elif action == "clear_selection":
             session.selected.clear()
         elif action == "back_select":
             session.screen = "select_accounts"
         elif action == "confirm":
             if not _signup_is_open(session):
-                note = "Signups are closed for this season. Your saved signups have not been changed."
+                note = "Signups are closed for this season. Your saved signups did not change."
                 session.screen = "home"
             elif not session.selected or session.pool not in {"main", "lazy"}:
-                note = "Choose a pool and at least one account before saving."
+                note = "Select a pool and at least one account. Then save."
             else:
                 season_id, expected_revision = _season_id(session), _revision(session)
                 existing_by_tag = {str(row["tag"]): row for row in _signups(session)}
@@ -756,18 +756,18 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                     session.selected.clear()
                     session.source_pools.clear()
                     if accounts:
-                        note = "Signup saved. Use My signups to check your accounts."
+                        note = "Signup saved. To check your accounts, select My signups."
                         try:
                             await _refresh(session, user_id, guild_id, include_accounts=False)
                         except Exception:
-                            note += " Refresh /cwl signup to reload current details."
+                            note += " Use `/cwl signup` again to see the new details."
                     else:
-                        note = "Those accounts are already saved for this pool. No changes were needed."
+                        note = "Those accounts are already saved for this pool. No changes were made."
                 except MemberClientError as exc:
-                    note = ("The save result is unclear. Refresh My signups before trying again." if getattr(exc, "uncertain", False)
-                            else str(exc) or "The signup could not be saved. Refresh and try again.")
+                    note = ("Your change may not be saved. Select My signups to check. Then try again if needed." if getattr(exc, "uncertain", False)
+                            else str(exc) or "Could not save the signup. Select My signups. Then try again.")
                 except Exception:
-                    note = "The save result is unclear. Refresh My signups before trying again."
+                    note = "Your change may not be saved. Select My signups to check. Then try again if needed."
                 session.screen = "home"
         elif action == "my_signups":
             try:
@@ -776,14 +776,14 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 session.screen = "my_signups"
             except Exception:
                 session.screen = "home"
-                note = "CWL is temporarily unavailable. No signups were changed. Try /cwl signup again shortly."
+                note = "CWL is temporarily unavailable. Your saved signups did not change. Try /cwl signup again shortly."
         elif action == "signup_pick":
             values = list(getattr(ctx.interaction, "values", ()) or ())
             known = {str(row["tag"]) for row in _signups(session)}
             if not _signup_is_open(session):
-                note = "Signups are closed; saved accounts are view only."
+                note = "Signups are closed. You can only view your saved accounts."
             elif len(values) != 1 or values[0] not in known:
-                note = "That saved signup changed. Refresh My signups."
+                note = "That saved signup changed. Select Back. Then select My signups."
             else:
                 session.pending_tag = values[0]
                 row = next(row for row in _signups(session) if str(row["tag"]) == session.pending_tag)
@@ -794,38 +794,38 @@ async def _handle(ctx, action_id: str, action: str) -> None:
             session.screen = "signup_action"
         elif action == "change_pool":
             if not _signup_is_open(session):
-                note = "Signups are closed for this season. Your saved signup is view only."
+                note = "Signups are closed for this season. You can only view your saved signup."
                 session.screen = "my_signups"
             else:
                 try:
                     await _refresh(session, user_id, guild_id, include_accounts=True)
                     if session.pending_tag not in {str(row["tag"]) for row in _signups(session)}:
-                        note = "That saved signup changed. Choose an account again."
+                        note = "That saved signup changed. Select an account again."
                         session.screen = "my_signups"
                     elif not _signup_is_open(session):
                         note = "Signups closed while this panel was open."
                         session.screen = "my_signups"
                     elif session.view.get("accounts_status") == "unavailable":
-                        note = "Linked accounts are temporarily unavailable. No signup was changed; try again shortly."
+                        note = "Linked accounts are temporarily unavailable. Your saved signups did not change. Try again in a few minutes."
                         session.screen = "signup_action"
                     elif session.pending_tag not in {str(row["tag"]) for row in _accounts(session)}:
-                        note = "This saved account is no longer linked to you. Re-link it before changing pools."
+                        note = "This saved account is not linked to you now. Link it again before you change its pool."
                         session.screen = "signup_action"
                     else:
                         session.screen = "change_pool"
                 except Exception:
-                    note = "Linked accounts could not be loaded. No signup was changed; try again shortly."
+                    note = "Linked accounts could not be loaded. Your saved signups did not change. Try again in a few minutes."
         elif action in {"move_main", "move_lazy"}:
             account = next((row for row in _accounts(session) if str(row.get("tag")) == session.pending_tag), {})
             if action == "move_main" and (not account or main_signup_error(account)):
-                note = "Main is unavailable for this account. Refresh linked accounts or choose Lazy."
+                note = "You cannot select Main for this account. Select Lazy, or update your linked accounts."
             elif not _signup_is_open(session):
-                note = "Signups are closed for this season. Your saved signups have not been changed."
+                note = "Signups are closed for this season. Your saved signups did not change."
                 session.screen = "home"
             else:
                 destination = "main" if action == "move_main" else "lazy"
                 if not session.pending_tag:
-                    note = "Choose a saved signup first."
+                    note = "Select a saved signup first."
                     session.screen = "my_signups"
                 elif session.source_pools.get(session.pending_tag) == destination:
                     note = "That account is already signed up for this pool."
@@ -835,10 +835,10 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                     session.screen = "pool_change_confirm"
         elif action == "confirm_move":
             if not _signup_is_open(session):
-                note = "Signups are closed for this season. Your saved signups have not been changed."
+                note = "Signups are closed for this season. Your saved signups did not change."
                 session.screen = "home"
             elif not session.pending_tag or session.pending_pool not in {"main", "lazy"}:
-                note = "Choose a saved signup and destination pool first."
+                note = "Select a saved signup and a new pool first."
                 session.screen = "my_signups"
             else:
                 season_id, expected_revision = _season_id(session), _revision(session)
@@ -854,28 +854,28 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                     await request("submit", user_id=user_id, guild_id=str(guild_id), season_id=season_id,
                                   expected_revision=expected_revision, pool=destination,
                                   accounts=[{"tag": tag, "prefer_crystal_1_or_lower": preference, "move_from_pool": source}])
-                    note = "Pool changed. Use My signups to check your accounts."
+                    note = "Pool changed. To check your accounts, select My signups."
                     try:
                         await _refresh(session, user_id, guild_id, include_accounts=False)
                     except Exception:
-                        note += " Refresh /cwl signup to reload current signup details."
+                        note += " Use `/cwl signup` again to see the new details."
                 except MemberClientError as exc:
-                    note = ("The save result is unclear. Refresh My signups before trying again." if getattr(exc, "uncertain", False)
-                            else str(exc) or "The pool could not be changed. Refresh My signups.")
+                    note = ("Your change may not be saved. Select My signups to check. Then try again if needed." if getattr(exc, "uncertain", False)
+                            else str(exc) or "Could not change the pool. Select My signups.")
                 except Exception:
-                    note = "The save result is unclear. Refresh My signups before trying again."
+                    note = "Your change may not be saved. Select My signups to check. Then try again if needed."
         elif action == "withdraw":
             if not _signup_is_open(session):
-                note = "Signups are closed for this season. Your saved signup is view only."
+                note = "Signups are closed for this season. You can only view your saved signup."
                 session.screen = "my_signups"
             else:
                 session.screen = "withdraw_confirm"
         elif action == "withdraw_confirm":
             if not _signup_is_open(session):
-                note = "Signups are closed for this season. Your saved signups have not been changed."
+                note = "Signups are closed for this season. Your saved signups did not change."
                 session.screen = "home"
             elif not session.pending_tag:
-                note = "Choose a saved signup first."
+                note = "Select a saved signup first."
                 session.screen = "my_signups"
             else:
                 tag = session.pending_tag
@@ -890,12 +890,12 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                     try:
                         await _refresh(session, user_id, guild_id, include_accounts=False)
                     except Exception:
-                        note += " Refresh /cwl signup to reload current details."
+                        note += " Use `/cwl signup` again to see the new details."
                 except MemberClientError as exc:
-                    note = ("The save result is unclear. Refresh My signups before trying again." if getattr(exc, "uncertain", False)
-                            else str(exc) or "The signup could not be withdrawn. Refresh My signups.")
+                    note = ("Your change may not be saved. Select My signups to check. Then try again if needed." if getattr(exc, "uncertain", False)
+                            else str(exc) or "Could not withdraw the signup. Select My signups.")
                 except Exception:
-                    note = "The save result is unclear. Refresh My signups before trying again."
+                    note = "Your change may not be saved. Select My signups to check. Then try again if needed."
                 session.screen = "home"
         elif action == "instructions":
             session.page = 0
@@ -907,19 +907,19 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 session.screen = "assignments"
             except Exception:
                 session.screen = "home"
-                note = "CWL is temporarily unavailable. Your saved signups are unchanged. Try /cwl signup again shortly."
+                note = "CWL is temporarily unavailable. Your saved signups did not change. Try /cwl signup again shortly."
         elif action == "refresh":
             try:
                 previous_season = (session.view.get("season") or {}).get("id")
                 await _refresh(session, user_id, guild_id, include_accounts=True)
                 if previous_season != (session.view.get("season") or {}).get("id"):
-                    note = "The CWL season changed. Review this panel before choosing a pool."
+                    note = "The CWL season changed. Check this panel before you select a pool."
                 elif session.view.get("accounts_status") == "unavailable":
-                    note = "Linked accounts are temporarily unavailable. Your saved signups are still safe."
+                    note = "Linked accounts are temporarily unavailable. Your saved signups did not change."
                 else:
                     note = "Linked accounts refreshed."
             except Exception:
-                note = "CWL is temporarily unavailable. Your saved signups are unchanged. Try /cwl signup again shortly."
+                note = "CWL is temporarily unavailable. Your saved signups did not change. Try /cwl signup again shortly."
         else:
             note = "That action is no longer available."
         await _edit(ctx, token, session, note)

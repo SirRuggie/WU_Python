@@ -108,7 +108,7 @@ def test_discord_component_nesting_for_all_dashboard_panels():
 def test_message_editor_exposes_copy_artwork_buttons_delivery_and_safe_preview():
     built = dashboard.message_editor(_draft(), "signup", "main")[0].build()[0]
     encoded = str(built)
-    for label in ("Edit text", "Upload replacement", "Edit buttons", "Choose a channel", "Choose roles to ping", "Preview", "Post image"):
+    for label in ("Edit text", "Upload replacement", "Edit buttons", "Select a channel", "Select roles to ping", "Preview", "Post image"):
         assert label in encoded
 
 
@@ -243,3 +243,230 @@ def test_rendered_custom_ids_fit_discords_100_character_limit(monkeypatch):
     for item in containers:
         walk(item)
     assert ids and max(map(len, ids)) <= 100
+
+
+def test_active_selection_panels_use_select_guidance():
+    draft = _draft()
+    draft['campaign']['messages']['signup']['variants']['main']['buttons'] = [
+        {'label': 'Guide', 'url': 'https://example.test/guide'}
+    ]
+    messages = str(asyncio.run(dashboard.panel(draft, 'messages'))[0].build()[0])
+    assert 'Select a Main CWL post' in messages
+    panel = asyncio.run(dashboard.panel(draft, 'messages'))[0].build()[0]
+    assert any(part.get('content') == '### Main CWL posts' for part in panel['components'])
+    buttons = [child for row in panel['components'] for child in row.get('components', ()) if child.get('type') == 2]
+    assert any(button.get('label') == 'Main CWL' and button.get('custom_id') == f"cwl_tab:{draft['token']}|messages_main" for button in buttons)
+    closing = str(dashboard.closing_editor(draft)[0].build()[0])
+    assert '### 2. Signups close\\nSelect a monthly rule for the close date. Or select one date.' in closing
+    links = str(dashboard.links_editor(draft, 'signup', 'main')[0].build()[0])
+    assert 'Select one to edit it, or add a new link button.' in links
+    assert 'Select a button' in links
+    assert 'cwl_button_choose:' in links
+
+
+def test_invalid_selection_guidance_does_not_save(monkeypatch):
+    draft = _draft()
+    token = draft['token']
+    monkeypatch.setattr(dashboard, '_load', AsyncMock(return_value=(draft, None)))
+    save = AsyncMock()
+    monkeypatch.setattr(dashboard, '_save_campaign', save)
+    monkeypatch.setattr(dashboard, 'panel', AsyncMock(side_effect=lambda _draft, _tab, notice, **_kwargs: notice))
+    monkeypatch.setattr(dashboard, 'message_editor', lambda _draft, _key, _audience, notice: notice)
+    ctx = _ctx()
+    ctx.interaction.values = []
+    assert asyncio.run(dashboard.reminder_audience(ctx, token, mongo=object())) == 'Select Main CWL, Lazy CWL, or Both.'
+    assert asyncio.run(dashboard.choose_message(ctx, token, mongo=object())) == 'Select one message version.'
+    assert asyncio.run(dashboard.choose_schedule(ctx, token, mongo=object())) == 'Select one message schedule.'
+    assert asyncio.run(dashboard.choose_channel(ctx, f'{token}|signup|main', mongo=object())) == 'Select one text or announcement channel.'
+    ctx.interaction.values = ['invalid']
+    assert asyncio.run(dashboard.choose_roles(ctx, f'{token}|signup|main', mongo=object())) == 'Select up to ten server roles.'
+    save.assert_not_awaited()
+
+
+def test_monthly_editor_selection_guidance():
+    rendered = str(dashboard.monthly_editor(_draft(), 'signup')[0].build()[0])
+    assert 'Select one way to set the date each month. Then enter the number and the send time.' in rendered
+    assert '**Day of the month:** a number from 1 to 31. A shorter month uses its last day.' in rendered
+    assert '**Days before month end:** 0 to 27 days before the last day of the month. 0 means the last day.' in rendered
+    assert 'Day of the month' in rendered and 'Days before month end' in rendered
+
+
+def test_header_uses_approved_monthly_repetition_copy():
+    rows = dashboard._header(_draft(), 'overview')
+    assert rows[1].content == 'For **October 2026** · **America/New_York**\nRepeats each month until you change it.'
+
+
+def test_closing_and_monthly_panels_use_complete_approved_copy():
+    closing = [node.content for node in dashboard.closing_editor(_draft())[0].components if hasattr(node, 'content')]
+    assert '### 2. Signups close\nSelect a monthly rule for the close date. Or select one date.' in closing
+    built = dashboard.closing_editor(_draft())[0].build()[0]
+    buttons = [child for row in built['components'] for child in row.get('components', ()) if child.get('type') == 2]
+    assert any(button.get('label') == 'Day of the month' and button.get('custom_id') == f"cwl_edit_closing_mode:{_draft()['token']}|day" for button in buttons)
+    monthly = [node.content for node in dashboard.monthly_editor(_draft(), 'signup')[0].components if hasattr(node, 'content')]
+    assert ('### Monthly · Signups open\nSelect one way to set the date each month. Then enter the number and the send time.\n'
+            '**Day of the month:** a number from 1 to 31. A shorter month uses its last day.\n'
+            '**Days before month end:** 0 to 27 days before the last day of the month. 0 means the last day.') in monthly
+
+
+def test_message_editor_copy_labels_name_other_pool_without_changing_callbacks():
+    draft = _draft()
+    for audience, expected_copy, expected_image in (
+        ('main', 'Copy text to Lazy', 'Use image for Lazy'),
+        ('lazy', 'Copy text to Main', 'Use image for Main'),
+    ):
+        built = dashboard.message_editor(draft, 'signup', audience)[0].build()[0]
+        buttons = [button for row in built['components'] for button in row.get('components', ())
+                   if button.get('type') == 2]
+        by_id = {button['custom_id']: button['label'] for button in buttons if 'custom_id' in button}
+        ref = f"{draft['token']}|signup|{audience}"
+        assert by_id[f'cwl_copy_text:{ref}'] == expected_copy
+        assert by_id[f'cwl_share_image:{ref}'] == expected_image
+
+
+def test_stale_cwl_controls_show_exact_recovery_without_loading_or_saving(monkeypatch):
+    load = AsyncMock()
+    save = AsyncMock()
+    monkeypatch.setattr(dashboard, '_load', load)
+    monkeypatch.setattr(dashboard, '_save_campaign', save)
+    monkeypatch.setattr(dashboard, 'error_panel', lambda text: text)
+    ctx = _ctx()
+    editor_text = 'This editor panel is old. Open it again from `/manage`.'
+    for action in (dashboard.edit_links, dashboard.choose_button, dashboard.choose_channel,
+                   dashboard.choose_roles, dashboard.toggle, dashboard.copy_text,
+                   dashboard.duplicate_message, dashboard.share_image, dashboard.reset_image,
+                   dashboard.queue_manual, dashboard.preview, dashboard.open_message):
+        assert asyncio.run(action(ctx, '', mongo=object())) == editor_text
+    for action in (dashboard.tab, dashboard.skip):
+        assert asyncio.run(action(ctx, '', mongo=object())) == 'This dashboard panel is old. Open it again from `/manage`.'
+    assert asyncio.run(dashboard.remove_button(ctx, '', mongo=object())) == 'That action is old. Use the controls in this panel.'
+    load.assert_not_awaited()
+    save.assert_not_awaited()
+
+
+def test_stale_cwl_modal_controls_show_exact_recovery_without_loading_or_saving(monkeypatch):
+    load = AsyncMock()
+    save = AsyncMock()
+    modal_source = AsyncMock()
+    monkeypatch.setattr(dashboard, '_load', load)
+    monkeypatch.setattr(dashboard, '_save_campaign', save)
+    monkeypatch.setattr(dashboard, '_modal_source', modal_source)
+    monkeypatch.setattr(dashboard, '_ack_modal', AsyncMock())
+    monkeypatch.setattr(dashboard, 'error_panel', lambda text: text)
+    ctx = _ctx()
+    ctx.interaction.edit_initial_response = AsyncMock()
+    expected = 'This editor panel is old. Open it again from `/manage`.'
+    for action in (dashboard.edit_image, dashboard.submit_button, dashboard.edit_schedule, dashboard.submit_schedule, dashboard.submit_sequence):
+        asyncio.run(action(ctx, '', mongo=object()))
+        modal_source.assert_awaited_with(ctx, expected)
+        modal_source.reset_mock()
+    asyncio.run(dashboard._button_modal(ctx, '', object(), index=None))
+    modal_source.assert_awaited_once_with(ctx, expected)
+    modal_source.reset_mock()
+    asyncio.run(dashboard._submit_message(ctx, '', object(), 'text'))
+    modal_source.assert_awaited_once_with(ctx, expected)
+    asyncio.run(dashboard.submit_image(ctx, '', mongo=object(), media=object()))
+    ctx.interaction.edit_initial_response.assert_awaited_once_with(components=expected, **dashboard.NO_MENTIONS)
+    load.assert_not_awaited()
+    save.assert_not_awaited()
+
+
+def test_text_modal_invalid_reference_acknowledges_and_shows_recovery(monkeypatch):
+    load = AsyncMock()
+    monkeypatch.setattr(dashboard, '_load', load)
+    monkeypatch.setattr(dashboard, 'error_panel', lambda text: text)
+    ctx = _ctx()
+    ctx.defer = AsyncMock()
+    ctx.respond_with_modal = AsyncMock()
+    ctx.interaction.edit_initial_response = AsyncMock()
+    asyncio.run(dashboard.edit_text(ctx, '', mongo=object()))
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
+    ctx.interaction.edit_initial_response.assert_awaited_once_with(
+        components='This editor panel is old. Open it again from `/manage`.',
+        **dashboard.NO_MENTIONS,
+    )
+    ctx.respond_with_modal.assert_not_awaited()
+    load.assert_not_awaited()
+
+
+def test_settings_modal_invalid_reference_acknowledges_once_without_loading(monkeypatch):
+    load = AsyncMock()
+    save = AsyncMock()
+    monkeypatch.setattr(dashboard, '_load', load)
+    monkeypatch.setattr(dashboard, '_save_timing', save)
+    monkeypatch.setattr(dashboard, 'error_panel', lambda text: text)
+    ctx = _ctx()
+    ctx.defer = AsyncMock()
+    ctx.respond_with_modal = AsyncMock()
+    ctx.interaction.edit_initial_response = AsyncMock()
+    asyncio.run(dashboard.submit_settings(ctx, 'invalid|too|many', mongo=object()))
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
+    ctx.interaction.edit_initial_response.assert_awaited_once_with(
+        components='This editor panel is old. Open it again from `/manage`.',
+        **dashboard.NO_MENTIONS,
+    )
+    ctx.respond_with_modal.assert_not_awaited()
+    load.assert_not_awaited()
+    save.assert_not_awaited()
+
+
+def test_schedule_mode_displays_menu_label_without_changing_selection_or_draft(monkeypatch):
+    import copy
+
+    save = AsyncMock()
+    monkeypatch.setattr(dashboard, '_save_campaign', save)
+    choices = [('monthly', 'Monthly'), ('after_open', 'After signups open'),
+               ('before_close', 'Before signups close'), ('specific', 'One-time date'),
+               ('legacy_chain', 'After previous reminder'), ('manual', 'Manual')]
+    for mode, label in choices + [('unexpected_mode', 'unexpected_mode')]:
+        draft = _draft()
+        draft['campaign']['messages']['signup']['schedule'] = {'mode': mode}
+        before = copy.deepcopy(draft)
+        panel = dashboard.schedule_editor(draft, 'signup')[0].build()[0]
+        texts = [part['content'] for part in panel['components'] if 'content' in part]
+        descriptions = {'monthly': 'Monthly · day ? at 00:00',
+                        'after_open': '0 minutes after signups open',
+                        'before_close': '0 minutes before signup close',
+                        'specific': 'One-time date · not set',
+                        'legacy_chain': 'After previous · 0 minutes',
+                        'manual': 'Manual', 'unexpected_mode': 'Manual'}
+        assert f'### Signups open\n**{descriptions[mode]}**\nMode: {label}' in texts
+        menus = [child for row in panel['components'] for child in row.get('components', ())
+                 if child.get('custom_id', '').startswith('cwl_schedule_mode:')]
+        assert len(menus) == 1
+        assert menus[0]['custom_id'] == f"cwl_schedule_mode:{draft['token']}|signup"
+        assert [(o['value'], o['label']) for o in menus[0]['options']] == choices
+        assert [o['value'] for o in menus[0]['options'] if o.get('default')] == ([mode] if mode != 'unexpected_mode' else [])
+        assert draft == before
+    save.assert_not_awaited()
+
+
+def test_more_options_and_published_roster_use_exact_approved_copy(monkeypatch):
+    draft = _draft()
+    draft['campaign'] = dashboard.cwl_campaign.default_campaign()
+    monkeypatch.setattr(dashboard, '_load', AsyncMock(return_value=(draft, None)))
+    advanced = asyncio.run(dashboard.advanced(_ctx(), draft['token'], mongo=object()))[0].build()[0]
+    assert any(part.get('content') == '### More options\nChange the timing of one message. Or remove your edits and load the saved settings.' for part in advanced['components'])
+    live = {'campaign': draft['campaign'], 'sent_occurrences': [
+        dashboard.cwl_campaign.occurrence_id('2026-10', 'roster', audience) for audience in ('main', 'lazy')
+    ]}
+    monkeypatch.setattr(dashboard.cwl_campaign, 'load_campaign', AsyncMock(return_value=live))
+    publication = asyncio.run(dashboard.publication_panel(draft, object()))[0].build()[0]
+    assert any(part.get('content') == '## Publish Final Roster\nYour saved announcements and spreadsheet links are used.' for part in publication['components'])
+    buttons = [child for row in publication['components'] for child in row.get('components', ()) if child.get('type') == 2]
+    assert any(button.get('label') == 'Already published' and button.get('disabled') for button in buttons)
+
+
+def test_posting_channel_save_keeps_destination_and_exact_notice(monkeypatch):
+    draft = _draft()
+    monkeypatch.setattr(dashboard, '_load', AsyncMock(return_value=(draft, None)))
+    save = AsyncMock(return_value=draft)
+    monkeypatch.setattr(dashboard, '_save_campaign', save)
+    monkeypatch.setattr(dashboard, 'message_editor', lambda _draft, _key, _audience, notice: notice)
+    ctx = _ctx()
+    ctx.interaction.values = ['123456789']
+    result = asyncio.run(dashboard.choose_channel(ctx, f"{draft['token']}|signup|main", mongo=object()))
+    assert result == 'Posting channel updated.'
+    save.assert_awaited_once()
+    campaign = save.await_args.args[2]
+    assert campaign['messages']['signup']['variants']['main']['destination_channel_id'] == 123456789
+    assert campaign['messages']['signup']['variants']['lazy'] == draft['campaign']['messages']['signup']['variants']['lazy']

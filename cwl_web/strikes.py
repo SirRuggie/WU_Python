@@ -522,7 +522,7 @@ async def manual(request):
     player = tag(data.get('player_tag'))
     reason = data.get('reason')
     if not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 500:
-        raise ValueError('Enter a reason under 500 characters.')
+        raise ValueError('Enter a reason of 500 characters or fewer.')
     provider = request.app['providers']
     account = await provider.player(player)
     owners = await recruit_links.resolve_players([player])
@@ -541,7 +541,7 @@ async def manual(request):
 async def remove(request):
     data = await body(request, {'reason'})
     if not isinstance(data.get('reason'), str) or not 1 <= len(data['reason'].strip()) <= 500:
-        raise ValueError('Enter a reason under 500 characters.')
+        raise ValueError('Enter a reason of 500 characters or fewer.')
     from .app import _session
     async with shared.mongo(request) as db:
         ledger = await service(request, db)

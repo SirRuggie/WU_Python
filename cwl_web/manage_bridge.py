@@ -159,8 +159,13 @@ async def save_variant(request):
     cycle = _required_binding(request, sid)
     pool = _pool(request)
     body = await _json(request)
-    if set(body) != {'generation', 'channel_id', 'body', 'roster_url'}:
+    required = {'generation', 'channel_id', 'body', 'roster_url'}
+    if not required <= set(body) or set(body) - required - {'roster_button_label'}:
         raise web.HTTPBadRequest(text="The request is not complete. Refresh the page and try again.")
+    if 'roster_button_label' in body:
+        label = body['roster_button_label']
+        if pool != 'lazy' or label != 'Lazy CWL guide' or not isinstance(label, str):
+            raise web.HTTPBadRequest(text='Only the Lazy CWL guide label can be updated')
     if not isinstance(body['body'], str) or len(body['body']) > 4000:
         raise web.HTTPBadRequest(text='Announcement text must be at most 4000 characters')
     channel_id = str(body['channel_id'])
@@ -189,6 +194,17 @@ async def save_variant(request):
         loaded = await cwl_campaign.load_campaign(mongo, GUILD_ID, cycle)
         if body['generation'] != campaign_generation(loaded):
             raise web.HTTPConflict(text="Manage settings changed. Refresh and review.")
+        if 'roster_button_label' in body:
+            current = loaded['campaign']['messages']['roster']['variants'][pool]
+            buttons = current.get('buttons') or []
+            matches = [index for index, button in enumerate(buttons)
+                       if button.get('label') == 'LazyCWL Guide']
+            if len(matches) != 1:
+                raise web.HTTPConflict(text='The Lazy CWL guide button is missing or ambiguous. Review Manage settings.')
+            if (channel_id != str(current.get('destination_channel_id'))
+                    or body['body'] != current.get('body')
+                    or not buttons or url != buttons[0].get('url')):
+                raise web.HTTPBadRequest(text='Only the Lazy CWL guide label can change in this request')
         delivery = await get_roster_send_status(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool)
         if delivery and delivery.get('status') in ('sent', 'pending', 'sending', 'uncertain'):
             raise web.HTTPConflict(text='This announcement is sent or in progress; edit it through Manage after delivery review')
@@ -199,13 +215,16 @@ async def save_variant(request):
                 raise web.HTTPConflict(text="Manage settings changed. Refresh and review.")
             candidate = copy.deepcopy(draft['campaign'])
             item = candidate['messages']['roster']['variants'][pool]
-            item['destination_channel_id'] = int(channel_id)
-            item['body'] = body['body']
-            if item.get('buttons'):
-                item['buttons'][0]['url'] = url
+            if 'roster_button_label' in body:
+                item['buttons'][matches[0]]['label'] = body['roster_button_label']
             else:
-                item['buttons'] = [roster_button(url)]
-            saved = await cwl_campaign.apply_draft(mongo, draft['_id'], int(session['user_id']), expected_revision=loaded['revision'], candidate_campaign=candidate)
+                item['destination_channel_id'] = int(channel_id)
+                item['body'] = body['body']
+                if item.get('buttons'):
+                    item['buttons'][0]['url'] = url
+                else:
+                    item['buttons'] = [roster_button(url)]
+            saved = await cwl_campaign.apply_draft(mongo, draft['_id'], int(session['user_id']), expected_revision=loaded['revision'], candidate_campaign=candidate, **({'expected_generation': body['generation']} if 'roster_button_label' in body else {}))
             if cwl_campaign.occurrence_id(cycle, 'roster', pool) in saved.get('protected_sent', []):
                 raise web.HTTPConflict(text='Manage sent this announcement during your edit; its posted settings were preserved')
         except (ValueError, RuntimeError) as exc:

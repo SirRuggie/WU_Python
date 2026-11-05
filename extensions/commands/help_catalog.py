@@ -40,7 +40,7 @@ HELP_CATEGORIES = {
     "manage": {
         "name": "Management", "emoji": "🛡️", "description": "Private dashboards for server staff",
         "commands": [
-            ("/manage", "Open management home or choose Server, Roles, Recruit Gauntlet, FWA (bases, war messages, blacklist, points, sync reminders), Recruitment Questions, Ticket Settings, Ticket Testing, CWL, or CWL Rosters."),
+            ("/manage", "Open the management home, or select a section: Server, Roles, Recruit Gauntlet, FWA, Recruitment Questions, Ticket Settings, Ticket Testing, CWL, or CWL Return Pings."),
         ],
     },
     "clan_fwa": {
@@ -52,10 +52,10 @@ HELP_CATEGORIES = {
             ("/goldrush post", "Post the Gold Rush signup and leaderboard. Admin only."),
             ("/goldrush configure", "Preview and confirm event start, duration and score reset. Admin only."),
             ("/goldrush finalize", "Refresh and lock results after the event ends. Admin only."),
-            ("/fwa bases", "Select and display an FWA base layout."),
+            ("/fwa bases", "Select and show an FWA base layout."),
             ("/fwa chocolate", "Look up a player or clan on FWA Chocolate."),
             ("/fwa links", "Open FWA verification and war-weight links."),
-            ("/fwa new-th-upgrade", "Display FWA Town Hall upgrade notes."),
+            ("/fwa new-th-upgrade", "Show FWA Town Hall upgrade notes."),
             ("/fwa war-plans", "Generate a war plan for win, loss, blacklist, or mismatch."),
             ("/fwa weight", "Calculate war weight from a storage value."),
         ],

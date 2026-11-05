@@ -132,9 +132,8 @@ def banner(prefix: str = "🔧") -> str:
     """
     line = f"{prefix} **Clash is in maintenance.**"
     if _since is None:
-        return f"{line} Some data couldn't be loaded — nothing is wrong with your accounts."
+        return f"{line} Could not load some data. Your accounts are correct."
     return (
-        f"{line} The game's API stopped answering <t:{int(_since.timestamp())}:R>, "
-        "so some of this may be missing or out of date. Nothing is wrong with "
-        "your accounts — try again in a few minutes."
+        f"{line} The game's API stopped answering <t:{int(_since.timestamp())}:R>. "
+        "Some data can be missing or old. Your accounts are correct. Try again in a few minutes."
     )

@@ -29,8 +29,12 @@ def _snowflake(value):
 
 
 def _candidate(loaded, patch):
-    _object(patch, ('timezone', 'signup_deadline', 'reminder_sequence', 'messages'), 'automatic message')
+    _object(patch, ('timezone', 'signup_deadline', 'reminder_sequence', 'messages', 'default_copy_version'), 'automatic message')
     candidate = copy.deepcopy(loaded['campaign'])
+    if 'default_copy_version' in patch:
+        if type(patch['default_copy_version']) is not int or patch['default_copy_version'] != 128 or 'default_copy_version' in candidate:
+            raise ValueError('Only unversioned reminder copy can be updated to version 128')
+        candidate['default_copy_version'] = 128
     if 'timezone' in patch:
         if not isinstance(patch['timezone'], str):
             raise ValueError("Select a timezone")

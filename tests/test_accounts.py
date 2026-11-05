@@ -116,9 +116,9 @@ def test_link_service_failure_is_not_reported_as_no_links(monkeypatch):
     text = _text(_payload(data))
 
     assert data.problem == accounts.LINK_FAILURE
-    assert "Couldn't reach the link service" in text
+    assert "Link service not available" in text
     assert "No linked accounts" not in text
-    assert "problem on their end, not yours" in text
+    assert "The Clash↔Discord link service did not answer. Your accounts cannot be found. The problem is not on your side. Try again in a few minutes." in text
 
 
 def test_successful_empty_lookup_shows_link_instructions_without_player_fetch(monkeypatch):
@@ -137,7 +137,7 @@ def test_successful_empty_lookup_shows_link_instructions_without_player_fetch(mo
     assert data.problem is None
     assert data.linked_count == 0
     assert "No linked accounts" in text
-    assert "ClashKing's `/link`" in text
+    assert "No Clash of Clans accounts are linked to your Discord.\n\nLink an account with the ClashKing `/link` command. You need your in-game API token. Find it in **Settings → More Settings → API Token**. Then use `/accounts` again." in [node["content"] for node in _walk(_payload(data)) if "content" in node]
 
 
 def test_rerunning_command_bypasses_an_old_empty_link_cache(monkeypatch):
@@ -205,7 +205,7 @@ def test_every_linked_tag_is_reconciled_as_loaded_not_found_or_error(monkeypatch
     text = _text(_payload(data))
     for tag in by_tag:
         assert text.count(f"`{tag}`") == 1
-    assert "1 account couldn't be loaded this time" in text
+    assert "⚠️ **Could not load 1 account.** Its linked tag is shown above. Try again in a few minutes." in text
     assert "1 linked tag returned no player profile" in text
 
 
@@ -273,7 +273,7 @@ def test_each_account_is_one_compact_mobile_row():
     assert rows[0].index("`#TAG01`") < rows[0].index("Clan 01")
     assert "https://link.clashofclans.com/" in rows[0]
     assert rows[1].startswith("**2.** ⚠️ `#MISSING`")
-    assert rows[2].startswith("**3.** ⏳ `#FAILED`")
+    assert rows[2] == "**3.** ⏳ `#FAILED` · **Account not loaded** · The link is saved. Try again in a few minutes."
     assert accounts._text_blocks(rows) == ["\n".join(rows)]
 
 
@@ -287,8 +287,9 @@ def test_maintenance_replaces_generic_partial_failure_copy():
     text = _text(_payload(data))
 
     assert "Clash is in maintenance" in text
-    assert "Nothing is wrong with your accounts" in text
+    assert "Some data can be missing or old. Your accounts are correct. Try again in a few minutes." in text
     assert "couldn't be loaded this time" not in text
+    assert "Could not load 1 account" not in text
     assert "`#FAILED`" in text
 
 
@@ -406,3 +407,24 @@ def test_command_keeps_guild_account_lists_private(
     assert ctx.defers == [{"ephemeral": expected_ephemeral}]
     assert len(ctx.interaction.edits) == 1
     assert ctx.interaction.edits[0]["components"]
+
+
+def test_unavailable_link_sources_show_full_approved_notice():
+    data = accounts.AccountsData(entries=(_loaded_entry(1),), unavailable_sources=('ClashKing',))
+    contents = [node['content'] for node in _walk(_payload(data)) if 'content' in node]
+    assert '⚠️ **Incomplete list:** Could not reach ClashKing. More accounts can be linked. Try again in a few minutes.' in contents
+
+
+def test_single_account_error_shows_full_approved_notice():
+    data = accounts.AccountsData(entries=(accounts.AccountEntry('#FAILED', accounts.STATUS_ERROR),))
+    contents = [node['content'] for node in _walk(_payload(data)) if 'content' in node]
+    assert '⚠️ **Could not load 1 account.** Its linked tag is shown above. Try again in a few minutes.' in contents
+
+
+def test_multiple_account_failures_keep_baseline_text_and_count():
+    data = accounts.AccountsData(entries=(
+        accounts.AccountEntry('#FIRST', accounts.STATUS_ERROR),
+        accounts.AccountEntry('#SECOND', accounts.STATUS_ERROR),
+    ))
+    contents = [node['content'] for node in _walk(_payload(data)) if 'content' in node]
+    assert "⚠️ **2 accounts couldn't be loaded this time.** Their linked tags are still shown above; try again shortly." in contents
