@@ -59,6 +59,11 @@ def test_schedule_has_four_controls_and_legacy_settings_links_still_work():
         mongo = MemoryMongo()
         draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2030-10")
         components = await ui.panel(draft, "schedule")
+        timezone = draft['campaign']['timezone']
+        expected = ("### Schedule\nYour edits are saved when you submit them. Active reminders change. "
+                    "Paused reminders stay paused.\n"
+                    f"Enter times in **{timezone}**. Dates below use your local time.")
+        assert any(node.get('content') == expected for node in nodes(components))
         buttons = [node for node in nodes(components) if node.get("type") == 2]
         assert len(buttons) == 8  # Three tabs, start/pause, four timing controls.
         assert all(not node.get("disabled") for node in buttons)

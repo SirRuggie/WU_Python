@@ -245,11 +245,11 @@ def render(data, state, *, page=0):
             items.insert(
                 0,
                 Text(
-                    content="Some linked accounts could not be checked. Choose a loaded account or type a name; no highest Town Hall was assumed."
+                    content="Could not check some linked accounts. Select a loaded account, or type a name. The highest Town Hall was not guessed."
                 ),
             )
     elif step == "country":
-        row, select = menu(data, state, "pick_country", "Choose country / region")
+        row, select = menu(data, state, "pick_country", "Select country / region")
         page = state.get("country_page", 0)
         for code, label in COUNTRY_CHOICES[page * 24 : (page + 1) * 24]:
             select.add_option(f"{flag(code)} {label}", code)
@@ -265,14 +265,14 @@ def render(data, state, *, page=0):
                 )
             )
     elif step == "zone":
-        row, select = menu(data, state, "pick_zone", "Choose standard time zone")
+        row, select = menu(data, state, "pick_zone", "Select standard time zone")
         for key, offset, label in zones_for_country(
             state.get("country"), show_all=state.get("all_zones", False)
         ):
             select.add_option(f"{key.upper()} · {label}"[:100], key)
         items = [
             Text(
-                content="Choose their standard time zone. GMT labels can be an hour off during daylight saving."
+                content="Select their standard time zone. GMT labels can be an hour off during daylight saving."
             ),
             row,
             control(data, state, "all_zones", "Show all zones"),
@@ -580,7 +580,7 @@ async def action(
             return
         if verb == "pick_name" and state["step"] == "name":
             if not selected.isdigit() or int(selected) >= len(state["accounts"]):
-                raise core.SetupError("Choose a listed account.")
+                raise core.SetupError("Select a listed account.")
             account = state["accounts"][int(selected)]
             state.update(
                 name=account["name"], name_source_tag=account["tag"], step="country"
@@ -591,7 +591,7 @@ async def action(
             state["all_zones"] = True
         elif verb == "pick_country" and state["step"] == "country":
             if selected not in dict(COUNTRY_CHOICES):
-                raise core.SetupError("Choose a listed country.")
+                raise core.SetupError("Select a listed country.")
             state.update(
                 country=selected, zone_id=SINGLE_ZONE.get(selected), all_zones=False
             )

@@ -143,10 +143,10 @@ def test_dm_guard_requires_exact_dm_recipient_and_channel():
 
 def test_confirmation_states_scope_and_fixed_cutoff_semantics():
     rendered = str(clear_my_dms._confirmation("opaque-action"))
-    assert "all messages authored by WUBOT" in rendered
-    assert "Your messages are preserved" in rendered
-    assert "including the oldest messages and this confirmation" in rendered
-    assert "Future reminders and a future `/todo` command remain enabled" in rendered
+    assert "all messages from WUBOT" in rendered
+    assert "Your messages are not deleted" in rendered
+    assert "This includes the oldest messages and this confirmation" in rendered
+    assert "Future reminders and `/todo` stay on" in rendered
 
 
 def test_command_module_is_discovered_at_startup():
@@ -187,7 +187,7 @@ def test_confirm_catches_partial_sweep_failure_and_records_terminal_state(monkey
     update = mongo.component_state.update_one.await_args.args[1]["$set"]
     assert update["status"] == "failed"
     assert update["deleted_count"] == 17
-    assert "17 WUBOT-authored messages" in receipts[0][1]
+    assert receipts[0][1] == "Deleting stopped after 17 WUBOT messages. Use `/clear-my-dms` again to delete the rest."
 
 
 def test_cancel_consumes_request_without_starting_any_purge(monkeypatch):

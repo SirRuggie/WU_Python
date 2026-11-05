@@ -204,7 +204,7 @@ def test_member_browse_exact_count_paging_refresh_and_rest_failure(monkeypatch):
     assert "(`100" in rendered(page_two)  # IDs distinguish duplicate names.
     env.bot.rest.fail_member_list = True
     failed = run(panel.refresh(env.ctx, browse["_id"], mongo=env.mongo))
-    assert "previous snapshot" in rendered(failed)
+    assert "The refresh did not work. The list shown is old." in rendered(failed)
     env.bot.rest.fail_member_list = False
     env.guild.members[1000].role_ids.clear()
     fresh = run(panel.refresh(env.ctx, browse["_id"], mongo=env.mongo))
@@ -223,6 +223,7 @@ def test_panel_and_paged_members_stay_within_discord_component_limits(monkeypatc
     built = panel._panel(state, "N" * 1800)[0].build()[0]
     texts = [part["content"] for part in built["components"]
              if part["type"] == hikari.ComponentType.TEXT_DISPLAY]
+    assert "### Role members\nSelect any server role to see its exact member count and browse names." in texts
     assert len(built["components"]) <= 40
     assert all(len(text) <= 2000 for text in texts)
     assert sum(map(len, texts)) <= 4000

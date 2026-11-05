@@ -523,3 +523,15 @@ def test_begin_after_approval_remains_on_original_ticket(monkeypatch):
     monkeypatch.setattr(core, "context", AsyncMock(return_value=context()))
     assert run(walkthrough.begin(object(), m, r, 20, r["ticket_channel"]))
     assert lookup.call_args.kwargs == {"ticket_id": r["ticket_id"]}
+
+
+def test_warrior_home_uses_exact_setup_guidance_without_writes(monkeypatch):
+    monkeypatch.setattr(core, 'settings', AsyncMock(return_value={'townhalls': {}, 'roles': core.STANDARD}))
+    monkeypatch.setattr(core, 'clans', AsyncMock(return_value=[]))
+    db = mongo()
+    rendered = run(ui.home({'_id': 'draft'}, context(), db))
+    contents = [part.content for container in rendered for part in container.components if hasattr(part, 'content')]
+    assert ('Set the nickname and roles of this warrior. Then start the server walkthrough '
+            'from the open ticket of the warrior. Check the roles below before you make changes.') in contents
+    db.warrior_audit.update_one.assert_not_awaited()
+    db.warrior_walkthroughs.update_one.assert_not_awaited()

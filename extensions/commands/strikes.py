@@ -163,7 +163,7 @@ class View(lightbulb.SlashCommand, name='view', description='View strike history
             await ctx.respond('Staff access required.', ephemeral=True)
             return
         if sum(value is not None for value in (self.member, self.player, self.clan)) > 1:
-            await ctx.respond('Choose one filter: member, player, or clan.', ephemeral=True)
+            await ctx.respond('Select one filter: member, player, or clan.', ephemeral=True)
             return
         state = {'_id': uuid.uuid4().hex, 'user_id': int(ctx.user.id),
                  'guild_id': int(ctx.guild_id), 'member_id': int(self.member.id) if self.member else None,
@@ -180,7 +180,7 @@ class View(lightbulb.SlashCommand, name='view', description='View strike history
 @strikes.register()
 class Add(lightbulb.SlashCommand, name='add', description='Give one player account a strike'):
     reason = lightbulb.string('reason', 'Why this account gets a strike', max_length=500)
-    member = lightbulb.user('member', 'Choose from this member’s linked accounts', default=None)
+    member = lightbulb.user('member', 'Select from this member’s linked accounts', default=None)
     player = lightbulb.string('player', 'Or enter a Clash player tag', default=None)
 
     @lightbulb.invoke
@@ -191,7 +191,7 @@ class Add(lightbulb.SlashCommand, name='add', description='Give one player accou
             await ctx.respond('Staff access required.', ephemeral=True)
             return
         if bool(self.member) == bool(self.player):
-            await ctx.respond('Choose a Discord member or player tag.', ephemeral=True)
+            await ctx.respond('Select a Discord member or player tag.', ephemeral=True)
             return
         store = StrikeService(mongo)
         if self.player:
@@ -230,11 +230,11 @@ class Add(lightbulb.SlashCommand, name='add', description='Give one player accou
         await insert_state(mongo, state)
         menu_row = hikari.impl.MessageActionRowBuilder()
         menu = menu_row.add_text_menu(f'strike_pick:{state["_id"]}',
-            placeholder='Choose the account to strike', min_values=1, max_values=1)
+            placeholder='Select the account to strike', min_values=1, max_values=1)
         for player in state['tags']:
             menu.add_option(player, player)
         await ctx.respond(components=[Container(accent_color=0xD9A441, components=[
-            Text(content='## Choose an account'),
+            Text(content='## Select an account'),
             Text(content=f'{len(tags)} linked account(s). Select the account that gets this strike.'),
             menu_row])], ephemeral=True, **NO_MENTIONS)
 
@@ -248,7 +248,7 @@ async def pick(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
         return panel('Strike', 'This selection expired or staff access changed.')
     selected = ctx.interaction.values[0]
     if selected not in state['tags']:
-        return panel('Strike', 'Choose an account from this menu.')
+        return panel('Strike', 'Select an account from this menu.')
     links = await recruit_links.resolve(state['member_id'])
     if links.unavailable or selected not in links.sources or selected in links.conflicts:
         return panel('Strike', 'Account links changed. Run /strikes add again.')
@@ -376,7 +376,7 @@ async def replacement_panel(store, state, *, notice=''):
                 Text(content=' · '.join(safe(item, 60) for item in filters))]
     messages = []
     if state.get('refresh_warning'):
-        messages.append('Some clans could not refresh; showing last known data.')
+        messages.append('Could not update some clans. The data shown is old.')
     if notice:
         messages.append(safe(notice, 180))
     if messages:
@@ -443,7 +443,7 @@ async def replacement_clan(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
         try:
             selected = tag(selected)
         except ValueError:
-            return panel('Replacements', 'Choose a clan from the menu.')
+            return panel('Replacements', 'Select a clan from the menu.')
         if not await mongo.clans.find_one({'tag': selected}):
             return panel('Replacements', 'That clan is no longer registered.')
     return await _replacement_update(ctx, mongo, action_id,
@@ -461,7 +461,7 @@ async def replacement_th(ctx, action_id, mongo: MongoClient = lightbulb.di.INJEC
         if th is not None and not 1 <= th <= 20:
             raise ValueError
     except ValueError:
-        return panel('Replacements', 'Choose a Town Hall from the menu.')
+        return panel('Replacements', 'Select a Town Hall from the menu.')
     return await _replacement_update(ctx, mongo, action_id, {'town_hall': th, 'page': 0})
 
 
@@ -472,7 +472,7 @@ async def replacement_sort(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
         return await _replacement_denied(ctx)
     selected = ctx.interaction.values[0]
     if selected not in REPLACEMENT_SORTS:
-        return panel('Replacements', 'Choose a sort from the menu.')
+        return panel('Replacements', 'Select a sort from the menu.')
     state = await _replacement_action_state(ctx, mongo, action_id)
     if state is None:
         return await _replacement_denied(ctx)

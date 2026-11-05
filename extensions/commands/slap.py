@@ -70,7 +70,7 @@ class Slap(
             gif_url = await fetch_slap_gif(session)
         
         if not gif_url:
-            await ctx.respond("❌ Failed to fetch a slap GIF. Please try again!", ephemeral=True)
+            await ctx.respond("❌ Could not get a slap GIF. Try again!", ephemeral=True)
             return
         
         # Fun flavor texts

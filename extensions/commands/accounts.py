@@ -264,8 +264,8 @@ def _entry_line(entry: AccountEntry, ordinal: int) -> str:
         )
     if entry.status == STATUS_ERROR:
         return (
-            f"**{ordinal}.** ⏳ `{entry.tag}` · **Account couldn't be loaded** · "
-            "The link is still included; try again shortly."
+            f"**{ordinal}.** ⏳ `{entry.tag}` · **Account not loaded** · "
+            "The link is saved. Try again in a few minutes."
         )
     return (
         f"**{ordinal}.** ⚠️ `{entry.tag}` · **Player profile not found** · "
@@ -328,19 +328,17 @@ def render_accounts(
         )
     if data.problem == LINK_FAILURE:
         return _notice(
-            "Couldn't reach the link service",
-            "The Clash↔Discord link service didn't answer, so I can't tell "
-            "which accounts are yours.\n\n"
-            "This is a problem on their end, not yours — try `/accounts` again shortly.",
+            "Link service not available",
+            "The Clash↔Discord link service did not answer. Your accounts cannot be found. "
+            "The problem is not on your side. Try again in a few minutes.",
         )
 
     if not data.entries:
         return _notice(
             "No linked accounts",
-            "I couldn't find any Clash of Clans accounts linked to your Discord.\n\n"
-            "Link one with ClashKing's `/link` command (you'll need your in-game "
-            "API token from **Settings → More Settings → API Token**), then run "
-            "`/accounts` again.",
+            "No Clash of Clans accounts are linked to your Discord.\n\n"
+            "Link an account with the ClashKing `/link` command. You need your in-game API token. "
+            "Find it in **Settings → More Settings → API Token**. Then use `/accounts` again.",
         )
 
     pages = max(1, math.ceil(data.linked_count / PAGE_SIZE))
@@ -381,16 +379,16 @@ def render_accounts(
     notes: list[str] = []
     if data.unavailable_sources:
         notes.append(
-            f"⚠️ **Incomplete list:** {', '.join(data.unavailable_sources)} "
-            "couldn't be reached. More accounts may be linked; try again shortly."
+            f"⚠️ **Incomplete list:** Could not reach {', '.join(data.unavailable_sources)}. "
+            "More accounts can be linked. Try again in a few minutes."
         )
     if data.error_count:
         if coc_maintenance.in_maintenance():
             notes.append(coc_maintenance.banner())
         elif data.error_count == 1:
             notes.append(
-                "⚠️ **1 account couldn't be loaded this time.** "
-                "Its linked tag is still shown above; try again shortly."
+                "⚠️ **Could not load 1 account.** "
+                "Its linked tag is shown above. Try again in a few minutes."
             )
         else:
             notes.append(

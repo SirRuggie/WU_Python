@@ -50,6 +50,11 @@ def test_ticket_panels_expose_only_authorized_post_actions():
     assert "content_publish:draft" not in rite_ids
     assert "content_send:draft" not in rite_ids
     assert "content_destination:draft" not in rite_ids
+    assert ('Apply is linked to the public ticket post. Save template keeps the text for later posts. '
+            'Update published post changes the public post now.') in _panel_texts(content.panel(apply))
+    apply_without_target = dict(apply, target=None)
+    assert ('No public Apply post is linked. Complete ticket setup before you update the public post. '
+            'You can still save this template.') in _panel_texts(content.panel(apply_without_target))
     assert any("future private" in text for text in _panel_texts(content.panel(rite)))
 
 
@@ -119,6 +124,6 @@ def test_apply_save_publish_rechecks_binding_before_template_save(monkeypatch):
         result = await content.save_and_publish.__wrapped__._func(
             _Context(), "draft", mongo=SimpleNamespace(), bot=SimpleNamespace()
         )
-        assert any("active public Apply post changed" in text for text in _panel_texts(result))
+        assert any("The public Apply post changed or is missing. Complete ticket setup, then reopen Recruit Gauntlet. Your draft is unchanged." in text for text in _panel_texts(result))
         save.assert_not_awaited()
     run(check())

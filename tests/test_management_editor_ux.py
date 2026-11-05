@@ -32,7 +32,8 @@ def test_content_panel_uses_real_snapshot_and_separate_navigation_footer():
     rows = _built(content.panel(state))
     assert "Management › Recruit Gauntlet › About Us" in _text(rows)
     assert "Saved" in _text(rows)
-    assert "Posting target: <#123>" in _text(rows)
+    assert "Posting channel: <#123>. Send to channel posts this draft. Save template keeps it so you can edit it later." in _text(rows)
+    assert any(component.get("placeholder") == "Select a posting channel" for row in rows for component in row.get("components", []))
     assert [button["label"] for button in _buttons(rows[-1])] == ["Back to Recruit Gauntlet", "Management Home"]
     assert all(button.get("emoji") for button in _buttons(rows[-1]))
     state["sections"] = sections.copy()

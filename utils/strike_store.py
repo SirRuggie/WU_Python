@@ -290,7 +290,7 @@ class StrikeService:
             current = await self.mongo.strike_profiles.find_one({'_id': f'{int(guild_id)}:{player}'})
             clan_tag = (current or {}).get('current_clan_tag')
             if not clan_tag:
-                raise ValueError('Current clan is unknown; choose a clan for this filler.')
+                raise ValueError('Current clan is unknown; select a clan for this filler.')
         if clan_tag is not None:
             changes['filler_clan_tag'] = tag(clan_tag)
         if weight is not None:
@@ -389,7 +389,7 @@ class StrikeService:
                          *, member_id=None, clan_tag=None, player_name=None, request_id=None) -> dict:
         reason = str(reason or '').strip()
         if not 1 <= len(reason) <= 500:
-            raise ValueError('Enter a reason under 500 characters.')
+            raise ValueError('Enter a reason of 500 characters or fewer.')
         player = tag(player_tag)
         now = datetime.now(timezone.utc)
         from uuid import uuid4
@@ -410,7 +410,7 @@ class StrikeService:
             previous = await self.mongo.strike_records.find_one({'_id': row['_id']})
             if (previous is None or previous['player_tag'] != player
                     or previous['reason'] != reason or previous.get('member_id') != row['member_id']):
-                raise ValueError('Request ID was already used for a different strike.')
+                raise ValueError('This request ID was already used for a different strike.')
             return {**previous, 'status': status_of(previous)}
         return {**row, 'status': 'active'}
 
@@ -456,7 +456,7 @@ class StrikeService:
     async def revoke(self, guild_id: int, strike_id: str, actor_id: int, reason: str) -> dict:
         reason = str(reason or '').strip()
         if not 1 <= len(reason) <= 500:
-            raise ValueError('Give a reason of at most 500 characters for removing the strike.')
+            raise ValueError('Enter a reason of 500 characters or fewer.')
         now = datetime.now(timezone.utc)
         result = await self.mongo.strike_records.find_one_and_update(
             {'_id': str(strike_id), 'guild_id': int(guild_id), 'kind': 'strike',
@@ -477,14 +477,14 @@ class StrikeService:
         if member_id:
             linked = await recruit_links.resolve(int(member_id))
             if linked.unavailable:
-                raise RuntimeError('Account links unavailable; member history cannot be complete.')
+                raise RuntimeError('The account links are not available. The member history is not complete.')
             linked_tags = [tag(value) for value in linked.sources if value not in linked.conflicts]
             query['$or'] = [{'member_id': int(member_id)}, {'player_tag': {'$in': linked_tags}}]
         if clan_tag:
             query['clan_tag'] = tag(clan_tag)
         if war_key is not None:
             if not isinstance(war_key, str) or not 8 <= len(war_key) <= 160:
-                raise ValueError('Choose a saved war.')
+                raise ValueError('Select a saved war.')
             query['war_key'] = war_key
         if search:
             import re
@@ -670,9 +670,9 @@ class StrikeService:
                            status='active', limit=25, skip=0, action='all') -> dict:
         """One row per account, with active and retained 90-day strike counts."""
         if status not in ('active', 'all'):
-            raise ValueError('Choose active or all accounts.')
+            raise ValueError('Select active or all accounts.')
         if action not in ('all', 'over_limit', 'new_this_week'):
-            raise ValueError('Choose an action filter.')
+            raise ValueError('Select an action filter.')
         config = await self.settings(guild_id)
         threshold = config['strike_limit']
         summary = {'over_limit': 0, 'new_this_week': 0}
@@ -688,7 +688,7 @@ class StrikeService:
             searched_member = int(search)
             linked = await recruit_links.resolve(searched_member)
             if linked.unavailable or linked.conflicts:
-                raise RuntimeError('Account links unavailable; member history cannot be complete.')
+                raise RuntimeError('The account links are not available. The member history is not complete.')
             linked_tags = {tag(value) for value in linked.sources}
             saved_tags = await self.mongo.strike_records.distinct(
                 'player_tag', {'guild_id': int(guild_id), 'member_id': searched_member})
@@ -924,7 +924,7 @@ class StrikeService:
         """Mark one account for replacement in its verified current family clan."""
         player, clan = tag(player_tag), tag(clan_tag)
         if priority not in ('replace_first', 'high', 'normal'):
-            raise ValueError('Choose a replacement priority.')
+            raise ValueError('Select a replacement priority.')
         if not isinstance(note, str) or len(note.strip()) > 500:
             raise ValueError('Keep the note under 500 characters.')
         if not await self.mongo.clans.find_one({'tag': clan}, {'_id': 1}):
@@ -991,10 +991,10 @@ class StrikeService:
         """Family list or weight matching across FWA/all registered clans."""
         matching = recruit_weight is not None
         if family_scope not in ('fwa', 'all'):
-            raise ValueError('Choose FWA or all clans.')
+            raise ValueError('Select FWA or all clans.')
         if town_hall is not None and (not isinstance(town_hall, int) or isinstance(town_hall, bool)
                                       or not 1 <= town_hall < 100):
-            raise ValueError('Choose a valid Town Hall level.')
+            raise ValueError('Select a valid Town Hall level.')
         if matching and (not isinstance(recruit_weight, int) or isinstance(recruit_weight, bool)
                          or not 0 < recruit_weight <= 500000):
             raise ValueError('Enter a positive recruit weight.')
@@ -1009,7 +1009,7 @@ class StrikeService:
             chosen = tag(clan_tag)
             clan = await self.mongo.clans.find_one({'tag': chosen}, {'_id': 1, 'type': 1})
             if not clan or (matching and family_scope == 'fwa' and clan.get('type') != 'FWA'):
-                raise ValueError('Choose a registered FWA clan.' if matching else 'Choose a registered family clan.')
+                raise ValueError('Select a registered FWA clan.' if matching else 'Select a registered family clan.')
             query['current_clan_tag'] = chosen
         else:
             allowed = {'type': 'FWA'} if matching and family_scope == 'fwa' else {}

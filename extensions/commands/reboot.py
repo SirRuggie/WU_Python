@@ -63,7 +63,7 @@ class Reboot(
                         components=[
                             Text(content=(
                                 "## ❌ Permission Denied\n\n"
-                                "This command is restricted to the bot owner only."
+                                "Only the owner can use this command."
                             ))
                         ]
                     )
@@ -88,20 +88,20 @@ class Reboot(
                 components=[
                     Text(content=(
                         "## ⚠️ Confirm Bot Reboot\n\n"
-                        "This will **restart the entire bot process**.\n\n"
+                        "This will **restart WUBOT**.\n\n"
                         "**What happens:**\n"
-                        "• All active connections will be closed\n"
-                        "• Bot will disconnect from Discord\n"
-                        "• Process manager will auto-restart the bot\n"
-                        "• Downtime: ~5-10 seconds\n\n"
-                        "⚠️ **Are you sure you want to reboot?**"
+                        "• WUBOT closes all connections\n"
+                        "• WUBOT disconnects from Discord\n"
+                        "• The process manager starts WUBOT again\n"
+                        "• WUBOT is off for 5 to 10 seconds\n\n"
+                        "⚠️ **Do you want to restart WUBOT?**"
                     )),
                     Separator(divider=True),
                     ActionRow(
                         components=[
                             Button(
                                 style=hikari.ButtonStyle.DANGER,
-                                label="Yes, Reboot Bot",
+                                label="Yes, restart WUBOT",
                                 custom_id=f"reboot_confirm:{action_id}",
                                 emoji="🔄"
                             ),
@@ -134,7 +134,7 @@ async def handle_reboot_confirm(
     # Get stored data
     stored_data = await get_state(mongo, action_id)
     if not stored_data:
-        return await ctx.respond("❌ Session expired. Please run the command again.")
+        return await ctx.respond("❌ The session expired. Run the command again.")
 
     # Double verify owner at the destructive action boundary.
     if not _is_reboot_owner(ctx.user.id):
@@ -150,9 +150,9 @@ async def handle_reboot_confirm(
             accent_color=RED_ACCENT,
             components=[
                 Text(content=(
-                    "## 🔄 Rebooting Bot...\n\n"
-                    f"Initiated by {ctx.user.mention}\n\n"
-                    "*The bot will reconnect in a few seconds.*"
+                    "## 🔄 Restarting WUBOT...\n\n"
+                    f"Started by {ctx.user.mention}\n\n"
+                    "*WUBOT connects again in a few seconds.*"
                 ))
             ]
         )

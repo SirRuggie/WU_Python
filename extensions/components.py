@@ -27,14 +27,14 @@ _log = logging.getLogger(__name__)
 # DO, because "unknown action" is never actionable to the person who clicked.
 MSG_STALE_PANEL = (
     "⚠️ This panel is out of date and can no longer be used.\n"
-    "Please re-run the command to get a fresh one."
+    "Use the command again to get a new panel."
 )
 
 # The ref is the whole point: without it, "the button didn't work" cannot be
 # matched to a traceback across the ~120 handlers in 40 files.
 MSG_INTERNAL_ERROR = (
     "❌ Something went wrong handling that.\n"
-    "It has been logged (ref `{ref}`). Please try again, or re-run the command."
+    "The error was saved (ref `{ref}`). Try again, or use the command again."
 )
 
 

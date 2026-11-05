@@ -255,6 +255,8 @@ def test_reset_keeps_selection_and_shows_restored_image():
         mongo = _mongo(state)
         ctx = _ModalContext(_ModalInteraction(540, "content_reset_media:draft"))
         dashboard = await content.reset_media(ctx=ctx, action_id="draft", mongo=mongo)
+        assert any(part.content == "-# Original artwork restored for Welcome banner. Use Save template to keep this change, or Update published post to apply it to the published post."
+                   for part in dashboard[0].components if hasattr(part, "content"))
         gallery = content.media_galleries(dashboard)[0]
         assert content.media_url(gallery.items[0]) == "assets/branding/banners/Warriors_United.gif"
         updated = [row for key, row in mongo.component_state.documents.items() if key != "draft"][-1]
@@ -278,7 +280,10 @@ def test_each_uploaded_replacement_refreshes_the_visible_selected_image(monkeypa
                 ctx=_ModalContext(interaction), action_id=current_draft, mongo=mongo,
                 media=SimpleNamespace(upload_bytes=AsyncMock(return_value=url)),
             )
-            galleries = content.media_galleries(interaction.edits[-1]["components"])
+            components = interaction.edits[-1]["components"]
+            assert any(part.content == '-# Welcome banner uploaded to this draft. Preview, save, or update the published post.'
+                       for part in components[0].components if hasattr(part, 'content'))
+            galleries = content.media_galleries(components)
             assert len(galleries) == 1
             assert content.media_url(galleries[0].items[0]) == url
             current_draft = next(reversed(mongo.component_state.documents))
@@ -525,3 +530,13 @@ def test_stale_clan_raw_upload_routes_through_dispatcher_without_writes(monkeypa
         assert "clan-native" not in image_uploads._PENDING
 
     asyncio.run(check())
+
+
+def test_destination_mismatch_keeps_exact_bt52_guidance_and_target_disabled():
+    state = _state(target={'channel_id': 30, 'message_id': 40, 'original': recruit_aboutus.default_sections()},
+                   destination_channel_id=31)
+    dashboard = content.panel(state)
+    fields = [part.content for part in dashboard[0].components if hasattr(part, 'content')]
+    assert ('The saved post is in a different channel. If you send here, a new post is made. '
+            'To update the saved post, select its original channel.') in fields
+    assert not content.target_matches_destination(state)
