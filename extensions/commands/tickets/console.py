@@ -3206,7 +3206,7 @@ def build_staff_chocolate_checklist(
             "Try the lookup again."
         ),
         account_sync.STATE_EMPTY: (
-            "No accounts are currently linked. Complete linking privately if needed."
+            "No accounts are currently linked. Finish linking in private if needed."
         ),
         account_sync.STATE_READY: (
             "Open each link to review the account on FWA Chocolate."

@@ -64,7 +64,7 @@ def test_editor_has_grouped_sections_and_navigation():
     payload = editor.page(data)[0].build()[0]
     assert "Recruitment Staff Thread" in repr(payload)
     assert "Donations and clan chat" in repr(payload)
-    assert "Save template" in repr(payload) and "Management Home" in repr(
+    assert "Save template" in repr(payload) and "Return to Management Home" in repr(
         payload
     )
     assert any(key == "recruitment_staff_thread" for _, key, _ in manage.DESTINATIONS)

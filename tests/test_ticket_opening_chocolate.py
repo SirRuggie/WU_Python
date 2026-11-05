@@ -177,7 +177,7 @@ def test_chocolate_excludes_observed_but_no_longer_linked_tag():
 @pytest.mark.parametrize(
     ("ticket", "needle", "expected_links"),
     [
-        (_ticket(count=0, state="empty"), "No accounts are currently linked", 0),
+        (_ticket(count=0, state="empty"), "No accounts are currently linked. Finish linking in private if needed.", 0),
         (_ticket(count=0, state="failed"), "latest linked-account refresh failed", 0),
         (_ticket(count=1, state="failed"), "The latest linked-account refresh failed. The last confirmed list is below. Try the lookup again.", 1),
     ],

@@ -1,6 +1,6 @@
 # 161-T ticket wording review
 
-This branch is based on `82400fbfafad39d003c85d64085b1473f5778c54` and isolates ticket wording from the integrated 161 draft. The 43 apply items are indexed in `wording-161-t-ledger.json`. The ledger records 38 applied, three skipped-unused, one skipped-unconfirmed and one blocked item. An independent source review recomputed the inventory, named exclusions and exact changed-string evidence. The separate declined ticket items TK-5, TK-16, TK-25 and TK-43 retain their 82400 text.
+This branch is based on `82400fbfafad39d003c85d64085b1473f5778c54` and isolates ticket wording from the integrated 161 draft. The 43 apply items are indexed in `wording-161-t-ledger.json`. The ledger records 38 applied, three skipped-unused, one skipped-unconfirmed and one item superseded by specific items. An independent source review recomputed the inventory, named exclusions and exact changed-string evidence. The separate declined ticket items TK-5, TK-16, TK-25 and TK-43 retain their 82400 text.
 
 The six additional live Choose→Select substitutions are lexical-only under 170 §3.3 and §2(c); TK-1 records their complete before/after values and locations, together with the earlier settings-panel lexical substitutions. The held `_hub_picker_placeholder` is skipped-unused under `docs/unused-code.md` §B.
 
@@ -10,7 +10,7 @@ The ticket-focused suite passed 669 tests with one skip after the baseline title
 
 ## 161-X follow-up: no exact approved copy
 
-- TK-10: the broad semicolon rule has no standalone exact sentence for any remaining unmapped context. Specific approved ticket items govern their named fields; the broad remainder is blocked for owner review.
+- TK-10 is superseded by the specific items listed in the ledger; the previously identified unused locations remain held.
 - The Rite-of-Passage default text in `extensions/commands/tickets/rite.py:30,37` contains “the path you choose” and “Choose this path”. No exact replacement for those full sentences was approved. The separate declined TK-43 text remains unchanged.
 - `extensions/commands/tickets/console.py:1758` contains a channel-access diagnostic using “the bot”; no exact replacement for that full diagnostic was approved. Channel ownership and relocation checks remain intact.
 - TK-32's two result notices in `extensions/commands/tickets/close.py:288,356` retain “FWA default message” and “Main default message”. The four specified menu labels are updated; an optional wording-consistency decision has no exact approved result text.

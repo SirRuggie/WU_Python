@@ -335,7 +335,7 @@ un-cloned `button_store` tickets. Useful v2 fallbacks are:
 ```
 
 In **Browse tickets**, the **Flag** selector defaults to **All tickets (no
-flag filter)**. Select **Blacklisted**, **Denied before**, **Not loyal to WU**, or
+flag filter)**. Select **Blacklisted**, **Previously denied**, **Not loyal to WU**, or
 **Ghosted** to show tickets whose applicant currently has that active flag.
 It combines with the status, clan-type, and date filters. The list and page
 total count matching tickets, not flag records; it includes both recruiter-set

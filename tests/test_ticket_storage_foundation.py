@@ -4025,6 +4025,7 @@ def test_fresh_denial_card_has_no_marker_text_and_recovers_by_checkpointed_id(
     ))
     assert result.won
     assert len(created) == 1
+    assert resolve._is_notification_card(created[0], resolve.KIND_DENY_CUSTOM)
     assert not any(
         "ticket-resolution:" in str(getattr(message, "content", "") or "")
         or any(
