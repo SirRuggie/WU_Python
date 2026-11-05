@@ -1752,7 +1752,7 @@ async def _send_ticket_creation_dm(
                 components=[
                     Text(content=f"**{guild_name}**"),
                     Text(content=(
-                        "A recruiter will reply in your ticket. Press the button to "
+                        "A recruiter will reply in your ticket. Select the button to "
                         "open it."
                     )),
                 ],

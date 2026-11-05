@@ -13,15 +13,15 @@ LABELS = {
     "hook": "What caught their interest",
     "donations": "Donations and clan chat",
 }
-NOTICE = "this is a private thread for the candidate. They cannot see this thread, so DO NOT ping them, as it will add them.\n\n"
+NOTICE = "This is a private thread for the candidate. They cannot see this thread. Do not mention them, because that adds them.\n\n"
 HOOK = 'What was the hook that reeled you in? The thing that said "yeah, I need to check these guys out!!!"'
-DONATIONS = "Donations are better with the update allowing loot to be used but clan chats are and can be sporadic."
+DONATIONS = "Donations are better since the update that lets you use loot. Clan chat can be quiet at times."
 
 
 def defaults(kind):
     if kind not in {"main", "fwa"}:
         raise ValueError("Choose Main or FWA.")
-    body = "Hello there 👋🏻...how you hear about " + (
+    body = "Hello there 👋🏻... How did you hear about " + (
         "our FWA Operation?" if kind == "fwa" else "Warriors United?"
     )
     sections = {

@@ -1081,7 +1081,7 @@ def test_copied_or_stale_pilot_panel_fails_before_slot_claim(monkeypatch):
     )
 
     assert calls == []
-    assert "not active for you here" in edits[-1]["content"]
+    assert "❌ This test panel is not active for you. Use the current public ticket panel or ask a recruiter." in edits[-1]["content"]
     assert handlers.user_cooldowns == {}
 
 
@@ -1323,8 +1323,12 @@ def test_config_read_failure_exactly_cancels_untouched_slot(monkeypatch):
         "workflow_id": "thread:50:main",
     }]
     assert handlers.user_cooldowns == {}
-    assert "Nothing was created." in edits[-1]["content"]
+    assert "❌ Test tickets are not available now. No ticket was created." in edits[-1]["content"]
     assert "Server Dev has been notified" in edits[-1]["content"]
+    assert edits[-1]["content"] == (
+        "❌ Test tickets are not available now. No ticket was created.\n"
+        "The Server Dev has been notified so they can look into this."
+    )
 
 
 class _Cursor:

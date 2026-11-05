@@ -125,7 +125,7 @@ async def flag_identity_from_context(ctx, mongo, discord_ids, player_tags):
 class FlagAddCommand(
     lightbulb.SlashCommand,
     name="flag-add",
-    description="Add or update an applicant flag (Recruiter only)",
+    description="Add or change an applicant flag (Recruiter only)",
 ):
     kind = lightbulb.string(
         "kind",
@@ -140,19 +140,19 @@ class FlagAddCommand(
     )
     reason = lightbulb.string(
         "reason",
-        "Short staff reason shown on every matching ticket",
+        "Short staff reason. Staff see it on every matching ticket",
         min_length=2,
         max_length=500,
     )
     discord_ids = lightbulb.string(
         "discord-ids",
-        "Discord IDs; omit both identity fields to use this ticket's applicant",
+        "Discord IDs. Leave both ID fields empty to use this ticket's applicant",
         default=None,
         max_length=100,
     )
     player_tags = lightbulb.string(
         "player-tags",
-        "Player tags; omit both identity fields to use this ticket's applicant",
+        "Player tags. Leave both ID fields empty to use this ticket's applicant",
         default=None,
         max_length=100,
     )
@@ -216,11 +216,11 @@ class FlagAddCommand(
 class FlagRemoveCommand(
     lightbulb.SlashCommand,
     name="flag-remove",
-    description="Deactivate one applicant flag (Recruiter only)",
+    description="Turn off one applicant flag (Recruiter only)",
 ):
     flag_id = lightbulb.string(
         "flag-id",
-        "Exact flag ID shown by /tickets flags or ticket detail",
+        "Flag ID from /tickets flags or the ticket details",
         min_length=6,
         max_length=80,
     )
@@ -263,7 +263,7 @@ class FlagRemoveCommand(
             await _reply(
                 ctx,
                 "Flag not found",
-                "Check the exact flag ID and try again.",
+                "Check the flag ID. Then try again.",
                 accent=ACCENT_RED,
             )
             return
@@ -283,7 +283,7 @@ class FlagRemoveCommand(
         await _reply(
             ctx,
             "Flag removed",
-            "The selected flag is inactive. Its audit history was kept.",
+            "The flag is off. We kept its history.",
             accent=ACCENT_GREEN,
         )
 
@@ -334,7 +334,7 @@ async def show_flags(ctx, mongo, identity):
         await _reply(
             ctx,
             "Flag search not run",
-            "Use a Discord ID or a player tag that starts with #.",
+            "Use a Discord ID, or a player tag that starts with #.",
             accent=ACCENT_RED,
         )
         return
@@ -351,7 +351,7 @@ async def show_flags(ctx, mongo, identity):
         await _reply(
             ctx,
             "No active flags",
-            "No staff flag matches that Discord ID or player tag.",
+            "No flag matches that Discord ID or player tag.",
             accent=ACCENT_BLUE,
         )
         return

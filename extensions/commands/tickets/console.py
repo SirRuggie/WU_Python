@@ -93,7 +93,7 @@ HUB_FLAG_ROWS = tuple(
 )
 HUB_FLAG_ACCESSIBLE_LABELS = {
     "blacklisted": "Blacklisted",
-    "denied_before": "Denied before",
+    "denied_before": "Previously denied",
     "not_loyal": "Not loyal to WU",
     "ghosted": "Ghosted",
     "flew_the_coop": "Flew the Coop",
@@ -655,7 +655,7 @@ def _overturn_step1_panel(ticket_doc: Mapping, *, action_id: str) -> list[Contai
         verb, ask, style = "denied", "Approve anyway?", hikari.ButtonStyle.SUCCESS
         confirm_id = f"ticket_v2_console_overturn_approve_confirm:{action_id}"
     return _confirm_panel(
-        "Overturn this decision?",
+        "Change this decision?",
         f"This person was {verb} by {who} {when}. {ask}",
         confirm_id=confirm_id,
         cancel_id=f"ticket_v2_console_confirm_cancel:{action_id}",
@@ -850,7 +850,7 @@ def build_hub_actions(
             options=[
                 SelectOption(label="Approve", value="approve", description="Accept this recruit", emoji="✅"),
                 SelectOption(label="Deny", value="deny", description="Deny with a reason", emoji="❌"),
-                SelectOption(label="Close", value="close", description="Close without an approval or denial", emoji="📁"),
+                SelectOption(label="Close", value="close", description="Close without a decision", emoji="📁"),
             ],
         )]))
     if not open_tickets:
@@ -2044,7 +2044,7 @@ BROWSE_PERIOD_OPTIONS: tuple[tuple[str, str, str], ...] = (
 BROWSE_FLAG_OPTIONS: tuple[tuple[str, str, str], ...] = (
     ("all", "All tickets (no flag filter)", "📋"),
     (flag_store.FLAG_BLACKLISTED, "Blacklisted", "🚫"),
-    (flag_store.FLAG_DENIED_BEFORE, "Denied before", "⚠️"),
+    (flag_store.FLAG_DENIED_BEFORE, "Previously denied", "⚠️"),
     (flag_store.FLAG_NOT_LOYAL, "Not loyal to WU", "💔"),
     (flag_store.FLAG_GHOSTED, "Ghosted", "👻"),
     (flag_store.FLAG_FLEW_THE_COOP, "Flew the Coop", "🐔"),
@@ -2485,7 +2485,7 @@ _INTAKE_LABELS = {
     "townhall": "Town Hall",
     "age": "Age",
     "age_group": "Age",
-    "timezone": "Timezone",
+    "timezone": "Time zone",
     "country": "Country",
     "multiple_accounts": "Multiple accounts",
     "other_accounts": "Other accounts",
@@ -3004,12 +3004,12 @@ def build_flag_manager(
         f"**Discord ID:** unavailable\n**Stored player tags ({len(tags)}):** "
     )
     footer = (
-        "-# Changes bind the latest stored Discord ID and every recorded player tag. "
-        "Names are display-only."
+        "-# A change applies to the latest saved Discord ID and to every saved player tag. "
+        "Names are for display only."
     )
     guidance = (
-        "Choose a flag type to add it or update its reason. "
-        "To remove a flag, choose it below and record why."
+        "Select a flag type to add it or change its reason. "
+        "To remove a flag, select it below and write why."
     )
     tag_copy = _bounded_tag_display(tags, limit=DISCORD_MESSAGE_TEXT_LIMIT) if tags else "none"
     flag_copy = _flag_manager_content(active_flags)
@@ -3116,8 +3116,8 @@ def _staff_account_summary(ticket_doc: Mapping) -> str:
     if snapshot.state == account_sync.STATE_PENDING:
         return (
             "### 🔄 Linked Clash accounts\n"
-            "The opening account check is pending. No zero-account conclusion has "
-            "been recorded; an automatic retry is required."
+            "The first account check is not done. We did not record a result of zero accounts. "
+            "It will try again automatically."
         )
     if snapshot.state == account_sync.STATE_FAILED:
         retained = len(snapshot.observed_tags)
@@ -3128,8 +3128,8 @@ def _staff_account_summary(ticket_doc: Mapping) -> str:
         )
         return (
             "### ⚠️ Linked Clash accounts\n"
-            "The latest account lookup failed, so the current linked count is "
-            f"unknown.{retained_copy} Retry before making the final decision."
+            "The latest account lookup failed, so we do not know the current linked count."
+            f"{retained_copy} Try again before you make the final decision."
         )
     if snapshot.state == account_sync.STATE_EMPTY:
         retained = len(snapshot.observed_tags)
@@ -3141,8 +3141,8 @@ def _staff_account_summary(ticket_doc: Mapping) -> str:
         return (
             "### 🔗 Linking required\n"
             "No Clash accounts are currently linked to this Discord ID."
-            f"{retained_copy} Complete linking privately if needed; the final "
-            "decision rechecks automatically."
+            f"{retained_copy} Finish linking in private if needed. "
+            "The check runs again automatically at the final decision."
         )
     current = len(snapshot.current_tags)
     observed = len(snapshot.observed_tags)
@@ -3199,22 +3199,22 @@ def build_staff_chocolate_checklist(
     accounts = _chocolate_accounts(ticket_doc)
     state_copy = {
         account_sync.STATE_PENDING: (
-            "The linked-account check is pending. No blacklist result was inferred."
+            "The linked-account check is pending. No blacklist result was guessed."
         ),
         account_sync.STATE_FAILED: (
-            "The latest linked-account refresh failed. The last confirmed current "
-            "snapshot remains below and the lookup must be retried."
+            "The latest linked-account refresh failed. The last confirmed list is below. "
+            "Try the lookup again."
         ),
         account_sync.STATE_EMPTY: (
-            "No accounts are currently linked. Complete linking privately if needed."
+            "No accounts are currently linked. Finish linking in private if needed."
         ),
         account_sync.STATE_READY: (
             "Open each link to review the account on FWA Chocolate."
         ),
     }[snapshot.state]
     disclaimer = (
-        "-# These are review links only. No Chocolate blacklist verdict was checked "
-        "automatically; record a verified concern through Manage Flags."
+        "-# These links are for review only. The Chocolate blacklist was not checked. "
+        "To record a verified concern, use Manage Flags."
     )
     marker = _chocolate_marker(ticket_id)
     if not accounts:
@@ -3957,9 +3957,8 @@ async def _retire_chocolate_message(
             components=[
                 Text(content=f"## {CHOCOLATE_TITLE_PREFIX} · retired"),
                 Text(content=(
-                    "Accounts formerly shown on this checklist are no longer in "
-                    "the current linked-account snapshot. Their tags remain in "
-                    "durable ticket identity history for search and flags."
+                    "These accounts were on this checklist before. They are not in the current linked-account list now. "
+                    "We keep their tags in the ticket history for search and flags."
                 )),
             ],
         ),
@@ -4759,7 +4758,7 @@ async def ticket_hub_details(
         if doc
         else _notice(
             "Ticket unavailable",
-            "Recruiter access is required and the ticket must still be open.",
+            "You must be a recruiter, and the ticket must be open.",
         )
     )
     await _execute_private_panel(ctx, components)
@@ -4781,7 +4780,7 @@ async def ticket_hub_approve(
         if doc
         else _notice(
             "Ticket unavailable",
-            "Recruiter access is required and the ticket must still be open.",
+            "You must be a recruiter, and the ticket must be open.",
         )
     )
     await _execute_private_panel(ctx, components)
@@ -4797,13 +4796,13 @@ async def ticket_hub_deny(
     # No database work before the modal acknowledgement. Submit independently
     # validates guild, recruiter access and the current status before the CAS.
     await ctx.respond_with_modal(
-        title="Deny ticket",
+        title="Reason for denial",
         custom_id=f"ticket_v2_hub_deny_submit:{action_id}",
         components=[
             ModalActionRow().add_text_input(
                 "reason",
-                "Reason shown to the applicant",
-                placeholder="Use short, clear language",
+                "Reason the applicant will see",
+                placeholder="Write a clear reason",
                 required=True,
                 style=hikari.TextInputStyle.PARAGRAPH,
                 min_length=5,
@@ -4832,7 +4831,7 @@ async def ticket_hub_deny_submit(
     if doc is None:
         components = _notice(
             "Ticket unavailable",
-            "Recruiter access is required and the ticket must still be open.",
+            "You must be a recruiter, and the ticket must be open.",
         )
     elif not 5 <= len(reason) <= 1000:
         components = _notice(
@@ -4865,7 +4864,7 @@ async def ticket_hub_deny_submit(
             _log.exception("shared console denial failed ticket=%s", action_id)
             components = _notice(
                 "Decision not saved",
-                "Open the ticket again and retry.",
+                "Open the ticket again. Then try again.",
                 accent=ACCENT_RED,
             )
     await ctx.interaction.edit_initial_response(
@@ -4994,7 +4993,7 @@ async def ticket_test_detail(
     if not testing_service.is_test_scope(mongo):
         panel = _notice("Test ticket unavailable", "This is not a test ticket.", accent=ACCENT_RED)
     elif not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
-        panel = _notice("Test access required", "This test window is closed or you are not allowlisted.", accent=ACCENT_RED)
+        panel = _notice("Test access required", "This test window is closed, or you are not on the test list.", accent=ACCENT_RED)
     else:
         ticket_doc = await store.find_one(mongo, {"_id": action_id, "mode": testing_service.MODE})
         if (ticket_doc is None or not testing_service.is_test_ticket(ticket_doc)
@@ -5077,7 +5076,7 @@ async def _authorized_flag_manager_state(
     if not envelope or envelope.get("type") != "ticket_v2_console_flag_manager":
         return None, _notice(
             "Flag panel expired",
-            "Open the ticket and choose **Manage flags** again.",
+            "Open the ticket and select **Manage flags** again.",
             accent=ACCENT_RED,
         )
     owner_id = _int(envelope.get("owner_id"))
@@ -5109,7 +5108,7 @@ async def _authorized_flag_manager_state(
     ):
         return None, _notice(
             "Flag panel expired",
-            "Open the ticket and choose **Manage flags** again.",
+            "Open the ticket and select **Manage flags** again.",
             accent=ACCENT_RED,
         )
     return data, None
@@ -5261,7 +5260,7 @@ async def ticket_flag_set(
         components=[ModalActionRow().add_text_input(
             "reason",
             "Why this flag applies",
-            placeholder="Record the staff-verifiable reason",
+            placeholder="Write a reason that staff can check",
             required=True,
             style=hikari.TextInputStyle.PARAGRAPH,
             min_length=2,
@@ -5287,7 +5286,7 @@ async def ticket_flag_remove(
         components=[ModalActionRow().add_text_input(
             "reason",
             "Why this flag no longer applies",
-            placeholder="This reason is kept in the permanent audit history",
+            placeholder="This reason is kept in the permanent history",
             required=True,
             style=hikari.TextInputStyle.PARAGRAPH,
             min_length=2,
@@ -5356,7 +5355,7 @@ async def ticket_flag_set_submit(
     if user_id is None and not tags:
         await _edit_flag_modal(ctx, _notice(
             "Flag not saved",
-            "This ticket has no durable Discord ID or player tag.",
+            "This ticket has no saved Discord ID or player tag.",
             accent=ACCENT_RED,
         ))
         return
@@ -6483,13 +6482,13 @@ async def _transition_result_panel(
     if result.outcome == store.WON:
         return _notice(
             f"Ticket {verb}",
-            "The decision was saved. The applicant is being notified. The "
-            "permanent thread remains available from the console.",
+            "The decision is saved. The applicant is being told now. "
+            "You can open the permanent thread from the console.",
             accent=ACCENT_GREEN if verb == "approved" else ACCENT_RED,
         )
     if result.outcome == store.EFFECT_FAILED:
         return _notice(
-            "Decision recorded; updates retrying",
+            "Decision saved. Updates will try again",
             resolve.RESOLUTION_EFFECT_RETRY_MESSAGE,
             accent=ACCENT_YELLOW,
         )
@@ -6499,7 +6498,7 @@ async def _transition_result_panel(
     if result.outcome == store.BLOCKED:
         blocker = result.blocker or {}
         if not blocker:
-            reason = str(result.reason or "Applicant identity is being updated; try again.")
+            reason = str(result.reason or "We are updating the applicant. Try again.")
             if "try again" not in reason.casefold():
                 reason += " Try again."
             return _notice(
@@ -6622,8 +6621,7 @@ async def ticket_console_approve_go(
         _log.exception("ticket approval failed ticket=%s", ticket_id)
         return _notice(
             "Decision not saved",
-            "Something went wrong before the decision was saved. Open the "
-            "ticket again and retry.",
+            "The decision was not saved. Open the ticket again. Then try again.",
             accent=ACCENT_RED,
         )
     if result.outcome in {store.WON, store.EFFECT_FAILED}:
@@ -6681,7 +6679,7 @@ async def ticket_console_overturn(
     if ticket_doc is None or ticket_doc.get("status") not in schema.TERMINAL_STATUSES:
         return _notice(
             "Ticket changed",
-            "This ticket is no longer decided. Open it again from the console.",
+            "This ticket has no decision now. Open it again from the console.",
             accent=ACCENT_YELLOW,
         )
     return _overturn_step1_panel(ticket_doc, action_id=action_id)
@@ -6738,8 +6736,7 @@ async def ticket_console_overturn_approve_go(
         _log.exception("ticket overturn failed ticket=%s", ticket_id)
         return _notice(
             "Decision not saved",
-            "Something went wrong before the decision was saved. Open the "
-            "ticket again and retry.",
+            "The decision was not saved. Open the ticket again. Then try again.",
             accent=ACCENT_RED,
         )
     if result.outcome in {store.WON, store.EFFECT_FAILED}:
@@ -6762,12 +6759,12 @@ async def ticket_overturn_deny_open(
     # Matches ticket_console_deny: no state read here, since the reason
     # modal's own submit handler owns every check (owner, guild, recruiter).
     await ctx.respond_with_modal(
-        title="Deny ticket",
+        title="Reason for denial",
         custom_id=f"ticket_v2_overturn_deny_submit:{action_id}",
         components=[ModalActionRow().add_text_input(
             "reason",
-            "Reason shown to the applicant",
-            placeholder="Use short, clear language",
+            "Reason the applicant will see",
+            placeholder="Write a clear reason",
             required=True,
             style=hikari.TextInputStyle.PARAGRAPH,
             min_length=5,
@@ -6867,8 +6864,7 @@ async def ticket_overturn_deny_submit(
         await ctx.interaction.edit_initial_response(
             components=_notice(
                 "Decision not saved",
-                "Something went wrong before the decision was saved. Open "
-                "the ticket again and retry.",
+                "The decision was not saved. Open the ticket again. Then try again.",
                 accent=ACCENT_RED,
             ),
             user_mentions=False,
@@ -6900,12 +6896,12 @@ async def ticket_console_deny(
     **_kwargs,
 ) -> None:
     await ctx.respond_with_modal(
-        title="Deny ticket",
+        title="Reason for denial",
         custom_id=f"ticket_v2_console_deny_submit:{action_id}",
         components=[ModalActionRow().add_text_input(
             "reason",
-            "Reason shown to the applicant",
-            placeholder="Use short, clear language",
+            "Reason the applicant will see",
+            placeholder="Write a clear reason",
             required=True,
             style=hikari.TextInputStyle.PARAGRAPH,
             min_length=5,
@@ -7006,8 +7002,7 @@ async def ticket_console_deny_submit(
         await ctx.interaction.edit_initial_response(
             components=_notice(
                 "Decision not saved",
-                "Something went wrong before the decision was saved. Open "
-                "the ticket again and retry.",
+                "The decision was not saved. Open the ticket again. Then try again.",
                 accent=ACCENT_RED,
             ),
             user_mentions=False,
@@ -7032,11 +7027,11 @@ async def ticket_console_deny_submit(
 class ConsoleCommand(
     lightbulb.SlashCommand,
     name="console",
-    description="Configure, inspect, or repair the shared ticket console (Admin only)",
+    description="Set up, check, or fix the shared ticket console (Admin only)",
 ):
     channel = lightbulb.channel(
         "channel",
-        "Private recruiter text channel; omit to inspect the current setup",
+        "Private recruiter text channel. Leave empty to check the current setup",
         default=None,
         channel_types=[hikari.ChannelType.GUILD_TEXT],
     )
@@ -7052,7 +7047,7 @@ class ConsoleCommand(
         await ctx.defer(ephemeral=True)
         if not await perms.is_target_admin(ctx.member, mongo):
             await ctx.respond(
-                "Administrator permission is required in the configured ticket guild.",
+                "You must be an administrator in the ticket guild.",
                 ephemeral=True,
             )
             return
@@ -7080,7 +7075,7 @@ class ConsoleCommand(
         message_id = _int(state.get("message_id"))
         if not channel_id or not message_id:
             await ctx.respond(
-                "The console could not be posted. Check the bot log and channel permissions.",
+                "Could not post the console. Check the log and the channel permissions.",
                 ephemeral=True,
             )
             return
@@ -7274,7 +7269,7 @@ async def ticket_lifecycle_submit(ctx, action_id: str,
     except Exception:
         _log.exception("Ticket lifecycle update failed ticket=%s", data.get("ticket_id"))
         await ctx.interaction.edit_initial_response(components=_notice(
-            "Ticket update interrupted", "Open the ticket details again to check its current status before retrying."))
+            "Ticket update interrupted", "Open the ticket details again. Check the current status before you try again."))
         return
     await ctx.interaction.edit_initial_response(components=await _transition_result_panel(
         result, verb="closed" if kind == "close" else "reopened", mongo=mongo,
@@ -7305,7 +7300,7 @@ async def ticket_hub_closure(ctx, action_id: str,
     else:
         await ctx.defer(ephemeral=True)
         await ctx.interaction.edit_initial_response(components=_notice(
-            "Choose an option", "Select Approve, Deny, or Close for this ticket."))
+            "Select an option", "Select Approve, Deny, or Close for this ticket."))
 
 
 @register_action("ticket_v2_hub_close_submit", is_modal=True, no_return=True, preload_state=False)
@@ -7317,7 +7312,7 @@ async def ticket_hub_close_submit(ctx, action_id: str,
     await ctx.defer(ephemeral=True)
     doc = await _shared_ticket(ctx, mongo, action_id)
     if doc is None:
-        components = _notice("Ticket unavailable", "Recruiter access is required and the ticket must still be open.")
+        components = _notice("Ticket unavailable", "You must be a recruiter, and the ticket must be open.")
     else:
         try:
             result = await lifecycle.change(bot, mongo, ticket_id=action_id, member=ctx.member,
@@ -7327,7 +7322,7 @@ async def ticket_hub_close_submit(ctx, action_id: str,
                 owner_id=int(ctx.user.id), guild_id=_int(ctx.guild_id))
         except Exception:
             _log.exception("Shared console closure failed ticket=%s", action_id)
-            components = _notice("Ticket update interrupted", "Open the ticket details again to check its current status before retrying.")
+            components = _notice("Ticket update interrupted", "Open the ticket details again. Check the current status before you try again.")
     await ctx.interaction.edit_initial_response(components=components,
         user_mentions=False, role_mentions=False, mentions_everyone=False)
 

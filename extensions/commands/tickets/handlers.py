@@ -333,8 +333,7 @@ async def handle_create_ticket(
     if not thread_intake_ready():
         await edit_error(ctx, rest=bot.rest,
             content=(
-                "❌ Thread ticketing is still completing its safety checks. "
-                "Nothing was created; try again shortly."
+                "❌ Tickets are not ready yet. No ticket was created. Try again soon."
             )
         )
         return
@@ -375,15 +374,15 @@ async def handle_create_ticket(
             f"message={message_id} error={type(error).__name__}"
         )
         await edit_error(ctx, rest=bot.rest,
-            content="❌ Thread ticketing is temporarily unavailable. Nothing was created."
+            content="❌ Tickets are not available now. No ticket was created."
         )
         return
     if not route.allowed or route.route != ticket_runtime.ROUTE_THREAD:
         message = (
-            "❌ This pilot panel is not active for you here. "
-            "Use the current public ticket panel or contact a recruiter."
+            "❌ This test panel is not active for you. "
+            "Use the current public ticket panel or ask a recruiter."
             if intake_surface == "pilot"
-            else "❌ This public ticket panel is not active. Use the current panel or contact a recruiter."
+            else "❌ This ticket panel is not active. Use the current panel or ask a recruiter."
         )
         await edit_error(ctx, rest=bot.rest, content=message)
         return
@@ -440,7 +439,7 @@ async def handle_create_ticket(
             f"error={type(error).__name__}"
         )
         await edit_error(ctx, rest=bot.rest,
-            content="❌ Thread ticketing is temporarily unavailable. Nothing was created."
+            content="❌ Tickets are not available now. No ticket was created."
         )
         return
     if not slot_claim.won:
@@ -456,8 +455,8 @@ async def handle_create_ticket(
                     store.as_int(slot_claim.slot.get("guild_id")) or int(ctx.guild_id)
                 )
                 sentences.append(
-                    "Jump to it here: "
-                    f"https://discord.com/channels/{slot_guild_id}/{location_id}."
+                    "Open it here: "
+                    f"https://discord.com/channels/{slot_guild_id}/{location_id}"
                 )
             role_name = await _recruiter_role_name(
                 bot, mongo, guild_id=store.as_int(ctx.guild_id), ticket_type=ticket_type
@@ -476,7 +475,7 @@ async def handle_create_ticket(
                 await _release_slot_for_missing_thread(mongo, existing_ticket["_id"])
                 message = (
                     "⚠️ Your earlier ticket's thread was removed. "
-                    "Press the button again to start a new one."
+                    "Select the button again to start a new one."
                 )
             else:
                 if existing_ticket is not None:
@@ -503,7 +502,7 @@ async def handle_create_ticket(
                     f"https://discord.com/channels/{ticket_guild_id}/{location_id}"
                 )
         else:
-            message = "⏳ Your ticket is already being created. Please try again shortly."
+            message = "⏳ We are already creating your ticket. Try again in a moment."
         await ctx.interaction.edit_initial_response(content=message)
         return
     user_cooldowns[user_id] = now
@@ -524,7 +523,7 @@ async def handle_create_ticket(
             f"error={type(error).__name__}"
         )
         await edit_error(ctx, rest=bot.rest,
-            content="❌ Pilot ticketing is temporarily unavailable. Nothing was created."
+            content="❌ Test tickets are not available now. No ticket was created."
         )
         return
     display_name = getattr(ctx.member, "display_name", None) if getattr(ctx, "member", None) else None
@@ -551,13 +550,13 @@ async def handle_create_ticket(
     except thread_service.ThreadCreationBusy:
         user_cooldowns.pop(user_id, None)
         await ctx.interaction.edit_initial_response(
-            content="⏳ Your ticket is already being created. Please try again in a moment."
+            content="⏳ We are already creating your ticket. Try again in a moment."
         )
         return
     except thread_service.ThreadConfigurationError as error:
         user_cooldowns.pop(user_id, None)
         await edit_error(ctx, rest=bot.rest,
-            content=f"❌ Thread ticketing is not ready: {error}. Please contact an administrator."
+            content=f"❌ Tickets are not ready: {error}. Ask an administrator."
         )
         return
     except hikari.RateLimitTooLongError:
@@ -576,8 +575,8 @@ async def handle_create_ticket(
             return
         await edit_error(ctx, rest=bot.rest,
             content=(
-                "❌ Your ticket could not be completed safely. The attempt was saved and can resume "
-                "without creating duplicates. Please try again or contact an administrator."
+                "❌ We could not finish your ticket. We saved your attempt. Try again. "
+                "We will not make a second ticket. If it fails again, ask an administrator."
             )
         )
         return
@@ -663,7 +662,7 @@ async def handle_my_ticket(
         await ctx.interaction.edit_initial_response(
             content=(
                 "⚠️ Your earlier ticket's thread was removed. "
-                "Press Main or FWA to start a new one."
+                "Select Main or FWA to start a new one."
             )
         )
         return
@@ -692,7 +691,7 @@ async def handle_my_ticket(
                 components=[
                     hikari.impl.TextDisplayComponentBuilder(content="## 🎟️ Your open ticket"),
                     hikari.impl.TextDisplayComponentBuilder(
-                        content="Continue your application using the button below."
+                        content="Use the button below to continue your application."
                     ),
                     hikari.impl.MessageActionRowBuilder().add_link_button(
                         f"https://discord.com/channels/{ticket_guild_id}/{location_id}",
@@ -710,7 +709,7 @@ async def handle_my_ticket(
     )
     if not history:
         await ctx.interaction.edit_initial_response(
-            content="You have no ticket yet. Press Main or FWA to start one."
+            content="You have no ticket yet. Select Main or FWA to start one."
         )
         return
 

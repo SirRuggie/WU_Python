@@ -176,8 +176,8 @@ def test_home_is_a_plain_language_overview():
 def test_timer_page_explains_review_versus_archive():
     d=data();d['view']='timers'
     text=' '.join(str(n.get('content','')) for n in walk([c.build() for c in settings.page(d)]))
-    assert 'does not automatically deny or archive' in text
-    assert 'archives both threads' in text
+    assert 'The ticket is not denied or archived by itself.' in text
+    assert 'Each day, both threads are archived if neither has a human message for this time.' in text
     assert '0 to turn automatic archiving off' in text
 
 
@@ -188,3 +188,25 @@ def test_open_ticket_review_form_saves_days_as_minutes(monkeypatch):
     monkeypatch.setattr(settings,'fresh',AsyncMock(return_value=data()))
     c=ctx();asyncio.run(settings.interval_submit(c,'token',mongo=NS(),bot=NS(rest=NS())))
     assert save.call_args.args[3]['draft']['ticket_inactivity_minutes']==10080
+
+
+def test_settings_selection_guidance_matches_visible_controls():
+    def rendered(view):
+        d = data()
+        d['view'] = view
+        return list(walk([component.build() for component in settings.page(d)]))
+
+    home = str(rendered('home'))
+    assert 'Select where tickets go' in home and 'select recruiters' in home
+    routing = str(rendered('routing'))
+    assert 'Select where Main recruit' in routing and 'Select where FWA recruit' in routing
+    main = rendered('main')
+    assert {node['placeholder'] for node in main if 'placeholder' in node} == {
+        'Select recruit channel', 'Select staff channel', 'Select recruiter role',
+    }
+    access = str(rendered('access'))
+    assert 'Select all additional viewer roles' in access
+    panels = str(rendered('panels'))
+    assert 'select a channel for first-time setup' in panels
+    assert 'Selecting Restore applies immediately.' in panels
+    assert 'Select the staff console channel' in panels

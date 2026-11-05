@@ -289,7 +289,7 @@ def render_overview_sync(counts: OverviewCounts) -> bytes:
     text(left + 24, flags_top + 16, "FLAGS", _font(14, bold=True), FAINT)
     flag_rows = (
         ("BLACKLISTED", _count(counts.flags, "blacklisted"), BLACKLISTED, "flag_blacklisted.png"),
-        ("DENIED BEFORE", _count(counts.flags, "denied_before"), DENIED_BEFORE, "flag_denied_before.png"),
+        ("PREVIOUSLY DENIED", _count(counts.flags, "denied_before"), DENIED_BEFORE, "flag_denied_before.png"),
         ("NOT LOYAL TO WU", _count(counts.flags, "not_loyal"), NOT_LOYAL, "flag_not_loyal.png"),
     )
     pill_width = (right - 24 - (left + 24) - 2 * 16) // 3

@@ -291,7 +291,7 @@ async def test_won_denial_flag_failure_reports_pending_and_keeps_durable_yes(mon
     monkeypatch.setattr(inactivity, "finish_ghosted", AsyncMock(side_effect=RuntimeError("Mongo unavailable")))
     await inactivity.handle_inactivity_reason(ctx, "ticket_123:abc:yes", bot=object(), mongo=mongo)
     wording = ctx.interaction.edit_initial_response.call_args.kwargs["content"]
-    assert wording == "Ticket closed; Ghosted flag update is pending and will retry automatically."
+    assert wording == "The ticket is closed. The Ghosted flag update is waiting. It will try again automatically."
     claim_update = mongo.tickets.find_one_and_update.call_args.args[1]
     assert claim_update["$set"]["inactivity.prompt.state"] == "yes"
     mongo.tickets.update_one.assert_not_awaited()
@@ -354,4 +354,4 @@ async def test_restoring_seven_days_blocks_old_five_minute_yes(monkeypatch):
     monkeypatch.setattr(lifecycle, "change", deny)
     await inactivity.handle_inactivity_reason(ctx, "ticket_123:abc:yes", bot=object(), mongo=mongo)
     deny.assert_not_awaited()
-    assert "not due" in ctx.interaction.edit_initial_response.call_args.kwargs["content"]
+    assert "This ticket does not need an inactivity review yet." in ctx.interaction.edit_initial_response.call_args.kwargs["content"]

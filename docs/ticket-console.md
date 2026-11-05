@@ -132,7 +132,7 @@ present on the deploy box.
 | New / open | `#4a90f5` | |
 | Denied | `#f0555a` | |
 | Blacklisted | `#dd1c1d` | sampled from the supplied flag icon |
-| Denied before | `#ffcc00` | sampled from the supplied flag icon |
+| Previously denied | `#ffcc00` | sampled from the supplied flag icon |
 | Not loyal to WU | `#f17511` | sampled from the supplied flag icon |
 | Ghosted | `#08c3fa` | sampled from the supplied flag icon |
 | Canvas / card | `#0b1018` / `#111822` | |
@@ -188,7 +188,7 @@ nothing at all on the Hetzner box. Two sanctioned approaches only:
   | Asset | Used for |
   |---|---|
   | `flag_blacklisted.png` | Blacklisted — red slash over WU wings |
-  | `flag_denied_before.png` | Denied before — yellow warning triangle |
+  | `flag_denied_before.png` | Previously denied — yellow warning triangle |
   | `flag_not_loyal.png` | Not loyal to WU — orange broken heart |
   | `flag_ghosted.png` | Ghosted — cyan supplied artwork |
   | `flag_flew_the_coop.png` | Flew the Coop — purple supplied artwork |
@@ -350,7 +350,7 @@ blocks approval:
 | Not loyal to WU | No — caution only | Warriors United recruiter note |
 | Ghosted | No — caution only | Warriors United recruiter ghosting report |
 
-The chart uses the shorter label **Denied before** for the
+The chart uses **PREVIOUSLY DENIED** for the
 `Previously denied` count. **Blacklisted**, not “On blacklist,” is the
 authoritative blacklist label. Blacklist state is binary, not tiered; the bot
 never renders a “maybe” verdict.

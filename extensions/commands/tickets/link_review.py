@@ -40,7 +40,7 @@ async def prompt(mongo, ticket, owner_id, guild_id, *, overturn=False):
     tags=', '.join(linked.get('conflicting_tags') or [])
     return [Container(accent_color=0xF1C40F,components=[
         Text(content='## Review linked-account conflicts\nHave you reviewed these linked-account conflicts?'),
-        Text(content=f'**Accounts:** {tags}\nYes opens a reason form covering all these accounts. External links and existing flags will not be changed.'),
+        Text(content=f'**Accounts:** {tags}\nYes opens a reason form for all these accounts. We will not change external links or existing flags.'),
         Row(components=[Button(style=hikari.ButtonStyle.SECONDARY,label='Yes — Reviewed',custom_id=f'ticket_link_review_yes:{token}'),
             Button(style=hikari.ButtonStyle.SECONDARY,label='No — Review First',custom_id=f'ticket_link_review_no:{token}')]),
     ])]
@@ -58,11 +58,11 @@ async def session(ctx, mongo, token):
 @lightbulb.di.with_di
 async def yes(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
     if not await session(ctx,mongo,action_id):
-        await ctx.respond('This review expired or is not yours. Click Approve again.',ephemeral=True)
+        await ctx.respond('This review expired or is not yours. Select Approve again.',ephemeral=True)
         return
     await ctx.respond_with_modal(title='Linked-account review',custom_id=f'ticket_link_review_submit:{action_id}',components=[
         ModalActionRowBuilder().add_text_input('reason','Why can these accounts be accepted?',style=hikari.TextInputStyle.PARAGRAPH,required=True,min_length=5,max_length=1000,
-            placeholder='Old Discord account; source linking tools unavailable. I reviewed all listed accounts.')])
+            placeholder='Old Discord account. The linking tools are not available. I reviewed all listed accounts.')])
 
 
 @register_action('ticket_link_review_no',opens_modal=True,no_return=True,preload_state=False)
@@ -71,10 +71,10 @@ async def no(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
     await ctx.defer(edit=True)
     data=await session(ctx,mongo,action_id)
     if not data:
-        await ctx.interaction.edit_initial_response(components=notice('This review expired or is not yours. Click Approve again.'))
+        await ctx.interaction.edit_initial_response(components=notice('This review expired or is not yours. Select Approve again.'))
         return
     await ctx.interaction.edit_initial_response(components=[Container(accent_color=0xF1C40F,components=[
-        Text(content='## Review first\nReview and resolve the linked-account conflicts, or click Approve again when you are ready to record your reasoning. Nothing was changed.'),
+        Text(content='## Review first\nReview and fix the linked-account conflicts. Then select Approve again and write your reason. Nothing was changed.'),
         Row(components=[Button(style=hikari.ButtonStyle.SECONDARY,label='Review Player Info',custom_id=f"ticket_player_info:{data['ticket_id']}|1")]),
     ])])
 
@@ -106,7 +106,7 @@ async def submit(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,bot:h
     data=await session(ctx,mongo,action_id)
     from extensions.commands.tickets import console, resolve
     if not data or not await save_review(mongo,data,reason=console._modal_value(ctx,'reason'),actor_id=ctx.user.id,actor_name=ctx.user.username):
-        await ctx.interaction.edit_initial_response(components=notice('The review expired, was already submitted, or the ticket/accounts changed. Click Approve again to review the latest information.'))
+        await ctx.interaction.edit_initial_response(components=notice('The review expired or was already sent, or the ticket or accounts changed. Select Approve again to see the latest information.'))
         return
     await ctx.interaction.edit_initial_response(components=notice('Review saved. Continuing approval…'))
     if data.get('overturn'):

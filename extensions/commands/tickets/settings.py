@@ -42,7 +42,7 @@ async def session(ctx, mongo, token):
     if data['user_id'] != int(ctx.user.id) or data['guild_id'] != guild(ctx):
         raise ValueError('Open your own Ticket Settings panel in this server.')
     if not await perms.is_target_admin(member(ctx), mongo):
-        raise ValueError('Administrator permission is required in the ticket server.')
+        raise ValueError('You must be an administrator in the ticket server.')
     return data
 
 
@@ -59,11 +59,11 @@ def button(token, action, label):
 
 
 def channel(value):
-    return f'<#{value}>' if value else 'Not configured'
+    return f'<#{value}>' if value else 'Not set'
 
 
 def role(value):
-    return f'<@&{value}>' if value else 'Not configured'
+    return f'<@&{value}>' if value else 'Not set'
 
 
 def duration(minutes):
@@ -95,35 +95,35 @@ def page(data, notice=''):
     days = cfg.get('ticket_archive_quiet_days', 1)
     archive = duration(int(days) * 1440) if days else 'Off'
     if view == 'home':
-        body.append(Text(content='Choose what you want to manage. These settings are only available to server administrators.'))
+        body.append(Text(content='Select what to manage. Only server administrators can use these settings.'))
         section('Keep the ticket list tidy',
                 f'**Open tickets:** ask recruiters to review after **{review}** of silence.\n'
                 f'**Resolved tickets:** automatically archive after **{archive}** of silence.' if days else
                 f'**Open tickets:** review after **{review}** of silence.\n**Automatic archiving is off.**',
                 [button(token, 'timers', 'Manage inactivity & archiving')])
-        section('Choose where tickets go',
-                'Set the recruit and staff channels for Main and FWA applications, choose recruiters, or allow extra staff viewers.',
+        section('Select where tickets go',
+                'Set the recruit and staff channels for Main and FWA applications, select recruiters, or allow extra staff viewers.',
                 [button(token, 'routing', 'Manage channels & staff')])
         section('Fix or test ticket setup',
                 'Check bot permissions, restore missing ticket messages, or try the ticket flow in a separate test area.',
                 [button(token, 'tools', 'Open troubleshooting')])
     elif view == 'timers':
         section('1 · Open tickets — ask staff to review',
-                f'**Current wait: {review}.**\nAfter no human messages in the recruit thread, the bot asks recruiters whether to deny as Ghosted or keep waiting. It does not automatically deny or archive the ticket. Staff-thread chat does not reset this timer.',
+                f'**Current wait: {review}.**\nIf the recruit thread has no human message for this time, recruiters are asked to deny the ticket as Ghosted or to keep waiting. The ticket is not denied or archived by itself. Messages in the staff thread do not reset the timer.',
                 [direct('ticket_settings_interval', 'Change open-ticket review wait')])
         section('2 · Resolved tickets — archive quiet chats',
-                f'**Current wait: {archive}.**\nApplies only to approved, denied, or closed tickets. Daily cleanup archives both threads after neither has human messages for this long. A new decision also starts a fresh wait. Bot messages do not reset it. History is kept; no new locks are added.',
+                f'**Current wait: {archive}.**\nThis applies only to approved, denied, or closed tickets. Each day, both threads are archived if neither has a human message for this time. A new decision starts the wait again. Messages from bots do not reset it. The history is kept and no new locks are added.',
                 [direct('ticket_settings_archive', 'Change resolved-ticket archive wait')])
         body.append(Text(content='The form saves your new wait when you submit it. Set the archive wait to 0 to turn automatic archiving off.'))
     elif view == 'routing':
-        section('Main applications', 'Choose where Main recruit and staff threads are created, and which role handles these applications.',
+        section('Main applications', 'Select where Main recruit and staff threads are created, and which role handles these applications.',
                 [button(token, 'main', 'Configure Main applications')])
-        section('FWA applications', 'Choose where FWA recruit and staff threads are created, and which role handles these applications.',
+        section('FWA applications', 'Select where FWA recruit and staff threads are created, and which role handles these applications.',
                 [button(token, 'fwa', 'Configure FWA applications')])
         section('Other staff who may view tickets', 'Register additional roles already allowed to see the staff channel. This does not give them approval or denial powers.',
                 [button(token, 'access', 'Manage additional viewers')])
     elif view in ('main', 'fwa'):
-        body.append(Text(content='Select each setting below, then **Save channel & role changes**. These choices apply to new tickets; existing tickets stay where they are.'))
+        body.append(Text(content='Select each setting below, then **Save channel & role changes**. These selections apply to new tickets. Existing tickets stay where they are.'))
         for key, label, explanation in (
             ('candidate_parent', 'Recruit channel', 'New private recruit threads are created here. This must be the channel containing the application entry message.'),
             ('staff_parent', 'Staff channel', 'New staff discussion threads are created here. Only authorized staff should be able to view this channel.'),
@@ -133,31 +133,31 @@ def page(data, notice=''):
             value = role(cfg.get(view+'_'+key)) if is_role else channel(cfg.get(view+'_'+key))
             section(label, f'**Selected:** {value}\n{explanation}', [Row(components=[Select(
                 type=hikari.ComponentType.ROLE_SELECT_MENU if is_role else hikari.ComponentType.CHANNEL_SELECT_MENU,
-                custom_id=f'ticket_settings:{token}:select:{view}_{key}', placeholder=f'Choose {label.lower()}', min_values=1, max_values=1)])])
+                custom_id=f'ticket_settings:{token}:select:{view}_{key}', placeholder=f'Select {label.lower()}', min_values=1, max_values=1)])])
         body.append(button(token, 'save', 'Save channel & role changes'))
     elif view == 'access':
-        body.append(Text(content='Allow the bot to recognize extra staff roles that already have access to the staff channel. This does not change Discord permissions or grant approve/deny actions.\n\nFirst give the role access in Discord channel permissions, then select it here and save.'))
+        body.append(Text(content='Add extra staff roles that already have access to the staff channel. This does not change Discord permissions. It does not let them approve or deny.\n\nFirst give the role access in the Discord channel permissions. Then select it here and save.'))
         section('Allowed viewer roles', ', '.join(role(x) for x in cfg.get('ticket_staff_viewer_role_ids', [])) or 'No additional roles selected.',
                 [Row(components=[Select(type=hikari.ComponentType.ROLE_SELECT_MENU,
-                 custom_id=f'ticket_settings:{token}:select:ticket_staff_viewer_role_ids', placeholder='Choose all additional viewer roles', min_values=0, max_values=25)]),
+                 custom_id=f'ticket_settings:{token}:select:ticket_staff_viewer_role_ids', placeholder='Select all additional viewer roles', min_values=0, max_values=25)]),
                  button(token, 'save', 'Save viewer roles')])
     elif view == 'tools':
-        section('Check for setup problems', 'Check both ticket types for channel access, recruiter permissions, and ticket storage readiness. This check does not change your settings.',
+        section('Check for setup problems', 'Check both ticket types: channel access, recruiter permissions, and whether ticket storage is ready. This check does not change your settings.',
                 [button(token, 'validate', 'Run setup check')])
-        section('Restore a missing or outdated message', 'Update or recreate the recruit application message or staff console using the saved layout.',
+        section('Restore a missing or outdated message', 'Update the recruit application message or the staff console, or make it again. The saved layout is used.',
                 [button(token, 'panels', 'Manage ticket messages')])
         section('Try the flow safely', 'Open the separate ticket testing controls. Test tickets use isolated storage and do not change live applications.',
                 [button(token, 'testing', 'Open ticket testing')])
     elif view == 'panels':
-        section('Recruit application message', f'**Channel:** {channel(data.get("entry_channel"))}\nUpdate the saved application message, or recreate it if deleted. Clicking below applies the repair immediately.',
+        section('Recruit application message', f'**Channel:** {channel(data.get("entry_channel"))}\nUpdate the saved application message, or make it again if someone deleted it. When you select the button below, the repair starts at once.',
                 [button(token, 'repair_entry', 'Restore application message')])
-        section('Staff console', f'**Channel:** {channel(data.get("console_channel"))}\nRefresh or recreate the staff ticket console. Select its current channel, or choose a channel for first-time setup. This cannot move an existing console. Clicking Restore applies immediately.',
-                [Row(components=[Select(type=hikari.ComponentType.CHANNEL_SELECT_MENU, custom_id=f'ticket_settings:{token}:select:console_channel', placeholder='Choose the staff console channel',min_values=1,max_values=1)]),
+        section('Staff console', f'**Channel:** {channel(data.get("console_channel"))}\nRefresh or recreate the staff ticket console. Select its current channel, or select a channel for first-time setup. This cannot move an existing console. Selecting Restore applies immediately.',
+                [Row(components=[Select(type=hikari.ComponentType.CHANNEL_SELECT_MENU, custom_id=f'ticket_settings:{token}:select:console_channel', placeholder='Select the staff console channel',min_values=1,max_values=1)]),
                  button(token, 'repair_console', 'Restore staff console')])
     if view != 'home':
         body.append(Separator())
         if view in ('main', 'fwa', 'access'):
-            body.append(Text(content='Selections are not saved until you press Save. Returning to all settings discards unsaved changes.'))
+            body.append(Text(content='Your selections are not saved until you select Save. If you go back to all settings, you lose unsaved changes.'))
         body.append(button(token, 'home', 'Back to all settings'))
     if data.get('manage_token'):
         body.append(Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,f'manage_home:{data["manage_token"]}',label='Back to server management'))
@@ -177,7 +177,7 @@ async def open_dashboard(ctx,mongo,*,manage_token=None,deferred=False):
     if not deferred:
         await ctx.defer(ephemeral=True)
     if not await perms.is_target_admin(member(ctx),mongo):
-        await ctx.interaction.edit_initial_response(content='Administrator permission is required in the ticket server.',**NO_MENTIONS)
+        await ctx.interaction.edit_initial_response(content='You must be an administrator in the ticket server.',**NO_MENTIONS)
         return
     data=await fresh(ctx,mongo,manage_token=manage_token)
     await ctx.interaction.edit_initial_response(components=page(data),**NO_MENTIONS)

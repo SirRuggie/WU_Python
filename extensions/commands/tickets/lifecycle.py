@@ -21,7 +21,7 @@ def components(ticket, kind, *, staff=False):
         or "No reason recorded."
     )
     text = (
-        "This application was closed without an approval or denial. Contact recruitment staff if you want to continue."
+        "Staff closed this application. They did not approve or deny it. Ask recruitment staff if you want to continue."
         if closing
         else "Recruitment staff reopened this application. You can continue the conversation here."
     )
@@ -203,7 +203,7 @@ async def change(
             return store.Transition(
                 store.BLOCKED,
                 ticket,
-                "This recruit already has an active ticket or ticket creation in progress.",
+                "This recruit already has an active ticket, or we are creating one.",
             )
         extra.update(
             open_slot_id=claim.slot["_id"],
