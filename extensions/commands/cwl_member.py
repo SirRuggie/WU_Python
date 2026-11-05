@@ -776,7 +776,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 session.screen = "my_signups"
             except Exception:
                 session.screen = "home"
-                note = "CWL is temporarily unavailable. Your saved signups did not change. Try /cwl signup again shortly."
+                note = "CWL is temporarily unavailable. Your saved signups did not change. Try /cwl signup again in a few minutes."
         elif action == "signup_pick":
             values = list(getattr(ctx.interaction, "values", ()) or ())
             known = {str(row["tag"]) for row in _signups(session)}
@@ -907,7 +907,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 session.screen = "assignments"
             except Exception:
                 session.screen = "home"
-                note = "CWL is temporarily unavailable. Your saved signups did not change. Try /cwl signup again shortly."
+                note = "CWL is temporarily unavailable. Your saved signups did not change. Try /cwl signup again in a few minutes."
         elif action == "refresh":
             try:
                 previous_season = (session.view.get("season") or {}).get("id")
@@ -919,7 +919,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 else:
                     note = "Linked accounts refreshed."
             except Exception:
-                note = "CWL is temporarily unavailable. Your saved signups did not change. Try /cwl signup again shortly."
+                note = "CWL is temporarily unavailable. Your saved signups did not change. Try /cwl signup again in a few minutes."
         else:
             note = "That action is no longer available."
         await _edit(ctx, token, session, note)

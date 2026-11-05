@@ -827,7 +827,7 @@ async def form(
                 role = next((r for r in c["roles"] if r.id == value), None)
                 if not core.role_allowed(c, role):
                     raise core.SetupError(
-                        "Select an unmanaged role below the bot’s highest role in this server."
+                        "Select an unmanaged role below the Warriors United app's highest role."
                     )
             if group != "channels" and any(
                 int(rid) == value

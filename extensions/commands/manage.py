@@ -159,7 +159,7 @@ def _destination_section(label: str, key: str, description: str, token: str, all
         "recruitment_questions": "Manage Server permission",
         "recruitment_staff_thread": "Manage Server permission",
         "fwa": "Access to an FWA section",
-        "fwa_bases": "FWA Representative role",
+        "fwa_bases": "FWA Clan Rep role",
         "fwa_blacklist": "Server membership to view; FWA Clan Rep role to edit",
         "fwa_weight": "Administrator permission",
         "fwa_points": "Administrator permission",
