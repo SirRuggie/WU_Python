@@ -289,7 +289,7 @@
     .roster-ui-chip button,
     .roster-header-more summary
   ):hover:where(:not(:disabled):not([aria-disabled="true"])) {
-  --roster-control-state-border: #797983;
+  --roster-control-state-border: var(--wu-text-muted);
   border-color: var(--roster-control-state-border);
 }
 .roster-ui .roster-ui-button.roster-ui[aria-pressed="true"],

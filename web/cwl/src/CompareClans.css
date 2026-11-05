@@ -72,7 +72,7 @@
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
   padding-bottom: 12px;
-  scrollbar-color: #8e8e96 #202024;
+  scrollbar-color: var(--wu-border) #202024;
   scrollbar-width: auto;
 }
 .compare-pan:focus-visible {
@@ -349,7 +349,7 @@
     text-align: left;
   }
   .compare-workspace button.compare-mobile-card:hover {
-    border-color: #85868c;
+    border-color: var(--wu-text-muted);
   }
   .compare-workspace button.compare-mobile-card.is-active {
     box-shadow: none;

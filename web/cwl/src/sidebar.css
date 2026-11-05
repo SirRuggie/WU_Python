@@ -47,7 +47,7 @@ div.shell {
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
-  scrollbar-color: #666973 #151517;
+  scrollbar-color: var(--wu-border) #151517;
   padding: 12px 10px 18px;
 }
 
@@ -55,7 +55,7 @@ div.shell {
   width: 7px;
 }
 .shell .sidebar > nav::-webkit-scrollbar-thumb {
-  background: #666973;
+  background: var(--wu-border);
   border: 2px solid #151517;
   border-radius: 8px;
 }
@@ -265,10 +265,11 @@ div.shell {
   min-height: 48px;
   white-space: normal;
 }
-.cwl-roster-tabs button.active {
-  background: #194a98;
-  border: 1px solid #8bb9ff;
-  color: #fff;
+.shell .cwl-roster-tabs button.active:not(:disabled) {
+  background: var(--wu-accent);
+  border: 1px solid var(--wu-accent);
+  color: var(--wu-accent-ink);
+  -webkit-text-fill-color: var(--wu-accent-ink);
 }
 .cwl-result-nav {
   display: flex;

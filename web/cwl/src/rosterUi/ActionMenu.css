@@ -11,7 +11,7 @@
   color: inherit;
 }
 .roster-action-trigger[data-hovered] {
-  border-color: #777980;
+  border-color: var(--wu-text-muted);
 }
 .roster-action-trigger[data-focus-visible] {
   outline: 2px solid white;

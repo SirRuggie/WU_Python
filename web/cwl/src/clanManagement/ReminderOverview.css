@@ -89,7 +89,7 @@
 }
 .overview-table tbody tr:hover,
 .overview-table tbody tr:focus-within {
-  background: #222833;
+  background: var(--wu-surface-raised);
 }
 .overview-table th:first-child {
   width: 18%;

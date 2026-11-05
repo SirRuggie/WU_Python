@@ -252,10 +252,12 @@
   gap: 12px;
   padding: 14px 16px;
   margin-top: 18px;
-  border: 1px solid #63748a;
+  border: 1px solid #f8dc8e;
   border-radius: 11px;
-  background: #1c2938;
+  background: var(--wu-accent);
   box-shadow: 0 8px 24px #0008;
+  color: var(--wu-accent-ink);
+  -webkit-text-fill-color: var(--wu-accent-ink);
 }
 .strikes-import-apply button {
   min-height: 44px;
@@ -327,9 +329,10 @@
   margin-top: 6px;
   padding: 4px 9px;
   font-size: 12px;
-  border-color: #6098df;
-  color: #b7d7ff;
-  background: #18304f;
+  border-color: var(--wu-accent);
+  color: var(--wu-text);
+  background: var(--wu-accent-soft);
+  -webkit-text-fill-color: var(--wu-text);
 }
 .strikes-search-matches {
   position: absolute;
@@ -408,12 +411,13 @@
   flex: 1;
   min-width: min(100%, 290px);
   padding: 7px 9px 7px 12px;
-  border: 1px solid #7292bc;
+  border: 1px solid var(--wu-accent);
   border-radius: 10px;
-  background: #1c314c;
-  color: #e3efff;
+  background: var(--wu-accent-soft);
+  color: var(--wu-text);
   font-size: 13px;
   font-weight: 650;
+  -webkit-text-fill-color: var(--wu-text);
 }
 .strikes-selected-war span {
   overflow-wrap: anywhere;
@@ -498,8 +502,8 @@
   text-align: left;
 }
 .strikes-account-row:hover {
-  border-color: #7799c4;
-  background: #1b2330;
+  border-color: var(--wu-text-muted);
+  background: var(--wu-surface-raised);
 }
 .strikes-account-name {
   display: grid;

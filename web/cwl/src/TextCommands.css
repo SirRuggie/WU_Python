@@ -412,13 +412,13 @@
 /* Explicit selection colors remain readable in dark browser themes. */
 .text-commands input::selection,
 .text-commands textarea::selection {
-  background-color: #9bc7ff;
-  color: #081526;
+  background-color: var(--wu-accent);
+  color: var(--wu-accent-ink);
   text-shadow: none;
 }
 .text-commands input,
 .text-commands textarea {
-  caret-color: #9bc7ff;
+  caret-color: var(--wu-accent);
 }
 @media (forced-colors: active) {
   .text-commands input::selection,

@@ -34,7 +34,7 @@
   flex: 0 0 42px;
   height: 42px;
   border-radius: 10px;
-  background: #292e37;
+  background: var(--wu-surface-raised);
 }
 
 .player-clan-details-icon img {
