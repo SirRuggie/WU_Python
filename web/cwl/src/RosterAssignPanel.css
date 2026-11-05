@@ -66,12 +66,12 @@
   cursor: pointer;
 }
 .roster-assign-clan:hover:not(:disabled) {
-  border-color: #9db9dc;
-  background: #283446;
+  border-color: var(--wu-text-muted);
+  background: var(--wu-surface-raised);
 }
 .roster-assign-clan:active:not(:disabled) {
   border-color: #d5b95e;
-  background: #303a48;
+  background: var(--wu-surface-soft);
   transform: translateY(1px);
 }
 .roster-assign-unassign {
@@ -96,8 +96,10 @@
 .roster-assign-clan:disabled {
   cursor: not-allowed;
   opacity: 1;
-  background: #20252d;
-  border-color: #4a5260;
+  background: var(--wu-surface);
+  border-color: var(--wu-border-subtle);
+  color: var(--wu-text-muted);
+  -webkit-text-fill-color: var(--wu-text-muted);
 }
 .roster-assign-clan-head,
 .roster-assign-clan-meta {

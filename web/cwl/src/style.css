@@ -1911,10 +1911,10 @@ img.discord-server-icon {
 }
 .shell button:disabled {
   opacity: 1;
-  background: var(--wu-surface-soft);
-  border-color: var(--wu-border);
-  color: #c6c6ce;
-  -webkit-text-fill-color: #c6c6ce;
+  background: var(--wu-surface);
+  border-color: var(--wu-border-subtle);
+  color: var(--wu-text-muted);
+  -webkit-text-fill-color: var(--wu-text-muted);
   cursor: not-allowed;
 }
 .shell .signup-flow {
@@ -1978,13 +1978,13 @@ img.discord-server-icon {
   min-height: 145px;
   padding: 20px;
   gap: 9px;
-  border-color: #586477;
-  background: #1b2029;
+  border-color: var(--wu-text-muted);
+  background: var(--wu-surface-soft);
   color: #fff;
 }
 .shell .signup-flow .pool-choice-grid button:hover {
-  background: #243953;
-  border-color: #a9ceff;
+  background: var(--wu-surface-raised);
+  border-color: var(--wu-text-muted);
 }
 .shell .signup-flow .pool-choice-grid small {
   color: var(--wu-text-muted);

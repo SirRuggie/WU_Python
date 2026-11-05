@@ -143,9 +143,9 @@
   height: 28px;
   margin: 8px 2px;
   padding: 0;
-  border: 2px solid #777c88;
+  border: 2px solid var(--wu-text-muted);
   border-radius: 16px;
-  background: #383b43;
+  background: var(--wu-surface-soft);
   position: relative;
   cursor: pointer;
 }

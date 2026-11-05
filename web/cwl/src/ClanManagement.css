@@ -48,12 +48,13 @@
   flex-wrap: wrap;
   margin: 14px 0;
 }
-.clan-tabs button[aria-pressed="true"],
-.clan-tabs button[aria-selected="true"],
-.clan-directory button[aria-pressed="true"] {
-  background: #19478e;
-  border-color: #80b2ff;
-  color: white;
+.shell .clan-tabs button[aria-pressed="true"]:not(:disabled),
+.shell .clan-tabs button[aria-selected="true"]:not(:disabled),
+.shell .clan-directory button[aria-pressed="true"]:not(:disabled) {
+  background: var(--wu-accent);
+  border-color: var(--wu-accent);
+  color: var(--wu-accent-ink);
+  -webkit-text-fill-color: var(--wu-accent-ink);
 }
 .clan-artwork img {
   max-width: 100%;
@@ -214,8 +215,8 @@
   overflow-wrap: anywhere;
 }
 .clan-restore {
-  border: 1px solid #80b2ff;
-  background: #172335;
+  border: 1px solid var(--wu-border);
+  background: var(--wu-surface-soft);
   border-radius: 12px;
   padding: 16px;
   margin-top: 16px;

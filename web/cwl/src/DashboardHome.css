@@ -101,8 +101,8 @@
   gap: 4px 12px;
   text-align: left;
   padding: 11px 14px;
-  background: #1a1e24;
-  border-color: #3a4149;
+  background: var(--wu-surface-soft);
+  border-color: var(--wu-text-muted);
   border-radius: 10px;
   min-height: 72px;
 }
@@ -340,11 +340,13 @@
   align-items: center;
   gap: 12px;
   margin-top: 20px;
-  border: 1px solid #8fbae8;
+  border: 1px solid var(--wu-accent);
   border-radius: 14px;
-  background: #17253b;
+  background: var(--wu-accent-soft);
   padding: 16px;
   box-shadow: 0 8px 32px #0008;
+  color: var(--wu-text);
+  -webkit-text-fill-color: var(--wu-text);
 }
 
 .hub-selected-bar > div {
@@ -358,7 +360,7 @@
 
 .hub-selected-bar small {
   margin-top: 5px;
-  color: #c2cfe2;
+  color: var(--wu-text);
 }
 
 .hub-bottom {

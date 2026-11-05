@@ -65,8 +65,8 @@
   line-height: 1.5;
 }
 .manage-tile:hover {
-  border-color: #91bcff;
-  background: #232d3b;
+  border-color: var(--wu-text-muted);
+  background: var(--wu-surface-raised);
 }
 .manage-tile:focus-visible,
 .server-management button:focus-visible,
@@ -145,9 +145,10 @@
   gap: 10px;
 }
 .manage-save .primary {
-  color: #fff;
-  background: #194d9f;
-  border: 1px solid #91bcff;
+  color: var(--wu-accent-ink);
+  background: var(--wu-accent);
+  border: 1px solid #f8dc8e;
+  -webkit-text-fill-color: var(--wu-accent-ink);
 }
 .manage-error,
 .manage-notice {
@@ -224,10 +225,11 @@
   gap: 10px;
   margin: 12px 0 20px;
 }
-.manage-categories button.active {
-  background: #194d9f;
-  border-color: #91bcff;
-  color: white;
+.shell .manage-categories button.active:not(:disabled) {
+  background: var(--wu-accent);
+  border-color: var(--wu-accent);
+  color: var(--wu-accent-ink);
+  -webkit-text-fill-color: var(--wu-accent-ink);
 }
 .manage-record-picker {
   display: grid;
@@ -311,10 +313,11 @@
   text-align: left;
   white-space: normal;
 }
-.manage-section-choices button[aria-pressed="true"] {
-  background: #194d9f;
-  color: #fff;
-  border-color: #91bcff;
+.shell .manage-section-choices button[aria-pressed="true"]:not(:disabled) {
+  background: var(--wu-accent);
+  color: var(--wu-accent-ink);
+  border-color: var(--wu-accent);
+  -webkit-text-fill-color: var(--wu-accent-ink);
 }
 .manage-record-picker label {
   display: grid;

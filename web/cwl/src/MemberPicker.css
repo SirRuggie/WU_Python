@@ -38,17 +38,20 @@
   border-bottom: 0;
 }
 .member-options label:hover {
-  background: #253043;
+  background: var(--wu-surface-raised);
 }
 .member-options label.selected {
-  background: #173e70;
-  box-shadow: inset 3px 0 #91bcff;
+  background: var(--wu-accent-soft);
+  box-shadow: inset 3px 0 var(--wu-accent);
+  color: var(--wu-text);
+  -webkit-text-fill-color: var(--wu-text);
+  border-color: var(--wu-accent);
 }
 .member-options input {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
-  accent-color: #8abaff;
+  accent-color: var(--wu-accent);
 }
 .member-options label:focus-within {
   outline: 2px solid var(--wu-focus);
@@ -71,13 +74,15 @@
 .member-selected {
   margin-top: 12px;
   padding: 12px;
-  background: #182b42;
-  border: 1px solid #5f88bd;
+  background: var(--wu-accent-soft);
+  border: 1px solid var(--wu-accent);
   border-radius: 10px;
+  color: var(--wu-text);
+  -webkit-text-fill-color: var(--wu-text);
 }
 .member-selected > strong {
   font-size: 12px;
-  color: #bad6ff;
+  color: var(--wu-text);
 }
 .member-selected-row {
   display: flex;
