@@ -10,7 +10,7 @@
   border-color: transparent;
   border-radius: 9px;
   background: transparent;
-  color: #d1d1d7;
+  color: var(--wu-text);
   font-size: 13px;
   font-weight: 580;
   text-align: left;

@@ -121,13 +121,13 @@ h3 {
   margin-bottom: 7px;
 }
 p {
-  color: #aaaab2;
+  color: var(--wu-text);
   line-height: 1.55;
 }
 .small,
 small {
   font-size: 12px;
-  color: #a9a9b1;
+  color: var(--wu-text-muted);
 }
 .eyebrow {
   color: #dcb43f;
@@ -196,7 +196,7 @@ small {
 }
 .brand small {
   display: block;
-  color: #aaaab2;
+  color: var(--wu-text-muted);
   letter-spacing: 0.19em;
   font-size: 9px;
   margin-top: 2px;
@@ -228,7 +228,7 @@ small {
   text-transform: uppercase;
   letter-spacing: 0.13em;
   font-size: 10px;
-  color: #85858e;
+  color: var(--wu-text-muted);
 }
 .sidebar nav button {
   width: 100%;
@@ -286,14 +286,14 @@ small {
   font-size: 13px;
 }
 .crumb {
-  color: #92929c;
+  color: var(--wu-text-muted);
 }
 .user-pill {
   margin-left: auto;
   background: var(--wu-surface-soft);
   border-radius: 8px;
   padding: 6px 10px;
-  color: #c9c9cf;
+  color: var(--wu-text);
   font-size: 12px;
 }
 .workspace main {
@@ -349,13 +349,13 @@ small {
 .th-pill {
   border-radius: 7px;
   background: var(--wu-surface-soft);
-  color: #c9c9cf;
+  color: var(--wu-text);
   font-size: 11px;
   padding: 5px 8px;
   font-weight: 700;
 }
 .season-banner > span {
-  color: #a9a9b1;
+  color: var(--wu-text-muted);
   text-transform: capitalize;
 }
 .tabs {
@@ -461,7 +461,7 @@ small {
   margin: 13px 0 0;
   padding-left: 32px;
   align-items: start;
-  color: #aaaab2;
+  color: var(--wu-text-muted);
   font-size: 12px;
   flex-wrap: wrap;
 }
@@ -1987,14 +1987,14 @@ img.discord-server-icon {
   border-color: #a9ceff;
 }
 .shell .signup-flow .pool-choice-grid small {
-  color: #dce3ec;
+  color: var(--wu-text-muted);
 }
 .shell .pool-next {
   display: block;
   margin-top: 7px;
   font-size: 14px;
   font-weight: 800;
-  color: #b9d5ff;
+  color: var(--wu-text-muted);
 }
 .shell .pool-choice-symbol {
   display: none;

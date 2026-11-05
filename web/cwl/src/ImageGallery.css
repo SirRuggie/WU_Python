@@ -156,7 +156,7 @@
   margin: 0;
 }
 .command-image-library button:focus-visible {
-  outline: 3px solid #9bc7ff;
+  outline: 3px solid var(--wu-focus);
   outline-offset: 2px;
 }
 @media (max-width: 650px) {

@@ -25,7 +25,7 @@
   overscroll-behavior: contain;
 }
 .history-values section {
-  border-top: 1px solid #414149;
+  border-top: 1px solid var(--wu-border-subtle);
   padding: 0.75rem 0;
 }
 .history-values h4 {

@@ -14,7 +14,7 @@
   margin: 0;
 }
 .cwl-pool-roles > p {
-  color: #c4c5cb;
+  color: var(--wu-text-muted);
 }
 .cwl-pool-role {
   margin-block: 16px;

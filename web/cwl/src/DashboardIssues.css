@@ -105,7 +105,7 @@
   align-content: center;
   cursor: pointer;
   font-size: 13px;
-  color: #b9d5ff;
+  color: var(--wu-text-muted);
 }
 .issue-details dl {
   display: grid;

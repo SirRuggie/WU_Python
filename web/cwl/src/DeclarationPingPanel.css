@@ -1,5 +1,5 @@
 .declaration-ping-panel {
-  border: 1px solid var(--border, #414654);
+  border: 1px solid var(--border, var(--wu-border));
   border-radius: 10px;
   padding: 12px;
   margin-block: 12px;

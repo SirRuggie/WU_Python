@@ -30,10 +30,10 @@
   gap: 8px;
   text-align: left;
   padding: 16px;
-  border: 1px solid #515966;
+  border: 1px solid var(--wu-border);
   border-radius: 12px;
-  background: #1d2027;
-  color: #e7e9ee;
+  background: var(--wu-surface-soft);
+  color: var(--wu-text);
 }
 .overview-filters strong {
   font-size: 1.6rem;
@@ -69,14 +69,14 @@
   padding: 16px 12px;
   vertical-align: top;
   text-align: left;
-  border-bottom: 1px solid #404752;
+  border-bottom: 1px solid var(--wu-border-subtle);
   overflow-wrap: anywhere;
 }
 .overview-table thead th {
-  color: #b9c4d6;
+  color: var(--wu-text-muted);
   font-size: 0.8rem;
   font-weight: 600;
-  background: #20242c;
+  background: var(--wu-surface);
 }
 .overview-table thead th:first-child {
   border-radius: 10px 0 0 0;
@@ -85,7 +85,7 @@
   border-radius: 0 10px 0 0;
 }
 .overview-table tbody tr {
-  background: #171a20;
+  background: var(--wu-surface);
 }
 .overview-table tbody tr:hover,
 .overview-table tbody tr:focus-within {
@@ -97,7 +97,7 @@
 .overview-table small {
   display: block;
   margin-top: 7px;
-  color: #c0c7d3;
+  color: var(--wu-text-muted);
   font-weight: 400;
   line-height: 1.45;
 }
@@ -191,7 +191,7 @@
   .overview-table tbody tr {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    border: 1px solid #485365;
+    border: 1px solid var(--wu-border);
     border-radius: 12px;
     margin-bottom: 14px;
     padding: 8px;
@@ -208,7 +208,7 @@
   }
   .overview-mobile-label {
     display: block;
-    color: #aebcd1;
+    color: var(--wu-text-muted);
     font-size: 0.78rem;
     margin-bottom: 4px;
   }

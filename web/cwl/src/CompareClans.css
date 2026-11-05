@@ -29,7 +29,7 @@
   min-width: 0;
 }
 .compare-toolbar-note {
-  color: #c2c5cd;
+  color: var(--wu-text-muted);
   font-size: 12px;
   background: transparent;
   padding: 0;
@@ -142,7 +142,7 @@
 
 /* Compare-only hierarchy. Existing roster tokens own surfaces and status colors. */
 .compare-workspace {
-  --compare-text-secondary: #d1d3d9;
+  --compare-text-secondary: var(--wu-text-muted);
   color: var(--roster-text);
 }
 .compare-workspace .compare-clan-summary {

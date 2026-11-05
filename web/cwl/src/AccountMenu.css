@@ -74,7 +74,7 @@
   left: 43px;
   bottom: 2px;
   overflow: hidden;
-  color: #aeb0b9;
+  color: var(--wu-text-muted);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -83,7 +83,7 @@
 .account-menu-chevron {
   position: absolute;
   right: 8px;
-  color: #aeb0b9;
+  color: var(--wu-text-muted);
 }
 
 .account-menu-avatar-trigger {
@@ -141,7 +141,7 @@
   z-index: 100;
   width: min(260px, calc(100vw - 24px));
   padding: 8px;
-  border: 1px solid #505158;
+  border: 1px solid var(--wu-border);
   border-radius: 14px;
   background: var(--wu-surface-raised);
   color: var(--wu-text);
@@ -156,7 +156,7 @@
 }
 
 .account-menu-summary > span {
-  color: #aaaab2;
+  color: var(--wu-text-muted);
   font-size: 11px;
 }
 
@@ -172,14 +172,14 @@
 }
 
 .account-menu-summary > small {
-  color: #aaaab2;
+  color: var(--wu-text-muted);
   font-size: 11px;
 }
 
 .account-menu-separator {
   height: 1px;
   margin: 0 2px 6px;
-  background: #45454c;
+  background: var(--wu-border-subtle);
 }
 
 .account-menu-list {

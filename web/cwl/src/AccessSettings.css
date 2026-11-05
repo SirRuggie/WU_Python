@@ -236,7 +236,7 @@
   }
 }
 .access-editor a {
-  color: #b7d5ff;
+  color: var(--wu-text);
 }
 .access-editor a:focus-visible {
   outline: 3px solid #f1cb56;

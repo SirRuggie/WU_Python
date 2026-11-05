@@ -92,7 +92,7 @@
   height: 42px;
 }
 .text-command-editor small {
-  color: #adb7c6;
+  color: var(--wu-text-muted);
 }
 .text-command-editor input[readonly] {
   opacity: 0.75;
@@ -192,7 +192,7 @@
 .command-link-fields {
   display: grid;
   gap: 10px;
-  border-bottom: 1px solid #414149;
+  border-bottom: 1px solid var(--wu-border-subtle);
   padding-bottom: 12px;
 }
 .command-block-tools {
@@ -292,7 +292,7 @@
 }
 .markdown-help dt {
   font-size: 0.8rem;
-  color: #adb7c6;
+  color: var(--wu-text-muted);
 }
 .command-block-order {
   flex-shrink: 0;
@@ -367,7 +367,7 @@
   border-radius: 9px;
 }
 .command-add-menu > summary {
-  color: #b7d2ff;
+  color: var(--wu-text-muted);
   min-height: 26px;
 }
 .command-add-blocks {
@@ -511,7 +511,7 @@
   margin: 14px 0;
   border: 1px solid #52657c;
   border-radius: 10px;
-  background: #1c222b;
+  background: var(--wu-surface);
 }
 .command-recipient-settings small {
   display: block;
