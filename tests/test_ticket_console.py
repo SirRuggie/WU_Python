@@ -2033,8 +2033,8 @@ def test_lock_contention_panel_does_not_claim_a_blacklist_exists():
     content = "\n".join(
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
-    assert "Approval not completed" in content
-    assert "## Approval not completed" in content.splitlines()
+    assert "Not approved" in content
+    assert "## Not approved" in content.splitlines()
     assert "try again" in content
     assert "blacklist" not in content.casefold()
 
@@ -4215,7 +4215,7 @@ def test_console_channel_validation_is_private_typed_and_permission_complete(mon
         (
             "inaccessible",
             999,
-            "saved console channel ID 444 is inaccessible.*relocation is disabled",
+            r"^Saved console channel 444 cannot be opened\. Restore channel access, then try again\.$",
         ),
         (
             "missing",
@@ -4225,7 +4225,7 @@ def test_console_channel_validation_is_private_typed_and_permission_complete(mon
         (
             "inaccessible",
             444,
-            "saved console channel ID 444 is inaccessible.*relocation is disabled",
+            r"^Saved console channel 444 cannot be opened\. Restore channel access, then try again\.$",
         ),
     ],
 )

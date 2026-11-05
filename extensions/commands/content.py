@@ -763,7 +763,7 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
                 if source != {"channel_id": int(match[2]), "message_id": int(match[3])}:
                     await initial_panel(ctx, mongo, state, "Open this ticket panel from Recruit Gauntlet. Apply updates only the active public ticket post."); return
             if not document:
-                await initial_panel(ctx, mongo, state, "Select a supported post created by this bot."); return
+                await initial_panel(ctx, mongo, state, "Select a supported post."); return
             sections = [node.content for node in text_nodes(message.components)]
             try:
                 if component_shape(message.components) != component_shape(await baseline(document)):

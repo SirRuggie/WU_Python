@@ -20,7 +20,7 @@ DONATIONS = "Donations are better since the update that lets you use loot. Clan 
 
 def defaults(kind):
     if kind not in {"main", "fwa"}:
-        raise ValueError("Choose Main or FWA.")
+        raise ValueError("Select Main or FWA.")
     body = "Hello there 👋🏻... How did you hear about " + (
         "our FWA Operation?" if kind == "fwa" else "Warriors United?"
     )
