@@ -82,7 +82,7 @@ def partial_role_panel(sid, result, message):
                 f"**{label}:** " + (text[:399] + "…" if len(text) > 400 else text)
             )
     return panel(
-        "Set-up needs attention",
+        "Setup needs attention",
         Text(content=str(message)[:500]),
         Text(content="\n".join(lines)),
         *back(sid),
@@ -148,8 +148,8 @@ async def home(data, c, mongo, note=""):
     items = [
         Text(
             content=(
-                "Set up this warrior’s nickname and roles, then start their server walkthrough "
-                "from their open ticket. Review the current roles below before making changes."
+                "Set the nickname and roles of this warrior. Then start the server walkthrough "
+                "from the open ticket of the warrior. Check the roles below before you make changes."
             )
         ),
         Separator(),
@@ -318,7 +318,7 @@ async def clan_menu(data, c, mongo, page=0, tour=False):
         menu = row.add_text_menu(
             f"warrior:{sid}:" + ("tour_choose" if tour else "clan_add"),
             placeholder=(
-                "Choose one clan for the walkthrough"
+                "Select one clan for the walkthrough"
                 if tour
                 else "Select clan roles to add"
             ),
@@ -408,7 +408,7 @@ async def settings_page(data, c, mongo, page=0):
     row = Row()
     menu = row.add_text_menu(
         f'warrior:{data["_id"]}:setting',
-        placeholder="Choose a role or channel to configure",
+        placeholder="Select a role or channel to configure",
     )
     for group, key in keys[page * 25 : page * 25 + 25]:
         menu.add_option(
@@ -496,7 +496,7 @@ async def action(
             output = panel(
                 "Member Roles",
                 Text(
-                    content="Quick Set-up adds Family, New Recruit and Strike System Accepted, then removes Visitor only if those additions succeed."
+                    content="Quick Setup adds Family, New Recruit and Strike System Accepted. It removes Visitor only if Quick Setup adds those roles."
                 ),
                 button(
                     button(Row(), sid, "add_roles", "Add Roles"),
@@ -504,7 +504,7 @@ async def action(
                     "remove_roles",
                     "Remove Roles",
                 ),
-                button(Row(), sid, "quick", "Quick Set-up"),
+                button(Row(), sid, "quick", "Quick Setup"),
                 *back(sid),
             )
         elif verb in ("add_roles", "remove_roles"):
@@ -622,7 +622,7 @@ async def action(
                 )
                 if not old:
                     raise core.SetupError(
-                        "Only a completed walkthrough can be restarted; use Retry for interrupted steps."
+                        "You can restart only a completed walkthrough. To finish stopped steps, use Retry."
                     )
                 archive = dict(
                     old,
@@ -701,7 +701,7 @@ async def action(
             output = panel(
                 "Walkthrough queued",
                 Text(
-                    content=f'The welcome will be posted in <#{run["ticket_channel"]}>. A recruiter can press Begin Walkthrough there.'
+                    content=f'The welcome will be posted in <#{run["ticket_channel"]}>. A recruiter can select Begin Walkthrough there.'
                 ),
                 *back(sid),
             )
@@ -766,19 +766,19 @@ async def action(
             message = (
                 str(error)
                 if isinstance(error, (core.SetupError, ValueError))
-                else "The later operation or status read could not finish. Confirmed changes are listed below; inspect current roles before another attempt."
+                else "Could not finish a later step. The changes that worked are below. Check the current roles before you try again."
             )
             await show(ctx, partial_role_panel(sid, role_result, message))
             return
         await show(
             ctx,
             panel(
-                "Set-up needs attention",
+                "Setup needs attention",
                 Text(
                     content=(
                         str(error)[:1500]
                         if isinstance(error, (core.SetupError, ValueError))
-                        else "The operation could not finish. Refresh to check which changes succeeded, then retry."
+                        else "Could not finish. Refresh to see which changes worked. Then try again."
                     )
                 ),
                 *back(sid),
@@ -822,12 +822,12 @@ async def form(
                     channel.guild_id != c["guild"].id
                     or channel.type != hikari.ChannelType.GUILD_TEXT
                 ):
-                    raise core.SetupError("Choose a text channel in this server.")
+                    raise core.SetupError("Select a text channel in this server.")
             else:
                 role = next((r for r in c["roles"] if r.id == value), None)
                 if not core.role_allowed(c, role):
                     raise core.SetupError(
-                        "Choose an unmanaged role below the bot’s highest role in this server."
+                        "Select an unmanaged role below the bot’s highest role in this server."
                     )
             if group != "channels" and any(
                 int(rid) == value
@@ -861,12 +861,12 @@ async def form(
         await show(
             ctx,
             panel(
-                "Set-up needs attention",
+                "Setup needs attention",
                 Text(
                     content=(
                         str(error)[:1500]
                         if isinstance(error, (core.SetupError, ValueError))
-                        else "The operation could not finish. Refresh to check which changes succeeded, then retry."
+                        else "Could not finish. Refresh to see which changes worked. Then try again."
                     )
                 ),
                 *back(sid),

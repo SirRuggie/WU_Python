@@ -368,7 +368,7 @@ def build_named_voter_components(document: dict, *, labels=None, page=0) -> list
             lines.append(f"{number}. [{label}](https://discord.com/users/{uid})")
     if lines:
         sections.append(Text(content='\n'.join(lines)))
-    sections += [Separator(divider=True), Text(content=f"-# Page {page + 1} of {pages} • Tap a name to view their profile")]
+    sections += [Separator(divider=True), Text(content=f"-# Page {page + 1} of {pages} • Select a name to see the profile")]
     if pages > 1:
         sections.append(ActionRow(components=[
             Button(style=hikari.ButtonStyle.SECONDARY, label='Previous',
@@ -748,7 +748,7 @@ class CreatePoll(
             components=[
                 ModalActionRow().add_text_input(
                     "title", "Question", required=True, min_length=1, max_length=100,
-                    placeholder="Which option should we choose?",
+                    placeholder="Which option should we select?",
                 ),
                 ModalActionRow().add_text_input(
                     "description", "Details (optional)", required=False, max_length=1000,
@@ -972,7 +972,7 @@ async def poll_create_submit(
         await ctx.respond(
             components=_notice(
                 "Poll not created",
-                "The poll could not be posted or saved. Nothing was scheduled; the failure was logged.",
+                "Could not post or save the poll. The poll was not scheduled.",
             ),
             ephemeral=True,
         )
@@ -1061,7 +1061,7 @@ async def poll_details(
     )
     if document is None:
         await ctx.respond(
-            components=_notice("Poll not found", "This poll is no longer retained in this server."),
+            components=_notice("Poll not found", "This server no longer has a saved copy of this poll."),
             ephemeral=True,
         )
         return
@@ -1086,7 +1086,7 @@ async def poll_voters_page(ctx, action_id: str, mongo: MongoClient = lightbulb.d
         return
     document = await poll_store.get_poll(mongo, guild_id=_guild_id(ctx), poll_id=poll_id)
     components = (await named_voter_components(document, page=page) if document is not None
-                  else _notice('Poll not found', 'This poll is no longer retained in this server.'))
+                  else _notice('Poll not found', 'This server no longer has a saved copy of this poll.'))
     await ctx.interaction.edit_initial_response(components=components,
         user_mentions=False, role_mentions=False, mentions_everyone=False)
 
@@ -1110,7 +1110,7 @@ async def poll_end(
         reason="manual",
     )
     if document is None:
-        message = "This poll is no longer retained in this server."
+        message = "This server no longer has a saved copy of this poll."
     elif changed:
         message = f"Poll `{action_id}` has been closed."
     else:

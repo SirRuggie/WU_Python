@@ -172,7 +172,7 @@ async def context(bot, mongo, guild_id, actor_id, user_id, *, fresh=True):
     ):
         raise SetupError("Recruitment Team or administrator permission is required.")
     if member.is_bot:
-        raise SetupError("Choose a human member to set up.")
+        raise SetupError("Select a human member to set up.")
     return dict(
         guild=guild,
         roles=roles,
@@ -306,7 +306,7 @@ async def change_roles(bot, mongo, c, *, add=(), remove=()):
                     result["failed"].append(f"{name} ({type(error).__name__})")
     except asyncio.CancelledError:
         result["failed"].append(
-            "Role batch interrupted. Check current member roles before repeating it."
+            "The role changes stopped. Check the current roles of the member before you try again."
         )
         raise
     except Exception as error:
@@ -351,7 +351,7 @@ async def change_roles(bot, mongo, c, *, add=(), remove=()):
                 type(error).__name__,
             )
             result["failed"].append(
-                "Role audit save not confirmed. Confirmed role changes are listed separately; check the member before another attempt."
+                "Could not confirm that the role audit was saved. The role changes that worked are listed separately. Check the member before you try again."
             )
     return result
 

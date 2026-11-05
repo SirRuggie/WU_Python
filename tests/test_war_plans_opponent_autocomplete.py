@@ -27,7 +27,7 @@ def test_build_opponent_choices_puts_chosen_clan_first():
         "BBB": _caught_up("Opp B"),
     }
     choices = autocomplete.build_opponent_choices(watch, records, chosen_clan_tag="BBB")
-    assert choices == [("Opp B — vs Clan B", "Opp B"), ("Opp A", "Opp A")]
+    assert choices == [("Opp B (opponent of Clan B)", "Opp B"), ("Opp A", "Opp A")]
 
 
 def test_build_opponent_choices_dedupes_by_name():

@@ -69,7 +69,7 @@ def test_saved_target_load_keeps_template_draft_and_checks_owner_and_guild(monke
         client.rest.fetch_message.return_value.author.id = 123
         result = await content.choose_document.__wrapped__._func(ctx, "root", mongo=db, bot=client)
         assert captured[-1]["target"] is None
-        assert "no longer this bot" in str(result[0].build())
+        assert "The saved message is not supported now." in str(result[0].build())
         client.rest.fetch_channel.return_value.guild_id = 99
         result = await content.choose_document.__wrapped__._func(ctx, "root", mongo=db, bot=client)
         assert captured[-1]["target"] is None
@@ -88,8 +88,9 @@ def test_saved_target_rejects_deleted_post():
             fetch_channel=AsyncMock(return_value=SimpleNamespace(guild_id=20)),
             fetch_message=AsyncMock(side_effect=hikari.NotFoundError(url="https://discord.com", headers={}, raw_body=b"", message="gone", code=10008)),
         ))
-        with pytest.raises(ValueError, match="missing or inaccessible"):
+        with pytest.raises(ValueError) as error:
             await content.loaded_published_target(client, 20, document, {"channel_id": 30, "message_id": 40}, 999)
+        assert str(error.value) == "The saved post cannot be found or opened. Check the channel. If you need a new post, select Send to channel."
     run(check())
 
 
@@ -143,4 +144,52 @@ def test_save_and_update_only_publishes_after_successful_template_save(monkeypat
             assert publish.call_args.kwargs["saved_template"] is True
         else:
             publish.assert_not_awaited()
+    run(check())
+
+
+def test_published_pointer_failures_keep_draft_and_exact_recovery(monkeypatch):
+    async def check():
+        document = content.DOCUMENTS['about-us']
+        coordinates = {'channel_id': 30, 'message_id': 40}
+        rest = SimpleNamespace(fetch_channel=AsyncMock(return_value=SimpleNamespace(guild_id=99)),
+                               fetch_message=AsyncMock())
+        client = SimpleNamespace(rest=rest)
+        with pytest.raises(ValueError) as error:
+            await content.loaded_published_target(client, 20, document, coordinates, 999)
+        assert str(error.value) == 'The published post is outside this server. Check the channel. If you need a new post, select Send to channel.'
+        rest.fetch_message.assert_not_awaited()
+        rest.fetch_channel.return_value.guild_id = 20
+        rest.fetch_message.side_effect = OSError('offline')
+        with pytest.raises(ValueError) as error:
+            await content.loaded_published_target(client, 20, document, coordinates, 999)
+        assert str(error.value) == 'I cannot read the published post right now. Your draft is still available.'
+        rest.fetch_message.side_effect = None
+        rest.fetch_message.return_value = SimpleNamespace(author=SimpleNamespace(id=999), components=[])
+        monkeypatch.setattr(content, 'baseline', AsyncMock(return_value=[]))
+        monkeypatch.setattr(content, 'component_shape', lambda _components: ())
+        monkeypatch.setattr(content, 'acknowledgement_id', lambda *_args: 'present')
+        monkeypatch.setattr(content, 'media_snapshot', lambda _components: [])
+        with pytest.raises(ValueError) as error:
+            await content.loaded_published_target(client, 20, document, coordinates, 999)
+        assert str(error.value) == "The saved post's images changed. Check the channel. If you need a new post, select Send to channel."
+    run(check())
+
+
+def test_published_update_requires_matching_target_without_save_or_send(monkeypatch):
+    async def check():
+        state = {'document': 'about-us', 'target': {'channel_id': 30, 'message_id': 40}, 'destination_channel_id': 31}
+        monkeypatch.setattr(content, 'load', AsyncMock(return_value=(state, None)))
+        monkeypatch.setattr(content, 'panel', lambda _state, notice: notice)
+        save = AsyncMock()
+        publish = AsyncMock()
+        monkeypatch.setattr(content, '_save', save)
+        monkeypatch.setattr(content, 'publish_state', publish)
+        result = await content.save_and_publish.__wrapped__._func(_Context(), 'draft', mongo=object(), bot=object())
+        assert result == 'The published post is unavailable in this posting channel. Your draft is unchanged.'
+        save.assert_not_awaited()
+        publish.assert_not_awaited()
+        state['target'] = None
+        result = await content.publish.__wrapped__._func(_Context(), 'draft', mongo=object(), bot=object())
+        assert result == 'Select a published post before updating it.'
+        publish.assert_not_awaited()
     run(check())

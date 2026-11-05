@@ -87,12 +87,18 @@ def test_confirmation_makes_scope_and_todo_effect_explicit():
         for component in clear_my_dms._confirmation("token")[0].components
         if hasattr(component, "content")
     )
-    assert "all messages authored by WUBOT" in text
+    assert clear_my_dms._confirmation("token")[0].components[1].content == (
+        "This deletes **all messages from WUBOT** in this private DM. This includes the oldest messages and this confirmation. "
+        "Your messages are not deleted.\n\nFirst, the active automatic `/todo` panel is stopped. "
+        "Future reminders and `/todo` stay on. A long history takes time. You cannot undo this. "
+        "When this is done, a short receipt is shown."
+    )
+    assert "all messages from WUBOT" in text
     assert "oldest" in text
-    assert "Your messages are preserved" in text
-    assert "automatic `/todo` panel will be stopped first" in text
+    assert "Your messages are not deleted" in text
+    assert "active automatic `/todo` panel is stopped" in text
     assert "Future reminders" in text
-    assert "temporary completion receipt" in text
+    assert "a short receipt is shown" in text
 
 
 def test_requester_dm_rejects_group_or_wrong_recipient():

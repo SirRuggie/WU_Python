@@ -102,7 +102,7 @@ async def upload_from_modal(interaction, media: MediaStore, *, guild_id: int, me
         await asyncio.sleep(0)
     entry = _pending.pop(int(interaction.id), None)
     if entry is None:
-        raise MediaStoreError("That upload expired. Click Upload replacement and upload it again.")
+        raise MediaStoreError("The upload expired. Select Upload replacement. Then upload the image again.")
     record = entry[1]
     if (record["custom_id"] != interaction.custom_id
         or record["guild_id"] != int(guild_id)
@@ -111,7 +111,7 @@ async def upload_from_modal(interaction, media: MediaStore, *, guild_id: int, me
         raise MediaStoreError("This image upload belongs to another editor.")
     attachment = record["attachment"]
     if not isinstance(attachment, dict):
-        raise MediaStoreError("Please attach exactly one image.")
+        raise MediaStoreError("Attach one image.")
     if not isinstance(attachment.get("size"), int) or not 0 < attachment["size"] <= MAX_IMAGE_BYTES:
         raise MediaStoreError("Images must be under 10 MB.")
     url = str(attachment.get("url", ""))
@@ -125,10 +125,10 @@ async def upload_from_modal(interaction, media: MediaStore, *, guild_id: int, me
         or not parsed.path.startswith(("/attachments/", "/ephemeral-attachments/"))):
         raise MediaStoreError("Discord did not return a valid image attachment.")
     if audience not in {"main", "lazy"} or not re.fullmatch(r"[a-zA-Z0-9_:-]{1,80}", message_id):
-        raise MediaStoreError("Choose a valid CWL message and audience first.")
+        raise MediaStoreError("Select a valid CWL message and audience first.")
     try:
         image_bytes = await asyncio.to_thread(download_image_blocking, url)
     except (requests.RequestException, ValueError, OSError) as exc:
-        raise MediaStoreError("I could not download that image. Your draft is unchanged; please try again.") from exc
+        raise MediaStoreError("I could not download that image. Your draft did not change. Try again.") from exc
     slot = message_id.replace(":", "-")
     return await media.upload_bytes(image_bytes, folder=f"content/cwl/{int(guild_id)}/{slot}", name=audience)

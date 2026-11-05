@@ -47,7 +47,7 @@ async def execute(ctx: lightbulb.Context, source: hikari.User, selection: str,
     if result.problem:
         summary += f"\n{result.problem}\nRemaining accounts were not processed."
     if destination:
-        summary += "\nRecreated links are unverified; previous verification and private link settings are not preserved."
+        summary += "\nNew links were made. They are not verified. The old verification and the private link settings were not kept."
     # Keep a complete per-tag receipt, even for lists too large for a Discord message.
     completed = set(result.completed)
     report = "\n".join(

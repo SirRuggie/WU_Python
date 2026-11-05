@@ -35,7 +35,7 @@ def test_panel_serializes_one_goldenrod_container_and_short_rows():
     assert [len(row["components"]) for row in built["components"][1:]] == [2, 1, 3]
 
     pools = session("signup_pool")
-    assert "no heroes upgrading" in member._main_text(pools)
+    assert "**Main:** Play at full strength. No hero upgrades." in member._main_text(pools)
     assert "You can upgrade during the event." in member._main_text(pools)
     assert [len(row.components) for row in member._components("panel", pools)] == [2, 2]
 
@@ -178,13 +178,13 @@ def test_multi_page_selection_has_clear_next_and_keeps_all_choices():
 
     async def run():
         text = member._main_text(current)
-        assert "one or more" in text and "Page 1 of 3" in text
+        assert "Select one or more accounts from the list." in text and "Page 1 of 3" in text
         assert "Next page" in text and "stay selected" in text
         assert button("next").style == hikari.ButtonStyle.PRIMARY
         assert button("review").is_disabled
         menu = member._components(token, current)[0].components[0]
         first = [o.value for o in menu.options[:2]]
-        assert menu.placeholder == "Choose one or more accounts"
+        assert menu.placeholder == "Select one or more accounts"
         await click("select", first)
         await click("next")
         second = member._components(token, current)[0].components[0].options[0].value
@@ -267,3 +267,52 @@ def test_signup_command_rejects_other_server_before_loading():
     request.assert_not_called()
     assert ctx.interaction.edits == []
     assert ctx.followups[0][1]["ephemeral"] is True
+
+
+def test_closed_signup_wording_keeps_actions_read_only():
+    from unittest.mock import AsyncMock, patch
+
+    saved = [{"tag": "#P2Y", "pool": "main", "player_name": "Player"}]
+    closed = session("my_signups", season=CLOSED, signups=saved)
+    assert member._saved_text(closed).splitlines()[-1] == 'Signups are closed. You can only view your saved accounts.'
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123),
+                          interaction=SimpleNamespace(guild_id=GUILD_ID, member=object(), values=['#P2Y']),
+                          respond=AsyncMock())
+    for action, screen, expected in (
+        ('signup_pick', 'my_signups', 'Signups are closed. You can only view your saved accounts.'),
+        ('change_pool', 'signup_action', 'Signups are closed for this season. You can only view your saved signup.'),
+        ('withdraw', 'signup_action', 'Signups are closed for this season. You can only view your saved signup.'),
+    ):
+        current = session(screen, season=CLOSED, signups=saved)
+        member._sessions['closed-wording'] = current
+        try:
+            with patch.object(member, '_edit', new_callable=AsyncMock) as edit, \
+                 patch('utils.cwl_member_client.request', new_callable=AsyncMock) as request:
+                asyncio.run(member._handle(ctx, 'closed-wording:0', action))
+                edit.assert_awaited_once_with(ctx, 'closed-wording', current, expected)
+                request.assert_not_awaited()
+                assert current.screen == 'my_signups'
+        finally:
+            member._sessions.pop('closed-wording', None)
+
+
+def test_signup_account_refresh_failure_preserves_signup_and_exact_notice(monkeypatch):
+    from copy import deepcopy
+    from unittest.mock import AsyncMock
+
+    saved = [{'tag': '#P2Y', 'pool': 'main', 'player_name': 'Player'}]
+    current = session('home', season=OPEN, signups=deepcopy(saved))
+    member._sessions['failed-refresh'] = current
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123),
+                          interaction=SimpleNamespace(guild_id=GUILD_ID, member=object()), respond=AsyncMock())
+    monkeypatch.setattr(member, '_refresh', AsyncMock(side_effect=OSError('offline')))
+    edit = AsyncMock()
+    monkeypatch.setattr(member, '_edit', edit)
+    try:
+        asyncio.run(member._handle(ctx, 'failed-refresh:0', 'signup'))
+        edit.assert_awaited_once_with(ctx, 'failed-refresh', current,
+            'Could not load your linked accounts. Use `/cwl signup` again in a few minutes. No signup was changed.')
+        assert current.view['signups'] == saved
+        assert current.screen == 'home'
+    finally:
+        member._sessions.pop('failed-refresh', None)

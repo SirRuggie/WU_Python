@@ -1,5 +1,6 @@
 import asyncio
 from copy import deepcopy
+from datetime import datetime
 
 import hikari
 import pytest
@@ -40,7 +41,9 @@ def test_red_skip_requires_confirmation_and_cancel_does_not_skip(monkeypatch):
         assert skip["style"] == hikari.ButtonStyle.DANGER
         before = deepcopy(mongo.cwl_pending_reminders.documents)
         review = await ui.skip(ctx, draft["token"] + "|" + occurrence, mongo=mongo)
-        assert "Main Clan" in str(review[0].build()[0])
+        run_at = next(iter(states.values()))['run_at']
+        stamp = int(datetime.fromisoformat(str(run_at)).timestamp())
+        assert review[0].components[0].content == f'### Skip this message?\n**Signups open · Main CWL**\n<t:{stamp}:F>\nOnly this post is skipped.'
         yes = next(node for node in nodes(review) if node.get("label") == "Yes, skip")
         assert yes["style"] == hikari.ButtonStyle.DANGER
         assert mongo.cwl_pending_reminders.documents == before

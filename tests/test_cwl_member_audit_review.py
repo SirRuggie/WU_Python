@@ -236,7 +236,7 @@ class MemberInteractionAuditTests(unittest.IsolatedAsyncioTestCase):
             await member._handle(retry, "audit:0", "confirm")
 
         self.assertEqual(actions.count("submit"), 1)
-        self.assertIn("fresh private panel", first.responses[0][0][0])
+        self.assertIn("Could not update this panel. Use `/cwl signup` to get a new private panel. Check My signups before you save again.", first.responses[0][0][0])
         self.assertTrue(retry.responses)
         self.assertIn("expired or changed", retry.responses[0][0][0])
 

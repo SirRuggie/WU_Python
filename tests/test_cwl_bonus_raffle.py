@@ -336,8 +336,17 @@ class RaffleDomainTests(unittest.TestCase):
         self.assertGreater(len(pages), 1)
         self.assertIn('Rule: 4+ attacks OR 3+ attacks and 8+ stars', pages[0])
         self.assertNotIn('Minimum None attacks', pages[0])
-        self.assertIn('Participation unavailable', pages[0])
+        self.assertIn('Attack data not available', pages[0])
         self.assertTrue(all(len(p.encode('utf-16-le')) // 2 <= 2000 for p in pages))
         self.assertTrue(all('@everyone' not in p and '<@123' not in p for p in pages))
         for i in range(50):
             self.assertEqual(sum(('\\#P'+str(i)+' ·') in p for p in pages), 1)
+
+
+def test_raffle_announcement_uses_approved_clan_leaders_footer():
+    snapshot = {'pool': 'main', 'clan_name': 'Alpha', 'cycle': '2026-10',
+                'minimum': 5, 'winners': []}
+    assert announcement_pages(snapshot) == [
+        '**Alpha · Main CWL bonus winners**\n2026-10 · Minimum 5 attacks\n'
+        '\nCongratulations! Clan leaders will give the bonuses in the game.'
+    ]

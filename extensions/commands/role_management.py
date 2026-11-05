@@ -87,7 +87,7 @@ def _panel(state: dict, notice: str | None = None) -> list:
     rows = [
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Roles") + "\n## Roles"),
         hikari.impl.TextDisplayComponentBuilder(content=(
-            "Choose one member and up to 25 roles. Add or Remove applies only to those roles."
+            "Select one member and up to 25 roles. Add or Remove applies only to those roles."
         )),
         hikari.impl.TextDisplayComponentBuilder(content=(
             f"Member: {state.get('target_label', 'not selected')} · "
@@ -99,11 +99,11 @@ def _panel(state: dict, notice: str | None = None) -> list:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
     rows.extend([
         hikari.impl.MessageActionRowBuilder(components=[hikari.impl.SelectMenuBuilder(
-            type=hikari.ComponentType.USER_SELECT_MENU, custom_id=f"roles_member:{sid}", placeholder="Choose a member",
+            type=hikari.ComponentType.USER_SELECT_MENU, custom_id=f"roles_member:{sid}", placeholder="Select a member",
             min_values=1, max_values=1,
         )]),
         hikari.impl.MessageActionRowBuilder(components=[hikari.impl.SelectMenuBuilder(
-            type=hikari.ComponentType.ROLE_SELECT_MENU, custom_id=f"roles_role:{sid}", placeholder="Choose up to 25 roles",
+            type=hikari.ComponentType.ROLE_SELECT_MENU, custom_id=f"roles_role:{sid}", placeholder="Select up to 25 roles",
             min_values=1, max_values=25,
         )]),
         _buttons(
@@ -113,9 +113,9 @@ def _panel(state: dict, notice: str | None = None) -> list:
              not bool(state.get("target_id") and selected)),
         ),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
-        hikari.impl.TextDisplayComponentBuilder(content="### Role members\nChoose any server role to see its exact member count and browse names."),
+        hikari.impl.TextDisplayComponentBuilder(content="### Role members\nSelect any server role to see its exact member count and browse names."),
         hikari.impl.MessageActionRowBuilder(components=[hikari.impl.SelectMenuBuilder(
-            type=hikari.ComponentType.ROLE_SELECT_MENU, custom_id=f"roles_browse_role:{sid}", placeholder="Choose a role to browse",
+            type=hikari.ComponentType.ROLE_SELECT_MENU, custom_id=f"roles_browse_role:{sid}", placeholder="Select a role to browse",
             min_values=1, max_values=1,
         )]),
         _buttons((f"manage_home:{state['manage_token']}", "Management Home",
@@ -163,18 +163,18 @@ async def member(ctx: Any, action_id: str,
         return _error(problem)
     selected = _selected_ids(ctx, maximum=1)
     if selected is None:
-        return _panel(state, "Choose one member.")
+        return _panel(state, "Select one member.")
     guild = _guild(ctx, state["guild_id"])
     try:
         target = await ctx.interaction.app.rest.fetch_member(guild.id, selected[0])
     except (hikari.NotFoundError, hikari.ForbiddenError, hikari.HTTPError):
         return _panel(state, "That member could not be found in this server.")
     if not perms.actor_can_manage_member(_member(ctx), target, guild):
-        return _panel(state, "You can only manage members below your highest role; the server owner is excluded.")
+        return _panel(state, "You can manage only members below your highest role. You cannot manage the server owner.")
     label = _safe_label(getattr(target, "display_name", None) or getattr(target, "username", None) or str(target.id))
     return _panel(await _next(mongo, state, target_id=selected[0],
                               target_label=f"{label} ({selected[0]})"),
-                  "Member selected. Now choose roles.")
+                  "Member selected. Now select roles.")
 
 
 @register_action("roles_role", preload_state=False)
@@ -186,7 +186,7 @@ async def role(ctx: Any, action_id: str,
         return _error(problem)
     selected = _selected_ids(ctx, maximum=25)
     if selected is None:
-        return _panel(state, "Choose between 1 and 25 distinct roles.")
+        return _panel(state, "Select between 1 and 25 distinct roles.")
     guild = _guild(ctx, state["guild_id"])
     bot = ctx.interaction.app
     actor = _member(ctx)
@@ -196,10 +196,10 @@ async def role(ctx: Any, action_id: str,
         and perms.actor_can_manage_role(actor, guild, candidate)
     )]
     if rejected:
-        return _panel(state, "One or more selected roles are outside your or the bot's permissions or role hierarchy.")
+        return _panel(state, "One or more of the selected roles cannot be managed by you or by WUBOT.")
     labels = [_safe_label(guild.get_role(role_id).name, 40) for role_id in selected]
     return _panel(await _next(mongo, state, role_ids=list(selected), role_labels=labels),
-                  f"{len(selected)} role(s) selected. Choose Add or Remove.")
+                  f"{len(selected)} role(s) selected. Select Add or Remove.")
 
 
 def _safe_label(value: str, limit: int = 75) -> str:
@@ -215,12 +215,12 @@ async def change(ctx: Any, action_id: str,
     if problem:
         return _error(problem)
     if separator != "|" or operation not in {"add", "remove"}:
-        return _panel(state, "Choose Add or Remove from this panel.")
+        return _panel(state, "Select Add or Remove from this panel.")
     target_id = state.get("target_id")
     role_ids = state.get("role_ids")
     if (not isinstance(target_id, int) or not isinstance(role_ids, list)
             or not 1 <= len(role_ids) <= 25 or len(set(role_ids)) != len(role_ids)):
-        return _panel(state, "Choose one member and up to 25 roles first.")
+        return _panel(state, "Select one member and up to 25 roles first.")
     guild = _guild(ctx, state["guild_id"])
     bot = ctx.interaction.app
     actor = _member(ctx)
@@ -229,7 +229,7 @@ async def change(ctx: Any, action_id: str,
     except (hikari.NotFoundError, hikari.ForbiddenError, hikari.HTTPError):
         return _panel(state, "Member could not be fetched. No roles were changed.")
     if not perms.actor_can_manage_member(actor, target, guild):
-        return _panel(state, "You can only manage members below your highest role; the server owner is excluded.")
+        return _panel(state, "You can manage only members below your highest role. You cannot manage the server owner.")
     changed, skipped, refused, failed = [], [], [], []
     current = set(target.role_ids)
     for role_id in role_ids:
@@ -278,7 +278,7 @@ async def browse_role(ctx: Any, action_id: str,
         return _error(problem)
     selected = _selected_ids(ctx, maximum=1)
     if selected is None:
-        return _panel(state, "Choose one role to browse.")
+        return _panel(state, "Select one role to browse.")
     guild = _guild(ctx, state["guild_id"])
     chosen = guild.get_role(selected[0])
     if chosen is None:
@@ -331,7 +331,7 @@ async def page(ctx: Any, action_id: str,
     if problem:
         return _error(problem)
     if state.get("view") != "browse" or separator != "|":
-        return _panel(state, "Choose a role to browse first.")
+        return _panel(state, "Select a role to browse first.")
     try:
         page_number = int(raw_page)
     except ValueError:
@@ -347,7 +347,7 @@ async def refresh(ctx: Any, action_id: str,
     if problem:
         return _error(problem)
     if state.get("view") != "browse":
-        return _panel(state, "Choose a role to browse first.")
+        return _panel(state, "Select a role to browse first.")
     guild = _guild(ctx, state["guild_id"])
     role = guild.get_role(state["browse_role_id"])
     if role is None:
@@ -366,7 +366,7 @@ async def _fetch_browse(ctx: Any, mongo: MongoClient, state: dict, role: Any) ->
                 entries.append((int(member_item.id), _safe_label(name),
                                 bool(getattr(member_item, "is_bot", getattr(user, "is_bot", False)))))
     except (hikari.ForbiddenError, hikari.HTTPError):
-        return (_browse_panel(state, 0, "Refresh failed; showing the previous snapshot.")
+        return (_browse_panel(state, 0, "The refresh did not work. The list shown is old.")
                 if state.get("browse_entries") is not None
                 else _panel(state, "Discord could not list members. Try again."))
     entries.sort(key=lambda entry: (entry[1].casefold(), entry[0]))

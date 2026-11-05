@@ -453,7 +453,7 @@ def _gap_note(unreadable: int, what: str) -> str:
     """
     if coc_maintenance.in_maintenance():
         return coc_maintenance.banner()
-    return f"⚠️ {unreadable} account(s) could not be checked — {what} lookup failed"
+    return f"⚠️ Could not check {unreadable} account(s). The {what} lookup failed."
 
 
 # ---------------------------------------------------------------------------

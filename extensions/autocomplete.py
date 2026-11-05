@@ -165,7 +165,7 @@ def build_opponent_choices(
         if query and query not in key:
             continue
         seen.add(key)
-        display = f"{name} — vs {our_clan_name}" if tag == chosen_clan_tag else name
+        display = f"{name} (opponent of {our_clan_name})" if tag == chosen_clan_tag else name
         choices.append((display[:100], name[:MAX_OPPONENT_NAME_LENGTH]))
         if len(choices) >= 25:
             break

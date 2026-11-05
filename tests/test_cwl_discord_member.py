@@ -118,7 +118,7 @@ class CwlMemberTransportTests(unittest.IsolatedAsyncioTestCase):
         text = member._main_text(session)
 
         self.assertIn("signup is saved", text)
-        self.assertIn("not published", text)
+        self.assertIn("Staff must publish the assignments first.", text)
         self.assertNotIn("Secret draft", text)
 
     def test_published_assignment_shows_only_service_rows_and_safe_clan_link(self):
@@ -174,7 +174,7 @@ class CwlMemberTransportTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(payload["season_id"], 77)
             self.assertEqual(payload["expected_revision"], 12)
             self.assertEqual(payload["accounts"], [{"tag": "#ABC23", "prefer_crystal_1_or_lower": True, "move_from_pool": "main"}])
-            self.assertIn("result is unclear", edited_text(ctx.interaction.edits[-1]))
+            self.assertIn("Your change may not be saved. Select My signups to check. Then try again if needed.", edited_text(ctx.interaction.edits[-1]))
 
             # The old confirmation is consumed; a duplicate click cannot issue another write.
             await member._handle(ctx, f"{token}:0", "confirm")
@@ -198,7 +198,7 @@ class CwlMemberTransportTests(unittest.IsolatedAsyncioTestCase):
         with patch("utils.cwl_member_client.request") as request:
             await member._handle(ctx, f"{token}:0", "confirm")
         request.assert_not_called()
-        self.assertIn("out of date", edited_text(ctx.interaction.edits[-1]))
+        self.assertIn("That action is old. Use the controls in this panel.", edited_text(ctx.interaction.edits[-1]))
 
     async def test_closed_season_blocks_writes_but_keeps_read_controls(self):
         token = "closed-token"

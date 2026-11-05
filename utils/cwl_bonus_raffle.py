@@ -127,13 +127,13 @@ def announcement_pages(snapshot):
         header = f"**{safe_text(snapshot['clan_name'])} · {label} bonus winners**\n{snapshot['cycle']} · Rule: {safe_text(rule)}\n"
     else:
         header = f"**{safe_text(snapshot['clan_name'])} · {label} bonus winners**\n{snapshot['cycle']} · Minimum {snapshot['minimum']} attacks\n"
-    footer = '\nCongratulations! Clan leadership will award the bonuses in-game.'
+    footer = '\nCongratulations! Clan leaders will give the bonuses in the game.'
     pages, body = [], header
     for account in snapshot['winners']:
         if snapshot['pool'] == 'lazy':
             attacks = account.get('attacks')
             stars = account.get('stars')
-            participation = 'Participation unavailable' if attacks is None else f"{attacks} attacks" + (f", {stars} stars" if stars is not None else '')
+            participation = 'Attack data not available' if attacks is None else f"{attacks} attacks" + (f", {stars} stars" if stars is not None else '')
             line = f"\n• {safe_text(account['player_name'])} · {safe_text(account['tag'])} · {participation}"
         else:
             line = f"\n• {safe_text(account['player_name'])} · {safe_text(account['tag'])} · {account['attacks']}{('/' + str(account['season_rounds'])) if account.get('season_rounds') else ''} attacks"

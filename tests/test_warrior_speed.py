@@ -455,7 +455,7 @@ def test_confirmed_role_changes_are_reported_when_audit_storage_is_unavailable()
         )
         result = await core.change_roles(b, m, c, add=[60])
         assert result["added"] == ["Role 60"]
-        assert "audit save not confirmed" in result["failed"][0]
+        assert "Could not confirm that the role audit was saved. The role changes that worked are listed separately. Check the member before you try again." in result["failed"][0]
 
     asyncio.run(check())
 
@@ -490,7 +490,7 @@ def test_cancelled_role_batch_attempts_audit_with_confirmed_partial_results():
         saved = m.warrior_audit.update_one.call_args.args[1]["$push"]["events"][
             "$each"
         ][0]["result"]
-        assert saved["added"] == ["Role 60"] and "interrupted" in saved["failed"][0]
+        assert saved["added"] == ["Role 60"] and "The role changes stopped. Check the current roles of the member before you try again." in saved["failed"][0]
 
     asyncio.run(check())
 

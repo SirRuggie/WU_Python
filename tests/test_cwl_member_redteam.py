@@ -89,7 +89,7 @@ class CwlMemberReviewRedteamTests(unittest.TestCase):
 
             content = cwl_member._main_text(session)
 
-            self.assertIn("Staff will need to assign a clan again", content)
+            self.assertIn("Staff must assign a clan again.", content)
 
     def test_assignments_without_signup_dont_claim_signup_saved(self):
         session = cwl_member.MemberSession(
