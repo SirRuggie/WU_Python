@@ -1,7 +1,7 @@
 {
   "kind": "R owner-item disposition ledger; independently reviewed static scope; final commit validation separate",
   "owner_inventory_sha256": "28e3f49a0827ad5452643e606558228bf89668c79fcb3a1dc9a93383f1572723",
-  "source_working_sha256": "f032b7b595d7b39773700c61b27d6e58b57c0b659fdaed9662bfdf847ec5e828",
+  "source_working_sha256": "7463fe82b6ea47591cf81350dae91ff5d6fd0046493da89dc1a3df66d77222ac",
   "base": "82400fbfafad39d003c85d64085b1473f5778c54",
   "count": 133,
   "rows": [
@@ -4591,5 +4591,6 @@
       "candidate_status_proof": "671: CL-87",
       "status": "superseded-by"
     }
-  ]
+  ],
+  "source_working_sha256_method": "SHA-256 of git diff --binary 82400 against working Python files"
 }
