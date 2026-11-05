@@ -34,7 +34,11 @@ def test_join_combined_sections_split_and_reassemble_title_body():
         groups = content.editable_groups(document, sections)
         assert groups[1][1] == ((2, "Title", "title"), (2, "Body", "body"))
         assert content.modal_field_value(sections[2], "title").startswith("###")
-        assert content.modal_field_value(sections[2], "body").startswith("Tap")
+        assert content.modal_field_value(sections[2], "body") == (
+            "Select the button below to unlock the family welcome area. From there, learn who we are, "
+            "read the required steps, and continue through recruitment. When you have completed the "
+            "Recruit Gauntlet, open an application ticket to apply."
+        )
     run(check())
 
 

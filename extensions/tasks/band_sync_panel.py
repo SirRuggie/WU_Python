@@ -52,7 +52,7 @@ REMINDER_LABEL = {
     "0": "at sync time",
 }
 MSG_PASSED = "This sync has passed."
-MSG_OPT_IN_FIRST = "Choose Yes or Maybe first, then pick reminders."
+MSG_OPT_IN_FIRST = "Select Yes or Maybe first. Then select your reminders."
 
 # DECISIONS.md D006: every sync DM auto-deletes this long after it is sent.
 DM_TTL_SECONDS = 600
@@ -249,17 +249,17 @@ def _header_components(event, url, include_role_ping, include_time=True):
                                       label=DM_ME_LABEL, emoji=DM_ME_EMOJI.partial_emoji))
     components.append(time_row)
     components.append(Text(content=(
-        "Review the **FWA Sync Time** and select your availability below."
+        "Check the **FWA Sync Time**. Then select your availability below."
     )))
     components.append(Separator(divider=True))
-    components.append(Text(content=f"{str(emojis.yes)} - Available to Start"))
-    components.append(Text(content=f"{str(emojis.maybe)} - Maybe Available to Start"))
-    components.append(Text(content=f"{str(emojis.no)} - Unavailable to Start"))
+    components.append(Text(content=f"{str(emojis.yes)} - I can start"))
+    components.append(Text(content=f"{str(emojis.maybe)} - I may be able to start"))
+    components.append(Text(content=f"{str(emojis.no)} - I cannot start"))
     components.append(Separator(divider=True))
     return components
 
 
-CHANGED_NOTE = "*Availability changed? Select another button to update your response.*"
+CHANGED_NOTE = "*If your availability changes, select another button to update your response.*"
 
 
 def status_rows(uid):
@@ -282,7 +282,7 @@ def status_rows(uid):
     row2 = ActionRow(components=[
         TextSelectMenu(
             custom_id=f"fwa_sync_reminders:{uid}",
-            placeholder="Reminders (choose Yes or Maybe first)…",
+            placeholder="Reminders (select Yes or Maybe first)…",
             min_values=0,
             max_values=4,
             options=[
@@ -710,7 +710,7 @@ async def fwa_sync_dm_once(
     if result.sent:
         await _answer(ctx, "Sent - check your DMs.")
     else:
-        await _answer(ctx, "Could not DM you - check that your DMs are open to server members.")
+        await _answer(ctx, "Could not DM you. Check that your DMs are open to server members.")
 
 
 @register_action("fwa_sync_reminders", no_return=True)

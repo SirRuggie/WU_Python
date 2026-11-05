@@ -332,3 +332,128 @@ def test_start_posts_one_sticky_and_bot_activity_does_not_move_it(db):
         await task.sweep_once(bot, db, now=now + timedelta(minutes=31))
         assert len(rest.created) == 1
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('question', ['do you need assistance', 'do you need help'])
+def test_recovery_queues_old_and_new_reminders_once_without_resending(db, question):
+    async def run():
+        now = datetime.now(timezone.utc)
+        rest = Rest()
+        body = f'<@7> — {question} with the next step?'
+        rest.history = [SimpleNamespace(
+            id=555, author=SimpleNamespace(id=42), created_at=now - task.DELETE_AFTER,
+            components=[SimpleNamespace(content='**Recruit Gauntlet step 2**', components=[SimpleNamespace(content=body)])],
+        )]
+        bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=42))
+        await state.record_progress(db, task.GUILD_ID, 7, 2)
+        row = db.bot_config.rows[state.progress_id(task.GUILD_ID, 7)]
+        row.update(status='send_unknown', claim_token='x', send_started_at=now - task.DELETE_AFTER)
+        await task._reconcile_unknown(bot, db, now)
+        assert row['status'] == 'reminded'
+        assert row['message_id'] == 555
+        key = f'gauntlet_help_delete:{task.GUILD_ID}:555'
+        assert key in db.bot_config.rows
+        assert rest.created == []
+        await task._drain_deletes(bot, db, now)
+        assert rest.deleted == [(task.HELP_CHANNEL_ID, 555)]
+        assert key not in db.bot_config.rows
+        rest.history = []  # The successful Discord deletion removes it from future history.
+        await task._reconcile_unknown(bot, db, now)
+        await task._drain_deletes(bot, db, now)
+        assert rest.deleted == [(task.HELP_CHANNEL_ID, 555)]
+        assert rest.created == []
+    asyncio.run(run())
+
+
+def test_recovery_rejects_foreign_author_and_unrelated_stage_message(db):
+    async def run():
+        now = datetime.now(timezone.utc)
+        rest = Rest()
+        rest.history = [
+            SimpleNamespace(id=556, author=SimpleNamespace(id=999), created_at=now,
+                            components=[SimpleNamespace(content='**Recruit Gauntlet step 2** do you need help')]),
+            SimpleNamespace(id=557, author=SimpleNamespace(id=42), created_at=now,
+                            components=[SimpleNamespace(content='**Recruit Gauntlet step 2** unrelated')]),
+        ]
+        bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=42))
+        await task._reconcile_unknown(bot, db, now)
+        assert not any(key.startswith('gauntlet_help_delete:') for key in db.bot_config.rows)
+        assert rest.created == []
+        assert rest.deleted == []
+    asyncio.run(run())
+
+
+def test_recovery_rejects_wrong_channel_guild(db):
+    async def run():
+        now = datetime.now(timezone.utc)
+        rest = Rest()
+        rest.history = [SimpleNamespace(id=558, author=SimpleNamespace(id=42), created_at=now,
+                         components=[SimpleNamespace(content='**Recruit Gauntlet step 2** do you need help')])]
+        async def wrong_guild(channel_id):
+            return SimpleNamespace(id=channel_id, guild_id=task.GUILD_ID + 1)
+        rest.fetch_channel = wrong_guild
+        bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=42))
+        await task._reconcile_unknown(bot, db, now)
+        assert not any(key.startswith('gauntlet_help_delete:') for key in db.bot_config.rows)
+        assert rest.created == []
+        assert rest.deleted == []
+    asyncio.run(run())
+
+
+def test_recovery_rejects_wrong_channel_id_even_with_matching_guild(db):
+    async def run():
+        now = datetime.now(timezone.utc)
+        rest = Rest()
+        rest.history = [SimpleNamespace(id=559, author=SimpleNamespace(id=42), created_at=now,
+                         components=[SimpleNamespace(content='**Recruit Gauntlet step 2** do you need help')])]
+        async def wrong_channel(_channel_id):
+            return SimpleNamespace(id=task.HELP_CHANNEL_ID + 1, guild_id=task.GUILD_ID)
+        rest.fetch_channel = wrong_channel
+        bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=42))
+        await task._reconcile_unknown(bot, db, now)
+        assert not any(key.startswith('gauntlet_help_delete:') for key in db.bot_config.rows)
+        assert rest.created == []
+        assert rest.deleted == []
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('question', ['do you need assistance', 'do you need help'])
+def test_reconstructed_state_recovers_cleanup_without_progress_row(db, question):
+    async def run():
+        now = datetime.now(timezone.utc)
+        rest = Rest()
+        rest.history = [SimpleNamespace(
+            id=560, author=SimpleNamespace(id=42), created_at=now,
+            components=[SimpleNamespace(content=f'**Recruit Gauntlet step 2** <@7> — {question} with the next step?')],
+        )]
+        bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=42))
+        assert not db.bot_config.rows
+        await task._reconcile_unknown(bot, db, now)
+        assert f'gauntlet_help_delete:{task.GUILD_ID}:560' in db.bot_config.rows
+        assert state.progress_id(task.GUILD_ID, 7) not in db.bot_config.rows
+        assert rest.created == []
+        assert rest.deleted == []
+    asyncio.run(run())
+
+
+def test_characterize_unknown_row_matching_unrelated_own_message(db):
+    """Record the existing broad stage/user/time fallback without changing it."""
+    async def run():
+        now = datetime.now(timezone.utc)
+        rest = Rest()
+        rest.history = [SimpleNamespace(
+            id=561, author=SimpleNamespace(id=42), created_at=now,
+            components=[SimpleNamespace(content='**Recruit Gauntlet step 2** <@7> unrelated own message')],
+        )]
+        bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=42))
+        await state.record_progress(db, task.GUILD_ID, 7, 2)
+        row = db.bot_config.rows[state.progress_id(task.GUILD_ID, 7)]
+        row.update(status='send_unknown', claim_token='x', send_started_at=now - timedelta(seconds=1))
+        await task._reconcile_unknown(bot, db, now)
+        # Existing fallback matches stage, user and time, even without the reminder phrase.
+        assert row['status'] == 'reminded'
+        assert row['message_id'] == 561
+        assert f'gauntlet_help_delete:{task.GUILD_ID}:561' in db.bot_config.rows
+        assert rest.created == []
+        assert rest.deleted == []
+    asyncio.run(run())

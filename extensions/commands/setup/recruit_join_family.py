@@ -56,13 +56,13 @@ def build_join_family(sections=None, *, media=None, action_id="preview", preview
                 ),
                 text(
                     "### **What happens next**\n"
-                    "Tap the button below to unlock the family welcome area. From there, learn who we are, "
+                    "Select the button below to unlock the family welcome area. From there, learn who we are, "
                     "read the required steps, and continue through recruitment. When you have completed the "
                     "Recruit Gauntlet, open an application ticket to apply."
                 ),
                 text(
                     "### **Ready to begin?**\n"
-                    "Choose **Join the Family** to get access to the next step."
+                    "Select **Join the Family** to open the next step."
                 ),
                 ActionRow(components=[
                     Button(
@@ -136,7 +136,7 @@ async def on_join_family_acknowledge(
     try:
         target_channel = await observed("channel_check", bot.rest.fetch_channel, ABOUT_US_CHANNEL_ID)
     except hikari.HTTPError:
-        await _private_error(ctx, "I could not open the next onboarding channel right now. Please try again shortly.")
+        await _private_error(ctx, "I could not open the next onboarding channel. Try again in a few minutes.")
         return
     except Exception:
         await _private_error(ctx, "I could not verify the next onboarding channel right now. Please try again shortly.")
@@ -160,13 +160,13 @@ async def on_join_family_acknowledge(
         await _private_error(ctx, "I could not find your member profile in this server. Please try again shortly.")
         return
     except Exception:
-        await _private_error(ctx, "I could not verify your member profile right now. Please try again shortly.")
+        await _private_error(ctx, "I could not check your member profile. Try again in a few minutes.")
         return
 
     if JOIN_FAMILY_ROLE_ID in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
         gauntlet_event("role_already_present")
         await observed("reminder_tracking", track_progress, mongo, guild_id, user_id, 1)
-        await _private_continue(ctx, guild_id, "You already have access to the Recruit Gauntlet. Continue to About Us to work through the required steps.", bot=bot)
+        await _private_continue(ctx, guild_id, "You already have access to the Recruit Gauntlet. Go to About Us and do the required steps.", bot=bot)
         return
 
     try:
@@ -179,4 +179,4 @@ async def on_join_family_acknowledge(
         return
 
     await observed("reminder_tracking", track_progress, mongo, guild_id, user_id, 1)
-    await _private_continue(ctx, guild_id, "Continue to About Us to begin the Recruit Gauntlet and work through the required steps.", bot=bot)
+    await _private_continue(ctx, guild_id, "Go to About Us to start the Recruit Gauntlet. Do the required steps.", bot=bot)

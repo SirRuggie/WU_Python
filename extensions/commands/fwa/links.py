@@ -52,9 +52,8 @@ class Links(
                     Text(content="## 🔗 **FWA Needed Links**"),
                     Separator(divider=True),
                     Text(content=(
-                        "In the FWA Clans, there are important links and maintenance tasks "
-                        "that need regular checking. Choose one of the options provided, "
-                        "and then select the specific clan when asked."
+                        "FWA clans have important links and tasks that you must check often. "
+                        "Select an option. Then select a clan."
                     )),
                     Media(
                         items=[
@@ -66,7 +65,7 @@ class Links(
                     Separator(divider=True),
                     Section(
                         components=[
-                            Text(content="Click to verify win status for FWA clans")
+                            Text(content="Select to verify the win status of FWA clans")
                         ],
                         accessory=Button(
                             style=hikari.ButtonStyle.SECONDARY,
@@ -77,7 +76,7 @@ class Links(
                     ),
                     Section(
                         components=[
-                            Text(content="Click to enter war weights for FWA clans")
+                            Text(content="Select to enter war weights for FWA clans")
                         ],
                         accessory=Button(
                             style=hikari.ButtonStyle.SECONDARY,
@@ -124,7 +123,7 @@ async def on_verify_win(
     container_components = [
         Text(content="## ✅ **Verify Win Links**"),
         Separator(divider=True),
-        Text(content="Click any clan to verify their win status:"),
+        Text(content="Select a clan to verify its win status:"),
         Separator(divider=True),
     ]
     
@@ -178,7 +177,7 @@ async def on_war_weights(
     container_components = [
         Text(content="## ⚖️ **Enter War Weights Links**"),
         Separator(divider=True),
-        Text(content="Click any clan to enter war weights:"),
+        Text(content="Select any clan to enter war weights:"),
         Separator(divider=True),
     ]
     

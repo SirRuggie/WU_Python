@@ -58,14 +58,14 @@ async def panel(mongo, state, notice=""):
     button(row, f"weight_add:{sid}", "Add Town Hall")
     button(row, f"weight_refresh:{sid}", "Refresh")
     children += [row, hikari.impl.SeparatorComponentBuilder(divider=True),
-        button(hikari.impl.MessageActionRowBuilder(), f"manage_fwa:{state['manage_token']}", "Return to FWA"),
-        hikari.impl.TextDisplayComponentBuilder(content="-# Emoji: automatic name lookup, custom emoji name, or pasted custom emoji. Changes apply to new calculator results.")]
+        button(hikari.impl.MessageActionRowBuilder(), f"manage_fwa:{state['manage_token']}", "Back to FWA"),
+        hikari.impl.TextDisplayComponentBuilder(content="-# Emoji: leave blank to find the emoji by name, or enter a custom emoji name, or paste a custom emoji. Changes apply to new calculator results.")]
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=children)]
 
 
 async def open_dashboard(ctx, mongo, *, manage_token, deferred=False):
     if not admin(ctx):
-        await ctx.respond("Administrator permission is required.", ephemeral=True)
+        await ctx.respond("You need Administrator permission.", ephemeral=True)
         return
     if not deferred:
         await ctx.defer(ephemeral=True)
@@ -89,7 +89,7 @@ async def minimum(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **
         state = await session(ctx, mongo, action_id)
         config = await store.load(mongo, state["guild_id"])
         if state["revision"] != config["revision"]:
-            return await panel(mongo, state, "Settings changed. Please select the minimum again.")
+            return await panel(mongo, state, "Settings changed. Select the minimum again.")
         config["minimum_th"] = int(ctx.interaction.values[0])
         await store.save(mongo, state["guild_id"], config, ctx.user.id)
         return await panel(mongo, state, "Lowest displayed Town Hall saved.")
@@ -108,7 +108,7 @@ async def show_modal(ctx, action_id, mongo, *, add=False):
         modal_state = {**state, "_id": uuid.uuid4().hex, "editing_th": th, "adding": add}
         await insert_state(mongo, modal_state, ttl=timedelta(minutes=30))
         fields = [("th", "Town Hall level", str(th or "")), ("low", "Minimum total war weight", str(entry.get("min", ""))),
-                  ("high", "Maximum total war weight", str(entry.get("max", ""))), ("emoji", "Emoji name or custom emoji (blank = auto)", entry.get("emoji", ""))]
+                  ("high", "Maximum total war weight", str(entry.get("max", ""))), ("emoji", "Emoji name or custom emoji (or leave blank)", entry.get("emoji", ""))]
         await ctx.respond_with_modal(title="Add Town Hall" if add else f"Edit TH{th}", custom_id=f"weight_save:{modal_state['_id']}",
             components=[hikari.impl.ModalActionRowBuilder().add_text_input(key, label, value=value or hikari.UNDEFINED,
                 required=key != "emoji", max_length=80 if key == "emoji" else 9) for key, label, value in fields])
@@ -147,7 +147,7 @@ async def save(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
         if config["revision"] != state["revision"]:
             raise ValueError("Settings changed. Refresh and try again.")
         if state["adding"] and str(th) in config["ranges"]:
-            raise ValueError("That Town Hall already exists. Choose Edit instead.")
+            raise ValueError("That Town Hall already exists. Select Edit instead.")
         if not state["adding"] and th != state["editing_th"]:
             raise ValueError("Use Add Town Hall for a new level. Keep this entry's level unchanged.")
         config = store.edit_entry(config, th, low, high, values["emoji"])

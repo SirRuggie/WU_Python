@@ -407,3 +407,26 @@ def test_shield_handler_send_failure_allows_another_click():
         )
 
     asyncio.run(run())
+
+
+def test_success_message_uses_671_copy_and_preserves_delivery_scope(monkeypatch):
+    deliver = AsyncMock(return_value={'ok': True})
+    rest = NS()
+    monkeypatch.setattr(handler, 'bot_instance', NS(rest=rest))
+    monkeypatch.setattr(handler, 'mongo_client', object())
+    monkeypatch.setattr(handler.delivery, 'deliver', deliver)
+    asyncio.run(handler.send_success_message(44, 22, 33, challenge={'session_id': 's', 'guild_id': 1}))
+    args, kwargs = deliver.await_args
+    assert args[1] is rest
+    assert kwargs['kind'] == 'goblin_confirmation' and kwargs['session_id'] == 's'
+    assert kwargs['guild_id'] == 1 and kwargs['channel_id'] == 44 and kwargs['user_id'] == 22
+    assert kwargs['user_mentions'] == [22, 33]
+    fields = [part.content for container in kwargs['components'] for part in container.components if hasattr(part, 'content')]
+    assert ("You've successfully:\n✅ Said the magic word 'Goblin'\n✅ Pinged your recruiter <@33>\n\n"
+            "**You've now proven all three Discord communication skills!**\n"
+            "1️⃣ Sending messages ✓\n2️⃣ Pinging users ✓\n3️⃣ Reacting to messages ✓\n\n"
+            "Awesome!!\nYou're officially 100% smarter than the average Discord user! 🧠✨\n\n"
+            "You will use these three ways to communicate on Discord often in the WU server. "
+            "A ping to a member or a role, or a reaction to a message, can say a lot. "
+            "Often it is the best way to get someone's attention, and Leadership is happy for you to do it...👍🏻\n\n"
+            "**Make sense?**") in fields

@@ -612,15 +612,18 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
 
 
 @pytest.mark.parametrize(
-    ("key", "command_type", "expected_total"),
+    ("key", "command_type", "builder", "expected_total", "expected_count", "headings"),
     [
-        ("about-us", recruit_aboutus.RecruitAboutUs, 2752),
-        ("strike-system", recruit_strikesystem.RecruitStrikeSystem, 3483),
-        ("family-particulars", recruit_familyparticulars.RecruitFamilyParticulars, 3926),
+        ("about-us", recruit_aboutus.RecruitAboutUs, recruit_aboutus.build_aboutus, 2579, 12,
+         ("Welcome to Warriors United!", "High Level Tactical Clans", "Flexible Fun War Clans", "FWA Clans", "Disclaimer", "NEXT STEP")),
+        ("strike-system", recruit_strikesystem.RecruitStrikeSystem, recruit_strikesystem.build_strikesystem, 3236, 12,
+         ("Warriors United Basic Rules", "Warriors United Strike System", "MAIN CLAN STRIKE SYSTEM", "FWA STRIKE SYSTEM", "Terms and Conditions", "ACKNOWLEDGMENT")),
+        ("family-particulars", recruit_familyparticulars.RecruitFamilyParticulars, recruit_familyparticulars.build_familyparticulars, 3710, 28,
+         ("Warriors United Family Particulars", "GOLDEN RULE", "FRIENDLY CHALLENGES", "CLAN GAMES", "Family War Rules", "WAR ELIGIBILITY", "PREP DAY", "BATTLE DAY", "Warriors United Clan War League", "Principles for Every CWL Battle", "ACKNOWLEDGMENT")),
     ],
 )
 def test_setup_posters_fall_back_from_malformed_saved_template(
-    key, command_type, expected_total, monkeypatch
+    key, command_type, builder, expected_total, expected_count, headings, monkeypatch
 ):
     async def check():
         module = {
@@ -664,8 +667,24 @@ def test_setup_posters_fall_back_from_malformed_saved_template(
             bot=SimpleNamespace(rest=Rest()),
             mongo=SimpleNamespace(bot_config=Collection()),
         )
-        create = next(event[1] for event in events if event[0] == "create")
-        assert sum(len(node.content) for node in content.text_nodes(create["components"])) == expected_total
+        creates = [event[1] for event in events if event[0] == "create"]
+        assert len(creates) == 1
+        create = creates[0]
+        assert create["channel"] == 30
+        texts = [node.content for node in content.text_nodes(create["components"])]
+        expected_components = builder()
+        expected_texts = [node.content for node in content.text_nodes(expected_components)]
+        assert texts == expected_texts
+        assert len(texts) == expected_count
+        assert sum(map(len, texts)) == expected_total
+        assert all("incomplete" not in text for text in texts)
+        heading_positions = [next(i for i, text in enumerate(texts) if text.startswith("#") and heading in text) for heading in headings]
+        assert all(left < right for left, right in zip(heading_positions, heading_positions[1:]))
+
+        def shape(nodes):
+            return [(type(node), shape(getattr(node, "components", ()) or ())) for node in nodes]
+
+        assert shape(create["components"]) == shape(expected_components)
         assert create["user_mentions"] is False
         assert create["role_mentions"] is False
         assert create["mentions_everyone"] is False
@@ -944,3 +963,19 @@ def test_hikari_edit_payload_retains_existing_attachments_with_reset_local_media
         {"id": 0, "filename": "WU_FamilyParticulars.gif"},
     ]
     assert form is not None
+
+
+def test_strike_system_default_uses_approved_strike_policy_copy():
+    texts = _panel_texts(recruit_strikesystem.build_strikesystem())
+    assert (
+        "Our Strike System is a penalty system in which strikes are given to members who violate the rules and "
+        "principles implemented within the Warriors United clan family.\n\n"
+        "Each violation has a fixed number of strikes. What counts is the number of strikes, not the number of violations. "
+        "For example, missing both attacks in war is one violation that results in two strikes. Members have a total of 4 strikes before disciplinary action takes place. "
+        "When you get the maximum number of strikes, you have 12 hours to open a ticket and talk about the case. If you do not, we remove you from the clan "
+        "and ban you from all other clans in the family for one week. After one week with no reply, your clan roles will be removed, returning you to the status you had when you joined the server.\n\n"
+        "All strikes are given per individual account, with the exception of civil-behavior offenses. "
+        "If one action causes more than one strike, we count only the strikes of the worst offense. We still note all strikes.\n\n"
+        "Strikes are recorded automatically. Staff manage them in Strikes & replacements. Each strike resets after a set time. This is usually 60 days.\n\n"
+        "Below are charts of offenses and the value of each offense."
+    ) in texts

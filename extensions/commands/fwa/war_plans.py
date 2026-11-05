@@ -40,8 +40,8 @@ FWA_WAR_PLANS_CONFIG = {
 }
 
 BLACKLIST_UNREADABLE_NOTE = (
-    "Could not read the current war, so nothing was added to the blacklist; "
-    "use /manage → FWA → Blacklist → Add clan."
+    "Could not read the current war. Nothing was added to the blacklist. "
+    "Use /manage → FWA → Blacklist → Add clan."
 )
 
 
@@ -86,9 +86,9 @@ async def _add_war_opponent_to_blacklist(
     normalized_typed_name = sanitize_opponent_name(typed_opponent_name).casefold()
     if normalized_coc_name != normalized_typed_name:
         return (
-            f"Nothing was added to the blacklist: the current war opponent "
-            f"is \"{opponent_name}\", but \"{typed_opponent_name}\" was typed; "
-            f"use /manage → FWA → Blacklist → Add clan."
+            f"Nothing was added to the blacklist. The current war opponent "
+            f"is \"{opponent_name}\", but you typed \"{typed_opponent_name}\". "
+            f"Use /manage → FWA → Blacklist → Add clan."
         )
 
     end = getattr(war, "end_time", None)
@@ -174,8 +174,8 @@ class WarPlans(
             clan_data = await mongo.clans.find_one({"name": clan_display_name, "type": "FWA"})
             if not clan_data:
                 await ctx.respond(
-                    f"❌ Could not find FWA clan '{clan_display_name}' in database.\n"
-                    f"Please try selecting the clan again.",
+                    f"❌ Could not find the FWA clan '{clan_display_name}'.\n"
+                    f"Select the clan again.",
                     ephemeral=True
                 )
                 return
@@ -185,7 +185,7 @@ class WarPlans(
 
         # Validate role_id
         if not clan_role_id or clan_role_id == "None":
-            await ctx.respond("❌ This clan doesn't have a Discord role assigned.", ephemeral=True)
+            await ctx.respond("❌ This clan has no Discord role.", ephemeral=True)
             return
 
         # Fetch the clan to get announcement channel
@@ -199,7 +199,7 @@ class WarPlans(
         # Set target channel from clan data
         target_channel = db_clan.announcement_id
         if not target_channel:
-            await ctx.respond("❌ This clan doesn't have an announcement channel set!", ephemeral=True)
+            await ctx.respond("❌ This clan has no announcement channel.", ephemeral=True)
             return
 
         # Sanitize opponent name (no validation needed - allow all characters)
@@ -240,7 +240,7 @@ class WarPlans(
                 )
             except Exception:
                 # The post is confirmed. Never report a failed send or resend it.
-                final_copy_text += "\nMessage posted, but its war-plan receipt could not be saved. Strikes can only use previously saved confirmed plans; otherwise normal rules apply."
+                final_copy_text += "\nThe message was posted, but its war plan record could not be saved. Strikes use only saved, confirmed war plans. If no record is saved, the normal rules apply."
 
             if self.war_result == "blacklisted":
                 blacklist_note = await _add_war_opponent_to_blacklist(
@@ -264,8 +264,8 @@ class WarPlans(
                     accent_color=RED_ACCENT,
                     components=[
                         Text(content="## ❌ **Error Posting Message**"),
-                        Text(content=f"Failed to post war message: {str(e)}"),
-                        Text(content="Please check bot permissions and channel access."),
+                        Text(content=f"Could not post the war message: {str(e)}"),
+                        Text(content="Check the permissions and the channel access."),
                         Media(items=[MediaItem(media="assets/Red_Footer.png")])
                     ]
                 )

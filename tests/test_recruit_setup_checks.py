@@ -257,7 +257,7 @@ def test_recruit_check_panel_is_components_v2_and_reports_r2_status():
     assert panel[0].type == hikari.ComponentType.CONTAINER
     text = "\n".join(item.content for item in panel[0].components)
     assert text.count("ready") == 4
-    assert "R2 is not configured" in text
+    assert "❌ **Recruit content image storage:** R2 is not set up. Image uploads are not available." in text
 
 
 def test_recruit_check_returns_private_components_v2_result_after_reads():

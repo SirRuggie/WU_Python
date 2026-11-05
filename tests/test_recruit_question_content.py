@@ -196,3 +196,44 @@ def test_shield_click_keeps_original_edited_copy(monkeypatch, fail_create):
     assert kwargs["user_mentions"] is False
     assert kwargs["role_mentions"] is False
     assert kwargs["mentions_everyone"] is False
+
+
+def test_recruit_question_menu_uses_approved_labels_and_retains_values():
+    panel = run(questions.recruit_questions_page('panel', 123))[0]
+    menus = [child for row in panel.components if hasattr(row, 'components')
+             for child in row.components if hasattr(child, 'options')]
+    options = {option.value: option.label for menu in menus for option in menu.options}
+    assert options['leaders_checking_you_out'] == 'Application Under Review'
+    assert options['fwa_bases_upon_approval'] == 'FWA Bases (After Approval)'
+    assert content.VARIANT_LABELS['leaders_checking_you_out'] == 'Application Under Review'
+    assert content.VARIANT_LABELS['fwa_bases_upon_approval'] == 'FWA Bases (After Approval)'
+
+
+def test_cwl_recruit_default_uses_exact_league_copy_and_signup_link():
+    from utils.dashboard_urls import SIGNUP_URL
+    template = content.default_template('warriors_united_cwl')
+    assert template['sections'][1] == (
+        "We use 20 clans for CWL, with leagues ranging from Master 1 to Gold 1. "
+        "Players in all clans except our High Tactical Clans join these clans for CWL.\n\n"
+        "Three factors determine the League you'll be placed in:\n\n"
+        "1) War activity\n2) War performance\n3) Account strength\n\n"
+        "We judge each factor against the League that you join.\n\n"
+        "If you are new to the family and have no war history, your first CWL season can be in a lower league. "
+        "This is for support or for strength. It is nothing personal. You are new and we do not know you yet. "
+        "*We can make exceptions.*\n\n"
+        f"You must sign up for CWL on the dashboard: {SIGNUP_URL}. "
+        "Sign-ups open around Clan Games each month so that we can prepare rosters.\n\n"
+        "## Is it a problem for you to sign up on the dashboard and move to another clan for CWL?"
+    )
+
+
+def test_family_code_default_uses_671_precedence_and_keeps_placeholders():
+    template = content.default_template('family_codes')
+    assert template['sections'][1] == (
+        'You can move between family clans for donations, a Friendly Challenge, help with Clan Games or a Family Event. '
+        'When you send a Clan Request, use one of these three emoji combinations as your request message.\n\n'
+        '{family_codes}\n\n'
+        '**DO NOT** use the default join message: "I\'d like to join your clan."\n\n'
+        'To show that you understand, send one of the three codes above in this chat. '
+        'Send it the same way you would send a request to join.'
+    )

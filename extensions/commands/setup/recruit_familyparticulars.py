@@ -10,6 +10,7 @@ import uuid
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
+from utils.dashboard_urls import SIGNUP_URL
 from utils.mongo import MongoClient
 from utils.recruit_error_reporting import notify as notify_recruit_error
 from utils.gauntlet_diagnostics import observed, event as gauntlet_event
@@ -70,15 +71,15 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
                     Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Text(content="### 🛡 **FRIENDLY CHALLENGES**\n"),
                     Text(content=(
-                        "Every time you come into the game, put up a Friendly Challenge, no matter what Town Hall level you are. "
-                        "This gives everyone a chance to practice."
+                        "Every time you open the game, post a Friendly Challenge. Do this at any Town Hall level. "
+                        "It gives everyone a chance to practice."
                     )),
                     Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Text(content="### 🛡 **CLAN GAMES**\n"),
                     Text(content=(
-                        "A simple, achievable goal: each member must earn at least 1,000 points for Clan Games. Builder Base challenges "
-                        "will get you there in no time. For context, if 40 members participate and earn 1,250 points each, that "
-                        "will equal the needed 50,000."
+                        "The goal is simple: each member must earn at least 1,000 points in Clan Games. "
+                        "Builder Base challenges give you these points quickly. For example, 40 members who earn "
+                        "1,250 points each make the 50,000 points that we need."
                     )),
                     Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                 ]
@@ -93,26 +94,25 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
                     Text(content="### 🛡 **WAR ELIGIBILITY**\n"),
                     Text(content=(
                         "To be included in war, you must have GREEN ✅ 🛡️ (opt-in) as your War Status. FWA/No Stress is explained below.\n\n"
-                        "If, for any personal reason, you cannot participate in war or have Heroes upgrading in a clan that requires "
-                        "Heroes in war, RED ❌ 🛡️ (opt-out) should be your War Status.\n\n"
-                        "Failure to communicate or change your war availability in any of the above scenarios will result in a strike "
-                        "within the Warriors United Strike System.\n\n"
+                        "If you cannot take part in war for a personal reason, or your Heroes are upgrading in a clan that needs "
+                        "Heroes in war, set your War Status to RED ❌ 🛡️ (opt-out).\n\n"
+                        "If you do not tell us or do not change your war availability in one of these cases, you get a strike in the Warriors United Strike System.\n\n"
                         "If you are in one of our FWA Clans or one of our No Stress Clans, it's 50v50 wars, so no matter what your "
                         "base is upgrading, you should be ✅ with your War Status."
                     )),
                     Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Text(content="### 🛡 **PREP DAY**\n"),
                     Text(content=(
-                        "Everyone is expected to help fill Defensive CCs. You are responsible for filling the member below you with "
-                        "the troops they request. There is no need to let one person fill them all when it can be a joint effort."
+                        "Everyone must help fill Defensive CCs. Fill the Defensive CC of the member below you with the troops they ask for. "
+                        "Do not leave one person to fill all of them."
                     )),
                     Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Text(content="### 🛡 **BATTLE DAY**\n"),
                     Text(content=(
-                        "Our Clan War General will provide a scripted War Plan detailing your war assignment. Don't assume "
-                        "you will be attacking your mirror/equal. Wait for the War Plan before attacking. If one is not provided "
-                        "in a timely fashion, ping your clan's War General role and ask. Don't just go rogue. Twenty-four hours is plenty of "
-                        "time to plan and attack. Always attack for stars, not for loot or Hero status (unless given specific "
+                        "Our Clan War General will provide a scripted War Plan detailing your war assignment. Do not assume that you attack your mirror. "
+                        "Wait for the War Plan before you attack. If there is no plan after a long time, ping the War General role of your clan "
+                        "and ask. Do not attack alone without a plan. You have 24 hours to plan and attack. "
+                        "Always attack for stars, not for loot or Hero status (unless given specific "
                         "direction by the War General)."
                     )),
                     Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
@@ -126,28 +126,28 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
                     Text(content="## <:warriorcat:947992348971905035> **Warriors United Clan War League**"),
                     Separator(divider=True),
                     Text(content=(
-                        "CWL is our pinnacle team event. Your clan expects and counts on you to ensure the entire team has "
-                        "the best shot at success. We split up into different clans for this event. Three factors determine the "
+                        "CWL is our biggest team event. Your clan counts on you. Help the whole team to win. "
+                        "We split into different clans for this event. Three factors determine the "
                         "league in which you'll be placed:\n"
                         "1) War activity\n"
                         "2) War performance\n"
                         "3) Account strength.\n\n"
-                        "Participation is not mandatory, but completing a simple Google \"CWL Form\" by the given deadline "
-                        "is mandatory for participation. No exceptions to the deadline. The data compiled from this form allows clan "
+                        f"You do not have to take part in CWL. To take part, sign up on the dashboard before the deadline: {SIGNUP_URL}. "
+                        "We make no exceptions. The signup information allows clan "
                         "Leaders and War Generals to produce clan rosters. We have several clans in the family, so everyone can have "
                         "a shot at some medals. If you have multiple accounts, only three are allotted to be in one clan roster.\n\n"
-                        "No form, no play... Pretty simple."
+                        "No signup, no play."
                     )),
                     Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Text(content="### 🛡 **Principles for Every CWL Battle**\n"),
                     Text(content=(
                         "• Be available to attack and make sure you request offensive CC troops.\n\n"
                         "• Have your heroes ready for battle.\n\n"
-                        "• Have your defensive CC troop request laid out plainly. (e.g., Ice Golem/Dragon or IG/Drag)\n\n"
+                        "• Write your defensive CC troop request clearly (for example, Ice Golem/Dragon or IG/Drag).\n\n"
                         "• Donate Defensive CC troops to the player below you and/or at least one of your teammates, "
                         "making sure they are max-level troops.\n\n"
                         "• Make a plan of attack. You have 24 hours for one attack.\n\n"
-                        "Make use of our Attack Trainers in the \"Help-Me-Attack-This-Base\" channels."
+                        "Ask our Attack Trainers for help in the \"Help-Me-Attack-This-Base\" channels."
                     )),
                     Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Media(
@@ -167,7 +167,7 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
                     Text(content="## 📜 **ACKNOWLEDGMENT**"),
                     Separator(divider=True),
                     Text(content=(
-                        "Click **I understand - Continue** to confirm that you have read and acknowledge our Family Particulars. Then continue to Apply to open an application ticket.\n\nChoose only one application ticket option."
+                        "Select **I understand - Continue** to confirm that you read the Family Particulars. Then select Apply to open an application ticket.\n\nSelect only one application ticket option."
                     )),
                     ActionRow(
                         components=[
@@ -318,7 +318,7 @@ async def on_familyparticulars_acknowledge(
         await _private_error(ctx, "I could not find your member profile in this server. Please try again shortly.")
         return
     except Exception:
-        await _private_error(ctx, "I could not verify your member profile right now. Please try again shortly.")
+        await _private_error(ctx, "I could not check your member profile. Try again in a few minutes.")
         return
 
     if role_id in {int(role_id) for role_id in getattr(member, "role_ids", ())}:

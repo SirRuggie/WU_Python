@@ -318,7 +318,7 @@ async def on_war_response(
     member = ctx.member
     if not any(role == ALLOWED_ROLE_ID for role in member.role_ids):
         await ctx.respond(
-            "❌ You don't have permission to respond to War Sync events.",
+            "❌ You do not have permission to answer War Sync events.",
             ephemeral=True
         )
         return
@@ -387,17 +387,15 @@ async def on_war_response(
                     ]
                 ),
                 Text(content=(
-                    "Please review the **FWA Sync Time** and confirm your availability by selecting the "
-                    "corresponding button below:"
+                    "Check the **FWA Sync Time**. Then select your availability below."
                 )),
                 Separator(divider=True),
-                Text(content=f"{str(emojis.yes)} - If you are available to start."),
-                Text(content=f"{str(emojis.maybe)} - If you may be available to start."),
-                Text(content=f"{str(emojis.no)} - If you are unavailable to start."),
+                Text(content=f"{str(emojis.yes)} - I can start"),
+                Text(content=f"{str(emojis.maybe)} - I may be able to start"),
+                Text(content=f"{str(emojis.no)} - I cannot start"),
                 Separator(divider=True),
                 Text(content=(
-                    "*Please note that if your availability changes, you can update your response by "
-                    "selecting the appropriate button.*"
+                    "*If your availability changes, select another button to update your response.*"
                 )),
                 Separator(divider=True),
                 Text(content="## Rep Availability"),

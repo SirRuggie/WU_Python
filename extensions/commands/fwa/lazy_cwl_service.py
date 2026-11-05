@@ -389,31 +389,31 @@ async def _send_reminder_message(doc: dict, away: list[dict], *, expected_channe
                 Text(content=f"## 📢 FWA Sync War - Return to {clan_name}"),
                 Separator(),
                 Text(content="⚔️ **FWA SYNC WAR TIME** ⚔️"),
-                Text(content=f"Please return to **{clan_name}** `{clan_tag}` for sync war!"),
+                Text(content=f"Return to **{clan_name}** `{clan_tag}` before the next FWA sync!"),
                 Separator(),
                 Text(content="**Workflow: Join CWL Clan ⇨ Attack ⇨ Return to FWA Clan (15-30min tops)**"),
                 Separator(),
                 Text(content="**Players to return:**"),
                 Text(content="\n".join(chunk_lines)),
                 Separator(),
-                Text(content=f"**Players not yet in their clan:** {len(away)}/{len(doc.get('players', []))} players"),
+                Text(content=f"**Players not yet in their clan:** {len(away)} of {len(doc.get('players', []))}"),
                 Separator(),
                 ActionRow(components=[LinkButton(
                     url=f"https://link.clashofclans.com/en?action=OpenClanProfile&tag={quote(clan_tag, safe='')}",
-                    label=f"Open {clan_name} in-Game",
+                    label=f"Open {clan_name} in the game",
                 )]),
             ]
         else:
             lines = [
                 Text(content="## ⚔️ Want to join the next war?"),
                 Separator(),
-                Text(content=f"Our next war is coming soon. If you would like to participate and earn extra ore and loot, please return to **{doc['clan_name']}**."),
+                Text(content=f"Our next war starts soon. To join it and earn extra ore and loot, return to **{doc['clan_name']}**."),
                 Separator(),
                 Text(content="**Players currently away:**"),
                 Text(content="\n".join(chunk_lines)),
                 ActionRow(components=[LinkButton(
                     url=f"https://link.clashofclans.com/en?action=OpenClanProfile&tag={quote(doc['clan_tag'], safe='')}",
-                    label=f"Open {doc['clan_name']} in-Game",
+                    label=f"Open {doc['clan_name']} in the game",
                 )]),
             ]
         lines.append(ActionRow().add_link_button(ASSIGNMENTS_URL, label="My clan assignments").add_link_button(TASKS_URL, label="My tasks").add_link_button(WARS_URL, label="Wars"))
@@ -442,7 +442,7 @@ async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = sto
         return {**_REMIND_NOW_DEFAULTS, "error": "No reminder destination is configured."}
     doc = await store.get_active(mongo_client, clan_tag, section=section)
     if doc is not None and store._utc(doc["expires_at"]) <= datetime.now(timezone.utc):
-        return {**_REMIND_NOW_DEFAULTS, "error": "This saved member list has expired. No ping sent."}
+        return {**_REMIND_NOW_DEFAULTS, "error": "This saved member list has expired. No ping was sent."}
     if doc is None or (expected_list_id is not None and doc.get("_id") != expected_list_id):
         if expected_list_id is not None:
             return {**_REMIND_NOW_DEFAULTS, **_stale_result()}
@@ -497,7 +497,7 @@ async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None, s
     if not coc.utils.is_valid_tag(tag):
         return {
             "ok": False, "name": None, "town_hall": None, "discord_id": None,
-            "away_now": None, "error": "That doesn't look like a player tag.",
+            "away_now": None, "error": "This is not a player tag.",
             "reason": "invalid_tag",
         }
 
@@ -590,7 +590,7 @@ async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[in
     if section == "MAIN":
         return {"ok": False, "error": "Main CWL reminders are manual only."}
     if enabled and every_minutes is None:
-        return {"ok": False, "error": "Choose how often."}
+        return {"ok": False, "error": "Select how often."}
 
     doc = await store.set_reminders(
         mongo_client, clan_tag, enabled=enabled, every_minutes=every_minutes,

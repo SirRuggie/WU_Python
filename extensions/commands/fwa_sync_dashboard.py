@@ -69,7 +69,7 @@ async def _state(ctx: Any, mongo: MongoClient, token: str) -> tuple[dict | None,
             or state.get("user_id") != user or state.get("guild_id") != guild):
         return None, "Open your own FWA Sync & Reminders panel from `/manage`."
     if not _admin(ctx):
-        return None, "Administrator permission is required."
+        return None, "You need Administrator permission."
     return state, None
 
 
@@ -117,7 +117,7 @@ async def _recent_failures(mongo: MongoClient) -> list[str]:
             f"• {_safe(doc.get('calendar') or '?', 30)} · "
             f"{_safe(offset if offset is not None else '?', 25)} · "
             f"{_safe(doc.get('terminal_reason') or 'Delivery abandoned', 90)} "
-            f"({int(doc.get('failure_count') or 0)} failed attempt(s))"
+            f"Failed attempts: {int(doc.get('failure_count') or 0)}"
         )
     return rows
 
@@ -172,13 +172,13 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None, *, 
         ),
         _buttons(
             (f"fwa_sync_check:{sid}", "Check Feed (no DM)", hikari.ButtonStyle.SECONDARY, False),
-            (f"fwa_sync_test:{sid}", "Send me test DM", hikari.ButtonStyle.SECONDARY, False),
+            (f"fwa_sync_test:{sid}", "Send me a test DM", hikari.ButtonStyle.SECONDARY, False),
         ),
     ])
     channel_row = hikari.impl.MessageActionRowBuilder()
     channel_row.add_channel_menu(
         f"fwa_sync_channel:{sid}", channel_types=CHANNEL_TYPES,
-        placeholder="Choose sync panel channel", min_values=1, max_values=1,
+        placeholder="Select sync panel channel", min_values=1, max_values=1,
     )
     rows.append(channel_row)
     rows.append(_buttons(
@@ -240,8 +240,8 @@ async def _band_monitor_panel(state: dict, notice: str | None = None) -> list:
         )),
         hikari.impl.TextDisplayComponentBuilder(content=(
             f"**Debug logging:** {'ON' if debug else 'OFF'}\n"
-            "Debug logging resets to the startup default when the bot restarts. "
-            "It affects post monitor logging only, not reminders."
+            "Debug logging returns to the default after a restart. "
+            "It changes only the logs of the BAND post monitor. It does not change reminders."
         )),
     ]
     if notice:
@@ -269,7 +269,7 @@ async def open_dashboard(ctx: Any, mongo: MongoClient, *, manage_token: str,
     user, guild = _identity(ctx)
     if user is None or guild is None or not _admin(ctx):
         await ctx.interaction.edit_initial_response(
-            components=_error("Administrator permission is required."), **NO_MENTIONS,
+            components=_error("You need Administrator permission."), **NO_MENTIONS,
         )
         return
     state = await _new(mongo, user_id=user, guild_id=guild, manage_token=manage_token)
@@ -293,21 +293,21 @@ async def toggle(ctx: Any, action_id: str,
     if problem:
         return _error(problem)
     if not sep or choice not in {"on", "off"}:
-        return await _panel(mongo, state, "Choose Enable or Disable.")
+        return await _panel(mongo, state, "Select Enable or Disable.")
     await mongo.fwa_sync_config.update_one(
         {"_id": sync.CONFIG_ID}, {"$set": {"enabled": choice == "on"}}, upsert=True,
     )
     return await _panel(mongo, await _next(mongo, state),
-                        "Reminders enabled; takes effect within one poll (up to 5 minutes)."
+                        "Reminders enabled. This takes effect within 5 minutes."
                         if choice == "on" else
-                        "Reminders disabled; takes effect within one poll (up to 5 minutes).")
+                        "Reminders disabled. This takes effect within 5 minutes.")
 
 
 def _check_panel(state: dict, events: list[dict], errors: list[str]) -> list:
     rows = [
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "Sync & Reminders", "Feed Check") + "\n## FWA feed check"),
         hikari.impl.TextDisplayComponentBuilder(content=(
-            f"**{len(events)} upcoming sync(s)** · Dry run only; No DMs sent."
+            f"**Upcoming syncs: {len(events)}** · This is a test only. No DMs were sent."
         )),
     ]
     if errors:
@@ -325,7 +325,7 @@ def _check_panel(state: dict, events: list[dict], errors: list[str]) -> list:
             )))
     else:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content=(
-            "Nothing upcoming. This can be normal on a quiet day; check the feeds if it persists."
+            "No syncs are coming up. This can be normal. If it continues, check the feeds."
         )))
     rows.append(_buttons(
         (f"fwa_sync_refresh:{state['_id']}", "Back to Sync & Reminders", hikari.ButtonStyle.SECONDARY, False),
@@ -374,7 +374,7 @@ async def test_dm(ctx: Any, action_id: str,
     offset = str(config["offsets"][0]) if config["offsets"] else DISCOVERY_OFFSET
     sent = await sync.dm_all([state["user_id"]], sync.build_embed(event, offset))
     return await _panel(mongo, await _next(mongo, state),
-                        f"Test DM sent to you ({source}); no reminder state saved."
+                        f"Test DM sent to you ({source}). No reminder state was saved."
                         if sent else "Could not DM you. Check your DM settings.")
 
 
@@ -387,7 +387,7 @@ async def channel(ctx: Any, action_id: str,
         return _error(problem)
     values = getattr(ctx.interaction, "values", ()) or ()
     if len(values) != 1:
-        return await _panel(mongo, state, "Choose one text or announcement channel.")
+        return await _panel(mongo, state, "Select one text or announcement channel.")
     try:
         channel_id = int(values[0])
         target = await ctx.interaction.app.rest.fetch_channel(channel_id)
@@ -395,7 +395,7 @@ async def channel(ctx: Any, action_id: str,
         return await _panel(mongo, state, "Could not find that channel.")
     if (getattr(target, "guild_id", None) != state["guild_id"]
             or getattr(target, "type", None) not in CHANNEL_TYPES):
-        return await _panel(mongo, state, "Choose a text or announcement channel in this server.")
+        return await _panel(mongo, state, "Select a text or announcement channel in this server.")
     from extensions.commands.content import destination_permissions
     try:
         permissions = await destination_permissions(ctx.interaction.app, state["guild_id"], target)
@@ -404,7 +404,7 @@ async def channel(ctx: Any, action_id: str,
     needed = (hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES
               | hikari.Permissions.EMBED_LINKS)
     if permissions & needed != needed:
-        return await _panel(mongo, state, "I need View Channel, Send Messages, and Embed Links there.")
+        return await _panel(mongo, state, "I need the View Channel, Send Messages and Embed Links permissions in that channel.")
     await mongo.fwa_sync_config.update_one(
         {"_id": sync.CONFIG_ID}, {"$set": {"panel_channel_id": channel_id}}, upsert=True,
     )
@@ -508,7 +508,7 @@ async def band_monitor_debug(ctx: Any, action_id: str,
     if problem:
         return _error(problem)
     if not sep or choice not in {"on", "off"}:
-        return await _band_monitor_panel(state, "Choose Enable debug or Disable debug.")
+        return await _band_monitor_panel(state, "Select Enable debug or Disable debug.")
     desired = choice == "on"
     already_set = bool(monitor.DEBUG_MODE) == desired
     monitor.DEBUG_MODE = desired

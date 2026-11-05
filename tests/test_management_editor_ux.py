@@ -52,7 +52,7 @@ def test_question_editor_status_and_navigation_follow_saved_template():
     rows = _built(recruitment_questions._editor(state))
     assert "Management › Recruitment Questions ›" in _text(rows)
     assert "Saved" in _text(rows)
-    assert "Posting target: Future `/recruit questions`" in _text(rows)
+    assert "Saved changes apply to future `/recruit questions` messages." in _text(rows)
     assert [button["label"] for button in _buttons(rows[-1])] == ["Back to Questions", "Management Home"]
     assert _buttons(rows[-1])[1]["custom_id"] == "manage_home:home"
     state["template"] = copy.deepcopy(template)
@@ -71,7 +71,7 @@ def test_war_editor_status_and_navigation_follow_saved_template():
     rows = _built(fwa_war_messages._editor(state))
     assert "Management › FWA › War Message Templates › Win" in _text(rows)
     assert "Saved" in _text(rows)
-    assert "Posting target: Future `/fwa war-plans`" in _text(rows)
+    assert "Edits apply to future `/fwa war-plans` messages. To post a message, use `/fwa war-plans`." in _text(rows)
     assert [button["label"] for button in _buttons(rows[-1])] == ["Back to War Message Templates", "Back to FWA", "Management Home"]
     assert _buttons(rows[-1])[1]["custom_id"] == "manage_fwa:home"
     assert _buttons(rows[-1])[2]["custom_id"] == "manage_home:home"

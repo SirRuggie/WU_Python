@@ -66,22 +66,22 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     text("## 📜 **Warriors United Basic Rules** 📜"),
                     Separator(divider=True),
                     text((
-                        "🛡️**WARRIORS UNITED**🛡️ is an adult community with good morals and ethics. A little banter and cutting up "
-                        "is acceptable; however, there are some things that just won't be tolerated...\n\n"
+                        "🛡️**WARRIORS UNITED**🛡️ is an adult community with good morals and ethics. A little banter and joking "
+                        "is fine, but we do not allow some things...\n\n"
                         "**1.** No form of sexism, racism, religious discrimination, or gender discrimination will be tolerated. "
-                        "A permanent ban will be issued without a warning if this is seen anywhere on this server.\n\n"
+                        "We ban you permanently, without a warning, if we see this anywhere on this server.\n\n"
                         "**2.** While cussing is allowed, do not cuss excessively or at someone. All such instances will be recorded. "
                         "A warning will be issued to you for each instance.\n\n"
-                        "**3.** Don't post advertisements for free Nitro. We don't check whether they are legitimate and will ban "
+                        "**3.** Do not post advertisements for free Nitro. We do not check if they are real, and we ban "
                         "without a warning.\n\n"
-                        "**4.** Respect other members and their privacy. If you DM someone repeatedly even after them telling you "
-                        "not to do so, a warning will be issued against you.\n\n"
-                        "**5.** While posting a message / image / GIF / sticker, you should always follow Discord ToS. "
-                        "It can be found at https://discord.com/terms. Not following Discord ToS will lead to a one-day mute, "
+                        "**4.** Respect other members and their privacy. If you send direct messages to someone again and again after they tell you to stop, "
+                        "you get a warning.\n\n"
+                        "**5.** When you post a message, image, GIF or sticker, always follow the Discord Terms of Service: "
+                        "https://discord.com/terms. Not following Discord ToS will lead to a one-day mute, "
                         "and a second instance will lead to a ban from the server.\n\n"
-                        "On two warnings - A one-day timeout will be issued to you.\n"
-                        "On three warnings - A one-week timeout will be issued to you.\n"
-                        "On four warnings - A permanent ban from the server, along with a kick from the family in CoC, will be issued."
+                        "After two warnings: you get a one-day timeout.\n"
+                        "After three warnings: you get a one-week timeout.\n"
+                        "After four warnings: you are banned from the server for good and removed from the family in CoC."
                     )),
                 ]
             ),
@@ -95,17 +95,17 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     text((
                         "Our Strike System is a penalty system in which strikes are given to members who violate the rules and "
                         "principles implemented within the Warriors United clan family.\n\n"
-                        "Violations have set strike values. It's not the number of violations you accumulate, but rather "
-                        "the number of strikes. For example, missing both attacks in war is one violation that results "
-                        "in two strikes. Members have a total of 4 strikes before disciplinary action takes place. Once the maximum "
-                        "number of strikes is received, you will have 12 hours to open a ticket and discuss your situation. Failure to comply "
-                        "will result in a kick from the clan and a ban from any other clan within the family for a week. After one "
+                        "Each violation has a fixed number of strikes. What counts is the number of strikes, not the number of violations. "
+                        "For example, missing both attacks in war is one violation that results "
+                        "in two strikes. Members have a total of 4 strikes before disciplinary action takes place. When you get the maximum "
+                        "number of strikes, you have 12 hours to open a ticket and talk about the case. If you do not, we remove you from the clan "
+                        "and ban you from all other clans in the family for one week. After one "
                         "week with no reply, your clan roles will be removed, returning you to the status you had when you joined the server.\n\n"
-                        "All strikes are given per individual account, with the exception of civil-behavior offenses. If multiple "
-                        "strikes are incurred within a single action, only the strike count of the more severe offense is counted; "
-                        "both strikes are still noted.\n\n"
-                        "Strike data is compiled and executed by the WU Strike Bot. Depending on the strike, it will have a time "
-                        "limit before it resets. Generally speaking, it's a 60-day reset.\n\n"
+                        "All strikes are given per individual account, with the exception of civil-behavior offenses. "
+                        "If one action causes more than one strike, we count only the strikes of the worst offense. "
+                        "We still note all strikes.\n\n"
+                        "Strikes are recorded automatically. Staff manage them in Strikes & replacements. "
+                        "Each strike resets after a set time. This is usually 60 days.\n\n"
                         "Below are charts of offenses and the value of each offense."
                     )),
                 ]
@@ -117,7 +117,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                 components=[
                     text("## ❌ **MAIN CLAN STRIKE SYSTEM** ❌"),
                     Separator(divider=True),
-                    text("Check below for the main clan strike system rules."),
+                    text("The rules for the Main clan strike system are below."),
                     Media(
                         items=[
                             MediaItem(
@@ -134,7 +134,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                 components=[
                     text("## ❌ **FWA STRIKE SYSTEM** ❌"),
                     Separator(divider=True),
-                    text("Check below for FWA clan strike system rules."),
+                    text("The rules for the FWA clan strike system are below."),
                     Media(
                         items=[
                             MediaItem(
@@ -152,10 +152,10 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     text("## ❌ **Terms and Conditions** ❌"),
                     Separator(divider=True),
                     text((
-                        "• All offenses except those that reside in the Red Zone can have warnings issued before strikes are given. "
-                        "Issuing warnings is up to the leadership team, and warnings will be logged.\n\n"
+                        "• For all offenses except those in the Red Zone, we can give a warning before a strike. "
+                        "The leadership team decides if it gives a warning. We log all warnings.\n\n"
                         "• Strikes can be withdrawn by leadership majority.\n\n"
-                        "• Leadership has the right to make changes and amendments to this system at any time between seasons.\n\n"
+                        "• Leadership can change this system at any time between seasons.\n\n"
                         "• A kicked person may be reinvited to the Family after a unanimous vote by Leadership."
                     )),
                 ]
@@ -168,7 +168,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     text("## 📜 **ACKNOWLEDGMENT**"),
                     Separator(divider=True),
                     text((
-                        "Choose **I understand - Continue** to confirm you have read and agree to follow the Warriors United Strike System, "
+                        "Select **I understand - Continue** to confirm you have read and agree to follow the Warriors United Strike System, "
                         "then continue to Family Particulars for the next Recruit Gauntlet step."
                     )),
                     ActionRow(
@@ -287,7 +287,7 @@ async def on_strikesystem_acknowledge(
     try:
         target_channel = await observed("channel_check", bot.rest.fetch_channel, next_channel_id)
     except hikari.HTTPError:
-        await _private_error(ctx, "I could not open the next onboarding channel right now. Please try again shortly.")
+        await _private_error(ctx, "I could not open the next onboarding channel. Try again in a few minutes.")
         return
     except Exception:
         await _private_error(ctx, "I could not verify the next onboarding channel right now. Please try again shortly.")
@@ -309,7 +309,7 @@ async def on_strikesystem_acknowledge(
         await _private_error(ctx, "I could not find your member profile in this server. Please try again shortly.")
         return
     except Exception:
-        await _private_error(ctx, "I could not verify your member profile right now. Please try again shortly.")
+        await _private_error(ctx, "I could not check your member profile. Try again in a few minutes.")
         return
 
     if role_id in {int(role_id) for role_id in getattr(member, "role_ids", ())}:

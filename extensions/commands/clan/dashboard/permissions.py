@@ -18,5 +18,5 @@ def dashboard_guard_for(action_name: str):
     if action_name in CLAN_CHILD_ACTIONS:
         return 993015846442127420, "Clan Management"
     if action_name in FWA_CHILD_ACTIONS:
-        return 993015846442127420, "FWA Representative"
+        return 993015846442127420, "FWA Clan Rep"
     return None

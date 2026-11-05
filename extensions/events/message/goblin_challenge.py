@@ -159,9 +159,9 @@ async def send_success_message(channel_id: int, user_id: int, recruiter_id: int,
                         "3️⃣ Reacting to messages ✓\n\n"
                         "Awesome!!\n"
                         "You're officially 100% smarter than the average Discord user! 🧠✨\n\n"
-                        "You'll be utilizing those three methods of discord communication very frequently while in the WU Server. "
-                        "Be it a member or a Role, a ping; and/or a reaction to a message; can be worth a thousand words. "
-                        "In some cases, it's the best way to get one's attention and all Leadership are cool with it...👍🏻\n\n"
+                        "You will use these three ways to communicate on Discord often in the WU server. "
+                        "A ping to a member or a role, or a reaction to a message, can say a lot. "
+                        "Often it is the best way to get someone's attention, and Leadership is happy for you to do it...👍🏻\n\n"
                         "**Make sense?**"
                     )
                 ),

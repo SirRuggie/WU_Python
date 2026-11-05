@@ -192,7 +192,7 @@ async def _panel(mongo: MongoClient, state: dict, *, editor: bool, notice: str |
     if editor and showing:
         menu_row = hikari.impl.MessageActionRowBuilder()
         menu = menu_row.add_text_menu(
-            f"fwa_blacklist_select:{sid}", placeholder="Choose a clan on this page to remove",
+            f"fwa_blacklist_select:{sid}", placeholder="Select a clan on this page to remove",
             min_values=1, max_values=1,
         )
         for entry in showing:
@@ -262,7 +262,7 @@ async def page(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJEC
         page_number = int(raw_page) if sep else 0
         next_state = await _next(mongo, state, page=max(0, page_number), selected_tag=None, selected_added_at=None, selected_name=None)
     except (ValueError, OverflowError):
-        return await _panel(mongo, state, editor=_can_manage(ctx), notice="Choose a valid page.")
+        return await _panel(mongo, state, editor=_can_manage(ctx), notice="Select a valid page.")
     except Exception:
         return _error("Could not change pages. Use Refresh to retry.", state)
     return await _panel(mongo, next_state, editor=_can_manage(ctx))
@@ -376,10 +376,10 @@ async def add_submit(
     tag = _tag(raw_tag)
     name = _modal_value(ctx, "name").strip()
     if tag is None:
-        await _modal_edit(ctx, await _panel(mongo, state, editor=True, notice="Enter a plain clan tag of 3–15 letters or digits."))
+        await _modal_edit(ctx, await _panel(mongo, state, editor=True, notice="Enter a clan tag of 3 to 15 letters or digits."))
         return
     if len(name) > 80 or any(ord(char) < 32 or ord(char) == 127 for char in name):
-        await _modal_edit(ctx, await _panel(mongo, state, editor=True, notice="Clan name must be at most 80 characters on one line."))
+        await _modal_edit(ctx, await _panel(mongo, state, editor=True, notice="Enter a clan name of 80 characters or fewer, on one line."))
         return
     if not name:
         try:
@@ -428,14 +428,14 @@ async def select(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
     tag = str(values[0]) if len(values) == 1 else ""
     entry = next((item for item in showing if item.get("_id") == tag and _tag(tag) == tag), None)
     if entry is None:
-        return await _panel(mongo, state, editor=True, notice="Choose a clan shown on this page.")
+        return await _panel(mongo, state, editor=True, notice="Select a clan shown on this page.")
     try:
         next_state = await _next(mongo, state, selected_tag=tag,
                                  selected_added_at=entry.get("added_at"),
                                  selected_name=entry.get("name") or tag)
     except Exception:
         return _error("Could not select that clan. Use Refresh to retry.", state)
-    return await _panel(mongo, next_state, editor=True, notice=f"#{tag} selected. Choose Remove selected clan to review.")
+    return await _panel(mongo, next_state, editor=True, notice=f"#{tag} is selected. Select Remove selected clan to review.")
 
 
 @register_action("fwa_blacklist_remove", preload_state=False)
@@ -453,7 +453,7 @@ async def remove(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
         return _error("Could not verify the selected clan. Use Refresh to retry.", state)
     entry = _selected_on_page(showing, state)
     if entry is None:
-        return await _panel(mongo, state, editor=True, notice="Selection changed. Choose a clan on this page again.")
+        return await _panel(mongo, state, editor=True, notice="The selection changed. Select a clan on this page again.")
     try:
         review_state = await _next(
             mongo, state, view="confirm",
@@ -506,7 +506,7 @@ async def confirm(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.IN
         return _error("The FWA Clan Rep role is required to remove clans.", state)
     tag = state.get("selected_tag")
     if not isinstance(tag, str) or _tag(tag) != tag:
-        return _error("Selection expired. Use Refresh and choose a clan again.", state)
+        return _error("Selection expired. Use Refresh and select a clan again.", state)
     try:
         entry = await mongo.fwa_blacklist.find_one({"_id": tag})
     except Exception:
@@ -516,7 +516,7 @@ async def confirm(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.IN
         return await _panel(mongo, next_state, editor=True, notice=f"#{tag} is no longer on the blacklist.")
     if entry.get("added_at") != state.get("selected_added_at"):
         next_state = await _next(mongo, state, view="list", selected_tag=None, selected_added_at=None, selected_name=None)
-        return await _panel(mongo, next_state, editor=True, notice="That clan entry changed. Select it again before removing.")
+        return await _panel(mongo, next_state, editor=True, notice="That clan entry changed. Select it again before you remove it.")
     try:
         removed = await remove_blacklisted(mongo, tag, expected_added_at=state.get("selected_added_at"))
     except Exception:

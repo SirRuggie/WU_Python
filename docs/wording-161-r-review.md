@@ -1,0 +1,17 @@
+# Recruitment and clan wording review
+
+Static review and preliminary checks recorded 2026-11-05 UTC. Final-commit validation remains separate.
+
+This local change covers the 133 approved CL items in part R of prompt 170, based on 82400. It is not an acceptance or deployment record. The ledger records 124 applied items, six skipped-unconfirmed items and three superseded items. An independent finite-scope review reconciled the 292 changed text pairs and their owner mappings, with eight documented dynamic or override cases; it is not a proof of every possible rendered output. CL-8 and CL-152 were declined and their protected text is held at 82400; they are outside the 133 apply rows.
+
+The retained 618 recovery compatibility and 625 shared signup URL exceptions are separate from ordinary string-only changes. The 618 task module is byte-equal to the previously reviewed 330752 version. For 625, each of the two signup files adds one shared URL import and one formatted signup field; after masking text and those fields, the remaining AST matches 82400. The existing gauntlet matcher has a known pre-existing unrelated-content ambiguity and is not claimed fixed here. Current S-owned participation and external-CWL default text remains at the base pending its separate saved-wording stage. No saved configuration or live Discord data was read or written.
+
+Preliminary focused checks before the latest test-only additions passed 517 tests. The live base-result button's lexical Select change passed one focused check of its exact label, link URL and link style after a fixture-only tuple-unpacking failure; both runs are retained privately. All 67 changed Python files compile. The subsequent focused checks passed 13 tests including the war-weight link and all four CL-111 states. The full final-commit backend, war-reminder check and owned boot remain pending.
+
+The CL-59 cited substitutions are limited by decision 669. The separate `saved-list status` phrase at the original line 290 is outside those cited locations and remains unchanged for 161-X because no exact approved item was identified. The `saved-list scope` sentence is instead governed by CL-140's specific exact proposal. CL-135 and CL-137 remain skipped-unconfirmed under decision 670; no additional reachability research was performed.
+
+Follow-up: the pre-existing gauntlet recovery matcher can settle an unknown-send row from a different bot-authored message in the same stage, user and time window. The characterization test records this ambiguity; a separate change should assess a stricter receipt match without weakening recovery of legacy posts. This wording work does not change that matcher.
+
+The CL-59 ledger lists the unapproved capture-action and capture-date fragments individually as blocked for 161-X, including the empty-clan state, no-new-capture summary, capture instruction and captured date/player counts. They remain unchanged where no exact replacement was approved.
+
+The independent review enumerated all 133 owner rows and 583 parsed owner references, compared 292 reconstructed changed text pairs, and reconciled eight dynamic or override contexts. Five isolated mutants were killed: four exercise the 618 recovery matcher against a missing new phrase, wrong channel, wrong guild and foreign author; one checks the 625 signup URL. The reviewer retained two earlier fixture setup failures; the final independent mutation baselines passed. These are bounded static and isolated-fixture results, not proof of live Discord delivery or all possible rendering.

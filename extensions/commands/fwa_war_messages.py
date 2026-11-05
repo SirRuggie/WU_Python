@@ -119,7 +119,7 @@ def _buttons(*items: tuple[str, str, hikari.ButtonStyle, bool]) -> hikari.impl.M
 def _home(state: dict, notice: str | None = None) -> list:
     sid = state["_id"]
     selector = hikari.impl.MessageActionRowBuilder()
-    menu = selector.add_text_menu(f"fwa_war_variant:{sid}", min_values=1, max_values=1, placeholder="Choose a war result")
+    menu = selector.add_text_menu(f"fwa_war_variant:{sid}", min_values=1, max_values=1, placeholder="Select a war result")
     for variant in content.VARIANTS:
         menu.add_option(VARIANT_LABELS[variant], variant)
     rows = [
@@ -132,7 +132,7 @@ def _home(state: dict, notice: str | None = None) -> list:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
     rows.extend([
         selector,
-        hikari.impl.TextDisplayComponentBuilder(content="-# Submitted edits save automatically for future posts."),
+        hikari.impl.TextDisplayComponentBuilder(content="-# Submitted edits are saved for future posts."),
         _buttons(
             (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
             (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
@@ -153,7 +153,7 @@ def _text_groups(variant: str):
 def _editor(state: dict, notice: str | None = None) -> list:
     variant, sid, template = state["variant"], state["_id"], state["template"]
     selector = hikari.impl.MessageActionRowBuilder()
-    menu = selector.add_text_menu(f"fwa_war_block:{sid}", min_values=1, max_values=1, placeholder="Choose message or copy text")
+    menu = selector.add_text_menu(f"fwa_war_block:{sid}", min_values=1, max_values=1, placeholder="Select message or copy text")
     for group in _text_groups(variant):
         menu.add_option(group.label[:100], group.key)
     menu.add_option("Copy text", "copy")
@@ -163,8 +163,8 @@ def _editor(state: dict, notice: str | None = None) -> list:
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Message Templates", VARIANT_LABELS[variant])),
         hikari.impl.TextDisplayComponentBuilder(content=f"## {VARIANT_LABELS[variant]} War Message"),
         hikari.impl.TextDisplayComponentBuilder(content=f"{'Unsaved changes' if _dirty(state) else 'Saved'} · {len(template['sections'])} text blocks · {footer_status}"),
-        hikari.impl.TextDisplayComponentBuilder(content="Posting target: Future `/fwa war-plans` messages. Edits save automatically; use `/fwa war-plans` to post."),
-        hikari.impl.TextDisplayComponentBuilder(content="Use `{opponent}`, `{author}`, `{clan_role}`, and `{fwa_rep_role}` for values filled in when a war plan is posted."),
+        hikari.impl.TextDisplayComponentBuilder(content="Edits apply to future `/fwa war-plans` messages. To post a message, use `/fwa war-plans`."),
+        hikari.impl.TextDisplayComponentBuilder(content="Use `{opponent}`, `{author}`, `{clan_role}` and `{fwa_rep_role}` for values that are added when a war plan is posted."),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
     ]
     if notice:
@@ -255,7 +255,7 @@ async def variant(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.IN
         return _error(problem)
     key = _selected(ctx, set(content.VARIANTS))
     if key is None:
-        return _home(state, "Choose one supported war result.")
+        return _home(state, "Select one supported war result.")
     try:
         template = await content.load_template(mongo, state["guild_id"], key)
     except ValueError as exc:
@@ -285,7 +285,7 @@ async def block(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
         title = group.label[:45]
     else:
         await _ack_modal(ctx)
-        await _modal_edit(ctx, _editor(state, "Choose one editable text block."))
+        await _modal_edit(ctx, _editor(state, "Select one editable text block."))
         return
     await ctx.respond_with_modal(
         title=title,
@@ -303,7 +303,7 @@ async def _autosave(mongo, state, template):
         saved = await save_with_history(content.save_template, 'war', mongo, state["guild_id"], state["variant"], template,
             state["template"]["revision"], state["user_id"])
     except (content.TemplateConflict, ValueError) as exc:
-        return state, f"Not saved: {exc}. Reopen this template before retrying."
+        return state, f"Not saved: {exc}. Reopen this template before you try again."
     return await _next(mongo, state, template=saved, saved_template=copy.deepcopy(saved)), "Saved for future posts."
 
 @register_action("fwa_war_submit", is_modal=True, no_return=True, preload_state=False)
@@ -325,7 +325,7 @@ async def submit(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
     if key == "copy":
         value = _modal_value(ctx, "text")
         if not value.strip():
-            await _modal_edit(ctx, _editor(state, "Copy text needs content."))
+            await _modal_edit(ctx, _editor(state, "Enter text for Copy text."))
             return
         template["copy_text"] = value
     elif group is not None:
@@ -337,7 +337,7 @@ async def submit(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
             await _modal_edit(ctx, _editor(state, str(exc)))
             return
     else:
-        await _modal_edit(ctx, _editor(state, "Choose one supported block and enter text."))
+        await _modal_edit(ctx, _editor(state, "Select one supported block and enter text."))
         return
     try:
         content.validate_template(state["variant"], template)
@@ -469,7 +469,7 @@ async def reset(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
         return _error(problem)
     return [hikari.impl.ContainerComponentBuilder(accent_color=RED_ACCENT, components=[
         hikari.impl.TextDisplayComponentBuilder(content="## Reset this war message?"),
-        hikari.impl.TextDisplayComponentBuilder(content="This restores the original text, accent, and artwork for future posts. Any unsaved edits in this draft will be discarded."),
+        hikari.impl.TextDisplayComponentBuilder(content="This restores the original text, accent color and artwork for future posts. It removes all unsaved edits in this draft."),
         _buttons(
             (f"fwa_war_reset_confirm:{action_id}", "Reset defaults", hikari.ButtonStyle.DANGER, False),
             (f"fwa_war_back_editor:{action_id}", "Keep editing", hikari.ButtonStyle.SECONDARY, False),
@@ -489,7 +489,7 @@ async def reset_confirm(ctx: Any, action_id: str, mongo: MongoClient = lightbulb
             state["template"]["revision"], state["user_id"],
         )
     except content.TemplateConflict:
-        return _editor(state, "This template changed elsewhere. Reopen it before resetting.")
+        return _editor(state, "This template changed elsewhere. Reopen it before you reset it.")
     draft = await _next(mongo, state, template=saved, saved_template=copy.deepcopy(saved))
     return _editor(draft, "Defaults restored for future posts.")
 
@@ -569,7 +569,7 @@ async def footer(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
         custom_id=f"fwa_war_footer_submit:{action_id}",
         components=[FileUploadModalComponentBuilder(
             custom_id="image", label="Footer image",
-            description="PNG, JPG, GIF, or WEBP; maximum 10 MB",
+            description="PNG, JPG, GIF or WEBP. Maximum 10 MB.",
         )],
     )
 

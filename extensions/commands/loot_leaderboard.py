@@ -157,8 +157,8 @@ async def execute(ctx):
         _log.exception('Gold leaderboard could not load its saved test')
         components = [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=(
             '## 🏆 Gold Loot Leaderboard\n'
-            'The saved gold-loot test is unavailable on this bot host. '
-            'Ask the bot owner to restore the test data, then run this command again.'
+            'The saved gold loot test data is not available on this host. '
+            'Ask the owner to restore it. Then run this command again.'
         ))])]
         await ctx.interaction.edit_initial_response(
             components=components, user_mentions=False, role_mentions=False, mentions_everyone=False,
