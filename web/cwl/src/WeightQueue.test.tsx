@@ -264,15 +264,33 @@ it("disables edits and refresh in archived seasons and while busy", async () => 
   expect(button("Refresh weights").disabled).toBe(true);
   expect(button("Save", rows()[0]).disabled).toBe(true);
 });
-it("uses 15px primary names and 12px regular metadata and helper text, with a text-fill reset", () => {
+it("uses 16px primary names, 12px regular metadata and 14px helpers, with a text-fill reset", () => {
   const css = readFileSync("src/WeightQueue.css", "utf8");
-  expect(css).toContain("font-size: 15px");
+  expect(css).toMatch(
+    /\.shell \.weight-queue-name button\s*\{[^}]*font-size: var\(--wu-text-md\)/,
+  );
   expect(css).toMatch(
     /\.roster-workspace\.roster-ui \.weight-queue \.weight-queue-name button \{[^}]*display: block;[^}]*text-align: left;/,
   );
-  expect(css).toContain("font-weight: 700");
-  expect(css).toContain("font-size: 12px");
-  expect(css).toContain("font-weight: 400");
+  expect(css).toContain("font-weight: var(--wu-weight-bold)");
+  expect(css).toMatch(
+    /\.weight-queue \.weight-queue-meta\s*\{[^}]*font-size: var\(--wu-text-xs\)/,
+  );
+  expect(css).toMatch(
+    /\.weight-queue \.weight-queue-managed\s*\{[^}]*font-size: var\(--wu-text-sm\)/,
+  );
+  expect(css).toContain("font-weight: var(--wu-weight-regular)");
+  const tokens = readFileSync("src/tokens.css", "utf8");
+  expect(tokens).toMatch(/--wu-text-xs:\s*12px\s*;/);
+  expect(tokens).toMatch(/--wu-text-sm:\s*14px\s*;/);
+  expect(tokens).toMatch(/--wu-text-md:\s*16px\s*;/);
+  expect(tokens).toMatch(/--wu-weight-regular:\s*400\s*;/);
+  expect(tokens).toMatch(/--wu-weight-bold:\s*700\s*;/);
+  expect(
+    readFileSync("src/main.tsx", "utf8").match(
+      /^import\s+["']([^"']+)["'];?/m,
+    )?.[1],
+  ).toBe("./tokens.css");
   expect(css).toContain("-webkit-text-fill-color: currentColor");
   expect(css).not.toMatch(/font-size: (?:[0-9]|1[01])px/);
 });

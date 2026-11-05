@@ -22,13 +22,13 @@
 .hub-sync {
   margin: 0 0 20px;
   color: var(--wu-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 
 .hub-sync button {
   min-height: 36px;
   padding: 7px 12px;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 
 .hub-sync .status-dot {
@@ -54,7 +54,7 @@
 .hub-next-symbol {
   display: grid;
   place-items: center;
-  font-size: 32px;
+  font-size: var(--wu-text-2xl);
   width: 48px;
   height: 48px;
   flex: none;
@@ -69,16 +69,20 @@
 }
 
 .hub-next h2 {
-  font-size: clamp(20px, 2vw, 25px);
+  font-size: var(--wu-text-xl);
   color: #fff;
   margin-bottom: 8px;
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 
 .hub-next p:last-child {
   margin: 0;
   color: var(--wu-text-muted);
-  font-size: 14px;
+  font-size: var(--wu-text-md);
   max-width: 670px;
+  text-wrap: pretty;
 }
 
 .hub-next > .primary {
@@ -91,6 +95,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .hub-stats button {
@@ -108,20 +113,22 @@
 }
 
 .hub-stats button > span {
-  font-size: 24px;
+  font-size: var(--wu-text-xl);
   grid-row: 1/3;
   align-self: center;
   color: var(--wu-accent);
 }
 
 .hub-stats strong {
-  font-size: 23px;
+  font-size: var(--wu-text-xl);
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .hub-stats small {
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .shell .hub-stats button[aria-pressed="true"] {
@@ -140,12 +147,16 @@
 }
 
 .hub-section-heading p {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   margin: 0;
+  text-wrap: pretty;
 }
 
 .hub-section-heading h2 {
-  font-size: 24px;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 
 .hub-toolbar {
@@ -166,13 +177,13 @@
 }
 
 .hub-selection {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
   padding: 12px 0;
 }
 
 .hub-selection button {
-  font-size: 12px;
+  font-size: var(--wu-text-md);
   background: transparent;
 }
 
@@ -222,14 +233,14 @@
   height: 40px;
   display: grid;
   place-items: center;
-  font-size: 28px;
+  font-size: var(--wu-text-2xl);
   flex: none;
 }
 
 .hub-clan-link {
   color: var(--wu-text);
-  font-weight: 700;
-  font-size: 13px;
+  font-weight: var(--wu-weight-bold);
+  font-size: var(--wu-text-sm);
   text-decoration: none;
   padding: 12px 0 12px 12px;
   white-space: nowrap;
@@ -269,14 +280,14 @@
 .hub-account-pick strong {
   display: block;
   color: var(--wu-text);
-  font-size: 15px;
+  font-size: var(--wu-text-md);
   overflow-wrap: anywhere;
 }
 
 .hub-account-pick small {
   display: block;
   margin-top: 5px;
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
 }
 
 .hub-account-pick > span {
@@ -290,7 +301,7 @@
 
 .hub-account-status {
   width: 240px;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   flex-shrink: 0;
 }
 
@@ -308,8 +319,8 @@
   border-radius: 6px;
   padding: 4px 8px;
   background: #222b38;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-bold);
 }
 
 .hub-state.saved {
@@ -319,7 +330,7 @@
 }
 
 .hub-account-action {
-  font-size: 12px;
+  font-size: var(--wu-text-md);
   flex: none;
 }
 
@@ -329,7 +340,7 @@
   justify-content: center;
   gap: 16px;
   margin-top: 18px;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 
 .hub-selected-bar {
@@ -384,18 +395,22 @@
 
 .hub-help summary {
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   min-height: 28px;
 }
 
 .hub-help p {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   margin: 14px 0;
+  text-wrap: pretty;
 }
 
 .hub-staff h3 {
-  font-size: 15px;
+  font-size: var(--wu-text-lg);
   margin-bottom: 14px;
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
 }
 
 .hub-staff > div {
@@ -405,7 +420,7 @@
 }
 
 .hub-staff button {
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 
 .dashboard-home .empty {
@@ -425,6 +440,7 @@
   }
   .hub-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    font-variant-numeric: tabular-nums;
   }
   .hub-account {
     flex-wrap: wrap;
@@ -465,11 +481,14 @@
   .hub-next-symbol {
     width: 46px;
     height: 46px;
-    font-size: 24px;
+    font-size: var(--wu-text-xl);
     border-radius: 12px;
   }
   .hub-next h2 {
-    font-size: 21px;
+    font-size: var(--wu-text-xl);
+    font-weight: var(--wu-weight-bold);
+    line-height: 1.2;
+    text-wrap: balance;
   }
   .hub-next > div:nth-child(2) {
     min-width: 190px;
@@ -481,6 +500,7 @@
   .hub-stats {
     gap: 8px;
     margin-bottom: 10px;
+    font-variant-numeric: tabular-nums;
   }
   .hub-stats button {
     padding: 11px 14px;
@@ -488,13 +508,15 @@
     min-height: 72px;
   }
   .hub-stats strong {
-    font-size: 23px;
+    font-size: var(--wu-text-xl);
+    font-variant-numeric: tabular-nums;
   }
   .hub-stats button > span {
-    font-size: 20px;
+    font-size: var(--wu-text-xl);
   }
   .hub-stats small {
-    font-size: 11px;
+    font-size: var(--wu-text-xs);
+    font-variant-numeric: tabular-nums;
   }
   .hub-section-heading {
     align-items: start;
@@ -508,7 +530,7 @@
     gap: 12px 8px;
   }
   .hub-toolbar select {
-    font-size: 13px;
+    font-size: var(--wu-text-md);
   }
   .hub-selection {
     align-items: start;
@@ -525,13 +547,16 @@
     gap: 8px;
   }
   .hub-clan h3 {
-    font-size: 15px;
+    font-size: var(--wu-text-lg);
+    font-weight: var(--wu-weight-medium);
+    line-height: 1.3;
+    text-wrap: balance;
   }
   .hub-clan-link {
-    font-size: 12px;
+    font-size: var(--wu-text-sm);
   }
   .hub-clan > header small {
-    font-size: 10px;
+    font-size: var(--wu-text-xs);
   }
   .hub-account {
     padding: 14px 12px;
@@ -546,7 +571,7 @@
     min-width: 150px;
   }
   .hub-account-action {
-    font-size: 11px;
+    font-size: var(--wu-text-xs);
     min-height: 40px;
     padding: 8px;
   }
@@ -561,7 +586,7 @@
   }
   .hub-selected-bar > button {
     flex: 1;
-    font-size: 13px;
+    font-size: var(--wu-text-md);
   }
   .hub-bottom {
     grid-template-columns: 1fr;
@@ -570,7 +595,7 @@
     gap: 8px;
   }
   .hub-pagination button {
-    font-size: 12px;
+    font-size: var(--wu-text-md);
   }
   .hub-help,
   .hub-staff {
@@ -586,6 +611,8 @@
 
 .hub-next .eyebrow {
   color: #f4cd64;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
 }
 
 .home-task-entry {
@@ -610,13 +637,17 @@
 
 .home-task-entry h2 {
   margin: 0 0 3px;
-  font-size: 17px;
+  font-size: var(--wu-text-lg);
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
 }
 
 .home-task-entry p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--wu-text-md);
   color: var(--wu-text-muted);
+  text-wrap: pretty;
 }
 
 .dashboard-home .home-task-entry button {
@@ -654,7 +685,7 @@
 
 .hub-data-note {
   color: #c9bd9f;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   margin: 0 0 24px;
 }
 
@@ -702,7 +733,8 @@
     display: none;
   }
   .dashboard-home .hub-stats strong {
-    font-size: 21px;
+    font-size: var(--wu-text-xl);
+    font-variant-numeric: tabular-nums;
   }
   .home-task-entry > div {
     min-width: 0;
@@ -723,7 +755,7 @@
   background: transparent;
   border-color: transparent;
   color: var(--wu-accent);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 
 @media (max-width: 700px) {

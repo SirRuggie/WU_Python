@@ -45,6 +45,7 @@
 }
 .gallery-upload p {
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .command-image-grid {
   display: grid;
@@ -74,15 +75,16 @@
   background: #111114;
 }
 .command-image-grid p {
-  font-size: 0.875rem;
+  font-size: var(--wu-text-sm);
   margin: 4px 0;
+  text-wrap: pretty;
 }
 .gallery-select {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 44px;
-  font-size: 0.875rem;
+  font-size: var(--wu-text-md);
 }
 .gallery-select input {
   width: 20px;

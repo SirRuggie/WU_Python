@@ -13,11 +13,15 @@
   margin: 18px 0;
 }
 .war-intro h3 {
-  font-size: 1.4rem;
+  font-size: var(--wu-text-lg);
   margin: 6px 0;
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
 }
 .war-intro p {
   margin: 6px 0;
+  text-wrap: pretty;
 }
 .clan-management .war-toggle {
   display: flex;
@@ -85,16 +89,16 @@
   display: flex;
   gap: 8px;
   align-items: center;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .war-bot-name span {
   background: #5865f2;
-  font-size: 0.65rem;
+  font-size: var(--wu-text-xs);
   padding: 2px 4px;
   border-radius: 3px;
 }
 .war-bot-name small {
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
   color: #b5bac1;
 }
 .war-history article {
@@ -114,6 +118,7 @@
 .war-history p {
   width: 100%;
   margin: 0;
+  text-wrap: pretty;
 }
 @media (max-width: 600px) {
   .war-intro {
@@ -148,12 +153,14 @@
 /* Keep owner groups compact without changing row width or quote indentation. */
 .war-discord-preview .discord-markdown p {
   margin-block: 3px;
+  text-wrap: pretty;
 }
 .war-discord-preview .discord-markdown blockquote {
   margin-block: 3px 7px;
 }
 .war-discord-preview .discord-markdown blockquote p {
   margin-block: 0;
+  text-wrap: pretty;
 }
 
 .war-disclosure {
@@ -165,7 +172,7 @@
   cursor: pointer;
   padding-block: 10px;
   min-height: 24px;
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
 }
 .war-disclosure > summary:focus-visible {
   outline: 2px solid #e6a640;

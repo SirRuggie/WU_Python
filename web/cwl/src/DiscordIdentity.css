@@ -10,12 +10,12 @@
 }
 .roster-discord-person strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--wu-text-md);
   overflow-wrap: anywhere;
 }
 .roster-discord-person small {
   display: block;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   line-height: 1.5;
   overflow-wrap: anywhere;
   color: var(--wu-text-muted);

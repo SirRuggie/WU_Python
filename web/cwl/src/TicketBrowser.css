@@ -41,7 +41,7 @@
   gap: 12px;
   margin: 12px 0;
   min-height: 44px;
-  font-size: 0.875rem;
+  font-size: var(--wu-text-sm);
   color: var(--muted, var(--wu-text-muted));
 }
 .ticket-list-summary button {
@@ -96,7 +96,7 @@
   padding: 3px 7px;
   background: #493622;
   color: #f2d6a5;
-  font-size: 0.8rem;
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
 .ticket-pages,
@@ -161,9 +161,11 @@
 }
 .ticket-message p {
   margin-top: 6px;
+  text-wrap: pretty;
 }
 .ticket-message p:last-child {
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .ticket-message pre {
   white-space: pre-wrap;
@@ -189,11 +191,15 @@
 }
 .ticket-flag-details h2 {
   margin: 0 0 8px;
-  font-size: 1rem;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .ticket-flag-details p {
   margin: 6px 0;
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .ticket-browser .notice button {
   margin: 8px;
@@ -216,14 +222,14 @@
   }
   .ticket-browser input,
   .ticket-browser select {
-    font-size: 16px;
+    font-size: var(--wu-text-md);
   }
   .ticket-conversation-tabs button {
     flex: 1;
     white-space: normal;
   }
   .ticket-reader-tools a {
-    font-size: 14px;
+    font-size: var(--wu-text-sm);
     min-height: 44px;
   }
 }

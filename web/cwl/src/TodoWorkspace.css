@@ -9,17 +9,17 @@
   gap: var(--roster-space-3);
   flex-wrap: wrap;
   color: var(--roster-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-md);
 }
 .todo-refresh .status-dot {
   display: inline-block;
   margin-right: 8px;
 }
 .todo-refresh button {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-md);
 }
 .todo-freshness {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
   margin: 10px 0 22px;
   color: var(--roster-text-muted);
 }
@@ -40,7 +40,7 @@
   min-height: 112px;
 }
 .todo-tabs button > span {
-  font-size: 24px;
+  font-size: var(--wu-text-xl);
 }
 .todo-tabs small {
   color: var(--roster-text-muted);
@@ -59,13 +59,13 @@
   padding: 16px;
 }
 .todo-account-picker summary {
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   cursor: pointer;
   min-height: 28px;
 }
 .todo-account-picker summary > span {
   float: right;
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-sm);
   color: var(--roster-gold);
   padding-top: 3px;
 }
@@ -115,12 +115,16 @@
   margin-bottom: 15px;
 }
 .todo-section-head h2 {
-  font-size: 26px;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .todo-section-head p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   max-width: 680px;
+  text-wrap: pretty;
 }
 .todo-section-head label {
   min-width: 210px;
@@ -141,21 +145,22 @@
   color: var(--roster-warning);
   padding: 15px 18px;
   margin: 14px 0;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .todo-warning p {
   color: var(--roster-warning);
   margin: 0;
   flex-basis: 100%;
+  text-wrap: pretty;
 }
 .todo-warning > span {
   flex: 1;
 }
 .todo-warning button {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-md);
 }
 .todo-notes {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: var(--roster-text-muted);
   border-left: 2px solid var(--roster-border);
   padding-left: 14px;
@@ -165,6 +170,7 @@
   color: inherit;
   margin: 6px 0;
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .todo-clan-list {
   display: grid;
@@ -189,7 +195,7 @@
   flex: none;
 }
 .todo-clan > header > span {
-  font-size: 27px;
+  font-size: var(--wu-text-xl);
 }
 .todo-clan > header > div {
   flex: 1;
@@ -200,10 +206,10 @@
   overflow-wrap: anywhere;
 }
 .todo-clan > header a {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   white-space: nowrap;
   color: var(--roster-gold);
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   text-decoration: none;
   padding: 12px 0;
 }
@@ -236,7 +242,7 @@
 }
 .todo-task-name strong {
   display: block;
-  font-size: 15px;
+  font-size: var(--wu-text-md);
   overflow-wrap: anywhere;
 }
 .todo-task-name small {
@@ -251,7 +257,7 @@
   min-height: 44px;
   text-decoration: none;
   color: var(--roster-gold);
-  font-size: 21px;
+  font-size: var(--wu-text-xl);
 }
 .todo-task-progress {
   display: flex;
@@ -265,8 +271,8 @@
   background: var(--roster-card-success);
   color: var(--roster-success);
   padding: 5px 9px;
-  font-size: var(--roster-font-small);
-  font-weight: 700;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-bold);
   border-radius: 6px;
 }
 .todo-state.prep {
@@ -301,20 +307,21 @@
   display: block;
 }
 .todo-task-time > strong {
-  font-size: 17px;
+  font-size: var(--wu-text-xs);
   margin: 5px 0;
   color: var(--roster-warning);
 }
 .todo-task-time time {
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
   color: var(--roster-text-muted);
 }
 .todo-task-time p {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
   color: var(--roster-text-muted);
-  line-height: 1.6;
+  line-height: 1.55;
   margin: 0;
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .todo-pagination {
   display: flex;
@@ -332,6 +339,7 @@
 }
 .todo-loading p {
   margin: 10px 0 0;
+  text-wrap: pretty;
 }
 .todo-home-link {
   display: flex;
@@ -344,19 +352,23 @@
   padding: 18px 22px;
 }
 .todo-home-link > span {
-  font-size: 30px;
+  font-size: var(--wu-text-xl);
 }
 .todo-home-link > div {
   flex: 1;
 }
 .todo-home-link h2 {
-  font-size: 20px;
+  font-size: var(--wu-text-xl);
   margin: 0 0 5px;
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .todo-home-link p {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: var(--roster-success);
   margin: 0;
+  text-wrap: pretty;
 }
 .todo-home-link > button {
   flex: none;
@@ -422,20 +434,24 @@
     gap: 8px;
   }
   .todo-clan h3 {
-    font-size: 16px;
+    font-size: var(--wu-text-lg);
+    font-weight: var(--wu-weight-medium);
+    line-height: 1.3;
+    text-wrap: balance;
   }
   .todo-clan > header small {
-    font-size: 10px;
+    font-size: var(--wu-text-xs);
   }
   .todo-task {
     padding: 16px 12px;
     gap: 14px;
   }
   .todo-task-time > strong {
-    font-size: var(--roster-font-body);
+    font-size: var(--wu-text-xs);
   }
   .todo-task-time p {
-    font-size: 11px;
+    font-size: var(--wu-text-xs);
+    text-wrap: pretty;
   }
   .todo-home-link {
     flex-wrap: wrap;
@@ -456,7 +472,7 @@
 }
 .todo-fwa strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: var(--roster-gold);
 }
 .todo-fwa.win strong {
@@ -468,7 +484,7 @@
 }
 .todo-fwa span {
   display: block;
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-sm);
   color: var(--roster-text-muted);
 }
 
@@ -482,39 +498,47 @@
   border-left: 3px solid var(--roster-gold);
   border-radius: 10px;
   background: var(--roster-surface);
+  font-variant-numeric: tabular-nums;
 }
 .todo-event-timer > div {
   display: grid;
   gap: 5px;
   flex: 1;
+  font-variant-numeric: tabular-nums;
 }
 .todo-event-label {
   color: var(--roster-warning);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .todo-event-timer strong {
-  font-size: 22px;
+  font-size: var(--wu-text-xl);
   color: var(--roster-gold);
+  font-variant-numeric: tabular-nums;
 }
 .todo-event-timer time,
 .todo-event-timer small {
   color: var(--roster-text-muted);
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
+  font-variant-numeric: tabular-nums;
 }
 .todo-event-timer p {
   flex: 1;
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.55;
+  text-wrap: pretty;
+  font-variant-numeric: tabular-nums;
 }
 .todo-event-timer small {
   display: block;
   margin-top: 6px;
+  font-variant-numeric: tabular-nums;
 }
 @media (max-width: 650px) {
   .todo-event-timer {
     flex-direction: column;
     align-items: stretch;
     gap: var(--roster-space-3);
+    font-variant-numeric: tabular-nums;
   }
 }
 

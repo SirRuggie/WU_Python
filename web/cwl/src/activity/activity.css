@@ -22,12 +22,24 @@
 }
 .activity-card :is(h2, h3) {
   margin: 0 0 5px;
-  font-size: 17px;
   overflow-wrap: anywhere;
 }
+.activity-card h3 {
+  font-size: var(--wu-text-lg);
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.activity-card h2 {
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
+}
 .activity-card p {
-  line-height: 1.6;
+  line-height: 1.55;
   color: #c3bfb6;
+  text-wrap: pretty;
 }
 .activity-card small {
   color: #b8b3a9;
@@ -35,7 +47,7 @@
 .activity-state {
   padding: 4px 9px;
   border-radius: 14px;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   color: #ded8ca;
   background: var(--wu-surface-raised);
   flex: none;
@@ -82,10 +94,11 @@
   flex: 1;
 }
 .activity-card .activity-countdown {
-  font-size: 22px;
-  font-weight: 650;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-medium);
   color: var(--wu-text);
   margin: 18px 0 12px;
+  font-variant-numeric: tabular-nums;
 }
 .activity-card progress {
   display: block;
@@ -117,7 +130,7 @@
 .activity-dates div {
   display: grid;
   gap: 4px;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
 .activity-card footer {
@@ -156,7 +169,7 @@
 }
 .calendar-sources {
   margin: 20px 0 32px;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: #b8b3a9;
 }
 .calendar-sources summary {
@@ -183,21 +196,24 @@
   gap: 12px;
   margin: 16px 0;
   color: #b8b3a9;
-  font-size: 13px;
+  font-size: var(--wu-text-md);
 }
 .raid-totals {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  font-variant-numeric: tabular-nums;
 }
 .raid-totals dt {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   color: #b8b3a9;
+  font-variant-numeric: tabular-nums;
 }
 .raid-totals dd {
   margin: 8px 0;
-  font-size: 22px;
+  font-size: var(--wu-text-xl);
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 @media (max-width: 850px) {
   .activity-card-grid {
@@ -245,7 +261,7 @@
   gap: 8px;
   margin-bottom: 18px;
   color: #c3bfb6;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .war-card-kind {
   display: flex;
@@ -281,11 +297,11 @@
 .war-team strong {
   grid-column: 2;
   grid-row: 1;
-  font-size: 15px;
+  font-size: var(--wu-text-md);
 }
 .war-team small {
   grid-column: 2;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .war-team:last-child {
   text-align: right;
@@ -294,31 +310,37 @@
   display: grid;
   text-align: center;
   gap: 3px;
+  font-variant-numeric: tabular-nums;
 }
 .war-matchup-score strong {
   white-space: nowrap;
-  font-size: 23px;
+  font-size: var(--wu-text-xl);
+  font-variant-numeric: tabular-nums;
 }
 .war-matchup-score small {
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
+  font-variant-numeric: tabular-nums;
 }
 .war-attacks {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   margin: 16px 0;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   color: #c3bfb6;
+  font-variant-numeric: tabular-nums;
 }
 .war-personal {
   border-top: 1px solid #333;
   padding-top: 12px;
 }
 .war-personal h3 {
-  font-size: 12px;
+  font-size: var(--wu-text-lg);
   color: #b8b3a9;
-  font-weight: 500;
+  font-weight: var(--wu-weight-medium);
   margin-bottom: 8px;
+  line-height: 1.3;
+  text-wrap: balance;
 }
 .war-personal ul {
   padding: 0;
@@ -330,21 +352,22 @@
   justify-content: space-between;
   gap: 14px;
   margin: 7px 0;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .war-personal li span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .war-personal li strong {
-  font-size: 12px;
+  font-size: var(--wu-text-md);
   text-align: right;
   flex-shrink: 0;
 }
 .war-personal p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .war-personal > small {
   display: block;
@@ -358,7 +381,7 @@
   align-items: center;
   gap: 8px;
   color: #c3bfb6;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .war-details > summary::before,
 .war-inactive > summary::before {
@@ -398,10 +421,11 @@
     align-items: flex-end;
   }
   .war-team strong {
-    font-size: 14px;
+    font-size: var(--wu-text-md);
   }
   .war-matchup-score strong {
-    font-size: 21px;
+    font-size: var(--wu-text-xl);
+    font-variant-numeric: tabular-nums;
   }
   .war-personal li {
     gap: 8px;
@@ -418,8 +442,10 @@
 }
 .events-workspace .calendar-title h2 {
   margin: 0;
-  font-size: 20px;
-  line-height: 1.3;
+  font-size: var(--wu-text-xl);
+  line-height: 1.2;
+  font-weight: var(--wu-weight-bold);
+  text-wrap: balance;
 }
 .events-workspace .calendar-card > header {
   align-items: center;
@@ -438,20 +464,22 @@
   gap: 4px;
   margin: 22px 0 12px;
   line-height: 1.3;
+  font-variant-numeric: tabular-nums;
 }
 .events-workspace .calendar-countdown > span {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: #c3bfb6;
+  font-variant-numeric: tabular-nums;
 }
 .events-workspace .calendar-countdown > strong {
-  font-size: 27px;
-  font-weight: 650;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-medium);
   color: var(--wu-text);
   font-variant-numeric: tabular-nums;
 }
 .events-workspace .calendar-description {
   margin: 0 0 18px;
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
   line-height: 1.5;
   color: #c3bfb6;
 }
@@ -464,7 +492,7 @@
 }
 .events-workspace .calendar-card .activity-dates small {
   color: #aaa69d;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .events-workspace .calendar-card .activity-dates time {
   line-height: 1.5;
@@ -478,13 +506,18 @@
     padding: 16px;
   }
   .events-workspace .calendar-title h2 {
-    font-size: 19px;
+    font-size: var(--wu-text-xl);
+    font-weight: var(--wu-weight-bold);
+    line-height: 1.2;
+    text-wrap: balance;
   }
   .events-workspace .calendar-countdown {
     margin-top: 18px;
+    font-variant-numeric: tabular-nums;
   }
   .events-workspace .calendar-countdown > strong {
-    font-size: 25px;
+    font-size: var(--wu-text-xl);
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -497,7 +530,7 @@
 }
 .war-detail-freshness {
   color: #b8b3a9;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   margin: 0 0 12px;
 }
 .war-detail-view,
@@ -520,11 +553,14 @@
 }
 .war-detail-panel h3 {
   margin: 12px 0 8px;
-  font-size: 14px;
+  font-size: var(--wu-text-lg);
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
 }
 .war-detail-panel h3 small {
   color: #b8b3a9;
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
 }
 .war-detail-lineup-list,
 .war-detail-attack-list {
@@ -538,7 +574,7 @@
   gap: 5px;
   padding: 10px 0;
   border-top: 1px solid #303030;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   min-width: 0;
 }
 .war-detail-member-title,
@@ -555,7 +591,7 @@
 .war-detail-member-meta,
 .war-detail-attack-list strong {
   color: #c3bfb6;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .war-detail-linked {
   display: inline-flex;
@@ -564,7 +600,7 @@
   border: 1px solid #566b50;
   border-radius: 12px;
   color: #b9dfa8;
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
   white-space: nowrap;
 }
 .war-detail-attacks > header {
@@ -573,10 +609,12 @@
   align-items: baseline;
   flex-wrap: wrap;
   gap: 8px;
+  font-variant-numeric: tabular-nums;
 }
 .war-detail-attacks > header > span {
   color: #b8b3a9;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
+  font-variant-numeric: tabular-nums;
 }
 .war-detail-attack-list li > div:last-child {
   display: flex;
@@ -596,7 +634,7 @@
 }
 .war-detail-pages span {
   color: #c3bfb6;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .war-detail-error {
   padding: 8px 0;
@@ -604,7 +642,8 @@
 .war-detail-error p,
 .war-detail-partial {
   color: var(--wu-warning);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
 }
 .war-detail-error button + button {
   margin-left: 8px;
@@ -632,6 +671,6 @@
 }
 .war-detail-attack-side {
   color: #b8b3a9;
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
   margin-right: 6px;
 }

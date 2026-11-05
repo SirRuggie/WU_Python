@@ -7,7 +7,7 @@
 .roster-assign-intro {
   margin: 0 0 12px;
   line-height: 1.4;
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
 }
 .roster-assign-warning {
   color: #f5cb83;
@@ -18,8 +18,8 @@
 .roster-assign-search {
   display: grid;
   gap: 5px;
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
 }
 .roster-assign-search input {
   width: 100%;
@@ -37,7 +37,10 @@
 }
 .roster-assign-destinations-heading h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--wu-text-lg);
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
 }
 .roster-assign-destinations-heading small {
   color: var(--wu-text-muted);
@@ -121,21 +124,22 @@
 .roster-assign-clan-name small {
   margin-left: 5px;
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .roster-assign-clan-count {
   color: var(--wu-text);
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-bold);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .roster-assign-clan-meta {
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .roster-assign-clan-meta .roster-assign-warning {
   color: #f5cb83;
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
 }
 .roster-assign-review {
   margin-top: 12px;
@@ -149,7 +153,7 @@
 .roster-assign-accounts summary {
   cursor: pointer;
   min-height: 28px;
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
 }
 .roster-assign-accounts li {
   display: flex;

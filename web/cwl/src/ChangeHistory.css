@@ -7,7 +7,7 @@
 }
 .change-history summary {
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   padding: 0.3rem 0;
 }
 .change-history label {
@@ -40,7 +40,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--wu-text-sm);
   margin: 0.4rem 0;
 }
 .history-values section > div > div {

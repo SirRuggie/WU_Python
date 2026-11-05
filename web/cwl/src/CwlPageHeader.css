@@ -17,8 +17,11 @@
 .cwl-page-header .cwl-page-header-title > h1,
 .shell .cwl-page-header .cwl-page-header-title > h1 {
   margin: 0;
-  font-size: var(--roster-font-title);
-  line-height: 1.1;
+  font-size: var(--wu-text-2xl);
+  line-height: 1.15;
+  font-weight: var(--wu-weight-bold);
+  text-wrap: balance;
+  letter-spacing: -0.02em;
 }
 .cwl-page-header > .roster-menu,
 .cwl-page-header > .roster-header-season,
@@ -33,11 +36,11 @@
   gap: var(--roster-space-2);
 }
 .cwl-page-header .roster-menu-label {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
   line-height: 1;
 }
 .cwl-page-header .roster-menu-current {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
   line-height: 1.2;
 }
 .cwl-page-header .roster-menu-chevron {
@@ -52,7 +55,7 @@
   height: var(--roster-height-control);
   margin: 0;
   color: var(--roster-text-muted);
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
   line-height: 1.2;
 }
 .cwl-page-description {
@@ -63,12 +66,23 @@
     gap: var(--roster-space-2);
   }
   .shell .cwl-page-header .cwl-page-header-title > h1 {
-    font-size: var(--roster-font-title-small);
+    font-size: var(--wu-text-2xl);
+    font-weight: var(--wu-weight-bold);
+    line-height: 1.15;
+    text-wrap: balance;
+    letter-spacing: -0.02em;
   }
   .cwl-page-header > .roster-menu,
   .cwl-page-header > .roster-header-season,
   .cwl-page-header > .cwl-page-header-season {
     flex-basis: 152px;
     max-width: 50%;
+  }
+}
+@media (max-width: 480px) {
+  .cwl-page-header .cwl-page-header-title > h1,
+  .shell .cwl-page-header .cwl-page-header-title > h1,
+  .shell .cwl-page-header .cwl-page-header-title > h1 {
+    font-size: var(--wu-text-xl);
   }
 }

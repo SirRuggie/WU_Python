@@ -34,7 +34,7 @@
 }
 .application-index small {
   color: var(--muted, var(--wu-text-muted));
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
 }
 .application-setting-list {
   border: 1px solid var(--border, var(--wu-border-subtle));
@@ -74,7 +74,7 @@
 }
 @media (max-width: 650px) {
   .application-index input {
-    font-size: 16px;
+    font-size: var(--wu-text-md);
   }
   .application-setting-list button {
     padding: 12px;

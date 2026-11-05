@@ -11,19 +11,21 @@
 }
 .weight-queue .weight-queue-heading h2 {
   margin: 0;
-  font-size: 18px;
-  line-height: 1.3;
+  font-size: var(--wu-text-xl);
+  line-height: 1.2;
+  font-weight: var(--wu-weight-bold);
+  text-wrap: balance;
 }
 .weight-queue-heading .roster-ui-button {
   padding: 0 12px;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 .weight-queue-search {
   display: grid;
   gap: 4px;
-  font-size: 12px;
-  font-weight: 400;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-regular);
 }
 .weight-queue-search input {
   width: 100%;
@@ -35,9 +37,16 @@
 .weight-queue .weight-queue-managed {
   color: var(--roster-text-muted);
   -webkit-text-fill-color: currentColor;
-  font-size: 12px;
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
   line-height: 16px;
+}
+.weight-queue .weight-queue-help,
+.weight-queue .compact-weight-feedback,
+.weight-queue .weight-queue-managed {
+  font-size: var(--wu-text-sm);
+}
+.weight-queue .weight-queue-meta {
+  font-size: var(--wu-text-xs);
 }
 .weight-queue-help {
   margin: 4px 0;
@@ -48,7 +57,7 @@
   gap: 12px;
   flex-wrap: wrap;
   margin: 8px 0 12px;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .weight-queue-unit-buttons {
   display: flex;
@@ -99,9 +108,9 @@
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-size: var(--wu-text-md);
   line-height: 19px;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   color: var(--roster-text);
   -webkit-text-fill-color: currentColor;
 }
@@ -121,12 +130,12 @@
   width: 100%;
   min-height: 44px;
   padding: 0 10px;
-  font-size: 16px;
+  font-size: var(--wu-text-md);
 }
 .compact-weight-controls .roster-ui-button {
   min-height: 44px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 .compact-weight-units {
   display: flex;
@@ -157,7 +166,7 @@
   justify-content: center;
   gap: 12px;
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 @media (max-width: 650px) {
   .weight-queue-row {
@@ -176,7 +185,10 @@
     padding: 12px;
   }
   .weight-queue .weight-queue-heading h2 {
-    font-size: 16px;
+    font-size: var(--wu-text-xl);
+    font-weight: var(--wu-weight-bold);
+    line-height: 1.2;
+    text-wrap: balance;
   }
   .weight-queue-search input {
     margin: 0;

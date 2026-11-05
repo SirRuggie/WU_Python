@@ -16,22 +16,28 @@
 }
 .member-compact-status .eyebrow {
   margin: 0 0 4px;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
 }
 .member-compact-status strong {
   display: block;
-  font-size: 15px;
+  font-size: var(--wu-text-lg);
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
 }
 .member-compact-status p {
   margin: 4px 0 0;
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
+  text-wrap: pretty;
 }
 .member-compact-status button {
   flex: none;
 }
 .member-assignment-count {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
   margin: 0 0 14px;
   color: var(--roster-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 .member-clan-jumps {
   display: flex;
@@ -47,7 +53,7 @@
   border-radius: 8px;
   color: var(--roster-gold);
   text-decoration: none;
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-sm);
 }
 .member-clan-list {
   display: grid;
@@ -71,9 +77,12 @@
   min-width: 0;
 }
 .member-clan-head h2 {
-  font-size: 18px;
+  font-size: var(--wu-text-xl);
   margin: 0 0 3px;
   overflow-wrap: anywhere;
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .member-clan-head small {
   display: block;
@@ -81,7 +90,7 @@
 }
 .member-clan-head .button {
   flex: none;
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-md);
   white-space: normal;
   text-align: center;
 }
@@ -109,12 +118,12 @@
   overflow-wrap: anywhere;
 }
 .member-clan-row small {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
 }
 .member-clan-row > span {
   flex: none;
   color: var(--roster-gold);
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-md);
 }
 .member-awaiting-card .member-clan-head {
   background: var(--roster-attention-surface);
@@ -123,7 +132,7 @@
   color: var(--roster-gold);
 }
 .member-awaiting-note {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
   margin: 10px 18px 0;
   color: var(--roster-warning);
 }
@@ -158,7 +167,7 @@
   margin-bottom: 13px;
 }
 .member-assignments > .cwl-page-description {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   line-height: 1.35;
 }
 .member-assignments .member-compact-status {
@@ -179,13 +188,15 @@
   min-width: 0;
 }
 .member-status-line strong {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-lg);
   white-space: nowrap;
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
 }
 .member-status-line button {
   min-height: 36px;
   padding: 6px 10px;
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-md);
 }
 .member-status-badge {
   background: var(--roster-attention-border);
@@ -201,15 +212,17 @@
 }
 .member-compact-status summary {
   color: var(--roster-text-muted);
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
   cursor: pointer;
 }
 .member-compact-status details p {
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
   margin: 6px 0 0;
+  text-wrap: pretty;
 }
 .member-assignments .member-assignment-count {
   margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
 }
 .member-clan-head .button {
   padding: 8px 10px;
@@ -240,14 +253,17 @@
     gap: 9px;
   }
   .member-clan-head h2 {
-    font-size: 16px;
+    font-size: var(--wu-text-xl);
+    font-weight: var(--wu-weight-bold);
+    line-height: 1.2;
+    text-wrap: balance;
   }
   .member-clan-head .button {
     display: inline-flex;
     width: auto;
     margin: 0;
     flex: none;
-    font-size: 11px;
+    font-size: var(--wu-text-xs);
     padding: 7px 8px;
   }
   .member-clan-row {
@@ -287,8 +303,8 @@
   border-radius: 12px;
   background: var(--roster-selection-surface);
   color: var(--roster-text);
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-bold);
   line-height: 1.35;
   text-align: left;
   box-shadow: var(--roster-shadow-soft);
@@ -315,7 +331,7 @@
   .member-assignments .member-clan-head a.member-open-clan {
     width: auto;
     min-width: 0;
-    font-size: var(--roster-font-body);
+    font-size: var(--wu-text-md);
     padding: 10px 12px;
     gap: 8px;
     white-space: nowrap;
@@ -347,6 +363,7 @@
 
 .member-unpublished-status p {
   margin: 6px 0;
+  text-wrap: pretty;
 }
 .member-unpublished-status button {
   margin-top: 4px;
@@ -369,6 +386,7 @@
   }
   .member-assignments .member-status-line p {
     margin: 0;
+    text-wrap: pretty;
   }
 }
 

@@ -1,8 +1,8 @@
 .clan-weight-source {
   color: var(--roster-text-muted);
   -webkit-text-fill-color: currentColor;
-  font-size: 12px;
-  font-weight: 400;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-regular);
   line-height: 16px;
 }
 .clan-weight-source a {

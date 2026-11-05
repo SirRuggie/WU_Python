@@ -5,7 +5,7 @@
   align-items: center;
   margin: 0 0 20px;
   color: var(--wu-text-muted);
-  font-size: 0.85rem;
+  font-size: var(--wu-text-xs);
 }
 .staff-overview-status label {
   display: flex;
@@ -29,7 +29,8 @@
 }
 .staff-overview-row p {
   margin: 6px 0;
-  font-size: 0.85rem;
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
 }
 .staff-overview-row > div {
   min-width: 0;
@@ -37,13 +38,14 @@
 }
 .staff-overview-row button {
   flex-shrink: 0;
-  font-size: 0.85rem;
+  font-size: var(--wu-text-md);
 }
 .staff-overview-count {
-  font-size: 2.5rem !important;
-  font-weight: 700;
+  font-size: var(--wu-text-xl) !important;
+  font-weight: var(--wu-weight-bold);
   color: #fff !important;
   margin: 12px 0 !important;
+  font-variant-numeric: tabular-nums;
 }
 .staff-overview-shortcuts {
   display: flex;

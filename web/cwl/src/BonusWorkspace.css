@@ -6,6 +6,7 @@
 }
 .bonus-page-head > div > p:last-child {
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .bonus-context,
 .bonus-section-heading,
@@ -23,7 +24,7 @@
 }
 .bonus-context > span {
   color: var(--roster-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .bonus-context button,
 .bonus-quiet-action {
@@ -49,7 +50,7 @@
   min-width: 100px;
   padding: 8px 10px;
   color: var(--roster-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   border-bottom: 2px solid transparent;
   white-space: nowrap;
 }
@@ -58,7 +59,7 @@
   border-color: var(--roster-gold);
 }
 .bonus-steps li span {
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   margin-right: 6px;
 }
 .bonus-controls {
@@ -96,6 +97,7 @@
 .bonus-section-heading p {
   margin: 5px 0 0;
   color: var(--roster-text-muted);
+  text-wrap: pretty;
 }
 .bonus-section-heading > span {
   color: var(--roster-text);
@@ -106,6 +108,7 @@
   gap: 0;
   border-block: 1px solid var(--roster-border-subtle);
   margin: 12px 0;
+  font-variant-numeric: tabular-nums;
 }
 .bonus-stats > div {
   min-width: 130px;
@@ -114,19 +117,23 @@
   align-items: baseline;
   gap: 8px;
   padding: 11px 14px;
+  font-variant-numeric: tabular-nums;
 }
 .bonus-stats > div + div {
   border-left: 1px solid var(--roster-border-subtle);
+  font-variant-numeric: tabular-nums;
 }
 .bonus-stats strong {
   color: var(--roster-gold);
-  font-size: 20px;
+  font-size: var(--wu-text-xl);
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 .bonus-stats span,
 .bonus-support {
   color: var(--roster-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
+  font-variant-numeric: tabular-nums;
 }
 .bonus-support {
   margin: 8px 0 14px;
@@ -143,6 +150,7 @@
 .bonus-secondary > p {
   color: var(--roster-text-muted);
   margin: 6px 0 14px;
+  text-wrap: pretty;
 }
 .bonus-secondary > label:not(.bonus-check) {
   display: block;
@@ -210,14 +218,14 @@
 .bonus-account-identity strong,
 .bonus-account-outcome strong {
   display: block;
-  font-size: var(--roster-font-body);
+  font-size: var(--wu-text-md);
 }
 .bonus-account-identity small,
 .bonus-account-outcome small,
 .bonus-editor-heading small {
   display: block;
   color: var(--roster-text-muted);
-  font-size: var(--roster-font-small);
+  font-size: var(--wu-text-xs);
   margin-top: 3px;
 }
 .bonus-account-outcome small:first-of-type {
@@ -259,14 +267,16 @@
 .bonus-review-editor > p,
 .bonus-add-candidate > p {
   color: var(--roster-text-muted);
+  text-wrap: pretty;
 }
 .bonus-review-context {
   margin: 10px 0;
   color: var(--roster-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .bonus-review-context p {
   margin: 5px 0;
+  text-wrap: pretty;
 }
 .bonus-review-context .bonus-review-attribution {
   color: var(--roster-text-muted);
@@ -277,7 +287,7 @@
   margin: 12px 0;
 }
 .bonus-review-editor legend {
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   margin-bottom: 4px;
 }
 .bonus-flag {
@@ -359,7 +369,7 @@
 }
 .bonus-action-bar span {
   color: var(--roster-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-md);
 }
 .bonus-action-bar button {
   min-height: 44px;
@@ -436,12 +446,15 @@
     padding: 9px 8px;
     flex-direction: column;
     gap: 2px;
+    font-variant-numeric: tabular-nums;
   }
   .bonus-stats strong {
-    font-size: 17px;
+    font-size: var(--wu-text-xl);
+    font-variant-numeric: tabular-nums;
   }
   .bonus-stats span {
-    font-size: 11px;
+    font-size: var(--wu-text-xs);
+    font-variant-numeric: tabular-nums;
   }
   .bonus-account-list li {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -465,7 +478,7 @@
 @media (max-width: 380px) {
   .bonus-steps li {
     min-width: 88px;
-    font-size: var(--roster-font-small);
+    font-size: var(--wu-text-sm);
   }
   .bonus-candidates-heading {
     flex-wrap: wrap;

@@ -105,11 +105,12 @@
 }
 .members-person-zone {
   overflow-wrap: anywhere;
-  font-size: 0.9rem;
+  font-size: var(--wu-text-xs);
 }
 .members-person > p {
   grid-column: 2;
   margin: 0;
+  text-wrap: pretty;
 }
 .members-workspace {
   min-height: 420px;
@@ -154,7 +155,10 @@
   border-bottom: 1px solid var(--wu-border);
 }
 .members-person-section h2 {
-  font-size: 1.1rem;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .members-person-role-list {
   max-height: 280px;
@@ -205,7 +209,7 @@
   align-items: center;
 }
 .members-workspace > header button {
-  font-size: 0.875rem;
+  font-size: var(--wu-text-md);
   padding: 0.5rem 0.75rem;
 }
 .members-workspace > header > div > button {
@@ -234,7 +238,7 @@
   width: 100%;
 }
 .members-person-open .roster-discord-person strong {
-  font-size: 15px;
+  font-size: var(--wu-text-md);
 }
 .members-workspace .mt-review-entry.is-compact {
   display: flex;
@@ -310,7 +314,7 @@
 }
 .members-range {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--wu-text-sm);
 }
 .members-bulk-bar {
   min-width: 0;

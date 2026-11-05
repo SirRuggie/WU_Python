@@ -70,8 +70,8 @@ div.shell {
   margin: 0 11px 4px;
   padding-top: 5px;
   color: var(--wu-text-muted);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -98,8 +98,8 @@ div.shell {
   border-radius: 9px;
   background: transparent;
   color: var(--wu-text);
-  font-size: 13px;
-  font-weight: 580;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-medium);
   line-height: 1.25;
   text-align: left;
   white-space: normal;
@@ -145,7 +145,7 @@ div.shell {
   background: var(--wu-accent-soft);
   color: #ffe098;
   box-shadow: inset 3px 0 #e4b94b;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .shell
   .sidebar
@@ -163,7 +163,7 @@ div.shell {
   display: none;
 }
 .shell .sidebar .navigation-children button {
-  font-size: 13px;
+  font-size: var(--wu-text-md);
 }
 
 .shell .sidebar > .sidebar-foot {
@@ -202,8 +202,8 @@ div.shell {
 }
 .shell .sidebar-account .user-display-name {
   display: block;
-  font-size: 13px;
-  font-weight: 750;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-bold);
 }
 .shell .sidebar-account > small {
   display: block;
@@ -211,7 +211,7 @@ div.shell {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--wu-text-muted);
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
 }
 .shell .sidebar-foot > button {
   width: 100%;
@@ -219,7 +219,7 @@ div.shell {
   margin: 0;
   border-color: var(--wu-border-subtle);
   background: var(--wu-surface-raised);
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 
 .shell .workspace main {
@@ -237,10 +237,10 @@ div.shell {
   min-width: 0;
 }
 .shell .topbar > div > strong {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .shell .topbar .crumb {
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
 }
 .shell .topbar .user-pill {
@@ -342,7 +342,7 @@ div.shell {
     flex-basis: 100%;
   }
   .cwl-roster-tabs button {
-    font-size: 13px;
+    font-size: var(--wu-text-md);
     padding: 10px 6px;
   }
 }
@@ -376,6 +376,6 @@ div.shell {
 @media (max-width: 650px) {
   .shell .cwl-roster-tabs > button {
     padding: 8px 6px;
-    font-size: 13px;
+    font-size: var(--wu-text-md);
   }
 }

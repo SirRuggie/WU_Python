@@ -45,6 +45,7 @@
 }
 .staff-tag-result fieldset > p {
   margin: 0;
+  text-wrap: pretty;
 }
 .staff-tag-result .roster-ui-status {
   margin-right: 7px;

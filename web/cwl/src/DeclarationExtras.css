@@ -14,10 +14,11 @@
 }
 .declaration-extras p,
 .declaration-extras-status {
-  font-size: 0.85rem;
+  font-size: var(--wu-text-sm);
   color: #b6afa1;
   margin: 8px 12px;
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .declaration-member-list {
   list-style: none;
@@ -33,7 +34,7 @@
 .declaration-member-context {
   display: block;
   color: #b6afa1;
-  font-size: 0.85rem;
+  font-size: var(--wu-text-sm);
   margin-top: 3px;
 }
 .arrival-check .declaration-clan > .declaration-extras-status {

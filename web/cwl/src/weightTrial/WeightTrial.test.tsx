@@ -392,8 +392,9 @@ it("owns hidden-label styling, readable text and disclosure targets on cold navi
     );
   expect(accentDefinitions).toEqual(["tokens.css"]);
   expect(css).toMatch(
-    /\.weight-trial \.town-hall-fallback\s*\{[^}]*font-size: 12px/,
+    /\.weight-trial \.town-hall-fallback\s*\{[^}]*font-size: var\(--wu-text-xs\)/,
   );
+  expect(globalTokens).toMatch(/--wu-text-xs:\s*12px\s*;/);
   expect(
     host.querySelector(".weight-trial-editor .weight-trial-save"),
   ).not.toBeNull();

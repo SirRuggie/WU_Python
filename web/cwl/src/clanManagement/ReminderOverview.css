@@ -10,10 +10,14 @@
 }
 .overview-heading h2 {
   margin: 6px 0;
-  font-size: clamp(1.3rem, 2vw, 1.8rem);
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .overview-heading p {
   margin: 6px 0;
+  text-wrap: pretty;
 }
 .overview-heading > button {
   flex-shrink: 0;
@@ -36,7 +40,7 @@
   color: var(--wu-text);
 }
 .overview-filters strong {
-  font-size: 1.6rem;
+  font-size: var(--wu-text-xl);
 }
 .overview-filters button[aria-pressed="true"] {
   border-color: #e6a640;
@@ -56,12 +60,13 @@
 }
 .overview-toolbar p {
   margin: 0 0 5px;
+  text-wrap: pretty;
 }
 .overview-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.92rem;
+  font-size: var(--wu-text-sm);
   table-layout: fixed;
 }
 .overview-table th,
@@ -74,8 +79,8 @@
 }
 .overview-table thead th {
   color: var(--wu-text-muted);
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
   background: var(--wu-surface);
 }
 .overview-table thead th:first-child {
@@ -98,7 +103,7 @@
   display: block;
   margin-top: 7px;
   color: var(--wu-text-muted);
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
   line-height: 1.45;
 }
 .overview-table td button {
@@ -112,8 +117,8 @@
   color: #e0e6ef;
   border-radius: 6px;
   padding: 4px 8px;
-  font-weight: 600;
-  font-size: 0.8rem;
+  font-weight: var(--wu-weight-medium);
+  font-size: var(--wu-text-xs);
 }
 .overview-state-attention {
   border-color: #dba94d;
@@ -137,7 +142,7 @@
 }
 .overview-note {
   color: var(--wu-text-muted);
-  font-size: 0.85rem;
+  font-size: var(--wu-text-sm);
   margin-top: 16px;
 }
 .overview-mobile-label {
@@ -204,12 +209,12 @@
     padding: 8px;
   }
   .overview-table th {
-    font-size: 1.1rem;
+    font-size: var(--wu-text-sm);
   }
   .overview-mobile-label {
     display: block;
     color: var(--wu-text-muted);
-    font-size: 0.78rem;
+    font-size: var(--wu-text-sm);
     margin-bottom: 4px;
   }
 }
@@ -242,7 +247,7 @@
   flex: 1;
 }
 .overview-off-line span {
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   white-space: nowrap;
 }
 .overview-off-line button {

@@ -1,6 +1,6 @@
 .roster-image-carousel {
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
 }
 .image-carousel-position {
   display: flex;

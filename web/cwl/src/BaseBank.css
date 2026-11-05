@@ -5,6 +5,7 @@
 .base-bank header p,
 .base-bank-muted {
   color: var(--muted, var(--wu-text-muted));
+  text-wrap: pretty;
 }
 .base-bank-levels {
   display: flex;
@@ -19,13 +20,13 @@
   flex: 0 0 auto;
   min-height: 44px;
   border-radius: 24px;
-  font-size: 16px;
+  font-size: var(--wu-text-md);
 }
 .base-bank-levels button[aria-pressed="true"] {
   background: #d4a017;
   border-color: #d4a017;
   color: #17130a;
-  font-weight: 700;
+  font-weight: var(--wu-weight-medium);
 }
 .base-bank-grid {
   display: grid;
@@ -54,8 +55,9 @@
 }
 .base-bank-image p {
   color: var(--wu-text-muted);
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
   padding: 16px;
+  text-wrap: pretty;
 }
 .base-bank-card-body {
   padding: 20px;
@@ -72,7 +74,7 @@
   background: var(--wu-surface-soft);
   border-radius: 18px;
   padding: 6px 12px;
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
 }
 .base-bank-copy {
   width: 100%;
@@ -80,11 +82,11 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  font-weight: 700;
+  font-weight: var(--wu-weight-medium);
 }
 .base-bank-card details {
   margin-top: 14px;
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
 }
 .base-bank-card summary {
   cursor: pointer;
@@ -95,6 +97,7 @@
 .base-bank-details p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .base-bank button:focus-visible,
 .base-bank a:focus-visible,

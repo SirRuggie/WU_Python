@@ -23,6 +23,7 @@
 .declaration-ping-panel p,
 .declaration-ping-review li {
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .declaration-ping-review {
   max-height: 55dvh;
@@ -52,7 +53,7 @@
 }
 .declaration-ping-panel > summary > span {
   color: var(--roster-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .declaration-ping-body {
   padding-top: 8px;

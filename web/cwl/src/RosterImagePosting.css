@@ -14,10 +14,11 @@
 .roster-image-posting h3,
 .roster-image-posting p {
   margin: 0;
+  text-wrap: pretty;
 }
 .roster-image-posting .image-muted {
   color: var(--roster-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .roster-image-posting summary {
   min-height: 44px;

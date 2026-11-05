@@ -38,7 +38,7 @@
 }
 .details-frame small,
 .details-frame dt {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 @media (max-width: 767px) {
   .details-frame {
@@ -51,7 +51,7 @@
   }
   .details-frame-navigation .roster-ui-button {
     padding-inline: 8px;
-    font-size: 12px;
+    font-size: var(--wu-text-md);
     white-space: nowrap;
   }
   .details-player-navigation {

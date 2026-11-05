@@ -1,16 +1,17 @@
 :root {
   font-family:
-    Inter,
-    ui-sans-serif,
+    "WU Inter",
+    "WU Inter Fallback",
     system-ui,
     -apple-system,
-    BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
   color: var(--wu-text);
   background: var(--wu-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-regular);
 }
 * {
   box-sizing: border-box;
@@ -38,7 +39,8 @@ button,
   align-items: center;
   justify-content: center;
   gap: 7px;
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
+  font-size: var(--wu-text-md);
 }
 button:hover,
 .button:hover {
@@ -70,7 +72,7 @@ select {
   color: var(--wu-text);
   border-radius: 10px;
   max-width: 100%;
-  font-size: 16px;
+  font-size: var(--wu-text-md);
 }
 input[type="checkbox"],
 input[type="radio"] {
@@ -83,8 +85,8 @@ input[type="radio"] {
 label {
   display: block;
   color: var(--wu-text-muted);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
 }
 label > input:not([type="checkbox"]):not([type="radio"]),
 label > select {
@@ -106,34 +108,43 @@ p {
   margin-top: 0;
 }
 h1 {
-  font-size: clamp(28px, 4vw, 38px);
+  font-size: var(--wu-text-2xl);
   line-height: 1.15;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.02em;
   margin-bottom: 10px;
+  font-weight: var(--wu-weight-bold);
+  text-wrap: balance;
 }
 h2 {
-  font-size: 21px;
+  font-size: var(--wu-text-xl);
   letter-spacing: -0.025em;
   margin-bottom: 8px;
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 h3 {
-  font-size: 17px;
+  font-size: var(--wu-text-lg);
   margin-bottom: 7px;
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
 }
 p {
   color: var(--wu-text);
   line-height: 1.55;
+  text-wrap: pretty;
 }
 .small,
 small {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
 }
 .eyebrow {
   color: #dcb43f;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   margin-bottom: 8px;
 }
@@ -165,7 +176,11 @@ small {
   padding: 34px;
 }
 .login-card h1 {
-  font-size: 34px;
+  font-size: var(--wu-text-2xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.15;
+  text-wrap: balance;
+  letter-spacing: -0.02em;
 }
 .login-card .button {
   width: 100%;
@@ -185,20 +200,20 @@ small {
   background: #d9a628;
   color: var(--wu-accent-ink);
   border-radius: 11px;
-  font-size: 13px;
-  font-weight: 900;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-bold);
   letter-spacing: -0.08em;
 }
 .brand strong {
   display: block;
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
   letter-spacing: -0.03em;
 }
 .brand small {
   display: block;
   color: var(--wu-text-muted);
   letter-spacing: 0.19em;
-  font-size: 9px;
+  font-size: var(--wu-text-xs);
   margin-top: 2px;
 }
 .shell {
@@ -226,9 +241,10 @@ small {
   display: block;
   margin: 14px 11px 7px;
   text-transform: uppercase;
-  letter-spacing: 0.13em;
-  font-size: 10px;
+  letter-spacing: 0.08em;
+  font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
+  font-weight: var(--wu-weight-medium);
 }
 .sidebar nav button {
   width: 100%;
@@ -251,7 +267,7 @@ small {
   overflow-wrap: anywhere;
 }
 .sidebar-foot strong {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .sidebar-foot button {
   margin-top: 12px;
@@ -280,10 +296,10 @@ small {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .topbar strong {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .crumb {
   color: var(--wu-text-muted);
@@ -294,7 +310,7 @@ small {
   border-radius: 8px;
   padding: 6px 10px;
   color: var(--wu-text);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .workspace main {
   max-width: 1300px;
@@ -311,6 +327,7 @@ small {
 }
 .page-head p:last-child {
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .season-choice {
   width: min(260px, 100%);
@@ -327,7 +344,7 @@ small {
   border: 1px solid #303035;
   border-radius: 13px;
   margin-bottom: 22px;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .season-banner > div {
   display: flex;
@@ -350,9 +367,10 @@ small {
   border-radius: 7px;
   background: var(--wu-surface-soft);
   color: var(--wu-text);
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
   padding: 5px 8px;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
+  font-variant-numeric: tabular-nums;
 }
 .season-banner > span {
   color: var(--wu-text-muted);
@@ -378,11 +396,13 @@ small {
 }
 .section-heading p:last-child {
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .count-pill {
   background: #302817;
   color: #e0b43c;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .selection-bar {
   display: flex;
@@ -399,12 +419,12 @@ small {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: var(--wu-text);
   cursor: pointer;
 }
 .selection-bar button {
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 .account-list {
   display: grid;
@@ -449,7 +469,7 @@ small {
   overflow-wrap: anywhere;
 }
 .account-select strong {
-  font-size: 15px;
+  font-size: var(--wu-text-md);
 }
 .account-select small {
   margin-top: 2px;
@@ -462,13 +482,13 @@ small {
   padding-left: 32px;
   align-items: start;
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   flex-wrap: wrap;
 }
 .account-meta strong {
   display: block;
   color: #e6e5e2;
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
   overflow-wrap: anywhere;
 }
 .inline-reason {
@@ -477,7 +497,7 @@ small {
   background: var(--wu-warning-surface);
   border-radius: 8px;
   color: #ecc8a3;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .preference {
   border: 0;
@@ -490,9 +510,9 @@ small {
   flex-wrap: wrap;
 }
 .preference legend {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   color: #eee2c1;
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
   padding: 0 0 5px;
 }
 .preference label {
@@ -513,7 +533,7 @@ small {
   background: #282213;
   border: 1px solid #51421f;
   border-radius: 11px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .apply-all strong {
   margin-right: auto;
@@ -565,6 +585,7 @@ small {
 }
 .empty p {
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .empty button {
   margin-top: 15px;
@@ -580,7 +601,7 @@ small {
   color: #f0d99d;
   border-radius: 10px;
   margin-bottom: 20px;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .notice.error {
   border-color: #67403c;
@@ -594,7 +615,7 @@ small {
 }
 .notice button {
   min-height: 36px;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
   flex: none;
 }
 .staff-grid {
@@ -626,7 +647,7 @@ small {
 }
 .staff-row button {
   flex: none;
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 .inline-form {
   display: flex;
@@ -672,7 +693,7 @@ small {
   top: 15px;
   min-width: 44px;
   padding: 0;
-  font-size: 26px;
+  font-size: var(--wu-text-md);
 }
 .modal h2 {
   padding-right: 40px;
@@ -689,7 +710,7 @@ small {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .review-row small {
   display: block;
@@ -833,12 +854,13 @@ small {
   .count-pill {
     display: inline-block;
     margin-top: 9px;
+    font-variant-numeric: tabular-nums;
   }
   .tabs {
     gap: 5px;
   }
   .tabs button {
-    font-size: 12px;
+    font-size: var(--wu-text-md);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -882,8 +904,8 @@ small {
   color: var(--wu-warning);
   border-radius: 9px;
   margin-bottom: 20px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-bold);
 }
 
 .card-heading {
@@ -896,7 +918,7 @@ small {
   margin-bottom: 0 !important;
 }
 .card-heading button {
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 
 /* Discord account identity */
@@ -925,7 +947,7 @@ small {
   place-items: center;
   background: #4b3b19;
   color: #f5d77d;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .user-display-name {
   min-width: 0;
@@ -956,7 +978,7 @@ small {
     max-width: 125px;
   }
   .topbar strong {
-    font-size: 12px;
+    font-size: var(--wu-text-sm);
   }
 }
 
@@ -976,8 +998,8 @@ small {
   border-radius: 14px;
   background: #d9a628;
   color: var(--wu-accent-ink);
-  font-size: 30px;
-  font-weight: 900;
+  font-size: var(--wu-text-2xl);
+  font-weight: var(--wu-weight-bold);
   margin-bottom: 20px;
 }
 .completion-card h1 {
@@ -985,6 +1007,7 @@ small {
 }
 .completion-card > p strong {
   color: var(--wu-text);
+  text-wrap: pretty;
 }
 .completion-accounts {
   display: grid;
@@ -1022,7 +1045,7 @@ small {
   flex: none;
 }
 .registered-actions button {
-  font-size: 12px;
+  font-size: var(--wu-text-md);
 }
 @media (max-width: 650px) {
   .completion-accounts {
@@ -1038,19 +1061,19 @@ small {
 }
 
 .preference-help {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   color: #d5c6a2;
   margin: 3px 0 10px;
   max-width: 54ch;
 }
 .outside-flag {
   color: #e9bd76 !important;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 
 .unknown-flag {
   color: #c8c8ce !important;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 
 .signup-panel-tabs {
@@ -1096,7 +1119,7 @@ small {
   box-shadow: inset 0 0 0 1px #d9a628;
 }
 .pool-choice-grid strong {
-  font-size: 18px;
+  font-size: var(--wu-text-lg);
 }
 .pool-choice-grid small {
   text-align: left;
@@ -1110,21 +1133,23 @@ small {
   border-radius: 8px;
   background: #393027;
   color: #e0b43c;
-  font-size: 17px;
+  font-size: var(--wu-text-xl);
 }
 .pool-choice > p:last-child {
   margin: 12px 0 0;
+  text-wrap: pretty;
 }
 .pool-prompt {
   margin-bottom: 25px;
 }
 .pool-prompt p {
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .transfer-review {
   display: block;
   color: #e0b43c !important;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .registered {
   margin-top: 15px;
@@ -1142,7 +1167,7 @@ small {
   }
   .signup-panel-tabs button {
     padding: 8px;
-    font-size: 12px;
+    font-size: var(--wu-text-md);
     white-space: normal;
   }
 }
@@ -1157,7 +1182,7 @@ small {
   border-left: 3px solid #d9a628;
   background: #282315;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   color: #d8c9a7;
 }
 .rules-grid {
@@ -1235,7 +1260,7 @@ small {
   min-width: 180px;
 }
 .roster-bulk > strong {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: #e8d094;
 }
 .roster-bulk > small {
@@ -1247,7 +1272,7 @@ small {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--wu-text-md);
 }
 .roster-select-all input,
 .roster-account-select input {
@@ -1282,7 +1307,7 @@ textarea {
   border-radius: 10px;
   resize: vertical;
   max-width: 100%;
-  font-size: 16px;
+  font-size: var(--wu-text-md);
 }
 textarea:focus-visible {
   outline: 3px solid var(--wu-focus);
@@ -1313,20 +1338,22 @@ textarea:focus-visible {
 .publication-status p:last-child,
 .assignment-version p:last-child {
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .publication-meta {
   display: grid;
   gap: 4px;
   min-width: 180px;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
 }
 .publication-meta strong {
   color: #ebd18c;
-  font-size: 15px;
+  font-size: var(--wu-text-xs);
 }
 .publication-totals {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  font-variant-numeric: tabular-nums;
 }
 .publication-preview {
   margin: 18px 0;
@@ -1354,7 +1381,7 @@ textarea:focus-visible {
 }
 .publication-row span {
   text-align: right;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
 .publication-unassigned {
@@ -1397,6 +1424,7 @@ textarea:focus-visible {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .assignment-grid {
   display: grid;
@@ -1416,6 +1444,8 @@ textarea:focus-visible {
 }
 .assignment-card .eyebrow {
   margin: 20px 0 6px;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
 }
 .assignment-card h3 {
   margin-bottom: 4px;
@@ -1438,8 +1468,9 @@ textarea:focus-visible {
   color: #efcf90;
 }
 .assignment-awaiting p {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   margin: 6px 0 0;
+  text-wrap: pretty;
 }
 @media (max-width: 800px) {
   .assignment-grid {
@@ -1477,12 +1508,15 @@ textarea:focus-visible {
   }
   .publication-totals {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    font-variant-numeric: tabular-nums;
   }
   .publication-totals > div {
     padding: 11px;
+    font-variant-numeric: tabular-nums;
   }
   .publication-totals strong {
-    font-size: 20px;
+    font-size: var(--wu-text-xl);
+    font-variant-numeric: tabular-nums;
   }
 }
 .assignment-provisional {
@@ -1517,8 +1551,11 @@ textarea:focus-visible {
   min-width: 0;
 }
 .announcement-card h3 {
-  font-size: 20px;
+  font-size: var(--wu-text-lg);
   margin-bottom: 20px;
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
 }
 .announcement-channel-actions {
   display: flex;
@@ -1535,14 +1572,16 @@ textarea:focus-visible {
   flex-wrap: wrap;
   gap: 7px;
   margin: 20px 0 12px;
+  font-variant-numeric: tabular-nums;
 }
 .announcement-counts span {
   padding: 5px 8px;
   border-radius: 6px;
   background: #302817;
   color: #edd48c;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-bold);
+  font-variant-numeric: tabular-nums;
 }
 .announcement-preview {
   border: 1px solid #3e3930;
@@ -1552,7 +1591,7 @@ textarea:focus-visible {
   min-width: 0;
 }
 .announcement-preview strong {
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   color: #ebd18c;
 }
 .announcement-preview pre {
@@ -1624,7 +1663,7 @@ textarea:focus-visible {
 }
 .compare-clan-summary strong {
   flex-basis: 100%;
-  font-size: 16px;
+  font-size: var(--wu-text-md);
   overflow-wrap: anywhere;
 }
 .compare-clan-summary small {
@@ -1678,6 +1717,7 @@ textarea:focus-visible {
 .compare-selected p {
   margin-bottom: 10px;
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .compare-review {
   margin-top: 15px;
@@ -1691,6 +1731,7 @@ textarea:focus-visible {
 }
 .compare-review p {
   margin: 9px 0 14px;
+  text-wrap: pretty;
 }
 .compare-review > div {
   display: flex;
@@ -1802,7 +1843,8 @@ textarea:focus-visible {
 .channel-more {
   display: block;
   margin: 7px 8px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
 }
 @media (max-width: 650px) {
   .channel-results button {
@@ -1849,7 +1891,7 @@ img.discord-server-icon {
   flex: none;
 }
 .town-hall-fallback {
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
   white-space: nowrap;
   flex: none;
   border: 1px solid var(--wu-border);
@@ -1860,7 +1902,7 @@ img.discord-server-icon {
 
 .discord-contact {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   min-height: 44px;
   padding: 8px 12px;
   max-width: 100%;
@@ -1936,23 +1978,27 @@ img.discord-server-icon {
 .shell .signup-guide :is(h2, p, span, b) {
   color: var(--wu-accent-ink);
   -webkit-text-fill-color: var(--wu-accent-ink);
+  text-wrap: pretty;
 }
 .shell .signup-guide h2 {
-  font-size: 24px;
-  line-height: 1.25;
+  font-size: var(--wu-text-xl);
+  line-height: 1.2;
   margin: 0;
   outline: none;
+  font-weight: var(--wu-weight-bold);
+  text-wrap: balance;
 }
 .shell .signup-guide .eyebrow {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
+  letter-spacing: 0.08em;
   margin: 0 0 8px;
 }
 .shell .signup-guide p {
-  font-size: 14px;
+  font-size: var(--wu-text-md);
   margin: 12px 0 0;
-  line-height: 1.5;
+  line-height: 1.55;
+  text-wrap: pretty;
 }
 .shell .signup-guide h2:focus-visible {
   outline: none;
@@ -1967,6 +2013,7 @@ img.discord-server-icon {
   .shell .signup-guide :is(h2, p, span, b) {
     color: CanvasText;
     -webkit-text-fill-color: currentColor;
+    text-wrap: pretty;
   }
   .shell .signup-guide {
     background: Canvas;
@@ -1992,8 +2039,8 @@ img.discord-server-icon {
 .shell .pool-next {
   display: block;
   margin-top: 7px;
-  font-size: 14px;
-  font-weight: 800;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-bold);
   color: var(--wu-text-muted);
 }
 .shell .pool-choice-symbol {
@@ -2007,13 +2054,26 @@ img.discord-server-icon {
     padding: 14px;
   }
   .shell .signup-guide h2 {
-    font-size: 22px;
+    font-size: var(--wu-text-xl);
+    font-weight: var(--wu-weight-bold);
+    line-height: 1.2;
+    text-wrap: balance;
   }
   .shell .signup-guide p {
-    font-size: 13px;
+    font-size: var(--wu-text-md);
+    text-wrap: pretty;
   }
   .shell .signup-flow .pool-choice-grid button {
     min-height: 125px;
     padding: 16px;
   }
+}
+@media (max-width: 480px) {
+  h1 {
+    font-size: var(--wu-text-xl);
+  }
+}
+textarea {
+  font-family: inherit;
+  font-size: var(--wu-text-md);
 }

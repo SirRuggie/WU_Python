@@ -15,6 +15,7 @@
 }
 .cwl-pool-roles > p {
   color: var(--wu-text-muted);
+  text-wrap: pretty;
 }
 .cwl-pool-role {
   margin-block: 16px;
@@ -34,6 +35,7 @@
 }
 .cwl-pool-role p {
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 
 .cwl-pool-role {
@@ -42,6 +44,6 @@
   min-width: 0;
 }
 .cwl-pool-role legend {
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   margin-bottom: 8px;
 }

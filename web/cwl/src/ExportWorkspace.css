@@ -6,6 +6,7 @@
 }
 .export-page-head p {
   margin-bottom: 0;
+  text-wrap: pretty;
 }
 .export-season-status {
   display: flex;
@@ -14,7 +15,7 @@
   gap: 5px 16px;
   padding: 10px 0;
   border-block: 1px solid #ffffff24;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
 }
 .export-controls {
@@ -31,7 +32,8 @@
   grid-column: 1 / -1;
   margin: 0;
   color: var(--wu-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
 }
 .export-ready {
   display: flex;
@@ -50,12 +52,12 @@
   overflow-wrap: anywhere;
 }
 .export-ready strong {
-  font-size: 16px;
+  font-size: var(--wu-text-md);
 }
 .export-ready span {
   margin-top: 2px;
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .export-ready button {
   flex: 0 0 auto;
@@ -71,7 +73,7 @@
   min-height: 44px;
   color: var(--wu-text-muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .export-about summary::before,
 .export-record-details summary::before {
@@ -83,8 +85,9 @@
   content: "▾";
 }
 .export-about p {
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   margin: 0 0 10px;
+  text-wrap: pretty;
 }
 .export-list-head {
   display: flex;
@@ -95,11 +98,11 @@
   padding-bottom: 8px;
 }
 .export-list-head strong {
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
 }
 .export-list-head span {
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .export-search {
   display: block;
@@ -127,23 +130,23 @@
   display: block;
 }
 .export-record-name strong {
-  font-size: 13px;
+  font-size: var(--wu-text-md);
 }
 .export-record-name small {
-  font-size: 11px;
+  font-size: var(--wu-text-xs);
 }
 .export-record-field small {
-  font-size: 10px;
+  font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
 }
 .export-record-field span {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .export-empty {
   padding: 12px 0;
   color: var(--wu-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 @media (max-width: 900px) {
   .export-record {
@@ -159,6 +162,7 @@
   }
   .export-controls p {
     grid-column: auto;
+    text-wrap: pretty;
   }
   .export-ready {
     align-items: stretch;
@@ -176,10 +180,10 @@
     grid-column: 1 / -1;
   }
   .export-record-field small {
-    font-size: 11px;
+    font-size: var(--wu-text-xs);
   }
   .export-record-field span {
-    font-size: 13px;
+    font-size: var(--wu-text-sm);
   }
 }
 .export-mismatch-note {
@@ -188,7 +192,7 @@
   border-left: 3px solid #bd8a81;
   background: #bd8a8110;
   color: #e3c2bb;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .export-record-details {
   grid-column: 1 / -1;
@@ -200,12 +204,13 @@
   min-height: 44px;
   color: var(--wu-text-muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .export-record-details p {
   margin: 0 0 7px;
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .export-about summary:focus-visible,
 .export-record-details summary:focus-visible {

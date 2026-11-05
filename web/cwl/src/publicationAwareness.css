@@ -12,7 +12,7 @@
   border-radius: 14px;
   background: var(--roster-card);
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }
 .publication-awareness-status {
   min-width: 0;
@@ -23,8 +23,16 @@
 .publication-change-list h3,
 .publication-change-list li strong {
   color: var(--wu-text);
-  font-size: 15px;
-  font-weight: 700;
+  font-weight: var(--wu-weight-medium);
+}
+.publication-change-list li strong {
+  font-size: var(--wu-text-md);
+}
+.publication-change-list h3 {
+  font-size: var(--wu-text-lg);
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  text-wrap: balance;
 }
 .publication-awareness button {
   flex-shrink: 0;
@@ -39,7 +47,7 @@
 .publication-change-list {
   margin: 14px 0;
   color: var(--wu-text-muted);
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 .publication-change-list h3 {
   margin: 0 0 6px;
@@ -62,5 +70,5 @@
 }
 .publication-change-caveat {
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-sm);
 }

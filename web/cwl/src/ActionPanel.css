@@ -47,7 +47,10 @@
 }
 .action-panel-heading h2 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: var(--wu-text-xl);
+  font-weight: var(--wu-weight-bold);
+  line-height: 1.2;
+  text-wrap: balance;
 }
 .action-panel-close {
   min-height: 44px;

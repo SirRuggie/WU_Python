@@ -3,9 +3,11 @@
   padding: clamp(22px, 5vw, 36px);
 }
 .welcome-screen h1 {
-  font-size: clamp(30px, 6vw, 40px);
+  font-size: var(--wu-text-2xl);
   line-height: 1.15;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.02em;
+  font-weight: var(--wu-weight-bold);
+  text-wrap: balance;
 }
 .welcome-features {
   list-style: none;
@@ -20,7 +22,7 @@
   align-items: center;
 }
 .welcome-features li > span {
-  font-size: 24px;
+  font-size: var(--wu-text-md);
   flex: none;
 }
 .welcome-features strong,
@@ -53,10 +55,10 @@
   margin-bottom: 16px;
 }
 .page-link-row button {
-  font-size: 13px;
+  font-size: var(--wu-text-md);
   min-height: 44px;
 }
 .page-link-row span {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   color: #a4dfc4;
 }
