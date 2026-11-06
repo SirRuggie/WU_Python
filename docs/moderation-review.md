@@ -313,3 +313,53 @@ no-store avatar reads returned 200. No backend 503 or traceback appeared in the
 checked journal; nothing was saved or sent. Deployment tooling needed a recursive
 manifest finalizer for nested shared assets; this was a staging-tool issue, not an
 application or production check failure.
+
+
+## Four new logs (2026-11-06)
+
+Seven event keys join the existing four in the same settings document (schema stays 2,
+revision-checked PUT). All default to off with no destination.
+
+| key | category | source |
+|---|---|---|
+| `timeout_add`, `timeout_remove` | moderation | audit-log `MEMBER_UPDATE` entry whose `communication_disabled_until` change sets a future time, or clears it |
+| `member_update` | members | `MemberUpdateEvent` diff: nickname, username, display name, avatar, server avatar, discriminator (only when not `0`) |
+| `link` | messages | `GuildMessageCreateEvent` with at least one `http(s)://` URL |
+| `invite_create`, `invite_delete` | invites | `InviteCreateEvent`, `InviteDeleteEvent` |
+| `invite_use` | invites | `MemberCreateEvent` plus a diff of invite use counts |
+
+Categories are now `members`, `moderation`, `messages`, `invites`. Reading an old row fills the
+missing keys from defaults; nothing is written until a revision-checked save.
+
+New settings fields: `ignores` (`channel_ids`, `role_ids`, max 100 ids each, 17 to 20 digits;
+link event only) and `invite_names` (`{code: name}`, max 200). `GET /api/cwl/member-events/invites`
+reads the bot's snapshot from the `member_invites` collection (one document per guild and code).
+
+How each part works:
+
+- Timeouts post from the audit entry and dedupe on the audit entry id. Moderator, reason,
+  duration and expiry come from it.
+- `member_update` needs the cached previous member, so it is skipped when that is missing.
+  Username, display-name and avatar changes arrive on `MemberUpdateEvent` because Discord sends
+  the updated user object in `GUILD_MEMBER_UPDATE`. The nickname actor is read from a single
+  audit-log page; when no entry matches the actor is omitted.
+- `link` skips bot and webhook authors, ignored channels, threads whose parent channel is
+  ignored, and authors with an ignored role. It dedupes on the message id.
+- `invite_use` snapshots invites at start and after every join, under one lock so two joins do
+  not share a diff. An invite is named only when exactly one explains the join: one use count
+  rose by 1, the vanity count rose, or an invite one use short of its limit vanished. Anything
+  else, and any fetch or permission failure, shows "Unknown invite".
+- `link` and `invite_*` rows are written only while their log is on and are excluded from
+  history search. Timeout and `member_update` rows are kept even when delivery is off.
+- No avatar bytes are downloaded or stored for the new kinds; cards use the Discord CDN URL.
+
+Limits:
+
+- A timeout that runs out by itself is not logged; Discord writes no audit entry for it.
+- Invite uses are joins, not link clicks. Attribution can be Unknown, and a join that races an
+  invite delete can also read Unknown.
+- The `GUILD_INVITES` intent (added in `main.py`) and the Manage Server permission are needed
+  for invite create, delete and use counts. Without Manage Server every invite use is Unknown.
+- The bot needs a restart to load the intent and listeners. Deploy the frontend with the backend:
+  the settings PUT now requires every event, the four categories, `ignores` and `invite_names`.
+- Link and invite rows are not pruned. There is no retention job.
