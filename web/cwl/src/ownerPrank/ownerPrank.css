@@ -111,11 +111,11 @@
 .owner-prank-card button {
   min-width: 44px;
   min-height: 44px;
-  border: 1px solid #6e6657;
+  border: 1px solid var(--wu-accent);
   border-radius: 999px;
   padding: var(--wu-space-2) var(--wu-space-3);
-  background: var(--wu-accent-soft);
-  color: #fff3d6;
+  background: transparent;
+  color: var(--wu-accent);
   font: inherit;
   cursor: pointer;
   font-weight: var(--wu-weight-medium);
@@ -125,6 +125,9 @@
   border-color: #fac775;
   color: #30220b;
   font-weight: var(--wu-weight-bold);
+}
+.owner-prank-card button:not(.primary):hover:not(:disabled) {
+  background: var(--wu-surface-raised);
 }
 .owner-prank-card button:disabled {
   cursor: default;

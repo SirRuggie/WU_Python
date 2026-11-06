@@ -217,6 +217,6 @@
   .roster-workspace
   .roster-workflow-nav
   > button:is(.active, [aria-pressed="true"]):hover:not(:disabled) {
-  background: var(--wu-surface-raised);
+  background: transparent;
   color: var(--wu-accent-hover);
 }

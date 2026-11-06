@@ -14,6 +14,7 @@ function resolveToken(name: string, ancestors: string[] = []): string {
   const value = values.get(name);
   if (!value) throw Error("Missing text color token " + name);
   if (/^#[0-9a-f]{6}$/i.test(value)) return value;
+  if (name === "wu-accent-soft" && value === "transparent") return value;
   const alias = value.match(/^var\(--([\w-]+)\)$/);
   if (!alias) throw Error("Unsupported text color token " + name);
   return resolveToken(alias[1], [...ancestors, name]);
@@ -29,6 +30,31 @@ const contrast = (a: string, b: string) => {
   const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (light + 0.05) / (dark + 0.05);
 };
+function expectTextContrast(foreground: string, surface: string) {
+  const background = resolveToken("wu-" + surface);
+  if (surface === "accent-soft") {
+    // A transparent selection inherits its actual surrounding surface. Keep
+    // every opaque dashboard surface in the bound rather than inventing a fill.
+    expect(background).toBe("transparent");
+    for (const backdrop of [
+      "bg",
+      "surface",
+      "surface-raised",
+      "surface-soft",
+      "card",
+      "success-surface",
+      "warning-surface",
+      "danger-surface",
+      "info-surface",
+    ]) {
+      expect(
+        contrast(foreground, resolveToken("wu-" + backdrop)),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+    return;
+  }
+  expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.5);
+}
 it.each([
   ["danger", "selection-surface"],
   ["danger", "card-danger"],
@@ -63,12 +89,7 @@ it.each([
 ])(
   "global %s text on %s meets normal-text contrast4.5:1",
   (foreground, background) => {
-    expect(
-      contrast(
-        resolveToken("wu-" + foreground),
-        resolveToken("wu-" + background),
-      ),
-    ).toBeGreaterThanOrEqual(4.5);
+    expectTextContrast(resolveToken("wu-" + foreground), background);
   },
 );
 
@@ -126,12 +147,7 @@ it.each(
 )(
   "1b %s text on every %s surface meets normal-text contrast4.5:1",
   (foreground, background) => {
-    expect(
-      contrast(
-        resolveToken("wu-" + foreground),
-        resolveToken("wu-" + background),
-      ),
-    ).toBeGreaterThanOrEqual(4.5);
+    expectTextContrast(resolveToken("wu-" + foreground), background);
   },
 );
 

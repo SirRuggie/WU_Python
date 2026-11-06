@@ -322,9 +322,13 @@
   padding: var(--wu-space-1) var(--wu-space-3);
   font-size: var(--wu-text-sm);
   border-color: var(--wu-accent);
-  color: var(--wu-text);
-  background: var(--wu-accent-soft);
-  -webkit-text-fill-color: var(--wu-text);
+  color: var(--wu-accent);
+  background: transparent;
+  -webkit-text-fill-color: currentColor;
+}
+.strikes-picked-member:hover:not(:disabled) {
+  background: transparent;
+  color: var(--wu-accent-hover);
 }
 .strikes-search-matches {
   position: absolute;
@@ -407,11 +411,11 @@
     var(--wu-space-3);
   border: 1px solid var(--wu-accent);
   border-radius: 10px;
-  background: var(--wu-accent-soft);
-  color: var(--wu-text);
+  background: transparent;
+  color: var(--wu-accent);
   font-size: var(--wu-text-sm);
   font-weight: var(--wu-weight-medium);
-  -webkit-text-fill-color: var(--wu-text);
+  -webkit-text-fill-color: currentColor;
 }
 .strikes-selected-war span {
   overflow-wrap: anywhere;
@@ -858,9 +862,9 @@
   font-size: var(--wu-text-md);
 }
 .strikes-action-chips button[aria-pressed="true"] {
-  color: #ffe296;
-  background: #4a3c21;
-  border-color: #e7b338;
+  color: var(--wu-accent);
+  background: transparent;
+  border-color: var(--wu-accent);
 }
 .strike-account-item {
   border-bottom: 1px solid var(--wu-border-subtle);

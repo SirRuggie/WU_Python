@@ -261,12 +261,12 @@
 }
 
 .roster-menu-item:has(.roster-menu-item-check) {
-  background: rgb(237 198 77 / 12%);
+  background: transparent;
 }
 
 /* Roster chip/card interaction contract — single source of state styling.
    Hover: subtly lighten the existing border only, with no size change.
-   Active filter: gold border, gold tint and gold text; hover preserves it.
+   Active filter: gold border, no fill and gold text; hover preserves it.
    Keyboard focus: white :focus-visible ring, transparent base border.
    Focus never implies an active filter. Stat chips paint these same states on
    their 36px pseudo-element inside the larger 44px hit target. */
@@ -296,11 +296,11 @@
 .roster-ui .roster-menu-item:has(.roster-menu-item-check),
 .roster-ui .roster-ui-chip:has(button) {
   --roster-control-state-border: var(--roster-gold);
-  --roster-control-state-background: #373127;
+  --roster-control-state-background: transparent;
   border-color: var(--roster-gold);
   background: var(--roster-control-state-background);
-  color: #ffe098;
-  -webkit-text-fill-color: #ffe098;
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
   box-shadow: none;
 }
 .roster-ui

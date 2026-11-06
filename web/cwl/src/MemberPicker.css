@@ -41,10 +41,10 @@
   background: var(--wu-surface-raised);
 }
 .member-options label.selected {
-  background: var(--wu-accent-soft);
+  background: transparent;
   box-shadow: inset 3px 0 var(--wu-accent);
-  color: var(--wu-text);
-  -webkit-text-fill-color: var(--wu-text);
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
   border-color: var(--wu-accent);
 }
 .member-options input {
@@ -74,7 +74,7 @@
 .member-selected {
   margin-top: var(--wu-space-3);
   padding: var(--wu-space-3);
-  background: var(--wu-accent-soft);
+  background: transparent;
   border: 1px solid var(--wu-accent);
   border-radius: 10px;
   color: var(--wu-text);
@@ -129,4 +129,11 @@
 .member-picker img {
   background: var(--wu-surface-raised);
   border-color: var(--wu-text-muted);
+}
+
+.member-selected,
+.member-options label.selected strong,
+.member-picker .member-selected strong {
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
 }

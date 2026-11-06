@@ -811,27 +811,13 @@
   }
 }
 
-.dashboard-home h1 {
-  position: relative;
-  color: var(--wu-accent);
-}
-.dashboard-home h1::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: -6px;
-  width: 24px;
-  height: 3px;
-  background: var(--wu-brand-red);
-  pointer-events: none;
-}
 .shell .hub-stats button[aria-pressed="true"] > span,
 .shell .hub-stats button[aria-pressed="true"] strong {
   color: var(--wu-accent);
   -webkit-text-fill-color: currentColor;
 }
 .shell .hub-stats button[aria-pressed="true"]:hover:not(:disabled) {
-  background: var(--wu-surface-raised);
+  background: transparent;
 }
 .dashboard-home .member-signup-summary a {
   color: var(--wu-accent);
@@ -851,6 +837,6 @@
   :is(button.active, button[aria-pressed="true"]):not(
     .hub-stats button
   ):hover:not(:disabled) {
-  background: var(--wu-surface-raised);
+  background: transparent;
   color: var(--wu-accent-hover);
 }

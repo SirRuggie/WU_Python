@@ -19,8 +19,10 @@
   background-clip: padding-box;
 }
 .shell .cwl-step-strip > button[aria-current="step"] {
-  background-color: var(--roster-gold-tint, var(--wu-accent-soft));
+  position: relative;
+  background-color: transparent;
   color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
 }
 .shell .cwl-step-strip .cwl-step-changes {
   color: var(--roster-warning);
@@ -54,15 +56,8 @@
   }
 }
 
-/* Staff workflow only: the member steps retain their existing treatment. */
-.shell .cwl-step-strip:not(.member-step-strip) > button[aria-current="step"] {
-  position: relative;
-  background-color: transparent;
-  -webkit-text-fill-color: currentColor;
-}
-.shell
-  .cwl-step-strip:not(.member-step-strip)
-  > button[aria-current="step"]::after {
+/* The existing transparent border reserves the selected underline's space. */
+.shell .cwl-step-strip > button[aria-current="step"]::after {
   content: "";
   position: absolute;
   left: -4px;
@@ -72,9 +67,7 @@
   background: var(--wu-accent);
   pointer-events: none;
 }
-.shell
-  .cwl-step-strip:not(.member-step-strip)
-  > button[aria-current="step"]:hover:not(:disabled) {
-  background-color: var(--wu-surface-raised);
+.shell .cwl-step-strip > button[aria-current="step"]:hover:not(:disabled) {
+  background-color: transparent;
   color: var(--wu-accent-hover);
 }

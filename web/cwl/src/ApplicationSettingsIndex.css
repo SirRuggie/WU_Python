@@ -99,7 +99,7 @@
   padding: var(--wu-space-2);
 }
 .applications-workspace .manage-preview-toggle button[aria-pressed="true"] {
-  background: #f5d46c0a;
+  background: transparent;
   color: var(--wu-accent);
   border-bottom-color: var(--wu-accent);
 }

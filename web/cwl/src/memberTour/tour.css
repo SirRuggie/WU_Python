@@ -118,9 +118,12 @@
   min-height: 44px;
   border-radius: 999px;
   padding: var(--wu-space-2) var(--wu-space-3);
-  border: 1px solid #6e6657;
-  background: var(--wu-accent-soft);
-  color: #fff3d6;
+  border: 1px solid var(--wu-accent);
+  background: transparent;
+  color: var(--wu-accent);
+}
+.member-tour button:hover:not(:disabled) {
+  background: var(--wu-surface-raised);
 }
 .member-tour button:focus-visible,
 .member-tour a:focus-visible,

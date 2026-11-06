@@ -14,8 +14,14 @@
   min-height: 44px;
 }
 .filter-chips button[aria-pressed="true"] {
-  border-color: #c6ae70;
-  background: #393326;
+  border-color: var(--wu-accent);
+  background: transparent;
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
+}
+.filter-chips button[aria-pressed="true"]:hover:not(:disabled) {
+  background: transparent;
+  color: var(--wu-accent-hover);
 }
 
 .filter-chips small {
@@ -31,15 +37,15 @@
 }
 .filter-chips--pill button[aria-pressed="true"],
 .shell .filter-chips--pill button[aria-pressed="true"] {
-  background: var(--wu-accent-soft);
+  background: transparent;
   border-color: var(--wu-accent);
-  color: var(--wu-text);
+  color: var(--wu-accent);
   -webkit-text-fill-color: currentColor;
 }
 .filter-chips--pill button[aria-pressed="true"]:hover:not(:disabled),
 .shell .filter-chips--pill button[aria-pressed="true"]:hover:not(:disabled) {
-  background: var(--wu-accent-soft);
-  color: var(--wu-text);
+  background: transparent;
+  color: var(--wu-accent-hover);
 }
 .filter-chips--pill button[aria-pressed="false"]:hover:not(:disabled),
 .shell .filter-chips--pill button[aria-pressed="false"]:hover:not(:disabled) {

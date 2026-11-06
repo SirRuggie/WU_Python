@@ -332,9 +332,9 @@ only editing opens the long forms. */
   color: var(--wu-text-muted);
 }
 .reminders-workspace .workflow-tabs > button.active {
-  border-bottom-color: #e2b541;
-  background: #e2b54110;
-  color: #f0d37e;
+  border-bottom-color: var(--wu-accent);
+  background: transparent;
+  color: var(--wu-accent);
 }
 .reminders-workspace .reminder-status {
   display: flex;
