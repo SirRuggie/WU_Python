@@ -73,7 +73,7 @@ it.each([
 );
 
 it("keeps roster action gold aligned with the approved global accent", () => {
-  expect(resolveToken("roster-gold")).toBe("#f4cd64");
+  expect(resolveToken("roster-gold")).toBe("#f2b62a");
   expect(values.get("roster-gold")).toBe("var(--wu-accent)");
 });
 
@@ -99,7 +99,7 @@ it("retains the winning primary fill and readable ink after the contrast fold", 
     const alias = value?.match(/^var\(--([\w-]+)\)$/);
     return alias ? resolveToken(alias[1]) : value;
   };
-  expect(color("background")).toBe("#f4cd64");
+  expect(color("background")).toBe("#f2b62a");
   expect(color("color")).toBe("#241b08");
   expect(color("-webkit-text-fill-color")).toBe("#241b08");
   expect(

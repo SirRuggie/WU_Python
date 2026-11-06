@@ -17,9 +17,9 @@
 }
 
 .roster-workspace .roster-workflow-nav button.active {
-  background: var(--wu-accent-soft);
-  border-color: #c49b45;
-  color: #f5d27b;
+  background: transparent;
+  border-color: var(--wu-accent);
+  color: var(--wu-accent);
 }
 
 .roster-list-heading {
@@ -213,4 +213,44 @@
     > .roster-workflow-nav {
     display: none;
   }
+}
+
+.roster-workspace h1[data-roster-heading] {
+  position: relative;
+  color: var(--wu-accent);
+}
+.roster-workspace h1[data-roster-heading]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  width: 24px;
+  height: 3px;
+  background: var(--wu-brand-red);
+  pointer-events: none;
+}
+.roster-workspace .publication-awareness button,
+.shell .roster-workspace :is(button.active, button[aria-pressed="true"]) {
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
+}
+.shell .roster-workspace :is(button.active, button[aria-pressed="true"]) {
+  border-color: var(--wu-accent);
+}
+.shell
+  .roster-workspace
+  :is(button.active, button[aria-pressed="true"]):hover:not(:disabled) {
+  background: var(--wu-surface-raised);
+  color: var(--wu-accent-hover);
+}
+/* Portaled controls inherit no page ancestor; this context exists only on Build. */
+body:has(.roster-workspace)
+  .roster-ui
+  :is(
+    .roster-ui-button.roster-ui[aria-pressed="true"],
+    .roster-menu-item:has(.roster-menu-item-check),
+    .roster-ui-chip:has(button)
+  ) {
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
 }

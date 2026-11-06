@@ -40,13 +40,9 @@
   display: flex;
   align-items: center;
   gap: var(--wu-space-4);
-  border: 1px solid #756039;
+  border: 1px solid var(--wu-accent);
   border-radius: 14px;
-  background: linear-gradient(
-    110deg,
-    var(--wu-accent-soft),
-    var(--wu-surface) 65%
-  );
+  background: var(--wu-surface);
   padding: var(--wu-space-5);
   margin-bottom: var(--wu-space-4);
 }
@@ -59,8 +55,8 @@
   height: 48px;
   flex: none;
   border-radius: 10px;
-  background: var(--wu-accent-soft);
-  border: 1px solid #685638;
+  background: var(--wu-surface);
+  border: 1px solid var(--wu-accent);
   color: var(--wu-accent);
 }
 
@@ -132,10 +128,11 @@
 }
 
 .shell .hub-stats button[aria-pressed="true"] {
-  background: var(--wu-accent-soft);
-  border-color: #d3a943;
+  background: var(--wu-surface);
+  border-color: var(--wu-accent);
   color: #fff;
-  box-shadow: inset 0 -3px #d3a943;
+  box-shadow: inset 0 -3px var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
 }
 
 .hub-section-heading {
@@ -264,7 +261,7 @@
 }
 
 .hub-account.is-selected {
-  background: var(--wu-accent-soft);
+  background: var(--wu-surface);
   box-shadow: inset 3px 0 var(--wu-accent);
 }
 
@@ -353,7 +350,7 @@
   margin-top: var(--wu-space-4);
   border: 1px solid var(--wu-accent);
   border-radius: 14px;
-  background: var(--wu-accent-soft);
+  background: var(--wu-surface);
   padding: var(--wu-space-4);
   box-shadow: 0 8px 32px #0008;
   color: var(--wu-text);
@@ -610,7 +607,7 @@
 }
 
 .hub-next .eyebrow {
-  color: #f4cd64;
+  color: var(--wu-accent);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
 }
@@ -812,4 +809,48 @@
   .hub-next {
     padding: var(--wu-space-4);
   }
+}
+
+.dashboard-home h1 {
+  position: relative;
+  color: var(--wu-accent);
+}
+.dashboard-home h1::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  width: 24px;
+  height: 3px;
+  background: var(--wu-brand-red);
+  pointer-events: none;
+}
+.shell .hub-stats button[aria-pressed="true"] > span,
+.shell .hub-stats button[aria-pressed="true"] strong {
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
+}
+.shell .hub-stats button[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--wu-surface-raised);
+}
+.dashboard-home .member-signup-summary a {
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
+}
+
+/* The stat tiles already own their selected treatment; keep their label paint. */
+.shell
+  .dashboard-home
+  :is(button.active, button[aria-pressed="true"]):not(.hub-stats button) {
+  color: var(--wu-accent);
+  border-color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
+}
+.shell
+  .dashboard-home
+  :is(button.active, button[aria-pressed="true"]):not(
+    .hub-stats button
+  ):hover:not(:disabled) {
+  background: var(--wu-surface-raised);
+  color: var(--wu-accent-hover);
 }

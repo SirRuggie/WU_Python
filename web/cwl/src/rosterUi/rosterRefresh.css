@@ -144,7 +144,10 @@
   .roster-workspace
   .roster-workflow-nav
   > button:is(.active, [aria-pressed="true"]) {
-  background: rgb(237 198 77 / 14%);
+  background: transparent;
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
+  position: relative;
   border-color: transparent;
   box-shadow: none;
 }
@@ -194,4 +197,26 @@
   .roster-workspace .staff-signup-bar-actions .roster-ui-button {
     padding-inline: 8px;
   }
+}
+
+/* Use the reserved border box for the section's gold underline. */
+.shell
+  .roster-workspace
+  .roster-workflow-nav
+  > button:is(.active, [aria-pressed="true"])::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  height: 3px;
+  background: var(--wu-accent);
+  pointer-events: none;
+}
+.shell
+  .roster-workspace
+  .roster-workflow-nav
+  > button:is(.active, [aria-pressed="true"]):hover:not(:disabled) {
+  background: var(--wu-surface-raised);
+  color: var(--wu-accent-hover);
 }

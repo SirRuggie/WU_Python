@@ -17,7 +17,7 @@
   --roster-height-control-comfortable: 48px;
   /* Aliases. New code uses --wu-* tokens. */
   --roster-gold: var(--wu-accent);
-  --roster-gold-strong: #f5d66e;
+  --roster-gold-strong: var(--wu-accent-hover);
   --roster-surface: var(--wu-surface);
   --roster-surface-raised: var(--wu-surface-raised);
   --roster-surface-soft: var(--wu-surface-soft);

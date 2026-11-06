@@ -155,6 +155,16 @@ it("keeps the signed-in sidebar helmet at its portrait height with its compact d
     expect(host.querySelector(".sidebar .brand small")?.textContent).toBe(
       "SERVER DASHBOARD",
     );
+    const phoneLogo = host.querySelector<HTMLImageElement>(
+      ".topbar .topbar-logo",
+    )!;
+    expect(phoneLogo.getAttribute("src")).toBe("/brand/wu-helmet-39.png");
+    expect(phoneLogo.getAttribute("srcset")).toBe(
+      "/brand/wu-helmet-39.png 1x, /brand/wu-helmet-78.png 2x, /brand/wu-helmet-117.png 3x",
+    );
+    expect(phoneLogo.getAttribute("alt")).toBe("");
+    expect(phoneLogo.getAttribute("aria-hidden")).toBe("true");
+    expect([phoneLogo.width, phoneLogo.height]).toEqual([26, 32]);
   } finally {
     await act(async () => root.unmount());
     host.remove();

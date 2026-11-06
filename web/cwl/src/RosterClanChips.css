@@ -172,3 +172,8 @@
   font-size: var(--wu-text-sm);
   white-space: nowrap;
 }
+
+/* MAIN/LAZY are grouping labels, not page/subsection headings. */
+.roster-workspace .roster-clan-chips-group h3 {
+  color: var(--wu-accent);
+}
