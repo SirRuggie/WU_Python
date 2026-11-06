@@ -3,6 +3,8 @@ import { api } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
 import ModerationCategoryCard from "./ModerationCategoryCard";
 import ModerationDestinationPicker from "./ModerationDestinationPicker";
+import ModerationIgnoreLists from "./ModerationIgnoreLists";
+import ModerationInviteNames from "./ModerationInviteNames";
 import {
   changedSettings,
   cloneSettings,
@@ -18,6 +20,7 @@ import {
   type CategoryKind,
   type Destination,
   type EventConfig,
+  type LinkIgnores,
   type ModerationKind,
   type RouteTarget,
   type SettingsDraft,
@@ -26,9 +29,7 @@ import {
 import "./ModerationSettings.css";
 
 type DialogState =
-  | { type: "test"; event: ModerationKind }
-  | { type: "reload" }
-  | null;
+  { type: "test"; event: ModerationKind } | { type: "reload" } | null;
 
 export default function ModerationSettings({
   onDirty,
@@ -68,6 +69,7 @@ export default function ModerationSettings({
       if (fresh) lastChannels.current = result.channels || [];
       setSaved({
         ...result,
+        ...cloneSettings(result),
         channels: fresh
           ? result.channels || []
           : lastChannels.current || result.channels || null,
@@ -131,6 +133,21 @@ export default function ModerationSettings({
           }
         : current,
     );
+    clearFeedback();
+  };
+
+  const updateIgnores = (ignores: LinkIgnores) => {
+    setDraft((current) => (current ? { ...current, ignores } : current));
+    clearFeedback();
+  };
+  const updateInviteName = (code: string, name: string) => {
+    setDraft((current) => {
+      if (!current) return current;
+      const names = { ...current.invite_names };
+      if (name) names[code] = name;
+      else delete names[code];
+      return { ...current, invite_names: names };
+    });
     clearFeedback();
   };
 
@@ -199,6 +216,7 @@ export default function ModerationSettings({
       if (request.current !== id) return;
       setSaved({
         ...result,
+        ...cloneSettings(result),
         channels: saved.channels,
         channels_available: saved.channels_available,
         warning: saved.warning,
@@ -366,10 +384,7 @@ export default function ModerationSettings({
 
           <div className="moderation-category-list">
             {moderationRegistry
-              .filter(
-                (category) =>
-                  category.key === "members" || category.key === "moderation",
-              )
+              .filter((category) => category.key !== "server")
               .map((category) => (
                 <ModerationCategoryCard
                   key={category.key}
@@ -391,7 +406,23 @@ export default function ModerationSettings({
                     void resolveDestination(scope, key, id)
                   }
                   onTest={startTest}
-                />
+                >
+                  {category.key === "messages" && (
+                    <ModerationIgnoreLists
+                      ignores={draft.ignores}
+                      channels={channels}
+                      disabled={busy}
+                      onChange={updateIgnores}
+                    />
+                  )}
+                  {category.key === "invites" && (
+                    <ModerationInviteNames
+                      names={draft.invite_names}
+                      disabled={busy}
+                      onName={updateInviteName}
+                    />
+                  )}
+                </ModerationCategoryCard>
               ))}
           </div>
 

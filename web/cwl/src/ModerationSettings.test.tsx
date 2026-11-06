@@ -71,14 +71,29 @@ const fixture: SettingsResponse = {
   categories: {
     members: { mode: "main", channel_id: null, forum_tag_id: null },
     moderation: { mode: "main", channel_id: null, forum_tag_id: null },
+    messages: { mode: "main", channel_id: null, forum_tag_id: null },
+    invites: { mode: "main", channel_id: null, forum_tag_id: null },
   },
   events: Object.fromEntries(
-    ["join", "leave", "kick", "ban"].map((key) => [
+    [
+      "join",
+      "leave",
+      "kick",
+      "ban",
+      "member_update",
+      "timeout_add",
+      "timeout_remove",
+      "link",
+      "invite_create",
+      "invite_delete",
+      "invite_use",
+    ].map((key) => [
       key,
       { enabled: true, channel_id: null, forum_tag_id: null },
     ]),
   ) as SettingsResponse["events"],
-  ignores: {},
+  ignores: { channel_ids: [], role_ids: [] },
+  invite_names: {},
   channels_available: true,
   channels: ["main", "other", "forum"].map((id) => ({
     id,
@@ -105,6 +120,7 @@ const fixture: SettingsResponse = {
     kick: { embeds: [{ description: "Forum kick card", color: 15112501 }] },
   },
 };
+const invites = vi.hoisted(() => vi.fn());
 let root: Root, host: HTMLDivElement;
 const button = (label: string) =>
   [...host.querySelectorAll("button")].find(
@@ -119,12 +135,43 @@ const settle = async () => {
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   transport.mockReset();
+  invites.mockReset();
+  invites.mockResolvedValue({
+    invites: [
+      {
+        code: "abc123",
+        name: null,
+        inviter_id: "1",
+        inviter_name: "Alice",
+        channel_id: "9",
+        channel_name: "welcome",
+        uses: 3,
+        max_uses: 10,
+        expires_at: null,
+        vanity: false,
+      },
+      {
+        code: "wu",
+        name: "Site",
+        inviter_id: null,
+        inviter_name: null,
+        channel_id: null,
+        channel_name: null,
+        uses: 40,
+        max_uses: null,
+        expires_at: null,
+        vanity: true,
+      },
+    ],
+    updated_at: null,
+  });
   transport.mockImplementation(async (path: string, method?: string) => {
     if (path === "/manage/member-events/settings" && method === "PUT")
       return { ...fixture, revision: 5 };
     if (path === "/manage/member-events/settings")
       return structuredClone(fixture);
     if (path === "/manage/member-events/test") return { sent: true };
+    if (path === "/manage/member-events/invites") return invites();
     throw new Error(`Unexpected ${path}`);
   });
   host = document.createElement("div");
@@ -196,7 +243,7 @@ it("hides unsupported future event controls", () => {
   expect(host.textContent).not.toContain("Nickname changes");
   expect(host.textContent).not.toContain("Roles added");
   expect(host.textContent).not.toContain("Channels created");
-  expect(host.querySelectorAll(".moderation-event-row")).toHaveLength(4);
+  expect(host.querySelectorAll(".moderation-event-row")).toHaveLength(11);
 });
 
 it("uses accessible track-and-thumb switches for categories and events", () => {
@@ -288,7 +335,7 @@ it("shows the missing effective channel without changing enabled settings", asyn
   expect(
     card.querySelector(".moderation-category-switch")?.textContent,
   ).toContain("Not posting — no channel set");
-  expect(card.querySelectorAll(".moderation-event-row")).toHaveLength(2);
+  expect(card.querySelectorAll(".moderation-event-row")).toHaveLength(4);
   for (const row of card.querySelectorAll(".moderation-event-row")) {
     expect(row.textContent).toContain("Not posting — no channel set");
     const test = [...row.querySelectorAll("button")].find(
@@ -305,4 +352,102 @@ it("shows the missing effective channel without changing enabled settings", asyn
   expect(
     transport.mock.calls.filter(([, method]) => method === "PUT"),
   ).toHaveLength(0);
+});
+
+const change = async (element: HTMLElement, value: string) => {
+  const select = element instanceof HTMLSelectElement;
+  const proto = select
+    ? HTMLSelectElement.prototype
+    : HTMLInputElement.prototype;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(element, value);
+    element.dispatchEvent(
+      new Event(select ? "change" : "input", { bubbles: true }),
+    );
+  });
+};
+it("renders the four categories with Links and Invites events", () => {
+  const titles = [...host.querySelectorAll(".moderation-category-head h3")].map(
+    (item) => item.textContent?.trim(),
+  );
+  expect(titles).toEqual([
+    "👥 Members",
+    "🛡️ Moderation",
+    "💬 Messages",
+    "📨 Invites",
+  ]);
+  expect(host.textContent).toContain("Profile changes");
+  expect(host.textContent).toContain("Timeout removals");
+  expect(host.textContent).toContain("Invite uses");
+});
+it("saves link ignores with the draft and flags them as unsaved", async () => {
+  const channelSelect = host.querySelector<HTMLSelectElement>(
+    ".moderation-ignore-group select",
+  )!;
+  await change(channelSelect, "other");
+  expect(host.textContent).toContain("#other-logs");
+  expect(host.textContent).toContain("Unsaved changes");
+  const roleInput = host.querySelector<HTMLInputElement>(
+    '.moderation-ignore-group input[placeholder="Role ID"]',
+  )!;
+  await change(roleInput, "12");
+  await act(async () => button("Add").click());
+  expect(host.textContent).toContain("17 to 20 digits");
+  await change(roleInput, "123456789012345678");
+  await act(async () => button("Add").click());
+  expect(host.textContent).toContain("Role 123456789012345678");
+  await act(async () => button("Save changes").click());
+  expect(
+    transport.mock.calls.find((call) => call[1] === "PUT")?.[2],
+  ).toMatchObject({
+    ignores: { channel_ids: ["other"], role_ids: ["123456789012345678"] },
+  });
+});
+it("lists invites with uses and saves edited names; clearing removes", async () => {
+  expect(host.textContent).toContain("3 / 10 uses");
+  expect(host.textContent).toContain("40 uses");
+  expect(host.textContent).toContain("Vanity URL");
+  const input = host.querySelector<HTMLInputElement>(
+    '[aria-label="Name for abc123"]',
+  )!;
+  await change(input, "  Spring ad ");
+  await act(async () => button("Save changes").click());
+  expect(
+    transport.mock.calls.find((call) => call[1] === "PUT")?.[2].invite_names,
+  ).toEqual({ abc123: "Spring ad" });
+  await change(input, "");
+  expect(host.textContent).toContain("All changes saved");
+});
+it("shows invite load failure without blocking the settings form", async () => {
+  invites.mockRejectedValue(new Error("Invite list down"));
+  await act(async () => button("Refresh invites").click());
+  await settle();
+  expect(host.textContent).toContain("Invite list down");
+  const join = host.querySelector<HTMLInputElement>(
+    '[aria-label="Joins logging"]',
+  )!;
+  await act(async () => join.click());
+  expect(button("Save changes").disabled).toBe(false);
+});
+it("shows the empty invite state", async () => {
+  invites.mockResolvedValue({ invites: [], updated_at: null });
+  await act(async () => button("Refresh invites").click());
+  await settle();
+  expect(host.textContent).toContain("No invites recorded yet.");
+});
+it("loads an old response that lacks the new keys", async () => {
+  const old = structuredClone(fixture) as Partial<SettingsResponse>;
+  delete old.invite_names;
+  old.ignores = {} as SettingsResponse["ignores"];
+  delete (old.categories as Record<string, unknown>).messages;
+  delete (old.categories as Record<string, unknown>).invites;
+  transport.mockImplementation(async (path: string) =>
+    path === "/manage/member-events/invites" ? invites() : structuredClone(old),
+  );
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () => root.render(<ModerationSettings />));
+  await settle();
+  expect(host.textContent).toContain("Ignored channels");
+  expect(host.textContent).toContain("All changes saved");
 });

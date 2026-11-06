@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import ModerationDestinationPicker from "./ModerationDestinationPicker";
 import ModerationPreviewCard from "./ModerationPreviewCard";
 import {
@@ -34,6 +40,7 @@ type Props = {
   onEvent: (kind: ModerationKind, values: Partial<EventConfig>) => void;
   onResolve: (scope: "category" | "event", key: string, id: string) => void;
   onTest: (kind: ModerationKind) => void;
+  children?: ReactNode;
 };
 
 export default function ModerationCategoryCard({
@@ -51,6 +58,7 @@ export default function ModerationCategoryCard({
   onEvent,
   onResolve,
   onTest,
+  children,
 }: Props) {
   const [openPicker, setOpenPicker] = useState<ModerationKind | null>(null);
   const [openPreview, setOpenPreview] = useState<ModerationKind | null>(null);
@@ -300,6 +308,7 @@ export default function ModerationCategoryCard({
           );
         })}
       </div>
+      {children}
     </section>
   );
 }
