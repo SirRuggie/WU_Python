@@ -9,12 +9,14 @@ from datetime import datetime, timedelta, timezone
 from aiohttp import web
 
 from utils.member_events import (
-    GUILD_ID, ID_PATTERN, MemberEventStore, SettingsConflict,
+    GUILD_ID, HISTORY_TYPES, ID_PATTERN, MemberEventStore, SettingsConflict,
     TestRateLimited, public_event,
 )
 from utils.member_event_settings import (
-    CATEGORIES, EVENT_TYPES, SCHEMA_VERSION, effective_event, normalize_settings,
+    CATEGORIES, EVENT_TYPES, INVITE_CODE, LEGACY_EVENT_TYPES, MAX_IGNORE_IDS,
+    MAX_INVITE_NAMES, SCHEMA_VERSION, default_ignores, effective_event, normalize_settings,
 )
+from utils.member_invites import MemberInviteStore, public_invite
 from .server_management import API, mongo, require_manage
 
 PREFIX = API + "/member-events"
@@ -39,8 +41,8 @@ async def listing(request):
     raw_limit = request.query.get("limit", "50")
     if len(q) > 80 or any(ord(c) < 32 for c in q):
         raise web.HTTPBadRequest(text="Keep searches to 80 printable characters.")
-    if kind not in ("", "join", "leave", "kick", "ban"):
-        raise web.HTTPBadRequest(text="Select join, leave, kick or ban.")
+    if kind not in ("", *HISTORY_TYPES):
+        raise web.HTTPBadRequest(text="Select a valid event type.")
     if before and not ID_PATTERN.fullmatch(before):
         raise web.HTTPBadRequest(text="Invalid page cursor.")
     try:
@@ -94,7 +96,23 @@ async def avatar(request):
     return response
 
 
-routes = [web.get(PREFIX, listing), web.get(PREFIX + "/{event_id}/avatar", avatar)]
+async def invites(request):
+    await require_manage(request, "roles")
+    async with mongo(request) as db:
+        saved = await MemberEventStore(db.member_events).settings()
+        rows = await MemberInviteStore(db.member_invites).load(GUILD_ID)
+    items = [public_invite(row, saved["invite_names"]) for row in rows.values()]
+    items.sort(key=lambda item: (-item["uses"], item["code"]))
+    stamps = [row["updated_at"].replace(tzinfo=row["updated_at"].tzinfo or timezone.utc)
+              for row in rows.values() if isinstance(row.get("updated_at"), datetime)]
+    response = web.json_response({"invites": items,
+                                  "updated_at": max(stamps).isoformat() if stamps else None})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+routes = [web.get(PREFIX, listing), web.get(PREFIX + "/invites", invites),
+          web.get(PREFIX + "/{event_id}/avatar", avatar)]
 
 
 async def _bot_permissions(request):
@@ -245,14 +263,49 @@ def _destination(value, label):
     return {"channel_id": channel_id, "forum_tag_id": tag_id}
 
 
+def _ignores(value):
+    if value == {}:  # Clients from before link ignores existed.
+        return default_ignores()
+    if not isinstance(value, dict) or set(value) != set(default_ignores()):
+        raise web.HTTPBadRequest(text="Invalid link ignore lists.")
+    checked = {}
+    for key in default_ignores():
+        ids = value[key]
+        if not isinstance(ids, list) or len(ids) > MAX_IGNORE_IDS:
+            raise web.HTTPBadRequest(text=f"Select at most {MAX_IGNORE_IDS} ignored IDs per list.")
+        for item in ids:
+            if not isinstance(item, str) or not item.isascii() or not item.isdigit() or not 17 <= len(item) <= 20:
+                raise web.HTTPBadRequest(text="Invalid ignored ID.")
+        checked[key] = list(dict.fromkeys(ids))
+    return checked
+
+
+def _invite_names(value):
+    if not isinstance(value, dict) or len(value) > MAX_INVITE_NAMES:
+        raise web.HTTPBadRequest(text=f"Name at most {MAX_INVITE_NAMES} invites.")
+    checked = {}
+    for code, name in value.items():
+        if not isinstance(code, str) or not INVITE_CODE.fullmatch(code):
+            raise web.HTTPBadRequest(text="Invalid invite code.")
+        if not isinstance(name, str):
+            raise web.HTTPBadRequest(text="Invalid invite name.")
+        name = name.strip()
+        if not name:  # An empty name removes the entry.
+            continue
+        if len(name) > 40 or not name.isprintable():
+            raise web.HTTPBadRequest(text="Invite names use 1 to 40 printable characters.")
+        checked[code] = name
+    return checked
+
+
 def _checked_settings(body):
     if not isinstance(body, dict) or type(body.get("revision")) is not int or body["revision"] < 0:
         raise web.HTTPBadRequest(text="Select a valid settings revision.")
     if set(body) == {"revision", "events"}:  # Original API clients.
         legacy = body["events"]
-        if not isinstance(legacy, dict) or set(legacy) != set(EVENT_TYPES):
+        if not isinstance(legacy, dict) or set(legacy) not in (set(LEGACY_EVENT_TYPES), set(EVENT_TYPES)):
             raise web.HTTPBadRequest(text="Select all four event settings.")
-        for kind in EVENT_TYPES:
+        for kind in legacy:
             value = legacy[kind]
             if not isinstance(value, dict) or set(value) != {"enabled", "channel_id", "forum_tag_id"}:
                 raise web.HTTPBadRequest(text=f"Invalid {kind} settings.")
@@ -261,16 +314,18 @@ def _checked_settings(body):
             _destination({"channel_id": value["channel_id"],
                           "forum_tag_id": value["forum_tag_id"]}, kind)
         body = normalize_settings(body, MemberEventStore.default_settings())
-    if set(body) == {"revision", "main", "categories", "events", "ignores"}:
-        body = {"schema_version": SCHEMA_VERSION, **body}
-    if set(body) != {"schema_version", "revision", "main", "categories", "events", "ignores"}:
+    body = {"schema_version": SCHEMA_VERSION, **body}
+    if set(body) != {"schema_version", "revision", "main", "categories", "events",
+                     "ignores", "invite_names"}:
         raise web.HTTPBadRequest(text="Select all member log settings.")
-    if body["schema_version"] != SCHEMA_VERSION or body["ignores"] != {}:
+    if body["schema_version"] != SCHEMA_VERSION:
         raise web.HTTPBadRequest(text="Unsupported member log settings schema.")
+    ignores = _ignores(body["ignores"])
+    invite_names = _invite_names(body["invite_names"])
     main = _destination(body["main"], "main")
     categories = body["categories"]
     if not isinstance(categories, dict) or set(categories) != set(CATEGORIES):
-        raise web.HTTPBadRequest(text="Select both member log categories.")
+        raise web.HTTPBadRequest(text="Select all member log categories.")
     checked_categories = {}
     for category in CATEGORIES:
         value = categories[category]
@@ -282,7 +337,7 @@ def _checked_settings(body):
             {"channel_id": value["channel_id"], "forum_tag_id": value["forum_tag_id"]}, category)}
     events = body["events"]
     if not isinstance(events, dict) or set(events) != set(EVENT_TYPES):
-        raise web.HTTPBadRequest(text="Select all four event settings.")
+        raise web.HTTPBadRequest(text="Select all event settings.")
     checked_events = {}
     for kind in EVENT_TYPES:
         value = events[kind]
@@ -294,7 +349,7 @@ def _checked_settings(body):
             {"channel_id": value["channel_id"], "forum_tag_id": value["forum_tag_id"]}, kind)}
     return {"schema_version": SCHEMA_VERSION, "revision": body["revision"],
             "main": main, "categories": checked_categories, "events": checked_events,
-            "ignores": {}}
+            "ignores": ignores, "invite_names": invite_names}
 
 
 async def _validate_destination(request, kind, resolved, actor, effective, staff):

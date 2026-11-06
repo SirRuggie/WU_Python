@@ -13,12 +13,15 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from pymongo.write_concern import WriteConcern
 
-from .member_event_settings import normalize_settings
+from .member_event_settings import EVENT_TYPES, normalize_settings
 
 GUILD_ID = 644963518025826315
 MAX_AVATAR_BYTES = 256 * 1024
 ID_PATTERN = re.compile(r"\d{13}:[0-9a-f]{32}\Z")
-EVENT_TYPES = ("join", "leave", "kick", "ban")
+# EVENT_TYPES covers every deliverable log. Only HISTORY_TYPES are searchable;
+# link and invite rows are delivery receipts, and IDENTITY_TYPES carry avatars.
+HISTORY_TYPES = ("join", "leave", "kick", "ban", "timeout_add", "timeout_remove", "member_update")
+IDENTITY_TYPES = ("join", "leave", "kick", "ban")
 DEFAULT_CHANNEL_ID = 1004519991648997447
 SETTINGS_ID = f"member-events-settings:{GUILD_ID}"
 AVATAR_HASH = re.compile(r"(?:a_)?[0-9a-fA-F]{32}\Z")
@@ -106,7 +109,8 @@ class MemberEventStore:
         if "events" not in settings:
             settings = {"events": settings}
         normalized = normalize_settings({"revision": revision, **settings}, self.default_settings())
-        values = {key: normalized[key] for key in ("schema_version", "main", "categories", "events", "ignores")}
+        values = {key: normalized[key] for key in (
+            "schema_version", "main", "categories", "events", "ignores", "invite_names")}
         if revision == 0:
             try:
                 await self.collection.insert_one({"_id": SETTINGS_ID, "event_key": SETTINGS_ID,
@@ -161,12 +165,14 @@ class MemberEventStore:
                       forum_tag_id: int | None = None, reason: str | None = None,
                       moderator_id: int | None = None, audit_entry_id: int | None = None,
                       episode: int | None = None, account_created_at: datetime | None = None,
-                      member_count: int | None = None, roles: list[str] | None = None):
+                      member_count: int | None = None, roles: list[str] | None = None,
+                      details: dict | None = None, dedupe_key: str | None = None):
         if guild_id != GUILD_ID or kind not in EVENT_TYPES:
             raise ValueError("Member event is outside the configured guild")
         if avatar is not None and (len(avatar) > MAX_AVATAR_BYTES or avatar_type not in ("image/png", "image/jpeg", "image/gif", "image/webp")):
             raise ValueError("Avatar does not meet the storage bounds")
         key = (f"{guild_id}:audit:{audit_entry_id}" if audit_entry_id else
+               dedupe_key or
                event_key(guild_id, user_id, kind, at, joined_at if kind in ("join", "leave") else None))
         if kind == "ban" and episode is not None:
             key = f"{guild_id}:ban:{user_id}:{episode}"
@@ -183,6 +189,7 @@ class MemberEventStore:
             "roles": [str(role)[:100] for role in roles[:30]] if isinstance(roles, list) else None,
             "moderator_id": str(moderator_id) if moderator_id else None,
             "audit_entry_id": str(audit_entry_id) if audit_entry_id else None,
+            "details": details if isinstance(details, dict) else None,
             "delivery_status": "capturing", "message_id": None,
         }
         try:
@@ -299,7 +306,7 @@ class MemberEventStore:
 
     async def latest_identity(self, guild_id: int, user_id: int):
         return await self.collection.find_one(
-            {"guild_id": guild_id, "user_id": str(user_id), "event_type": {"$in": EVENT_TYPES}},
+            {"guild_id": guild_id, "user_id": str(user_id), "event_type": {"$in": IDENTITY_TYPES}},
             {"display_name": 1, "username": 1, "avatar": 1, "avatar_type": 1,
              "joined_at": 1, "occurred_at": 1, "account_created_at": 1,
              "member_count": 1, "roles": 1}, sort=[("_id", -1)],
@@ -431,7 +438,7 @@ class MemberEventStore:
         )
 
     async def search(self, *, guild_id: int, query="", kind="", start=None, end=None, before=None, limit=50):
-        filters = {"guild_id": guild_id, "event_type": kind if kind else {"$in": EVENT_TYPES}}
+        filters = {"guild_id": guild_id, "event_type": kind if kind else {"$in": HISTORY_TYPES}}
         if before:
             filters["_id"] = {"$lt": before}
         if start or end:
@@ -465,6 +472,7 @@ def public_event(row: dict, *, api_prefix: str) -> dict:
         "occurred_at": at, "delivery_status": "queued" if row["delivery_status"] == "capturing" else row["delivery_status"],
         "joined_at": row.get("joined_at").replace(tzinfo=row["joined_at"].tzinfo or timezone.utc).isoformat() if isinstance(row.get("joined_at"), datetime) else None,
         "reason": row.get("reason"), "moderator_id": row.get("moderator_id"),
+        "details": row.get("details"),
     }
 
 

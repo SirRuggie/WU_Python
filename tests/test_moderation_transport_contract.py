@@ -123,3 +123,71 @@ def test_failed_create_is_not_retried_or_replaced_with_another_format(forum):
         with pytest.raises(RuntimeError, match='HTTP 502'):
             asyncio.run(transport.post_card(sample(), forum=forum))
     assert len(calls) == 1
+
+
+NEW_KINDS = ['timeout_add', 'timeout_remove', 'member_update', 'link',
+             'invite_create', 'invite_delete', 'invite_use']
+
+
+@pytest.mark.parametrize('kind', NEW_KINDS)
+@pytest.mark.parametrize('forum', [False, True])
+def test_new_logs_post_without_avatar_bytes_or_key_errors(kind, forum):
+    from utils.member_event_cards import sample_row
+    calls = []
+    row = {**sample_row(kind), 'channel_id': 1004519991648997447}
+    if kind in ('invite_create', 'invite_delete'):
+        row['user_id'] = '0'
+    with patch.dict('os.environ', {'DISCORD_TOKEN': 'test-token'}), patch.object(
+        transport.aiohttp, 'ClientSession', return_value=Session(calls)
+    ):
+        assert asyncio.run(transport.post_card(row, forum=forum)) == '123456789012345678'
+    url, request = calls[0]
+    assert 'data' not in request  # No multipart avatar upload for the new kinds.
+    payload = request['json']
+    if forum:
+        assert len(payload['name']) <= 100 and url.endswith('/threads')
+        assert payload['message']['allowed_mentions'] == {'parse': []}
+    else:
+        assert payload['flags'] == 32768 and 'content' not in payload and 'embeds' not in payload
+        assert payload['allowed_mentions'] == {'parse': []}
+
+
+def test_every_configurable_kind_has_a_preview_card():
+    from utils.member_event_cards import build_card, build_forum_message, sample_row
+    from utils.member_event_settings import EVENT_TYPES
+    assert set(NEW_KINDS) < set(EVENT_TYPES)
+    for kind in EVENT_TYPES:
+        assert build_card(sample_row(kind))['components'][0]['accent_color']
+        assert build_forum_message(sample_row(kind))['embeds'][0]['description']
+
+
+def test_link_card_is_inert_bounded_and_has_a_jump_button():
+    from utils.member_event_cards import build_card, sample_row
+    row = sample_row('link')
+    row['details'] = {
+        'channel_id': '223456789012345678', 'message_id': '323456789012345678',
+        'content': '@everyone <@123456789012345678> https://evil.example/x [a](https://evil.example) ' + 'y' * 600,
+        'urls': [f'https://e.example/{i}`' + 'z' * 300 for i in range(15)],
+    }
+    card = build_card(row)
+    text = json.dumps(card, ensure_ascii=False)
+    texts = [child['content'] for child in card['components'][0]['components'] if child['type'] == 10]
+    message = next(t for t in texts if t.startswith('**Message**'))
+    assert 'https://evil' not in message and 'https\u200b://evil' in message
+    assert '@everyone' not in text and '<@123456789012345678> https' not in text
+    assert len(message) < 560
+    links = next(t for t in texts if t.startswith('**Links**')).split('\n')[1:]
+    assert len(links) == 10 and all(len(line) <= 202 and line.startswith('`') and line.endswith('`') for line in links)
+    assert not any('`' in line[1:-1] for line in links)
+    buttons = [c for r in card['components'][0]['components'] if r['type'] == 1 for c in r['components']]
+    assert buttons[-1]['url'] == 'https://discord.com/channels/644963518025826315/223456789012345678/323456789012345678'
+
+
+def test_invite_use_card_names_vanity_and_unknown_attribution():
+    from utils.member_event_cards import build_card, sample_row
+    row = sample_row('invite_use')
+    vanity = json.dumps(build_card({**row, 'details': {**row['details'], 'vanity': True}}), ensure_ascii=False)
+    unknown = json.dumps(build_card({**row, 'details': {'unknown': True}}), ensure_ascii=False)
+    assert 'Vanity URL' in vanity and 'Unknown invite' in unknown and 'Inviter' not in unknown
+    named = json.dumps(build_card(row), ensure_ascii=False)
+    assert 'Spring recruitment' in named and '8 of 10' in named

@@ -73,6 +73,7 @@ bot = hikari.GatewayBot(
         | hikari.Intents.GUILDS
         | hikari.Intents.GUILD_MEMBERS
         | hikari.Intents.GUILD_MODERATION
+        | hikari.Intents.GUILD_INVITES
         | hikari.Intents.GUILD_MESSAGE_REACTIONS
     ),
     # Fix hikari's overly aggressive rate limiting

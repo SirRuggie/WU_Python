@@ -1,4 +1,5 @@
 """Moderation archive settings, provenance, and queue isolation regressions."""
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
@@ -406,6 +407,134 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(transport, "record_identity", new=AsyncMock()) as record:
             await transport.audited(event, NS(), bot)
         record.assert_not_awaited()
+
+
+class NewLogApiTests(unittest.IsolatedAsyncioTestCase):
+    def body(self, **changes):
+        from utils.member_event_settings import normalize_settings
+        body = normalize_settings(None, MemberEventStore.default_settings())
+        body.pop("schema_version")
+        body.update(changes)
+        return body
+
+    def test_put_accepts_and_normalizes_ignores_and_invite_names(self):
+        ids = ["123456789012345678", "12345678901234567890"]
+        checked = api._checked_settings(self.body(
+            ignores={"channel_ids": ids + ids[:1], "role_ids": []},
+            invite_names={"abc-12": "  Spring  ", "gone": "   "}))
+        self.assertEqual(checked["ignores"], {"channel_ids": ids, "role_ids": []})
+        self.assertEqual(checked["invite_names"], {"abc-12": "Spring"})  # Empty name removes the entry.
+        self.assertEqual(api._checked_settings(self.body(ignores={}))["ignores"],
+                         {"channel_ids": [], "role_ids": []})
+        self.assertEqual(set(checked["events"]), set(api.EVENT_TYPES))
+
+    def test_put_rejects_bad_ignores_and_invite_names(self):
+        bad_ignores = [
+            {"channel_ids": ["1234567890123456"], "role_ids": []},  # 16 digits
+            {"channel_ids": ["1234567890123456789012"], "role_ids": []},  # 22 digits
+            {"channel_ids": ["12345678901234567a"], "role_ids": []},
+            {"channel_ids": [123456789012345678], "role_ids": []},
+            {"channel_ids": [str(10 ** 17 + i) for i in range(101)], "role_ids": []},
+            {"channel_ids": [], "role_ids": "123456789012345678"},
+            {"channel_ids": []},
+            {"channel_ids": [], "role_ids": [], "user_ids": []},
+            None,
+        ]
+        for value in bad_ignores:
+            with self.subTest(ignores=value), self.assertRaises(web.HTTPBadRequest):
+                api._checked_settings(self.body(ignores=value))
+        bad_names = [{"a": "x"}, {"has space": "x"}, {"ok-code": "x" * 41}, {"ok-code": "bad\nname"},
+                     {"ok-code": 5}, {"x" * 33: "x"}, {f"code{i:04d}": "n" for i in range(201)}, [], None]
+        for value in bad_names:
+            with self.subTest(invite_names=value), self.assertRaises(web.HTTPBadRequest):
+                api._checked_settings(self.body(invite_names=value))
+        with self.assertRaises(web.HTTPBadRequest):
+            api._checked_settings({**self.body(), "extra": 1})
+        events = self.body()["events"]
+        with self.assertRaises(web.HTTPBadRequest):
+            api._checked_settings(self.body(events={k: v for k, v in events.items() if k != "link"}))
+        with self.assertRaises(web.HTTPBadRequest):
+            api._checked_settings(self.body(categories={"members": {"mode": "main", "channel_id": None, "forum_tag_id": None}}))
+        self.assertEqual(len(api._checked_settings(self.body(invite_names={f"code{i:04d}": "n" for i in range(200)}))["invite_names"]), 200)
+
+    async def test_invites_endpoint_shape_order_and_names(self):
+        from tests.test_member_events import InviteCollection
+        invites, history = InviteCollection(), MemoryCollection()
+        later = datetime(2026, 11, 6, 9, 0)  # Mongo returns naive UTC.
+        for code, uses, max_uses, vanity in (("bb", 3, 0, False), ("aa", 3, 10, False), ("zz", 9, None, False), ("wu", 40, None, True)):
+            invites.rows[f"{GUILD_ID}:{code}"] = {
+                "_id": f"{GUILD_ID}:{code}", "guild_id": GUILD_ID, "code": code, "uses": uses, "max_uses": max_uses,
+                "inviter_id": "987654321098765432", "inviter_name": "host", "channel_id": "223456789012345678",
+                "channel_name": "welcome", "expires_at": later if code == "aa" else None, "vanity": vanity,
+                "updated_at": later}
+        store = MemberEventStore(history)
+        saved = (await store.settings())
+        saved["invite_names"] = {"aa": "Spring"}
+        await store.save_settings(0, saved)
+
+        class Context:
+            async def __aenter__(self): return NS(member_events=history, member_invites=invites)
+            async def __aexit__(self, *args): pass
+        with patch.object(api, "require_manage", new=AsyncMock()) as guard, patch.object(api, "mongo", return_value=Context()):
+            response = await api.invites(make_request())
+        guard.assert_awaited_once()
+        self.assertEqual(guard.await_args.args[1], "roles")  # Same permission as the settings GET.
+        data = json.loads(response.text)
+        self.assertEqual([row["code"] for row in data["invites"]], ["wu", "zz", "aa", "bb"])
+        self.assertEqual(set(data["invites"][0]), {"code", "name", "inviter_id", "inviter_name", "channel_id",
+                                                   "channel_name", "uses", "max_uses", "expires_at", "vanity"})
+        by = {row["code"]: row for row in data["invites"]}
+        self.assertEqual((by["aa"]["name"], by["aa"]["max_uses"], by["aa"]["expires_at"]),
+                         ("Spring", 10, "2026-11-06T09:00:00+00:00"))
+        self.assertIsNone(by["bb"]["max_uses"])  # 0 means unlimited.
+        self.assertTrue(by["wu"]["vanity"])
+        self.assertEqual(data["updated_at"], "2026-11-06T09:00:00+00:00")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        invites.rows.clear()
+        with patch.object(api, "require_manage", new=AsyncMock()), patch.object(api, "mongo", return_value=Context()):
+            empty = json.loads((await api.invites(make_request())).text)
+        self.assertEqual(empty, {"invites": [], "updated_at": None})
+
+    async def test_history_search_excludes_link_and_invite_rows(self):
+        collection = MemoryCollection()
+        store = MemberEventStore(collection)
+        at = datetime(2026, 11, 6, tzinfo=timezone.utc)
+        for index, kind in enumerate(("join", "timeout_add", "timeout_remove", "member_update",
+                                      "link", "invite_create", "invite_delete", "invite_use")):
+            await store.capture(guild_id=GUILD_ID, user_id=123456789012345678, kind=kind, display_name="A",
+                                username="a", avatar=None, avatar_type=None, at=at + timedelta(seconds=index),
+                                dedupe_key=f"k{index}", details={"x": 1})
+        rows, _ = await store.search(guild_id=GUILD_ID)
+        self.assertEqual({row["event_type"] for row in rows},
+                         {"join", "timeout_add", "timeout_remove", "member_update"})
+        for kind in ("link", "invite_use"):
+            with self.subTest(kind=kind), patch.object(api, "require_manage", new=AsyncMock()):
+                with self.assertRaises(web.HTTPBadRequest):
+                    await api.listing(make_request(f"?type={kind}"))
+        listed = NS(search=AsyncMock(return_value=([], None)))
+
+        class Context:
+            async def __aenter__(self): return NS(member_events=object())
+            async def __aexit__(self, *args): pass
+        for kind in ("timeout_add", "timeout_remove", "member_update"):
+            with self.subTest(kind=kind), patch.object(api, "require_manage", new=AsyncMock()), \
+                    patch.object(api, "mongo", return_value=Context()), \
+                    patch.object(api, "MemberEventStore", return_value=listed), \
+                    patch("cwl_web.moderation_names.resolve_names", new=AsyncMock(return_value={})):
+                self.assertEqual((await api.listing(make_request(f"?type={kind}"))).status, 200)
+
+    def test_public_event_carries_details_as_plain_json(self):
+        from utils.member_events import public_event
+        row = {"_id": "1792972800000:" + "a" * 32, "user_id": "1", "event_type": "timeout_add",
+               "display_name": "A", "username": "a", "occurred_at": datetime(2026, 11, 6),
+               "delivery_status": "sent", "details": {"until": "2026-11-07T00:00:00+00:00"}}
+        self.assertEqual(public_event(row, api_prefix="/x")["details"], {"until": "2026-11-07T00:00:00+00:00"})
+        json.dumps(public_event(row, api_prefix="/x"))
+
+
+def make_request(query=""):
+    from aiohttp.test_utils import make_mocked_request
+    return make_mocked_request("GET", api.PREFIX + query)
 
 
 if __name__ == "__main__":

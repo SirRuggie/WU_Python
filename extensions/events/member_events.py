@@ -2,20 +2,23 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 
 import aiohttp
 import hikari
 import lightbulb
 from utils.member_events import (
-    DEFAULT_CHANNEL_ID, GUILD_ID, MAX_AVATAR_BYTES, MemberEventStore,
-    avatar_source, effective_permissions, safe_text,
+    DEFAULT_CHANNEL_ID, GUILD_ID, HISTORY_TYPES, MAX_AVATAR_BYTES, MemberEventStore,
+    avatar_source, effective_permissions, event_key, safe_text,
 )
 from utils.member_event_cards import avatar_filename, build_card, build_forum_message
 from utils.member_event_settings import effective_event
+from utils.member_invites import MemberInviteStore, attribute_join, snapshot_row
 from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
@@ -24,6 +27,13 @@ CHANNEL_ID = DEFAULT_CHANNEL_ID  # Kept for existing imports and deployment chec
 _start_task = None
 _indexes_ready = False
 _index_lock = asyncio.Lock()
+_invite_lock = asyncio.Lock()  # One join diff at a time; create/delete share it.
+URL_PATTERN = re.compile(r"https?://\S+")
+FORUM_LABELS = {"join": "Joined", "leave": "Left", "kick": "Kicked", "ban": "Banned",
+                "timeout_add": "Timed out", "timeout_remove": "Timeout removed",
+                "member_update": "Profile changed", "link": "Link",
+                "invite_create": "Invite created", "invite_delete": "Invite deleted",
+                "invite_use": "Invite used"}
 
 
 async def ensure_indexes(store):
@@ -86,10 +96,10 @@ async def post_card(row, *, forum=False):
     channel_id = int(row["channel_id"])
     filename = avatar_filename(row)
     if forum:
-        label = {"join": "Joined", "leave": "Left", "kick": "Kicked", "ban": "Banned"}[row["event_type"]]
+        label = FORUM_LABELS[row["event_type"]]
         occurred = row["occurred_at"].replace(tzinfo=row["occurred_at"].tzinfo or timezone.utc)
         date = occurred.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        suffix = f" · {row['user_id']} · {date}"
+        suffix = f" · {row['user_id']} · {date}" if row["user_id"] != "0" else f" · {date}"
         name_budget = max(1, 100 - len(label) - len(suffix) - 3)
         title = f"{label} · {safe_text(row['display_name'], name_budget)}{suffix}"
         payload = {"name": title[:100], "message": build_forum_message(row)}
@@ -411,6 +421,8 @@ async def audited(event: hikari.AuditLogEntryCreateEvent, mongo: MongoClient = l
                                   user=getattr(member, "user", None), member=member,
                                   at=entry.created_at, moderator_id=entry.user_id,
                                   reason=entry.reason, audit_entry_id=entry.id)
+        elif entry.action_type == hikari.AuditLogEventType.MEMBER_UPDATE:
+            await record_timeout(entry, mongo, bot)
         elif entry.action_type == hikari.AuditLogEventType.MEMBER_BAN_ADD:
             store = MemberEventStore(mongo.member_events)
             await ensure_indexes(store)
@@ -455,3 +467,398 @@ async def unbanned(event: hikari.BanDeleteEvent, mongo: MongoClient = lightbulb.
         raise
     except Exception:
         log.exception("Could not advance a member ban episode")
+
+
+def _text(value):
+    return value if isinstance(value, str) and value else None
+
+
+def extract_urls(content) -> list[str]:
+    """Distinct http(s) URLs in order, trailing punctuation trimmed, bounded."""
+    urls = []
+    for match in URL_PATTERN.findall(content or ""):
+        url = match.rstrip(")>.,")[:200]
+        if len(url) > len("https://") and url not in urls:
+            urls.append(url)
+    return urls[:10]
+
+
+def profile_changes(old, new) -> list[dict]:
+    """Contract fields only; roles and timeouts are not profile changes."""
+    old_user, new_user = old.user, new.user
+    pairs = (
+        ("nickname", old.nickname, new.nickname),
+        ("username", old_user.username, new_user.username),
+        ("global_name", getattr(old_user, "global_name", None), getattr(new_user, "global_name", None)),
+        ("avatar", old_user.avatar_hash, new_user.avatar_hash),
+        ("guild_avatar", getattr(old, "guild_avatar_hash", None), getattr(new, "guild_avatar_hash", None)),
+        ("discriminator", getattr(old_user, "discriminator", None), getattr(new_user, "discriminator", None)),
+    )
+    changes = []
+    for field, before, after in pairs:
+        before, after = _text(before), _text(after)
+        if before == after or (field == "discriminator" and after in (None, "0")):
+            continue
+        if field in ("avatar", "guild_avatar"):
+            before = after = None  # Hashes are not shown; the card says "Changed".
+        changes.append({"field": field, "before": before, "after": after})
+    return changes
+
+
+async def member_identity(bot, user_id: int):
+    """Cached member first, one REST lookup second; never raises."""
+    cache = getattr(bot, "cache", None)
+    member = cache.get_member(GUILD_ID, user_id) if cache else None
+    if member is None:
+        try:
+            member = await bot.rest.fetch_member(GUILD_ID, user_id)
+        except Exception:
+            member = None
+    user = getattr(member, "user", None)
+    username = _text(getattr(user, "username", None)) or str(user_id)
+    return {
+        "display_name": _text(getattr(member, "display_name", None))
+        or _text(getattr(user, "global_name", None)) or username,
+        "username": username,
+        "joined_at": getattr(member, "joined_at", None),
+        "avatar_url": avatar_source(GUILD_ID, user_id, getattr(user, "avatar_hash", None),
+                                    getattr(member, "guild_avatar_hash", None)),
+    }
+
+
+async def record_extra(kind, mongo, bot, *, user_id, display_name, username, at, details,
+                       settings=None, dedupe_key=None, audit_entry_id=None, moderator_id=None,
+                       reason=None, joined_at=None):
+    """Capture and deliver one of the newer logs. No avatar bytes are stored.
+
+    History kinds keep a row even when delivery is off; link and invite rows are
+    only delivery receipts, so they are not written unless delivery is on.
+    """
+    store = MemberEventStore(mongo.member_events)
+    await ensure_indexes(store)
+    config = effective_event(settings or await store.settings(), kind)
+    enabled = config["enabled"] and bool(config["channel_id"])
+    if not enabled and kind not in HISTORY_TYPES:
+        return None
+    row = await store.capture(
+        guild_id=GUILD_ID, user_id=int(user_id), kind=kind, display_name=display_name,
+        username=username, avatar=None, avatar_type=None, at=at, joined_at=joined_at,
+        channel_id=int(config["channel_id"]) if enabled else None,
+        forum_tag_id=int(config["forum_tag_id"]) if enabled and config.get("forum_tag_id") else None,
+        reason=reason, moderator_id=moderator_id, audit_entry_id=audit_entry_id,
+        details=details, dedupe_key=dedupe_key,
+    )
+    if not row:
+        return None
+    ready_row = await store.ready(row["_id"], enabled=enabled)
+    if ready_row and enabled:
+        await deliver(store, bot, ready_row)
+    return ready_row
+
+
+async def record_timeout(entry, mongo, bot):
+    change = next((c for c in entry.changes
+                   if c.key == hikari.AuditLogChangeKey.COMMUNICATION_DISABLED_UNTIL), None)
+    if change is None:
+        return
+    new, old, created = change.new_value, change.old_value, entry.created_at
+    if isinstance(new, datetime) and new > created:
+        kind = "timeout_add"
+    elif old and not (isinstance(new, datetime) and new > created):
+        kind = "timeout_remove"  # Cleared by a moderator; natural expiry has no audit entry.
+    else:
+        return
+    uid = int(entry.target_id)
+    who = await member_identity(bot, uid)
+    details = {"avatar_url": who["avatar_url"]}
+    if kind == "timeout_add":
+        details["until"] = new.isoformat()
+        details["duration_seconds"] = round((new - created).total_seconds() / 60) * 60
+    await record_extra(
+        kind, mongo, bot, user_id=uid, display_name=who["display_name"],
+        username=who["username"], at=created, details=details,
+        audit_entry_id=int(entry.id), moderator_id=entry.user_id, reason=entry.reason,
+        joined_at=who["joined_at"],
+    )
+
+
+async def nickname_actor(bot, user_id: int, at: datetime):
+    """Moderator or self named by the audit entry for this nickname change."""
+    await asyncio.sleep(1)  # The audit entry can trail the member update.
+    try:
+        async for page in bot.rest.fetch_audit_log(
+                GUILD_ID, event_type=hikari.AuditLogEventType.MEMBER_UPDATE):
+            for entry in page.entries.values():
+                if (entry.target_id and int(entry.target_id) == user_id and entry.user_id
+                        and any(c.key == hikari.AuditLogChangeKey.NICK for c in entry.changes)
+                        and abs((entry.created_at - at).total_seconds()) <= 15):
+                    return str(entry.user_id)
+            return None
+    except Exception:
+        log.info("Nickname audit lookup unavailable", exc_info=True)
+    return None
+
+
+async def record_profile_change(event, mongo, bot):
+    if int(event.guild_id) != GUILD_ID or event.old_member is None:
+        return
+    changes = profile_changes(event.old_member, event.member)
+    if not changes:
+        return
+    member = event.member
+    uid, now = int(member.user.id), datetime.now(timezone.utc)
+    actor = await nickname_actor(bot, uid, now) if any(c["field"] == "nickname" for c in changes) else None
+    digest = hashlib.sha1(json.dumps(changes, sort_keys=True).encode()).hexdigest()[:12]
+    await record_extra(
+        "member_update", mongo, bot, user_id=uid,
+        display_name=_text(member.display_name) or member.user.username,
+        username=member.user.username, at=now,
+        details={"changes": changes, "actor_id": actor,
+                 "avatar_url": avatar_source(GUILD_ID, uid, member.user.avatar_hash,
+                                             getattr(member, "guild_avatar_hash", None))},
+        dedupe_key=f"{GUILD_ID}:member_update:{uid}:{digest}:{int(now.timestamp()) // 10}",
+        joined_at=member.joined_at if isinstance(member.joined_at, datetime) else None,
+    )
+
+
+async def thread_parent_id(bot, channel_id: int):
+    """Parent channel of a thread, else None. Plain channels' parent is a category."""
+    cache = getattr(bot, "cache", None)
+    channel = (cache.get_thread(channel_id) or cache.get_guild_channel(channel_id)) if cache else None
+    if channel is None:
+        try:
+            channel = await bot.rest.fetch_channel(channel_id)
+        except Exception:
+            return None
+    threads = (hikari.ChannelType.GUILD_PUBLIC_THREAD, hikari.ChannelType.GUILD_PRIVATE_THREAD,
+               hikari.ChannelType.GUILD_NEWS_THREAD)
+    return getattr(channel, "parent_id", None) if getattr(channel, "type", None) in threads else None
+
+
+async def record_link(event, mongo, bot):
+    message = event.message
+    if message.guild_id is None or int(message.guild_id) != GUILD_ID:
+        return
+    author = message.author
+    if getattr(author, "is_bot", False) or getattr(message, "webhook_id", None):
+        return
+    urls = extract_urls(message.content)
+    if not urls:
+        return
+    store = MemberEventStore(mongo.member_events)
+    await ensure_indexes(store)
+    settings = await store.settings()
+    config = effective_event(settings, "link")
+    if not (config["enabled"] and config["channel_id"]):
+        return
+    ignored_channels = set(settings["ignores"]["channel_ids"])
+    channel_id = int(message.channel_id)
+    if str(channel_id) in ignored_channels:
+        return
+    if ignored_channels:
+        parent = await thread_parent_id(bot, channel_id)
+        if parent is not None and str(parent) in ignored_channels:
+            return
+    member = message.member
+    if {str(role) for role in getattr(member, "role_ids", ())} & set(settings["ignores"]["role_ids"]):
+        return
+    uid = int(author.id)
+    username = _text(getattr(author, "username", None)) or str(uid)
+    await record_extra(
+        "link", mongo, bot, settings=settings, user_id=uid,
+        display_name=_text(getattr(member, "display_name", None))
+        or _text(getattr(author, "global_name", None)) or username,
+        username=username, at=message.created_at,
+        details={"channel_id": str(channel_id), "message_id": str(message.id),
+                 "content": (message.content or "")[:500], "urls": urls,
+                 "avatar_url": avatar_source(GUILD_ID, uid, getattr(author, "avatar_hash", None),
+                                             getattr(member, "guild_avatar_hash", None))},
+        dedupe_key=f"{GUILD_ID}:link:{message.id}",
+        joined_at=getattr(member, "joined_at", None),
+    )
+
+
+def invite_row(invite, *, bot=None, vanity=False, now=None):
+    inviter = getattr(invite, "inviter", None)
+    channel = getattr(invite, "channel", None)
+    channel_id = getattr(invite, "channel_id", None) or getattr(channel, "id", None)
+    channel_name = getattr(channel, "name", None)
+    cache = getattr(bot, "cache", None)
+    if not channel_name and channel_id and cache:
+        channel_name = getattr(cache.get_guild_channel(int(channel_id)), "name", None)
+    return snapshot_row(
+        GUILD_ID, invite.code, uses=getattr(invite, "uses", 0),
+        max_uses=getattr(invite, "max_uses", None),
+        inviter_id=getattr(inviter, "id", None),
+        inviter_name=_text(getattr(inviter, "global_name", None)) or _text(getattr(inviter, "username", None)),
+        channel_id=channel_id, channel_name=channel_name,
+        expires_at=getattr(invite, "expires_at", None), vanity=vanity, now=now,
+    )
+
+
+async def fetch_invite_rows(bot):
+    """Current invites and vanity URL as snapshot rows; raises when unreadable."""
+    rows = []
+    for invite in await bot.rest.fetch_guild_invites(GUILD_ID):
+        if not hasattr(invite, "uses"):  # Without Manage Server, Discord omits counts.
+            raise PermissionError("Invite use counts need the Manage Server permission")
+        rows.append(invite_row(invite, bot=bot))
+    try:
+        vanity = await bot.rest.fetch_vanity_url(GUILD_ID)
+    except hikari.NotFoundError:
+        vanity = None
+    if vanity is not None and vanity.code:
+        rows.append(snapshot_row(GUILD_ID, vanity.code, uses=vanity.uses, max_uses=None, vanity=True))
+    return rows
+
+
+def invite_details(row: dict, names: dict, **extra) -> dict:
+    return {
+        "code": row["code"], "name": names.get(row["code"]), "vanity": bool(row.get("vanity")),
+        "inviter_id": row.get("inviter_id"), "inviter_name": row.get("inviter_name"),
+        "channel_id": row.get("channel_id"), "channel_name": row.get("channel_name"),
+        "uses": row.get("uses"), "max_uses": row.get("max_uses"),
+        "expires_at": row["expires_at"].isoformat() if isinstance(row.get("expires_at"), datetime) else None,
+        **extra,
+    }
+
+
+async def refresh_invites(mongo, bot):
+    async with _invite_lock:
+        store = MemberInviteStore(mongo.member_invites)
+        await store.ensure_indexes()
+        await store.replace_all(GUILD_ID, await fetch_invite_rows(bot))
+
+
+async def record_invite_create(event, mongo, bot):
+    if int(event.guild_id) != GUILD_ID:
+        return
+    row = invite_row(event.invite, bot=bot)
+    async with _invite_lock:
+        await MemberInviteStore(mongo.member_invites).upsert(row)
+    settings = await MemberEventStore(mongo.member_events).settings()
+    created = getattr(event.invite, "created_at", None) or datetime.now(timezone.utc)
+    await record_extra(
+        "invite_create", mongo, bot, settings=settings, user_id=int(row["inviter_id"] or 0),
+        display_name=row["code"], username=row["inviter_name"] or "", at=created,
+        details=invite_details(row, settings["invite_names"]),
+        dedupe_key=f"{GUILD_ID}:invite_create:{row['code']}:{int(created.timestamp())}",
+    )
+
+
+async def record_invite_delete(event, mongo, bot):
+    if int(event.guild_id) != GUILD_ID:
+        return
+    store = MemberInviteStore(mongo.member_invites)
+    async with _invite_lock:
+        saved = await store.get(GUILD_ID, event.code)
+        await store.delete(GUILD_ID, event.code)
+    row = saved or (invite_row(event.old_invite, bot=bot) if event.old_invite else
+                    snapshot_row(GUILD_ID, event.code, uses=0, max_uses=None,
+                                 channel_id=event.channel_id))
+    settings = await MemberEventStore(mongo.member_events).settings()
+    now = datetime.now(timezone.utc)
+    await record_extra(
+        "invite_delete", mongo, bot, settings=settings, user_id=0,
+        display_name=event.code, username="", at=now,
+        details=invite_details(row, settings["invite_names"]),
+        dedupe_key=f"{GUILD_ID}:invite_delete:{event.code}:{int(now.timestamp()) // 10}",
+    )
+
+
+async def record_invite_use(event, mongo, bot):
+    member = event.member
+    if int(member.guild_id) != GUILD_ID:
+        return
+    store = MemberInviteStore(mongo.member_invites)
+    before, after, unavailable = {}, {}, False
+    async with _invite_lock:
+        before = await store.load(GUILD_ID)
+        try:
+            rows = await fetch_invite_rows(bot)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("Invite attribution unavailable (%s); posting Unknown invite", exc)
+            unavailable = True
+        else:
+            after = {row["code"]: row for row in rows}
+            await store.replace_all(GUILD_ID, rows)
+    code = None if unavailable else attribute_join(before, after)
+    settings = await MemberEventStore(mongo.member_events).settings()
+    uid, now = int(member.user.id), datetime.now(timezone.utc)
+    if code:
+        matched = dict(after.get(code) or before[code])
+        if code not in after:  # Spent its last use on this join.
+            matched["uses"] = int(matched.get("uses") or 0) + 1
+        details = invite_details(matched, settings["invite_names"], unknown=False)
+    else:
+        details = {"unknown": True}
+    details["avatar_url"] = avatar_source(GUILD_ID, uid, getattr(member.user, "avatar_hash", None),
+                                          getattr(member, "guild_avatar_hash", None))
+    joined_at = member.joined_at if isinstance(member.joined_at, datetime) else None
+    await record_extra(
+        "invite_use", mongo, bot, settings=settings, user_id=uid,
+        display_name=_text(member.display_name) or member.user.username,
+        username=member.user.username, at=now, details=details, joined_at=joined_at,
+        dedupe_key=event_key(GUILD_ID, uid, "invite_use", now, joined_at),
+    )
+
+
+def _safely(action, failure):
+    """Listener wrapper: a log failure must never reach the gateway dispatcher."""
+    async def run(event, mongo, bot):
+        try:
+            await action(event, mongo, bot)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception(failure)
+    return run
+
+
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def invites_started(event: hikari.StartedEvent, mongo: MongoClient = lightbulb.di.INJECTED,
+                          bot: hikari.GatewayBot = lightbulb.di.INJECTED):
+    try:
+        await refresh_invites(mongo, bot)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.warning("Invite snapshot unavailable (%s); invite uses will read Unknown invite", exc)
+
+
+@loader.listener(hikari.MemberUpdateEvent)
+@lightbulb.di.with_di
+async def profile_changed(event: hikari.MemberUpdateEvent, mongo: MongoClient = lightbulb.di.INJECTED,
+                          bot: hikari.GatewayBot = lightbulb.di.INJECTED):
+    await _safely(record_profile_change, "Failed to archive a profile change")(event, mongo, bot)
+
+
+@loader.listener(hikari.GuildMessageCreateEvent)
+@lightbulb.di.with_di
+async def link_posted(event: hikari.GuildMessageCreateEvent, mongo: MongoClient = lightbulb.di.INJECTED,
+                      bot: hikari.GatewayBot = lightbulb.di.INJECTED):
+    await _safely(record_link, "Failed to log a posted link")(event, mongo, bot)
+
+
+@loader.listener(hikari.InviteCreateEvent)
+@lightbulb.di.with_di
+async def invite_created(event: hikari.InviteCreateEvent, mongo: MongoClient = lightbulb.di.INJECTED,
+                         bot: hikari.GatewayBot = lightbulb.di.INJECTED):
+    await _safely(record_invite_create, "Failed to log an invite creation")(event, mongo, bot)
+
+
+@loader.listener(hikari.InviteDeleteEvent)
+@lightbulb.di.with_di
+async def invite_deleted(event: hikari.InviteDeleteEvent, mongo: MongoClient = lightbulb.di.INJECTED,
+                         bot: hikari.GatewayBot = lightbulb.di.INJECTED):
+    await _safely(record_invite_delete, "Failed to log an invite deletion")(event, mongo, bot)
+
+
+@loader.listener(hikari.MemberCreateEvent)
+@lightbulb.di.with_di
+async def invite_used(event: hikari.MemberCreateEvent, mongo: MongoClient = lightbulb.di.INJECTED,
+                      bot: hikari.GatewayBot = lightbulb.di.INJECTED):
+    await _safely(record_invite_use, "Failed to log an invite use")(event, mongo, bot)

@@ -1,10 +1,12 @@
 """Member event durability, delivery ambiguity, and staff API boundaries."""
+import asyncio
 import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, patch
 
+import hikari
 from aiohttp import web
 from pymongo.errors import DuplicateKeyError
 from aiohttp.test_utils import make_mocked_request
@@ -14,6 +16,7 @@ from extensions.events import member_events as transport
 from utils.member_event_cards import build_card
 from utils.member_event_settings import normalize_settings
 from utils.member_events import GUILD_ID, MemberEventStore, avatar_source, event_key, safe_text
+from tests.test_moderation_backend import MemoryCollection
 
 
 def settings():
@@ -305,6 +308,300 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((called["end"] - called["start"]).days, 1)
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertEqual(json.loads(response.text)["events"][0]["user_id"], self.row["user_id"])
+
+
+class InviteCursor:
+    def __init__(self, rows): self.rows = rows
+    async def to_list(self, length): return [dict(row) for row in self.rows[:length]]
+
+
+class InviteCollection:
+    def __init__(self): self.rows = {}
+    async def create_index(self, *args, **kwargs): pass
+    def find(self, query):
+        return InviteCursor([row for row in self.rows.values() if row["guild_id"] == query["guild_id"]])
+    async def find_one(self, query): return self.rows.get(query["_id"])
+    async def replace_one(self, query, row, upsert=False): self.rows[query["_id"]] = dict(row)
+    async def delete_one(self, query): self.rows.pop(query["_id"], None)
+    async def delete_many(self, query):
+        keep = set(query["code"]["$nin"])
+        for key in [k for k, row in self.rows.items()
+                    if row["guild_id"] == query["guild_id"] and row["code"] not in keep]:
+            del self.rows[key]
+
+
+def invite(code, uses, max_uses=None, **extra):
+    return NS(code=code, uses=uses, max_uses=max_uses, inviter=NS(id=987654321098765432, username="host", global_name=None),
+              channel=NS(id=223456789012345678, name="welcome"), channel_id=223456789012345678,
+              expires_at=None, **extra)
+
+
+async def enable(collection, *kinds, **extra):
+    saved = normalize_settings(None, MemberEventStore.default_settings())
+    for kind in kinds:
+        saved["events"][kind] = {"enabled": True, "channel_id": "223456789012345678", "forum_tag_id": None}
+    saved.update(extra)
+    await MemberEventStore(collection).save_settings(0, saved)
+
+
+class NewLogTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.now = datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc)
+        self.uid = 123456789012345678
+        self.history = MemoryCollection()
+        self.invites = InviteCollection()
+        self.mongo = NS(member_events=self.history, member_invites=self.invites)
+        self.patches = [patch.object(transport, "ensure_indexes", new=AsyncMock()),
+                        patch.object(transport, "deliver", new=AsyncMock())]
+        self.deliver = self.patches[1].start()
+        self.patches[0].start()
+        self.addCleanup(lambda: [p.stop() for p in self.patches])
+
+    def rows(self, kind):
+        return [row for row in self.history.rows.values() if row.get("event_type") == kind]
+
+    async def test_old_settings_row_without_new_keys_reads_and_saves(self):
+        old = MemberEventStore.default_settings()
+        old["events"] = {k: v for k, v in old["events"].items() if k in ("join", "leave", "kick", "ban")}
+        old["revision"] = 3
+        old["categories"] = {"members": {"mode": "own", "channel_id": "111111111111111111", "forum_tag_id": None},
+                             "moderation": {"mode": "main", "channel_id": None, "forum_tag_id": None}}
+        old["ignores"] = {}
+        self.history.rows["member-events-settings:%d" % GUILD_ID] = {
+            "_id": "member-events-settings:%d" % GUILD_ID, "event_key": "x", **old}
+        store = MemberEventStore(self.history)
+        loaded = await store.settings()
+        self.assertEqual(set(loaded["categories"]), {"members", "moderation", "messages", "invites"})
+        self.assertEqual(loaded["categories"]["members"]["mode"], "own")
+        self.assertEqual(loaded["ignores"], {"channel_ids": [], "role_ids": []})
+        self.assertEqual(loaded["invite_names"], {})
+        for kind in ("timeout_add", "timeout_remove", "member_update", "link",
+                     "invite_create", "invite_delete", "invite_use"):
+            self.assertEqual(loaded["events"][kind], {"enabled": False, "channel_id": None, "forum_tag_id": None})
+        saved = await store.save_settings(3, loaded)
+        self.assertEqual(saved["revision"], 4)
+        self.assertEqual(self.history.rows["member-events-settings:%d" % GUILD_ID]["invite_names"], {})
+
+    async def test_timeout_add_and_remove_come_from_the_audit_entry_once(self):
+        await enable(self.history, "timeout_add", "timeout_remove")
+        member = NS(user=NS(username="alice", global_name="Alice", avatar_hash=None), display_name="Alice",
+                    joined_at=self.now - timedelta(days=400), guild_avatar_hash=None)
+        bot = NS(cache=NS(get_member=lambda guild, uid: member))
+        key = hikari.AuditLogChangeKey.COMMUNICATION_DISABLED_UNTIL
+
+        def entry(entry_id, new, old):
+            return NS(guild_id=GUILD_ID, target_id=self.uid, id=entry_id, user_id=999, reason="spam",
+                      action_type=hikari.AuditLogEventType.MEMBER_UPDATE, created_at=self.now,
+                      changes=[NS(key=key, new_value=new, old_value=old)])
+        until = self.now + timedelta(hours=1, seconds=1)
+        await transport.audited(NS(entry=entry(1001, until, None)), self.mongo, bot)
+        await transport.audited(NS(entry=entry(1001, until, None)), self.mongo, bot)  # Gateway replay.
+        added = self.rows("timeout_add")
+        self.assertEqual(len(added), 1)
+        self.assertEqual(added[0]["details"]["duration_seconds"], 3600)
+        self.assertEqual(added[0]["details"]["until"], until.isoformat())
+        self.assertEqual((added[0]["moderator_id"], added[0]["reason"]), ("999", "spam"))
+        self.assertIsNone(added[0]["avatar"])
+        self.assertEqual(self.deliver.await_count, 1)
+        await transport.audited(NS(entry=entry(1002, None, until)), self.mongo, bot)
+        self.assertEqual(len(self.rows("timeout_remove")), 1)
+        nick = NS(guild_id=GUILD_ID, target_id=self.uid, id=1003, user_id=999, reason=None,
+                  action_type=hikari.AuditLogEventType.MEMBER_UPDATE, created_at=self.now,
+                  changes=[NS(key=hikari.AuditLogChangeKey.NICK, new_value="x", old_value="y")])
+        await transport.audited(NS(entry=nick), self.mongo, bot)
+        self.assertEqual(len(self.history.rows), 3)  # settings + two timeout rows only.
+
+    async def test_timeout_history_is_kept_when_delivery_is_off(self):
+        member = NS(user=NS(username="alice", global_name=None, avatar_hash=None), display_name="Alice",
+                    joined_at=None, guild_avatar_hash=None)
+        entry = NS(guild_id=GUILD_ID, target_id=self.uid, id=7, user_id=999, reason=None,
+                   action_type=hikari.AuditLogEventType.MEMBER_UPDATE, created_at=self.now,
+                   changes=[NS(key=hikari.AuditLogChangeKey.COMMUNICATION_DISABLED_UNTIL,
+                               new_value=self.now + timedelta(minutes=5), old_value=None)])
+        await transport.audited(NS(entry=entry), self.mongo, NS(cache=NS(get_member=lambda g, u: member)))
+        row = self.rows("timeout_add")[0]
+        self.assertEqual(row["delivery_status"], "skipped")
+        self.deliver.assert_not_awaited()
+
+    def test_profile_changes_cover_contract_fields_only(self):
+        def member(**changes):
+            user = dict(username="alice", global_name="Alice", avatar_hash="a" * 32, discriminator="0")
+            user.update({k: v for k, v in changes.items() if k in user})
+            return NS(user=NS(**user), nickname=changes.get("nickname"), guild_avatar_hash=changes.get("guild_avatar_hash"),
+                      role_ids=changes.get("role_ids", []), communication_disabled_until=changes.get("until"))
+        base = member()
+        self.assertEqual(transport.profile_changes(base, member(role_ids=[1, 2])), [])
+        self.assertEqual(transport.profile_changes(base, member(until=self.now)), [])
+        self.assertEqual(transport.profile_changes(base, member(nickname="Al")),
+                         [{"field": "nickname", "before": None, "after": "Al"}])
+        fields = [c["field"] for c in transport.profile_changes(
+            base, member(username="al", global_name="Al", avatar_hash="b" * 32, guild_avatar_hash="c" * 32))]
+        self.assertEqual(fields, ["username", "global_name", "avatar", "guild_avatar"])
+        avatar = transport.profile_changes(base, member(avatar_hash="b" * 32))[0]
+        self.assertEqual((avatar["before"], avatar["after"]), (None, None))  # Hashes are never shown.
+        self.assertEqual(transport.profile_changes(base, member(discriminator="1234"))[0]["field"], "discriminator")
+
+    async def test_member_update_skips_unknown_old_member_and_posts_nickname_change_with_actor(self):
+        await enable(self.history, "member_update")
+        user = NS(id=self.uid, username="alice", global_name="Alice", avatar_hash=None, discriminator="0")
+        old = NS(user=user, nickname="Old", guild_avatar_hash=None, display_name="Old")
+        new = NS(user=user, nickname="New", guild_avatar_hash=None, display_name="New",
+                 joined_at=self.now - timedelta(days=3), guild_id=GUILD_ID)
+        audit = NS(entries={1: NS(target_id=self.uid, user_id=999, created_at=datetime.now(timezone.utc),
+                                  changes=[NS(key=hikari.AuditLogChangeKey.NICK)])})
+
+        async def pages(*args, **kwargs):
+            yield audit
+        bot = NS(rest=NS(fetch_audit_log=pages))
+        with patch.object(transport.asyncio, "sleep", new=AsyncMock()):
+            await transport.record_profile_change(NS(guild_id=GUILD_ID, old_member=None, member=new), self.mongo, bot)
+            self.assertEqual(self.rows("member_update"), [])
+            await transport.record_profile_change(NS(guild_id=GUILD_ID, old_member=old, member=new), self.mongo, bot)
+            same = NS(user=user, nickname="Old", guild_avatar_hash=None, display_name="Old", joined_at=None)
+            await transport.record_profile_change(NS(guild_id=GUILD_ID, old_member=old, member=same), self.mongo, bot)
+        (row,) = self.rows("member_update")
+        self.assertEqual(row["details"]["changes"], [{"field": "nickname", "before": "Old", "after": "New"}])
+        self.assertEqual(row["details"]["actor_id"], "999")
+        self.assertIsNone(row["avatar"])
+        self.deliver.assert_awaited_once()
+
+    def test_url_extraction_trims_punctuation_and_bounds(self):
+        text = "see (https://a.example/x). and <https://b.example/y>, https://a.example/x http://c.example/z>"
+        self.assertEqual(transport.extract_urls(text),
+                         ["https://a.example/x", "https://b.example/y", "http://c.example/z"])
+        self.assertEqual(transport.extract_urls("no links here, just https:// alone"), [])
+        many = " ".join(f"https://e.example/{i}" for i in range(30))
+        self.assertEqual(len(transport.extract_urls(many)), 10)
+        self.assertEqual(len(transport.extract_urls("https://e.example/" + "a" * 500)[0]), 200)
+
+    async def test_link_ignore_rules_bot_skip_and_message_dedupe(self):
+        await enable(self.history, "link", ignores={"channel_ids": ["333333333333333333"],
+                                                    "role_ids": ["444444444444444444"]})
+        threads = {555555555555555555: NS(type=hikari.ChannelType.GUILD_PUBLIC_THREAD, parent_id=333333333333333333),
+                   666666666666666666: NS(type=hikari.ChannelType.GUILD_TEXT, parent_id=333333333333333333)}  # Category.
+        bot = NS(cache=NS(get_thread=lambda cid: threads.get(cid), get_guild_channel=lambda cid: threads.get(cid)))
+
+        def event(message_id, channel=777777777777777777, bot_author=False, roles=(), webhook=None, content="x https://e.example/a"):
+            author = NS(id=self.uid, username="alice", global_name="Alice", avatar_hash=None, is_bot=bot_author)
+            member = NS(display_name="Alice", role_ids=list(roles), joined_at=None, guild_avatar_hash=None)
+            return NS(message=NS(id=message_id, guild_id=GUILD_ID, channel_id=channel, author=author, member=member,
+                                 webhook_id=webhook, content=content, created_at=self.now))
+        for case in (event(1, channel=333333333333333333), event(2, channel=555555555555555555),
+                     event(3, roles=[444444444444444444]), event(4, bot_author=True),
+                     event(5, webhook=888888888888888888), event(6, content="plain text")):
+            await transport.record_link(case, self.mongo, bot)
+        self.assertEqual(self.rows("link"), [])
+        await transport.record_link(event(7, channel=666666666666666666), self.mongo, bot)  # Category id is not a parent.
+        await transport.record_link(event(7, channel=666666666666666666), self.mongo, bot)  # Replay.
+        (row,) = self.rows("link")
+        self.assertEqual(row["details"]["message_id"], "7")
+        self.assertEqual(row["details"]["urls"], ["https://e.example/a"])
+        self.deliver.assert_awaited_once()
+
+    async def test_link_is_not_stored_when_delivery_is_off(self):
+        author = NS(id=self.uid, username="a", global_name=None, avatar_hash=None, is_bot=False)
+        message = NS(id=1, guild_id=GUILD_ID, channel_id=1, author=author, member=None, webhook_id=None,
+                     content="https://e.example", created_at=self.now)
+        await transport.record_link(NS(message=message), self.mongo, NS(cache=None))
+        self.assertEqual(self.rows("link"), [])
+
+    def test_attribution_single_ambiguous_vanity_and_vanished(self):
+        from utils.member_invites import attribute_join
+        row = lambda uses, max_uses=None: {"uses": uses, "max_uses": max_uses}
+        before = {"aa": row(1), "bb": row(2), "vanity": row(9)}
+        self.assertEqual(attribute_join(before, {"aa": row(2), "bb": row(2), "vanity": row(9)}), "aa")
+        self.assertIsNone(attribute_join(before, {"aa": row(2), "bb": row(3), "vanity": row(9)}))  # Ambiguous.
+        self.assertIsNone(attribute_join(before, {"aa": row(3), "bb": row(2), "vanity": row(9)}))  # Two joins.
+        self.assertIsNone(attribute_join(before, before))
+        self.assertEqual(attribute_join(before, {"aa": row(1), "bb": row(2), "vanity": row(10)}), "vanity")
+        spent = {"cc": row(4, 5)}
+        self.assertEqual(attribute_join(spent, {}), "cc")  # Vanished at max_uses - 1.
+        self.assertIsNone(attribute_join({"cc": row(2, 5)}, {}))  # Expired or deleted, not spent.
+        self.assertIsNone(attribute_join({"cc": row(4, 0)}, {}))
+        self.assertEqual(attribute_join({"cc": row(4, 5), "dd": row(0)}, {"dd": row(0)}), "cc")
+
+    async def join(self, fetch, uid=None):
+        uid = uid or self.uid
+        user = NS(id=uid, username="newbie", global_name=None, avatar_hash=None)
+        member = NS(guild_id=GUILD_ID, user=user, display_name="Newbie", joined_at=self.now,
+                    guild_avatar_hash=None)
+        bot = NS(rest=NS(fetch_guild_invites=fetch, fetch_vanity_url=AsyncMock(side_effect=hikari.NotFoundError("u", {}, b"")),
+                         ), cache=None)
+        await transport.record_invite_use(NS(member=member), self.mongo, bot)
+
+    async def test_invite_use_attributes_one_invite_and_updates_snapshot(self):
+        await enable(self.history, "invite_use", invite_names={"aa": "Spring"})
+        await transport.refresh_invites(self.mongo, NS(cache=None, rest=NS(
+            fetch_guild_invites=AsyncMock(return_value=[invite("aa", 1, 5), invite("bb", 0)]),
+            fetch_vanity_url=AsyncMock(side_effect=hikari.NotFoundError("u", {}, b"")))))
+        await self.join(AsyncMock(return_value=[invite("aa", 2, 5), invite("bb", 0)]))
+        (row,) = self.rows("invite_use")
+        self.assertEqual((row["details"]["code"], row["details"]["name"], row["details"]["uses"]), ("aa", "Spring", 2))
+        self.assertEqual(row["details"]["inviter_name"], "host")
+        self.assertFalse(row["details"]["unknown"])
+        self.assertEqual(self.invites.rows[f"{GUILD_ID}:aa"]["uses"], 2)
+
+    async def test_invite_use_unknown_when_ambiguous_or_fetch_fails_and_never_raises(self):
+        await enable(self.history, "invite_use")
+        await transport.refresh_invites(self.mongo, NS(cache=None, rest=NS(
+            fetch_guild_invites=AsyncMock(return_value=[invite("aa", 1), invite("bb", 1)]),
+            fetch_vanity_url=AsyncMock(side_effect=hikari.NotFoundError("u", {}, b"")))))
+        await self.join(AsyncMock(return_value=[invite("aa", 2), invite("bb", 2)]), uid=123456789012345601)
+        forbidden = AsyncMock(side_effect=hikari.ForbiddenError("u", {}, b""))
+        with self.assertLogs(transport.log, "WARNING") as logs:
+            await self.join(forbidden, uid=123456789012345602)
+        self.assertEqual(len(logs.records), 1)
+        rows = self.rows("invite_use")
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(row["details"]["unknown"] for row in rows))
+        self.assertEqual(self.invites.rows[f"{GUILD_ID}:aa"]["uses"], 2)  # Failure left the snapshot alone.
+        no_counts = AsyncMock(return_value=[NS(code="aa")])  # Without Manage Server there are no counts.
+        with self.assertLogs(transport.log, "WARNING"):
+            await self.join(no_counts, uid=123456789012345603)
+
+    async def test_vanity_and_vanished_single_use_invite_are_attributed(self):
+        await enable(self.history, "invite_use")
+        await transport.refresh_invites(self.mongo, NS(cache=None, rest=NS(
+            fetch_guild_invites=AsyncMock(return_value=[invite("once", 0, 1)]),
+            fetch_vanity_url=AsyncMock(return_value=NS(code="wu", uses=40)))))
+        vanity_bot = NS(cache=None, rest=NS(fetch_guild_invites=AsyncMock(return_value=[invite("once", 0, 1)]),
+                                           fetch_vanity_url=AsyncMock(return_value=NS(code="wu", uses=41))))
+        user = NS(id=123456789012345611, username="u", global_name=None, avatar_hash=None)
+        member = NS(guild_id=GUILD_ID, user=user, display_name="U", joined_at=self.now, guild_avatar_hash=None)
+        await transport.record_invite_use(NS(member=member), self.mongo, vanity_bot)
+        await self.join(AsyncMock(return_value=[]), uid=123456789012345612)  # "once" is gone: it was spent.
+        by = {row["user_id"]: row["details"] for row in self.rows("invite_use")}
+        self.assertTrue(by["123456789012345611"]["vanity"])
+        self.assertEqual(by["123456789012345611"]["code"], "wu")
+        self.assertEqual((by["123456789012345612"]["code"], by["123456789012345612"]["uses"]), ("once", 1))
+
+    async def test_concurrent_joins_do_not_share_one_diff(self):
+        await enable(self.history, "invite_use")
+        await transport.refresh_invites(self.mongo, NS(cache=None, rest=NS(
+            fetch_guild_invites=AsyncMock(return_value=[invite("aa", 0), invite("bb", 0)]),
+            fetch_vanity_url=AsyncMock(side_effect=hikari.NotFoundError("u", {}, b"")))))
+        states = iter([[invite("aa", 1), invite("bb", 0)], [invite("aa", 1), invite("bb", 1)]])
+
+        async def fetch(guild):
+            await asyncio.sleep(0)
+            return next(states)
+        await asyncio.gather(self.join(fetch, uid=123456789012345621), self.join(fetch, uid=123456789012345622))
+        codes = sorted(row["details"]["code"] for row in self.rows("invite_use"))
+        self.assertEqual(codes, ["aa", "bb"])
+
+    async def test_invite_create_and_delete_update_snapshot_and_post(self):
+        await enable(self.history, "invite_create", "invite_delete", invite_names={"aa": "Spring"})
+        created = NS(guild_id=GUILD_ID, invite=NS(**{**vars(invite("aa", 0, 10)), "created_at": self.now}))
+        await transport.record_invite_create(created, self.mongo, NS(cache=None))
+        self.assertIn(f"{GUILD_ID}:aa", self.invites.rows)
+        (made,) = self.rows("invite_create")
+        self.assertEqual((made["details"]["name"], made["details"]["max_uses"]), ("Spring", 10))
+        await transport.record_invite_delete(NS(guild_id=GUILD_ID, code="aa", channel_id=1, old_invite=None),
+                                             self.mongo, NS(cache=None))
+        self.assertNotIn(f"{GUILD_ID}:aa", self.invites.rows)
+        (gone,) = self.rows("invite_delete")
+        self.assertEqual(gone["details"]["uses"], 0)
+        self.assertEqual(self.deliver.await_count, 2)
 
 
 if __name__ == "__main__":

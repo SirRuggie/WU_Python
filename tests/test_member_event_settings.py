@@ -32,10 +32,11 @@ class LayeredSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(normalized["revision"], 0)
         self.assertEqual(normalized["main"], {"channel_id": None, "forum_tag_id": None})
         self.assertEqual({key: value["mode"] for key, value in normalized["categories"].items()},
-                         {"members": "main", "moderation": "main"})
+                         {"members": "main", "moderation": "main", "messages": "main", "invites": "main"})
         for kind in EVENT_TYPES:
             self.assertEqual(effective_event(normalized, kind), legacy["events"][kind])
-        self.assertEqual(normalized["ignores"], {})
+        self.assertEqual(normalized["ignores"], {"channel_ids": [], "role_ids": []})
+        self.assertEqual(normalized["invite_names"], {})
 
     def test_all_layers_and_off_priority(self):
         settings = normalize_settings(None, MemberEventStore.default_settings())

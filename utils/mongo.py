@@ -42,6 +42,8 @@ class MongoClient(AsyncMongoClient):
         self.member_events = collection_for(self, "member_events", routes=routes)
         # Test-send rate claims and audit live apart from real member history.
         self.member_event_test_audit = collection_for(self, "member_event_test_audit", routes=routes)
+        # Bot-written invite snapshot (uses diff for the invite-use log); web reads only.
+        self.member_invites = collection_for(self, "member_invites", routes=routes)
         self.fwa_data = collection_for(self, "fwa_data", routes=routes)
         self.fwa_band_data = collection_for(self, "fwa_band_data", routes=routes)
         self.ticket_setup = collection_for(self, "ticket_setup", routes=routes)
