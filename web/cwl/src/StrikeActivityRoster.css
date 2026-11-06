@@ -1,5 +1,6 @@
 .strike-activity-roster {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--wu-space-2);
   min-width: 0;
 }
@@ -301,7 +302,7 @@
 .strike-activity-table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
 }
 .strike-activity-table caption {
   position: absolute;
@@ -318,15 +319,6 @@
   z-index: 4;
   background: var(--wu-surface);
   text-align: left;
-}
-.strike-activity-table th:first-child {
-  width: 22%;
-}
-.strike-activity-table th:last-child {
-  width: 15%;
-}
-.strike-activity-table th:nth-child(3) {
-  width: 17%;
 }
 .strike-activity-table th button {
   padding: 0 var(--wu-space-1);
@@ -381,116 +373,21 @@
   display: none;
 }
 .strike-priority-chopping {
-  color: #edb0a8;
-  background: #4a2724;
-  border-radius: 4px;
-  padding: var(--wu-space-1) var(--wu-space-1);
+  color: var(--roster-card-text-danger, #ff9f9f);
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
   font-size: var(--wu-text-sm);
   white-space: nowrap;
 }
 .strike-priority-high {
-  color: #d4bd84;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
 }
 @media (max-width: 900px) {
   .shell .strike-activity-toolbar {
     top: 70px;
     z-index: 2;
-  }
-}
-@media (max-width: 899px) {
-  .strike-activity-table,
-  .strike-activity-table tbody {
-    display: block;
-  }
-  .strike-activity-table thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-  .strike-activity-table tr {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 0 var(--wu-space-1);
-    border-bottom: 1px solid var(--wu-border-subtle);
-    padding: var(--wu-space-1) 0;
-    height: auto;
-  }
-  .strike-activity-table td {
-    border: 0;
-    padding: 0;
-  }
-  .strike-activity-account {
-    grid-column: 2;
-    grid-row: 1;
-  }
-  .strike-activity-selection {
-    grid-column: 1;
-    grid-row: 1 / 4;
-    align-self: center;
-  }
-  .strike-activity-count {
-    grid-column: 3;
-    grid-row: 1;
-    align-self: center;
-    font-variant-numeric: tabular-nums;
-  }
-  .strike-activity-table .strike-activity-th,
-  .strike-activity-table .strike-activity-clan,
-  .strike-activity-table .strike-activity-weight {
-    grid-column: 2 / 4;
-    font-size: var(--wu-text-sm);
-    color: #b8b5ad;
-  }
-  .strike-activity-table .strike-activity-th {
-    grid-row: 2;
-  }
-  .strike-activity-table .strike-activity-clan {
-    grid-row: 2;
-    margin-left: var(--wu-space-7);
-    margin-right: var(--wu-space-7);
-  }
-  .strike-activity-table .strike-activity-weight {
-    grid-row: 2;
-    justify-self: end;
-  }
-  .strike-activity-table .strike-activity-one-summary {
-    display: block;
-    grid-column: 2 / 4;
-    font-size: var(--wu-text-sm);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 20px;
-    min-height: 20px;
-    color: #bfbbae;
-  }
-  .strike-activity-table .strike-activity-quiet,
-  .strike-activity-table .strike-activity-wars,
-  .strike-activity-table .strike-activity-raids,
-  .strike-activity-table .strike-activity-priority {
-    display: none;
-  }
-  .strike-mobile-priority {
-    display: inline-flex;
-    flex: 0 0 auto;
-  }
-  .strike-activity-mobile-label {
-    display: inline;
-  }
-}
-.strikes-workspace .strike-activity-table .strike-activity-row {
-  align-items: center;
-  justify-content: flex-start;
-}
-.strike-mobile-priority {
-  align-items: center;
-}
-@media (max-width: 899px) {
-  .strike-activity-table tbody tr {
-    height: auto;
   }
 }
 
@@ -509,7 +406,7 @@
 }
 .strike-tab-predicate {
   font-size: var(--wu-text-md);
-  padding: var(--wu-space-1) var(--wu-space-2);
+  padding: 0;
   color: var(--wu-text-muted);
 }
 .shell
@@ -524,15 +421,12 @@
     gap: var(--wu-space-1) var(--wu-space-3);
   }
   .strike-activity-roster
-    > :not(.strike-activity-tabs):not(.strike-activity-toolbar):not(
+    > :not(.strike-activity-chips):not(.strike-activity-toolbar):not(
       .strike-activity-applied
     ):not(.strike-activity-summary) {
     grid-column: 1 / -1;
   }
-  .strike-activity-summary {
-    align-self: center;
-    text-align: right;
-  }
+
   .strike-activity-toolbar {
     top: 0;
   }
@@ -572,6 +466,12 @@
 }
 
 .strike-activity-status-line {
+  display: grid;
+  min-width: 0;
+  color: var(--wu-text-muted);
+}
+.strike-activity-rule-line,
+.strike-activity-freshness {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -620,16 +520,191 @@
     > .strikes-tracking-body {
     display: none;
   }
-  .strike-activity-status .strikes-tracking > summary {
-    order: 0;
-  }
-  .strike-activity-status .strike-activity-as-of {
-    order: 1;
-    flex-basis: 100%;
-  }
   .strike-activity-status .strikes-tracking-body {
-    order: 2;
     flex-basis: 100%;
     min-width: 0;
+  }
+}
+
+/* Accounts layout: chip overflow stays local, with an end-of-row affordance. */
+.strike-activity-chips {
+  position: relative;
+  min-width: 0;
+}
+@media (max-width: 650px) {
+  .strike-activity-chips.has-more::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 20px;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--wu-bg));
+  }
+  .strike-activity-toolbar {
+    grid-template-columns: 56px minmax(0, 1fr) 44px;
+    grid-template-areas: "search search actions" "filters sort direction";
+  }
+  .strike-activity-toolbar > input {
+    grid-area: search;
+  }
+  .strike-activity-toolbar > select {
+    grid-area: sort;
+  }
+  .strike-activity-toolbar > button:first-of-type {
+    grid-area: direction;
+  }
+  .strike-activity-toolbar > button:last-of-type {
+    grid-area: filters;
+  }
+  .strike-activity-toolbar > .strike-activity-actions {
+    grid-area: actions;
+  }
+}
+.strike-activity-table .strike-activity-heading-name {
+  width: 200px;
+}
+.strike-activity-table-scroll {
+  min-width: 0;
+}
+@media (min-width: 900px) and (max-width: 1279px) {
+  .strike-activity-table-scroll {
+    overflow-x: auto;
+  }
+}
+.strike-activity-table .strike-activity-heading-th {
+  width: 48px;
+}
+.strike-activity-table .strike-activity-heading-clan {
+  width: 160px;
+}
+.strike-activity-table .strike-activity-heading-weight {
+  width: 70px;
+}
+.strike-activity-table .strike-activity-heading-strikes {
+  width: 65px;
+}
+.strike-activity-table
+  :is(.strike-activity-heading-quiet, .strike-activity-heading-wars) {
+  width: 150px;
+}
+.strike-activity-table
+  :is(.strike-activity-heading-raids, .strike-activity-heading-priority) {
+  width: 1%;
+}
+.strike-activity-table
+  :is(
+    .strike-activity-quiet,
+    .strike-activity-wars,
+    .strike-activity-raids,
+    .strike-activity-priority
+  ) {
+  white-space: nowrap;
+}
+.strike-activity-cards {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.strike-activity-cards > .shared-account-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.strike-activity-cards .roster-ui .player-card {
+  background: var(--wu-surface);
+  border: 1px solid var(--wu-border-subtle);
+}
+.strike-activity-cards .roster-ui .player-card::before {
+  content: none;
+  display: none;
+}
+.strike-activity-cards .account-card-layout {
+  padding: 8px 6px 8px 10px;
+}
+.strike-activity-cards .account-card-content {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.strike-activity-cards .player-card-inline-th {
+  display: none;
+}
+.strike-activity-cards .player-card-name-text {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wu-space-1);
+}
+.strike-activity-cards .strike-activity-row {
+  position: static;
+  display: block;
+  min-height: 0;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.strike-activity-cards .strike-activity-row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: var(--roster-radius-card);
+}
+.strike-activity-cards .player-card:has(.strike-activity-row:focus-visible) {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
+}
+.strike-activity-cards .account-card-select {
+  position: relative;
+  z-index: 2;
+}
+.strike-activity-cards .account-card-detail {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  height: 20px;
+  line-height: 20px;
+  font-size: var(--wu-text-sm);
+  color: var(--wu-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.strike-activity-cards .account-card-meta {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  color: var(--wu-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.strike-activity-cards .account-card-action {
+  grid-column: 2;
+  grid-row: 1;
+  margin-top: 0;
+  align-self: center;
+}
+.strike-activity-cards .strike-activity-count {
+  padding: 0;
+  margin: 0;
+}
+
+@media (min-width: 900px) {
+  .strikes-workspace .strike-activity-table .strike-activity-row {
+    align-items: center;
+  }
+  .strike-activity-status-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--wu-space-1) var(--wu-space-2);
+  }
+  .strike-activity-rule-line,
+  .strike-activity-freshness {
+    display: contents;
   }
 }
