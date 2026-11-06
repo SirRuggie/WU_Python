@@ -1909,6 +1909,8 @@ textarea:focus-visible {
 }
 /* Self-hosted helmet identity keeps the sidebar's reserved image box. */
 img.site-logo {
+  width: calc(39px * 1007 / 1221);
+  height: 39px;
   object-fit: contain;
   flex-shrink: 0;
   background: transparent;
@@ -1920,12 +1922,12 @@ img.site-logo {
   text-align: center;
 }
 .brand--large img.site-logo {
-  width: 120px;
+  width: calc(120px * 1007 / 1221);
   height: 120px;
 }
 @media (min-width: 900px) {
   .brand--large img.site-logo {
-    width: 160px;
+    width: calc(160px * 1007 / 1221);
     height: 160px;
   }
 }

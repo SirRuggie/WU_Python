@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { existsSync, readFileSync } from "node:fs";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -39,17 +40,33 @@ it("uses the large self-hosted helmet throughout loading and signed-out branding
     const loading = host.querySelector<HTMLImageElement>(
       'img[alt="Warriors United logo"]',
     )!;
-    expect(loading.getAttribute("src")).toBe("/brand/wu-helmet-160.png");
+    expect(loading.getAttribute("src")).toBe("/brand/wu-helmet-120.png");
     expect(loading.getAttribute("srcset")).toBe(
-      "/brand/wu-helmet-160.png 1x, /brand/wu-helmet-320.png 2x, /brand/wu-helmet-480.png 3x",
+      "/brand/wu-helmet-120.png 1x, /brand/wu-helmet-240.png 2x, /brand/wu-helmet-360.png 3x",
     );
     expect(loading.closest(".brand--large")).not.toBeNull();
     expect(loading.parentElement?.tagName).toBe("PICTURE");
     const source = loading.parentElement?.querySelector("source");
     expect(source?.getAttribute("type")).toBe("image/webp");
+    expect(source?.getAttribute("media")).toBe("(min-width: 900px)");
     expect(source?.getAttribute("srcset")).toBe(
       "/brand/wu-helmet-160.webp 1x, /brand/wu-helmet-320.webp 2x, /brand/wu-helmet-480.webp 3x",
     );
+    expect(
+      loading.parentElement
+        ?.querySelector("source:not([media])")
+        ?.getAttribute("srcset"),
+    ).toBe(
+      "/brand/wu-helmet-120.webp 1x, /brand/wu-helmet-240.webp 2x, /brand/wu-helmet-360.webp 3x",
+    );
+    expect(
+      loading.parentElement
+        ?.querySelector('source[type="image/png"]')
+        ?.getAttribute("srcset"),
+    ).toBe(
+      "/brand/wu-helmet-160.png 1x, /brand/wu-helmet-320.png 2x, /brand/wu-helmet-480.png 3x",
+    );
+    expect([loading.width, loading.height]).toEqual([99, 120]);
     expect(host.textContent).toContain("Checking Discord sign-in…");
     const { ApiError } = await import("./api");
     await act(async () => {
@@ -58,7 +75,7 @@ it("uses the large self-hosted helmet throughout loading and signed-out branding
     const welcome = host.querySelector<HTMLImageElement>(
       '.welcome-screen img[alt="Warriors United logo"]',
     )!;
-    expect(welcome.getAttribute("src")).toBe("/brand/wu-helmet-160.png");
+    expect(welcome.getAttribute("src")).toBe("/brand/wu-helmet-120.png");
     expect(welcome.parentElement?.tagName).toBe("PICTURE");
     expect(host.querySelector(".brand strong")?.textContent).toBe(
       "WARRIORS UNITED",
@@ -78,7 +95,28 @@ it("uses the large self-hosted helmet throughout loading and signed-out branding
   }
 });
 
-it("keeps the signed-in sidebar helmet at 39 square with its compact density sources", async () => {
+it("keeps transparent any-icons and removes the maskable tile from the manifest and assets", () => {
+  const manifest = JSON.parse(
+    readFileSync("public/manifest.webmanifest", "utf8"),
+  );
+  expect(manifest.icons).toEqual([
+    {
+      src: "/icons/wu-192.png",
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: "/icons/wu-512.png",
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "any",
+    },
+  ]);
+  expect(existsSync("public/icons/wu-maskable-512.png")).toBe(false);
+});
+
+it("keeps the signed-in sidebar helmet at its portrait height with its compact density sources", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   history.replaceState({}, "", "/home");
   state.api.mockImplementation(async (path: string) => {
@@ -104,11 +142,11 @@ it("keeps the signed-in sidebar helmet at 39 square with its compact density sou
       '.sidebar img[alt="Warriors United logo"]',
     )!;
     expect(logo).not.toBeNull();
-    expect(logo.getAttribute("src")).toBe("/brand/wu-helmet-48.png");
+    expect(logo.getAttribute("src")).toBe("/brand/wu-helmet-39.png");
     expect(logo.getAttribute("srcset")).toBe(
-      "/brand/wu-helmet-48.png 1x, /brand/wu-helmet-96.png 2x, /brand/wu-helmet-144.png 3x",
+      "/brand/wu-helmet-39.png 1x, /brand/wu-helmet-78.png 2x, /brand/wu-helmet-117.png 3x",
     );
-    expect([logo.width, logo.height]).toEqual([39, 39]);
+    expect([logo.width, logo.height]).toEqual([32, 39]);
     expect(logo.closest(".brand--large")).toBeNull();
     expect(logo.closest("picture")).toBeNull();
     expect(host.querySelector(".sidebar .brand strong")?.textContent).toBe(

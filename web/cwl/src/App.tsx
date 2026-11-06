@@ -1255,15 +1255,15 @@ function Brand({ large = false }: { large?: boolean }) {
   const image = (
     <img
       className="emblem site-logo"
-      src={large ? "/brand/wu-helmet-160.png" : "/brand/wu-helmet-48.png"}
+      src={large ? "/brand/wu-helmet-120.png" : "/brand/wu-helmet-39.png"}
       srcSet={
         large
-          ? "/brand/wu-helmet-160.png 1x, /brand/wu-helmet-320.png 2x, /brand/wu-helmet-480.png 3x"
-          : "/brand/wu-helmet-48.png 1x, /brand/wu-helmet-96.png 2x, /brand/wu-helmet-144.png 3x"
+          ? "/brand/wu-helmet-120.png 1x, /brand/wu-helmet-240.png 2x, /brand/wu-helmet-360.png 3x"
+          : "/brand/wu-helmet-39.png 1x, /brand/wu-helmet-78.png 2x, /brand/wu-helmet-117.png 3x"
       }
       alt="Warriors United logo"
-      width={large ? 160 : 39}
-      height={large ? 160 : 39}
+      width={large ? 99 : 32}
+      height={large ? 120 : 39}
     />
   );
   return (
@@ -1271,8 +1271,18 @@ function Brand({ large = false }: { large?: boolean }) {
       {large ? (
         <picture>
           <source
+            media="(min-width: 900px)"
             type="image/webp"
             srcSet="/brand/wu-helmet-160.webp 1x, /brand/wu-helmet-320.webp 2x, /brand/wu-helmet-480.webp 3x"
+          />
+          <source
+            type="image/webp"
+            srcSet="/brand/wu-helmet-120.webp 1x, /brand/wu-helmet-240.webp 2x, /brand/wu-helmet-360.webp 3x"
+          />
+          <source
+            media="(min-width: 900px)"
+            type="image/png"
+            srcSet="/brand/wu-helmet-160.png 1x, /brand/wu-helmet-320.png 2x, /brand/wu-helmet-480.png 3x"
           />
           {image}
         </picture>
