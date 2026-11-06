@@ -1,3 +1,4 @@
+import AccountCard from "./AccountCard";
 import useConfirmDialog from "./useConfirmDialog";
 import { useEffect, useId, useRef, useState } from "react";
 import DiscordIdentity from "./DiscordIdentity";
@@ -236,54 +237,54 @@ export default function ParticipationRecord({
   };
 
   return (
-    <article
+    <AccountCard
       className={`participation-row${account.roster_changed ? " participation-row-changed" : ""}`}
+      thLevel={account.town_hall}
+      name={account.player_name}
+      meta={[
+        <>TH {account.town_hall ?? "—"}</>,
+        account.tag,
+        account.assigned_clan_name || account.assigned_clan_tag || "Unplaced",
+      ]}
+      status={{
+        tone: account.roster_changed ? "bad" : "neutral",
+        content: account.roster_changed
+          ? "Assignment changed"
+          : participationStatus(account).label,
+      }}
+      flags={[
+        hasOverride && !account.roster_changed ? "Staff correction" : null,
+      ]}
+      values={
+        <div className="participation-values">
+          <span>
+            <strong>{account.attacks ?? "—"}</strong>
+            <small> Attacks</small>
+          </span>
+          <span className="participation-value-separator"> · </span>
+          <span>
+            <strong>{account.stars ?? "—"}</strong>
+            <small> Stars</small>
+          </span>
+        </div>
+      }
+      action={
+        <button
+          ref={opener}
+          type="button"
+          className="participation-row-action"
+          disabled={locked}
+          onClick={onOpen}
+        >
+          Details
+          <span className="participation-visually-hidden">
+            {" "}
+            for {account.player_name}
+          </span>
+        </button>
+      }
     >
       {confirmation}
-      <div className="participation-identity">
-        <strong>{account.player_name}</strong>
-        <small>
-          {account.tag} · TH {account.town_hall ?? "—"} ·{" "}
-          {account.assigned_clan_name ||
-            account.assigned_clan_tag ||
-            "Unplaced"}
-        </small>
-      </div>
-      <div className="participation-values">
-        <span>
-          <strong>{account.attacks ?? "—"}</strong>
-          <small>Attacks</small>
-        </span>
-        <span>
-          <strong>{account.stars ?? "—"}</strong>
-          <small>Stars</small>
-        </span>
-      </div>
-      <div className="participation-state">
-        <strong>
-          {account.roster_changed
-            ? "Assignment changed"
-            : participationStatus(account).label}
-        </strong>
-        {hasOverride && !account.roster_changed && (
-          <small>Staff correction</small>
-        )}
-
-      </div>
-      <button
-        ref={opener}
-        type="button"
-        className="participation-row-action"
-        disabled={locked}
-        onClick={onOpen}
-      >
-        Details
-        <span className="participation-visually-hidden">
-          {" "}
-          for {account.player_name}
-        </span>
-      </button>
-
       <dialog
         ref={dialog}
         className="participation-dialog"
@@ -407,7 +408,9 @@ export default function ParticipationRecord({
               : ""}
           </p>
           {participationStatus(account).warning && (
-            <p className="participation-error">{participationStatus(account).warning}</p>
+            <p className="participation-error">
+              {participationStatus(account).warning}
+            </p>
           )}
 
           {hasOverride && (
@@ -550,6 +553,6 @@ export default function ParticipationRecord({
           </button>
         </div>
       </dialog>
-    </article>
+    </AccountCard>
   );
 }
