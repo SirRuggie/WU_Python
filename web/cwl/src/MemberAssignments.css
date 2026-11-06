@@ -300,10 +300,11 @@
   max-width: 100%;
   margin: 0;
   padding: var(--wu-space-2) var(--wu-space-4);
-  border: 2px solid var(--wu-text-muted);
+  border: 2px solid var(--wu-accent);
   border-radius: 12px;
-  background: var(--roster-selection-surface);
-  color: var(--roster-text);
+  background: var(--wu-accent);
+  color: var(--wu-accent-ink);
+  -webkit-text-fill-color: var(--wu-accent-ink);
   font-size: var(--wu-text-md);
   font-weight: var(--wu-weight-bold);
   line-height: 1.35;
@@ -312,15 +313,15 @@
   text-decoration: none;
 }
 .member-assignments .member-clan-head a.member-open-clan:hover {
-  background: var(--roster-selection-surface);
-  border-color: var(--wu-text-muted);
-  color: var(--roster-text);
+  background: var(--wu-accent-hover);
+  border-color: var(--wu-accent-hover);
+  color: var(--wu-accent-ink);
 }
 .member-assignments .member-clan-head a.member-open-clan:focus-visible {
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
-  background: var(--roster-selection-surface);
-  color: var(--roster-text);
+  background: var(--wu-accent);
+  color: var(--wu-accent-ink);
 }
 .member-open-arrow {
   width: 20px;
