@@ -117,6 +117,9 @@
   font-size: var(--wu-text-sm);
 }
 .participation-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
   min-width: 0;
 }
 .participation-list > [hidden] {
@@ -124,6 +127,14 @@
 }
 .participation-row {
   min-width: 0;
+}
+.participation-list .participation-row .roster-ui .player-card {
+  background: var(--wu-surface);
+  border: 1px solid var(--wu-border-subtle);
+}
+.participation-list .participation-row .roster-ui .player-card::before {
+  content: none;
+  display: none;
 }
 .participation-values {
   display: flex;
