@@ -357,6 +357,7 @@ export default function StrikeActivityRoster({
         className={`strike-activity-chips${moreChips ? " has-more" : ""}`}
       >
         <FilterChips
+          variant="pill"
           className="strike-activity-tabs"
           label="Account views"
           value={filters.view}
