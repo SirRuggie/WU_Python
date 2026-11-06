@@ -6,6 +6,7 @@ export default function FilterChips<T extends string>({
   onChange,
   disabled = false,
   className = "",
+  variant = "default",
 }: {
   label: string;
   value: T;
@@ -13,9 +14,17 @@ export default function FilterChips<T extends string>({
   onChange: (value: T) => void;
   disabled?: boolean;
   className?: string;
+  variant?: "default" | "pill";
 }) {
   return (
-    <div className={`filter-chips ${className}`} aria-label={label}>
+    <div
+      className={
+        variant === "pill"
+          ? `filter-chips ${className} filter-chips--pill`
+          : `filter-chips ${className}`
+      }
+      aria-label={label}
+    >
       {options.map((option) => (
         <button
           type="button"

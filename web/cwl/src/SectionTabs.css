@@ -1,0 +1,42 @@
+.section-tabs > button,
+.shell .section-tabs > button {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--wu-text-muted);
+  -webkit-text-fill-color: currentColor;
+  box-shadow: none;
+}
+.section-tabs > button[aria-pressed="true"],
+.shell .section-tabs > button[aria-pressed="true"] {
+  background: transparent;
+  color: var(--wu-accent);
+  border-color: transparent;
+  box-shadow: inset 0 -2px var(--wu-accent);
+}
+.section-tabs > button[aria-pressed="false"]:hover:not(:disabled),
+.shell .section-tabs > button[aria-pressed="false"]:hover:not(:disabled) {
+  background: transparent;
+  color: var(--wu-text);
+  box-shadow: none;
+}
+.section-tabs > button[aria-pressed="true"]:hover:not(:disabled),
+.shell .section-tabs > button[aria-pressed="true"]:hover:not(:disabled) {
+  background: transparent;
+  color: var(--wu-accent);
+}
+.section-tabs > button[aria-pressed]:focus-visible:not(:disabled),
+.shell .section-tabs > button[aria-pressed]:focus-visible:not(:disabled) {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 2px var(--wu-focus);
+}
+.section-tabs > button[aria-pressed="true"]:focus-visible:not(:disabled),
+.shell
+  .section-tabs
+  > button[aria-pressed="true"]:focus-visible:not(:disabled) {
+  box-shadow:
+    inset 0 -2px var(--wu-accent),
+    inset 0 0 0 2px var(--wu-focus);
+}

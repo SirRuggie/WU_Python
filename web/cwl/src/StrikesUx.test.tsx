@@ -809,3 +809,44 @@ it("refreshes canonical historical counts after removal and preserves direct-lin
     host.querySelector(".strikes-detail-context")?.textContent,
   ).not.toContain("2 active");
 });
+
+it("keeps a dirty leave draft until section navigation is confirmed, then clears it without saving", async () => {
+  transport.mockImplementation(async (path: string) => {
+    if (path === "/strikes/settings") return settings;
+    return { members: [], accounts: [], entries: [], total: 0, clans: [] };
+  });
+  await render(<StrikesWorkspace permissions={[]} isOwner userId="1" />);
+  await settle();
+  const sections = host.querySelector('[aria-label="Strike sections"]')!;
+  expect(
+    [...sections.querySelectorAll("button")].map((node) => node.textContent),
+  ).toEqual(["Accounts", "Leave", "Settings"]);
+  await click("Leave", sections);
+  await settle();
+  await input('input[type="date"]', "2027-01-01");
+  await click("Settings", sections);
+  expect(host.querySelector('input[type="date"]')).not.toBeNull();
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "Discard unsaved changes?",
+  );
+  await click("Keep editing", document.querySelector("dialog")!);
+  expect(
+    host.querySelector<HTMLInputElement>('input[type="date"]')?.value,
+  ).toBe("2027-01-01");
+  expect(button("Leave", sections).getAttribute("aria-pressed")).toBe("true");
+  await click("Settings", sections);
+  await click("Discard", document.querySelector("dialog")!);
+  await settle();
+  expect(button("Settings", sections).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  expect(host.querySelector('input[type="date"]')).toBeNull();
+  await click("Leave", sections);
+  await settle();
+  expect(
+    host.querySelector<HTMLInputElement>('input[type="date"]')?.value,
+  ).toBe("");
+  expect(
+    transport.mock.calls.every(([, method]) => !method || method === "GET"),
+  ).toBe(true);
+});

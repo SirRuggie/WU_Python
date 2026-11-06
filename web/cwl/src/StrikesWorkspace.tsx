@@ -44,6 +44,7 @@ import {
   selectedImportEntries,
   toggleLeaveTag,
 } from "./strikeSelections";
+import SectionTabs from "./SectionTabs";
 import "./StrikesWorkspace.css";
 
 type Tab = "history" | "leave" | "settings";
@@ -893,33 +894,29 @@ export default function StrikesWorkspace({
         </div>
       </div>
       <div className="strikes-navigation">
-        <div className="strikes-tabs" role="group" aria-label="Strike sections">
-          {visibleTabs.map((item) => (
-            <button
-              key={item.id}
-              aria-pressed={tab === item.id}
-              disabled={busy}
-              onClick={() =>
-                leaveDraft(() => {
-                  setManualOpen(false);
-                  setManualDirty(false);
-                  memberRequest.current++;
-                  setRemoveId("");
-                  setRemoveReason("");
-                  setLeaveTags([]);
-                  setLeaveRevision(null);
-                  setLeaveConflict(false);
-                  setResumeDate("");
-                  setTab(item.id);
-                  setError("");
-                  setNotice("");
-                })
-              }
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        <SectionTabs
+          className="strikes-tabs"
+          label="Strike sections"
+          items={visibleTabs}
+          value={tab}
+          disabled={busy}
+          onChange={(nextTab) =>
+            leaveDraft(() => {
+              setManualOpen(false);
+              setManualDirty(false);
+              memberRequest.current++;
+              setRemoveId("");
+              setRemoveReason("");
+              setLeaveTags([]);
+              setLeaveRevision(null);
+              setLeaveConflict(false);
+              setResumeDate("");
+              setTab(nextTab);
+              setError("");
+              setNotice("");
+            })
+          }
+        />
         {tab === "history" && !manualOpen && (
           <StrikeTrackingStatus compact canRetry={access.add} />
         )}
