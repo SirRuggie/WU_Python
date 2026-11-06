@@ -1,10 +1,11 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type ButtonHTMLAttributes, type ReactNode } from "react";
 import TownHallIcon from "./TownHallIcon";
 import "./rosterUi/tokens.css";
 import "./PlayerCard.css";
 import "./AccountCard.css";
 
 type Props = {
+  variant?: "participation";
   select?: ReactNode;
   thLevel: number | null | undefined;
   name: ReactNode;
@@ -29,18 +30,56 @@ const joined = (items: ReactNode[]) =>
     </Fragment>
   ));
 
-export default function AccountCard({
-  select,
-  thLevel,
-  name,
-  values,
-  action,
-  meta,
-  status,
-  flags = [],
-  className = "",
-  children,
-}: Props) {
+type StructuralProps = {
+  variant: "structural";
+  className: string;
+  beforeBody?: ReactNode;
+  body?: Pick<
+    ButtonHTMLAttributes<HTMLButtonElement>,
+    "onClick" | "disabled" | "aria-label" | "aria-describedby"
+  > & { type: "button"; className: string };
+  top: {
+    element: "span" | "div";
+    className: string;
+    name: ReactNode;
+    aside?: ReactNode;
+  };
+  rows: ReactNode;
+  afterBody?: ReactNode;
+};
+
+export default function AccountCard(props: Props | StructuralProps) {
+  if (props.variant === "structural") {
+    const Top = props.top.element;
+    const content = (
+      <>
+        <Top className={props.top.className}>
+          {props.top.name}
+          {props.top.aside}
+        </Top>
+        {props.rows}
+      </>
+    );
+    return (
+      <article className={props.className}>
+        {props.beforeBody}
+        {props.body ? <button {...props.body}>{content}</button> : content}
+        {props.afterBody}
+      </article>
+    );
+  }
+  const {
+    select,
+    thLevel,
+    name,
+    values,
+    action,
+    meta,
+    status,
+    flags = [],
+    className = "",
+    children,
+  } = props;
   const visibleFlags = parts(flags);
   const hasValues = parts([values]).length > 0;
   const toneClass =

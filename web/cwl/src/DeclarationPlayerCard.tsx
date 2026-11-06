@@ -7,6 +7,7 @@ import TownHallIcon from "./TownHallIcon";
 import StaffPlayerButton from "./StaffPlayerButton";
 import DiscordContact from "./DiscordContact";
 import "./PlayerCard.css";
+import AccountCard from "./AccountCard";
 export default function DeclarationPlayerCard({
   account,
   clanName,
@@ -30,29 +31,37 @@ export default function DeclarationPlayerCard({
     true,
   );
   return (
-    <article
+    <AccountCard
+      variant="structural"
       className={`player-card player-card-compact declaration-player compare-account-${status.inClan ? "arrived" : "missing"}${highlighted ? " is-match" : ""}`}
-    >
-      <div className="declaration-player-top">
-        <StaffPlayerButton {...request} tag={account.tag}>
-          <span className="player-card-inline-th" aria-hidden="true">
-            <TownHallIcon level={account.town_hall} />
-          </span>
-          <span className="player-card-name-text">{account.player_name}</span>
-        </StaffPlayerButton>
-        {!status.inClan && (
+      top={{
+        element: "div",
+        className: "declaration-player-top",
+        name: (
+          <StaffPlayerButton {...request} tag={account.tag}>
+            <span className="player-card-inline-th" aria-hidden="true">
+              <TownHallIcon level={account.town_hall} />
+            </span>
+            <span className="player-card-name-text">{account.player_name}</span>
+          </StaffPlayerButton>
+        ),
+        aside: !status.inClan && (
           <DiscordContact
             userId={account.user_id}
             compact
             className="declaration-dm"
           />
-        )}
-      </div>
-      <PlayerCardMeta account={account} showPool={false} />
-      <PlayerClanStatus status={status} />
-      {!!record?.current_clan_tag && record.outside_family && (
-        <span className="compare-tag is-warning">Outside family</span>
-      )}
-    </article>
+        ),
+      }}
+      rows={
+        <>
+          <PlayerCardMeta account={account} showPool={false} />
+          <PlayerClanStatus status={status} />
+          {!!record?.current_clan_tag && record.outside_family && (
+            <span className="compare-tag is-warning">Outside family</span>
+          )}
+        </>
+      }
+    />
   );
 }
