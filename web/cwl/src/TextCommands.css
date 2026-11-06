@@ -1,7 +1,7 @@
 .text-command-workspace {
   display: grid;
   grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
-  gap: 20px;
+  gap: var(--wu-space-4);
   align-items: start;
 }
 .text-command-list {
@@ -9,25 +9,25 @@
   top: 90px;
 }
 .command-delete-warning {
-  margin: 8px 0 16px;
+  margin: var(--wu-space-2) 0 var(--wu-space-4);
   overflow-wrap: anywhere;
 }
 .text-command-rows {
   display: grid;
-  gap: 8px;
+  gap: var(--wu-space-2);
   max-height: 60vh;
   overflow: auto;
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 .text-command-rows button {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--wu-space-3);
   text-align: left;
 }
 .text-command-row-info {
   display: grid;
-  gap: 3px;
+  gap: var(--wu-space-1);
   min-width: 0;
 }
 .text-command-row-info small {
@@ -40,16 +40,16 @@
   padding: 0;
   margin: 0;
   display: grid;
-  gap: 16px;
+  gap: var(--wu-space-4);
 }
 .text-command-editor legend {
   font-size: var(--wu-text-lg);
   font-weight: var(--wu-weight-bold);
-  margin-bottom: 18px;
+  margin-bottom: var(--wu-space-4);
 }
 .text-command-editor label {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-1);
 }
 .text-command-editor textarea {
   resize: vertical;
@@ -63,14 +63,14 @@
 .text-command-editor .text-command-enable {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--wu-space-3);
 }
 .text-command-enable input {
   width: 20px;
   height: 20px;
 }
 .text-command-editor details > label {
-  margin-top: 14px;
+  margin-top: var(--wu-space-3);
 }
 .text-command-editor summary {
   cursor: pointer;
@@ -78,7 +78,7 @@
 }
 .text-command-save {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-3);
   align-items: center;
   flex-wrap: wrap;
 }
@@ -127,25 +127,25 @@
     grid-template-columns: 1fr;
   }
   .text-command-list {
-    padding: 16px;
+    padding: var(--wu-space-4);
   }
 }
 .command-builder h3 {
-  margin: 0.3rem 0;
+  margin: var(--wu-space-2) 0;
 }
 .command-add-blocks {
   display: flex;
-  gap: 6px;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
-  margin: 12px 0;
+  margin: var(--wu-space-3) 0;
 }
 .command-add-blocks button {
-  padding: 8px 10px;
+  padding: var(--wu-space-2) var(--wu-space-2);
   font-size: var(--wu-text-md);
 }
 .command-block-list {
   display: grid;
-  gap: 10px;
+  gap: var(--wu-space-2);
   overflow: visible;
 }
 .command-block {
@@ -157,8 +157,8 @@
 .command-block-heading {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-2);
 }
 .command-block-title {
   flex: 1;
@@ -170,11 +170,11 @@
 }
 .command-block-order {
   display: flex;
-  gap: 4px;
+  gap: var(--wu-space-1);
 }
 .command-block-order button {
   min-width: 38px;
-  padding: 8px;
+  padding: var(--wu-space-2);
 }
 .command-block-summary {
   font-size: var(--wu-text-sm);
@@ -182,22 +182,22 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin: 0 12px 10px;
+  margin: 0 var(--wu-space-3) var(--wu-space-2);
 }
 .command-block-fields {
   display: grid;
-  gap: 14px;
-  padding: 12px;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-3);
 }
 .command-link-fields {
   display: grid;
-  gap: 10px;
+  gap: var(--wu-space-3);
   border-bottom: 1px solid var(--wu-border-subtle);
-  padding-bottom: 12px;
+  padding-bottom: var(--wu-space-3);
 }
 .command-block-tools {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
 }
 .command-block-tools button {
@@ -214,25 +214,25 @@
 }
 .mention-tools {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--wu-space-2);
+  margin-top: var(--wu-space-2);
 }
 .mention-tools button {
-  padding: 7px 12px;
+  padding: var(--wu-space-1) var(--wu-space-3);
   font-size: var(--wu-text-md);
 }
 .mention-picker {
-  margin-top: 10px;
-  padding: 12px;
+  margin-top: var(--wu-space-3);
+  padding: var(--wu-space-3);
   border: 1px solid var(--wu-border);
   border-radius: 10px;
 }
 .mention-picker > div {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-2);
   max-height: 220px;
   overflow: auto;
-  margin-top: 10px;
+  margin-top: var(--wu-space-3);
 }
 .mention-picker button {
   text-align: left;
@@ -242,7 +242,7 @@
   position: relative;
 }
 .command-block-heading {
-  padding-left: 42px;
+  padding-left: var(--wu-space-7);
 }
 .command-drag {
   position: absolute;
@@ -250,9 +250,9 @@
   top: 9px;
   touch-action: none;
   cursor: grab;
-  padding: 6px !important;
+  padding: var(--wu-space-2) !important;
   min-width: 30px;
-  min-height: 36px;
+  min-height: 44px;
 }
 .command-drag:active {
   cursor: grabbing;
@@ -268,14 +268,14 @@
 .command-color {
   display: grid;
   grid-template-columns: 90px minmax(0, 180px);
-  gap: 12px;
+  gap: var(--wu-space-3);
   align-items: end;
 }
 .markdown-help {
-  margin-top: 10px;
+  margin-top: var(--wu-space-3);
   border: 1px solid var(--wu-border);
   border-radius: 8px;
-  padding: 10px;
+  padding: var(--wu-space-3);
 }
 .markdown-help summary {
   font-size: var(--wu-text-sm);
@@ -283,10 +283,10 @@
 .markdown-help dl {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .markdown-help dd {
-  margin: 4px 0 0;
+  margin: var(--wu-space-1) 0 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -298,7 +298,7 @@
   flex-shrink: 0;
 }
 .command-block-order button {
-  min-height: 40px;
+  min-height: 44px;
 }
 .mention-text {
   min-width: 0;
@@ -311,24 +311,24 @@
     gap: 0;
   }
   .command-block-title {
-    padding: 8px 4px;
+    padding: var(--wu-space-2) var(--wu-space-1);
   }
   .command-block-order button {
     min-width: 34px;
-    padding: 7px;
+    padding: var(--wu-space-1);
   }
   .command-block-fields {
-    padding: 10px;
+    padding: var(--wu-space-3);
   }
 }
 
 .command-option {
   border: 1px solid #414149;
   border-radius: 8px;
-  padding: 10px;
+  padding: var(--wu-space-3);
 }
 .command-option > label {
-  margin-top: 10px;
+  margin-top: var(--wu-space-2);
 }
 .command-block .command-block .command-block-list {
   max-height: none;
@@ -350,25 +350,25 @@
   min-width: 0;
 }
 .command-block-fields .command-block-fields {
-  padding: 8px;
+  padding: var(--wu-space-2);
 }
 .command-block-list {
   overflow: visible;
   max-height: none;
 }
 .command-add-blocks button {
-  min-height: 40px;
+  min-height: 44px;
 }
 
 .command-add-menu {
-  margin: 12px 0;
-  padding: 10px;
+  margin: var(--wu-space-3) 0;
+  padding: var(--wu-space-3);
   border: 1px solid var(--wu-border);
   border-radius: 9px;
 }
 .command-add-menu > summary {
   color: var(--wu-text-muted);
-  min-height: 26px;
+  min-height: 44px;
 }
 .command-add-blocks {
   display: grid;
@@ -380,19 +380,19 @@
   overflow-wrap: anywhere;
 }
 .command-add-menu .command-add-blocks {
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 
 .command-activity {
-  margin-top: 16px;
+  margin-top: var(--wu-space-4);
   border: 1px solid var(--wu-border);
   border-radius: 10px;
-  padding: 12px;
+  padding: var(--wu-space-3);
 }
 .command-activity summary {
   cursor: pointer;
   font-weight: var(--wu-weight-medium);
-  margin-bottom: 10px;
+  margin-bottom: var(--wu-space-2);
 }
 .command-activity > div {
   max-height: 300px;
@@ -400,8 +400,8 @@
 }
 .command-activity article {
   display: grid;
-  gap: 5px;
-  padding: 12px 0;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-3) 0;
   border-bottom: 1px solid var(--wu-border);
   overflow-wrap: anywhere;
 }
@@ -434,12 +434,12 @@
 
 .command-image-field {
   display: grid;
-  gap: 10px;
+  gap: var(--wu-space-3);
   min-width: 0;
 }
 .command-image-tools {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   align-items: start;
   flex-wrap: wrap;
 }
@@ -461,20 +461,20 @@
   text-wrap: pretty;
 }
 .command-test {
-  margin-top: 16px;
+  margin-top: var(--wu-space-4);
 }
 .command-test summary {
   cursor: pointer;
   font-weight: var(--wu-weight-bold);
 }
 .command-test > button {
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 .command-outline {
   display: flex;
   align-items: end;
-  gap: 10px;
-  margin: 14px 0;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-4) 0;
 }
 .command-outline label {
   flex: 1;
@@ -508,15 +508,15 @@
 }
 
 .command-recipient-settings {
-  padding: 14px;
-  margin: 14px 0;
+  padding: var(--wu-space-4);
+  margin: var(--wu-space-4) 0;
   border: 1px solid #52657c;
   border-radius: 10px;
   background: var(--wu-surface);
 }
 .command-recipient-settings small {
   display: block;
-  margin: 6px 0;
+  margin: var(--wu-space-1) 0;
   line-height: 1.5;
 }
 
@@ -524,8 +524,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--wu-space-3);
+  margin-bottom: var(--wu-space-3);
 }
 .command-editor-heading strong {
   overflow-wrap: anywhere;
@@ -541,8 +541,8 @@
 }
 .text-command-tabs {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--wu-space-2);
+  margin-bottom: var(--wu-space-3);
 }
 .text-command-tabs button {
   min-height: 44px;
@@ -557,11 +557,11 @@
 .text-command-save {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3) 0;
 }
 .command-danger {
-  margin-top: 16px;
+  margin-top: var(--wu-space-4);
 }
 .command-danger summary,
 .command-appearance summary {
@@ -571,7 +571,7 @@
   cursor: pointer;
 }
 .command-test-review button {
-  margin: 4px 8px 4px 0;
+  margin: var(--wu-space-1) var(--wu-space-2) var(--wu-space-1) 0;
 }
 .command-editor-heading h2 {
   margin: 0;
@@ -582,7 +582,7 @@
 .command-recipient-settings {
   margin: 0;
   background: transparent;
-  padding: 10px 12px;
+  padding: var(--wu-space-3) var(--wu-space-3);
 }
 .command-recipient-settings > summary {
   min-height: 44px;
@@ -590,7 +590,7 @@
   align-items: center;
 }
 .command-appearance .command-color {
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 .text-command-rows button[aria-pressed="true"] {
   background: #e2b33218;
@@ -604,7 +604,7 @@
 @media (max-width: 700px) {
   .text-commands .text-command-save {
     position: static;
-    padding: 12px 0;
+    padding: var(--wu-space-3) 0;
   }
 }
 
@@ -627,7 +627,7 @@
 
 .text-command-editor fieldset > details {
   border-bottom: 1px solid #ffffff26;
-  padding: 8px 0;
+  padding: var(--wu-space-2) 0;
 }
 .text-commands summary {
   min-height: 44px;
@@ -637,7 +637,7 @@
 }
 .text-commands .command-scope button {
   min-height: 44px;
-  margin: 4px;
+  margin: var(--wu-space-1);
 }
 .text-commands small {
   font-size: var(--wu-text-xs);
@@ -646,5 +646,5 @@
   display: block;
 }
 .text-command-editor fieldset > details[open] > summary {
-  margin-bottom: 12px;
+  margin-bottom: var(--wu-space-3);
 }

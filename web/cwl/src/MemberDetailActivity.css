@@ -1,7 +1,7 @@
 .member-detail-activity {
-  margin-top: 0.75rem;
+  margin-top: var(--wu-space-3);
   border-top: 1px solid var(--line, var(--wu-border-subtle));
-  padding-top: 0.65rem;
+  padding-top: var(--wu-space-3);
 }
 
 .member-detail-activity > summary {
@@ -34,7 +34,7 @@
 }
 
 .member-detail-activity p {
-  margin: 0.35rem 0;
+  margin: var(--wu-space-2) 0;
   font-size: var(--wu-text-sm);
   text-wrap: pretty;
 }
@@ -49,11 +49,11 @@
 }
 
 .member-detail-war {
-  padding: 0.25rem 0 0.5rem;
+  padding: var(--wu-space-1) 0 var(--wu-space-2);
 }
 
 .member-detail-war h3 {
-  margin: 0.45rem 0 0.2rem;
+  margin: var(--wu-space-2) 0 var(--wu-space-1);
   font-size: var(--wu-text-lg);
   font-weight: var(--wu-weight-medium);
   line-height: 1.3;

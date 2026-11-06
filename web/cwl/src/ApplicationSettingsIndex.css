@@ -3,7 +3,7 @@
 }
 .application-index > label {
   display: grid;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .application-index > details {
   border-bottom: 1px solid var(--border, var(--wu-border-subtle));
@@ -12,22 +12,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 16px 0;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-4) 0;
   min-height: 44px;
   cursor: pointer;
 }
 .application-index summary > span:first-child {
   display: grid;
-  gap: 5px;
+  gap: var(--wu-space-1);
 }
 .application-index summary > span:first-child::before {
   content: "▸";
   position: absolute;
-  margin-left: -18px;
+  margin-left: calc(-1 * var(--wu-space-4));
 }
 .application-index summary {
-  padding-left: 20px;
+  padding-left: var(--wu-space-4);
 }
 .application-index details[open] summary > span:first-child::before {
   content: "▾";
@@ -40,7 +40,7 @@
   border: 1px solid var(--border, var(--wu-border-subtle));
   border-radius: 12px;
   overflow: hidden;
-  margin: 0 0 16px;
+  margin: 0 0 var(--wu-space-4);
 }
 .application-setting-list button {
   width: 100%;
@@ -48,11 +48,11 @@
   text-align: left;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--wu-space-4);
   border: 0;
   border-radius: 0;
   border-bottom: 1px solid var(--border, var(--wu-border-subtle));
-  padding: 12px 16px;
+  padding: var(--wu-space-3) var(--wu-space-4);
   min-height: 44px;
   background: var(--wu-surface);
 }
@@ -61,7 +61,7 @@
 }
 .application-setting-list button > span:first-child {
   display: grid;
-  gap: 4px;
+  gap: var(--wu-space-1);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -77,7 +77,7 @@
     font-size: var(--wu-text-md);
   }
   .application-setting-list button {
-    padding: 12px;
+    padding: var(--wu-space-3);
   }
 }
 
@@ -87,7 +87,7 @@
 .applications-workspace .manage-preview-toggle {
   display: none;
   border-bottom: 1px solid var(--wu-border-subtle);
-  margin-bottom: 16px;
+  margin-bottom: var(--wu-space-4);
 }
 .applications-workspace .manage-preview-toggle button {
   flex: 1;
@@ -96,7 +96,7 @@
   border-radius: 0;
   border-bottom: 3px solid transparent;
   min-height: 44px;
-  padding: 8px;
+  padding: var(--wu-space-2);
 }
 .applications-workspace .manage-preview-toggle button[aria-pressed="true"] {
   background: #f5d46c0a;
@@ -113,19 +113,19 @@
   border: 0;
   border-top: 1px solid var(--wu-border-subtle);
   border-radius: 0;
-  padding: 16px 0;
+  padding: var(--wu-space-4) 0;
 }
 @media (max-width: 650px) {
   .applications-workspace .manage-save {
     position: static;
-    padding: 12px;
-    gap: 10px;
+    padding: var(--wu-space-3);
+    gap: var(--wu-space-3);
   }
   .applications-workspace .manage-heading {
-    gap: 8px;
+    gap: var(--wu-space-2);
   }
   .applications-workspace .manage-heading .manage-categories {
-    margin: 4px 0;
+    margin: var(--wu-space-1) 0;
   }
 }
 @media (max-height: 600px) {

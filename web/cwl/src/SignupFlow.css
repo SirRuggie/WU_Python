@@ -3,8 +3,8 @@
   margin: 0 auto;
 }
 .signup-guide {
-  padding: 22px 24px;
-  margin: 0 0 24px;
+  padding: var(--wu-space-4) var(--wu-space-5);
+  margin: 0 0 var(--wu-space-5);
   background: #f1c54d;
   color: #211a09;
   border-radius: 16px;
@@ -12,7 +12,7 @@
 }
 .signup-guide .eyebrow {
   color: #514016;
-  margin: 0 0 6px;
+  margin: 0 0 var(--wu-space-1);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
 }
@@ -26,14 +26,14 @@
 }
 .signup-guide p {
   color: #3e3217;
-  margin: 12px 0 0;
+  margin: var(--wu-space-3) 0 0;
   line-height: 1.55;
   text-wrap: pretty;
 }
 .signup-guide li {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   font-size: var(--wu-text-sm);
   flex: 1;
   color: #54431d;
@@ -60,14 +60,14 @@
 }
 .signup-flow .pool-choice-grid button {
   min-height: 165px;
-  padding: 24px;
+  padding: var(--wu-space-5);
 }
 .signup-flow .pool-choice-grid button:focus-visible {
   outline: 3px solid #f1c54d;
   outline-offset: 3px;
 }
 .signup-actions {
-  gap: 14px;
+  gap: var(--wu-space-4);
 }
 .signup-actions p {
   margin: 0;
@@ -75,16 +75,16 @@
 }
 .signup-action-buttons {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-2);
   flex-shrink: 0;
 }
 .signup-flow .submit-bar {
   z-index: 3;
-  padding-bottom: max(15px, env(safe-area-inset-bottom));
-  margin-top: 24px;
+  padding-bottom: max(var(--wu-space-4), env(safe-area-inset-bottom));
+  margin-top: var(--wu-space-5);
 }
 .signup-review {
-  padding: 24px;
+  padding: var(--wu-space-5);
 }
 .signup-review h3 {
   font-size: var(--wu-text-lg);
@@ -97,7 +97,7 @@
   overflow: visible;
 }
 .signup-review .review-row {
-  gap: 15px;
+  gap: var(--wu-space-3);
 }
 .signup-review .submit-bar {
   margin-bottom: 0;
@@ -114,7 +114,7 @@
 .signup-flow .signed-up-name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .signup-guide h2:focus-visible {
   outline: 2px solid #211a09;
@@ -122,7 +122,7 @@
 }
 @media (max-width: 650px) {
   .signup-guide {
-    padding: 18px 16px;
+    padding: var(--wu-space-4) var(--wu-space-4);
   }
   .signup-guide h2 {
     font-size: var(--wu-text-xl);
@@ -131,14 +131,14 @@
     text-wrap: balance;
   }
   .signup-guide ol {
-    gap: 6px;
+    gap: var(--wu-space-2);
   }
   .signup-guide li {
     font-size: var(--wu-text-xs);
     flex-direction: column;
     align-items: flex-start;
     position: relative;
-    gap: 6px;
+    gap: var(--wu-space-2);
   }
   .signup-guide li b {
     position: absolute;
@@ -147,10 +147,10 @@
   }
   .signup-flow .pool-choice-grid button {
     min-height: 125px;
-    padding: 18px;
+    padding: var(--wu-space-4);
   }
   .signup-review {
-    padding: 16px;
+    padding: var(--wu-space-4);
   }
   .signup-flow .submit-bar {
     margin-left: 0;
@@ -183,8 +183,8 @@
 
 .signup-account-search {
   display: grid;
-  gap: 0.4rem;
-  margin-block: 1rem;
+  gap: var(--wu-space-1);
+  margin-block: var(--wu-space-4);
 }
 .account-link-help {
   text-align: left;
@@ -193,14 +193,14 @@
   overflow-wrap: anywhere;
 }
 .account-link-help ol {
-  padding-left: 1.4rem;
+  padding-left: var(--wu-space-4);
 }
 .account-link-help li + li {
-  margin-top: 0.5rem;
+  margin-top: var(--wu-space-2);
 }
 
 .member-season-line {
-  margin: 0 0 14px;
+  margin: 0 0 var(--wu-space-4);
   color: #d9d7d0;
   font-size: var(--wu-text-sm);
   line-height: 1.5;
@@ -209,7 +209,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .signup-review-heading h3,
 .signup-review-heading p {
@@ -217,7 +217,7 @@
   text-wrap: pretty;
 }
 .signup-review-heading + .signup-review-heading {
-  margin-top: 6px;
+  margin-top: var(--wu-space-2);
 }
 .signup-review-heading button {
   flex-shrink: 0;
@@ -227,17 +227,17 @@
   .signup-review-heading + .signup-review-heading {
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
+    gap: var(--wu-space-2);
   }
   .member-signup-head + .cwl-page-description {
     font-size: var(--wu-text-sm);
   }
   .signup-flow .section-heading {
-    margin: 8px 0;
+    margin: var(--wu-space-5) 0 var(--wu-space-3);
   }
   .signup-flow .section-heading h2 {
     font-size: var(--wu-text-xl);
-    margin-bottom: 4px;
+    margin-bottom: var(--wu-space-1);
     font-weight: var(--wu-weight-bold);
     line-height: 1.2;
     text-wrap: balance;
@@ -253,20 +253,21 @@
     font-weight: var(--wu-weight-medium);
   }
   .signup-flow .selection-bar {
-    padding: 8px;
-    gap: 5px;
+    padding: var(--wu-space-2);
+    gap: var(--wu-space-1);
   }
   .signup-flow .signup-account-search {
-    margin-block: 8px;
+    margin-block: var(--wu-space-2);
   }
   .signup-flow .hub-help {
-    margin-block: 8px;
+    margin-block: var(--wu-space-2);
   }
 }
 @media (max-width: 650px) {
   .signup-flow .section-heading {
     display: flex;
-    gap: 8px;
+    gap: var(--wu-space-2);
+    margin: var(--wu-space-5) 0 var(--wu-space-3);
   }
   .signup-flow .section-heading .count-pill {
     flex: none;
@@ -286,11 +287,12 @@
   .signup-flow .selection-bar > button {
     flex: none;
     font-size: var(--wu-text-md);
-    padding-inline: 8px;
+    padding-inline: var(--wu-space-2);
   }
   .signup-flow .submit-bar {
-    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
-    gap: 8px;
+    padding: var(--wu-space-2) var(--wu-space-3)
+      max(var(--wu-space-2), env(safe-area-inset-bottom));
+    gap: var(--wu-space-2);
   }
   .signup-flow .submit-bar button {
     margin-top: 0;

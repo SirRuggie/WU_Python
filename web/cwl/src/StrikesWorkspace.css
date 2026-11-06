@@ -1,10 +1,10 @@
 .strikes-workspace {
   min-width: 0;
   max-width: 1100px;
-  margin: 0 auto 48px;
+  margin: 0 auto var(--wu-space-7);
 }
 .strikes-workspace .page-head {
-  margin-bottom: 18px;
+  margin-bottom: var(--wu-space-5);
 }
 .strikes-tabs {
   display: flex;
@@ -12,13 +12,13 @@
   overflow-x: auto;
   border-bottom: 1px solid var(--wu-border-subtle);
   padding: 0;
-  margin-bottom: 10px;
+  margin-bottom: var(--wu-space-2);
   scrollbar-width: thin;
 }
 .strikes-tabs button {
   white-space: nowrap;
   min-height: 44px;
-  padding: 10px 14px;
+  padding: var(--wu-space-2) var(--wu-space-3);
   border: 0;
   border-bottom: 3px solid transparent;
   border-radius: 0;
@@ -34,15 +34,15 @@
   grid-template-columns:
     minmax(200px, 2fr) minmax(120px, 1fr) minmax(140px, 1fr)
     auto;
-  gap: 10px;
+  gap: var(--wu-space-2);
   align-items: end;
-  margin: 0 0 18px;
+  margin: 0 0 var(--wu-space-4);
 }
 .strikes-toolbar label,
 .strikes-form label,
 .strikes-inline label {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-1);
   min-width: 0;
 }
 .strikes-toolbar input,
@@ -60,10 +60,10 @@
 }
 .strikes-form {
   display: grid;
-  gap: 14px;
+  gap: var(--wu-space-4);
   max-width: 700px;
-  margin: 12px 0 22px;
-  padding: 20px;
+  margin: var(--wu-space-3) 0 var(--wu-space-4);
+  padding: var(--wu-space-4);
 }
 .strikes-form h2 {
   margin: 0;
@@ -80,7 +80,7 @@
 .strikes-inline {
   display: flex;
   align-items: end;
-  gap: 10px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
 }
 .strikes-inline label {
@@ -94,8 +94,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin: 22px 0 10px;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-4) 0 var(--wu-space-2);
 }
 .strikes-list-head h2 {
   margin: 0;
@@ -105,17 +105,17 @@
   font-size: var(--wu-text-sm);
 }
 .strikes-empty {
-  padding: 28px;
+  padding: var(--wu-space-5);
   text-align: center;
   color: var(--wu-text-muted);
 }
 .strikes-list {
   display: grid;
-  gap: 10px;
+  gap: var(--wu-space-2);
 }
 .strikes-candidate,
 .strikes-import-row {
-  padding: 16px 18px;
+  padding: var(--wu-space-4) var(--wu-space-4);
 }
 .strikes-workspace small {
   color: var(--wu-text-muted);
@@ -125,8 +125,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin: 18px 0;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-4) 0;
 }
 .strikes-pages span {
   font-size: var(--wu-text-sm);
@@ -134,13 +134,13 @@
 }
 .strikes-candidate-facts {
   display: flex;
-  gap: 12px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
-  margin: 15px 0;
+  margin: var(--wu-space-4) 0;
 }
 .strikes-candidate-facts span {
   min-width: 95px;
-  padding: 9px 12px;
+  padding: var(--wu-space-3) var(--wu-space-3);
   border: 1px solid #414958;
   background: var(--wu-surface-soft);
   border-radius: 9px;
@@ -155,7 +155,7 @@
 .strikes-check {
   display: flex !important;
   align-items: center;
-  gap: 9px;
+  gap: var(--wu-space-3);
   cursor: pointer;
   font-size: var(--wu-text-sm);
 }
@@ -168,7 +168,7 @@
 }
 .strikes-account-checks {
   display: grid;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .strikes-account-checks > span {
   font-weight: var(--wu-weight-medium);
@@ -176,20 +176,20 @@
 .strikes-account-checks label {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--wu-space-2);
   min-height: 44px;
 }
 .strikes-leave {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-  padding: 14px 18px;
+  gap: var(--wu-space-3);
+  margin-bottom: var(--wu-space-2);
+  padding: var(--wu-space-4) var(--wu-space-4);
 }
 .strikes-leave > div {
   display: grid;
-  gap: 3px;
+  gap: var(--wu-space-1);
 }
 .strikes-leave > div span {
   font-size: var(--wu-text-sm);
@@ -197,14 +197,14 @@
 }
 .strikes-role-list {
   display: grid;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .strikes-role-list > div {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-2) var(--wu-space-3);
   border: 1px solid #414958;
   border-radius: 9px;
 }
@@ -215,7 +215,7 @@
   min-height: 44px;
 }
 .strikes-coverage {
-  padding: 14px 18px;
+  padding: var(--wu-space-4) var(--wu-space-4);
 }
 .strikes-coverage summary {
   cursor: pointer;
@@ -225,20 +225,20 @@
 .strikes-coverage > div {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--wu-space-3);
   border-top: 1px solid var(--wu-border-subtle);
-  padding: 9px 0;
+  padding: var(--wu-space-3) 0;
   font-size: var(--wu-text-sm);
 }
 .strikes-import-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--wu-space-4);
 }
 .strikes-import-row > div {
   display: grid;
-  gap: 4px;
+  gap: var(--wu-space-1);
 }
 .strikes-import-row span {
   font-size: var(--wu-text-sm);
@@ -250,9 +250,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  margin-top: 18px;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-4) var(--wu-space-4);
+  margin-top: var(--wu-space-4);
   border: 1px solid #f8dc8e;
   border-radius: 11px;
   background: var(--wu-accent);
@@ -280,7 +280,7 @@
     width: 100%;
   }
   .strikes-form {
-    padding: 16px;
+    padding: var(--wu-space-4);
   }
 }
 @media (max-width: 480px) {
@@ -292,11 +292,11 @@
   }
   .strikes-tabs button {
     font-size: var(--wu-text-sm);
-    padding: 9px 11px;
+    padding: var(--wu-space-2) var(--wu-space-2);
   }
   .strikes-candidate,
   .strikes-import-row {
-    padding: 14px;
+    padding: var(--wu-space-3);
   }
   .strikes-leave,
   .strikes-import-row,
@@ -306,8 +306,8 @@
   }
   .strikes-import-apply {
     bottom: 0;
-    margin-left: -10px;
-    margin-right: -10px;
+    margin-left: calc(-1 * var(--wu-space-3));
+    margin-right: calc(-1 * var(--wu-space-3));
     border-radius: 10px 10px 0 0;
   }
   .strikes-import-apply button {
@@ -320,15 +320,15 @@
 }
 .strikes-history-search label {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-1);
 }
 .strikes-history-search input {
   width: 100%;
 }
 .strikes-picked-member {
   min-height: 44px;
-  margin-top: 6px;
-  padding: 4px 9px;
+  margin-top: var(--wu-space-2);
+  padding: var(--wu-space-1) var(--wu-space-3);
   font-size: var(--wu-text-sm);
   border-color: var(--wu-accent);
   color: var(--wu-text);
@@ -342,8 +342,8 @@
   right: 0;
   z-index: 6;
   display: grid;
-  gap: 3px;
-  padding: 6px;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-2);
   border: 1px solid #5c7798;
   border-radius: 10px;
   background: #192332;
@@ -353,9 +353,9 @@
 }
 .strikes-search-matches button {
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--wu-space-2);
   text-align: left;
-  min-height: 42px;
+  min-height: 44px;
 }
 .strikes-search-matches small {
   font-weight: var(--wu-weight-regular);
@@ -374,8 +374,8 @@
   }
 }
 .strikes-job-status {
-  margin: 0 0 16px;
-  padding: 12px 15px;
+  margin: 0 0 var(--wu-space-4);
+  padding: var(--wu-space-3) var(--wu-space-3);
   border: 1px solid var(--wu-info-border);
   border-radius: 10px;
   background: var(--wu-info-surface);
@@ -386,33 +386,34 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
   font-size: var(--wu-text-sm);
 }
 .strikes-job-status button {
   min-height: 44px;
-  padding: 7px 11px;
+  padding: var(--wu-space-1) var(--wu-space-2);
 }
 .strikes-war-tools {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
-  margin: -2px 0 16px;
+  margin: calc(-1 * var(--wu-space-1)) 0 var(--wu-space-4);
 }
 .strikes-war-tools > button {
   min-height: 44px;
-  padding: 8px 12px;
+  padding: var(--wu-space-2) var(--wu-space-3);
 }
 .strikes-selected-war {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--wu-space-2);
   flex: 1;
   min-width: min(100%, 290px);
-  padding: 7px 9px 7px 12px;
+  padding: var(--wu-space-1) var(--wu-space-2) var(--wu-space-1)
+    var(--wu-space-3);
   border: 1px solid var(--wu-accent);
   border-radius: 10px;
   background: var(--wu-accent-soft);
@@ -427,39 +428,39 @@
 .strikes-selected-war button {
   min-height: 44px;
   flex: none;
-  padding: 6px 9px;
+  padding: var(--wu-space-1) var(--wu-space-2);
 }
 .strikes-war-search {
-  padding: 16px 18px;
-  margin: 0 0 18px;
+  padding: var(--wu-space-4) var(--wu-space-4);
+  margin: 0 0 var(--wu-space-4);
   max-width: 760px;
 }
 .strikes-war-search label {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-1);
 }
 .strikes-war-search input {
   width: 100%;
   min-height: 44px;
 }
 .strikes-war-search p {
-  margin: 12px 0 0;
+  margin: var(--wu-space-3) 0 0;
   text-wrap: pretty;
 }
 .strikes-war-results {
   display: grid;
-  gap: 7px;
+  gap: var(--wu-space-2);
   max-height: 360px;
   overflow: auto;
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 .strikes-war-results button {
   display: grid;
   justify-content: start;
-  gap: 3px;
+  gap: var(--wu-space-1);
   text-align: left;
   min-height: 54px;
-  padding: 9px 12px;
+  padding: var(--wu-space-2) var(--wu-space-3);
 }
 .strikes-war-results button strong {
   overflow-wrap: anywhere;
@@ -480,7 +481,7 @@
     width: 100%;
   }
   .strikes-war-search {
-    padding: 14px;
+    padding: var(--wu-space-4);
   }
 }
 .strikes-account-list {
@@ -498,10 +499,10 @@
   display: grid;
   grid-template-columns: minmax(180px, 1fr) auto minmax(140px, auto) 14px;
   align-items: center;
-  gap: 12px;
+  gap: var(--wu-space-3);
   width: 100%;
   min-height: 74px;
-  padding: 13px 17px;
+  padding: var(--wu-space-3) var(--wu-space-4);
   text-align: left;
 }
 .strikes-account-row:hover {
@@ -510,7 +511,7 @@
 }
 .strikes-account-name {
   display: grid;
-  gap: 3px;
+  gap: var(--wu-space-1);
   min-width: 0;
 }
 .strikes-account-name strong {
@@ -534,7 +535,7 @@
   white-space: nowrap;
 }
 .strikes-detail-context {
-  margin: 2px 0 6px;
+  margin: var(--wu-space-1) 0 var(--wu-space-2);
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
 }
@@ -574,8 +575,8 @@
     border-radius: 0;
     box-shadow: none;
     grid-template-columns: minmax(0, 1fr) auto 10px;
-    gap: 7px;
-    padding: 12px;
+    gap: var(--wu-space-1);
+    padding: var(--wu-space-3);
   }
   .strikes-account-count {
     min-width: 72px;
@@ -617,8 +618,8 @@
   }
 }
 .strikes-needs-review {
-  margin: 16px 0;
-  padding: 14px 18px;
+  margin: var(--wu-space-4) 0;
+  padding: var(--wu-space-4) var(--wu-space-4);
 }
 .strikes-needs-review summary {
   cursor: pointer;
@@ -627,12 +628,12 @@
 }
 .strikes-review-list {
   display: grid;
-  margin-top: 8px;
+  margin-top: var(--wu-space-2);
 }
 .strikes-review-list > div {
   display: grid;
-  gap: 3px;
-  padding: 10px 0;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-2) 0;
   border-top: 1px solid var(--wu-border-subtle);
 }
 .strikes-review-list small,
@@ -644,8 +645,8 @@
   overflow-wrap: anywhere;
 }
 .strikes-tracking {
-  margin: 2px 0 16px;
-  padding: 12px 16px;
+  margin: var(--wu-space-1) 0 var(--wu-space-4);
+  padding: var(--wu-space-3) var(--wu-space-4);
   border-color: var(--wu-border);
 }
 .strikes-tracking.warning {
@@ -656,7 +657,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 9px;
+  gap: var(--wu-space-2);
   min-height: 44px;
   cursor: pointer;
   font-size: var(--wu-text-sm);
@@ -674,18 +675,18 @@
 .strikes-tracking-body {
   display: grid;
   gap: 0;
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 .strikes-tracking-clan {
   display: grid;
-  gap: 5px;
-  padding: 10px 0;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-2) 0;
   border-top: 1px solid var(--wu-border-subtle);
 }
 .strikes-tracking-clan > div {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
 }
 .strikes-tracking-clan-heading {
@@ -698,11 +699,11 @@
 .strikes-tracking-facts {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 14px !important;
+  gap: var(--wu-space-2) var(--wu-space-4) !important;
 }
 .strikes-tracking-facts small {
   display: grid;
-  gap: 2px;
+  gap: var(--wu-space-1);
 }
 .strikes-tracking-facts strong {
   color: var(--wu-text);
@@ -715,7 +716,7 @@
 .strikes-tracking-clan button {
   justify-self: start;
   min-height: 44px;
-  padding: 5px 11px;
+  padding: var(--wu-space-1) var(--wu-space-2);
 }
 .strikes-tracking-state {
   font-size: var(--wu-text-xs);
@@ -734,23 +735,23 @@
 }
 .strikes-import-settings {
   padding: 0;
-  margin: 16px 0;
+  margin: var(--wu-space-4) 0;
 }
 .strikes-import-settings > summary {
   cursor: pointer;
   min-height: 52px;
-  padding: 15px 18px;
+  padding: var(--wu-space-3) var(--wu-space-4);
   font-weight: var(--wu-weight-medium);
 }
 .strikes-import-content {
-  padding: 0 18px 18px;
+  padding: 0 var(--wu-space-4) var(--wu-space-4);
   border-top: 1px solid var(--wu-border-subtle);
 }
 .strikes-import-content > .strikes-form {
   border: 0;
   background: transparent;
   box-shadow: none;
-  padding: 16px 0 4px;
+  padding: var(--wu-space-4) 0 var(--wu-space-1);
   margin: 0;
 }
 .strikes-import-content > .strikes-form h2 {
@@ -765,23 +766,23 @@
 }
 @media (max-width: 480px) {
   .strikes-tracking {
-    padding: 11px 12px;
+    padding: var(--wu-space-3) var(--wu-space-3);
   }
   .strikes-tracking-facts {
     grid-template-columns: minmax(0, 1fr);
   }
   .strikes-import-content {
-    padding: 0 12px 12px;
+    padding: 0 var(--wu-space-3) var(--wu-space-3);
   }
   .strikes-import-settings > summary {
-    padding: 14px 12px;
+    padding: var(--wu-space-3) var(--wu-space-3);
   }
 }
 
 .strikes-form form,
 .strikes-form fieldset {
   display: grid;
-  gap: 14px;
+  gap: var(--wu-space-4);
   min-width: 0;
 }
 .strikes-form fieldset {
@@ -791,27 +792,27 @@
 }
 .strike-member-matches {
   display: grid;
-  gap: 4px;
+  gap: var(--wu-space-1);
   max-height: 240px;
   overflow: auto;
 }
 .strike-member-matches button {
   display: grid;
-  gap: 4px;
+  gap: var(--wu-space-1);
   text-align: left;
   min-height: 44px;
 }
 .strike-review {
   margin: 0;
   display: grid;
-  gap: 14px;
+  gap: var(--wu-space-4);
 }
 .strike-review dt {
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
 }
 .strike-review dd {
-  margin: 4px 0 0;
+  margin: var(--wu-space-1) 0 0;
   overflow-wrap: anywhere;
 }
 .strike-review small {
@@ -819,11 +820,11 @@
 }
 .strikes-leave-editor {
   padding: 0;
-  margin: 16px 0;
+  margin: var(--wu-space-4) 0;
 }
 .strikes-leave-editor > summary {
   cursor: pointer;
-  padding: 14px 18px;
+  padding: var(--wu-space-3) var(--wu-space-5);
   min-height: 44px;
 }
 .strikes-leave-editor .strikes-form {
@@ -843,13 +844,13 @@
   color: #f4d078;
   font-size: var(--wu-text-md);
   font-weight: var(--wu-weight-medium);
-  margin: 12px 0;
+  margin: var(--wu-space-3) 0;
 }
 .strikes-action-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-1);
   width: fit-content;
   max-width: 100%;
   background: var(--wu-surface-soft);
@@ -877,10 +878,10 @@
 }
 .strike-account-action {
   display: flex;
-  gap: 12px;
+  gap: var(--wu-space-3);
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px 4px;
+  padding: 0 var(--wu-space-3) var(--wu-space-1);
   font-size: var(--wu-text-md);
   color: #f4d078;
 }
@@ -894,9 +895,9 @@
 .strike-compact-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px;
-  gap: 0 6px;
+  gap: 0 var(--wu-space-1);
   align-items: center;
-  padding: 4px 8px;
+  padding: var(--wu-space-1) var(--wu-space-2);
   border-bottom: 1px solid var(--wu-border-subtle);
   background: var(--wu-surface);
 }
@@ -926,7 +927,7 @@
 .strike-inline-status svg {
   display: inline;
   vertical-align: -2px;
-  margin-right: 3px;
+  margin-right: var(--wu-space-1);
 }
 .strike-compact-row.active .strike-inline-status {
   color: #f4d078;
@@ -934,19 +935,19 @@
 .strike-row-more {
   min-width: 44px;
   min-height: 44px;
-  padding: 4px;
+  padding: var(--wu-space-1);
   font-size: var(--wu-text-xl);
   align-self: start;
 }
 .strike-row-details {
   grid-column: 1/-1;
   border-top: 1px solid var(--wu-border-subtle);
-  padding: 8px 0;
+  padding: var(--wu-space-2) 0;
   font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
 .strike-row-details p {
-  margin: 4px 0;
+  margin: var(--wu-space-1) 0;
   text-wrap: pretty;
 }
 .strike-row-details button {
@@ -956,11 +957,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .strike-row-details label {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-1);
   flex: 1 1 180px;
 }
 .strike-row-details input {
@@ -975,7 +976,7 @@
 }
 .strikes-detail-context h2 {
   color: var(--wu-text);
-  margin: 8px 0;
+  margin: var(--wu-space-2) 0;
   font-size: var(--wu-text-xl);
   font-weight: var(--wu-weight-bold);
   line-height: 1.2;
@@ -983,13 +984,13 @@
 }
 .strikes-role-options {
   display: grid;
-  gap: 4px;
+  gap: var(--wu-space-1);
   max-height: 240px;
   overflow: auto;
 }
 .strikes-role-options button {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   min-height: 44px;
   align-items: center;
   text-align: left;
@@ -1008,7 +1009,7 @@
 .strikes-import-review > summary {
   min-height: 44px;
   display: list-item;
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   cursor: pointer;
 }
 .strikes-check {
@@ -1016,7 +1017,7 @@
 }
 .strike-target-identity {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-2);
 }
 .strike-target-identity button {
   justify-self: start;
@@ -1034,15 +1035,15 @@
 }
 @media (max-width: 480px) {
   .strike-compact-row {
-    padding: 4px 6px;
+    padding: var(--wu-space-1) var(--wu-space-1);
   }
   .strike-account-action {
     flex-wrap: wrap;
-    gap: 0 8px;
+    gap: 0 var(--wu-space-2);
   }
   .strikes-import-apply {
     flex-wrap: wrap;
-    margin: 12px 0 0;
+    margin: var(--wu-space-3) 0 0;
   }
   .strikes-import-apply button {
     max-width: 100%;
@@ -1070,30 +1071,30 @@
     min-width: 0;
   }
   .strikes-toolbar.strikes-toolbar-player > button {
-    padding-inline: 8px;
+    padding-inline: var(--wu-space-2);
     font-size: var(--wu-text-md);
   }
 }
 .strike-replacement-row {
-  margin-block: 4px;
+  margin-block: var(--wu-space-1);
   border-block: 1px solid var(--border);
 }
 .strike-replacement-row p {
   margin: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
   text-wrap: pretty;
 }
 .strike-replacement-row form {
   display: flex;
-  gap: 12px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
 }
 .strike-replacement-row label {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-1);
   min-width: 0;
   flex: 1 1 180px;
 }
@@ -1106,7 +1107,7 @@
 @media (max-width: 760px) {
   .strikes-player-detail .page-head,
   .strikes-player-detail .strikes-toolbar {
-    margin-bottom: 2px;
+    margin-bottom: var(--wu-space-1);
   }
 }
 @media (max-width: 760px) {
@@ -1120,8 +1121,8 @@
   }
 }
 .strike-review-resolution {
-  padding: 16px;
-  margin-bottom: 16px;
+  padding: var(--wu-space-4);
+  margin-bottom: var(--wu-space-4);
   border: 1px solid #ae8750;
   border-radius: 12px;
   background: var(--wu-warning-surface);
@@ -1130,8 +1131,8 @@
   display: block;
   width: 100%;
   min-height: 88px;
-  padding: 10px;
-  margin-block: 6px 10px;
+  padding: var(--wu-space-2);
+  margin-block: var(--wu-space-1) var(--wu-space-2);
   background: var(--wu-surface);
   border: 1px solid #6d624e;
   border-radius: 8px;
@@ -1142,7 +1143,7 @@
 
 /* Keep the family overview immediately below its routine controls. */
 .strikes-activity-overview .page-head {
-  margin-bottom: 8px;
+  margin-bottom: var(--wu-space-5);
 }
 .strikes-activity-overview .page-head h1 {
   margin: 0;
@@ -1155,8 +1156,8 @@
 .strikes-navigation {
   display: flex;
   align-items: start;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--wu-space-2);
+  margin-bottom: var(--wu-space-2);
 }
 .strikes-navigation .strikes-tabs {
   flex: 1;
@@ -1164,28 +1165,28 @@
   margin: 0;
 }
 .strikes-navigation .strikes-tabs button {
-  padding: 8px;
+  padding: var(--wu-space-2);
 }
 .strikes-navigation .strikes-tracking {
   flex: 0 1 280px;
   margin: 0;
-  padding: 0 8px;
+  padding: 0 var(--wu-space-2);
 }
 .strikes-toolbar.strikes-toolbar-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: var(--wu-space-1);
+  margin-bottom: var(--wu-space-2);
 }
 .strikes-toolbar.strikes-toolbar-actions > button {
   flex: 0 1 auto;
   width: auto;
-  padding: 6px 10px;
+  padding: var(--wu-space-1) var(--wu-space-2);
 }
 .replacement-departure {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
   color: #cfb9a4;
 }
@@ -1212,7 +1213,7 @@
   .strikes-activity-overview {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    gap: 4px 12px;
+    gap: var(--wu-space-1) var(--wu-space-3);
   }
   .strikes-activity-overview > :not(.page-head):not(.strikes-navigation) {
     grid-column: 1 / -1;
@@ -1220,6 +1221,7 @@
   .strikes-activity-overview .page-head {
     align-self: center;
     margin: 0;
+    margin-bottom: var(--wu-space-5);
   }
   .strikes-activity-overview .strikes-navigation {
     margin: 0;

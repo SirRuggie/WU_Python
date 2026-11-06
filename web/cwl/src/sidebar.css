@@ -21,7 +21,7 @@ div.shell {
   min-width: 0;
   display: flex;
   align-items: center;
-  padding: 12px 17px;
+  padding: var(--wu-space-3) var(--wu-space-4);
   border-bottom: 1px solid #303035;
 }
 
@@ -48,7 +48,7 @@ div.shell {
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--wu-text-muted) #151517;
-  padding: 12px 10px 18px;
+  padding: var(--wu-space-3) var(--wu-space-2) var(--wu-space-4);
 }
 
 .shell .sidebar > nav::-webkit-scrollbar {
@@ -61,14 +61,14 @@ div.shell {
 }
 
 .shell .sidebar .navigation-section {
-  margin: 0 0 9px;
+  margin: 0 0 var(--wu-space-2);
 }
 .shell .sidebar .navigation-section + .navigation-section {
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 .shell .sidebar .navigation-label {
-  margin: 0 11px 4px;
-  padding-top: 5px;
+  margin: 0 var(--wu-space-2) var(--wu-space-1);
+  padding-top: var(--wu-space-1);
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
@@ -76,12 +76,12 @@ div.shell {
   text-transform: uppercase;
 }
 .shell .sidebar .navigation-staff {
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: var(--wu-space-3);
+  padding-top: var(--wu-space-3);
   border-top: 1px solid var(--wu-border-subtle);
 }
 .shell .sidebar .navigation-staff-label {
-  margin-bottom: 9px;
+  margin-bottom: var(--wu-space-2);
 }
 
 .shell .sidebar nav button,
@@ -91,9 +91,9 @@ div.shell {
   justify-content: flex-start;
   width: 100%;
   min-height: 44px;
-  margin: 1px 0;
-  padding: 9px 10px;
-  gap: 10px;
+  margin: 0 0;
+  padding: var(--wu-space-2) var(--wu-space-2);
+  gap: var(--wu-space-2);
   border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
@@ -155,8 +155,8 @@ div.shell {
   color: inherit;
 }
 .shell .sidebar .navigation-children {
-  margin: 1px 0 5px 18px;
-  padding-left: 8px;
+  margin: 0 0 var(--wu-space-1) var(--wu-space-4);
+  padding-left: var(--wu-space-2);
   border-left: 1px solid var(--wu-border-subtle);
 }
 .shell .sidebar .navigation-children[hidden] {
@@ -169,10 +169,11 @@ div.shell {
 .shell .sidebar > .sidebar-foot {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--wu-space-2);
   min-width: 0;
   margin: 0;
-  padding: 11px 12px max(12px, env(safe-area-inset-bottom, 0px));
+  padding: var(--wu-space-3) var(--wu-space-3)
+    max(var(--wu-space-3), env(safe-area-inset-bottom, 0));
   border-top: 1px solid #303035;
   background: var(--wu-surface);
 }
@@ -183,7 +184,7 @@ div.shell {
   justify-content: center;
   min-width: 0;
   min-height: 38px;
-  padding-left: 43px;
+  padding-left: var(--wu-space-7);
 }
 .shell .sidebar-account .user-pill {
   display: block;
@@ -226,11 +227,11 @@ div.shell {
   width: min(100%, 1520px);
   max-width: none;
   margin: 0 auto 0 0;
-  padding: 25px 28px 72px;
+  padding: var(--wu-space-5) var(--wu-space-6) 72px;
 }
 .shell .topbar {
   height: 70px;
-  padding: 0 28px;
+  padding: 0 var(--wu-space-5);
   background: var(--wu-surface);
 }
 .shell .topbar > div {
@@ -250,13 +251,13 @@ div.shell {
 .cwl-workspace-nav {
   display: flex;
   align-items: start;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: var(--wu-space-3);
+  margin-bottom: var(--wu-space-4);
   min-width: 0;
 }
 .cwl-roster-tabs {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   flex: 1;
   min-width: 0;
 }
@@ -274,8 +275,8 @@ div.shell {
 .cwl-result-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: var(--wu-space-2);
+  margin-bottom: var(--wu-space-4);
 }
 
 @media (max-width: 900px) {
@@ -316,8 +317,8 @@ div.shell {
   .shell .menu-open {
     flex: 0 0 auto;
     min-height: 44px;
-    gap: 8px;
-    padding-inline: 12px;
+    gap: var(--wu-space-2);
+    padding-inline: var(--wu-space-3);
     border-color: #8d7845;
     color: #ffe098;
   }
@@ -328,33 +329,33 @@ div.shell {
 
 @media (max-width: 650px) {
   .shell .workspace main {
-    padding: 18px 15px 80px;
+    padding: var(--wu-space-4) var(--wu-space-4) 80px;
   }
   .shell .topbar {
     height: 64px;
-    padding: 0 15px;
+    padding: 0 var(--wu-space-4);
   }
   .cwl-workspace-nav {
     flex-wrap: wrap;
-    gap: 4px;
+    gap: var(--wu-space-1);
   }
   .cwl-roster-tabs {
     flex-basis: 100%;
   }
   .cwl-roster-tabs button {
     font-size: var(--wu-text-md);
-    padding: 10px 6px;
+    padding: var(--wu-space-2) var(--wu-space-1);
   }
 }
 
 @media (max-width: 370px) {
   .shell .topbar {
-    padding-inline: 10px;
-    gap: 8px;
+    padding-inline: var(--wu-space-3);
+    gap: var(--wu-space-2);
   }
   .shell .topbar .user-pill {
     max-width: 44px;
-    padding: 6px;
+    padding: var(--wu-space-1);
   }
   .shell .topbar .user-display-name {
     display: none;
@@ -363,7 +364,7 @@ div.shell {
 
 /* Route shortcuts stay compact; settings and exports live in the sidebar. */
 .shell .cwl-workspace-nav {
-  margin-bottom: 12px;
+  margin-bottom: var(--wu-space-3);
 }
 .shell .cwl-roster-tabs {
   margin: 0;
@@ -375,7 +376,7 @@ div.shell {
 }
 @media (max-width: 650px) {
   .shell .cwl-roster-tabs > button {
-    padding: 8px 6px;
+    padding: var(--wu-space-2) var(--wu-space-1);
     font-size: var(--wu-text-md);
   }
 }

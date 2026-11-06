@@ -1,15 +1,15 @@
 .roster-image-posting {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--wu-space-4);
 }
 .roster-image-posting .image-pool {
   border: 1px solid var(--roster-border);
   border-radius: 14px;
   background: var(--roster-surface);
-  padding: 16px;
+  padding: var(--wu-space-4);
   display: grid;
-  gap: 10px;
+  gap: var(--wu-space-3);
 }
 .roster-image-posting h3,
 .roster-image-posting p {
@@ -29,12 +29,12 @@
   list-style: none;
   padding: 0;
   display: grid;
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .roster-image-posting .image-clan-list > li {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-3);
   border: 1px solid var(--roster-border);
   border-radius: 14px;
 }

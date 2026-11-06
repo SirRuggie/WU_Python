@@ -1,10 +1,10 @@
 .roster-ui.roster-signup-actions {
   display: flex;
   align-items: end;
-  gap: 10px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
   border-top: 1px solid var(--roster-border-subtle);
-  padding-top: 12px;
+  padding-top: var(--wu-space-3);
   width: 100%;
 }
 .roster-signup-actions > label {
@@ -21,14 +21,14 @@
   width: 100%;
 }
 .roster-signup-review h3 {
-  margin: 0 0 5px;
+  margin: 0 0 var(--wu-space-2);
   font-size: var(--wu-text-lg);
   font-weight: var(--wu-weight-medium);
   line-height: 1.3;
   text-wrap: balance;
 }
 .roster-signup-review p {
-  margin: 0 0 10px;
+  margin: 0 0 var(--wu-space-3);
   color: var(--roster-text-muted);
   text-wrap: pretty;
 }
@@ -39,15 +39,15 @@
   list-style: none;
   max-height: min(26dvh, 220px);
   overflow: auto;
-  margin: 0 0 12px;
+  margin: 0 0 var(--wu-space-3);
   padding: 0;
   border-block: 1px solid var(--roster-border-subtle);
 }
 .roster-signup-review li {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  padding: 7px 2px;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-2) var(--wu-space-1);
   border-bottom: 1px solid var(--roster-border-subtle);
 }
 .roster-signup-review li strong,
@@ -57,14 +57,14 @@
 }
 .roster-signup-review-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 .roster-signup-review-actions {
   display: flex;
   width: 100%;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .roster-signup-review-actions .roster-ui-button {
   min-width: 0;
@@ -85,7 +85,7 @@
 .roster-signup-option {
   width: 100%;
   display: grid;
-  gap: 4px;
+  gap: var(--wu-space-1);
 }
 .roster-signup-option .roster-ui-button {
   width: 100%;

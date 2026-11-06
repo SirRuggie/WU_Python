@@ -2,7 +2,7 @@
   min-width: 0;
 }
 .bonus-page-head {
-  margin-bottom: 16px;
+  margin-bottom: var(--wu-space-4);
 }
 .bonus-page-head > div > p:last-child {
   margin-bottom: 0;
@@ -19,7 +19,7 @@
 }
 .bonus-context {
   min-height: 44px;
-  margin: 12px 0;
+  margin: var(--wu-space-3) 0;
   color: var(--roster-text);
 }
 .bonus-context > span {
@@ -34,21 +34,21 @@
 }
 .bonus-context button {
   min-height: 44px;
-  padding: 8px 12px;
+  padding: var(--wu-space-2) var(--wu-space-3);
 }
 .bonus-steps {
   display: flex;
-  gap: 4px;
+  gap: var(--wu-space-1);
   list-style: none;
-  margin: 12px 0 20px;
-  padding: 0 0 8px;
+  margin: var(--wu-space-3) 0 var(--wu-space-4);
+  padding: 0 0 var(--wu-space-2);
   border-bottom: 1px solid var(--roster-border-subtle);
   overflow-x: auto;
 }
 .bonus-steps li {
   flex: 1 0 auto;
   min-width: 100px;
-  padding: 8px 10px;
+  padding: var(--wu-space-2) var(--wu-space-3);
   color: var(--roster-text-muted);
   font-size: var(--wu-text-sm);
   border-bottom: 2px solid transparent;
@@ -60,14 +60,14 @@
 }
 .bonus-steps li span {
   font-weight: var(--wu-weight-bold);
-  margin-right: 6px;
+  margin-right: var(--wu-space-2);
 }
 .bonus-controls {
   display: flex;
   align-items: end;
   flex-wrap: wrap;
   gap: var(--roster-space-3);
-  padding: 2px 0 16px;
+  padding: var(--wu-space-1) 0 var(--wu-space-4);
 }
 .bonus-controls label {
   flex: 1 1 250px;
@@ -82,12 +82,12 @@
 }
 .bonus-flow {
   border-top: 1px solid var(--roster-border-subtle);
-  padding-top: 16px;
-  margin-top: 2px;
+  padding-top: var(--wu-space-4);
+  margin-top: var(--wu-space-1);
 }
 .bonus-section-heading {
   align-items: start;
-  margin-bottom: 12px;
+  margin-bottom: var(--wu-space-3);
 }
 .bonus-section-heading h2,
 .bonus-section-heading h3,
@@ -95,7 +95,7 @@
   margin: 0;
 }
 .bonus-section-heading p {
-  margin: 5px 0 0;
+  margin: var(--wu-space-2) 0 0;
   color: var(--roster-text-muted);
   text-wrap: pretty;
 }
@@ -107,7 +107,7 @@
   flex-wrap: wrap;
   gap: 0;
   border-block: 1px solid var(--roster-border-subtle);
-  margin: 12px 0;
+  margin: var(--wu-space-3) 0;
   font-variant-numeric: tabular-nums;
 }
 .bonus-stats > div {
@@ -115,8 +115,8 @@
   flex: 1 1 0;
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 11px 14px;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-3) var(--wu-space-4);
   font-variant-numeric: tabular-nums;
 }
 .bonus-stats > div + div {
@@ -136,26 +136,26 @@
   font-variant-numeric: tabular-nums;
 }
 .bonus-support {
-  margin: 8px 0 14px;
+  margin: var(--wu-space-2) 0 var(--wu-space-4);
 }
 .bonus-workspace details {
   border-top: 1px solid var(--roster-border-subtle);
 }
 .bonus-workspace details summary {
   min-height: 44px;
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   cursor: pointer;
   color: var(--roster-text);
 }
 .bonus-secondary > p {
   color: var(--roster-text-muted);
-  margin: 6px 0 14px;
+  margin: var(--wu-space-2) 0 var(--wu-space-4);
   text-wrap: pretty;
 }
 .bonus-secondary > label:not(.bonus-check) {
   display: block;
   max-width: 480px;
-  margin: 12px 0;
+  margin: var(--wu-space-3) 0;
 }
 .bonus-secondary > label select,
 .bonus-secondary > label input,
@@ -164,14 +164,14 @@
 }
 .bonus-secondary > button {
   min-height: 44px;
-  margin-bottom: 12px;
+  margin-bottom: var(--wu-space-3);
 }
 .bonus-policy {
   display: flex;
   align-items: end;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 14px 0;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-4) 0;
 }
 .bonus-policy label {
   width: 200px;
@@ -183,7 +183,7 @@
   min-height: 44px;
 }
 .bonus-candidates-heading {
-  margin: 16px 0 8px;
+  margin: var(--wu-space-4) 0 var(--wu-space-2);
 }
 .bonus-candidates-heading button {
   min-height: 44px;
@@ -191,7 +191,7 @@
 .bonus-account-search {
   display: block;
   max-width: 480px;
-  margin-bottom: 8px;
+  margin-bottom: var(--wu-space-2);
 }
 .bonus-account-search input {
   width: 100%;
@@ -207,7 +207,7 @@
   align-items: center;
   gap: var(--roster-space-3);
   min-height: 58px;
-  padding: 7px 0;
+  padding: var(--wu-space-1) 0;
   border-bottom: 1px solid var(--roster-border-subtle);
 }
 .bonus-account-identity,
@@ -226,14 +226,14 @@
   display: block;
   color: var(--roster-text-muted);
   font-size: var(--wu-text-xs);
-  margin-top: 3px;
+  margin-top: var(--wu-space-1);
 }
 .bonus-account-outcome small:first-of-type {
   color: var(--roster-text);
 }
 .bonus-quiet-action {
   min-height: 44px;
-  padding: 8px 10px;
+  padding: var(--wu-space-2) var(--wu-space-3);
   text-align: center;
 }
 .bonus-quiet-action:hover,
@@ -241,22 +241,22 @@
   text-decoration: underline;
 }
 .bonus-empty {
-  margin: 10px 0;
+  margin: var(--wu-space-3) 0;
   color: var(--roster-text-muted);
 }
 .bonus-show-more {
   display: block;
   width: 100%;
   min-height: 44px;
-  margin: 8px 0;
+  margin: var(--wu-space-2) 0;
   background: transparent;
   color: var(--roster-gold);
   border: 1px solid var(--roster-border);
 }
 .bonus-review-editor,
 .bonus-add-candidate {
-  margin: 12px 0 18px;
-  padding: 16px;
+  margin: var(--wu-space-3) 0 var(--wu-space-4);
+  padding: var(--wu-space-4);
   background: var(--roster-surface-raised);
   border: 1px solid var(--roster-border);
   border-radius: 10px;
@@ -270,12 +270,12 @@
   text-wrap: pretty;
 }
 .bonus-review-context {
-  margin: 10px 0;
+  margin: var(--wu-space-3) 0;
   color: var(--roster-text-muted);
   font-size: var(--wu-text-sm);
 }
 .bonus-review-context p {
-  margin: 5px 0;
+  margin: var(--wu-space-2) 0;
   text-wrap: pretty;
 }
 .bonus-review-context .bonus-review-attribution {
@@ -284,18 +284,18 @@
 .bonus-review-editor fieldset {
   border: 0;
   padding: 0;
-  margin: 12px 0;
+  margin: var(--wu-space-3) 0;
 }
 .bonus-review-editor legend {
   font-weight: var(--wu-weight-bold);
-  margin-bottom: 4px;
+  margin-bottom: var(--wu-space-1);
 }
 .bonus-flag {
   display: flex;
   align-items: center;
   gap: var(--roster-space-3);
   min-height: 52px;
-  padding: 6px 0;
+  padding: var(--wu-space-2) 0;
   border-bottom: 1px solid var(--roster-border-subtle);
 }
 .bonus-flag input {
@@ -311,7 +311,7 @@
 .bonus-override-reason,
 .bonus-add-candidate > label {
   display: block;
-  margin: 12px 0;
+  margin: var(--wu-space-3) 0;
 }
 .bonus-override-reason textarea,
 .bonus-add-candidate textarea {
@@ -321,7 +321,7 @@
 }
 .bonus-lookup {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   align-items: end;
   max-width: 520px;
 }
@@ -338,8 +338,8 @@
 .bonus-editor-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--wu-space-2);
+  margin-top: var(--wu-space-3);
 }
 .bonus-editor-actions button {
   min-height: 44px;
@@ -364,8 +364,8 @@
   flex-wrap: wrap;
   gap: var(--roster-space-3);
   border-top: 1px solid var(--roster-border-subtle);
-  margin-top: 16px;
-  padding: 14px 0;
+  margin-top: var(--wu-space-4);
+  padding: var(--wu-space-4) 0;
 }
 .bonus-action-bar span {
   color: var(--roster-text-muted);
@@ -376,40 +376,40 @@
   margin-left: auto;
 }
 .bonus-preview {
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
   border-top: 2px solid var(--roster-gold);
-  padding-top: 14px;
+  padding-top: var(--wu-space-4);
 }
 .bonus-preview h4 {
-  margin: 18px 0 8px;
+  margin: var(--wu-space-4) 0 var(--wu-space-2);
 }
 .bonus-announcement {
   border-top: 1px solid var(--roster-border-subtle);
-  margin-top: 20px;
-  padding-top: 16px;
+  margin-top: var(--wu-space-4);
+  padding-top: var(--wu-space-4);
 }
 .bonus-message-preview {
-  margin: 18px 0;
+  margin: var(--wu-space-4) 0;
   border-left: 3px solid var(--roster-gold);
   background: var(--roster-surface-raised);
-  padding: 14px;
+  padding: var(--wu-space-4);
   border-radius: 4px;
 }
 .bonus-message-preview .discord-preview {
   margin: 0;
 }
 .bonus-history {
-  margin-top: 22px;
+  margin-top: var(--wu-space-4);
 }
 .bonus-history-row {
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   border-bottom: 1px solid var(--roster-surface-soft);
   overflow-wrap: anywhere;
 }
 .bonus-history-row small {
   display: block;
   color: var(--roster-text-muted);
-  margin-top: 4px;
+  margin-top: var(--wu-space-1);
 }
 .sr-only {
   position: absolute;
@@ -430,12 +430,12 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     overflow: visible;
-    gap: 2px;
+    gap: var(--wu-space-1);
   }
   .bonus-steps li {
     min-width: 0;
     white-space: normal;
-    padding: 6px 8px;
+    padding: var(--wu-space-2) var(--wu-space-2);
   }
   .bonus-context > span {
     order: 3;
@@ -443,9 +443,9 @@
   }
   .bonus-stats > div {
     min-width: 95px;
-    padding: 9px 8px;
+    padding: var(--wu-space-3) var(--wu-space-2);
     flex-direction: column;
-    gap: 2px;
+    gap: var(--wu-space-1);
     font-variant-numeric: tabular-nums;
   }
   .bonus-stats strong {
@@ -458,7 +458,7 @@
   }
   .bonus-account-list li {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 3px 10px;
+    gap: var(--wu-space-1) var(--wu-space-2);
   }
   .bonus-account-outcome {
     grid-column: 1;

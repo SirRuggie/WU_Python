@@ -4,7 +4,7 @@
 .ticket-filters {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .ticket-filters input,
 .ticket-filters select,
@@ -14,9 +14,9 @@
   width: 100%;
 }
 .ticket-date-filter {
-  margin: 14px 0;
+  margin: var(--wu-space-3) 0;
   border-bottom: 1px solid var(--wu-border-subtle);
-  padding-bottom: 12px;
+  padding-bottom: var(--wu-space-3);
 }
 .ticket-date-filter summary {
   min-height: 44px;
@@ -25,10 +25,10 @@
 }
 .ticket-date-filter > div {
   display: flex;
-  gap: 12px;
+  gap: var(--wu-space-3);
   align-items: end;
   flex-wrap: wrap;
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 .ticket-date-filter > div > label {
   flex: 1 1 160px;
@@ -38,8 +38,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin: 12px 0;
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-3) 0;
   min-height: 44px;
   font-size: var(--wu-text-sm);
   color: var(--muted, var(--wu-text-muted));
@@ -59,8 +59,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 14px 16px;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3) var(--wu-space-4);
   border-bottom: 1px solid var(--wu-border-subtle);
   background: var(--wu-surface);
 }
@@ -76,24 +76,24 @@
   min-height: 44px;
   background: transparent;
   border-color: transparent;
-  padding: 8px 12px;
+  padding: var(--wu-space-2) var(--wu-space-3);
 }
 .ticket-row small {
   display: block;
-  margin-top: 4px;
+  margin-top: var(--wu-space-1);
   color: var(--muted, var(--wu-text-muted));
 }
 .ticket-flags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--wu-space-2);
   list-style: none;
   padding: 0;
-  margin: 8px 0 0;
+  margin: var(--wu-space-2) 0 0;
 }
 .ticket-flags li {
   border-radius: 5px;
-  padding: 3px 7px;
+  padding: var(--wu-space-1) var(--wu-space-2);
   background: #493622;
   color: #f2d6a5;
   font-size: var(--wu-text-sm);
@@ -103,10 +103,10 @@
 .ticket-reader-tools,
 .ticket-conversation-tabs {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-2);
   align-items: center;
   flex-wrap: wrap;
-  margin: 18px 0;
+  margin: var(--wu-space-4) 0;
 }
 .ticket-pages button,
 .ticket-reader-tools button,
@@ -129,16 +129,16 @@
   border-color: var(--wu-accent);
 }
 .ticket-reader-tools {
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .ticket-reader-tools label {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   align-items: center;
   min-height: 44px;
 }
 .ticket-heading {
-  margin-top: 22px;
+  margin-top: var(--wu-space-4);
 }
 .ticket-heading h1 {
   overflow-wrap: anywhere;
@@ -148,19 +148,19 @@
 }
 .ticket-message {
   border-bottom: 1px solid var(--wu-border-subtle);
-  padding: 16px 0;
+  padding: var(--wu-space-4) 0;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .ticket-message header {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-3);
   justify-content: space-between;
   flex-wrap: wrap;
-  margin-bottom: 6px;
+  margin-bottom: var(--wu-space-2);
 }
 .ticket-message p {
-  margin-top: 6px;
+  margin-top: var(--wu-space-2);
   text-wrap: pretty;
 }
 .ticket-message p:last-child {
@@ -181,28 +181,28 @@
   text-decoration: underline;
 }
 .ticket-attachments {
-  padding-left: 20px;
+  padding-left: var(--wu-space-4);
 }
 .ticket-flag-details {
-  margin-top: 16px;
-  padding: 12px;
+  margin-top: var(--wu-space-4);
+  padding: var(--wu-space-3);
   border-left: 3px solid #d4a34d;
   background: #d4a34d14;
 }
 .ticket-flag-details h2 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--wu-space-2);
   font-size: var(--wu-text-xl);
   font-weight: var(--wu-weight-bold);
   line-height: 1.2;
   text-wrap: balance;
 }
 .ticket-flag-details p {
-  margin: 6px 0;
+  margin: var(--wu-space-2) 0;
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
 .ticket-browser .notice button {
-  margin: 8px;
+  margin: var(--wu-space-2);
   min-height: 44px;
 }
 .ticket-browser :focus-visible {
@@ -217,8 +217,8 @@
     grid-column: 1/-1;
   }
   .ticket-row {
-    padding: 12px;
-    gap: 8px;
+    padding: var(--wu-space-3);
+    gap: var(--wu-space-2);
   }
   .ticket-browser input,
   .ticket-browser select {

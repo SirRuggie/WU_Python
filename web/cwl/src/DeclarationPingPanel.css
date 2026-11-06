@@ -1,16 +1,16 @@
 .declaration-ping-panel {
   border: 1px solid var(--border, var(--wu-border));
   border-radius: 10px;
-  padding: 12px;
-  margin-block: 12px;
+  padding: var(--wu-space-5);
+  margin-block: var(--wu-space-3);
   min-width: 0;
 }
 .declaration-ping-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--wu-space-2);
+  margin-top: var(--wu-space-2);
 }
 .declaration-ping-controls .channel-combobox {
   flex: 1 1 230px;
@@ -31,7 +31,7 @@
   min-width: 0;
 }
 .declaration-ping-review ul {
-  padding-left: 20px;
+  padding-left: var(--wu-space-4);
 }
 @media (max-width: 600px) {
   .declaration-ping-controls {
@@ -48,7 +48,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   min-height: 44px;
-  gap: 4px 12px;
+  gap: var(--wu-space-1) var(--wu-space-3);
   cursor: pointer;
 }
 .declaration-ping-panel > summary > span {
@@ -56,7 +56,7 @@
   font-size: var(--wu-text-sm);
 }
 .declaration-ping-body {
-  padding-top: 8px;
+  padding-top: var(--wu-space-2);
 }
 .declaration-ping-panel > summary > strong {
   margin-right: auto;
@@ -66,4 +66,9 @@
 }
 .declaration-ping-panel[open] > summary .declaration-ping-chevron::before {
   content: "▾";
+}
+@media (max-width: 650px) {
+  .declaration-ping-panel {
+    padding: var(--wu-space-4);
+  }
 }

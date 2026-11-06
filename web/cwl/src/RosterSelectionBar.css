@@ -9,9 +9,9 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: var(--wu-space-2) var(--wu-space-4);
   box-sizing: border-box;
-  padding: 12px 16px;
+  padding: var(--wu-space-3) var(--wu-space-4);
   border: 1px solid var(--roster-gold);
   border-radius: var(--roster-radius-card);
   background: var(--roster-surface-raised);
@@ -28,7 +28,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: var(--wu-space-2) var(--wu-space-3);
 }
 .roster-selection-dock-summary span {
   font-size: var(--wu-text-sm);
@@ -43,7 +43,7 @@
   .roster-selection-dock {
     bottom: calc(8px + env(safe-area-inset-bottom));
     width: calc(100% - 16px);
-    padding: 10px;
+    padding: var(--wu-space-2);
   }
   .roster-selection-dock-summary {
     width: 100%;
@@ -70,6 +70,6 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
+  gap: var(--wu-space-1) var(--wu-space-2);
   color: var(--roster-text);
 }

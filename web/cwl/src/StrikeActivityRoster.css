@@ -1,6 +1,6 @@
 .strike-activity-roster {
   display: grid;
-  gap: 8px;
+  gap: var(--wu-space-2);
   min-width: 0;
 }
 .strike-activity-toolbar {
@@ -11,12 +11,12 @@
   top: 0;
   z-index: 5;
   background: var(--wu-surface);
-  padding: 4px 0;
-  gap: 8px;
+  padding: var(--wu-space-1) 0;
+  gap: var(--wu-space-2);
 }
 .strike-activity-roster label {
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   align-items: center;
   min-height: 44px;
   font-size: var(--wu-text-sm);
@@ -25,7 +25,7 @@
 .strike-activity-recruit > label {
   align-items: stretch;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--wu-space-1);
 }
 .strike-activity-roster button,
 .strike-activity-roster select,
@@ -45,7 +45,7 @@
   margin: 0;
   min-width: 0;
   display: flex;
-  gap: 6px 14px;
+  gap: var(--wu-space-2) var(--wu-space-4);
   flex-wrap: wrap;
 }
 .strike-activity-roster legend {
@@ -56,13 +56,13 @@
 .strike-activity-roster details {
   border: 1px solid #484238;
   border-radius: 10px;
-  padding: 0 12px;
+  padding: 0 var(--wu-space-3);
   min-width: 0;
 }
 .strike-activity-roster summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   cursor: pointer;
   font-size: var(--wu-text-sm);
   font-weight: var(--wu-weight-medium);
@@ -75,8 +75,8 @@
 }
 .strike-activity-more {
   display: grid;
-  gap: 8px;
-  padding: 6px 0 12px;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-2) 0 var(--wu-space-3);
   max-height: 320px;
   overflow: auto;
 }
@@ -98,10 +98,10 @@
 }
 .strike-activity-row {
   display: grid;
-  gap: 3px;
+  gap: var(--wu-space-1);
   text-align: left;
   width: 100%;
-  padding: 8px 10px;
+  padding: var(--wu-space-2) var(--wu-space-2);
   border: 1px solid var(--wu-border-subtle);
   border-radius: 12px;
   background: var(--wu-surface);
@@ -126,7 +126,7 @@
 
 .strike-activity-pages {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-3);
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
@@ -134,9 +134,9 @@
 }
 .strike-activity-recruit {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
-  padding: 8px 0 14px;
+  padding: var(--wu-space-2) 0 var(--wu-space-4);
   align-items: end;
 }
 .strike-activity-recruit > p,
@@ -146,19 +146,19 @@
   text-wrap: pretty;
 }
 .strike-activity-recruit ul {
-  padding-left: 20px;
+  padding-left: var(--wu-space-4);
 }
 @media (max-width: 650px) {
   .strike-activity-toolbar {
-    gap: 8px;
+    gap: var(--wu-space-2);
   }
   .strike-activity-count {
     font-size: var(--wu-text-xs);
-    padding-top: 3px;
+    padding-top: var(--wu-space-1);
     font-variant-numeric: tabular-nums;
   }
   .strike-activity-row {
-    padding: 11px;
+    padding: var(--wu-space-2);
   }
 
   .strike-activity-pages span {
@@ -178,30 +178,30 @@
   .strikes-toolbar:not(:has(.strikes-history-search)) {
   display: flex;
   width: 100%;
-  margin: 0 0 12px;
-  gap: 8px;
+  margin: 0 0 var(--wu-space-3);
+  gap: var(--wu-space-2);
 }
 .strikes-workspace.strikes-activity-overview .strikes-toolbar > button {
   margin-left: 0;
   width: auto;
 }
 .strikes-activity-overview .strikes-tracking {
-  padding: 4px 12px;
-  margin-bottom: 12px;
+  padding: var(--wu-space-1) var(--wu-space-3);
+  margin-bottom: var(--wu-space-3);
 }
 .strikes-activity-overview .strikes-tracking summary {
-  gap: 4px 9px;
+  gap: var(--wu-space-1) var(--wu-space-2);
 }
 .strikes-activity-overview .page-head {
-  margin-bottom: 16px;
+  margin-bottom: var(--wu-space-5);
 }
 .strikes-activity-overview .page-head p:not(.eyebrow) {
-  margin-bottom: 10px;
+  margin-bottom: var(--wu-space-2);
   text-wrap: pretty;
 }
 @media (max-width: 650px) {
   .strike-activity-roster {
-    gap: 10px;
+    gap: var(--wu-space-3);
   }
   .strike-activity-more > label {
     gap: 0;
@@ -230,8 +230,8 @@
   z-index: 5;
   min-width: 150px;
   display: grid;
-  gap: 4px;
-  padding: 4px;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-1);
   background: var(--wu-surface-raised);
   border: 1px solid #59503d;
   border-radius: 8px;
@@ -244,14 +244,14 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--wu-space-1);
 }
 .strike-bulk-mark {
   border: 1px solid #59503d;
   border-radius: 10px;
-  padding: 12px;
+  padding: var(--wu-space-3);
   display: flex;
-  gap: 8px;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
   align-items: end;
 }
@@ -272,7 +272,7 @@
   max-height: 200px;
   overflow: auto;
   margin: 0;
-  padding-left: 20px;
+  padding-left: var(--wu-space-4);
   font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
@@ -281,16 +281,16 @@
 .strike-activity-toolbar > select {
   width: 100%;
   min-width: 0;
-  padding-inline: 6px;
+  padding-inline: var(--wu-space-1);
 }
 .strike-activity-applied {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--wu-space-1);
 }
 .strike-activity-applied button {
   font-size: var(--wu-text-md);
-  padding: 4px 8px;
+  padding: var(--wu-space-1) var(--wu-space-2);
 }
 .strike-activity-one-summary {
   color: #bfbbae;
@@ -301,7 +301,7 @@
   min-width: 0;
 }
 .strike-activity-toolbar {
-  gap: 4px;
+  gap: var(--wu-space-1);
 }
 @media (max-width: 650px) {
   .strike-activity-toolbar {
@@ -340,7 +340,7 @@
   width: 17%;
 }
 .strike-activity-table th button {
-  padding: 0 4px;
+  padding: 0 var(--wu-space-1);
   width: 100%;
   border: 0;
   border-radius: 0;
@@ -350,7 +350,7 @@
   min-height: 44px;
 }
 .strike-activity-table td {
-  padding: 0 4px;
+  padding: 0 var(--wu-space-1);
   border-bottom: 1px solid var(--wu-border-subtle);
   font-size: var(--wu-text-sm);
   min-width: 0;
@@ -365,7 +365,7 @@
 .strike-activity-table .strike-activity-row {
   padding: 0;
   display: flex;
-  gap: 5px;
+  gap: var(--wu-space-1);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -395,7 +395,7 @@
   color: #edb0a8;
   background: #4a2724;
   border-radius: 4px;
-  padding: 2px 4px;
+  padding: var(--wu-space-1) var(--wu-space-1);
   font-size: var(--wu-text-sm);
   white-space: nowrap;
 }
@@ -424,9 +424,9 @@
   .strike-activity-table tr {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 0 6px;
+    gap: 0 var(--wu-space-1);
     border-bottom: 1px solid var(--wu-border-subtle);
-    padding: 4px 0;
+    padding: var(--wu-space-1) 0;
     height: auto;
   }
   .strike-activity-table td {
@@ -460,8 +460,8 @@
   }
   .strike-activity-table .strike-activity-clan {
     grid-row: 2;
-    margin-left: 40px;
-    margin-right: 45px;
+    margin-left: var(--wu-space-7);
+    margin-right: var(--wu-space-7);
   }
   .strike-activity-table .strike-activity-weight {
     grid-row: 2;
@@ -512,7 +512,7 @@
   transform: translateX(-50%);
   z-index: 80;
   max-width: calc(100vw - 32px);
-  padding: 12px 18px;
+  padding: var(--wu-space-3) var(--wu-space-4);
   border: 1px solid #a89564;
   border-radius: 10px;
   background: var(--wu-surface-raised);
@@ -520,7 +520,7 @@
 }
 .strike-tab-predicate {
   font-size: var(--wu-text-md);
-  padding: 6px 8px;
+  padding: var(--wu-space-1) var(--wu-space-2);
   color: #bfbbae;
 }
 .shell
@@ -532,7 +532,7 @@
 @media (min-width: 1000px) {
   .strike-activity-roster {
     grid-template-columns: auto minmax(0, 1fr);
-    gap: 4px 12px;
+    gap: var(--wu-space-1) var(--wu-space-3);
   }
   .strike-activity-roster
     > :not(.strike-activity-tabs):not(.strike-activity-toolbar):not(

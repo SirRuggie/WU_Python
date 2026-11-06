@@ -8,7 +8,7 @@
 .return-toolbar,
 .return-toolbar > div:last-child {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-2);
   align-items: center;
   flex-wrap: wrap;
 }
@@ -21,18 +21,18 @@
 }
 .return-toolbar .workflow-tabs button {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-2);
 }
 .return-date-fields {
   display: grid;
   grid-template-columns: 2fr 1fr;
-  gap: 16px;
-  margin: 20px 0;
+  gap: var(--wu-space-4);
+  margin: var(--wu-space-4) 0;
 }
 .return-overview label,
 .return-batch label {
   display: grid;
-  gap: 7px;
+  gap: var(--wu-space-1);
 }
 .return-clan-list {
   border: 1px solid var(--wu-border-subtle);
@@ -45,8 +45,8 @@
     minmax(180px, 1.3fr) minmax(125px, 0.7fr) minmax(180px, 1fr)
     auto;
   align-items: center;
-  gap: 18px;
-  padding: 18px;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-4);
 }
 .return-clan-row + .return-clan-row {
   border-top: 1px solid var(--wu-border-subtle);
@@ -58,11 +58,11 @@
 .return-clan-row small {
   display: block;
   color: #aaa;
-  margin-top: 5px;
+  margin-top: var(--wu-space-1);
 }
 .return-overview .return-clan-name {
   display: flex;
-  gap: 12px;
+  gap: var(--wu-space-3);
   align-items: center;
 }
 .return-clan-name input {
@@ -74,10 +74,10 @@
 .return-row-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .return-batch {
-  margin: 16px 0;
+  margin: var(--wu-space-4) 0;
   border-color: #eab63b;
 }
 .return-batch > p {
@@ -85,7 +85,7 @@
   text-wrap: pretty;
 }
 .return-batch fieldset > button {
-  margin-top: 16px;
+  margin-top: var(--wu-space-4);
 }
 .return-results {
   white-space: pre-wrap;
@@ -94,7 +94,7 @@
 }
 .return-maintenance {
   border-top: 1px solid var(--wu-border-subtle);
-  padding-top: 16px;
+  padding-top: var(--wu-space-4);
 }
 .return-maintenance summary {
   cursor: pointer;
@@ -102,7 +102,7 @@
 }
 .return-maintenance > div {
   display: flex;
-  gap: 10px;
+  gap: var(--wu-space-3);
   flex-wrap: wrap;
 }
 @media (max-width: 1100px) {
@@ -127,5 +127,5 @@
   }
 }
 .return-overview fieldset > .return-maintenance {
-  margin-bottom: 16px;
+  margin-bottom: var(--wu-space-4);
 }

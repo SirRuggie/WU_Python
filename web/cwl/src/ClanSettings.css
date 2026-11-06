@@ -1,10 +1,10 @@
 .clan-settings-list,
 .clan-settings-group {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-1);
 }
 .clan-settings-group h3 {
-  margin: 4px 0;
+  margin: var(--wu-space-1) 0;
   font-size: var(--wu-text-lg);
   color: var(--roster-text-muted);
   font-weight: var(--wu-weight-medium);
@@ -16,7 +16,7 @@
   min-width: 0;
   max-width: none;
   min-height: 64px;
-  padding: 7px 10px;
+  padding: var(--wu-space-1) var(--wu-space-2);
 }
 .clan-settings .clan-settings-row.is-selected {
   border-color: var(--roster-gold);
@@ -27,7 +27,7 @@
   color: var(--roster-text-muted);
 }
 .clan-settings-row .roster-clan-chip-content {
-  gap: 4px;
+  gap: var(--wu-space-1);
 }
 .clan-settings-row .roster-clan-chip-top strong,
 .clan-settings-row .roster-clan-chip-count {
@@ -71,18 +71,18 @@
   text-wrap: pretty;
 }
 .clan-settings-panel .roster-menu {
-  margin-block: 12px;
+  margin-block: var(--wu-space-3);
 }
 .clan-settings-weights {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--wu-space-3);
 }
 .clan-settings-moved {
   font-size: var(--wu-text-sm);
 }
 .clan-settings .clan-settings-row {
-  padding-block: 5px;
+  padding-block: var(--wu-space-1);
 }
 .clan-settings .clan-settings-row.is-room .roster-ui-progress-track > span {
   background: var(--roster-text-muted);
@@ -118,7 +118,7 @@
   pointer-events: none;
 }
 .clan-settings-k-input input {
-  padding-right: 32px;
+  padding-right: var(--wu-space-6);
 }
 .clan-settings-panel .roster-ui-input-error {
   font-size: var(--wu-text-md);
@@ -128,7 +128,7 @@
   font-variant-numeric: tabular-nums;
 }
 .clan-settings-range p {
-  margin: 12px 0 4px;
+  margin: var(--wu-space-3) 0 var(--wu-space-1);
   text-wrap: pretty;
 }
 .clan-settings-range small {
@@ -138,7 +138,7 @@
 .clan-settings-impact {
   color: var(--roster-warning);
   font-size: var(--wu-text-sm);
-  margin-top: 12px;
+  margin-top: var(--wu-space-3);
 }
 .clan-settings-impact summary {
   min-height: 44px;

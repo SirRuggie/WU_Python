@@ -8,7 +8,7 @@
 .clan-weight-source a {
   display: inline-flex;
   align-items: center;
-  min-height: 24px;
+  min-height: 44px;
   color: var(--roster-text);
   -webkit-text-fill-color: currentColor;
   text-decoration: underline;

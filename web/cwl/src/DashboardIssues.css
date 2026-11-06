@@ -11,12 +11,12 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(160px, 230px) auto;
   align-items: end;
-  gap: 12px;
-  margin-block: 24px 12px;
+  gap: var(--wu-space-3);
+  margin-block: var(--wu-space-5) var(--wu-space-3);
 }
 .issues-toolbar label {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-1);
   min-width: 0;
   font-size: var(--wu-text-sm);
 }
@@ -47,8 +47,8 @@
 .issue-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  column-gap: 24px;
-  padding: 18px 20px 8px;
+  column-gap: var(--wu-space-5);
+  padding: var(--wu-space-4) var(--wu-space-4) var(--wu-space-2);
   background: #ffffff03;
 }
 .issue-row + .issue-row {
@@ -57,9 +57,9 @@
 .issue-summary h2 {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   font-size: var(--wu-text-xl);
-  margin: 0 0 6px;
+  margin: 0 0 var(--wu-space-1);
   font-weight: var(--wu-weight-bold);
   line-height: 1.2;
   text-wrap: balance;
@@ -89,10 +89,10 @@
 .issue-member .roster-discord-identity {
   border: 0;
   margin: 0;
-  padding: 5px 0;
+  padding: var(--wu-space-2) 0;
 }
 .issues-unsigned {
-  margin: 5px 0;
+  margin: var(--wu-space-2) 0;
   font-size: var(--wu-text-sm);
 }
 .issues-unsigned small {
@@ -114,7 +114,7 @@
 .issue-details dl {
   display: grid;
   grid-template-columns: 80px minmax(0, 1fr);
-  gap: 8px;
+  gap: var(--wu-space-2);
   font-size: var(--wu-text-sm);
 }
 .issue-details dt {
@@ -130,24 +130,24 @@
 }
 .issues-more {
   display: block;
-  margin: 16px auto;
+  margin: var(--wu-space-4) auto;
 }
 .issues-history {
-  margin-top: 18px;
+  margin-top: var(--wu-space-4);
   font-size: var(--wu-text-sm);
 }
 @media (max-width: 600px) {
   .issues-toolbar {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
+    gap: var(--wu-space-2);
   }
   .issues-toolbar label:first-child {
     grid-column: 1 / -1;
   }
   .issue-row {
     grid-template-columns: minmax(0, 1fr);
-    padding: 14px 12px 4px;
-    gap: 10px;
+    padding: var(--wu-space-3) var(--wu-space-3) var(--wu-space-1);
+    gap: var(--wu-space-2);
   }
   .issue-summary h2 {
     font-size: var(--wu-text-xl);

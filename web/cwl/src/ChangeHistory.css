@@ -1,19 +1,19 @@
 .change-history {
-  margin-top: 1rem;
+  margin-top: var(--wu-space-4);
   border: 1px solid var(--border, var(--wu-border-subtle));
   border-radius: 12px;
-  padding: 1rem;
+  padding: var(--wu-space-4);
   background: var(--surface, var(--wu-surface));
 }
 .change-history summary {
   cursor: pointer;
   font-weight: var(--wu-weight-bold);
-  padding: 0.3rem 0;
+  padding: var(--wu-space-1) 0;
 }
 .change-history label {
   display: grid;
-  gap: 0.5rem;
-  margin: 1rem 0;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-4) 0;
 }
 .change-history select {
   width: 100%;
@@ -26,31 +26,31 @@
 }
 .history-values section {
   border-top: 1px solid var(--wu-border-subtle);
-  padding: 0.75rem 0;
+  padding: var(--wu-space-3) 0;
 }
 .history-values h4 {
-  margin: 0 0 0.6rem;
+  margin: 0 0 var(--wu-space-2);
 }
 .history-values section > div {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: var(--wu-space-4);
 }
 .history-values pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: inherit;
   font-size: var(--wu-text-sm);
-  margin: 0.4rem 0;
+  margin: var(--wu-space-1) 0;
 }
 .history-values section > div > div {
   min-width: 0;
 }
 .history-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--wu-space-2);
   flex-wrap: wrap;
-  margin: 1rem 0;
+  margin: var(--wu-space-4) 0;
 }
 @media (max-width: 600px) {
   .history-values section > div {

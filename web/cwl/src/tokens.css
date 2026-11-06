@@ -59,4 +59,11 @@
   --wu-weight-regular: 400;
   --wu-weight-medium: 600;
   --wu-weight-bold: 700;
+  --wu-space-1: 4px;
+  --wu-space-2: 8px;
+  --wu-space-3: 12px;
+  --wu-space-4: 16px;
+  --wu-space-5: 24px;
+  --wu-space-6: 32px;
+  --wu-space-7: 48px;
 }

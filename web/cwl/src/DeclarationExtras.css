@@ -1,5 +1,5 @@
 .declaration-extras {
-  margin: 8px 12px;
+  margin: var(--wu-space-2) var(--wu-space-3);
   min-width: 0;
 }
 .declaration-extras {
@@ -16,7 +16,7 @@
 .declaration-extras-status {
   font-size: var(--wu-text-sm);
   color: #b6afa1;
-  margin: 8px 12px;
+  margin: var(--wu-space-2) var(--wu-space-3);
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
@@ -24,26 +24,26 @@
   list-style: none;
   padding: 0;
   display: grid;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .declaration-member-list > li {
   border-top: 1px solid #6f5c333b;
-  padding-top: 8px;
+  padding-top: var(--wu-space-2);
   overflow-wrap: anywhere;
 }
 .declaration-member-context {
   display: block;
   color: #b6afa1;
   font-size: var(--wu-text-sm);
-  margin-top: 3px;
+  margin-top: var(--wu-space-1);
 }
 .arrival-check .declaration-clan > .declaration-extras-status {
-  margin: 8px 12px;
+  margin: var(--wu-space-2) var(--wu-space-3);
 }
 .declaration-extras-filter {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   min-height: 44px;
 }
 .declaration-extras.is-neutral {
@@ -54,10 +54,10 @@
   padding: 0;
   margin: 0;
   display: grid;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .declaration-member-account {
-  padding: 8px 0;
+  padding: var(--wu-space-2) 0;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -65,13 +65,13 @@
   color: #d4cfc5;
   background: var(--wu-surface);
   border-radius: 6px;
-  padding: 8px;
+  padding: var(--wu-space-2);
 }
 .declaration-member-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--wu-space-3);
   min-height: 44px;
 }
 .declaration-member-actions .roster-filler-control {

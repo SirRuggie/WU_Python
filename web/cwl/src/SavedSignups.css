@@ -1,32 +1,32 @@
 .saved-signup-toolbar {
   border-block: 1px solid #45413a;
-  padding: 14px 0;
-  margin-bottom: 16px;
+  padding: var(--wu-space-3) 0;
+  margin-bottom: var(--wu-space-4);
 }
 .saved-signup-selection,
 .saved-signup-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--wu-space-2);
 }
 .saved-signup-selection {
-  margin-bottom: 12px;
+  margin-bottom: var(--wu-space-3);
 }
 .saved-signup-selection label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   min-height: 44px;
 }
 .saved-signup-toolbar small {
   display: block;
-  margin-top: 10px;
+  margin-top: var(--wu-space-2);
 }
 .saved-signup-account {
   display: flex;
   align-items: start;
-  gap: 10px;
+  gap: var(--wu-space-2);
   min-width: 0;
 }
 .saved-signup-account > div {
@@ -34,7 +34,7 @@
 }
 .saved-signup-account > input {
   flex: none;
-  margin-top: 8px;
+  margin-top: var(--wu-space-2);
 }
 @media (max-width: 650px) {
   .saved-signup-actions button {
@@ -47,9 +47,9 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px;
-  margin-top: 16px;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-4);
+  margin-top: var(--wu-space-4);
   background: #232019;
   border: 1px solid #977b36;
   border-radius: 12px;

@@ -1,6 +1,6 @@
 .arrival-check {
   display: grid;
-  gap: 6px;
+  gap: var(--wu-space-2);
   color: var(--roster-text);
 }
 .arrival-check p {
@@ -22,7 +22,7 @@
 .declaration-pools {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .declaration-pools > button {
   flex: 1;
@@ -47,11 +47,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: var(--wu-space-1) var(--wu-space-2);
   width: 100%;
   min-height: 58px;
   justify-content: flex-start;
-  padding: 8px 12px;
+  padding: var(--wu-space-2) var(--wu-space-3);
   border: 0;
   border-radius: 0;
   text-align: left;
@@ -77,18 +77,18 @@
 }
 .declaration-clan-content {
   display: grid;
-  gap: 6px;
-  padding: 8px;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-2);
 }
 .declaration-settings {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 var(--wu-space-3);
 }
 .declaration-copy {
   display: grid;
-  gap: 4px;
+  gap: var(--wu-space-1);
 }
 .declaration-copy button {
   justify-self: start;
@@ -98,7 +98,7 @@
   min-height: 64px;
 }
 .roster-ui .declaration-player {
-  padding: 0 10px 8px 12px;
+  padding: 0 var(--wu-space-2) var(--wu-space-2) var(--wu-space-3);
   color: var(--roster-text);
 }
 .declaration-player-top {
@@ -106,12 +106,12 @@
   align-items: center;
   min-width: 0;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--wu-space-2);
 }
 .arrival-check .declaration-player-top > button {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--wu-space-1);
   min-height: 44px;
   min-width: 0;
   padding: 0;
@@ -136,7 +136,7 @@
 .declaration-player .player-clan-status {
   display: block;
   width: 100%;
-  margin-top: 4px;
+  margin-top: var(--wu-space-1);
 }
 .arrival-check .declaration-dm {
   display: inline-flex;
@@ -154,8 +154,8 @@
 }
 .declaration-player .compare-tag {
   display: inline-flex;
-  margin-top: 4px;
-  padding: 0 7px;
+  margin-top: var(--wu-space-1);
+  padding: 0 var(--wu-space-1);
   border: 1px solid var(--roster-warning);
   border-radius: 999px;
   font-size: var(--wu-text-sm);
@@ -170,7 +170,7 @@
 }
 @media (max-width: 767px) {
   .shell main:has(.arrival-check) {
-    padding: 10px 12px;
+    padding: var(--wu-space-3) var(--wu-space-3);
   }
   .declaration-clan-toggle {
     scroll-margin-top: 75px;
@@ -182,7 +182,7 @@
 }
 @media (max-width: 767px) {
   .arrival-check {
-    gap: 2px;
+    gap: var(--wu-space-1);
   }
   .arrival-check .declaration-summary {
     font-size: var(--wu-text-sm);
@@ -205,7 +205,7 @@
 .arrival-check .declaration-info {
   min-width: 44px;
   min-height: 44px;
-  margin: -14px 0;
+  margin: calc(-1 * var(--wu-space-4)) 0;
   padding: 0;
   background: transparent;
   border: 0;
@@ -216,10 +216,10 @@
   justify-content: space-between;
 }
 .roster-ui .declaration-player {
-  padding-top: 6px;
+  padding-top: var(--wu-space-1);
 }
 .arrival-check .declaration-player-top > button {
-  min-height: 24px;
+  min-height: 44px;
   height: 24px;
   line-height: 20px;
   margin-bottom: 0;
@@ -237,7 +237,7 @@
 }
 .declaration-overview {
   display: grid;
-  gap: 4px;
+  gap: var(--wu-space-1);
   min-width: 0;
 }
 .declaration-last-checked {
@@ -248,7 +248,7 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: end;
-  gap: 4px 8px;
+  gap: var(--wu-space-1) var(--wu-space-2);
   min-width: 0;
 }
 .declaration-toolbar .roster-ui-input > label {
@@ -271,8 +271,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 6px 10px;
+  gap: var(--wu-space-1) var(--wu-space-2);
+  padding: var(--wu-space-2) var(--wu-space-3);
   border-left: 4px solid var(--roster-danger);
   color: var(--roster-danger);
 }
@@ -284,6 +284,6 @@
 
 @media (max-width: 767px) {
   .shell main:has(.arrival-check) .cwl-page-header {
-    margin-inline: 3px;
+    margin-inline: var(--wu-space-1);
   }
 }

@@ -1,10 +1,10 @@
 .announcement-post-copy {
   display: grid;
-  gap: 1rem;
+  gap: var(--wu-space-4);
 }
 .announcement-post-copy label {
   display: grid;
-  gap: 0.35rem;
+  gap: var(--wu-space-1);
 }
 .announcement-post-copy input,
 .announcement-post-copy textarea {
@@ -15,8 +15,8 @@
 .announcement-post-copy fieldset {
   min-width: 0;
   display: grid;
-  gap: 0.75rem;
-  padding: 0.85rem;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-4);
 }
 .announcement-post-copy button {
   min-height: 44px;
@@ -24,14 +24,14 @@
 .announcement-post-comparison {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  margin-block: 1rem;
+  gap: var(--wu-space-4);
+  margin-block: var(--wu-space-4);
   overflow-wrap: anywhere;
 }
 .announcement-post-future {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--wu-space-3);
   min-height: 44px;
 }
 .announcement-post-future input {
@@ -46,7 +46,7 @@
 
 .announcement-post-footer {
   display: grid;
-  gap: 0.4rem;
+  gap: var(--wu-space-2);
   width: 100%;
 }
 .announcement-post-footer button {
@@ -58,7 +58,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  margin-inline-end: 0.75rem;
+  margin-inline-end: var(--wu-space-3);
 }
 
 .announcement-post-panel {

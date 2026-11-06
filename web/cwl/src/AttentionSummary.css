@@ -1,13 +1,13 @@
 .attention-summary {
-  margin: 0 0 20px;
-  padding: 14px 18px;
+  margin: 0 0 var(--wu-space-4);
+  padding: var(--wu-space-3) var(--wu-space-4);
   border: 1px solid #806843;
   border-radius: 12px;
   background: var(--wu-warning-surface);
 }
 
 .attention-summary h2 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--wu-space-2);
   color: #f5d584;
   font-size: var(--wu-text-xl);
   font-weight: var(--wu-weight-bold);
@@ -23,8 +23,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-2) 0;
 }
 .attention-summary li + li {
   border-top: 1px solid #64553c;
@@ -37,14 +37,14 @@
   overflow-wrap: anywhere;
 }
 .attention-summary p {
-  margin: 3px 0 0;
+  margin: var(--wu-space-1) 0 0;
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
 .attention-summary details {
-  margin-top: 5px;
+  margin-top: var(--wu-space-1);
   font-size: var(--wu-text-sm);
 }
 .attention-summary details p {
@@ -53,7 +53,7 @@
 }
 .attention-summary summary {
   min-height: 44px;
-  padding: 12px 0;
+  padding: var(--wu-space-3) 0;
   cursor: pointer;
 }
 .attention-summary button {

@@ -1,6 +1,6 @@
 .filter-chips {
   display: flex;
-  gap: 4px;
+  gap: var(--wu-space-1);
   flex-wrap: nowrap;
   overflow-x: auto;
   scrollbar-width: thin;
@@ -9,7 +9,7 @@
 .filter-chips button {
   flex: 0 0 auto;
   white-space: nowrap;
-  padding: 4px 8px;
+  padding: var(--wu-space-1) var(--wu-space-2);
   font-size: var(--wu-text-md);
   min-height: 44px;
 }

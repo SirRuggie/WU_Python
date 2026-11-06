@@ -1,5 +1,5 @@
 .signup-walkthrough {
-  margin-bottom: 16px;
+  margin-bottom: var(--wu-space-4);
   border: 1px solid #8b733b;
   border-radius: 14px;
   overflow: hidden;
@@ -15,7 +15,7 @@
 .signup-walkthrough li {
   position: relative;
   min-width: 0;
-  padding: 12px;
+  padding: var(--wu-space-3);
   color: #e1d7bd;
 }
 .signup-walkthrough li + li {
@@ -83,7 +83,7 @@
   font-size: var(--wu-text-md);
   font-weight: var(--wu-weight-bold);
   line-height: 1.2;
-  margin-block: 5px;
+  margin-block: var(--wu-space-2);
 }
 .signup-walkthrough .walkthrough-summary {
   font-size: var(--wu-text-sm);
@@ -104,7 +104,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .signup-walkthrough li {
-    padding: 0 12px;
+    padding: 0 var(--wu-space-3);
   }
   .signup-walkthrough li + li {
     border-left: 0;
@@ -112,7 +112,7 @@
   }
   .signup-walkthrough li.current {
     min-height: 116px;
-    padding: 10px 108px 10px 12px;
+    padding: var(--wu-space-3) 108px var(--wu-space-3) var(--wu-space-3);
   }
   .signup-walkthrough .walkthrough-art {
     height: 96px;
@@ -130,7 +130,7 @@
 }
 
 .signup-walkthrough .walkthrough-instruction {
-  margin: 6px -124px 0 0;
+  margin: var(--wu-space-2) -124px 0 0;
   font-size: var(--wu-text-sm);
   line-height: 1.35;
   color: inherit;

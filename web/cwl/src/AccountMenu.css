@@ -8,8 +8,8 @@
   width: 100%;
   min-height: 44px;
   margin: 0;
-  padding: 5px 8px;
-  gap: 8px;
+  padding: var(--wu-space-1) var(--wu-space-2);
+  gap: var(--wu-space-2);
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
@@ -36,7 +36,7 @@
   position: relative;
   justify-content: flex-start;
   padding-left: 43px;
-  padding-right: 28px;
+  padding-right: var(--wu-space-5);
 }
 
 .account-menu-profile-trigger .user-pill {
@@ -92,7 +92,7 @@
   justify-content: center;
   width: 44px;
   height: 44px;
-  padding: 4px;
+  padding: var(--wu-space-1);
   border-color: var(--wu-border-subtle);
   border-radius: 50%;
   background: var(--wu-surface-raised);
@@ -140,7 +140,7 @@
 .account-menu-popover {
   z-index: 100;
   width: min(260px, calc(100vw - 24px));
-  padding: 8px;
+  padding: var(--wu-space-2);
   border: 1px solid var(--wu-border);
   border-radius: 14px;
   background: var(--wu-surface-raised);
@@ -151,8 +151,8 @@
 .account-menu-summary {
   display: grid;
   min-width: 0;
-  padding: 8px 10px 10px;
-  gap: 2px;
+  padding: var(--wu-space-2) var(--wu-space-2) var(--wu-space-2);
+  gap: var(--wu-space-1);
 }
 
 .account-menu-summary > span {
@@ -178,7 +178,7 @@
 
 .account-menu-separator {
   height: 1px;
-  margin: 0 2px 6px;
+  margin: 0 2px var(--wu-space-1);
   background: var(--wu-border-subtle);
 }
 
@@ -190,8 +190,8 @@
   display: flex;
   align-items: center;
   min-height: 44px;
-  padding: 8px 10px;
-  gap: 9px;
+  padding: var(--wu-space-2) var(--wu-space-2);
+  gap: var(--wu-space-2);
   border-radius: 8px;
   color: #f0c4c4;
   cursor: pointer;
@@ -205,9 +205,9 @@
 }
 
 .shell .sidebar > .sidebar-foot:has(> .account-menu) {
-  gap: 4px;
-  padding-top: 8px;
-  padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  gap: var(--wu-space-1);
+  padding-top: var(--wu-space-2);
+  padding-bottom: max(var(--wu-space-2), env(safe-area-inset-bottom, 0));
 }
 
 @media (max-width: 900px) {

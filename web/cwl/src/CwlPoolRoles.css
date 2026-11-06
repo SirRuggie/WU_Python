@@ -1,6 +1,6 @@
 .cwl-pool-roles {
-  margin-block: 24px;
-  padding-top: 16px;
+  margin-block: var(--wu-space-5);
+  padding-top: var(--wu-space-4);
   border-top: 1px solid var(--roster-border, var(--wu-border));
 }
 .cwl-pool-role-heading {
@@ -8,7 +8,7 @@
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
+  gap: var(--wu-space-3);
 }
 .cwl-pool-role-heading h2 {
   margin: 0;
@@ -18,12 +18,12 @@
   text-wrap: pretty;
 }
 .cwl-pool-role {
-  margin-block: 16px;
+  margin-block: var(--wu-space-4);
   max-width: 600px;
 }
 .cwl-pool-role label {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: var(--wu-space-2);
 }
 .cwl-pool-role input,
 .cwl-pool-role select {
@@ -31,7 +31,7 @@
   width: 100%;
   min-height: 44px;
   min-width: 0;
-  margin-top: 4px;
+  margin-top: var(--wu-space-1);
 }
 .cwl-pool-role p {
   overflow-wrap: anywhere;
@@ -45,5 +45,5 @@
 }
 .cwl-pool-role legend {
   font-weight: var(--wu-weight-bold);
-  margin-bottom: 8px;
+  margin-bottom: var(--wu-space-2);
 }

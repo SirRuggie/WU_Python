@@ -3,7 +3,7 @@
 }
 .fwa-signup-animation {
   display: block;
-  margin: 1rem auto;
+  margin: var(--wu-space-4) auto;
   max-width: 100%;
   height: auto;
   border-radius: 8px;

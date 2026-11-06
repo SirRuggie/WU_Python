@@ -4,7 +4,7 @@
   min-height: 44px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--wu-space-2);
   margin: 0;
   padding: 0 10px;
   border: 1px solid var(--wu-warning-border);
@@ -13,6 +13,11 @@
   background: var(--roster-card);
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
+}
+.publication-awareness:where(
+  :not(.roster-workspace *):not(.roster-header *):not(.compare-workspace *)
+) {
+  padding: 0 var(--wu-space-3);
 }
 .publication-awareness-status {
   min-width: 0;
@@ -45,12 +50,12 @@
   cursor: pointer;
 }
 .publication-change-list {
-  margin: 14px 0;
+  margin: var(--wu-space-3) 0;
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
 }
 .publication-change-list h3 {
-  margin: 0 0 6px;
+  margin: 0 0 var(--wu-space-1);
 }
 .publication-change-list ul {
   padding: 0;
@@ -61,8 +66,8 @@
 .publication-change-list li {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 8px 0;
+  gap: var(--wu-space-1) var(--wu-space-2);
+  padding: var(--wu-space-2) 0;
   border-bottom: 1px solid var(--wu-border);
 }
 .publication-change-list li strong::after {
