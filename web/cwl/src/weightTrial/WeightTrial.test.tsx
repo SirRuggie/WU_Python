@@ -375,7 +375,7 @@ it("owns hidden-label styling, readable text and disclosure targets on cold navi
     /\.weight-trial \.weight-trial-sr-only\s*\{[^}]*position: absolute;[^}]*width: 1px;[^}]*height: 1px;[^}]*clip: rect\(0, 0, 0, 0\)/,
   );
   expect(css).toMatch(/\.weight-trial summary\s*\{[^}]*min-height: 44px/);
-  expect(css).toMatch(/\.weight-trial a\s*\{[^}]*color: var\(--wu-text\)/);
+  expect(css).toMatch(/\.weight-trial a\s*\{[^}]*color: var\(--wu-accent\)/);
   expect(css).toMatch(/\.weight-trial a\s*\{[^}]*text-decoration: underline/);
   const globalTokens = readFileSync("src/tokens.css", "utf8");
   expect(globalTokens).toMatch(/--wu-text:\s*#f5f4f0\s*;/i);

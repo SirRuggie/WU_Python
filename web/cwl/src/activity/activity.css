@@ -79,8 +79,8 @@
   height: 40px;
   flex: 0 0 40px;
   border-radius: 12px;
-  background: var(--wu-surface-raised);
-  color: var(--wu-text-muted);
+  background: #30291c;
+  color: #f4cd64;
 }
 .calendar-event-icon > svg {
   width: 24px;
@@ -143,8 +143,7 @@
 }
 .activity-card a,
 .calendar-sources a {
-  color: var(--wu-text);
-  text-decoration: underline;
+  color: var(--wu-accent);
 }
 .activity-card footer a {
   display: inline-flex;
@@ -154,11 +153,10 @@
 .shell .calendar-link {
   border: 0;
   background: transparent;
-  color: var(--wu-text);
+  color: var(--wu-accent);
   text-align: left;
   padding: var(--wu-space-3) 0 0;
   min-height: 44px;
-  text-decoration: underline;
 }
 .activity-timezone {
   display: flex;
@@ -400,9 +398,8 @@
   background: transparent;
   border: 0;
   padding: var(--wu-space-2) 0;
-  color: var(--wu-text);
+  color: var(--wu-accent);
   min-height: 44px;
-  text-decoration: underline;
 }
 .war-inactive {
   margin-top: var(--wu-space-4);

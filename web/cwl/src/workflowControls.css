@@ -336,8 +336,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: var(--wu-text);
-  text-decoration: underline;
+  color: var(--wu-accent);
 }
 .search-pagination {
   display: flex;

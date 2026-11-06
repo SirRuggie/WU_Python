@@ -336,10 +336,9 @@
 }
 
 .clan-tabs[aria-label="Used by"] a {
-  color: var(--wu-text);
+  color: var(--wu-accent);
   display: inline-flex;
   align-items: center;
   min-height: 44px;
   padding: var(--wu-space-2) var(--wu-space-2);
-  text-decoration: underline;
 }

@@ -174,7 +174,7 @@ small {
   color: var(--wu-text-muted);
 }
 .eyebrow {
-  color: var(--wu-text-muted);
+  color: #dcb43f;
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
   letter-spacing: 0.08em;
@@ -1046,8 +1046,8 @@ small {
   display: grid;
   place-items: center;
   border-radius: 14px;
-  background: var(--wu-surface-raised);
-  color: var(--wu-text-muted);
+  background: #d9a628;
+  color: var(--wu-accent-ink);
   font-size: var(--wu-text-2xl);
   font-weight: var(--wu-weight-bold);
   margin-bottom: var(--wu-space-4);
@@ -1229,8 +1229,8 @@ small {
 }
 .roster-source-note {
   padding: var(--wu-space-4) var(--wu-space-4);
-  border-left: 3px solid var(--wu-text-muted);
-  background: var(--wu-surface-raised);
+  border-left: 3px solid #d9a628;
+  background: #282315;
   border-radius: 8px;
   font-size: var(--wu-text-xs);
   color: #d8c9a7;
@@ -2018,17 +2018,17 @@ img.discord-server-icon {
 .shell .signup-guide {
   padding: var(--wu-space-4) var(--wu-space-4);
   margin-bottom: var(--wu-space-4);
-  background: var(--wu-surface-raised);
-  border: 1px solid var(--wu-text-muted);
-  border-left: 5px solid var(--wu-text-muted);
+  background: var(--wu-accent);
+  border: 1px solid #f8dc8e;
+  border-left: 5px solid #b57900;
   border-radius: 10px;
-  color: var(--wu-text);
+  color: var(--wu-accent-ink);
   box-shadow: none;
   cursor: default;
 }
 .shell .signup-guide :is(h2, p, span, b) {
-  color: var(--wu-text);
-  -webkit-text-fill-color: var(--wu-text);
+  color: var(--wu-accent-ink);
+  -webkit-text-fill-color: var(--wu-accent-ink);
   text-wrap: pretty;
 }
 .shell .signup-guide h2 {

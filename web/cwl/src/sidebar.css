@@ -319,8 +319,8 @@ div.shell {
     min-height: 44px;
     gap: var(--wu-space-2);
     padding-inline: var(--wu-space-3);
-    border-color: var(--wu-text-muted);
-    color: var(--wu-text);
+    border-color: #8d7845;
+    color: #ffe098;
   }
   .shell .workspace {
     scroll-padding-top: 80px;
