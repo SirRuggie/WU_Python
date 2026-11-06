@@ -638,11 +638,8 @@
 .strikes-tracking {
   margin: var(--wu-space-1) 0 var(--wu-space-4);
   padding: var(--wu-space-3) var(--wu-space-4);
-  border-color: var(--wu-border);
-}
-.strikes-tracking.warning {
-  border-color: #ae8750;
-  background: var(--wu-warning-surface);
+  border: 0;
+  background: transparent;
 }
 .strikes-tracking summary {
   display: flex;
@@ -652,16 +649,24 @@
   min-height: 44px;
   cursor: pointer;
   font-size: var(--wu-text-sm);
+  padding: 0 var(--wu-space-2);
+  border: 1px solid
+    color-mix(in srgb, var(--wu-border) 50%, var(--wu-text-muted));
+  border-radius: inherit;
+  background: var(--wu-surface-soft);
+  color: var(--wu-text);
+}
+.strikes-tracking summary:focus-visible {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 2px var(--wu-focus);
 }
 .strikes-tracking summary span {
   font-weight: var(--wu-weight-bold);
 }
 .strikes-tracking summary strong {
   font-weight: var(--wu-weight-medium);
-  color: var(--wu-text-muted);
-}
-.strikes-tracking.warning summary strong {
-  color: #ffd697;
+  color: inherit;
 }
 .strikes-tracking-body {
   display: grid;
@@ -716,7 +721,7 @@
 .strikes-tracking-state.behind,
 .strikes-tracking-state.unverified,
 .strikes-tracking-error {
-  color: #ffd697 !important;
+  color: var(--wu-text-muted) !important;
 }
 .strikes-tracking-state.private {
   color: #e9bcff;

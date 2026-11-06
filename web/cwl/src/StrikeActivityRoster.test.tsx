@@ -76,21 +76,46 @@ afterEach(async () => {
 it("keeps known strikes on a cold activity view and fills signals when refresh completes", async () => {
   vi.useFakeTimers();
   vi.mocked(fetch)
-    .mockResolvedValueOnce(new Response(JSON.stringify({
-      accounts: [{ ...row, active_strikes: 3, total_strikes: 5, quiet_days: null,
-        activity_unavailable: true }], clans: [{ tag: "#PQQ", name: "Family" }],
-      activity_updating: true,
-      activity_warning: "Activity unavailable. Strike rows remain available.",
-    })))
-    .mockResolvedValueOnce(new Response(JSON.stringify({
-      accounts: [{ ...row, active_strikes: 3, total_strikes: 5, quiet_days: 7 }],
-      clans: [{ tag: "#PQQ", name: "Family" }], activity_updating: false,
-      activity_checked_at: "2026-11-04T06:00:00Z", activity_warning: null,
-      activity_as_of: "Activity as of 06:00 UTC",
-    })));
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          accounts: [
+            {
+              ...row,
+              active_strikes: 3,
+              total_strikes: 5,
+              quiet_days: null,
+              activity_unavailable: true,
+            },
+          ],
+          clans: [{ tag: "#PQQ", name: "Family" }],
+          activity_updating: true,
+          activity_warning:
+            "Activity unavailable. Strike rows remain available.",
+        }),
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          accounts: [
+            { ...row, active_strikes: 3, total_strikes: 5, quiet_days: 7 },
+          ],
+          clans: [{ tag: "#PQQ", name: "Family" }],
+          activity_updating: false,
+          activity_checked_at: "2026-11-04T06:00:00Z",
+          activity_warning: null,
+          activity_as_of: "Activity as of 06:00 UTC",
+        }),
+      ),
+    );
   const choose = vi.fn();
-  await act(async () => root.render(<StrikeActivityRoster onChoose={choose} />));
-  expect(host.querySelector(".notice:not(.error)")?.textContent).toBe("Loading activity…");
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={choose} />),
+  );
+  expect(host.querySelector(".strike-activity-as-of")?.textContent).toBe(
+    "Loading activity…",
+  );
   expect(host.textContent).not.toContain("Activity unavailable");
   expect(host.querySelector(".notice.error")).toBeNull();
   expect(host.textContent).not.toContain("Quiet 0d");
@@ -98,21 +123,34 @@ it("keeps known strikes on a cold activity view and fills signals when refresh c
   await act(async () => vi.advanceTimersByTimeAsync(2000));
   expect(host.textContent).not.toContain("Activity unavailable");
   expect(host.textContent).toContain("Quiet 7d");
-  expect(host.querySelector(".notice:not(.error)")?.textContent).toBe("Activity as of 06:00 UTC");
-  await act(async () => host.querySelector<HTMLButtonElement>(".strike-activity-row")!.click());
+  expect(host.querySelector(".strike-activity-as-of")?.textContent).toBe(
+    "Activity as of 06:00 UTC",
+  );
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".strike-activity-row")!.click(),
+  );
   expect(choose.mock.calls[0][0].active_strikes).toBe(3);
   expect(choose.mock.calls[0][0].total_strikes).toBe(5);
   await act(async () => vi.advanceTimersByTimeAsync(20000));
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 it("shows an activity error after refresh failure rather than a loading notice", async () => {
-  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({
-    accounts: [{ ...row, quiet_days: null, activity_unavailable: true }],
-    clans: [{ tag: "#PQQ", name: "Family" }], activity_updating: false,
-    activity_warning: "Activity unavailable. Strike rows remain available.",
-  })));
-  await act(async () => root.render(<StrikeActivityRoster onChoose={vi.fn()} />));
-  expect(host.querySelector(".notice.error")?.textContent).toBe("Activity unavailable. Strike rows remain available.");
+  vi.mocked(fetch).mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({
+        accounts: [{ ...row, quiet_days: null, activity_unavailable: true }],
+        clans: [{ tag: "#PQQ", name: "Family" }],
+        activity_updating: false,
+        activity_warning: "Activity unavailable. Strike rows remain available.",
+      }),
+    ),
+  );
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+  );
+  expect(host.querySelector(".notice.error")?.textContent).toBe(
+    "Activity unavailable. Strike rows remain available.",
+  );
   expect(host.textContent).not.toContain("Loading activity");
 });
 it("loads the family once, keeps weight tool closed, and row selection only navigates", async () => {
@@ -620,9 +658,204 @@ it("empty base tab has no dead Clear filters action", async () => {
   ).toBe(false);
 });
 it("shows a muted unavailable-names status and no failure while loading", async () => {
-  vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify({accounts:[row], clans:[], identity_warning:"Names temporarily unavailable", identity_updating:false})));
-  await act(async () => root.render(<StrikeActivityRoster state="?activity_view=all" onChoose={vi.fn()} />));
-  const status = [...host.querySelectorAll("[role=status]")].find(node => node.textContent === "Names temporarily unavailable");
+  vi.mocked(fetch).mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          accounts: [row],
+          clans: [],
+          identity_warning: "Names temporarily unavailable",
+          identity_updating: false,
+        }),
+      ),
+  );
+  await act(async () =>
+    root.render(
+      <StrikeActivityRoster state="?activity_view=all" onChoose={vi.fn()} />,
+    ),
+  );
+  const status = [...host.querySelectorAll("[role=status]")].find(
+    (node) => node.textContent === "Names temporarily unavailable",
+  );
   expect(status?.classList.contains("muted")).toBe(true);
   expect(status?.classList.contains("error")).toBe(false);
+});
+
+it.each([false, true])(
+  "reveals the selected chip on load/change using row-only scrolling (reduced motion %s)",
+  async (reduced) => {
+    vi.spyOn(window, "matchMedia").mockReturnValue({
+      matches: reduced,
+    } as MediaQueryList);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
+      function (this: HTMLElement) {
+        return this.classList.contains("strike-activity-tabs") ? 200 : 0;
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+      function (this: HTMLElement) {
+        return this.classList.contains("strike-activity-tabs") ? 500 : 0;
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        const group = this.closest<HTMLElement>(".strike-activity-tabs");
+        const index = group
+          ? [...group.querySelectorAll("button")].indexOf(
+              this as HTMLButtonElement,
+            )
+          : -1;
+        const left = index >= 0 ? 10 + index * 130 - group!.scrollLeft : 10;
+        const width = index >= 0 ? 100 : 200;
+        return {
+          x: left,
+          y: 400,
+          left,
+          right: left + width,
+          top: 400,
+          bottom: 444,
+          width,
+          height: 44,
+          toJSON: () => ({}),
+        };
+      },
+    );
+    const scroll = vi
+      .spyOn(HTMLElement.prototype, "scrollTo")
+      .mockImplementation(function (
+        this: HTMLElement,
+        options: ScrollToOptions | number,
+      ) {
+        if (typeof options === "object")
+          this.scrollLeft = options.left ?? this.scrollLeft;
+      });
+    await act(async () =>
+      root.render(
+        <StrikeActivityRoster state="activity_view=all" onChoose={vi.fn()} />,
+      ),
+    );
+    const group = host.querySelector<HTMLElement>(".strike-activity-tabs")!;
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.instances[0]).toBe(group);
+    expect(scroll.mock.calls[0]).toEqual([
+      { left: 290, behavior: reduced ? "auto" : "smooth" },
+    ]);
+    expect(window.scrollTo).not.toHaveBeenCalled();
+
+    // Controlled routes and ordinary rerenders use the same selected-chip path.
+    for (const [view, left] of [
+      ["not_attacking", 0],
+      ["inactive", 30],
+      ["replacements", 160],
+      ["all", 290],
+    ] as const) {
+      await act(async () =>
+        root.render(
+          <StrikeActivityRoster
+            state={`activity_view=${view}`}
+            onChoose={vi.fn()}
+          />,
+        ),
+      );
+      const selected = group.querySelector<HTMLElement>(
+        '[aria-pressed="true"]',
+      )!;
+      const bounds = selected.getBoundingClientRect();
+      expect(bounds.left).toBeGreaterThanOrEqual(10);
+      expect(bounds.right).toBeLessThanOrEqual(210);
+      expect(group.scrollLeft).toBe(left);
+    }
+    expect(scroll.mock.instances.every((instance) => instance === group)).toBe(
+      true,
+    );
+    const calls = scroll.mock.calls.length;
+    await act(async () =>
+      root.render(
+        <StrikeActivityRoster
+          state="activity_view=all"
+          reload={1}
+          onChoose={vi.fn()}
+        />,
+      ),
+    );
+    expect(scroll).toHaveBeenCalledTimes(calls);
+    expect(window.scrollTo).not.toHaveBeenCalled();
+  },
+);
+
+it("cancels an unfinished row reveal when a rapid reverse selection is already visible", async () => {
+  vi.spyOn(window, "matchMedia").mockReturnValue({
+    matches: false,
+  } as MediaQueryList);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains("strike-activity-tabs") ? 200 : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains("strike-activity-tabs") ? 500 : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      const group = this.closest<HTMLElement>(".strike-activity-tabs");
+      const index = group
+        ? [...group.querySelectorAll("button")].indexOf(
+            this as HTMLButtonElement,
+          )
+        : -1;
+      const left = index >= 0 ? 10 + index * 130 - group!.scrollLeft : 10;
+      const width = index >= 0 ? 100 : 200;
+      return {
+        x: left,
+        y: 400,
+        left,
+        right: left + width,
+        top: 400,
+        bottom: 444,
+        width,
+        height: 44,
+        toJSON: () => ({}),
+      };
+    },
+  );
+  let pending: number | undefined;
+  const scroll = vi
+    .spyOn(HTMLElement.prototype, "scrollTo")
+    .mockImplementation(function (
+      this: HTMLElement,
+      options: ScrollToOptions | number,
+    ) {
+      if (typeof options !== "object") return;
+      if (options.behavior === "smooth") pending = options.left;
+      else {
+        pending = undefined;
+        this.scrollLeft = options.left ?? this.scrollLeft;
+      }
+    });
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+  );
+  const group = host.querySelector<HTMLElement>(".strike-activity-tabs")!;
+  const buttons = group.querySelectorAll<HTMLButtonElement>("button");
+  expect(pending).toBe(290);
+  await act(async () => buttons[0].click());
+  expect(scroll.mock.calls.at(-1)).toEqual([{ left: 0, behavior: "instant" }]);
+  expect(pending).toBeUndefined();
+  await act(async () => buttons[2].click());
+  expect(pending).toBe(160);
+  group.scrollLeft = 60; // The previous smooth animation has advanced partway.
+  await act(async () => buttons[1].click());
+  expect(scroll.mock.calls.at(-1)).toEqual([{ left: 60, behavior: "instant" }]);
+  expect(pending).toBeUndefined();
+  const selected = group
+    .querySelector<HTMLElement>('[aria-pressed="true"]')!
+    .getBoundingClientRect();
+  expect(selected.left).toBeGreaterThanOrEqual(10);
+  expect(selected.right).toBeLessThanOrEqual(210);
+  expect(scroll.mock.instances.every((instance) => instance === group)).toBe(
+    true,
+  );
+  expect(window.scrollTo).not.toHaveBeenCalled();
 });

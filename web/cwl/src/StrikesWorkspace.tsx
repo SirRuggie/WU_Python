@@ -295,6 +295,7 @@ export default function StrikesWorkspace({
       : { job: null, preview: null, excluded: [] },
   );
   const [accessLost, setAccessLost] = useState(false);
+  const [trackingSlot, setTrackingSlot] = useState<HTMLDivElement | null>(null);
   const [tab, setTab] = useState<Tab>(
     initialImport.current.job || initialImport.current.preview
       ? "settings"
@@ -918,7 +919,11 @@ export default function StrikesWorkspace({
           }
         />
         {tab === "history" && !manualOpen && (
-          <StrikeTrackingStatus compact canRetry={access.add} />
+          <StrikeTrackingStatus
+            compact
+            canRetry={access.add}
+            portalTarget={trackingSlot}
+          />
         )}
       </div>
       {error && (
@@ -1401,6 +1406,7 @@ export default function StrikesWorkspace({
             </>
           ) : (
             <StrikeActivityRoster
+              trackingSlotRef={setTrackingSlot}
               overviewActions={
                 <>
                   {access.add && (
