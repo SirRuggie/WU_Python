@@ -1,3 +1,4 @@
+import SectionTabs from "../SectionTabs";
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError } from '../api'
 import { clearSnapshots } from '../snapshotCache'
@@ -112,10 +113,60 @@ export default function WarDetailPanel({clanTag, type, scope, war, onAccessDenie
     {data && <>
       <div className="war-detail-freshness">Checked {Number.isFinite(Date.parse(data.checked_at)) ? new Date(data.checked_at).toLocaleString() : data.checked_at}</div>
       {data.warnings?.length ? <ul className="war-detail-partial" aria-label="War detail notes">{data.warnings.map((warning, index) => <li key={`${index}:${warning}`}>{warning}</li>)}</ul> : null}
-      <div className="war-detail-view" role="group" aria-label="War detail view"><button type="button" aria-pressed={view === 'lineup'} onClick={() => {setView('lineup'); setPage(0)}}>Lineup</button><button type="button" aria-pressed={view === 'attacks'} onClick={() => {setView('attacks'); setPage(0)}}>Attack log</button></div>
+      <SectionTabs
+        className="war-detail-view section-tabs--flow"
+        label="War detail view"
+        items={[
+          { id: "lineup", label: <>Lineup</> },
+          { id: "attacks", label: <>Attack log</> },
+        ]}
+        value={view}
+        onChange={(next) => {
+          switch (next) {
+            case "lineup":
+              {
+                setView("lineup");
+                setPage(0);
+              }
+              break;
+            case "attacks":
+              {
+                setView("attacks");
+                setPage(0);
+              }
+              break;
+          }
+        }}
+        revealSelection
+      />
       {view === 'lineup' ? <>
         {!data.lineup_complete && <p className="war-detail-partial" role="status">Lineup data is partial. Some bases may be missing.</p>}
-        <div className="war-detail-side" role="group" aria-label="Lineup side"><button type="button" aria-pressed={side === 'clan'} onClick={() => {setSide('clan'); setPage(0)}}>{data.clan?.name || 'Your clan'}</button><button type="button" aria-pressed={side === 'opponent'} onClick={() => {setSide('opponent'); setPage(0)}}>{data.opponent?.name || 'Opponent'}</button></div>
+        <SectionTabs
+          className="war-detail-side section-tabs--flow"
+          label="Lineup side"
+          items={[
+            { id: "clan", label: <>{data.clan?.name || "Your clan"}</> },
+            { id: "opponent", label: <>{data.opponent?.name || "Opponent"}</> },
+          ]}
+          value={side}
+          onChange={(next) => {
+            switch (next) {
+              case "clan":
+                {
+                  setSide("clan");
+                  setPage(0);
+                }
+                break;
+              case "opponent":
+                {
+                  setSide("opponent");
+                  setPage(0);
+                }
+                break;
+            }
+          }}
+          revealSelection
+        />
         <h3>{side === 'clan' ? data.clan?.name || 'Your clan' : data.opponent?.name || 'Opponent'} lineup <small>{members.length}{data.team_size == null ? '' : `/${data.team_size}`}</small></h3>
         {members.length ? <ol className="war-detail-lineup-list">{visibleMembers.map(memberSummary)}</ol> : <p>Lineup unavailable.</p>}
       </> : <section className="war-detail-attacks" aria-label="Attack log">

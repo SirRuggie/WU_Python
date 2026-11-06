@@ -1,3 +1,4 @@
+import SectionTabs from "../SectionTabs";
 import { useJourneyState, useJourneyPosition } from '../journeyState'
 import { useState } from 'react'
 import WarDetailPanel from './WarDetailPanel'
@@ -68,7 +69,35 @@ export default function WarsWorkspace({canEdit, onTasks, userId = 'anonymous', v
   const card = (clan: ClanActivity) => <WarCard key={clan.tag} {...{clan, type, scope, now, onTasks}} onAccessDenied={invalidateAccess} onRefreshOverview={refresh}/>
   return <section className="clan-activity-workspace wars-workspace">
     <header className="page-head"><div><h1>Wars</h1><p>{scope === 'mine' ? 'Your clans’ wars, scores, and your accounts’ remaining attacks.' : 'All family clans · war scores and battle times.'}</p></div></header>
-    <div className="workflow-tabs" role="group" aria-label="War type">{(['regular', 'cwl'] as const).map(value => <button key={value} aria-pressed={type === value} onClick={() => setType(value)}><DashboardIcon name={value === 'regular' ? 'war' : 'trophy'}/>{value === 'regular' ? 'Clan wars' : 'CWL rounds'} {data && <small>{data.clans.filter(clan => ['inWar', 'preparation'].includes(clan[value]?.state || '')).length}</small>}</button>)}</div>
+    <SectionTabs
+      className="workflow-tabs section-tabs--flow"
+      label="War type"
+      items={(["regular", "cwl"] as const).map((value) => {
+        return {
+          id: value,
+          label: (
+            <>
+              <DashboardIcon name={value === "regular" ? "war" : "trophy"} />
+              {value === "regular" ? "Clan wars" : "CWL rounds"}{" "}
+              {data && (
+                <small>
+                  {
+                    data.clans.filter((clan) =>
+                      ["inWar", "preparation"].includes(clan[value]?.state || ""),
+                    ).length
+                  }
+                </small>
+              )}
+            </>
+          ),
+        };
+      })}
+      value={type}
+      onChange={(value) => {
+        setType(value);
+      }}
+      revealSelection
+    />
     <div className="activity-toolbar"><label>Find a clan<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Clan name or tag"/></label>{canEdit && <button aria-pressed={scope === 'family'} onClick={() => setScope(scope === 'mine' ? 'family' : 'mine')}>{scope === 'mine' ? 'Show all clans' : 'Show my clans'}</button>}</div>
     <ClanActivityStatus error={error} busy={busy} checkedAt={data?.checked_at} warnings={data?.warnings || []} refresh={refresh}/>
     {!data && busy && <p role="status">Loading your wars…</p>}

@@ -1,3 +1,4 @@
+import SectionTabs from "./SectionTabs";
 import { RefreshCw } from "lucide-react";
 import CwlNextLink from "./CwlNextLink";
 import { retainRosterFwa } from "./roster";
@@ -1199,15 +1200,10 @@ export default function RosterWorkspace({
         <>
           <div className="roster-workspace-navigation">
             {canRoster && (
-              <div
-                ref={tabFades.ref}
-                className="roster-workflow-nav has-horizontal-fades"
-                data-fade-left={tabFades.left}
-                data-fade-right={tabFades.right}
-                role="group"
-                aria-label="Roster workspace views"
-              >
-                {(
+              <SectionTabs
+                className="roster-workflow-nav has-horizontal-fades section-tabs--flow"
+                label="Roster workspace views"
+                items={(
                   [
                     { id: "assign", label: "Accounts & signups" },
                     { id: "compare", label: "Compare clans" },
@@ -1217,49 +1213,50 @@ export default function RosterWorkspace({
                       label: `Missing weights · ${globalMissingWeight}`,
                     },
                   ] as const
-                ).map((item) => (
-                  <Button
-                    key={item.id}
-                    disabled={uiLocked && !working}
-                    aria-pressed={mode === item.id}
-                    className={mode === item.id ? "active" : ""}
-                    onClick={() => {
-                      if (item.id === mode) return;
-                      const action = () => {
-                        setMode(item.id);
-                        setSelectedTags([]);
-                      };
-                      mayLeaveEditor(action);
-                    }}
-                  >
-                    {item.label}
-                  </Button>
-                ))}
-              </div>
+                ).map((item) => {
+                  return { id: item.id, label: <>{item.label}</> };
+                })}
+                value={mode}
+                onChange={(next) => {
+                  if (next === mode) return;
+                  const action = () => {
+                    setMode(next);
+                    setSelectedTags([]);
+                  };
+                  mayLeaveEditor(action);
+                }}
+                disabled={uiLocked && !working}
+                revealSelection
+                rootRef={tabFades.ref}
+                data-fade-left={tabFades.left}
+                data-fade-right={tabFades.right}
+              />
             )}
             {mode === "assign" ? (
-              <div
-                className="roster-list-pool-tabs workflow-tabs"
-                role="group"
-                aria-label="CWL account pool"
-              >
-                {(["all", "main", "lazy"] as const).map((pool) => (
-                  <Button
-                    key={pool}
-                    aria-pressed={releasePreferences.pool === pool}
-                    disabled={uiLocked}
-                    onClick={() =>
-                      setReleasePreferences((current) => ({ ...current, pool }))
-                    }
-                  >
-                    {pool === "all"
-                      ? "All accounts"
-                      : pool === "main"
-                        ? "Main CWL"
-                        : "Lazy CWL"}
-                  </Button>
-                ))}
-              </div>
+              <SectionTabs
+                className="roster-list-pool-tabs workflow-tabs section-tabs--flow"
+                label="CWL account pool"
+                items={(["all", "main", "lazy"] as const).map((pool) => {
+                  return {
+                    id: pool,
+                    label: (
+                      <>
+                        {pool === "all"
+                          ? "All accounts"
+                          : pool === "main"
+                            ? "Main CWL"
+                            : "Lazy CWL"}
+                      </>
+                    ),
+                  };
+                })}
+                value={releasePreferences.pool}
+                onChange={(pool) => {
+                  setReleasePreferences((current) => ({ ...current, pool }));
+                }}
+                disabled={uiLocked}
+                revealSelection
+              />
             ) : mode === "weights" ? null : (
               <CwlPoolTabs
                 value={poolFilter}

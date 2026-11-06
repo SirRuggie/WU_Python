@@ -88,13 +88,13 @@ export default function NicknameReview({
     <section aria-label="Nickname review">
       <h2>{membersText.fixNames}</h2>
       <FilterChips
+        variant="pill"
+        revealSelection
         label="Nickname filters"
         value={filter}
         disabled={disabled}
         options={(Object.keys(labels) as ReviewCategory[])
-          .filter(
-            (k) => k !== "check_name" || rows.some((r) => r.category === k),
-          )
+          .filter((k) => k !== "check_name" || rows.some((r) => r.category === k))
           .map((k) => ({
             value: k,
             label: labels[k],

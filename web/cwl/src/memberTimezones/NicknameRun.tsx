@@ -122,12 +122,13 @@ export default function NicknameRun({
         </button>
       )}
       <FilterChips
+        variant="pill"
+        revealSelection
         label="Run results"
         value={filter}
         options={(Object.keys(labels) as (keyof typeof labels)[])
           .filter(
-            (k) =>
-              k !== "remaining" || run.rows.some((r) => resultKey(r) === k),
+            (k) => k !== "remaining" || run.rows.some((r) => resultKey(r) === k),
           )
           .map((k) => ({
             value: k,

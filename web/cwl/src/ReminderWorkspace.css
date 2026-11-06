@@ -324,18 +324,6 @@ only editing opens the long forms. */
   margin: 0;
   border-bottom: 1px solid #ffffff24;
 }
-.reminders-workspace .workflow-tabs > button {
-  border: 0;
-  border-radius: 0;
-  border-bottom: 3px solid transparent;
-  background: transparent;
-  color: var(--wu-text-muted);
-}
-.reminders-workspace .workflow-tabs > button.active {
-  border-bottom-color: var(--wu-accent);
-  background: transparent;
-  color: var(--wu-accent);
-}
 .reminders-workspace .reminder-status {
   display: flex;
   gap: var(--wu-space-1) var(--wu-space-4);
@@ -351,13 +339,16 @@ only editing opens the long forms. */
   color: #f0d37e;
 }
 @media (max-width: 650px) {
-  .shell .reminders-workspace .workflow-tabs {
+  .shell .reminders-workspace .workflow-tabs:where(:not(.section-tabs--flow)) {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0;
     overflow: visible;
   }
-  .shell .reminders-workspace .workflow-tabs > button {
+  .shell
+    .reminders-workspace
+    .workflow-tabs:where(:not(.section-tabs--flow))
+    > button {
     width: 100%;
     min-width: 0;
     white-space: normal;

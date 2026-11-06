@@ -48,8 +48,6 @@
   flex-wrap: wrap;
   margin: var(--wu-space-3) 0;
 }
-.shell .clan-tabs button[aria-pressed="true"]:not(:disabled),
-.shell .clan-tabs button[aria-selected="true"]:not(:disabled),
 .shell .clan-directory button[aria-pressed="true"]:not(:disabled) {
   background: var(--wu-accent);
   border-color: var(--wu-accent);

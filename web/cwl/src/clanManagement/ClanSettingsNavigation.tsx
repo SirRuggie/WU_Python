@@ -1,4 +1,7 @@
 import { useRef } from "react";
+import useChoiceGroupScroll from "../useChoiceGroupScroll";
+import "../SectionTabs.css";
+import "../ChoiceGroupLayout.css";
 
 type Props<T extends string> = {
   sections: readonly T[];
@@ -14,8 +17,14 @@ export default function ClanSettingsNavigation<T extends string>({
   onChange,
 }: Props<T>) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const tabsRef = useChoiceGroupScroll<HTMLDivElement>(value);
   return (
-    <div className="clan-tabs" role="tablist" aria-label="Clan settings">
+    <div
+      ref={tabsRef}
+      className="clan-tabs section-tabs section-tabs--flow"
+      role="tablist"
+      aria-label="Clan settings"
+    >
       {sections.map((section, index) => (
         <button
           key={section}

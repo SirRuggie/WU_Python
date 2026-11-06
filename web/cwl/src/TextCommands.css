@@ -114,10 +114,6 @@
     display: block;
   }
 
-  .text-command-tabs button {
-    flex: 1;
-  }
-
   .text-command-editor.mobile-edit > .discord-preview,
   .text-command-editor.mobile-preview > form {
     display: none;
@@ -543,13 +539,6 @@
   display: flex;
   gap: var(--wu-space-2);
   margin-bottom: var(--wu-space-3);
-}
-.text-command-tabs button {
-  min-height: 44px;
-}
-.text-command-tabs button[aria-pressed="true"] {
-  border-color: var(--wu-accent);
-  background: transparent;
 }
 .text-command-editor.mobile-preview > form {
   display: none;

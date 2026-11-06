@@ -1,3 +1,4 @@
+import FilterChips from "./FilterChips";
 import { loadAccountDisplay } from './accountDisplay'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, type Account, type Clan, type Session } from './api'
@@ -61,7 +62,28 @@ export default function DashboardSearch({ session, includeFamily, query, onQuery
   return <section className="dashboard-search-workspace">
     <header className="page-head"><div><h1>Search</h1><p>Find your linked players and their clans{includeFamily ? ', plus the family clan directory' : ''}.</p></div></header>
     <label className="global-search-field" htmlFor="dashboard-search"><DashboardIcon name="search"/><span className="sr-only">Find a player or clan</span><input id="dashboard-search" autoFocus type="search" placeholder="Find a player or clan" value={query} maxLength={100} onChange={event => onQuery(event.target.value)}/></label>
-    <div className="search-kind-filters" role="group" aria-label="Search result type">{(['all','player','clan'] as const).map(value => <button key={value} aria-pressed={kind === value} onClick={() => setKind(value)}>{value === 'all' ? 'All' : value === 'player' ? 'Players' : 'Clans'} <small>{matchingResults(index, query, value).length}</small></button>)}</div>
+    <FilterChips
+      className="search-kind-filters filter-chips--flow"
+      label="Search result type"
+      options={(["all", "player", "clan"] as const).map((value) => {
+        return {
+          value: value,
+          label: (
+            <>
+              {value === "all" ? "All" : value === "player" ? "Players" : "Clans"}
+            </>
+          ),
+          count: matchingResults(index, query, value).length,
+        };
+      })}
+      value={kind}
+      onChange={(value) => {
+        setKind(value);
+      }}
+      variant="pill"
+      role="group"
+      revealSelection
+    />
     {busy && <p role="status">Loading searchable accounts and clans…</p>}
     {(error || familyError) && <AttentionSummary items={dashboardSearchAttention(error, familyError, busy, () => setAttempt(value => value + 1))} urgent />}
     {!busy && <p role="status">{results.length} result{results.length === 1 ? '' : 's'}</p>}

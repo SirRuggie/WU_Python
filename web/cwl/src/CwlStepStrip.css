@@ -57,7 +57,9 @@
 }
 
 /* The existing transparent border reserves the selected underline's space. */
-.shell .cwl-step-strip > button[aria-current="step"]::after {
+.shell
+  .cwl-step-strip:where(:not(.section-tabs))
+  > button[aria-current="step"]::after {
   content: "";
   position: absolute;
   left: -4px;

@@ -1,3 +1,4 @@
+import SectionTabs from "./SectionTabs";
 import { dashboardPath } from "./dashboardHistory";
 import SignupReminderOverview, {
   shortReminderTime,
@@ -481,30 +482,33 @@ export default function ReminderWorkspace({
                   This season is archived. Settings are read-only.
                 </p>
               )}
-              <div
-                className="tabs workflow-tabs"
-                role="group"
-                aria-label="Reminder sections"
-              >
-                {(["overview", "messages", "schedule", "history"] as const).map(
-                  (value) => (
-                    <button
-                      key={value}
-                      className={tab === value ? "active" : ""}
-                      aria-pressed={tab === value}
-                      onClick={() => setTab(value)}
-                    >
-                      {value === "overview"
-                        ? "Overview"
-                        : value === "messages"
-                          ? "Messages"
-                          : value === "schedule"
-                            ? "Schedule"
-                            : "Delivery history"}
-                    </button>
-                  ),
+              <SectionTabs
+                className="tabs workflow-tabs section-tabs--flow"
+                label="Reminder sections"
+                items={(["overview", "messages", "schedule", "history"] as const).map(
+                  (value) => {
+                    return {
+                      id: value,
+                      label: (
+                        <>
+                          {value === "overview"
+                            ? "Overview"
+                            : value === "messages"
+                              ? "Messages"
+                              : value === "schedule"
+                                ? "Schedule"
+                                : "Delivery history"}
+                        </>
+                      ),
+                    };
+                  },
                 )}
-              </div>
+                value={tab}
+                onChange={(value) => {
+                  setTab(value);
+                }}
+                revealSelection
+              />
               {tab === "overview" && (
                 <>
                   <SignupReminderOverview
@@ -548,22 +552,18 @@ export default function ReminderWorkspace({
               {tab === "messages" && (
                 <>
                   <div className="reminder-editor-intro">
-                    <div
-                      className="tabs workflow-tabs"
-                      role="group"
-                      aria-label="Message audience"
-                    >
-                      {(["main", "lazy"] as const).map((value) => (
-                        <button
-                          key={value}
-                          className={pool === value ? "active" : ""}
-                          aria-pressed={pool === value}
-                          onClick={() => setPool(value)}
-                        >
-                          {value === "main" ? "Main" : "Lazy"}
-                        </button>
-                      ))}
-                    </div>
+                    <SectionTabs
+                      className="tabs workflow-tabs section-tabs--flow"
+                      label="Message audience"
+                      items={(["main", "lazy"] as const).map((value) => {
+                        return { id: value, label: <>{value === "main" ? "Main" : "Lazy"}</> };
+                      })}
+                      value={pool}
+                      onChange={(value) => {
+                        setPool(value);
+                      }}
+                      revealSelection
+                    />
                   </div>
                   <div className="reminder-fields">
                     <label>

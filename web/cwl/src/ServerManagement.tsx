@@ -1,3 +1,4 @@
+import SectionTabs from "./SectionTabs";
 import ServerSettingsIndex from "./ServerSettingsIndex";
 import BandStatusSummary, { bandStatusWarning } from "./BandStatusSummary";
 import ApplicationSettingsIndex from "./ApplicationSettingsIndex";
@@ -1002,24 +1003,30 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
             </p>
           )}
           {document.preview_supported && (
-            <div
-              className="manage-preview-toggle"
-              role="group"
-              aria-label="Message editor view"
-            >
-              <button
-                aria-pressed={mobilePane === "edit"}
-                onClick={() => setMobilePane("edit")}
-              >
-                Edit message
-              </button>
-              <button
-                aria-pressed={mobilePane === "preview"}
-                onClick={() => setMobilePane("preview")}
-              >
-                Preview message
-              </button>
-            </div>
+            <SectionTabs
+              className="manage-preview-toggle section-tabs--flow"
+              label="Message editor view"
+              items={[
+                { id: "edit", label: <>Edit message</> },
+                { id: "preview", label: <>Preview message</> },
+              ]}
+              value={mobilePane}
+              onChange={(next) => {
+                switch (next) {
+                  case "edit":
+                    {
+                      setMobilePane("edit");
+                    }
+                    break;
+                  case "preview":
+                    {
+                      setMobilePane("preview");
+                    }
+                    break;
+                }
+              }}
+              revealSelection
+            />
           )}
           <div
             className={

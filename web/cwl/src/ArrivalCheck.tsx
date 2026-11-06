@@ -1,3 +1,4 @@
+import FilterChips from "./FilterChips";
 import useConfirmDialog from "./useConfirmDialog";
 import CwlNextLink from "./CwlNextLink";
 import useFillerMarkQueue from "./useFillerMarkQueue";
@@ -535,60 +536,59 @@ export default function ArrivalCheck({
               </p>
             )}
             <div className="declaration-toolbar">
-              <div
-                className="declaration-pools"
+              <FilterChips
+                className="declaration-pools filter-chips--flow"
+                label="CWL pool"
+                options={(["main", "lazy"] as const).map((p) => {
+                  return {
+                    value: p,
+                    label: (
+                      <>
+                        {p === "main" ? "Main" : "Lazy"}
+                        {checking || data.arrival.updating ? (
+                          <>
+                            {" · "}Checking…{" "}
+                            {
+                              hosts.filter(
+                                (g) =>
+                                  g.pool === p && !locationStatus(g) && g.readiness.ready,
+                              ).length
+                            }{" "}
+                            of {hosts.filter((g) => g.pool === p).length}
+                          </>
+                        ) : hosts.some(
+                            (g) => g.pool === p && !!locationStatus(g),
+                          ) ? null : (
+                          <>
+                            {" · "}
+                            {hosts.filter((g) => g.pool === p && g.readiness.ready).length}/
+                            {hosts.filter((g) => g.pool === p).length} ready
+                          </>
+                        )}
+                      </>
+                    ),
+                  };
+                })}
+                value={pool}
+                onChange={async (p) => {
+                  if (pingWorking.current) return;
+                  if (
+                    pingDirty.current &&
+                    !(await confirm(
+                      "Discard the unsaved ping channel change?",
+                      "Discard channel change",
+                    ))
+                  )
+                    return;
+                  pingDirty.current = false;
+                  onDirty(fillerQueue.working);
+                  setPool(p);
+                  setActiveClan("");
+                }}
+                variant="pill"
                 role="group"
-                aria-label="CWL pool"
-              >
-                {(["main", "lazy"] as const).map((p) => (
-                  <Button
-                    key={p}
-                    aria-pressed={pool === p}
-                    onClick={async () => {
-                      if (pingWorking.current) return;
-                      if (
-                        pingDirty.current &&
-                        !(await confirm(
-                          "Discard the unsaved ping channel change?",
-                          "Discard channel change",
-                        ))
-                      )
-                        return;
-                      pingDirty.current = false;
-                      onDirty(fillerQueue.working);
-                      setPool(p);
-                      setActiveClan("");
-                    }}
-                  >
-                    {p === "main" ? "Main" : "Lazy"}
-                    {checking || data.arrival.updating ? (
-                      <>
-                        {" · "}Checking…{" "}
-                        {
-                          hosts.filter(
-                            (g) =>
-                              g.pool === p &&
-                              !locationStatus(g) &&
-                              g.readiness.ready,
-                          ).length
-                        }{" "}
-                        of {hosts.filter((g) => g.pool === p).length}
-                      </>
-                    ) : hosts.some(
-                        (g) => g.pool === p && !!locationStatus(g),
-                      ) ? null : (
-                      <>
-                        {" · "}
-                        {
-                          hosts.filter((g) => g.pool === p && g.readiness.ready)
-                            .length
-                        }
-                        /{hosts.filter((g) => g.pool === p).length} ready
-                      </>
-                    )}
-                  </Button>
-                ))}
-              </div>
+                revealSelection
+              />
               <Input
                 label="Find a player or clan"
                 type="search"

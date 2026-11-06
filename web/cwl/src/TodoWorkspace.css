@@ -24,32 +24,8 @@
   color: var(--roster-text-muted);
 }
 .todo-tabs {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--wu-space-2);
-  margin: var(--wu-space-4) 0;
-}
-.todo-tabs button {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  padding: var(--wu-space-4);
-  background: var(--roster-surface-raised);
-  border-color: var(--roster-border);
-  min-height: 112px;
-}
-.todo-tabs button > span {
-  font-size: var(--wu-text-xl);
-}
-.todo-tabs small {
-  color: var(--roster-text-muted);
-}
-.shell .todo-tabs button[aria-pressed="true"] {
-  background: var(--roster-surface-soft);
-  border-color: var(--roster-gold);
-  box-shadow: inset 0 -3px var(--roster-gold);
-  color: var(--roster-text);
+  margin: var(--wu-space-4) 0;
 }
 .todo-account-picker {
   border: 1px solid var(--roster-border);
@@ -376,7 +352,6 @@
 }
 @media (max-width: 1050px) {
   .todo-tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .todo-picker-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -391,24 +366,6 @@
 }
 @media (max-width: 650px) {
   .todo-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--wu-space-2);
-  }
-  .todo-tabs button {
-    min-height: 95px;
-    padding: var(--wu-space-3);
-  }
-  .todo-tabs button:last-child {
-    grid-column: 1/-1;
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: var(--wu-space-1) var(--wu-space-3);
-  }
-  .todo-tabs button:last-child > span {
-    grid-row: 1/3;
-  }
-  .todo-tabs button:last-child small {
-    grid-column: 2;
   }
   .todo-picker-tools {
     flex-wrap: wrap;

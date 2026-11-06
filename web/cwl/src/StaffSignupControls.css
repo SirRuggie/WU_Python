@@ -68,17 +68,6 @@
   gap: 0;
   border-bottom: 1px solid var(--wu-border-subtle);
 }
-.staff-add-modes.workflow-tabs button {
-  min-height: 44px;
-  border: 0;
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  background: transparent;
-}
-.staff-add-modes.workflow-tabs button[aria-pressed="true"] {
-  color: #f1c54d;
-  border-bottom-color: #f1c54d;
-}
 .staff-signup-list-tools {
   display: flex;
   align-items: center;

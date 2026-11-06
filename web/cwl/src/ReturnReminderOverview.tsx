@@ -1,3 +1,4 @@
+import FilterChips from "./FilterChips";
 import SelectionActionBar from "./SelectionActionBar";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import ActionPanel from "./ActionPanel";
@@ -244,25 +245,27 @@ export default function ReturnReminderOverview({
     >
       <p className="return-cycle">{captureMonth()}</p>
       <div className="return-toolbar">
-        <div className="workflow-tabs" role="group" aria-label="Home clan type">
-          {(["FWA", "MAIN"] as const).map((value) => (
-            <button
-              key={value}
-              aria-pressed={section === value}
-              disabled={!!batch}
-              onClick={() => {
-                setSection(value);
-                setFilter("all");
-                setSelected([]);
-              }}
-            >
-              {value === "MAIN" ? "Main" : value}
-              <span>
-                {clans.filter((row) => clanSection(row) === value).length}
-              </span>
-            </button>
-          ))}
-        </div>
+        <FilterChips
+          className="return-clan-type filter-chips--flow"
+          label="Home clan type"
+          options={(["FWA", "MAIN"] as const).map((value) => {
+            return {
+              value: value,
+              label: <>{value === "MAIN" ? "Main" : value}</>,
+              count: clans.filter((row) => clanSection(row) === value).length,
+            };
+          })}
+          value={section}
+          onChange={(value) => {
+            setSection(value);
+            setFilter("all");
+            setSelected([]);
+          }}
+          disabled={!!batch}
+          variant="pill"
+          role="group"
+          revealSelection
+        />
       </div>
       {aboutTrigger && (
         <ActionPanel

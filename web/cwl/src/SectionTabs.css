@@ -1,5 +1,6 @@
-.section-tabs > button,
-.shell .section-tabs > button {
+.section-tabs > :is(button, a),
+.shell .section-tabs > :is(button, a),
+.shell .section-tabs.section-tabs--flow > :is(button, a) {
   border: 0;
   border-bottom: 3px solid transparent;
   border-radius: 0;
@@ -8,34 +9,146 @@
   -webkit-text-fill-color: currentColor;
   box-shadow: none;
 }
-.section-tabs > button[aria-pressed="true"],
-.shell .section-tabs > button[aria-pressed="true"] {
+.section-tabs
+  > :is(button, a):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"],
+    [aria-current="step"]
+  ),
+.shell
+  .section-tabs
+  > :is(button, a):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"],
+    [aria-current="step"]
+  ),
+.shell
+  .section-tabs.section-tabs--flow
+  > :is(button, a):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"],
+    [aria-current="step"]
+  ) {
   background: transparent;
   color: var(--wu-accent);
   border-color: transparent;
   box-shadow: inset 0 -2px var(--wu-accent);
 }
-.section-tabs > button[aria-pressed="false"]:hover:not(:disabled),
-.shell .section-tabs > button[aria-pressed="false"]:hover:not(:disabled) {
+.section-tabs
+  > :is(button, a):not(
+    :is(
+      [aria-pressed="true"],
+      [aria-selected="true"],
+      [aria-current="page"],
+      [aria-current="step"]
+    )
+  ):hover:not(:disabled),
+.shell
+  .section-tabs
+  > :is(button, a):not(
+    :is(
+      [aria-pressed="true"],
+      [aria-selected="true"],
+      [aria-current="page"],
+      [aria-current="step"]
+    )
+  ):hover:not(:disabled),
+.shell
+  .section-tabs.section-tabs--flow
+  > :is(button, a):not(
+    :is(
+      [aria-pressed="true"],
+      [aria-selected="true"],
+      [aria-current="page"],
+      [aria-current="step"]
+    )
+  ):hover:not(:disabled) {
   background: transparent;
   color: var(--wu-text);
   box-shadow: none;
 }
-.section-tabs > button[aria-pressed="true"]:hover:not(:disabled),
-.shell .section-tabs > button[aria-pressed="true"]:hover:not(:disabled) {
+.section-tabs
+  > :is(button, a):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"],
+    [aria-current="step"]
+  ):hover:not(:disabled),
+.shell
+  .section-tabs
+  > :is(button, a):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"],
+    [aria-current="step"]
+  ):hover:not(:disabled),
+.shell
+  .section-tabs.section-tabs--flow
+  > :is(button, a):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"],
+    [aria-current="step"]
+  ):hover:not(:disabled) {
   background: transparent;
   color: var(--wu-accent);
 }
-.section-tabs > button[aria-pressed]:focus-visible:not(:disabled),
-.shell .section-tabs > button[aria-pressed]:focus-visible:not(:disabled) {
+.section-tabs
+  > :is(button, a):is(
+    [aria-pressed],
+    [aria-selected],
+    [aria-current],
+    button,
+    a
+  ):focus-visible:not(:disabled),
+.shell
+  .section-tabs
+  > :is(button, a):is(
+    [aria-pressed],
+    [aria-selected],
+    [aria-current],
+    button,
+    a
+  ):focus-visible:not(:disabled),
+.shell
+  .section-tabs.section-tabs--flow
+  > :is(button, a):is(
+    [aria-pressed],
+    [aria-selected],
+    [aria-current],
+    button,
+    a
+  ):focus-visible:not(:disabled) {
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
   box-shadow: inset 0 0 0 2px var(--wu-focus);
 }
-.section-tabs > button[aria-pressed="true"]:focus-visible:not(:disabled),
+.section-tabs
+  > :is(button, a):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"],
+    [aria-current="step"]
+  ):focus-visible:not(:disabled),
 .shell
   .section-tabs
-  > button[aria-pressed="true"]:focus-visible:not(:disabled) {
+  > :is(button, a):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"],
+    [aria-current="step"]
+  ):focus-visible:not(:disabled),
+.shell
+  .section-tabs.section-tabs--flow
+  > :is(button, a):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"],
+    [aria-current="step"]
+  ):focus-visible:not(:disabled) {
   box-shadow:
     inset 0 -2px var(--wu-accent),
     inset 0 0 0 2px var(--wu-focus);

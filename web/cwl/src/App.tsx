@@ -1,4 +1,7 @@
 import CwlPageHeader from "./CwlPageHeader"
+import useChoiceGroupScroll from "./useChoiceGroupScroll";
+import "./SectionTabs.css";
+import "./ChoiceGroupLayout.css";
 import useConfirmDialog from "./useConfirmDialog"
 import RosterMenu from "./rosterUi/Menu"
 import CwlNextLink from "./CwlNextLink";
@@ -99,6 +102,7 @@ function App() {
   const [flowPublication, setFlowPublication] = useState<{season: string; draft: PublicationDraft} | null>(null)
   const [rosterReadiness, setRosterReadiness] = useState<ReadinessFilter>('all')
   const [view, setView] = useState<View>(entryTarget.view)
+  const resultsTabsRef = useChoiceGroupScroll<HTMLElement>(view);
   const [rosterBusy, setRosterBusy] = useState(false)
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -964,14 +968,28 @@ function App() {
         />}
         {session.can_edit && ['participation','bonuses','exports'].includes(view) &&
           (['participation','bonuses','exports'] as const).filter(target => allowedView(target) === target).length > 1 && (
-          <nav className="cwl-result-nav" aria-label="Results sections">
-            {([
-              ['participation', 'Participation'],
-              ['bonuses', 'Bonus medals'],
-              ['exports', 'Exports'],
-            ] as const).filter(([target]) => allowedView(target) === target).map(([target, label]) => (
-              <button key={target} aria-current={view === target ? 'page' : undefined} onClick={() => changeView(target)}>{label}</button>
-            ))}
+          <nav
+            ref={resultsTabsRef}
+            className="cwl-result-nav section-tabs section-tabs--flow"
+            aria-label="Results sections"
+          >
+            {(
+              [
+                ["participation", "Participation"],
+                ["bonuses", "Bonus medals"],
+                ["exports", "Exports"],
+              ] as const
+            )
+              .filter(([target]) => allowedView(target) === target)
+              .map(([target, label]) => (
+                <button
+                  key={target}
+                  aria-current={view === target ? "page" : undefined}
+                  onClick={() => changeView(target)}
+                >
+                  {label}
+                </button>
+              ))}
           </nav>
         )}
         {notice && !(view === 'signup' && review) && <div className={`notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}<button aria-label="Dismiss message" onClick={() => setNotice(null)}>×</button></div>}

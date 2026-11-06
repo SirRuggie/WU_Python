@@ -1,3 +1,4 @@
+import FilterChips from "./FilterChips";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { defaultTownHall, type BankBase } from "./baseBank";
@@ -102,22 +103,20 @@ export default function BaseBank({
         <p>No bases are available yet. Try again later.</p>
       ) : (
         <>
-          <div
-            className="base-bank-levels"
+          <FilterChips<number>
+            className="base-bank-levels filter-chips--flow"
+            label="Town Hall level"
+            options={levels.map((th) => {
+              return { value: th, label: <>{th}</>, ariaLabel: `Town Hall ${th}` };
+            })}
+            value={selected}
+            onChange={(th) => {
+              setChosen(th);
+            }}
+            variant="pill"
             role="group"
-            aria-label="Town Hall level"
-          >
-            {levels.map((th) => (
-              <button
-                key={th}
-                aria-label={`Town Hall ${th}`}
-                aria-pressed={th === selected}
-                onClick={() => setChosen(th)}
-              >
-                {th}
-              </button>
-            ))}
-          </div>
+            revealSelection
+          />
           <div className="base-bank-grid">
             {bases
               .filter((b) => b.town_hall === selected)
