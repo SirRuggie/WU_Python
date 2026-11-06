@@ -84,7 +84,6 @@ type Completion = { seasonId: string; seasonLabel: string; pool: Pool; accounts:
 const poolName = (pool: Pool | null) => pool === 'lazy' ? 'Lazy CWL' : pool === 'main' ? 'Main CWL' : 'CWL'
 const message = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Try again.'
 const tagPath = (tag: string) => encodeURIComponent(tag)
-const serverIconUrl = 'https://cdn.discordapp.com/icons/644963518025826315/a_8070a2dc790e4ff877d5f3df7e79b8fe.png?size=128'
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -834,16 +833,16 @@ function App() {
       setPending(false)
     }
   }
-  if (authState === 'loading') return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
+  if (authState === 'loading') return <div className="center-screen"><Brand large /><p>Checking Discord sign-in…</p></div>
   const retrySignupRead = async () => {
     if (signupPanel === 'saved' && savedSignupDirty && !(await confirmCwl('Refresh CWL data and discard pending pool changes?', 'Discard and refresh'))) return
     setSavedSignupsLoaded(false)
     void loadSignup()
   }
-  if (authState === 'error') return <div className="center-screen"><Brand /><div className="card narrow"><h1>CWL is unavailable</h1><p role="alert">{authError}</p><button onClick={() => void loadAuth()}>Retry connection</button></div></div>
-  if (authState === 'signed-out') return <main className="center-screen welcome-screen"><Brand /><div className="card login-card"><p className="eyebrow">Warriors United Dashboard</p><h1>Your accounts.<br />Your clans.<br />One place.</h1><p>Check your attacks, set reminders, and sign up for CWL.</p><ul className="welcome-features"><li><DashboardIcon name="war"/><div><strong>Tasks</strong><small>See attacks and events.</small></div></li><li><DashboardIcon name="shield"/><div><strong>My accounts</strong><small>View your linked accounts.</small></div></li><li><DashboardIcon name="trophy"/><div><strong>CWL</strong><small>Sign up and see your assigned clans.</small></div></li></ul>{entryTarget.view !== 'home' && <p className="welcome-destination">After sign-in: <strong>{entryTarget.view === 'signup' && entryTarget.signupPanel === 'saved' ? 'My signups' : navigationLabel(entryTarget.view)}</strong></p>}<a className="button primary" href={loginPath(window.location.search, !!authError, window.location.pathname)}>Continue with Discord</a>{fixtureMode && <button className="fixture-button" onClick={() => void api('/dev/login', 'POST').then(loadAuth).catch(error => setAuthError(message(error)))}>Open local test session</button>}{authError && <p className="inline-reason" role="alert">{authError}</p>}</div></main>
+  if (authState === 'error') return <div className="center-screen"><Brand large /><div className="card narrow"><h1>CWL is unavailable</h1><p role="alert">{authError}</p><button onClick={() => void loadAuth()}>Retry connection</button></div></div>
+  if (authState === 'signed-out') return <main className="center-screen welcome-screen"><Brand large /><div className="card login-card"><p className="eyebrow">Warriors United Dashboard</p><h1>Your accounts.<br />Your clans.<br />One place.</h1><p>Check your attacks, set reminders, and sign up for CWL.</p><ul className="welcome-features"><li><DashboardIcon name="war"/><div><strong>Tasks</strong><small>See attacks and events.</small></div></li><li><DashboardIcon name="shield"/><div><strong>My accounts</strong><small>View your linked accounts.</small></div></li><li><DashboardIcon name="trophy"/><div><strong>CWL</strong><small>Sign up and see your assigned clans.</small></div></li></ul>{entryTarget.view !== 'home' && <p className="welcome-destination">After sign-in: <strong>{entryTarget.view === 'signup' && entryTarget.signupPanel === 'saved' ? 'My signups' : navigationLabel(entryTarget.view)}</strong></p>}<a className="button primary" href={loginPath(window.location.search, !!authError, window.location.pathname)}>Continue with Discord</a>{fixtureMode && <button className="fixture-button" onClick={() => void api('/dev/login', 'POST').then(loadAuth).catch(error => setAuthError(message(error)))}>Open local test session</button>}{authError && <p className="inline-reason" role="alert">{authError}</p>}</div></main>
 
-  if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
+  if (!session) return <div className="center-screen"><Brand large /><p>Checking Discord sign-in…</p></div>
 
   return <DashboardPermissions.Provider value={{owner: session.is_owner, permissions: session.dashboard_permissions || []}}><div className={`shell${tourActive ? ' tour-active' : ''}`}>
     {cwlConfirmation}
@@ -1252,5 +1251,26 @@ function App() {
     </OwnerPrankBoundary>}
   </div></DashboardPermissions.Provider>
 }
-function Brand() { return <div className="brand"><img className="emblem discord-server-icon" src={serverIconUrl} alt="Warriors United server icon" width={39} height={39} /><span><strong>WARRIORS UNITED</strong><small>SERVER DASHBOARD</small></span></div> }
+function Brand({ large = false }: { large?: boolean }) {
+  return (
+    <div className={`brand${large ? " brand--large" : ""}`}>
+      <img
+        className="emblem site-logo"
+        src={large ? "/brand/wu-helmet-160.png" : "/brand/wu-helmet-48.png"}
+        srcSet={
+          large
+            ? "/brand/wu-helmet-160.png 1x, /brand/wu-helmet-320.png 2x, /brand/wu-helmet-480.png 3x"
+            : "/brand/wu-helmet-48.png 1x, /brand/wu-helmet-96.png 2x, /brand/wu-helmet-144.png 3x"
+        }
+        alt="Warriors United logo"
+        width={large ? 160 : 39}
+        height={large ? 160 : 39}
+      />
+      <span>
+        <strong>WARRIORS UNITED</strong>
+        <small>SERVER DASHBOARD</small>
+      </span>
+    </div>
+  );
+}
 export default App
