@@ -9,6 +9,7 @@ import PlayerClanStatus, { playerClanStatus } from "./PlayerClanStatus";
 import type { RosterAccount } from "./roster";
 import "./PlayerCard.css";
 import "./RosterAccountCard.css";
+import AccountCard from "./AccountCard";
 
 type Props = {
   now: number;
@@ -52,37 +53,43 @@ export default function RosterAccountCard({
     now,
   );
   return (
-    <article
+    <AccountCard
+      variant="structural"
       className={`player-card player-card-responsive roster-player-card${account.assigned_clan_tag ? " is-assigned" : ""}${selected ? " is-selected" : ""}`}
-    >
-      <label className="roster-player-select">
-        <input
-          type="checkbox"
-          checked={selected}
-          disabled={disabled || !maySelect}
-          onChange={onToggle}
-          aria-label={`Select ${account.player_name} for bulk actions`}
-        />
-      </label>
-      <button
-        type="button"
-        className="player-card-body roster-player-body"
-        aria-describedby={descriptionId}
-        disabled={disabled}
-        aria-label={
+      beforeBody={
+        <label className="roster-player-select">
+          <input
+            type="checkbox"
+            checked={selected}
+            disabled={disabled || !maySelect}
+            onChange={onToggle}
+            aria-label={`Select ${account.player_name} for bulk actions`}
+          />
+        </label>
+      }
+      body={{
+        type: "button",
+        className: "player-card-body roster-player-body",
+        "aria-describedby": descriptionId,
+        disabled,
+        "aria-label":
           selectionMode && maySelect
             ? `${selected ? "Deselect" : "Select"} ${account.player_name}`
-            : `Details for ${account.player_name}`
-        }
-        onClick={selectionMode && maySelect ? onToggle : onDetails}
-      >
-        <span className="player-card-top">
+            : `Details for ${account.player_name}`,
+        onClick: selectionMode && maySelect ? onToggle : onDetails,
+      }}
+      top={{
+        element: "span",
+        className: "player-card-top",
+        name: (
           <strong className="player-card-name" title={account.player_name}>
             <span className="player-card-inline-th" aria-hidden="true">
               <TownHallIcon level={account.town_hall} />
             </span>
             <span className="player-card-name-text">{account.player_name}</span>
           </strong>
+        ),
+        aside: (
           <span className="player-card-weight">
             {account.effective_weight == null ? (
               <Chip tone="danger">No weight</Chip>
@@ -90,84 +97,96 @@ export default function RosterAccountCard({
               <strong>{compactRosterWeight(account.effective_weight)}</strong>
             )}
           </span>
-        </span>
-        <PlayerCardMeta account={account} showPool={showPool} />
-        <PlayerClanStatus status={status} />
-        <span className="roster-account-columns">
-          <span className="roster-account-column-name">
-            <span className="roster-account-column-identity">
-              <TownHallIcon level={account.town_hall} />
-              <strong title={account.player_name}>{account.player_name}</strong>
+        ),
+      }}
+      rows={
+        <>
+          <PlayerCardMeta account={account} showPool={showPool} />
+          <PlayerClanStatus status={status} />
+          <span className="roster-account-columns">
+            <span className="roster-account-column-name">
+              <span className="roster-account-column-identity">
+                <TownHallIcon level={account.town_hall} />
+                <strong title={account.player_name}>
+                  {account.player_name}
+                </strong>
+              </span>
+              <small>
+                {account.tag} · TH{account.town_hall ?? "—"}
+                {account.kept && (
+                  <LockKeyhole size={13} aria-label="Locked placement" />
+                )}
+              </small>
             </span>
-            <small>
-              {account.tag} · TH{account.town_hall ?? "—"}
-              {account.kept && (
-                <LockKeyhole size={13} aria-label="Locked placement" />
+            <span className="roster-account-column-pool">
+              {account.pool === "main" ? "Main" : "Lazy"}
+              {account.roster_filler && (
+                <small className="roster-account-filler">Filler</small>
               )}
-            </small>
+            </span>
+            <span
+              className={`roster-account-column-assigned${status.inClan ? " is-in-clan" : ""}`}
+              title={status.name}
+            >
+              {status.name}
+            </span>
+            <span className="roster-account-column-now">
+              <PlayerClanStatus
+                status={status}
+                showAssigned={false}
+                currentOnly
+              />
+            </span>
+            <span className="roster-account-column-weight">
+              {account.effective_weight == null ? (
+                <Chip tone="danger">No weight</Chip>
+              ) : (
+                compactRosterWeight(account.effective_weight)
+              )}
+            </span>
           </span>
-          <span className="roster-account-column-pool">
-            {account.pool === "main" ? "Main" : "Lazy"}
-            {account.roster_filler && (
-              <small className="roster-account-filler">Filler</small>
-            )}
-          </span>
-          <span
-            className={`roster-account-column-assigned${status.inClan ? " is-in-clan" : ""}`}
-            title={status.name}
-          >
-            {status.name}
-          </span>
-          <span className="roster-account-column-now">
-            <PlayerClanStatus
-              status={status}
-              showAssigned={false}
-              currentOnly
-            />
-          </span>
-          <span className="roster-account-column-weight">
-            {account.effective_weight == null ? (
-              <Chip tone="danger">No weight</Chip>
-            ) : (
-              compactRosterWeight(account.effective_weight)
-            )}
-          </span>
-        </span>
-        {account.outside_family_and_hosts && (
-          <span className="roster-player-warning">
-            <Chip tone="warning">Outside family / hosting clans</Chip>
-          </span>
-        )}
-        {!account.assigned_clan_tag &&
-          (account.kept ||
-            (account.auto_placement_reason !== "ready" &&
-              account.auto_placement_note !==
-                "Set Clan size to 15 or 30 in Clan settings." &&
-              !!account.auto_placement_note)) && (
-            <small className="roster-player-note">
-              {account.kept
-                ? "Stays unplaced. To place it with Auto-place, unlock it in Details."
-                : account.auto_placement_note}
-            </small>
+          {account.outside_family_and_hosts && (
+            <span className="roster-player-warning">
+              <Chip tone="warning">Outside family / hosting clans</Chip>
+            </span>
           )}
-      </button>
-      <span id={descriptionId} className="roster-player-sr-only">
-        {account.tag}. Town Hall {account.town_hall ?? "unknown"}.
-        {showPool ? ` ${account.pool === "main" ? "Main" : "Lazy"} CWL.` : ""}{" "}
-        Weight {compactRosterWeight(account.effective_weight)}.{" "}
-        {status.description}
-        {account.kept ? " Locked placement." : ""}
-      </span>
-      <RosterAccountMenu
-        account={account}
-        disabled={disabled}
-        canRoster={canRoster}
-        canSignups={canSignups}
-        archived={archived}
-        onDetails={onDetails}
-        onAssign={onAssign}
-        onSignup={onSignup}
-      />
-    </article>
+          {!account.assigned_clan_tag &&
+            (account.kept ||
+              (account.auto_placement_reason !== "ready" &&
+                account.auto_placement_note !==
+                  "Set Clan size to 15 or 30 in Clan settings." &&
+                !!account.auto_placement_note)) && (
+              <small className="roster-player-note">
+                {account.kept
+                  ? "Stays unplaced. To place it with Auto-place, unlock it in Details."
+                  : account.auto_placement_note}
+              </small>
+            )}
+        </>
+      }
+      afterBody={
+        <>
+          <span id={descriptionId} className="roster-player-sr-only">
+            {account.tag}. Town Hall {account.town_hall ?? "unknown"}.
+            {showPool
+              ? ` ${account.pool === "main" ? "Main" : "Lazy"} CWL.`
+              : ""}{" "}
+            Weight {compactRosterWeight(account.effective_weight)}.{" "}
+            {status.description}
+            {account.kept ? " Locked placement." : ""}
+          </span>
+          <RosterAccountMenu
+            account={account}
+            disabled={disabled}
+            canRoster={canRoster}
+            canSignups={canSignups}
+            archived={archived}
+            onDetails={onDetails}
+            onAssign={onAssign}
+            onSignup={onSignup}
+          />
+        </>
+      }
+    />
   );
 }

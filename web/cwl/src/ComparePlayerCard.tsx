@@ -16,6 +16,7 @@ import {
 } from "./comparePresentation";
 import { compactRosterWeight } from "./rosterCompactWeight";
 import type { PublishedComparisonAccount } from "./useComparisonLocations";
+import AccountCard from "./AccountCard";
 
 type Props = {
   account: RosterAccount;
@@ -53,25 +54,30 @@ export default function ComparePlayerCard({
   const outsideFamily = !!record?.current_clan_tag && record.outside_family;
   const note = comparisonPublishNote(account, published);
   return (
-    <article
+    <AccountCard
+      variant="structural"
       className={`player-card player-card-compact compare-account compare-account-${location.state}`}
-    >
-      <button
-        type="button"
-        className="player-card-body compare-player-body"
-        aria-label={`Details for ${account.player_name}`}
-        aria-describedby={`${id}-weight ${id}-meta ${id}-location${zone?.offsetMinutes != null ? ` ${id}-timezone` : ""}${outsideRange || outsideFamily ? ` ${id}-tags` : ""}${note ? ` ${id}-note` : ""}`}
-        disabled={busy}
-        onClick={onDetails}
-      >
-        <span className="player-card-top compare-player-top">
+      body={{
+        type: "button",
+        className: "player-card-body compare-player-body",
+        "aria-label": `Details for ${account.player_name}`,
+        "aria-describedby": `${id}-weight ${id}-meta ${id}-location${zone?.offsetMinutes != null ? ` ${id}-timezone` : ""}${outsideRange || outsideFamily ? ` ${id}-tags` : ""}${note ? ` ${id}-note` : ""}`,
+        disabled: busy,
+        onClick: onDetails,
+      }}
+      top={{
+        element: "span",
+        className: "player-card-top compare-player-top",
+        name: (
           <strong className="player-card-name" title={account.player_name}>
             <span className="player-card-inline-th" aria-hidden="true">
               <TownHallIcon level={account.town_hall} />
             </span>
             <span className="player-card-name-text">{account.player_name}</span>
           </strong>
-          {account.effective_weight === null ? (
+        ),
+        aside:
+          account.effective_weight === null ? (
             <span id={`${id}-weight`} className="compare-tag is-danger">
               No weight
             </span>
@@ -82,58 +88,67 @@ export default function ComparePlayerCard({
             >
               {compactRosterWeight(account.effective_weight)}
             </strong>
-          )}
-        </span>
-        <span className="compare-player-meta-line">
-          <PlayerCardMeta
-            account={account}
-            id={`${id}-meta`}
-            className="compare-player-meta"
+          ),
+      }}
+      rows={
+        <>
+          <span className="compare-player-meta-line">
+            <PlayerCardMeta
+              account={account}
+              id={`${id}-meta`}
+              className="compare-player-meta"
+            />
+            {zone?.offsetMinutes != null && (
+              <span
+                id={`${id}-timezone`}
+                className="compare-time-zone"
+                aria-label={`Time zone ${zone.label}`}
+              >
+                {zone.label}
+              </span>
+            )}
+          </span>
+          <PlayerClanStatus
+            id={`${id}-location`}
+            className="compare-player-location"
+            status={status}
           />
-          {zone?.offsetMinutes != null && (
-            <span
-              id={`${id}-timezone`}
-              className="compare-time-zone"
-              aria-label={`Time zone ${zone.label}`}
-            >
-              {zone.label}
+          {(outsideRange || outsideFamily) && (
+            <span id={`${id}-tags`} className="compare-player-tags">
+              {outsideRange && (
+                <>
+                  <span className="sr-only">, </span>
+                  <span className="compare-tag is-warning">
+                    Outside weight range
+                  </span>
+                </>
+              )}
+              {outsideFamily && (
+                <>
+                  <span className="sr-only">, </span>
+                  <span className="compare-tag is-warning">Outside family</span>
+                </>
+              )}
             </span>
           )}
-        </span>
-        <PlayerClanStatus
-          id={`${id}-location`}
-          className="compare-player-location"
-          status={status}
+          {note && (
+            <span
+              id={`${id}-note`}
+              className="compare-publish-note"
+              title={note}
+            >
+              {note}
+            </span>
+          )}
+        </>
+      }
+      afterBody={
+        <RosterAccountMenu
+          account={account}
+          disabled={busy}
+          onDetails={onDetails}
         />
-        {(outsideRange || outsideFamily) && (
-          <span id={`${id}-tags`} className="compare-player-tags">
-            {outsideRange && (
-              <>
-                <span className="sr-only">, </span>
-                <span className="compare-tag is-warning">
-                  Outside weight range
-                </span>
-              </>
-            )}
-            {outsideFamily && (
-              <>
-                <span className="sr-only">, </span>
-                <span className="compare-tag is-warning">Outside family</span>
-              </>
-            )}
-          </span>
-        )}
-        {note && (
-          <span id={`${id}-note`} className="compare-publish-note" title={note}>
-            {note}
-          </span>
-        )}
-      </button>
-      <RosterAccountMenu
-        account={account}
-        disabled={busy}
-        onDetails={onDetails}
-      />
-    </article>
+      }
+    />
   );
 }
