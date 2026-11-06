@@ -261,7 +261,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: #f1d378;
+  color: var(--wu-text);
   text-decoration: underline;
   font-size: var(--wu-text-sm);
 }

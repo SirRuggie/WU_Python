@@ -33,7 +33,7 @@
 }
 .filter-picker summary span {
   font-size: var(--wu-text-sm);
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
 }
 .filter-picker-options {
   padding: var(--wu-space-2) var(--wu-space-3);
@@ -69,7 +69,7 @@
 }
 
 .filter-picker summary:focus-visible {
-  outline: 3px solid var(--roster-focus);
+  outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
 .filter-picker summary[aria-disabled="true"] {

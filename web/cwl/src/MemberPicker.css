@@ -55,7 +55,7 @@
 }
 .member-options label:focus-within {
   outline: 2px solid var(--wu-focus);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 .member-options label > span:last-child,
 .member-selected-row > div {
@@ -123,4 +123,10 @@
 .member-picker strong {
   color: var(--wu-text);
   font-size: var(--wu-text-sm);
+}
+
+/* The selected chip stays gold; an ordinary avatar is decorative. */
+.member-picker img {
+  background: var(--wu-surface-raised);
+  border-color: var(--wu-text-muted);
 }

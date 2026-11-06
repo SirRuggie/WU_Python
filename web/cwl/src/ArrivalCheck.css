@@ -72,8 +72,8 @@
   font-weight: var(--wu-weight-regular);
 }
 .declaration-clan-toggle:focus-visible {
-  outline: 2px solid white;
-  outline-offset: -3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .declaration-clan-content {
   display: grid;
@@ -178,7 +178,8 @@
 }
 
 .arrival-check a {
-  color: var(--roster-gold);
+  color: var(--wu-text);
+  text-decoration: underline;
 }
 @media (max-width: 767px) {
   .arrival-check {

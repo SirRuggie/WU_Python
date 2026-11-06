@@ -51,8 +51,8 @@
   padding: var(--wu-space-1) var(--wu-space-2);
   border: 1px solid var(--roster-attention-border);
   border-radius: 8px;
-  color: var(--roster-gold);
-  text-decoration: none;
+  color: var(--wu-text);
+  text-decoration: underline;
   font-size: var(--wu-text-sm);
   min-height: 44px;
 }
@@ -123,14 +123,14 @@
 }
 .member-clan-row > span {
   flex: none;
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-md);
 }
 .member-awaiting-card .member-clan-head {
   background: var(--roster-attention-surface);
 }
 .member-awaiting-card .member-clan-head h2 {
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
 }
 .member-awaiting-note {
   font-size: var(--wu-text-xs);
@@ -201,7 +201,7 @@
 }
 .member-status-badge {
   background: var(--roster-attention-border);
-  color: var(--roster-gold);
+  color: var(--wu-text);
   white-space: nowrap;
 }
 .member-compact-status:not(.is-provisional) .member-status-badge {
@@ -300,7 +300,7 @@
   max-width: 100%;
   margin: 0;
   padding: var(--wu-space-2) var(--wu-space-4);
-  border: 2px solid var(--roster-gold);
+  border: 2px solid var(--wu-text-muted);
   border-radius: 12px;
   background: var(--roster-selection-surface);
   color: var(--roster-text);
@@ -313,12 +313,12 @@
 }
 .member-assignments .member-clan-head a.member-open-clan:hover {
   background: var(--roster-selection-surface);
-  border-color: var(--roster-gold);
+  border-color: var(--wu-text-muted);
   color: var(--roster-text);
 }
 .member-assignments .member-clan-head a.member-open-clan:focus-visible {
-  outline: 3px solid var(--roster-text);
-  outline-offset: 4px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
   background: var(--roster-selection-surface);
   color: var(--roster-text);
 }
@@ -371,13 +371,13 @@
 }
 
 .member-unpublished-status a {
-  color: var(--roster-gold);
+  color: var(--wu-text);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .member-unpublished-status a:focus-visible {
-  outline: 2px solid var(--roster-gold);
-  outline-offset: 4px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 @media (max-width: 650px) {
   .member-assignments .member-status-line > div {

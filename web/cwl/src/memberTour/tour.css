@@ -19,8 +19,8 @@
   background: var(--wu-surface-raised);
 }
 .tour-launcher:focus-visible {
-  outline: 2px solid #f4cd64;
-  outline-offset: -2px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .shell .sidebar-foot > .tour-launcher {
   margin: 0;
@@ -31,7 +31,7 @@
   background: var(--wu-surface-raised);
 }
 .shell .sidebar-foot > .tour-launcher:focus-visible {
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 .member-tour {
   position: fixed;
@@ -119,14 +119,14 @@
   border-radius: 999px;
   padding: var(--wu-space-2) var(--wu-space-3);
   border: 1px solid #6e6657;
-  background: var(--wu-accent-soft);
+  background: var(--wu-surface-raised);
   color: #fff3d6;
 }
 .member-tour button:focus-visible,
 .member-tour a:focus-visible,
 .member-tour input:focus-visible {
-  outline: 2px solid white;
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .member-tour button:disabled {
   cursor: default;
@@ -388,4 +388,8 @@
   .shell.tour-active .workspace main {
     padding-bottom: 520px;
   }
+}
+.tour-card h2:focus-visible {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }

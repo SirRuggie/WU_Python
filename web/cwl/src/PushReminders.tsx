@@ -1,119 +1,125 @@
-import DashboardIcon from './DashboardIcon'
-import { useEffect, useRef, useState } from 'react'
-import { api, type Account } from './api'
+import DashboardIcon from "./DashboardIcon";
+import { useEffect, useRef, useState } from "react";
+import { api, type Account } from "./api";
 import {
   PushPermissionError,
   getBrowserSubscription,
   enableBrowserPush,
   disableBrowserPush,
   subscriptionId,
-} from './webPush'
-import usePushPermission from './usePushPermission'
-import PushPermissionHelp from './PushPermissionHelp'
-import TownHallIcon from './TownHallIcon'
-import './PushReminders.css'
+} from "./webPush";
+import usePushPermission from "./usePushPermission";
+import PushPermissionHelp from "./PushPermissionHelp";
+import TownHallIcon from "./TownHallIcon";
+import "./PushReminders.css";
 export type ReminderSubscription = {
-  id: string
-  enabled: boolean
-  tags: string[]
-  war: boolean
-  cwl: boolean
-  offsets: number[]
-  updated_at?: number
-}
+  id: string;
+  enabled: boolean;
+  tags: string[];
+  war: boolean;
+  cwl: boolean;
+  offsets: number[];
+  updated_at?: number;
+};
 type PushStatus = {
-  available: boolean
-  public_key: string
-  subscriptions: ReminderSubscription[]
-}
+  available: boolean;
+  public_key: string;
+  subscriptions: ReminderSubscription[];
+};
 type InstallEvent = Event & {
-  prompt: () => Promise<void>
-  userChoice: Promise<{ outcome: string }>
-}
-export default function PushReminders({ accounts, accountsComplete = true }: { accounts: Account[]; accountsComplete?: boolean }) {
-  const { support, refreshPermission } = usePushPermission()
-  const inFlight = useRef(false)
-  const mounted = useRef(true)
-  const edited = useRef(false)
-  const loadSequence = useRef(0)
-  const [permissionIssue, setPermissionIssue] = useState(false)
-  const [status, setStatus] = useState<PushStatus | null>(null)
-  const [current, setCurrent] = useState<ReminderSubscription | null>(null)
-  const [tags, setTags] = useState<string[]>([])
-  const [war, setWar] = useState(true)
-  const [cwl, setCwl] = useState(true)
-  const [offsets, setOffsets] = useState<number[]>([120])
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: string }>;
+};
+export default function PushReminders({
+  accounts,
+  accountsComplete = true,
+}: {
+  accounts: Account[];
+  accountsComplete?: boolean;
+}) {
+  const { support, refreshPermission } = usePushPermission();
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+  const edited = useRef(false);
+  const loadSequence = useRef(0);
+  const [permissionIssue, setPermissionIssue] = useState(false);
+  const [status, setStatus] = useState<PushStatus | null>(null);
+  const [current, setCurrent] = useState<ReminderSubscription | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
+  const [war, setWar] = useState(true);
+  const [cwl, setCwl] = useState(true);
+  const [offsets, setOffsets] = useState<number[]>([120]);
   const validTimes =
     offsets.length > 0 &&
     offsets.every((value) => value >= 1 && value <= 1440) &&
-    new Set(offsets).size === offsets.length
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [search, setSearch] = useState('')
-  const [install, setInstall] = useState<InstallEvent | null>(null)
+    new Set(offsets).size === offsets.length;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [search, setSearch] = useState("");
+  const [install, setInstall] = useState<InstallEvent | null>(null);
   const load = async (restoreChoices = false) => {
-    const turn = ++loadSequence.current
-    const result = await api<PushStatus>('/push')
-    const browser = await getBrowserSubscription()
-    const id = browser ? await subscriptionId(browser) : null
-    if (!mounted.current || turn !== loadSequence.current) return
-    const saved = result.subscriptions.find((item) => item.id === id) || null
-    setStatus(result)
-    setCurrent(saved)
+    const turn = ++loadSequence.current;
+    const result = await api<PushStatus>("/push");
+    const browser = await getBrowserSubscription();
+    const id = browser ? await subscriptionId(browser) : null;
+    if (!mounted.current || turn !== loadSequence.current) return;
+    const saved = result.subscriptions.find((item) => item.id === id) || null;
+    setStatus(result);
+    setCurrent(saved);
     if (restoreChoices && !edited.current && saved) {
-      setTags(saved.tags)
-      setWar(saved.war)
-      setCwl(saved.cwl)
-      setOffsets(saved.offsets)
+      setTags(saved.tags);
+      setWar(saved.war);
+      setCwl(saved.cwl);
+      setOffsets(saved.offsets);
     }
-  }
+  };
   useEffect(() => {
-    mounted.current = true
+    mounted.current = true;
     void load(true).catch((cause) => {
       if (mounted.current)
         setError(
           cause instanceof Error
             ? cause.message
-            : 'Reminder settings unavailable',
-        )
-    })
+            : "Reminder settings unavailable",
+        );
+    });
     const capture = (event: Event) => {
-      event.preventDefault()
-      setInstall(event as InstallEvent)
-    }
-    window.addEventListener('beforeinstallprompt', capture)
+      event.preventDefault();
+      setInstall(event as InstallEvent);
+    };
+    window.addEventListener("beforeinstallprompt", capture);
     return () => {
-      mounted.current = false
-      ++loadSequence.current
-      window.removeEventListener('beforeinstallprompt', capture)
-    }
-  }, [])
+      mounted.current = false;
+      ++loadSequence.current;
+      window.removeEventListener("beforeinstallprompt", capture);
+    };
+  }, []);
   const act = async (work: () => Promise<void>) => {
-    if (inFlight.current) return
-    inFlight.current = true
-    ++loadSequence.current // An earlier settings read must not overwrite this action.
-    setBusy(true)
-    setError('')
-    setNotice('')
-    setPermissionIssue(false)
+    if (inFlight.current) return;
+    inFlight.current = true;
+    ++loadSequence.current; // An earlier settings read must not overwrite this action.
+    setBusy(true);
+    setError("");
+    setNotice("");
+    setPermissionIssue(false);
     try {
-      await work()
+      await work();
     } catch (cause) {
       if (mounted.current) {
-        setPermissionIssue(cause instanceof PushPermissionError)
+        setPermissionIssue(cause instanceof PushPermissionError);
         setError(
-          cause instanceof Error ? cause.message : 'Request failed. Try again.',
-        )
+          cause instanceof Error ? cause.message : "Request failed. Try again.",
+        );
       }
     } finally {
-      inFlight.current = false
+      inFlight.current = false;
       if (mounted.current) {
-        setBusy(false)
-        refreshPermission()
+        setBusy(false);
+        refreshPermission();
       }
     }
-  }
+  };
   const enable = () => {
     if (
       inFlight.current ||
@@ -122,14 +128,14 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
       !validTimes ||
       (!war && !cwl)
     )
-      return
+      return;
     // act invokes work synchronously: permission is requested on this click,
     // before any fetch or worker registration can consume user activation.
     void act(async () => {
-      const subscription = await enableBrowserPush(status.public_key)
+      const subscription = await enableBrowserPush(status.public_key);
       const saved = await api<ReminderSubscription>(
-        '/push/subscriptions',
-        'PUT',
+        "/push/subscriptions",
+        "PUT",
         {
           subscription: subscription.toJSON(),
           enabled: true,
@@ -138,9 +144,9 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
           cwl,
           offsets,
         },
-      )
-      if (!mounted.current) return
-      setCurrent(saved)
+      );
+      if (!mounted.current) return;
+      setCurrent(saved);
       setStatus((value) =>
         value
           ? {
@@ -151,32 +157,32 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
               ],
             }
           : value,
-      )
-      setNotice('Reminder settings saved for this device.')
-    })
-  }
+      );
+      setNotice("Reminder settings saved for this device.");
+    });
+  };
   useEffect(() => {
-    if (support.permission === 'granted' && permissionIssue) {
-      setPermissionIssue(false)
-      setError('')
+    if (support.permission === "granted" && permissionIssue) {
+      setPermissionIssue(false);
+      setError("");
       setNotice(
-        'Browser permission is allowed. Select Enable notifications to finish setup with your chosen accounts and times.',
-      )
+        "Browser permission is allowed. Select Enable notifications to finish setup with your chosen accounts and times.",
+      );
     }
-  }, [support.permission, permissionIssue])
+  }, [support.permission, permissionIssue]);
   const recheckPermission = () => {
-    refreshPermission()
-    setError('')
-    setPermissionIssue(false)
+    refreshPermission();
+    setError("");
+    setPermissionIssue(false);
     setNotice(
-      'Permission checked. If allowed, select Enable notifications to finish setup or save your choices.',
-    )
-  }
+      "Permission checked. If allowed, select Enable notifications to finish setup or save your choices.",
+    );
+  };
   const visible = accounts.filter((account) =>
-    `${account.name} ${account.tag} ${account.current_clan_name || ''}`
+    `${account.name} ${account.tag} ${account.current_clan_name || ""}`
       .toLowerCase()
       .includes(search.trim().toLowerCase()),
-  )
+  );
   const dirty =
     !!current &&
     (JSON.stringify([...tags].sort()) !==
@@ -184,7 +190,7 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
       war !== current.war ||
       cwl !== current.cwl ||
       JSON.stringify([...offsets].sort()) !==
-        JSON.stringify([...current.offsets].sort()))
+        JSON.stringify([...current.offsets].sort()));
   return (
     <details className="card push-reminders">
       <summary>
@@ -192,17 +198,17 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
           <DashboardIcon name="bell" /> Notifications
         </span>
         <span className="badge">
-          {current?.enabled && support.permission === 'granted'
-            ? 'On for this device'
-            : support.permission === 'denied'
-              ? 'Permission blocked'
-              : 'Off for this device'}
+          {current?.enabled && support.permission === "granted"
+            ? "On for this device"
+            : support.permission === "denied"
+              ? "Permission blocked"
+              : "Off for this device"}
         </span>
       </summary>
       <p>Reminders for your accounts with War or CWL attacks left.</p>
       {!status && !error && <p role="status">Loading reminder settings…</p>}
       {!support.supported && <p className="notice">{support.reason}</p>}
-      {support.permission === 'denied' && (
+      {support.permission === "denied" && (
         <p className="notice">
           Notifications are blocked on this device. Open Notification help below
           for the steps to allow them.
@@ -218,7 +224,7 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
           <p>{error}</p>
           {permissionIssue ? (
             <>
-              {support.permission !== 'denied' && (
+              {support.permission !== "denied" && (
                 <button disabled={busy} onClick={enable}>
                   Try permission again
                 </button>
@@ -239,10 +245,10 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
       <fieldset
         disabled={busy}
         onChange={() => {
-          edited.current = true
+          edited.current = true;
         }}
         onClick={() => {
-          edited.current = true
+          edited.current = true;
         }}
       >
         <legend>Remind me about</legend>
@@ -268,10 +274,10 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
       <fieldset
         disabled={busy}
         onChange={() => {
-          edited.current = true
+          edited.current = true;
         }}
         onClick={() => {
-          edited.current = true
+          edited.current = true;
         }}
       >
         <legend>Remind me before war ends</legend>
@@ -288,14 +294,14 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
                   aria-label={`Reminder ${index + 1} hours`}
                   value={Math.floor(value / 60)}
                   onChange={(event) => {
-                    const hours = Number(event.target.value)
+                    const hours = Number(event.target.value);
                     setOffsets((current) =>
                       current.map((item, i) =>
                         i === index
                           ? hours * 60 + (hours === 24 ? 0 : item % 60)
                           : item,
                       ),
-                    )
+                    );
                   }}
                 >
                   {Array.from({ length: 25 }, (_, hour) => (
@@ -324,7 +330,7 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
                 >
                   {Array.from({ length: 60 }, (_, minute) => (
                     <option key={minute} value={minute}>
-                      {minute.toString().padStart(2, '0')}
+                      {minute.toString().padStart(2, "0")}
                     </option>
                   ))}
                 </select>
@@ -370,10 +376,10 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
         <fieldset
           disabled={busy}
           onChange={() => {
-            edited.current = true
+            edited.current = true;
           }}
           onClick={() => {
-            edited.current = true
+            edited.current = true;
           }}
         >
           <legend>Accounts to include</legend>
@@ -398,7 +404,11 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
               Clear
             </button>
           </div>
-          {!accountsComplete && <p>Some accounts have not loaded. Your saved selections are kept.</p>}
+          {!accountsComplete && (
+            <p>
+              Some accounts have not loaded. Your saved selections are kept.
+            </p>
+          )}
           <div className="push-accounts">
             {visible.map((account) => (
               <label key={account.tag}>
@@ -417,8 +427,8 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
                 <span>
                   <strong>{account.name}</strong>
                   <small>
-                    {account.tag} ·{' '}
-                    {account.current_clan_name || 'No current clan'}
+                    {account.tag} ·{" "}
+                    {account.current_clan_name || "No current clan"}
                   </small>
                 </span>
               </label>
@@ -439,14 +449,14 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
           Select at least one account to enable reminders.
         </p>
       )}
-      <div className="push-actions">
+      <div className="push-actions" aria-busy={busy}>
         <button
-          className="primary"
+          className={busy ? "primary working-status" : "primary"}
           disabled={
             busy ||
             !status?.available ||
             !support.supported ||
-            support.permission === 'denied' ||
+            support.permission === "denied" ||
             !tags.length ||
             !validTimes ||
             (!war && !cwl)
@@ -454,21 +464,21 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
           onClick={enable}
         >
           {busy
-            ? 'Working…'
-            : current?.enabled && support.permission === 'granted'
-              ? 'Save changes'
-              : 'Enable notifications'}
+            ? "Working…"
+            : current?.enabled && support.permission === "granted"
+              ? "Save changes"
+              : "Enable notifications"}
         </button>
         {current?.enabled && (
           <button
             disabled={busy}
             onClick={() =>
               void act(async () => {
-                await api(`/push/subscriptions/${current.id}`, 'DELETE')
-                await disableBrowserPush()
-                setCurrent(null)
-                await load()
-                setNotice('Notifications are off for this device.')
+                await api(`/push/subscriptions/${current.id}`, "DELETE");
+                await disableBrowserPush();
+                setCurrent(null);
+                await load();
+                setNotice("Notifications are off for this device.");
               })
             }
           >
@@ -480,15 +490,15 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
       <details className="push-tools">
         <summary>Notification help &amp; test</summary>
         <p className="small">
-          Permission on this device:{' '}
+          Permission on this device:{" "}
           <strong>
-            {support.permission === 'granted'
-              ? 'Allowed'
-              : support.permission === 'denied'
-                ? 'Blocked'
-                : support.permission === 'default'
-                  ? 'Not allowed yet'
-                  : 'Unavailable'}
+            {support.permission === "granted"
+              ? "Allowed"
+              : support.permission === "denied"
+                ? "Blocked"
+                : support.permission === "default"
+                  ? "Not allowed yet"
+                  : "Unavailable"}
           </strong>
         </p>
         <div className="push-actions">
@@ -498,17 +508,17 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
           {current?.enabled && (
             <>
               <button
-                disabled={busy || dirty || support.permission !== 'granted'}
+                disabled={busy || dirty || support.permission !== "granted"}
                 onClick={() =>
                   void act(async () => {
                     await api(
                       `/push/subscriptions/${current.id}/test`,
-                      'POST',
+                      "POST",
                       {},
-                    )
+                    );
                     setNotice(
-                      'Test notification accepted by the push service. Check this device’s notifications.',
-                    )
+                      "Test notification accepted by the push service. Check this device’s notifications.",
+                    );
                   })
                 }
               >
@@ -521,7 +531,7 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
         <PushPermissionHelp
           expanded={
             permissionIssue ||
-            support.permission === 'denied' ||
+            support.permission === "denied" ||
             !support.supported
           }
         />
@@ -555,20 +565,20 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
               .map((item, index) => (
                 <div className="push-device" key={item.id}>
                   <span>
-                    Device {index + 1} · {item.enabled ? 'On' : 'Off'}
+                    Device {index + 1} · {item.enabled ? "On" : "Off"}
                     <small>
                       {item.updated_at
                         ? `Updated ${new Date(item.updated_at * 1000).toLocaleString()}`
-                        : ''}
+                        : ""}
                     </small>
                   </span>
                   <button
                     disabled={busy}
                     onClick={() =>
                       void act(async () => {
-                        await api(`/push/subscriptions/${item.id}`, 'DELETE')
-                        await load()
-                        setNotice('Reminders removed for that device.')
+                        await api(`/push/subscriptions/${item.id}`, "DELETE");
+                        await load();
+                        setNotice("Reminders removed for that device.");
                       })
                     }
                   >
@@ -585,5 +595,5 @@ export default function PushReminders({ accounts, accountsComplete = true }: { a
         </p>
       </details>
     </details>
-  )
+  );
 }

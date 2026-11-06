@@ -1,4 +1,4 @@
-import { participationSummary } from './participation';
+import { participationSummary } from "./participation";
 import "./rosterUi/tokens.css";
 import CwlPageHeader from "./CwlPageHeader";
 import useConfirmDialog from "./useConfirmDialog";
@@ -273,8 +273,11 @@ export default function BonusWorkspace({
   );
   const allowance = data?.allowances?.[clanTag];
   const statusSummary = participationSummary(
-    data?.accounts.filter(account =>
-      account.pool === pool && (!clanTag || account.assigned_clan_tag === clanTag)) || [],
+    data?.accounts.filter(
+      (account) =>
+        account.pool === pool &&
+        (!clanTag || account.assigned_clan_tag === clanTag),
+    ) || [],
     data?.sync,
   );
   const requestedSlots = manualCount ? Number(slots) : null;
@@ -562,7 +565,11 @@ export default function BonusWorkspace({
         </div>
       )}
       {notice && <p role="status">{notice}</p>}
-      {busy && <p role="status">Working…</p>}
+      {busy && (
+        <p className="working-status" role="status">
+          Working…
+        </p>
+      )}
       {!seasonId && <p>Select a season to begin.</p>}
       {data && (
         <>
@@ -689,7 +696,7 @@ export default function BonusWorkspace({
           )}
 
           {selectedClan && !draw && (
-            <section className="bonus-flow">
+            <section className="bonus-flow" aria-busy={busy}>
               <div className="bonus-section-heading">
                 <h2>{selectedClan.name}</h2>
               </div>
@@ -954,7 +961,9 @@ export default function BonusWorkspace({
                   <details className="bonus-secondary">
                     <summary>Eligibility rules</summary>
                     <p>
-                      If an account got a bonus in 3 seasons in a row, it cannot enter the next season. The dashboard has no record of bonuses from before.
+                      If an account got a bonus in 3 seasons in a row, it cannot
+                      enter the next season. The dashboard has no record of
+                      bonuses from before.
                     </p>
                   </details>
                   {clanAccounts.some(
@@ -1045,7 +1054,10 @@ export default function BonusWorkspace({
                   >
                     <summary>FWA Rep odds settings</summary>
                     <p>
-                      Members with this Discord role get 2 chances in Lazy draws. Each account can win only one time. With 2 chances, an account does not always have twice the chance to win when the draw picks more than one winner.
+                      Members with this Discord role get 2 chances in Lazy
+                      draws. Each account can win only one time. With 2 chances,
+                      an account does not always have twice the chance to win
+                      when the draw picks more than one winner.
                     </p>
                     {rolesLoading && <p role="status">Loading roles…</p>}
                     {rolesError && (
@@ -1227,7 +1239,7 @@ export default function BonusWorkspace({
           )}
 
           {draw && (
-            <section className="bonus-flow">
+            <section className="bonus-flow" aria-busy={busy}>
               <div className="bonus-section-heading">
                 <div>
                   <h2 ref={drawHeading} tabIndex={-1}>
@@ -1260,7 +1272,8 @@ export default function BonusWorkspace({
                   {draw.snapshot.allowance_source === "automatic"
                     ? "Calculated"
                     : "Staff-confirmed"}{" "}
-                  allowance · Saved results do not change if the rules change later.
+                  allowance · Saved results do not change if the rules change
+                  later.
                 </p>
                 <AccountList
                   accounts={draw.snapshot.eligible}
@@ -1292,7 +1305,8 @@ export default function BonusWorkspace({
                 <details className="bonus-secondary">
                   <summary>Cancel this draw</summary>
                   <p>
-                    Cancel only if the results or setup are wrong. The winners and the reason stay in history.
+                    Cancel only if the results or setup are wrong. The winners
+                    and the reason stay in history.
                   </p>
                   <label>
                     Reason

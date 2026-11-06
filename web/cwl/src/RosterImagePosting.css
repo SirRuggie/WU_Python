@@ -43,10 +43,11 @@
   height: auto;
 }
 .roster-image-posting a {
-  color: var(--roster-gold);
+  color: var(--wu-text);
   display: inline-flex;
   min-height: 44px;
   align-items: center;
+  text-decoration: underline;
 }
 .roster-image-posting button {
   justify-self: start;

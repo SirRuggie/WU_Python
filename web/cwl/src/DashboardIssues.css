@@ -68,7 +68,7 @@
   flex: 0 0 7px;
   height: 7px;
   border-radius: 50%;
-  background: #f49898;
+  background: var(--wu-danger);
 }
 .issue-dot-warning {
   background: #efd079;

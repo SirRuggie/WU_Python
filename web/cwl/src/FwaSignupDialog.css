@@ -9,7 +9,7 @@
   border-radius: 8px;
 }
 .fwa-signup-slogan {
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
   font-weight: var(--wu-weight-bold);
 }
 

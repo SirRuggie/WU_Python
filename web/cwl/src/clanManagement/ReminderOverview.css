@@ -126,7 +126,7 @@
   background: var(--wu-warning-surface);
 }
 .overview-state-tracking {
-  border-color: #90ee90;
+  border-color: var(--wu-success-border);
   color: #b9f1da;
   background: var(--wu-success-surface);
 }
@@ -160,8 +160,8 @@
   border: 0;
 }
 .reminder-overview :is(button, input, select):focus-visible {
-  outline: 2px solid #efb952;
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 @media (max-width: 850px) {
   .overview-heading,

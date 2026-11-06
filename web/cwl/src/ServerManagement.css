@@ -61,7 +61,7 @@
   padding: var(--wu-space-4);
   text-align: left;
   background: var(--wu-surface-soft);
-  border: 1px solid #495563;
+  border: 1px solid var(--wu-info-border);
   min-height: 96px;
   white-space: normal;
 }
@@ -88,8 +88,8 @@
 .server-management input:focus-visible,
 .server-management select:focus-visible,
 .server-management textarea:focus-visible {
-  outline: 3px solid var(--wu-focus);
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .manage-fields {
   display: grid;
@@ -186,7 +186,7 @@
 .manage-preview,
 .manage-action {
   padding: var(--wu-space-4);
-  border: 1px solid #495563;
+  border: 1px solid var(--wu-info-border);
   background: var(--wu-surface);
   border-radius: 12px;
   margin-top: var(--wu-space-4);
@@ -261,7 +261,7 @@
 .manage-option-checks {
   max-height: 220px;
   overflow: auto;
-  border: 1px solid #495563;
+  border: 1px solid var(--wu-info-border);
   border-radius: 8px;
   padding: var(--wu-space-2);
 }
@@ -283,7 +283,7 @@
 .manage-result {
   padding: var(--wu-space-4);
   background: var(--wu-success-surface);
-  border: 1px solid #90ee90;
+  border: 1px solid var(--wu-success-border);
   border-radius: 12px;
   margin: var(--wu-space-4) 0;
 }
@@ -380,6 +380,6 @@
 }
 
 .band-status .manage-more-options > summary:focus-visible {
-  outline: 3px solid var(--wu-focus);
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }

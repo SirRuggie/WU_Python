@@ -79,7 +79,7 @@
   min-height: 44px;
 }
 .action-panel-footer :focus-visible {
-  outline: 3px solid #f0c64d;
+  outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
 .action-panel-side {

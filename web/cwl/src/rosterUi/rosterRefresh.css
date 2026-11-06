@@ -15,7 +15,7 @@
   border-radius: var(--roster-radius-pill);
 }
 .roster-ui :focus-visible {
-  outline: 3px solid var(--roster-focus);
+  outline: 3px solid var(--wu-focus);
   outline-offset: 3px;
 }
 .roster-ui.action-panel {

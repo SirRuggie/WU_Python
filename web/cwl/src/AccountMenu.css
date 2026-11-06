@@ -28,7 +28,7 @@
 
 .account-menu-trigger:focus-visible,
 .account-menu-trigger[data-focus-visible] {
-  outline: 2px solid #f4cd64;
+  outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
 
@@ -214,4 +214,9 @@
   .account-menu-avatar-trigger {
     display: inline-flex;
   }
+}
+
+.account-menu-signout[data-focus-visible] {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }

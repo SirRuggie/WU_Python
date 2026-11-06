@@ -58,11 +58,19 @@
 }
 .compare-pan-frame.has-left::before {
   left: 0;
-  background: linear-gradient(to right, #111113ee, transparent);
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--wu-bg) 93.33333333333333%, transparent),
+    transparent
+  );
 }
 .compare-pan-frame.has-right::after {
   right: 0;
-  background: linear-gradient(to left, #111113ee, transparent);
+  background: linear-gradient(
+    to left,
+    color-mix(in srgb, var(--wu-bg) 93.33333333333333%, transparent),
+    transparent
+  );
 }
 .compare-workspace .compare-pan {
   display: grid;
@@ -72,7 +80,7 @@
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
   padding-bottom: 12px;
-  scrollbar-color: var(--wu-text-muted) #202024;
+  scrollbar-color: var(--wu-text-muted) var(--wu-surface-raised);
   scrollbar-width: auto;
 }
 .compare-pan:focus-visible {

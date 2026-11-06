@@ -292,10 +292,10 @@
 }
 .clan-management h2:focus-visible {
   outline: 2px solid var(--wu-focus);
-  outline-offset: 4px;
+  outline-offset: 2px;
 }
 .clan-management [role="tab"]:focus-visible {
-  outline: 2px solid #e6a640;
+  outline: 2px solid var(--wu-focus);
   outline-offset: 3px;
 }
 
@@ -336,9 +336,10 @@
 }
 
 .clan-tabs[aria-label="Used by"] a {
-  color: var(--wu-accent);
+  color: var(--wu-text);
   display: inline-flex;
   align-items: center;
   min-height: 44px;
   padding: var(--wu-space-2) var(--wu-space-2);
+  text-decoration: underline;
 }

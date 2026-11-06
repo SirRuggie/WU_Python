@@ -47,7 +47,7 @@
 }
 .owner-prank-card.farewell {
   border-color: #f4b9d6;
-  background: linear-gradient(145deg, #38263b, #211c28 65%);
+  background: linear-gradient(145deg, #38263b, var(--wu-surface-raised) 65%);
   box-shadow:
     0 16px 60px #000a,
     0 0 30px #f0a9ca40;
@@ -114,7 +114,7 @@
   border: 1px solid #6e6657;
   border-radius: 999px;
   padding: var(--wu-space-2) var(--wu-space-3);
-  background: var(--wu-accent-soft);
+  background: var(--wu-surface-raised);
   color: #fff3d6;
   font: inherit;
   cursor: pointer;
@@ -131,8 +131,8 @@
   opacity: 0.55;
 }
 .owner-prank-card button:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .owner-prank-card .owner-prank-close {
   position: absolute;

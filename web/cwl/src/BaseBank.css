@@ -102,8 +102,8 @@
 .base-bank button:focus-visible,
 .base-bank a:focus-visible,
 .base-bank summary:focus-visible {
-  outline: 3px solid #e8b72c;
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 @media (max-width: 650px) {
   .base-bank-grid {

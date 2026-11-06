@@ -8,7 +8,7 @@
   margin: 0;
   padding: 0 10px;
   border: 1px solid var(--wu-warning-border);
-  border-left: 4px solid var(--roster-gold);
+  border-left: 4px solid var(--wu-text-muted);
   border-radius: 14px;
   background: var(--roster-card);
   color: var(--wu-text-muted);

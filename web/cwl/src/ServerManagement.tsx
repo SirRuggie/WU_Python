@@ -1037,7 +1037,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
               {document.readonly && operationsWorkspace ? (
                 <BandStatusSummary fields={document.fields} />
               ) : (
-                <fieldset disabled={busy || document.readonly}>
+                <fieldset disabled={busy || document.readonly} aria-busy={busy}>
                   <legend className="manage-sr-only">
                     {selected.label} settings
                   </legend>
@@ -1119,7 +1119,10 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
               )}
               {!document.readonly && !document.action_only && (
                 <div className="manage-save">
-                  <span aria-live="polite">
+                  <span
+                    className={busy ? "working-status" : undefined}
+                    aria-live="polite"
+                  >
                     {busy
                       ? "Working…"
                       : dirty

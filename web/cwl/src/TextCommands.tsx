@@ -451,6 +451,7 @@ export default function TextCommands({
             <div className={`text-command-editor mobile-${pane}`}>
               <form
                 className="card"
+                aria-busy={busy}
                 id="command-reply-form"
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -680,7 +681,10 @@ export default function TextCommands({
               )}
             </div>
             <div className="text-command-save" aria-label="Save command">
-              <span role="status">
+              <span
+                className={busy ? "working-status" : undefined}
+                role="status"
+              >
                 {busy ? "Working…" : dirty ? "Unsaved changes" : "Saved"}
               </span>
               <button

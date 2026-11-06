@@ -61,7 +61,7 @@
   -webkit-text-fill-color: currentColor;
 }
 .roster-ui .player-card-body:focus-visible {
-  outline: 2px solid var(--roster-gold);
+  outline: 2px solid var(--wu-focus);
   outline-offset: -2px;
 }
 .player-card-top {

@@ -84,7 +84,7 @@
   content: "▾";
 }
 .return-overview summary:focus-visible {
-  outline: 3px solid #e0b43c;
+  outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
 @media (max-width: 700px) {

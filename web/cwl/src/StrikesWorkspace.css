@@ -841,7 +841,7 @@
 /* Strikes UX: compact facts and explicit controls share the existing gold hierarchy. */
 .strikes-action-summary,
 .strikes-import-summary {
-  color: #f4d078;
+  color: var(--wu-text);
   font-size: var(--wu-text-md);
   font-weight: var(--wu-weight-medium);
   margin: var(--wu-space-3) 0;
@@ -883,13 +883,13 @@
   justify-content: space-between;
   padding: 0 var(--wu-space-3) var(--wu-space-1);
   font-size: var(--wu-text-md);
-  color: #f4d078;
+  color: var(--wu-text);
 }
 .strike-account-action a {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  color: #f4d078;
+  color: var(--wu-text);
   text-decoration: underline;
 }
 .strike-compact-row {
@@ -930,7 +930,7 @@
   margin-right: var(--wu-space-1);
 }
 .strike-compact-row.active .strike-inline-status {
-  color: #f4d078;
+  color: var(--wu-text);
 }
 .strike-row-more {
   min-width: 44px;
