@@ -19,15 +19,6 @@
   white-space: nowrap;
   min-height: 44px;
   padding: var(--wu-space-2) var(--wu-space-3);
-  border: 0;
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  background: transparent;
-}
-.strikes-tabs button[aria-pressed="true"] {
-  background: #e7b3380b;
-  border-bottom-color: #e7b338;
-  color: var(--wu-accent);
 }
 .strikes-toolbar {
   display: grid;

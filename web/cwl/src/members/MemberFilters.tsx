@@ -97,6 +97,7 @@ export default function MemberFilters({
         {actions}
       </div>
       <FilterChips
+        variant="pill"
         label={t.statusLabel}
         value={value.status}
         options={(Object.keys(labels) as MemberStatus[]).map((status) => ({

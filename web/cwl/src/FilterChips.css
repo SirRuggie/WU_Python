@@ -21,3 +21,33 @@
 .filter-chips small {
   font-size: var(--wu-text-xs);
 }
+
+.filter-chips--pill button,
+.shell .filter-chips--pill button {
+  border-radius: 999px;
+  background: var(--wu-surface-soft);
+  border-color: color-mix(in srgb, var(--wu-border) 50%, var(--wu-text-muted));
+  box-shadow: none;
+}
+.filter-chips--pill button[aria-pressed="true"],
+.shell .filter-chips--pill button[aria-pressed="true"] {
+  background: var(--wu-accent-soft);
+  border-color: var(--wu-accent);
+  color: var(--wu-text);
+  -webkit-text-fill-color: currentColor;
+}
+.filter-chips--pill button[aria-pressed="true"]:hover:not(:disabled),
+.shell .filter-chips--pill button[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--wu-accent-soft);
+  color: var(--wu-text);
+}
+.filter-chips--pill button[aria-pressed="false"]:hover:not(:disabled),
+.shell .filter-chips--pill button[aria-pressed="false"]:hover:not(:disabled) {
+  border-color: var(--wu-text-muted);
+}
+.filter-chips--pill button:focus-visible,
+.shell .filter-chips--pill button:focus-visible {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 2px var(--wu-focus);
+}
