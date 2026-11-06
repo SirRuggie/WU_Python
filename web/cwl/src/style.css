@@ -1907,13 +1907,27 @@ textarea:focus-visible {
     text-align: left;
   }
 }
-/* Discord server identity, shared by sidebar and sign-in branding. */
-img.discord-server-icon {
-  object-fit: cover;
+/* Self-hosted helmet identity keeps the sidebar's reserved image box. */
+img.site-logo {
+  object-fit: contain;
   flex-shrink: 0;
   background: transparent;
-  border-radius: 50%;
+  border-radius: 0;
   display: block;
+}
+.center-screen > .brand--large {
+  flex-direction: column;
+  text-align: center;
+}
+.brand--large img.site-logo {
+  width: 120px;
+  height: 120px;
+}
+@media (min-width: 900px) {
+  .brand--large img.site-logo {
+    width: 160px;
+    height: 160px;
+  }
 }
 
 .withdraw-button {
