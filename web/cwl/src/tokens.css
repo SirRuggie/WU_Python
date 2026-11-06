@@ -21,7 +21,7 @@
   line-gap-override: 0%;
 }
 
-/* Shared dashboard colors. Gold is action/selection; warning amber is separate. */
+/* Helmet gold is the highlight; brand red frames the shell, status colors stay separate. */
 :root {
   --wu-bg: #0c0c0e;
   --wu-surface: #19191d;
@@ -32,10 +32,11 @@
   --wu-border-subtle: #38383e;
   --wu-text: #f5f4f0;
   --wu-text-muted: #b9bbc4;
-  --wu-accent: #f4cd64;
-  --wu-accent-hover: #ffdc7b;
+  --wu-accent: #f2b62a;
+  --wu-accent-hover: #f6c654;
   --wu-accent-ink: #241b08;
   --wu-accent-soft: #30291a;
+  --wu-brand-red: #e00010;
   --wu-focus: #f5d66e;
   --wu-success: #79c89b;
   --wu-success-surface: #2b4b38;

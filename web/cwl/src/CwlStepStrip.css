@@ -20,7 +20,7 @@
 }
 .shell .cwl-step-strip > button[aria-current="step"] {
   background-color: var(--roster-gold-tint, var(--wu-accent-soft));
-  color: var(--roster-gold, #e2bd50);
+  color: var(--wu-accent);
 }
 .shell .cwl-step-strip .cwl-step-changes {
   color: var(--roster-warning);
@@ -52,4 +52,29 @@
   .shell .member-step-strip > button {
     font-size: var(--wu-text-sm);
   }
+}
+
+/* Staff workflow only: the member steps retain their existing treatment. */
+.shell .cwl-step-strip:not(.member-step-strip) > button[aria-current="step"] {
+  position: relative;
+  background-color: transparent;
+  -webkit-text-fill-color: currentColor;
+}
+.shell
+  .cwl-step-strip:not(.member-step-strip)
+  > button[aria-current="step"]::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  height: 3px;
+  background: var(--wu-accent);
+  pointer-events: none;
+}
+.shell
+  .cwl-step-strip:not(.member-step-strip)
+  > button[aria-current="step"]:hover:not(:disabled) {
+  background-color: var(--wu-surface-raised);
+  color: var(--wu-accent-hover);
 }

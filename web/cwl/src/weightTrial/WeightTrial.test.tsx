@@ -380,7 +380,7 @@ it("owns hidden-label styling, readable text and disclosure targets on cold navi
   const globalTokens = readFileSync("src/tokens.css", "utf8");
   expect(globalTokens).toMatch(/--wu-text:\s*#f5f4f0\s*;/i);
   expect(globalTokens.match(/--wu-accent:\s*(#[\da-f]{6})\s*;/)?.[1]).toBe(
-    "#f4cd64",
+    "#f2b62a",
   );
   const main = readFileSync("src/main.tsx", "utf8");
   expect(main.match(/^import\s+["']([^"']+)["'];?/m)?.[1]).toBe("./tokens.css");

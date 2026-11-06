@@ -69,7 +69,7 @@ div.shell {
 .shell .sidebar .navigation-label {
   margin: 0 var(--wu-space-2) var(--wu-space-1);
   padding-top: var(--wu-space-1);
-  color: var(--wu-text-muted);
+  color: var(--wu-accent);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
   letter-spacing: 0.08em;
@@ -131,20 +131,20 @@ div.shell {
   height: 16px;
 }
 .shell .sidebar .navigation-section.contains-current > .navigation-toggle {
-  color: #f5d785;
+  color: var(--wu-accent);
 }
 .shell
   .sidebar
   .navigation-section.contains-current
   > .navigation-toggle
   .navigation-icon {
-  color: #f5d785;
+  color: var(--wu-accent);
 }
 .shell .sidebar .navigation-section button[aria-current="page"] {
-  border-color: #8d7131;
-  background: var(--wu-accent-soft);
-  color: #ffe098;
-  box-shadow: inset 3px 0 #e4b94b;
+  border-color: var(--wu-accent);
+  background: transparent;
+  color: var(--wu-accent);
+  box-shadow: inset 3px 0 var(--wu-accent);
   font-weight: var(--wu-weight-bold);
 }
 .shell
@@ -319,8 +319,8 @@ div.shell {
     min-height: 44px;
     gap: var(--wu-space-2);
     padding-inline: var(--wu-space-3);
-    border-color: #8d7845;
-    color: #ffe098;
+    border-color: var(--wu-accent);
+    color: var(--wu-accent);
   }
   .shell .workspace {
     scroll-padding-top: 80px;
@@ -378,5 +378,44 @@ div.shell {
   .shell .cwl-roster-tabs > button {
     padding: var(--wu-space-2) var(--wu-space-1);
     font-size: var(--wu-text-md);
+  }
+}
+
+.shell .sidebar .navigation-section button[aria-current="page"]:hover {
+  background: var(--wu-surface-raised);
+  color: var(--wu-accent-hover);
+}
+.topbar-logo {
+  display: none;
+}
+@media (min-width: 901px) {
+  .shell .sidebar::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--wu-brand-red);
+    pointer-events: none;
+  }
+}
+@media (max-width: 650px) {
+  .shell .topbar .topbar-logo {
+    display: block;
+    flex: 0 0 auto;
+    width: calc(32px * 1007 / 1221);
+    height: 32px;
+    object-fit: contain;
+  }
+  .shell .topbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--wu-brand-red);
+    pointer-events: none;
   }
 }
