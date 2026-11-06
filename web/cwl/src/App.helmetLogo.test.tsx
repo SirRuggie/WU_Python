@@ -44,6 +44,12 @@ it("uses the large self-hosted helmet throughout loading and signed-out branding
       "/brand/wu-helmet-160.png 1x, /brand/wu-helmet-320.png 2x, /brand/wu-helmet-480.png 3x",
     );
     expect(loading.closest(".brand--large")).not.toBeNull();
+    expect(loading.parentElement?.tagName).toBe("PICTURE");
+    const source = loading.parentElement?.querySelector("source");
+    expect(source?.getAttribute("type")).toBe("image/webp");
+    expect(source?.getAttribute("srcset")).toBe(
+      "/brand/wu-helmet-160.webp 1x, /brand/wu-helmet-320.webp 2x, /brand/wu-helmet-480.webp 3x",
+    );
     expect(host.textContent).toContain("Checking Discord sign-in…");
     const { ApiError } = await import("./api");
     await act(async () => {
@@ -53,6 +59,7 @@ it("uses the large self-hosted helmet throughout loading and signed-out branding
       '.welcome-screen img[alt="Warriors United logo"]',
     )!;
     expect(welcome.getAttribute("src")).toBe("/brand/wu-helmet-160.png");
+    expect(welcome.parentElement?.tagName).toBe("PICTURE");
     expect(host.querySelector(".brand strong")?.textContent).toBe(
       "WARRIORS UNITED",
     );
@@ -103,6 +110,7 @@ it("keeps the signed-in sidebar helmet at 39 square with its compact density sou
     );
     expect([logo.width, logo.height]).toEqual([39, 39]);
     expect(logo.closest(".brand--large")).toBeNull();
+    expect(logo.closest("picture")).toBeNull();
     expect(host.querySelector(".sidebar .brand strong")?.textContent).toBe(
       "WARRIORS UNITED",
     );

@@ -1252,20 +1252,33 @@ function App() {
   </div></DashboardPermissions.Provider>
 }
 function Brand({ large = false }: { large?: boolean }) {
+  const image = (
+    <img
+      className="emblem site-logo"
+      src={large ? "/brand/wu-helmet-160.png" : "/brand/wu-helmet-48.png"}
+      srcSet={
+        large
+          ? "/brand/wu-helmet-160.png 1x, /brand/wu-helmet-320.png 2x, /brand/wu-helmet-480.png 3x"
+          : "/brand/wu-helmet-48.png 1x, /brand/wu-helmet-96.png 2x, /brand/wu-helmet-144.png 3x"
+      }
+      alt="Warriors United logo"
+      width={large ? 160 : 39}
+      height={large ? 160 : 39}
+    />
+  );
   return (
     <div className={`brand${large ? " brand--large" : ""}`}>
-      <img
-        className="emblem site-logo"
-        src={large ? "/brand/wu-helmet-160.png" : "/brand/wu-helmet-48.png"}
-        srcSet={
-          large
-            ? "/brand/wu-helmet-160.png 1x, /brand/wu-helmet-320.png 2x, /brand/wu-helmet-480.png 3x"
-            : "/brand/wu-helmet-48.png 1x, /brand/wu-helmet-96.png 2x, /brand/wu-helmet-144.png 3x"
-        }
-        alt="Warriors United logo"
-        width={large ? 160 : 39}
-        height={large ? 160 : 39}
-      />
+      {large ? (
+        <picture>
+          <source
+            type="image/webp"
+            srcSet="/brand/wu-helmet-160.webp 1x, /brand/wu-helmet-320.webp 2x, /brand/wu-helmet-480.webp 3x"
+          />
+          {image}
+        </picture>
+      ) : (
+        image
+      )}
       <span>
         <strong>WARRIORS UNITED</strong>
         <small>SERVER DASHBOARD</small>
