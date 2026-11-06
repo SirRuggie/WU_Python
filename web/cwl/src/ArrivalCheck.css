@@ -288,3 +288,9 @@
     margin-inline: var(--wu-space-1);
   }
 }
+
+/* The card clips child overflow; its own ring remains visible on keyboard focus. */
+.declaration-clan:has(.declaration-clan-toggle:focus-visible) {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
+}
