@@ -150,3 +150,41 @@ it("discard editor cancellation retains the draft; confirmed discard closes with
   expect(reset).not.toHaveBeenCalled();
   expect(save).not.toHaveBeenCalled();
 });
+
+it("keeps the direct unlocked Save callback arguments and single-submit guard", async () => {
+  let finish!: (value: ParticipationAccount) => void;
+  save.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const notes = host.querySelector("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!.call(notes, "Changed");
+    notes.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    button("Save results").click();
+    button("Save results").click();
+  });
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save).toHaveBeenCalledWith(
+    { ...account, roster_token: account.roster_token },
+    1,
+    1,
+    null,
+    2,
+    6,
+    "Changed",
+  );
+  expect(reset).not.toHaveBeenCalled();
+  await act(async () => finish({ ...account, notes: "Changed", revision: 2 }));
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(
+    host.querySelector<HTMLDialogElement>(".participation-dialog")!.open,
+  ).toBe(false);
+});

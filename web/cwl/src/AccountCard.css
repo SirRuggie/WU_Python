@@ -1,0 +1,94 @@
+/* Slot geometry only. The held PlayerCard classes supply every visual treatment. */
+.shared-account-card {
+  min-width: 0;
+}
+.account-card-layout {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 6px 8px 10px;
+}
+.account-card-select {
+  flex: 0 0 auto;
+}
+.account-card-content {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 6px;
+  row-gap: 0;
+  align-items: center;
+}
+.shared-account-card .account-card-name {
+  height: auto;
+  min-height: 20px;
+}
+.shared-account-card .account-card-meta {
+  grid-column: 1;
+  grid-row: 2;
+  padding-right: 0;
+}
+.shared-account-card .account-card-content .account-card-status-row {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.account-card-status-row > .account-card-status {
+  min-width: 0;
+}
+.account-card-values,
+.account-card-value-separator {
+  flex: 0 0 auto;
+}
+.account-card-value-separator {
+  white-space: pre;
+}
+.account-card-action {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: start;
+  margin-top: -8px;
+}
+.shared-account-card .account-card-flags {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  padding-right: 0;
+}
+@media (min-width: 651px) {
+  .account-card-layout {
+    padding-block: 3px;
+  }
+  .account-card-content.has-values {
+    grid-template-columns: minmax(0, 1fr) 112px auto;
+  }
+  .shared-account-card .account-card-content .account-card-status-row {
+    display: contents;
+  }
+  .account-card-values {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    width: 112px;
+    align-self: center;
+  }
+  .account-card-value-separator {
+    display: none;
+  }
+  .account-card-status {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .account-card-action {
+    grid-row: 1 / span 3;
+    align-self: center;
+    margin-top: 0;
+  }
+  .account-card-content.has-values .account-card-action {
+    grid-column: 3;
+  }
+}
