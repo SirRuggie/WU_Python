@@ -35,7 +35,7 @@
   padding: 0.85rem;
 }
 .roster-ui .roster-assign-clan:hover:not(:disabled) {
-  border-color: var(--roster-gold);
+  border-color: var(--wu-text-muted);
   background: var(--roster-surface-soft);
 }
 .roster-ui .roster-assign-clan-head {
