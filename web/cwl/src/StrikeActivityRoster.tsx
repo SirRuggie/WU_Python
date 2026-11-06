@@ -65,8 +65,10 @@ export default function StrikeActivityRoster({
   onChoose,
   onDenied,
   overviewActions,
+  trackingSlotRef,
 }: {
   overviewActions?: ReactNode;
+  trackingSlotRef?: (slot: HTMLDivElement | null) => void;
   state?: string;
   canManage?: boolean;
   selectionReset?: number;
@@ -82,6 +84,8 @@ export default function StrikeActivityRoster({
   onChoose: (account: ActivityAccount) => void;
   onDenied?: () => void;
 }) {
+  const rosterRef = useRef<HTMLElement>(null);
+  const scrolledView = useRef<string | null>(null);
   const [local, setLocal] = useState(() =>
     parseActivityFilters(state ?? window.location.search, markedDefault),
   );
@@ -104,6 +108,39 @@ export default function StrikeActivityRoster({
   const [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [loadedAt, setLoadedAt] = useState("");
+  useEffect(() => {
+    if (loading || scrolledView.current === filters.view) return;
+    const row = rosterRef.current?.querySelector<HTMLElement>(
+      ".strike-activity-tabs",
+    );
+    const selected = row?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!row || !selected) return;
+    scrolledView.current = filters.view;
+    const rowBounds = row.getBoundingClientRect();
+    const selectedBounds = selected.getBoundingClientRect();
+    const left = rowBounds.left + row.clientLeft;
+    const right = left + row.clientWidth;
+    const delta =
+      selectedBounds.left < left
+        ? selectedBounds.left - left
+        : selectedBounds.right > right
+          ? selectedBounds.right - right
+          : 0;
+    if (!delta) {
+      // Cancel an earlier smooth reveal before it moves this selection away.
+      row.scrollTo({ left: row.scrollLeft, behavior: "instant" });
+      return;
+    }
+    row.scrollTo({
+      left: Math.max(
+        0,
+        Math.min(row.scrollWidth - row.clientWidth, row.scrollLeft + delta),
+      ),
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+  }, [filters.view, loading]);
   const [tools, setTools] = useState(false);
   const [filterTrigger, setFilterTrigger] = useState<HTMLElement | null>(null);
   const copyIdentity = useRef(filterIdentity);
@@ -182,25 +219,36 @@ export default function StrikeActivityRoster({
     };
   }, [read, reload]);
   useActivityIdentityRefresh({
-    enabled: !!data.identity_updating || !!data.identity_warning || !!data.activity_updating,
+    enabled:
+      !!data.identity_updating ||
+      !!data.identity_warning ||
+      !!data.activity_updating,
     generation: request.current,
     busy: () => pending.current || bulkBusy,
-    readVersion: () => `${request.current}:${writeEpoch.current}:${selectionReset}`,
+    readVersion: () =>
+      `${request.current}:${writeEpoch.current}:${selectionReset}`,
     onResult: (result) =>
       setData((current) => ({
         ...current,
         identity_warning: result.identity_warning ?? undefined,
         identity_updating: result.identity_updating,
-        ...(current.activity_updating ? {
-          accounts: result.accounts,
-          clans: result.clans ?? current.clans,
-          activity_updating: result.activity_updating,
-          activity_checked_at: result.activity_checked_at,
-          activity_as_of: result.activity_as_of,
-          activity_warning: result.activity_warning ?? undefined,
-          history_warning: result.history_warning ?? undefined,
-          weight_warning: result.weight_warning ?? undefined,
-        } : { accounts: mergeIdentityAccounts(current.accounts, result.accounts) }),
+        ...(current.activity_updating
+          ? {
+              accounts: result.accounts,
+              clans: result.clans ?? current.clans,
+              activity_updating: result.activity_updating,
+              activity_checked_at: result.activity_checked_at,
+              activity_as_of: result.activity_as_of,
+              activity_warning: result.activity_warning ?? undefined,
+              history_warning: result.history_warning ?? undefined,
+              weight_warning: result.weight_warning ?? undefined,
+            }
+          : {
+              accounts: mergeIdentityAccounts(
+                current.accounts,
+                result.accounts,
+              ),
+            }),
       })),
     onDenied: () => {
       setData({ accounts: [], clans: [] });
@@ -279,6 +327,7 @@ export default function StrikeActivityRoster({
   );
   return (
     <section
+      ref={rosterRef}
       className="strike-activity-roster"
       aria-label="Family activity overview"
     >
@@ -415,47 +464,63 @@ export default function StrikeActivityRoster({
           }}
         />
       )}
-      <div className="strike-activity-applied">
-        {appliedActivityFilters(filters, data.clans).map((filter) => {
-          const next = normalizeActivityView({ ...filters, ...filter.clear });
-          if (
-            Object.keys(filter.clear).every(
-              (key) =>
-                next[key as keyof ActivityFilters] ===
-                filters[key as keyof ActivityFilters],
-            )
-          )
-            return (
-              <span
-                key={filter.key}
-                className="strike-tab-predicate"
-                title="This rule decides which accounts the tab shows. Select All to show other accounts."
-              >
-                {filter.label}
-              </span>
-            );
-          return (
-            <button
-              key={filter.key}
-              aria-label={`Remove ${filter.label}`}
-              onClick={() => change(filter.clear)}
-            >
-              {filter.label} ×
-            </button>
-          );
-        })}
+      <div className="strike-activity-status">
+        <div className="strike-activity-status-line">
+          <div className="strike-activity-applied">
+            {appliedActivityFilters(filters, data.clans).map((filter) => {
+              const next = normalizeActivityView({
+                ...filters,
+                ...filter.clear,
+              });
+              if (
+                Object.keys(filter.clear).every(
+                  (key) =>
+                    next[key as keyof ActivityFilters] ===
+                    filters[key as keyof ActivityFilters],
+                )
+              )
+                return (
+                  <span
+                    key={filter.key}
+                    className="strike-tab-predicate"
+                    title="This rule decides which accounts the tab shows. Select All to show other accounts."
+                  >
+                    {filter.label}
+                  </span>
+                );
+              return (
+                <button
+                  key={filter.key}
+                  aria-label={`Remove ${filter.label}`}
+                  onClick={() => change(filter.clear)}
+                >
+                  {filter.label} ×
+                </button>
+              );
+            })}
+          </div>
+          <p
+            className="strike-activity-summary"
+            role="status"
+            title={loadedAt ? `Updated ${loadedAt}` : undefined}
+          >
+            {(error
+              ? "Activity unavailable"
+              : loading && !data.accounts.length
+                ? "Loading accounts…"
+                : "") || `Showing ${visible.length} of ${data.accounts.length}`}
+          </p>
+          {data.activity_updating ? (
+            <p className="strike-activity-as-of">Loading activity…</p>
+          ) : data.activity_as_of ? (
+            <p className="strike-activity-as-of">{data.activity_as_of}</p>
+          ) : null}
+          <div
+            className="strike-activity-tracking-slot"
+            ref={trackingSlotRef}
+          />
+        </div>
       </div>
-      <p
-        className="strike-activity-summary"
-        role="status"
-        title={loadedAt ? `Updated ${loadedAt}` : undefined}
-      >
-        {(error
-          ? "Activity unavailable"
-          : loading && !data.accounts.length
-            ? "Loading accounts…"
-            : "") || `Showing ${visible.length} of ${data.accounts.length}`}
-      </p>
       {copied && (
         <div className="strike-copy-toast" role="status">
           {copied}
@@ -470,8 +535,6 @@ export default function StrikeActivityRoster({
       {data.history_warning && (
         <p className="notice error">{data.history_warning}</p>
       )}
-      {data.activity_updating ? <p className="notice">Loading activity…</p> :
-        data.activity_as_of && <p className="notice">{data.activity_as_of}</p>}
       {data.activity_warning && !data.activity_updating && (
         <p className="notice error">{data.activity_warning}</p>
       )}

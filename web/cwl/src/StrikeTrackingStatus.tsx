@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, ApiError } from "./api";
 import {
   currentWarStateLabel,
@@ -21,10 +22,14 @@ const message = (error: unknown) =>
 export default function StrikeTrackingStatus({
   canRetry,
   compact = false,
+  portalTarget = null,
 }: {
   canRetry: boolean;
   compact?: boolean;
+  portalTarget?: HTMLElement | null;
 }) {
+  const [open, setOpen] = useState(false);
+  const disclosureRef = useRef<HTMLDetailsElement>(null);
   const [clans, setClans] = useState<ClanTracking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -129,8 +134,18 @@ export default function StrikeTrackingStatus({
     ? `${behind} need review`
     : `${clans.length} on track`;
   const tone = error ? "warning" : summary.tone;
-  return (
-    <details className={`card strikes-tracking ${tone}`}>
+  // A native toggle may still be queued when the portal target changes.
+  const disclosureOpen = disclosureRef.current?.open ?? open;
+  const disclosure = (
+    <details
+      className={`card strikes-tracking ${tone}`}
+      ref={disclosureRef}
+      open={disclosureOpen}
+      onToggle={(event) => {
+        if (event.currentTarget === disclosureRef.current)
+          setOpen(event.currentTarget.open);
+      }}
+    >
       <summary>
         <span>Tracking</span>
         <strong>
@@ -210,4 +225,5 @@ export default function StrikeTrackingStatus({
       </div>
     </details>
   );
+  return portalTarget ? createPortal(disclosure, portalTarget) : disclosure;
 }

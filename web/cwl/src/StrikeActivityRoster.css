@@ -82,7 +82,7 @@
 }
 .strike-activity-summary {
   margin: 0;
-  color: #d4c7a3;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
 }
 .strike-activity-roster h2 {
@@ -185,13 +185,6 @@
   margin-left: 0;
   width: auto;
 }
-.strikes-activity-overview .strikes-tracking {
-  padding: var(--wu-space-1) var(--wu-space-3);
-  margin-bottom: var(--wu-space-3);
-}
-.strikes-activity-overview .strikes-tracking summary {
-  gap: var(--wu-space-1) var(--wu-space-2);
-}
 .strikes-activity-overview .page-head {
   margin-bottom: var(--wu-space-5);
 }
@@ -205,10 +198,6 @@
   }
   .strike-activity-more > label {
     gap: 0;
-  }
-
-  .strikes-activity-overview .strikes-tracking summary {
-    font-size: var(--wu-text-sm);
   }
 }
 .strike-activity-toolbar .strike-activity-actions {
@@ -521,7 +510,7 @@
 .strike-tab-predicate {
   font-size: var(--wu-text-md);
   padding: var(--wu-space-1) var(--wu-space-2);
-  color: #bfbbae;
+  color: var(--wu-text-muted);
 }
 .shell
   .strike-activity-roster
@@ -579,5 +568,68 @@
 @media (min-width: 1000px) {
   .strike-activity-toolbar details {
     border: 0;
+  }
+}
+
+.strike-activity-status-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--wu-space-1) var(--wu-space-2);
+  min-width: 0;
+  color: var(--wu-text-muted);
+}
+.strike-activity-status-line .strike-activity-applied {
+  display: contents;
+}
+.strike-activity-as-of {
+  margin: 0;
+  font-size: var(--wu-text-sm);
+  color: var(--wu-text-muted);
+}
+.strike-activity-tracking-slot {
+  min-width: 0;
+  max-width: 100%;
+}
+.strike-activity-tracking-slot:has(> details[open]) {
+  flex-basis: 100%;
+}
+.strikes-workspace .strike-activity-status .strikes-tracking {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 17px;
+}
+.strikes-workspace .strike-activity-status .strikes-tracking > summary::before {
+  content: none;
+}
+
+/* The measured narrow status exceeds two rows; keep its timestamp above the body. */
+@media (max-width: 650px) {
+  .strike-activity-status .strike-activity-tracking-slot,
+  .strikes-workspace .strike-activity-status .strikes-tracking {
+    display: contents;
+  }
+  .strike-activity-status .strikes-tracking[open]::details-content {
+    display: contents;
+  }
+  .strike-activity-status .strikes-tracking:not([open])::details-content,
+  .strike-activity-status
+    .strikes-tracking:not([open])
+    > .strikes-tracking-body {
+    display: none;
+  }
+  .strike-activity-status .strikes-tracking > summary {
+    order: 0;
+  }
+  .strike-activity-status .strike-activity-as-of {
+    order: 1;
+    flex-basis: 100%;
+  }
+  .strike-activity-status .strikes-tracking-body {
+    order: 2;
+    flex-basis: 100%;
+    min-width: 0;
   }
 }
