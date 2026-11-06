@@ -84,6 +84,8 @@ it("separately preserves the base primary gold declarations, not the welcome CTA
   expect(base).toBeTruthy();
   expect(base).toMatch(/background:\s*#d9a628\s*;/i);
   expect(base).toMatch(/border-color:\s*#d9a628\s*;/i);
-  expect(base).toMatch(/color:\s*#211b10\s*;/i);
+  expect(base).toMatch(/color:\s*var\(--wu-accent-ink\)\s*;/i);
+  const tokens = readFileSync("src/tokens.css", "utf8");
+  expect(tokens).toMatch(/--wu-accent-ink:\s*#241b08\s*;/i);
   expect(hover).toMatch(/background:\s*#e7b73f\s*;/i);
 });

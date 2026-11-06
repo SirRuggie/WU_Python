@@ -175,7 +175,7 @@
   font-weight: var(--wu-weight-medium);
 }
 .war-disclosure > summary:focus-visible {
-  outline: 2px solid #e6a640;
+  outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
 .war-disclosure > summary[aria-disabled="true"] {
@@ -196,8 +196,8 @@
   align-items: center;
 }
 .war-delivery-link:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 
 .war-reminders label:has(input[type="checkbox"]) {

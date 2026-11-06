@@ -19,14 +19,14 @@
   scroll-margin-top: 80px;
 }
 #dashboard-main:focus-visible {
-  outline: 2px solid #f4cd64;
-  outline-offset: -3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 textarea:focus-visible,
 summary:focus-visible,
 [role="switch"]:focus-visible {
-  outline: 3px solid var(--wu-focus);
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .shell :is(input, select, textarea, button, summary, a[href]) {
   scroll-margin-block: 90px 140px;

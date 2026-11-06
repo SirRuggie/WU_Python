@@ -35,8 +35,8 @@
   outline: none;
 }
 .signup-walkthrough h2:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 4px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .shell .signup-walkthrough h2 button {
   display: block;
@@ -62,8 +62,8 @@
   cursor: default;
 }
 .shell .signup-walkthrough h2 button:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 4px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .signup-walkthrough .walkthrough-step {
   font-size: var(--wu-text-sm);

@@ -9,7 +9,7 @@
   gap: var(--wu-space-4);
   max-width: min(36rem, calc(100vw - 2rem));
   padding: var(--wu-space-3) var(--wu-space-4);
-  border: 1px solid var(--roster-gold);
+  border: 1px solid var(--wu-text-muted);
   border-radius: var(--roster-radius-card);
   background: var(--roster-surface-raised);
   color: var(--roster-text);

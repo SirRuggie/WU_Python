@@ -5,13 +5,13 @@
 .signup-guide {
   padding: var(--wu-space-4) var(--wu-space-5);
   margin: 0 0 var(--wu-space-5);
-  background: #f1c54d;
-  color: #211a09;
+  background: var(--wu-surface-raised);
+  color: var(--wu-text);
   border-radius: 16px;
-  border: 1px solid #ffdc7e;
+  border: 1px solid var(--wu-text-muted);
 }
 .signup-guide .eyebrow {
-  color: #514016;
+  color: var(--wu-text-muted);
   margin: 0 0 var(--wu-space-1);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
@@ -25,7 +25,7 @@
   text-wrap: balance;
 }
 .signup-guide p {
-  color: #3e3217;
+  color: var(--wu-text);
   margin: var(--wu-space-3) 0 0;
   line-height: 1.55;
   text-wrap: pretty;
@@ -36,10 +36,10 @@
   gap: var(--wu-space-2);
   font-size: var(--wu-text-sm);
   flex: 1;
-  color: #54431d;
+  color: var(--wu-text-muted);
 }
 .signup-guide li[aria-current="step"] {
-  color: #211a09;
+  color: var(--wu-text);
   font-weight: var(--wu-weight-bold);
 }
 .signup-guide li span {
@@ -52,8 +52,8 @@
   border-radius: 50%;
 }
 .signup-guide li[aria-current="step"] span {
-  background: #211a09;
-  color: #ffdb76;
+  background: var(--wu-accent-ink);
+  color: var(--wu-accent-hover);
 }
 .signup-guide li b {
   margin-left: auto;
@@ -63,8 +63,8 @@
   padding: var(--wu-space-5);
 }
 .signup-flow .pool-choice-grid button:focus-visible {
-  outline: 3px solid #f1c54d;
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .signup-actions {
   gap: var(--wu-space-4);
@@ -117,8 +117,8 @@
   gap: var(--wu-space-2);
 }
 .signup-guide h2:focus-visible {
-  outline: 2px solid #211a09;
-  outline-offset: 4px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 @media (max-width: 650px) {
   .signup-guide {

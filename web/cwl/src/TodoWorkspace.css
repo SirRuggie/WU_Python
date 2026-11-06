@@ -66,7 +66,7 @@
 .todo-account-picker summary > span {
   float: right;
   font-size: var(--wu-text-sm);
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
   padding-top: var(--wu-space-1);
 }
 .todo-picker-tools {
@@ -208,9 +208,9 @@
 .todo-clan > header a {
   font-size: var(--wu-text-sm);
   white-space: nowrap;
-  color: var(--roster-gold);
+  color: var(--wu-text);
   font-weight: var(--wu-weight-bold);
-  text-decoration: none;
+  text-decoration: underline;
   padding: var(--wu-space-3) 0;
   min-height: 44px;
 }
@@ -256,8 +256,8 @@
   place-items: center;
   width: 36px;
   min-height: 44px;
-  text-decoration: none;
-  color: var(--roster-gold);
+  text-decoration: underline;
+  color: var(--wu-text);
   font-size: var(--wu-text-xl);
 }
 .todo-task-progress {
@@ -279,7 +279,7 @@
 .todo-state.prep {
   background: var(--roster-surface-soft);
   border-color: var(--roster-border);
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
 }
 .todo-state.blocked {
   background: var(--roster-attention-surface);
@@ -474,7 +474,7 @@
 .todo-fwa strong {
   display: block;
   font-size: var(--wu-text-sm);
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
 }
 .todo-fwa.win strong {
   color: var(--roster-success);
@@ -496,7 +496,7 @@
   padding: var(--wu-space-4) var(--wu-space-4);
   margin: var(--wu-space-3) 0 var(--wu-space-4);
   border: 1px solid var(--roster-attention-border);
-  border-left: 3px solid var(--roster-gold);
+  border-left: 3px solid var(--wu-text-muted);
   border-radius: 10px;
   background: var(--roster-surface);
   font-variant-numeric: tabular-nums;
@@ -513,7 +513,7 @@
 }
 .todo-event-timer strong {
   font-size: var(--wu-text-xl);
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
   font-variant-numeric: tabular-nums;
 }
 .todo-event-timer time,
@@ -566,10 +566,11 @@
 .shell .todo-wars-link {
   background: transparent;
   border: 0;
-  color: var(--roster-gold);
+  color: var(--wu-text);
   padding: 0 var(--wu-space-1);
   min-height: 44px;
   text-align: left;
+  text-decoration: underline;
 }
 
 @media (max-width: 320px) {

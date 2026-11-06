@@ -28,7 +28,7 @@
 }
 .pool-change-warning {
   padding: var(--wu-space-2) var(--wu-space-3);
-  border-left: 3px solid var(--roster-gold);
+  border-left: 3px solid var(--wu-text-muted);
   color: var(--roster-warning);
 }
 .pool-change-save-note {

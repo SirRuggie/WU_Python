@@ -33,6 +33,7 @@
   }
 }
 .member-signup-link a {
-  color: #f3ca56;
+  color: var(--wu-text);
   margin: var(--wu-space-2) 0;
+  text-decoration: underline;
 }

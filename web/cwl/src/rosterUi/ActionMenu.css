@@ -12,9 +12,10 @@
 }
 .roster-action-trigger[data-hovered] {
   border-color: var(--wu-text-muted);
+  background: var(--wu-surface-raised);
 }
 .roster-action-trigger[data-focus-visible] {
-  outline: 2px solid white;
+  outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
 .roster-action-popover {
@@ -43,10 +44,15 @@
   cursor: pointer;
   outline: none;
 }
-.roster-action-item[data-focused],
 .roster-action-item[data-hovered] {
-  background: #d9ae3020;
-  color: #f5d66e;
+  background: var(--wu-surface-raised);
+  color: var(--wu-text);
+  border-color: var(--wu-text-muted);
+}
+.roster-action-item[data-focus-visible]:not([data-hovered]) {
+  background: var(--wu-surface-raised);
+  color: var(--wu-focus);
+  border-color: var(--wu-text-muted);
 }
 .roster-action-item[data-disabled] {
   opacity: 0.6;

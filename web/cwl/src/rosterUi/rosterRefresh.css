@@ -15,7 +15,7 @@
   border-radius: var(--roster-radius-pill);
 }
 .roster-ui :focus-visible {
-  outline: 3px solid var(--roster-focus);
+  outline: 3px solid var(--wu-focus);
   outline-offset: 3px;
 }
 .roster-ui.action-panel {
@@ -35,7 +35,7 @@
   padding: 0.85rem;
 }
 .roster-ui .roster-assign-clan:hover:not(:disabled) {
-  border-color: var(--roster-gold);
+  border-color: var(--wu-text-muted);
   background: var(--roster-surface-soft);
 }
 .roster-ui .roster-assign-clan-head {

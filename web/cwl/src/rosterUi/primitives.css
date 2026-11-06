@@ -28,7 +28,7 @@
   cursor: pointer;
 }
 .roster-ui-button:hover:not(:disabled) {
-  border-color: var(--roster-gold);
+  border-color: var(--wu-text-muted);
 }
 .roster-ui-button:disabled {
   cursor: not-allowed;
@@ -215,7 +215,7 @@
   font-weight: 650;
 }
 .roster-menu-chevron {
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
 }
 .roster-menu-panel {
   max-height: 100%;

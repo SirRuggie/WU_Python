@@ -26,7 +26,7 @@
 }
 
 .confirm-dialog-actions .confirm-danger {
-  border: 1px solid #ef9a9a;
+  border: 1px solid var(--wu-danger);
   background: #452626;
   color: #ffe0e0;
   -webkit-text-fill-color: currentColor;

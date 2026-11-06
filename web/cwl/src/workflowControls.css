@@ -110,7 +110,7 @@
     .cwl-result-nav
   )
   > button:focus-visible {
-  outline: 2px solid #f4cd64;
+  outline: 2px solid var(--wu-focus);
   outline-offset: -3px;
 }
 .clan-category-filters span {
@@ -235,8 +235,8 @@
 .shell
   :is(.overview-filters, .clan-category-filters, .search-kind-filters)
   button:focus-visible {
-  outline: 2px solid #f4cd64;
-  outline-offset: -2px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .shell .home-search-entry {
   display: flex;
@@ -292,7 +292,7 @@
   min-height: 48px;
 }
 .global-search-field:focus-within {
-  outline: 2px solid #f4cd64;
+  outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
 .global-search-field .sr-only {
@@ -336,7 +336,8 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: var(--wu-accent);
+  color: var(--wu-text);
+  text-decoration: underline;
 }
 .search-pagination {
   display: flex;
@@ -400,4 +401,25 @@
   font-size: var(--wu-text-md);
   font-weight: var(--wu-weight-medium);
   margin: 0;
+}
+/* Tab geometry remains at the released baseline; only focus color is unified. */
+.shell .text-command-tabs > button:focus-visible,
+.shell .manage-preview-toggle > button:focus-visible {
+  outline: 3px solid var(--wu-focus);
+  outline-offset: 3px;
+}
+.shell .ticket-conversation-tabs > button:focus-visible {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: -2px;
+}
+
+/* 748: selected solid-gold tabs draw the focus ring on the dark outside paint. */
+.shell
+  :is(.clan-tabs, .cwl-roster-tabs)
+  > button:is(
+    .active,
+    [aria-pressed="true"],
+    [aria-selected="true"]
+  ):focus-visible {
+  outline-offset: 2px;
 }

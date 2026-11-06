@@ -70,7 +70,7 @@ button:disabled {
 .primary {
   background: #d9a628;
   border-color: #d9a628;
-  color: #211b10;
+  color: var(--wu-accent-ink);
 }
 .primary:hover {
   background: #e7b73f;
@@ -131,8 +131,8 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 3px solid var(--wu-focus);
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 h1,
 h2,
@@ -174,7 +174,7 @@ small {
   color: var(--wu-text-muted);
 }
 .eyebrow {
-  color: #dcb43f;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
   letter-spacing: 0.08em;
@@ -319,9 +319,7 @@ small {
 }
 .workspace {
   min-width: 0;
-  background:
-    radial-gradient(ellipse at top right, #2a2316 0, transparent 480px),
-    var(--wu-bg);
+  background: var(--wu-bg);
 }
 .topbar {
   height: 74px;
@@ -439,7 +437,7 @@ small {
   text-wrap: pretty;
 }
 .count-pill {
-  background: #302817;
+  background: var(--wu-surface-raised);
   color: #e0b43c;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -586,7 +584,11 @@ small {
   align-items: center;
   justify-content: space-between;
   gap: var(--wu-space-3);
-  background: #19191cef;
+  background: color-mix(
+    in srgb,
+    var(--wu-surface) 93.72549019607843%,
+    transparent
+  );
   backdrop-filter: blur(12px);
   border: 1px solid var(--wu-border-subtle);
   border-radius: 13px;
@@ -984,13 +986,13 @@ small {
   flex: 0 0 32px;
   border-radius: 50%;
   object-fit: cover;
-  background: #38383e;
+  background: var(--wu-border-subtle);
 }
 .user-avatar-fallback {
   display: grid;
   place-items: center;
-  background: #4b3b19;
-  color: #f5d77d;
+  background: var(--wu-surface-raised);
+  color: var(--wu-text-muted);
   font-weight: var(--wu-weight-bold);
 }
 .user-display-name {
@@ -1030,8 +1032,12 @@ small {
   max-width: 760px;
   margin: var(--wu-space-5) auto var(--wu-space-7);
   padding: var(--wu-space-5);
-  border-color: #9a7726;
-  background: linear-gradient(145deg, #292315, var(--wu-surface) 55%);
+  border-color: var(--wu-text-muted);
+  background: linear-gradient(
+    145deg,
+    var(--wu-surface-raised),
+    var(--wu-surface) 55%
+  );
   box-shadow: 0 18px 54px #0004;
 }
 .completion-mark {
@@ -1040,8 +1046,8 @@ small {
   display: grid;
   place-items: center;
   border-radius: 14px;
-  background: #d9a628;
-  color: var(--wu-accent-ink);
+  background: var(--wu-surface-raised);
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-2xl);
   font-weight: var(--wu-weight-bold);
   margin-bottom: var(--wu-space-4);
@@ -1223,8 +1229,8 @@ small {
 }
 .roster-source-note {
   padding: var(--wu-space-4) var(--wu-space-4);
-  border-left: 3px solid #d9a628;
-  background: #282315;
+  border-left: 3px solid var(--wu-text-muted);
+  background: var(--wu-surface-raised);
   border-radius: 8px;
   font-size: var(--wu-text-xs);
   color: #d8c9a7;
@@ -1354,8 +1360,8 @@ textarea {
   font-size: var(--wu-text-md);
 }
 textarea:focus-visible {
-  outline: 3px solid var(--wu-focus);
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .member-nav-tabs {
   display: flex;
@@ -1622,7 +1628,7 @@ textarea:focus-visible {
 .announcement-counts span {
   padding: var(--wu-space-2) var(--wu-space-2);
   border-radius: 6px;
-  background: #302817;
+  background: var(--wu-surface-raised);
   color: #edd48c;
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-bold);
@@ -1714,7 +1720,7 @@ textarea:focus-visible {
 }
 .compare-clan-summary small {
   padding: var(--wu-space-1) var(--wu-space-1);
-  background: #302817;
+  background: var(--wu-surface-raised);
   border-radius: 6px;
   color: #e7d19a;
 }
@@ -1858,7 +1864,7 @@ textarea:focus-visible {
   max-height: 320px;
   overflow: auto;
   background: var(--wu-surface-raised);
-  border: 1px solid #76602f;
+  border: 1px solid var(--wu-text-muted);
   border-radius: 10px;
   box-shadow: 0 15px 40px #000a;
   padding: var(--wu-space-2);
@@ -1911,13 +1917,13 @@ img.discord-server-icon {
 }
 
 .withdraw-button {
-  background: #b91c1c;
-  border-color: #b91c1c;
+  background: var(--wu-danger-surface);
+  border-color: var(--wu-danger-border);
   color: #fff;
 }
 .withdraw-button:hover:not(:disabled) {
-  background: #991b1b;
-  border-color: #991b1b;
+  background: color-mix(in srgb, var(--wu-danger-surface) 85%, black);
+  border-color: var(--wu-danger-border);
   color: #fff;
 }
 
@@ -2008,22 +2014,21 @@ img.discord-server-icon {
 .shell .signup-flow {
   max-width: none;
 }
-/* Informational walkthrough: warm yellow paper, explicitly dark text, no
-   button-like pills. Set text fill too so inherited light text cannot win. */
+/* Informational walkthrough: neutral surface and explicit readable text. */
 .shell .signup-guide {
   padding: var(--wu-space-4) var(--wu-space-4);
   margin-bottom: var(--wu-space-4);
-  background: var(--wu-accent);
-  border: 1px solid #f8dc8e;
-  border-left: 5px solid #b57900;
+  background: var(--wu-surface-raised);
+  border: 1px solid var(--wu-text-muted);
+  border-left: 5px solid var(--wu-text-muted);
   border-radius: 10px;
-  color: var(--wu-accent-ink);
+  color: var(--wu-text);
   box-shadow: none;
   cursor: default;
 }
 .shell .signup-guide :is(h2, p, span, b) {
-  color: var(--wu-accent-ink);
-  -webkit-text-fill-color: var(--wu-accent-ink);
+  color: var(--wu-text);
+  -webkit-text-fill-color: var(--wu-text);
   text-wrap: pretty;
 }
 .shell .signup-guide h2 {
@@ -2047,23 +2052,23 @@ img.discord-server-icon {
   text-wrap: pretty;
 }
 .shell .signup-guide h2:focus-visible {
-  outline: none;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
-/* Keep this light information panel out of browser automatic darkening.
-   The rest of the dashboard remains dark. */
+/* Keep this information panel consistent under browser automatic darkening. */
 .shell .signup-guide,
 .shell .signup-guide * {
   color-scheme: only light;
 }
 @media (forced-colors: active) {
   .shell .signup-guide :is(h2, p, span, b) {
-    color: CanvasText;
-    -webkit-text-fill-color: currentColor;
+    color: var(--wu-text);
+    -webkit-text-fill-color: var(--wu-text);
     text-wrap: pretty;
   }
   .shell .signup-guide {
-    background: Canvas;
-    color: CanvasText;
+    background: var(--wu-surface-raised);
+    color: var(--wu-text);
     border-color: CanvasText;
   }
 }
@@ -2155,4 +2160,26 @@ textarea {
   .shell .workspace main:has(.events-workspace) {
     padding-inline: var(--wu-space-3);
   }
+}
+
+/* Placeholder paint is explicit so browser opacity cannot reduce contrast. */
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--wu-text-muted);
+  opacity: 1;
+}
+
+/* Busy status keeps each existing region’s type and spacing. */
+.working-status {
+  color: var(--wu-text-muted);
+  -webkit-text-fill-color: currentColor;
+}
+.shell .signup-guide .eyebrow {
+  color: var(--wu-text-muted);
+  -webkit-text-fill-color: var(--wu-text-muted);
+}
+.completion-card h1:focus-visible {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }

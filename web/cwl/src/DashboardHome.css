@@ -40,11 +40,11 @@
   display: flex;
   align-items: center;
   gap: var(--wu-space-4);
-  border: 1px solid #756039;
+  border: 1px solid var(--wu-text-muted);
   border-radius: 14px;
   background: linear-gradient(
     110deg,
-    var(--wu-accent-soft),
+    var(--wu-surface-raised),
     var(--wu-surface) 65%
   );
   padding: var(--wu-space-5);
@@ -59,9 +59,9 @@
   height: 48px;
   flex: none;
   border-radius: 10px;
-  background: var(--wu-accent-soft);
-  border: 1px solid #685638;
-  color: var(--wu-accent);
+  background: var(--wu-surface-raised);
+  border: 1px solid var(--wu-text-muted);
+  color: var(--wu-text-muted);
 }
 
 .hub-next > div:nth-child(2) {
@@ -116,7 +116,7 @@
   font-size: var(--wu-text-xl);
   grid-row: 1/3;
   align-self: center;
-  color: var(--wu-accent);
+  color: var(--wu-text-muted);
 }
 
 .hub-stats strong {
@@ -265,7 +265,7 @@
 
 .hub-account.is-selected {
   background: var(--wu-accent-soft);
-  box-shadow: inset 3px 0 #f4cd64;
+  box-shadow: inset 3px 0 var(--wu-accent);
 }
 
 .hub-account-pick {
@@ -326,7 +326,7 @@
 .hub-state.saved {
   color: #b8efdc;
   background: var(--wu-success-surface);
-  border-color: #90ee90;
+  border-color: var(--wu-success-border);
 }
 
 .hub-account-action {
@@ -610,7 +610,7 @@
 }
 
 .hub-next .eyebrow {
-  color: #f4cd64;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
 }
@@ -627,7 +627,7 @@
 
 .home-task-entry > .dashboard-icon {
   flex: none;
-  color: var(--wu-accent);
+  color: var(--wu-text-muted);
 }
 
 .home-task-entry > div {
@@ -655,7 +655,8 @@
   min-height: 44px;
   border-color: transparent;
   background: transparent;
-  color: var(--wu-accent);
+  color: var(--wu-text);
+  text-decoration: underline;
 }
 
 .home-quick-links {
@@ -754,8 +755,9 @@
   padding: var(--wu-space-1) var(--wu-space-2);
   background: transparent;
   border-color: transparent;
-  color: var(--wu-accent);
+  color: var(--wu-text);
   font-size: var(--wu-text-xs);
+  text-decoration: underline;
 }
 
 @media (max-width: 700px) {

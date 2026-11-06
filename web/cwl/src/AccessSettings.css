@@ -167,8 +167,8 @@
   left: 23px;
 }
 .access-switch-row input[role="switch"]:focus-visible {
-  outline: 3px solid #f1cb56;
-  outline-offset: 4px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .access-switch-row input[role="switch"]:disabled {
   opacity: 0.5;
@@ -239,8 +239,8 @@
   color: var(--wu-text);
 }
 .access-editor a:focus-visible {
-  outline: 3px solid #f1cb56;
-  outline-offset: 3px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .access-person {
   display: flex;

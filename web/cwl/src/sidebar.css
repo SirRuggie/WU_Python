@@ -47,7 +47,7 @@ div.shell {
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
-  scrollbar-color: var(--wu-text-muted) #151517;
+  scrollbar-color: var(--wu-text-muted) var(--wu-surface);
   padding: var(--wu-space-3) var(--wu-space-2) var(--wu-space-4);
 }
 
@@ -109,8 +109,8 @@ div.shell {
   background: var(--wu-surface-raised);
 }
 .shell .sidebar nav button:focus-visible {
-  outline: 2px solid #f4cd64;
-  outline-offset: -2px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 .shell .sidebar .navigation-icon {
   display: inline-flex;
@@ -319,8 +319,8 @@ div.shell {
     min-height: 44px;
     gap: var(--wu-space-2);
     padding-inline: var(--wu-space-3);
-    border-color: #8d7845;
-    color: #ffe098;
+    border-color: var(--wu-text-muted);
+    color: var(--wu-text);
   }
   .shell .workspace {
     scroll-padding-top: 80px;

@@ -404,7 +404,11 @@ export default function ReminderWorkspace({
           {notice}
         </p>
       )}
-      {busy && <p role="status">Working…</p>}
+      {busy && (
+        <p className="working-status" role="status">
+          Working…
+        </p>
+      )}
       {state?.warning && (
         <p className="notice error" role="alert">
           {state.warning}
@@ -1019,7 +1023,10 @@ export default function ReminderWorkspace({
                 </div>
               )}
               {tab !== "history" && (tab !== "overview" || dirty) && (
-                <div className={`reminder-save ${dirty ? "has-changes" : ""}`}>
+                <div
+                  className={`reminder-save ${dirty ? "has-changes" : ""}`}
+                  aria-busy={busy}
+                >
                   <span>
                     {error ||
                       (dirty
@@ -1028,63 +1035,76 @@ export default function ReminderWorkspace({
                           : "Unsaved changes"
                         : "All changes saved")}
                   </span>
-                  <div className="reminder-control-actions" role="group" aria-label="Review and save">
-                  <button
-                    disabled={disabled || !dirty}
-                    onClick={() =>
-                      void act(async () => {
-                        setPreview(
-                          await api<CampaignState>(
+                  <div
+                    className="reminder-control-actions"
+                    role="group"
+                    aria-label="Review and save"
+                  >
+                    <button
+                      disabled={disabled || !dirty}
+                      onClick={() =>
+                        void act(async () => {
+                          setPreview(
+                            await api<CampaignState>(
+                              base + "/preview",
+                              "POST",
+                              body,
+                            ),
+                          );
+                          setNotice(
+                            "Preview ready. Review the schedule below before saving.",
+                          );
+                        })
+                      }
+                    >
+                      Preview schedule
+                    </button>
+                    <button
+                      className="primary"
+                      disabled={disabled || !dirty}
+                      onClick={() =>
+                        void act(async () => {
+                          const checked = await api<CampaignState>(
                             base + "/preview",
                             "POST",
                             body,
-                          ),
-                        );
-                        setNotice(
-                          "Preview ready. Review the schedule below before saving.",
-                        );
-                      })
-                    }
-                  >
-                    Preview schedule
-                  </button>
-                  <button
-                    className="primary"
-                    disabled={disabled || !dirty}
-                    onClick={() => void act(async () => {
-                      const checked = await api<CampaignState>(base + "/preview", "POST", body);
-                      setPreview(checked);
-                      setConfirmation({
-                        confirmLabel: "Save",
-                        text: "Save these reminder settings? They repeat monthly, and the bot will use the new times for enabled messages. Already-sent messages will not be sent again.",
-                        action: () =>
-                          void act(async () => {
-                            const result = await api<CampaignState>(
-                              base,
-                              "PATCH",
-                              {
-                                ...body,
-                                patch:
-                                  state?.campaign &&
-                                  !Object.hasOwn(
-                                    state.campaign,
-                                    "default_copy_version",
-                                  )
-                                    ? { ...patch, default_copy_version: 128 }
-                                    : patch,
-                              },
-                            );
-                            await load();
-                            setNotice(
-                              result.warning ||
-                                "Saved to Manage. Signup links are unchanged. The existing bot will check the scheduled sends.",
-                            );
-                          }),
-                      });
-                    })}
-                  >
-                    Save changes
-                  </button>
+                          );
+                          setPreview(checked);
+                          setConfirmation({
+                            confirmLabel: "Save",
+                            text: "Save these reminder settings? They repeat monthly, and the bot will use the new times for enabled messages. Already-sent messages will not be sent again.",
+                            action: () =>
+                              void act(async () => {
+                                const result = await api<CampaignState>(
+                                  base,
+                                  "PATCH",
+                                  {
+                                    ...body,
+                                    patch:
+                                      state?.campaign &&
+                                      !Object.hasOwn(
+                                        state.campaign,
+                                        "default_copy_version",
+                                      )
+                                        ? {
+                                            ...patch,
+                                            default_copy_version: 128,
+                                          }
+                                        : patch,
+                                  },
+                                );
+                                await load();
+                                setNotice(
+                                  result.warning ||
+                                    "Saved to Manage. Signup links are unchanged. The existing bot will check the scheduled sends.",
+                                );
+                              }),
+                          });
+                        })
+                      }
+                    >
+                      Save changes
+                    </button>
                   </div>
                 </div>
               )}

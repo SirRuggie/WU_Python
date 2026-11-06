@@ -31,7 +31,7 @@
 .member-signup-remaining h2 svg {
   flex: none;
   margin-top: var(--wu-space-1);
-  color: var(--roster-card-edge-danger, #ff737d);
+  color: var(--roster-card-edge-danger, var(--wu-danger-border));
   font-variant-numeric: tabular-nums;
 }
 .member-signup-summary h2 {
@@ -75,8 +75,8 @@
   text-underline-offset: 3px;
 }
 .member-signup-summary a:focus-visible {
-  outline: 2px solid #f2d892;
-  outline-offset: 4px;
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
 }
 
 /* Real status slots stay present while saved signup reads settle. Content may grow. */

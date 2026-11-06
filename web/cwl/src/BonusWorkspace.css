@@ -30,7 +30,8 @@
 .bonus-quiet-action {
   background: transparent;
   border: 0;
-  color: var(--roster-gold);
+  color: var(--wu-text);
+  text-decoration: underline;
 }
 .bonus-context button {
   min-height: 44px;
@@ -124,7 +125,7 @@
   font-variant-numeric: tabular-nums;
 }
 .bonus-stats strong {
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-xl);
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
@@ -250,8 +251,9 @@
   min-height: 44px;
   margin: var(--wu-space-2) 0;
   background: transparent;
-  color: var(--roster-gold);
+  color: var(--wu-text);
   border: 1px solid var(--roster-border);
+  text-decoration: underline;
 }
 .bonus-review-editor,
 .bonus-add-candidate {
@@ -345,7 +347,7 @@
   min-height: 44px;
 }
 .bonus-caution {
-  color: var(--roster-gold);
+  color: var(--wu-text-muted);
 }
 .bonus-check {
   display: flex;
@@ -377,7 +379,7 @@
 }
 .bonus-preview {
   margin-top: var(--wu-space-3);
-  border-top: 2px solid var(--roster-gold);
+  border-top: 2px solid var(--wu-text-muted);
   padding-top: var(--wu-space-4);
 }
 .bonus-preview h4 {
@@ -390,7 +392,7 @@
 }
 .bonus-message-preview {
   margin: var(--wu-space-4) 0;
-  border-left: 3px solid var(--roster-gold);
+  border-left: 3px solid var(--wu-text-muted);
   background: var(--roster-surface-raised);
   padding: var(--wu-space-4);
   border-radius: 4px;
