@@ -692,3 +692,19 @@
   padding: 0;
   margin: 0;
 }
+
+@media (min-width: 900px) {
+  .strikes-workspace .strike-activity-table .strike-activity-row {
+    align-items: center;
+  }
+  .strike-activity-status-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--wu-space-1) var(--wu-space-2);
+  }
+  .strike-activity-rule-line,
+  .strike-activity-freshness {
+    display: contents;
+  }
+}
