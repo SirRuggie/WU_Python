@@ -125,7 +125,7 @@
 }
 .ticket-conversation-tabs button[aria-pressed="true"] {
   color: var(--wu-accent);
-  background: #f5d46c0a;
+  background: transparent;
   border-color: var(--wu-accent);
 }
 .ticket-reader-tools {

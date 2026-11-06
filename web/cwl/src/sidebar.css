@@ -382,7 +382,7 @@ div.shell {
 }
 
 .shell .sidebar .navigation-section button[aria-current="page"]:hover {
-  background: var(--wu-surface-raised);
+  background: transparent;
   color: var(--wu-accent-hover);
 }
 .topbar-logo {

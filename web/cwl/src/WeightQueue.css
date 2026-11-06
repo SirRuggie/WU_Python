@@ -70,7 +70,7 @@
 .shell .weight-queue-unit-buttons button[aria-pressed="true"] {
   color: var(--roster-gold);
   border-color: var(--roster-gold);
-  background: rgba(237, 198, 77, 0.12);
+  background: transparent;
 }
 .weight-queue-row {
   display: grid;
@@ -149,7 +149,7 @@
 .shell .compact-weight-units button[aria-pressed="true"] {
   color: var(--roster-gold);
   border-color: var(--roster-gold);
-  background: rgba(237, 198, 77, 0.12);
+  background: transparent;
 }
 .compact-weight-feedback:empty {
   display: none;

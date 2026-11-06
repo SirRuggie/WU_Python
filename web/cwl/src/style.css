@@ -141,12 +141,45 @@ p {
   margin-top: 0;
 }
 h1 {
+  color: var(--wu-accent);
   font-size: var(--wu-text-2xl);
   line-height: 1.15;
   letter-spacing: -0.02em;
   margin-bottom: var(--wu-space-2);
   font-weight: var(--wu-weight-bold);
   text-wrap: balance;
+}
+/* Page titles share the helmet bar; card/dialog H1s retain only the gold ink. */
+:where(
+  .page-head h1,
+  .members-workspace > header > h1,
+  .base-bank > header > h1,
+  .dashboard-home > h1,
+  .ticket-browser > h1,
+  .dashboard-issues > h1,
+  .image-gallery > h1,
+  main:not(.center-screen) > h1
+) {
+  position: relative;
+}
+:where(
+  .page-head h1,
+  .members-workspace > header > h1,
+  .base-bank > header > h1,
+  .dashboard-home > h1,
+  .ticket-browser > h1,
+  .dashboard-issues > h1,
+  .image-gallery > h1,
+  main:not(.center-screen) > h1
+)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  width: 24px;
+  height: 3px;
+  background: var(--wu-brand-red);
+  pointer-events: none;
 }
 h2 {
   font-size: var(--wu-text-xl);
@@ -478,8 +511,12 @@ small {
   min-width: 0;
 }
 .account-card.chosen {
-  background: #282213;
-  border-color: #c6961b;
+  background: transparent;
+  border-color: var(--wu-accent);
+}
+.account-card.chosen .signed-up-name {
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
 }
 .account-top,
 .account-meta,
@@ -1141,8 +1178,8 @@ small {
   border-color: #d9a628;
 }
 .signup-panel-tabs button.active .count-pill {
-  background: #241d0f;
-  color: #f5e2ac;
+  background: transparent;
+  color: var(--wu-accent);
 }
 .pool-choice {
   margin: 0 0 var(--wu-space-5);
@@ -1164,9 +1201,11 @@ small {
   white-space: normal;
 }
 .pool-choice-grid button.active {
-  background: var(--wu-accent-soft);
-  border-color: #d9a628;
-  box-shadow: inset 0 0 0 1px #d9a628;
+  background: transparent;
+  border-color: var(--wu-accent);
+  box-shadow: inset 0 0 0 1px var(--wu-accent);
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
 }
 .pool-choice-grid strong {
   font-size: var(--wu-text-lg);
@@ -1230,7 +1269,7 @@ small {
 .roster-source-note {
   padding: var(--wu-space-4) var(--wu-space-4);
   border-left: 3px solid #d9a628;
-  background: #282315;
+  background: transparent;
   border-radius: 8px;
   font-size: var(--wu-text-xs);
   color: #d8c9a7;
@@ -1740,8 +1779,10 @@ textarea:focus-visible {
   min-height: 58px;
 }
 .compare-player.selected {
-  background: var(--wu-accent-soft);
-  border-color: #d9a628;
+  background: transparent;
+  border-color: var(--wu-accent);
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
 }
 .compare-player > span {
   display: block;
@@ -1759,8 +1800,8 @@ textarea:focus-visible {
 .compare-selected {
   margin-top: var(--wu-space-3);
   padding: var(--wu-space-4);
-  background: #242016;
-  border: 1px solid #5f4c23;
+  background: transparent;
+  border: 1px solid var(--wu-accent);
   border-radius: 11px;
 }
 .compare-selected h3 {
@@ -1768,6 +1809,7 @@ textarea:focus-visible {
 }
 .compare-selected p {
   margin-bottom: var(--wu-space-2);
+  color: var(--wu-accent);
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
@@ -1880,12 +1922,15 @@ textarea:focus-visible {
   border: 0;
   background: transparent;
 }
-.channel-results button.active,
-.channel-results button:hover {
-  background: #3c321e;
+.channel-results button:not(.active):not([aria-selected="true"]):hover {
+  background: var(--wu-surface-raised);
 }
+.channel-results button.active,
 .channel-results button[aria-selected="true"] {
-  color: #f4d781;
+  background: transparent;
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
+  box-shadow: inset 0 -3px var(--wu-accent);
 }
 .channel-results button small {
   overflow-wrap: anywhere;
@@ -1996,16 +2041,16 @@ img.site-logo {
 }
 .shell button.active,
 .shell button[aria-pressed="true"] {
-  background: var(--wu-accent-soft);
-  border-color: #dcb43f;
-  color: #ffe098;
-  -webkit-text-fill-color: #ffe098;
-  box-shadow: inset 0 -3px #e4b94b;
+  background: transparent;
+  border-color: var(--wu-accent);
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
+  box-shadow: inset 0 -3px var(--wu-accent);
 }
 .shell button.active:hover,
 .shell button[aria-pressed="true"]:hover {
-  background: #40351f;
-  color: #ffe098;
+  background: transparent;
+  color: var(--wu-accent-hover);
 }
 .shell button.active span,
 .shell button[aria-pressed="true"] span {
@@ -2013,8 +2058,8 @@ img.site-logo {
   -webkit-text-fill-color: inherit;
 }
 .shell .signup-panel-tabs button.active .count-pill {
-  background: #4b3d1e;
-  color: #ffe098;
+  background: transparent;
+  color: var(--wu-accent);
 }
 .shell button:disabled {
   opacity: 1;
@@ -2096,6 +2141,23 @@ img.site-logo {
 .shell .signup-flow .pool-choice-grid button:hover {
   background: var(--wu-surface-raised);
   border-color: var(--wu-text-muted);
+}
+.shell
+  .signup-flow
+  .pool-choice-grid
+  button:is(.active, [aria-pressed="true"]) {
+  background: transparent;
+  border-color: var(--wu-accent);
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
+}
+.shell
+  .signup-flow
+  .pool-choice-grid
+  button:is(.active, [aria-pressed="true"]):hover {
+  background: transparent;
+  border-color: var(--wu-accent);
+  color: var(--wu-accent-hover);
 }
 .shell .signup-flow .pool-choice-grid small {
   color: var(--wu-text-muted);

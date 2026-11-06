@@ -54,8 +54,10 @@
 }
 .access-person[aria-pressed="true"],
 .access-role-results button[aria-pressed="true"] {
-  border-color: #f1cb56;
-  background: var(--wu-accent-soft);
+  border-color: var(--wu-accent);
+  background: transparent;
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
 }
 .access-editor {
   min-width: 0;

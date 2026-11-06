@@ -43,9 +43,11 @@
   font-size: var(--wu-text-xl);
 }
 .overview-filters button[aria-pressed="true"] {
-  border-color: #e6a640;
-  box-shadow: inset 0 -3px #e6a640;
-  background: var(--wu-accent-soft);
+  border-color: var(--wu-accent);
+  box-shadow: inset 0 -3px var(--wu-accent);
+  background: transparent;
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
 }
 .overview-toolbar {
   display: flex;

@@ -69,8 +69,12 @@
   }
 }
 .saved-signup-card.account-selected {
-  border-color: #8f793f;
-  background: #242116;
+  border-color: var(--wu-accent);
+  background: transparent;
+}
+.saved-signup-card.account-selected .signed-up-name {
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
 }
 .saved-signup-card.pool-change-pending,
 .account-card.pool-change-pending {

@@ -50,9 +50,13 @@
   margin: var(--wu-space-3) 0;
 }
 .war-chips button {
-  border-color: #ba8b40;
-  background: var(--wu-accent-soft);
-  color: #ffe3aa;
+  border-color: var(--wu-accent);
+  background: transparent;
+  color: var(--wu-accent);
+}
+.war-chips button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--wu-accent-hover);
 }
 .war-chips span {
   margin-left: var(--wu-space-3);
