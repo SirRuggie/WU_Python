@@ -114,7 +114,7 @@
   border: 1px solid #6e6657;
   border-radius: 999px;
   padding: var(--wu-space-2) var(--wu-space-3);
-  background: var(--wu-surface-raised);
+  background: var(--wu-accent-soft);
   color: #fff3d6;
   font: inherit;
   cursor: pointer;

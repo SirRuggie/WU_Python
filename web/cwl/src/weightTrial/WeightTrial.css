@@ -255,7 +255,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: var(--wu-text);
+  color: var(--wu-accent);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
