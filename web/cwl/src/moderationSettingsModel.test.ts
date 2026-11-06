@@ -15,6 +15,7 @@ import {
   hasInvalidDestination,
   moderationRegistry,
   moderationSettingsError,
+  normalizeRoleId,
   saveModerationSettings,
   type Destination,
   type SettingsResponse,
@@ -56,14 +57,24 @@ const settings: SettingsResponse = {
   categories: {
     members: { mode: "main", channel_id: null, forum_tag_id: null },
     moderation: { mode: "main", channel_id: null, forum_tag_id: null },
+    messages: { mode: "main", channel_id: null, forum_tag_id: null },
+    invites: { mode: "main", channel_id: null, forum_tag_id: null },
   },
   events: {
     join: { enabled: true, channel_id: null, forum_tag_id: null },
     leave: { enabled: true, channel_id: null, forum_tag_id: null },
     kick: { enabled: true, channel_id: null, forum_tag_id: null },
     ban: { enabled: true, channel_id: null, forum_tag_id: null },
+    member_update: { enabled: false, channel_id: null, forum_tag_id: null },
+    timeout_add: { enabled: false, channel_id: null, forum_tag_id: null },
+    timeout_remove: { enabled: false, channel_id: null, forum_tag_id: null },
+    link: { enabled: false, channel_id: null, forum_tag_id: null },
+    invite_create: { enabled: false, channel_id: null, forum_tag_id: null },
+    invite_delete: { enabled: false, channel_id: null, forum_tag_id: null },
+    invite_use: { enabled: false, channel_id: null, forum_tag_id: null },
   },
-  ignores: {},
+  ignores: { channel_ids: [], role_ids: [] },
+  invite_names: {},
   channels_available: true,
   channels,
 };
@@ -162,8 +173,15 @@ it("accepts an authorized existing forum post and hides unsupported future event
   expect(eventTypes.map((event) => event.key)).toEqual([
     "join",
     "leave",
+    "member_update",
     "kick",
     "ban",
+    "timeout_add",
+    "timeout_remove",
+    "link",
+    "invite_create",
+    "invite_delete",
+    "invite_use",
   ]);
   expect(
     moderationRegistry.map((category) => [
@@ -171,9 +189,13 @@ it("accepts an authorized existing forum post and hides unsupported future event
       category.events.map((event) => event.key),
     ]),
   ).toEqual([
-    ["members", ["join", "leave", "nickname", "roles_added", "roles_removed"]],
+    [
+      "members",
+      ["join", "leave", "member_update", "roles_added", "roles_removed"],
+    ],
     ["moderation", ["kick", "ban", "unban", "timeout_add", "timeout_remove"]],
-    ["messages", ["delete", "edit", "bulk_delete"]],
+    ["messages", ["link", "delete", "edit", "bulk_delete"]],
+    ["invites", ["invite_create", "invite_delete", "invite_use"]],
     [
       "server",
       [
@@ -190,7 +212,7 @@ it("accepts an authorized existing forum post and hides unsupported future event
     moderationRegistry.flatMap((category) =>
       category.events.filter((event) => !event.supported),
     ),
-  ).toHaveLength(15);
+  ).toHaveLength(12);
 });
 
 it("preserves edits on conflict and distinguishes uncertain test delivery", () => {
@@ -203,4 +225,65 @@ it("preserves edits on conflict and distinguishes uncertain test delivery", () =
   expect(moderationSettingsError(null, "test").message).toContain(
     "Check Discord before trying again",
   );
+});
+
+it("round-trips ignores and invite names through clone and save", async () => {
+  const draft = cloneSettings(settings);
+  draft.ignores.channel_ids.push("123456789012345678");
+  draft.ignores.role_ids.push("223456789012345678");
+  draft.invite_names = { abc123: " Spring ad ", gone: "  ", vanity: "Site" };
+  const copy = cloneSettings(draft);
+  expect(copy.invite_names).toEqual({ abc123: "Spring ad", vanity: "Site" });
+  expect(copy.ignores).not.toBe(draft.ignores);
+  expect(changedSettings(settings, draft)).toBe(true);
+  transport.mockResolvedValue({ ...settings, revision: 8 });
+  await saveModerationSettings(settings, draft);
+  const body = transport.mock.calls[0][2];
+  expect(body.ignores).toEqual({
+    channel_ids: ["123456789012345678"],
+    role_ids: ["223456789012345678"],
+  });
+  expect(body.invite_names).toEqual({ abc123: "Spring ad", vanity: "Site" });
+});
+
+it("fills missing keys when an old response lacks the new fields", () => {
+  const old = {
+    ...settings,
+    categories: {
+      members: settings.categories.members,
+      moderation: settings.categories.moderation,
+    },
+    events: {
+      join: settings.events.join,
+      leave: settings.events.leave,
+      kick: settings.events.kick,
+      ban: settings.events.ban,
+    },
+    ignores: {},
+    invite_names: undefined,
+  } as unknown as SettingsResponse;
+  const copy = cloneSettings(old);
+  expect(copy.ignores).toEqual({ channel_ids: [], role_ids: [] });
+  expect(copy.invite_names).toEqual({});
+  expect(copy.categories.invites).toEqual({
+    mode: "main",
+    channel_id: null,
+    forum_tag_id: null,
+  });
+  expect(copy.events.invite_use).toEqual({
+    enabled: false,
+    channel_id: null,
+    forum_tag_id: null,
+  });
+  expect(changedSettings(settings, old)).toBe(false);
+  expect(effectiveDestination(copy, "link")).toMatchObject({ source: "main" });
+  copy.categories.messages.mode = "off";
+  expect(effectiveDestination(copy, "link")).toMatchObject({ source: "off" });
+});
+
+it("accepts only valid role ids for the ignore list", () => {
+  expect(normalizeRoleId(" 123456789012345678 ")).toBe("123456789012345678");
+  expect(normalizeRoleId("12345")).toBeNull();
+  expect(normalizeRoleId("12345678901234567890123")).toBeNull();
+  expect(normalizeRoleId("abc")).toBeNull();
 });

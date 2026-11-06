@@ -1,7 +1,37 @@
 import { api, ApiError } from "./api";
 
-export type ModerationKind = "join" | "leave" | "kick" | "ban";
-export type CategoryKind = "members" | "moderation";
+export type ModerationKind =
+  | "join"
+  | "leave"
+  | "kick"
+  | "ban"
+  | "member_update"
+  | "timeout_add"
+  | "timeout_remove"
+  | "link"
+  | "invite_create"
+  | "invite_delete"
+  | "invite_use";
+export type CategoryKind = "members" | "moderation" | "messages" | "invites";
+const categoryKinds: CategoryKind[] = [
+  "members",
+  "moderation",
+  "messages",
+  "invites",
+];
+const moderationKinds: ModerationKind[] = [
+  "join",
+  "leave",
+  "kick",
+  "ban",
+  "member_update",
+  "timeout_add",
+  "timeout_remove",
+  "link",
+  "invite_create",
+  "invite_delete",
+  "invite_use",
+];
 export type RouteTarget = {
   channel_id: string | null;
   forum_tag_id: string | null;
@@ -14,11 +44,29 @@ export type EventConfig = RouteTarget & {
 };
 export type EventSettings = Record<ModerationKind, EventConfig>;
 export type CategorySettings = Record<CategoryKind, CategoryConfig>;
+export type LinkIgnores = { channel_ids: string[]; role_ids: string[] };
 export type SettingsDraft = {
   main: RouteTarget;
   categories: CategorySettings;
   events: EventSettings;
-  ignores: Record<string, never>;
+  ignores: LinkIgnores;
+  invite_names: Record<string, string>;
+};
+export type InviteRow = {
+  code: string;
+  name: string | null;
+  inviter_id: string | null;
+  inviter_name: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  uses: number;
+  max_uses: number | null;
+  expires_at: string | null;
+  vanity: boolean;
+};
+export type InvitesResponse = {
+  invites: InviteRow[];
+  updated_at: string | null;
 };
 export type Destination = {
   id: string;
@@ -49,7 +97,7 @@ type RegistryEvent = {
   supported: boolean;
 };
 export const moderationRegistry: {
-  key: CategoryKind | "messages" | "server";
+  key: CategoryKind | "server";
   label: string;
   icon: string;
   events: RegistryEvent[];
@@ -76,12 +124,12 @@ export const moderationRegistry: {
         supported: true,
       },
       {
-        key: "nickname",
-        label: "Nickname changes",
+        key: "member_update",
+        label: "Profile changes",
         icon: "✏️",
         color: "#398fc9",
-        explanation: "",
-        supported: false,
+        explanation: "Nickname, name or avatar changes.",
+        supported: true,
       },
       {
         key: "roles_added",
@@ -135,16 +183,16 @@ export const moderationRegistry: {
         label: "Timeouts",
         icon: "⏱️",
         color: "#e69935",
-        explanation: "",
-        supported: false,
+        explanation: "Member timed out.",
+        supported: true,
       },
       {
         key: "timeout_remove",
         label: "Timeout removals",
         icon: "✅",
         color: "#2ba66a",
-        explanation: "",
-        supported: false,
+        explanation: "Timeout removed by a moderator.",
+        supported: true,
       },
     ],
   },
@@ -153,6 +201,14 @@ export const moderationRegistry: {
     label: "Messages",
     icon: "💬",
     events: [
+      {
+        key: "link",
+        label: "Links",
+        icon: "🔗",
+        color: "#398fc9",
+        explanation: "Message with a link.",
+        supported: true,
+      },
       {
         key: "delete",
         label: "Deletes",
@@ -176,6 +232,37 @@ export const moderationRegistry: {
         color: "#d34a4a",
         explanation: "",
         supported: false,
+      },
+    ],
+  },
+  {
+    key: "invites",
+    label: "Invites",
+    icon: "📨",
+    events: [
+      {
+        key: "invite_create",
+        label: "Invites created",
+        icon: "📨",
+        color: "#2ba66a",
+        explanation: "Invite created.",
+        supported: true,
+      },
+      {
+        key: "invite_delete",
+        label: "Invites deleted",
+        icon: "🗑️",
+        color: "#d34a4a",
+        explanation: "Invite deleted.",
+        supported: true,
+      },
+      {
+        key: "invite_use",
+        label: "Invite uses",
+        icon: "🎟️",
+        color: "#c9a84f",
+        explanation: "Member joins with an invite.",
+        supported: true,
       },
     ],
   },
@@ -246,20 +333,54 @@ export const eventTypes = moderationRegistry.flatMap((category) =>
     })),
 );
 
+const idPattern = /^\d{17,20}$/;
+export const maxIgnoreIds = 100;
+export const maxInviteNameLength = 40;
+
+export function normalizeRoleId(value: string): string | null {
+  const id = value.trim();
+  return idPattern.test(id) ? id : null;
+}
+
+function idList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
 export function cloneSettings(settings: SettingsDraft): SettingsDraft {
+  const categories = {} as CategorySettings;
+  for (const key of categoryKinds) {
+    const fallback: CategoryConfig = {
+      mode: "main",
+      channel_id: null,
+      forum_tag_id: null,
+    };
+    categories[key] = { ...fallback, ...settings.categories?.[key] };
+  }
+  const events = {} as EventSettings;
+  for (const key of moderationKinds) {
+    const fallback: EventConfig = {
+      enabled: false,
+      channel_id: null,
+      forum_tag_id: null,
+    };
+    events[key] = { ...fallback, ...settings.events?.[key] };
+  }
+  const inviteNames: Record<string, string> = {};
+  for (const [code, name] of Object.entries(settings.invite_names || {})) {
+    const trimmed = typeof name === "string" ? name.trim() : "";
+    if (trimmed) inviteNames[code] = trimmed;
+  }
   return {
     main: { ...settings.main },
-    categories: {
-      members: { ...settings.categories.members },
-      moderation: { ...settings.categories.moderation },
+    categories,
+    events,
+    ignores: {
+      channel_ids: idList(settings.ignores?.channel_ids),
+      role_ids: idList(settings.ignores?.role_ids),
     },
-    events: {
-      join: { ...settings.events.join },
-      leave: { ...settings.events.leave },
-      kick: { ...settings.events.kick },
-      ban: { ...settings.events.ban },
-    },
-    ignores: { ...settings.ignores },
+    invite_names: inviteNames,
   };
 }
 
@@ -274,7 +395,9 @@ export function changedSettings(
 }
 
 export function categoryForEvent(kind: ModerationKind): CategoryKind {
-  return kind === "join" || kind === "leave" ? "members" : "moderation";
+  return (
+    eventTypes.find((event) => event.key === kind)?.category || "moderation"
+  );
 }
 
 export function effectiveDestination(

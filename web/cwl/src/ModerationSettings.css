@@ -407,3 +407,111 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+.moderation-ignore-lists,
+.moderation-invite-names {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #495563;
+  border-radius: 10px;
+  background: #252b35;
+}
+
+.moderation-ignore-group {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.moderation-ignore-group label,
+.moderation-invite-list label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.moderation-ignore-group select,
+.moderation-ignore-group input,
+.moderation-invite-list input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.moderation-ignore-add {
+  display: flex;
+  gap: 6px;
+}
+
+.moderation-ignore-add button {
+  min-height: 44px;
+}
+
+.moderation-ignore-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.moderation-ignore-chips li {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  padding-left: 10px;
+  border: 1px solid #69798d;
+  border-radius: 999px;
+  background: #303a48;
+  font-size: 12px;
+}
+
+.moderation-ignore-chips li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.moderation-ignore-chips button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.moderation-invite-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.moderation-invite-head h4 {
+  margin: 0;
+}
+
+.moderation-invite-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.moderation-invite-list li {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid #3b4553;
+}
+
+.moderation-invite-list small,
+.moderation-invite-code {
+  overflow-wrap: anywhere;
+}

@@ -13,7 +13,7 @@ import { eventTypes } from "./moderationSettingsModel";
 type MemberEvent = {
   id: string;
   user_id: string;
-  event_type: "join" | "leave" | "kick" | "ban";
+  event_type: string;
   display_name?: string | null;
   username?: string | null;
   avatar_url?: string | null;
@@ -25,8 +25,27 @@ type MemberEvent = {
   delivery_status?: string | null;
 };
 type Response = { events: MemberEvent[]; next_cursor: string | null };
-type EventType = "all" | "join" | "leave" | "kick" | "ban";
+type EventType =
+  | "all"
+  | "join"
+  | "leave"
+  | "kick"
+  | "ban"
+  | "timeout_add"
+  | "timeout_remove"
+  | "member_update";
 type Filters = { query: string; type: EventType; from: string; to: string };
+
+const eventLabels: Record<string, string> = {
+  join: "Joined",
+  leave: "Left",
+  kick: "Kicked",
+  ban: "Banned",
+  timeout_add: "Timed out",
+  timeout_remove: "Timeout removed",
+  member_update: "Profile changed",
+};
+const moderationEvents = ["kick", "ban", "timeout_add", "timeout_remove"];
 
 const deliveryLabels: Record<string, string> = {
   queued: "Delivery queued",
@@ -155,8 +174,8 @@ export default function MemberActivityHistory({
         <div>
           <h2 id="member-activity-title">Activity history</h2>
           <p>
-            Recent joins, leaves, kicks and bans. A kick or ban can also create
-            a separate leave event.
+            Recent joins, leaves, kicks, bans, timeouts and profile changes. A
+            kick or ban can also create a separate leave event.
           </p>
         </div>
         <button
@@ -188,6 +207,9 @@ export default function MemberActivityHistory({
             <option value="leave">Leaves</option>
             <option value="kick">Kicks</option>
             <option value="ban">Bans</option>
+            <option value="timeout_add">Timeouts</option>
+            <option value="timeout_remove">Timeout removals</option>
+            <option value="member_update">Profile changes</option>
           </select>
         </label>
         <details className="member-activity-date-range">
@@ -294,17 +316,11 @@ export default function MemberActivityHistory({
                 null,
                 item.moderator_name,
               );
-              const eventLabel = {
-                join: "Joined",
-                leave: "Left",
-                kick: "Kicked",
-                ban: "Banned",
-              }[item.event_type];
+              const eventLabel = eventLabels[item.event_type] || "Activity";
               const eventIcon =
                 eventTypes.find((event) => event.key === item.event_type)
                   ?.icon || "●";
-              const isModeration =
-                item.event_type === "kick" || item.event_type === "ban";
+              const isModeration = moderationEvents.includes(item.event_type);
               const deliveryText = item.delivery_status
                 ? deliveryLabels[item.delivery_status] || ""
                 : "";
