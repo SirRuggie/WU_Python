@@ -11,8 +11,9 @@ type Props = {
   name: ReactNode;
   values?: ReactNode;
   action?: ReactNode;
+  detail?: ReactNode;
   meta: ReactNode[];
-  status: { tone: "good" | "bad" | "neutral"; content: ReactNode };
+  status?: { tone: "good" | "bad" | "neutral"; content: ReactNode };
   flags?: ReactNode[];
   className?: string;
   children?: ReactNode;
@@ -74,6 +75,7 @@ export default function AccountCard(props: Props | StructuralProps) {
     name,
     values,
     action,
+    detail,
     meta,
     status,
     flags = [],
@@ -83,9 +85,9 @@ export default function AccountCard(props: Props | StructuralProps) {
   const visibleFlags = parts(flags);
   const hasValues = parts([values]).length > 0;
   const toneClass =
-    status.tone === "good"
+    status?.tone === "good"
       ? " is-assigned"
-      : status.tone === "bad"
+      : status?.tone === "bad"
         ? " compare-account-missing"
         : "";
   return (
@@ -105,30 +107,35 @@ export default function AccountCard(props: Props | StructuralProps) {
                   <span className="player-card-name-text">{name}</span>
                 </strong>
               </div>
+              {detail && <div className="account-card-detail">{detail}</div>}
               <div className="player-card-meta account-card-meta">
                 {joined(meta)}
               </div>
-              <div className="roster-player-placement account-card-status-row">
-                {hasValues && (
-                  <div className="account-card-values">{values}</div>
-                )}
-                {hasValues && (
-                  <span className="account-card-value-separator"> · </span>
-                )}
-                <span className="player-clan-status account-card-status">
-                  <span
-                    className={`roster-player-placement${status.tone === "good" ? " is-in-clan" : status.tone === "neutral" ? " is-unassigned" : ""}`}
-                  >
-                    {status.tone === "bad" ? (
-                      <span className="player-current-clan is-elsewhere">
-                        {status.content}
+              {(hasValues || status) && (
+                <div className="roster-player-placement account-card-status-row">
+                  {hasValues && (
+                    <div className="account-card-values">{values}</div>
+                  )}
+                  {hasValues && status && (
+                    <span className="account-card-value-separator"> · </span>
+                  )}
+                  {status && (
+                    <span className="player-clan-status account-card-status">
+                      <span
+                        className={`roster-player-placement${status.tone === "good" ? " is-in-clan" : status.tone === "neutral" ? " is-unassigned" : ""}`}
+                      >
+                        {status.tone === "bad" ? (
+                          <span className="player-current-clan is-elsewhere">
+                            {status.content}
+                          </span>
+                        ) : (
+                          <strong>{status.content}</strong>
+                        )}
                       </span>
-                    ) : (
-                      <strong>{status.content}</strong>
-                    )}
-                  </span>
-                </span>
-              </div>
+                    </span>
+                  )}
+                </div>
+              )}
               {visibleFlags.length > 0 && (
                 <div className="player-card-meta account-card-flags">
                   {joined(visibleFlags)}

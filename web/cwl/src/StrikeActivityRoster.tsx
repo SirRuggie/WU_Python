@@ -85,6 +85,8 @@ export default function StrikeActivityRoster({
   onDenied?: () => void;
 }) {
   const rosterRef = useRef<HTMLElement>(null);
+  const chipsRef = useRef<HTMLDivElement>(null);
+  const [moreChips, setMoreChips] = useState(false);
   const scrolledView = useRef<string | null>(null);
   const [local, setLocal] = useState(() =>
     parseActivityFilters(state ?? window.location.search, markedDefault),
@@ -325,29 +327,53 @@ export default function StrikeActivityRoster({
       JSON.stringify(normalizeActivityView({ ...filters, ...filter.clear })) !==
       JSON.stringify(filters),
   );
+  useEffect(() => {
+    const row = chipsRef.current?.querySelector<HTMLElement>(
+      ".strike-activity-tabs",
+    );
+    if (!row) return;
+    const measure = () =>
+      setMoreChips(row.scrollWidth - row.clientWidth - row.scrollLeft > 1);
+    measure();
+    row.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    const observer =
+      typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    observer?.observe(row);
+    return () => {
+      row.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+      observer?.disconnect();
+    };
+  }, [loading, data.accounts, filterIdentity]);
   return (
     <section
       ref={rosterRef}
       className="strike-activity-roster"
       aria-label="Family activity overview"
     >
-      <FilterChips
-        className="strike-activity-tabs"
-        label="Account views"
-        value={filters.view}
-        disabled={bulkBusy}
-        options={activityViews.map((view) => ({
-          value: view,
-          label: {
-            not_attacking: "Not attacking",
-            inactive: "Inactive",
-            replacements: "Replacements",
-            all: "All",
-          }[view],
-          count: counts[view],
-        }))}
-        onChange={(view) => change(activityViewPreset(filters, view))}
-      />
+      <div
+        ref={chipsRef}
+        className={`strike-activity-chips${moreChips ? " has-more" : ""}`}
+      >
+        <FilterChips
+          className="strike-activity-tabs"
+          label="Account views"
+          value={filters.view}
+          disabled={bulkBusy}
+          options={activityViews.map((view) => ({
+            value: view,
+            label: {
+              not_attacking: "Not attacking",
+              inactive: "Inactive",
+              replacements: "Replacements",
+              all: "All",
+            }[view],
+            count: counts[view],
+          }))}
+          onChange={(view) => change(activityViewPreset(filters, view))}
+        />
+      </div>
       <div className="strike-activity-toolbar">
         <input
           aria-label="Find account or member"
@@ -466,59 +492,64 @@ export default function StrikeActivityRoster({
       )}
       <div className="strike-activity-status">
         <div className="strike-activity-status-line">
-          <div className="strike-activity-applied">
-            {appliedActivityFilters(filters, data.clans).map((filter) => {
-              const next = normalizeActivityView({
-                ...filters,
-                ...filter.clear,
-              });
-              if (
-                Object.keys(filter.clear).every(
-                  (key) =>
-                    next[key as keyof ActivityFilters] ===
-                    filters[key as keyof ActivityFilters],
+          <div className="strike-activity-rule-line">
+            <div className="strike-activity-applied">
+              {appliedActivityFilters(filters, data.clans).map((filter) => {
+                const next = normalizeActivityView({
+                  ...filters,
+                  ...filter.clear,
+                });
+                if (
+                  Object.keys(filter.clear).every(
+                    (key) =>
+                      next[key as keyof ActivityFilters] ===
+                      filters[key as keyof ActivityFilters],
+                  )
                 )
-              )
+                  return (
+                    <span
+                      key={filter.key}
+                      className="strike-tab-predicate"
+                      title="This rule decides which accounts the tab shows. Select All to show other accounts."
+                    >
+                      {filter.label}
+                    </span>
+                  );
                 return (
-                  <span
+                  <button
                     key={filter.key}
-                    className="strike-tab-predicate"
-                    title="This rule decides which accounts the tab shows. Select All to show other accounts."
+                    aria-label={`Remove ${filter.label}`}
+                    onClick={() => change(filter.clear)}
                   >
-                    {filter.label}
-                  </span>
+                    {filter.label} ×
+                  </button>
                 );
-              return (
-                <button
-                  key={filter.key}
-                  aria-label={`Remove ${filter.label}`}
-                  onClick={() => change(filter.clear)}
-                >
-                  {filter.label} ×
-                </button>
-              );
-            })}
+              })}
+            </div>
+            <p
+              className="strike-activity-summary"
+              role="status"
+              title={loadedAt ? `Updated ${loadedAt}` : undefined}
+            >
+              {(error
+                ? "Activity unavailable"
+                : loading && !data.accounts.length
+                  ? "Loading accounts…"
+                  : "") ||
+                `Showing ${visible.length} of ${data.accounts.length}`}
+            </p>
           </div>
-          <p
-            className="strike-activity-summary"
-            role="status"
-            title={loadedAt ? `Updated ${loadedAt}` : undefined}
-          >
-            {(error
-              ? "Activity unavailable"
-              : loading && !data.accounts.length
-                ? "Loading accounts…"
-                : "") || `Showing ${visible.length} of ${data.accounts.length}`}
-          </p>
-          {data.activity_updating ? (
-            <p className="strike-activity-as-of">Loading activity…</p>
-          ) : data.activity_as_of ? (
-            <p className="strike-activity-as-of">{data.activity_as_of}</p>
-          ) : null}
-          <div
-            className="strike-activity-tracking-slot"
-            ref={trackingSlotRef}
-          />
+          <div className="strike-activity-freshness">
+            {data.activity_updating ? (
+              <p className="strike-activity-as-of">Loading activity…</p>
+            ) : data.activity_as_of ? (
+              <p className="strike-activity-as-of">{data.activity_as_of}</p>
+            ) : null}
+            <div
+              className="strike-activity-tracking-slot"
+              ref={trackingSlotRef}
+            />
+          </div>
         </div>
       </div>
       {copied && (
