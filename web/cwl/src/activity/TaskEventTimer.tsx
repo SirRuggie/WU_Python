@@ -44,7 +44,7 @@ export default function TaskEventTimer({
       </div>
       <p>
         {cwl
-          ? "This is the time when clans sign up in the game. Each clan has its own battle times. Your attack tasks and battle timers appear below after the game reports a war."
+          ? "This is the time when clans sign up in the game. Each clan has its own battle times. Your attack tasks and battle timers appear here after the game reports a war."
           : live
             ? "Progress appears below as activity is reported. If it has not appeared yet, check again after playing."
             : "New event progress will appear here after the event starts and activity is reported."}
