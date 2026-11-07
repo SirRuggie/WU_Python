@@ -15,7 +15,8 @@ from utils.member_events import (
 )
 from utils.member_event_settings import (
     CATEGORIES, EVENT_TYPES, INVITE_CODE, LEGACY_EVENT_TYPES, MAX_IGNORE_IDS,
-    MAX_INVITE_NAMES, SCHEMA_VERSION, default_ignores, effective_event, normalize_settings,
+    MAX_INVITE_NAMES, SCHEMA_VERSION, checked_ignored_bot_ids, default_ignores, effective_event,
+    normalize_settings, resolve_ignored_bots,
 )
 from utils.member_invites import MemberInviteStore, public_invite
 from .server_management import API, mongo, require_manage
@@ -203,11 +204,37 @@ async def destination(request):
     return response
 
 
+async def _own_bot(request):
+    """This bot's {id, username} from Discord; None when the lookup fails."""
+    from .server_management import discord
+    try:
+        me = await discord(request, "GET", "/users/@me")
+        return {"id": str(me["id"]), "username": str(me.get("global_name") or me.get("username") or me["id"])}
+    except Exception:
+        return None
+
+
+def _bot_actors(stored, own):
+    """Bots seen as audit actors plus this bot, sorted by name."""
+    actors = {str(uid): {"id": str(uid), "name": str(item.get("name") or uid),
+                         "last_seen": item["last_seen"].replace(tzinfo=item["last_seen"].tzinfo or timezone.utc).isoformat()
+                         if isinstance(item.get("last_seen"), datetime) else None}
+              for uid, item in stored.items() if isinstance(item, dict)}
+    if own and own["id"] not in actors:
+        actors[own["id"]] = {"id": own["id"], "name": own["username"], "last_seen": None}
+    return sorted(actors.values(), key=lambda actor: (actor["name"].casefold(), actor["id"]))
+
+
 async def settings(request):
     staff = await require_manage(request, "roles")
     async with mongo(request) as db:
-        saved = normalize_settings(await MemberEventStore(db.member_events).settings(),
-                                   MemberEventStore.default_settings())
+        store = MemberEventStore(db.member_events)
+        saved = normalize_settings(await store.settings(), MemberEventStore.default_settings())
+        stored_actors = await store.bot_actors()
+    own = await _own_bot(request)
+    # Resolved on read; a row that never saved the list is left untouched.
+    saved["ignored_bot_ids"] = resolve_ignored_bots(saved, own["id"] if own else None)
+    bot_actors = _bot_actors(stored_actors, own)
     try:
         from .server_management import discord
         actor, effective = await _bot_permissions(request)
@@ -256,7 +283,8 @@ async def settings(request):
     forum_preview_cards = {kind: build_forum_message(sample_row(kind)) for kind in EVENT_TYPES}
     sample = sample_row("kick")
     preview_names = {sample["user_id"]: sample["display_name"], sample["moderator_id"]: "Sample moderator"}
-    response = web.json_response({**saved, "preview_names": preview_names, "preview_cards": preview_cards,
+    response = web.json_response({**saved, "bot_actors": bot_actors,
+                                  "preview_names": preview_names, "preview_cards": preview_cards,
                                   "forum_preview_cards": forum_preview_cards, "channels": options,
                                   "channels_available": channels_available, "warning": warning,
                                   "roles": roles, "roles_available": roles_available})
@@ -343,11 +371,16 @@ def _checked_settings(body):
                           "forum_tag_id": value["forum_tag_id"]}, kind)
         body = normalize_settings(body, MemberEventStore.default_settings())
     body = {"schema_version": SCHEMA_VERSION, **body}
-    if set(body) != {"schema_version", "revision", "main", "categories", "events",
-                     "ignores", "invite_names"}:
+    required = {"schema_version", "revision", "main", "categories", "events", "ignores", "invite_names"}
+    if not required <= set(body) <= required | {"ignored_bot_ids"}:  # Older clients omit the bot list.
         raise web.HTTPBadRequest(text="Select all member log settings.")
     if body["schema_version"] != SCHEMA_VERSION:
         raise web.HTTPBadRequest(text="Unsupported member log settings schema.")
+    try:  # Absent or null leaves the saved bot list (or its own-bot default) alone.
+        ignored_bots = (checked_ignored_bot_ids(body["ignored_bot_ids"])
+                        if body.get("ignored_bot_ids") is not None else None)
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from None
     ignores = _ignores(body["ignores"])
     invite_names = _invite_names(body["invite_names"])
     main = _destination(body["main"], "main")
@@ -377,7 +410,7 @@ def _checked_settings(body):
             {"channel_id": value["channel_id"], "forum_tag_id": value["forum_tag_id"]}, kind)}
     return {"schema_version": SCHEMA_VERSION, "revision": body["revision"],
             "main": main, "categories": checked_categories, "events": checked_events,
-            "ignores": ignores, "invite_names": invite_names}
+            "ignores": ignores, "invite_names": invite_names, "ignored_bot_ids": ignored_bots}
 
 
 async def _validate_destination(request, kind, resolved, actor, effective, staff):
@@ -420,6 +453,9 @@ async def save_settings(request):
             saved = await MemberEventStore(db.member_events).save_settings(checked["revision"], checked)
         except SettingsConflict:
             raise web.HTTPConflict(text="Member log settings changed. Reload before saving.") from None
+    if saved.get("ignored_bot_ids") is None:  # Client left it unsaved: show the default in force.
+        own = await _own_bot(request)
+        saved["ignored_bot_ids"] = resolve_ignored_bots(saved, own["id"] if own else None)
     response = web.json_response(saved)
     response.headers["Cache-Control"] = "no-store"
     return response

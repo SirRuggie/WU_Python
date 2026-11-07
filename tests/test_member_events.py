@@ -392,9 +392,45 @@ class NewLogTests(unittest.IsolatedAsyncioTestCase):
             if kind in ("join", "leave"):
                 continue
             self.assertEqual(loaded["events"][kind], {"enabled": False, "channel_id": None, "forum_tag_id": None})
+        self.assertIsNone(loaded["ignored_bot_ids"])  # Never saved: the runtime default applies.
         saved = await store.save_settings(3, loaded)
         self.assertEqual(saved["revision"], 4)
         self.assertEqual(self.history.rows["member-events-settings:%d" % GUILD_ID]["invite_names"], {})
+        self.assertNotIn("ignored_bot_ids", self.history.rows["member-events-settings:%d" % GUILD_ID])
+        saved = await store.save_settings(4, {**loaded, "ignored_bot_ids": []})  # Staff chose an empty list.
+        self.assertEqual(self.history.rows["member-events-settings:%d" % GUILD_ID]["ignored_bot_ids"], [])
+        self.assertEqual((await store.settings())["ignored_bot_ids"], [])
+
+    async def test_bot_actor_doc_keeps_100_newest_and_is_not_history_or_expiring(self):
+        store = MemberEventStore(self.history)
+        start = datetime(2026, 11, 6, tzinfo=timezone.utc)
+        for index in range(101):
+            await store.note_bot_actor(10 ** 17 + index, f"bot{index}", start + timedelta(minutes=index))
+        bots = await store.bot_actors()
+        self.assertEqual(len(bots), 100)
+        self.assertNotIn(str(10 ** 17), bots)  # The oldest was dropped.
+        self.assertIn(str(10 ** 17 + 100), bots)
+        doc = self.history.rows["member-events-bot-actors:%d" % GUILD_ID]
+        self.assertNotIn("expires_at", doc)
+        self.assertNotIn("event_type", doc)
+        await store.note_bot_actor(10 ** 17 + 5, "renamed", start + timedelta(hours=3))  # Seen again, new name.
+        self.assertEqual((await store.bot_actors())[str(10 ** 17 + 5)]["name"], "renamed")
+        await store.advance_audit_cursor(500)
+        self.assertNotIn("expires_at", self.history.rows["member-events-audit-cursor:%d" % GUILD_ID])
+        # State docs never reach history (they carry no event type).
+        from utils.member_events import HISTORY_TYPES
+        self.assertTrue(all(row.get("event_type") not in HISTORY_TYPES for row in self.history.rows.values()))
+        found, _ = await store.search(guild_id=GUILD_ID)
+        self.assertEqual(found, [])
+
+    async def test_audit_cursor_only_moves_forward(self):
+        store = MemberEventStore(self.history)
+        self.assertIsNone(await store.audit_cursor())
+        await store.advance_audit_cursor(1000)
+        await store.advance_audit_cursor(900)
+        self.assertEqual(await store.audit_cursor(), 1000)
+        await store.advance_audit_cursor(1001)
+        self.assertEqual(await store.audit_cursor(), 1001)
 
     async def test_timeout_add_and_remove_come_from_the_audit_entry_once(self):
         await enable(self.history, "timeout_add", "timeout_remove")
@@ -634,7 +670,7 @@ class NewLogTests(unittest.IsolatedAsyncioTestCase):
 
 A = hikari.AuditLogEventType
 K = hikari.AuditLogChangeKey
-HUMAN, APP = 999, 998
+HUMAN, APP, WICK = 999, 998, 997
 
 
 class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
@@ -655,7 +691,11 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
                       transport._recent_app_adds, transport._delete_counts):
             state.clear()
         users = {HUMAN: NS(is_bot=False), APP: NS(is_bot=True)}
-        self.bot = NS(cache=NS(get_user=users.get, get_role=lambda r: None, get_guild_channel=lambda c: None,
+        for key, value in (("pending", False), ("live_max", 0)):
+            transport._audit_state[key] = value
+        self.addCleanup(transport._audit_state.update, pending=True, live_max=0)
+        self.bot = NS(get_me=lambda: NS(id=APP),  # The default ignored bot is this one.
+                      cache=NS(get_user=users.get, get_role=lambda r: None, get_guild_channel=lambda c: None,
                                get_thread=lambda c: None, get_guild=lambda g: None,
                                get_member=lambda g, u: None),
                       rest=NS(fetch_user=AsyncMock(side_effect=hikari.NotFoundError("u", {}, b"")),
@@ -706,7 +746,7 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated["changes"], [{"field": "name", "before": "Raiders", "after": "Raid leads"}])
 
     async def test_disabled_kind_does_no_work_and_unknown_actor_counts_as_human(self):
-        await enable(self.history, "role_create", "emoji")
+        await enable(self.history, "role_create", "emoji", ignored_bot_ids=["776"])
         await self.audit(A.CHANNEL_CREATE, 1, NS(key=K.NAME, old_value=None, new_value="x"))  # Not enabled.
         self.assertEqual(self.rows("channel_create"), [])
         self.bot.rest.fetch_user.assert_not_awaited()
@@ -821,6 +861,150 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.rows("roles_added")), 1)
         await self.audit(A.MEMBER_ROLE_UPDATE, 1, added, removed, target=self.uid)  # Replay.
         self.assertEqual((len(self.rows("roles_added")), len(self.rows("roles_removed"))), (1, 1))
+
+    def add_bot(self, user_id, name="Wick"):
+        users = self.bot.cache.get_user.__self__  # The dict behind users.get.
+        users[user_id] = NS(is_bot=True, username=name.lower(), global_name=name)
+
+    async def test_only_listed_bots_are_skipped_and_every_bot_actor_is_remembered(self):
+        self.add_bot(WICK)
+        role = NS(key=K.NAME, old_value=None, new_value="Raiders")
+        await enable(self.history, "role_create")  # Never saved a list: default = this bot (APP).
+        await self.audit(A.ROLE_CREATE, 1, role, user=APP)
+        await self.audit(A.ROLE_CREATE, 2, role, user=WICK)  # Wick-like bot is logged.
+        await self.audit(A.ROLE_CREATE, 3, role, user=HUMAN)
+        self.assertEqual([r["moderator_id"] for r in sorted(self.rows("role_create"), key=lambda r: r["_id"])],
+                         [str(WICK), str(HUMAN)])
+        actors = await MemberEventStore(self.history).bot_actors()
+        self.assertEqual({k: v["name"] for k, v in actors.items()}, {str(APP): str(APP), str(WICK): "Wick"})
+        self.assertNotIn("ignored_bot_ids", self.history.rows["member-events-settings:%d" % GUILD_ID])
+        # A saved list is used as is: Wick ignored, the own bot (not listed) is logged.
+        await MemberEventStore(self.history).save_settings(1, {
+            **await MemberEventStore(self.history).settings(), "ignored_bot_ids": [str(WICK)]})
+        await self.audit(A.ROLE_CREATE, 4, role, user=WICK)
+        await self.audit(A.ROLE_CREATE, 5, role, user=APP)
+        self.assertEqual(sorted(r["audit_entry_id"] for r in self.rows("role_create")), ["2", "3", "5"])
+
+    async def test_saved_empty_list_logs_the_own_bot_and_unknown_own_id_ignores_nobody(self):
+        role = NS(key=K.NAME, old_value=None, new_value="Raiders")
+        await enable(self.history, "role_create", ignored_bot_ids=[])
+        await self.audit(A.ROLE_CREATE, 1, role, user=APP)
+        self.assertEqual(len(self.rows("role_create")), 1)
+        self.history.rows.clear()
+        await enable(self.history, "role_create")  # Field missing, but own id cannot be read.
+        self.bot.get_me = lambda: None
+        self.bot.rest.fetch_my_user = AsyncMock(side_effect=RuntimeError("down"))
+        await self.audit(A.ROLE_CREATE, 2, role, user=APP)
+        self.assertEqual(len(self.rows("role_create")), 1)
+
+    async def test_other_audit_paths_use_the_ignored_list_too(self):
+        self.add_bot(WICK)
+        added = NS(key=K.ADD_ROLE_TO_MEMBER, old_value=None, new_value={1: NS(name="Member")})
+        await enable(self.history, "roles_added", "unban", ignored_bot_ids=[str(WICK)])
+        await self.audit(A.MEMBER_ROLE_UPDATE, 1, added, target=self.uid, user=WICK)
+        await self.audit(A.MEMBER_ROLE_UPDATE, 2, added, target=self.uid, user=APP)
+        self.assertEqual([r["moderator_id"] for r in self.rows("roles_added")], [str(APP)])
+        await self.audit(A.MEMBER_BAN_REMOVE, 3, target=self.uid, user=WICK)
+        self.assertEqual(self.rows("unban"), [])
+
+    async def test_live_audit_entries_advance_the_cursor_forward_only(self):
+        await enable(self.history, "role_create")
+        role = NS(key=K.NAME, old_value=None, new_value="Raiders")
+        store = MemberEventStore(self.history)
+        await self.audit(A.ROLE_CREATE, 1000, role)
+        await self.audit(A.ROLE_CREATE, 900, role)
+        self.assertEqual(await store.audit_cursor(), 1000)
+        await self.audit(A.CHANNEL_CREATE, 1001, role)  # Disabled kind: handled, cursor still moves.
+        self.assertEqual(await store.audit_cursor(), 1001)
+        transport._audit_state["pending"] = True  # Before recovery has read the cursor.
+        await self.audit(A.ROLE_CREATE, 1500, role)
+        self.assertEqual((await store.audit_cursor(), transport._audit_state["live_max"]), (1001, 1500))
+
+    def audit_log(self, *entries, error=None):
+        async def pages(guild, **kwargs):
+            if error:
+                raise error
+            for chunk in (entries[i:i + 100] for i in range(0, len(entries), 100)):
+                yield NS(entries={e.id: e for e in chunk})
+        self.bot.rest.fetch_audit_log = pages
+
+    async def recover(self):
+        transport._audit_state.update(pending=True, live_max=0)
+        await transport.recover_audit(self.mongo, self.bot)
+
+    async def test_recovery_replays_missed_entries_oldest_first_marked_recovered(self):
+        await enable(self.history, "role_create")
+        store = MemberEventStore(self.history)
+        await store.advance_audit_cursor(1000)
+        role = lambda i: self.entry(A.ROLE_CREATE, i, NS(key=K.NAME, old_value=None, new_value=f"r{i}"))
+        self.audit_log(role(1003), role(1002), role(1001), role(1000), role(999))  # Newest first, like Discord.
+        await self.recover()
+        order = [call.args[2]["audit_entry_id"] for call in self.deliver.await_args_list]
+        self.assertEqual(order, ["1001", "1002", "1003"])
+        self.assertTrue(all(r["details"]["recovered"] for r in self.rows("role_create")))
+        self.assertEqual(await store.audit_cursor(), 1003)
+        self.assertFalse(transport._audit_state["pending"])
+
+    async def test_recovery_caps_at_24_hours_and_500_entries(self):
+        await enable(self.history, "role_create")
+        store = MemberEventStore(self.history)
+        await store.advance_audit_cursor(1)
+        role = lambda i, age=0: NS(**{**vars(self.entry(A.ROLE_CREATE, i, NS(key=K.NAME, old_value=None, new_value="r"))),
+                                      "created_at": datetime.now(timezone.utc) - timedelta(hours=age)})
+        self.audit_log(role(30), role(29), role(28, age=25), role(27, age=26))
+        await self.recover()
+        self.assertEqual(sorted(r["audit_entry_id"] for r in self.rows("role_create")), ["29", "30"])
+        self.history.rows.clear()
+        await enable(self.history, "role_create")
+        await store.advance_audit_cursor(1)
+        self.audit_log(*[role(5000 - i) for i in range(600)])
+        await self.recover()
+        ids = sorted(int(r["audit_entry_id"]) for r in self.rows("role_create"))
+        self.assertEqual((len(ids), ids[0], ids[-1]), (500, 4501, 5000))  # The newest 500.
+
+    async def test_recovery_never_posts_an_entry_the_live_handler_already_posted(self):
+        await enable(self.history, "role_create")
+        store = MemberEventStore(self.history)
+        entry = self.entry(A.ROLE_CREATE, 1001, NS(key=K.NAME, old_value=None, new_value="Raiders"))
+        await transport.audited(NS(entry=entry), self.mongo, self.bot)
+        self.assertEqual(self.deliver.await_count, 1)
+        self.history.rows.pop("member-events-audit-cursor:%d" % GUILD_ID)
+        await store.advance_audit_cursor(1000)  # Cursor behind the live entry (for example, a restart).
+        self.audit_log(entry)
+        await self.recover()
+        self.assertEqual((len(self.rows("role_create")), self.deliver.await_count), (1, 1))
+        self.assertNotIn("recovered", self.rows("role_create")[0]["details"])
+
+    async def test_recovery_forbidden_logs_one_warning_and_never_raises(self):
+        store = MemberEventStore(self.history)
+        await store.advance_audit_cursor(1000)
+        self.audit_log(error=hikari.ForbiddenError("u", {}, b""))
+        with self.assertLogs(transport.log, "WARNING") as logs:
+            await self.recover()
+        self.assertEqual(len(logs.records), 1)
+        self.assertEqual(await store.audit_cursor(), 1000)
+        self.assertTrue(transport._audit_state["pending"])  # Retried on the next start.
+
+    async def test_first_run_sets_the_cursor_to_the_newest_entry_and_recovers_nothing(self):
+        await enable(self.history, "role_create")
+        role = lambda i: self.entry(A.ROLE_CREATE, i, NS(key=K.NAME, old_value=None, new_value="r"))
+        self.audit_log(role(77), role(76))
+        await self.recover()
+        self.assertEqual(await MemberEventStore(self.history).audit_cursor(), 77)
+        self.assertEqual(self.rows("role_create"), [])
+        self.deliver.assert_not_awaited()
+
+    async def test_started_hook_runs_recovery_in_the_background_after_the_snapshot(self):
+        order = []
+        async def snapshot(mongo, bot): order.append("snapshot")
+        async def recovery(mongo, bot):
+            order.append("recovery")
+        with patch.object(transport, "refresh_invites", new=snapshot), \
+             patch.object(transport, "recover_audit", new=recovery):
+            await transport.invites_started(NS(), self.mongo, self.bot)
+            self.assertEqual(order, ["snapshot"])  # Recovery is a task, not awaited.
+            await transport._audit_task
+        self.assertEqual(order, ["snapshot", "recovery"])
 
     def unban_event(self):
         return NS(guild_id=GUILD_ID, user=NS(id=self.uid, username="alice", global_name="Alice", avatar_hash=None))

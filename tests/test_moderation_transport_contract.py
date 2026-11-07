@@ -185,6 +185,7 @@ def test_link_card_is_inert_bounded_and_has_a_jump_button():
     assert '@everyone' not in text and '<@123456789012345678> https' not in text
     assert len(message) < 560
     links = next(t for t in texts if t.startswith('**Links**')).split('\n')[1:]
+    assert links.pop() == '+5 more'  # Ten shown, five summarized.
     assert len(links) == 10 and all(len(line) <= 202 and line.startswith('`') and line.endswith('`') for line in links)
     assert not any('`' in line[1:-1] for line in links)
     buttons = [c for r in card['components'][0]['components'] if r['type'] == 1 for c in r['components']]

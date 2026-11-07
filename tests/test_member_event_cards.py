@@ -278,5 +278,85 @@ class BatchTwoCardTests(unittest.TestCase):
         self.assertIn("**Roles**\nUnavailable", card_text(build_card({**sample_row("kick"), "roles": None})))
 
 
+def oversized(kind):
+    """A row of this kind with every list and text far past the limits."""
+    row = sample_row(kind)
+    long = "<>&*_`|~[]()@" * 40  # Every character is escaped, doubling its length.
+    change = lambda i: {"field": f"field_{i}" * 3, "before": long, "after": long}
+    row.update(display_name=long, reason=long, roles=[long] * 100)
+    row["details"] = {
+        **(row["details"] or {}), "changes": [change(i) for i in range(40)],
+        "roles": [long] * 100, "urls": [f"https://e.example/{i}" + "z" * 300 for i in range(40)],
+        "attachments": [{"name": long, "type": long} for _ in range(40)],
+        "content": long * 3, "before": long * 3, "after": long * 3, "invite": long,
+        "name": long, "subject_name": long, "channel_name": long, "inviter_name": long,
+    }
+    return row
+
+
+class CardLimitTests(unittest.TestCase):
+    def test_every_kind_stays_within_discord_limits_as_text_card_and_forum_starter(self):
+        from utils.member_event_settings import EVENT_TYPES
+        for kind in EVENT_TYPES:
+            with self.subTest(kind=kind):
+                row = oversized(kind)
+                card = build_card(row)
+                texts = [c["content"] for c in card["components"][0]["components"] if c["type"] == 10]
+                texts += [c["content"] for child in card["components"][0]["components"] if child["type"] == 9
+                          for c in child["components"]]
+                self.assertLessEqual(sum(map(len, texts)), 3800)
+                forum = build_forum_message(row)["embeds"][0]
+                self.assertLessEqual(len(forum["description"]), 4000)
+                self.assertLessEqual(len(forum["description"]), 5800)
+                for text in (*texts, forum["description"]):
+                    self.assertNotIn("�", text)
+
+    def test_oversized_text_is_cut_with_an_ellipsis_at_a_character_boundary(self):
+        from utils.member_event_cards import _fit
+        lines = ["name", "title", "m" * 2000, "f" * 5000, "footer"]
+        fitted = _fit(lines, 3800)
+        self.assertEqual(sum(map(len, fitted)), 3800)
+        self.assertTrue(fitted[3].endswith("…"))
+        self.assertEqual((fitted[0], fitted[1], fitted[2], fitted[4]), ("name", "title", "m" * 2000, "footer"))
+        emoji = _fit(["n", "t", "😀" * 5000, "end"], 100)
+        self.assertEqual(emoji[2], "😀" * (100 - len("n") - len("t") - len("end") - 1) + "…")
+
+    def test_lists_are_capped_with_a_more_line(self):
+        def lines(kind, key, count, item):
+            row = sample_row(kind)
+            row["details"] = {**(row["details"] or {}), key: [item(i) for i in range(count)]}
+            return card_text(build_card(row))
+        roles = lines("roles_added", "roles", 25, lambda i: f"Role{i:02d}")
+        self.assertIn("Role09 +15 more", roles)
+        self.assertNotIn("Role10", roles)
+        urls = lines("link", "urls", 14, lambda i: f"https://e.example/{i}")
+        self.assertIn("+4 more", urls)
+        self.assertNotIn("/10`", urls)
+        profile = lines("member_update", "changes", 14, lambda i: {"field": "nickname", "before": f"b{i}", "after": f"a{i}"})
+        self.assertIn("+4 more", profile)
+        settings = lines("channel_update", "changes", 14, lambda i: {"field": f"f{i}", "before": "x", "after": "y"})
+        self.assertIn("+4 more", settings)
+        self.assertNotIn("**F10**", settings)
+        permissions = lines("channel_permissions", "changes", 20, lambda i: {"field": f"p{i}", "before": "x", "after": "y"})
+        self.assertIn("**P14**", permissions)
+        self.assertNotIn("**P15**", permissions)
+        self.assertIn("+5 more", permissions)
+        files = lines("message_delete", "attachments", 13, lambda i: {"name": f"f{i}", "type": "t"})
+        self.assertIn("+3 more", files)
+
+    def test_recovered_cards_carry_one_line_before_the_footer(self):
+        for kind in ("kick", "role_create", "unban"):
+            row = sample_row(kind)
+            plain = build_card(row)
+            recovered = build_card({**row, "details": {**(row["details"] or {}), "recovered": True}})
+            children = recovered["components"][0]["components"]
+            texts = [c["content"] for c in children if c["type"] == 10]
+            self.assertEqual(texts.count("Recovered after restart"), 1)
+            self.assertTrue(texts[-1].startswith("ID ") or "<t:" in texts[-1])  # Footer stays last.
+            self.assertNotIn("Recovered after restart", card_text(plain))
+            forum = build_forum_message({**row, "details": {**(row["details"] or {}), "recovered": True}})
+            self.assertIn("Recovered after restart", forum["embeds"][0]["description"])
+
+
 if __name__ == "__main__":
     unittest.main()

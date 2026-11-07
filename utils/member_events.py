@@ -28,6 +28,9 @@ RETENTION_DAYS = {"link": 30, "message_delete": 30, "message_edit": 30, "message
 IDENTITY_TYPES = ("join", "leave", "kick", "ban")
 DEFAULT_CHANNEL_ID = 1004519991648997447
 SETTINGS_ID = f"member-events-settings:{GUILD_ID}"
+BOT_ACTORS_ID = f"member-events-bot-actors:{GUILD_ID}"
+AUDIT_CURSOR_ID = f"member-events-audit-cursor:{GUILD_ID}"
+MAX_BOT_ACTORS = 100
 AVATAR_HASH = re.compile(r"(?:a_)?[0-9a-fA-F]{32}\Z")
 
 
@@ -116,6 +119,8 @@ class MemberEventStore:
         normalized = normalize_settings({"revision": revision, **settings}, self.default_settings())
         values = {key: normalized[key] for key in (
             "schema_version", "main", "categories", "events", "ignores", "invite_names")}
+        if normalized["ignored_bot_ids"] is not None:  # Absent keeps the own-bot default.
+            values["ignored_bot_ids"] = normalized["ignored_bot_ids"]
         if revision == 0:
             try:
                 await self.collection.insert_one({"_id": SETTINGS_ID, "event_key": SETTINGS_ID,
@@ -131,6 +136,53 @@ class MemberEventStore:
         if not row:
             raise SettingsConflict("Member log settings changed")
         return normalize_settings(row, self.default_settings())
+
+    async def bot_actors(self) -> dict:
+        row = await self.collection.find_one({"_id": BOT_ACTORS_ID})
+        bots = row.get("bots") if row else None
+        return dict(bots) if isinstance(bots, dict) else {}
+
+    async def note_bot_actor(self, user_id, name: str, now: datetime | None = None):
+        """Remember a bot seen as an audit actor; keeps the 100 most recent."""
+        now = now or datetime.now(timezone.utc)
+        bots = await self.bot_actors()
+        uid, name = str(user_id), str(name or user_id)[:80]
+        seen = bots.get(uid)
+        if seen and seen.get("name") == name and isinstance(seen.get("last_seen"), datetime) and (
+                now - seen["last_seen"].replace(tzinfo=seen["last_seen"].tzinfo or timezone.utc)
+        ) < timedelta(hours=1):
+            return  # Fresh enough; avoid a write per audit entry.
+        bots.pop(uid, None)
+        bots[uid] = {"name": name, "last_seen": now}
+        ordered = sorted(bots.items(), key=lambda item: item[1]["last_seen"].replace(
+            tzinfo=item[1]["last_seen"].tzinfo or timezone.utc))
+        bots = dict(ordered[-MAX_BOT_ACTORS:])
+        await self._write_state(BOT_ACTORS_ID, {"bots": bots})
+
+    async def audit_cursor(self) -> int | None:
+        row = await self.collection.find_one({"_id": AUDIT_CURSOR_ID})
+        try:
+            return int(row["last_audit_id"]) if row else None
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    async def advance_audit_cursor(self, entry_id, now: datetime | None = None):
+        """Move the newest-processed audit entry forward; never backward."""
+        current = await self.audit_cursor()
+        if current is not None and current >= int(entry_id):
+            return
+        await self._write_state(AUDIT_CURSOR_ID, {
+            "last_audit_id": str(int(entry_id)), "updated_at": now or datetime.now(timezone.utc)})
+
+    async def _write_state(self, state_id: str, values: dict):
+        """State docs carry no event_type or expires_at: never in history, never expired."""
+        row = await self.collection.find_one_and_update({"_id": state_id}, {"$set": values})
+        if row is None:
+            try:
+                await self.collection.insert_one({"_id": state_id, "event_key": state_id,
+                                                  "guild_id": GUILD_ID, **values})
+            except DuplicateKeyError:
+                await self.collection.update_one({"_id": state_id}, {"$set": values})
 
     async def reserve_test(self, kind: str, staff_id: str, now: datetime):
         """Atomically rate-limit a test without touching event history."""
