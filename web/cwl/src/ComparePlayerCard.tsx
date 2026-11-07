@@ -126,7 +126,7 @@ export default function ComparePlayerCard({
               {outsideFamily && (
                 <>
                   <span className="sr-only">, </span>
-                  <span className="compare-tag is-warning">Outside family</span>
+                  <span className="compare-tag is-danger">Outside family</span>
                 </>
               )}
             </span>

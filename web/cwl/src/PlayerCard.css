@@ -300,6 +300,10 @@
   .roster-player-placement.is-elsewhere
   .player-location-pin {
   color: var(--wu-brand-red);
+}
+.roster-player-dialog
+  .roster-player-placement.is-elsewhere
+  .player-location-pin {
   background: var(--wu-bg);
   border-radius: 50%;
   box-shadow: 0 0 0 1px var(--wu-bg);
@@ -314,6 +318,26 @@
   border-radius: 999px;
   color: var(--roster-card-text-success);
   background: var(--wu-success-surface);
+}
+:is(.roster-player-card, .compare-account, .declaration-player)
+  :is(.roster-ui-chip.is-danger:not(:has(button)), .compare-tag.is-danger) {
+  background: var(--wu-brand-red);
+  border-color: var(--wu-brand-red);
+  color: #fff;
+  -webkit-text-fill-color: currentColor;
+}
+.compare-account .compare-tag.is-warning {
+  background: var(--roster-warning);
+  border-color: var(--roster-warning);
+  color: var(--wu-bg);
+  -webkit-text-fill-color: currentColor;
+}
+:is(.roster-player-card, .compare-account, .declaration-player)
+  .player-in-clan-pill {
+  background: #00d659;
+  border-color: #00d659;
+  color: var(--wu-bg);
+  -webkit-text-fill-color: currentColor;
 }
 @media (min-width: 701px) {
   .player-card-responsive .player-clan-status {

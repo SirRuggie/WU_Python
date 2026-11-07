@@ -147,7 +147,7 @@ export default function RosterAccountCard({
           </span>
           {account.outside_family_and_hosts && (
             <span className="roster-player-warning">
-              <Chip tone="warning">Outside family / hosting clans</Chip>
+              <Chip tone="danger">Outside family / hosting clans</Chip>
             </span>
           )}
           {!account.assigned_clan_tag &&
