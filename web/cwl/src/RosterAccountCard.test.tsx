@@ -106,6 +106,26 @@ describe("roster account card", () => {
     expect(html).toContain("Main CWL");
   });
 
+  it("marks outside-family placement as danger without changing missing-weight status", () => {
+    const host = document.createElement("div");
+    host.innerHTML = render({
+      account: { ...account, outside_family_and_hosts: true },
+    });
+    const family = host.querySelector(
+      ".roster-player-warning .roster-ui-chip",
+    )!;
+    expect(family.textContent).toBe("Outside family / hosting clans");
+    expect(family.classList.contains("is-danger")).toBe(true);
+    expect(family.classList.contains("is-warning")).toBe(false);
+    const weight = [...host.querySelectorAll(".roster-ui-chip")].filter(
+      (chip) => chip.textContent === "No weight",
+    );
+    expect(weight).toHaveLength(2);
+    expect(weight.every((chip) => chip.classList.contains("is-danger"))).toBe(
+      true,
+    );
+  });
+
   it("keeps stale location results with Compare's age formatter", () => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-28T14:00:00Z"));
     const html = render({

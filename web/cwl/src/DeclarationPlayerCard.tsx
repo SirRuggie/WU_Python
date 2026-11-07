@@ -58,7 +58,7 @@ export default function DeclarationPlayerCard({
           <PlayerCardMeta account={account} showPool={false} />
           <PlayerClanStatus status={status} />
           {!!record?.current_clan_tag && record.outside_family && (
-            <span className="compare-tag is-warning">Outside family</span>
+            <span className="compare-tag is-danger">Outside family</span>
           )}
         </>
       }

@@ -96,6 +96,16 @@ it("keeps the TH-first headline, metadata, shared clan status and warning row in
   expect(body.children[3].textContent).toBe(
     ", Outside weight range, Outside family",
   );
+  expect(
+    [...body.children[3].querySelectorAll(".compare-tag")].map((tag) => ({
+      text: tag.textContent,
+      danger: tag.classList.contains("is-danger"),
+      warning: tag.classList.contains("is-warning"),
+    })),
+  ).toEqual([
+    { text: "Outside weight range", danger: false, warning: true },
+    { text: "Outside family", danger: true, warning: false },
+  ]);
   const ids = body.getAttribute("aria-describedby")!.split(" ");
   expect(
     ids

@@ -173,10 +173,9 @@
   display: inline-flex;
   margin-top: var(--wu-space-1);
   padding: 0 var(--wu-space-1);
-  border: 1px solid var(--roster-warning);
+  border: 1px solid;
   border-radius: 999px;
   font-size: var(--wu-text-sm);
-  color: #ffe4a0;
 }
 .declaration-player.is-match {
   border-color: var(--roster-gold);
