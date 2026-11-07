@@ -705,7 +705,7 @@ async def fetch_invite_rows(bot):
         rows.append(invite_row(invite, bot=bot))
     try:
         vanity = await bot.rest.fetch_vanity_url(GUILD_ID)
-    except hikari.NotFoundError:
+    except (hikari.NotFoundError, hikari.ForbiddenError, hikari.BadRequestError):
         vanity = None
     if vanity is not None and vanity.code:
         rows.append(snapshot_row(GUILD_ID, vanity.code, uses=vanity.uses, max_uses=None, vanity=True))

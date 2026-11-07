@@ -443,7 +443,9 @@ class NewLogApiTests(unittest.IsolatedAsyncioTestCase):
         for value in bad_ignores:
             with self.subTest(ignores=value), self.assertRaises(web.HTTPBadRequest):
                 api._checked_settings(self.body(ignores=value))
-        bad_names = [{"a": "x"}, {"has space": "x"}, {"ok-code": "x" * 41}, {"ok-code": "bad\nname"},
+        self.assertEqual(api._checked_settings(self.body(invite_names={"ok-code": "👨\u200d👩\u200d👧 fam\ufe0f"}))["invite_names"],
+                         {"ok-code": "👨\u200d👩\u200d👧 fam\ufe0f"})
+        bad_names = [{"ok-code": "a\u200bb"}, {"ok-code": "a\x07b"}, {"ok-code": "a\u2028b"}, {"a": "x"}, {"has space": "x"}, {"ok-code": "x" * 41}, {"ok-code": "bad\nname"},
                      {"ok-code": 5}, {"x" * 33: "x"}, {f"code{i:04d}": "n" for i in range(201)}, [], None]
         for value in bad_names:
             with self.subTest(invite_names=value), self.assertRaises(web.HTTPBadRequest):

@@ -9,6 +9,7 @@ import {
   changedSettings,
   cloneSettings,
   destinationName,
+  inviteNameError,
   effectiveDestination,
   eventTypes,
   hasInvalidDestination,
@@ -206,8 +207,13 @@ export default function ModerationSettings({
     (saved.channels_available === false ||
       hasInvalidDestination(draft, saved.channels));
 
+  const invalidName =
+    !!draft &&
+    Object.values(draft.invite_names).some((name) => !!inviteNameError(name));
+
   const save = async () => {
-    if (!saved || !draft || !dirty || busy || invalidDestination) return;
+    if (!saved || !draft || !dirty || busy || invalidDestination || invalidName)
+      return;
     const id = ++request.current;
     setBusy(true);
     clearFeedback();
@@ -449,7 +455,9 @@ export default function ModerationSettings({
               <button
                 className="primary"
                 type="button"
-                disabled={!dirty || busy || loading || invalidDestination}
+                disabled={
+                  !dirty || busy || loading || invalidDestination || invalidName
+                }
                 onClick={() => void save()}
               >
                 {busy ? "Saving…" : "Save changes"}

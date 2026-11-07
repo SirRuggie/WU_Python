@@ -336,6 +336,18 @@ export const eventTypes = moderationRegistry.flatMap((category) =>
 const idPattern = /^\d{17,20}$/;
 export const maxIgnoreIds = 100;
 export const maxInviteNameLength = 40;
+const badNameCharacter = /[\p{Cc}\p{Zl}\p{Zp}]|(?!\u200d)\p{Cf}/u;
+
+/** Same rule as the backend: 1 to 40 characters, no control or separator characters. */
+export function inviteNameError(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "";
+  if ([...trimmed].length > maxInviteNameLength)
+    return `Use at most ${maxInviteNameLength} characters.`;
+  if (badNameCharacter.test(trimmed))
+    return "Remove control or invisible characters.";
+  return "";
+}
 
 export function normalizeRoleId(value: string): string | null {
   const id = value.trim();

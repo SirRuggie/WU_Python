@@ -332,7 +332,7 @@ Categories are now `members`, `moderation`, `messages`, `invites`. Reading an ol
 missing keys from defaults; nothing is written until a revision-checked save.
 
 New settings fields: `ignores` (`channel_ids`, `role_ids`, max 100 ids each, 17 to 20 digits;
-link event only) and `invite_names` (`{code: name}`, max 200). `GET /api/cwl/member-events/invites`
+link event only) and `invite_names` (`{code: name}`, max 200). `GET /api/cwl/manage/member-events/invites`
 reads the bot's snapshot from the `member_invites` collection (one document per guild and code).
 
 How each part works:

@@ -418,6 +418,47 @@ it("lists invites with uses and saves edited names; clearing removes", async () 
   await change(input, "");
   expect(host.textContent).toContain("All changes saved");
 });
+it("lists stale saved names, removes them from the draft only, and validates names", async () => {
+  const stale = structuredClone(fixture);
+  stale.invite_names = { gone: "Old", abc123: "Ok" };
+  transport.mockImplementation(async (path: string, method?: string) => {
+    if (path === "/manage/member-events/settings" && method === "PUT")
+      return { ...stale, revision: 5 };
+    if (path === "/manage/member-events/settings")
+      return structuredClone(stale);
+    if (path === "/manage/member-events/invites") return invites();
+    throw new Error(`Unexpected ${path}`);
+  });
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () => root.render(<ModerationSettings />));
+  await settle();
+  expect(host.textContent).toContain("No longer active");
+  const before = transport.mock.calls.filter((call) => call[1] === "PUT");
+  expect(before).toHaveLength(0);
+  await act(async () => button("Remove").click());
+  expect(host.textContent).not.toContain("No longer active");
+  expect(button("Save changes").disabled).toBe(false);
+  await change(
+    host.querySelector<HTMLInputElement>('[aria-label="Name for abc123"]')!,
+    "👨\u200d👩\u200d👧 fam",
+  );
+  expect(host.textContent).not.toContain("Remove control");
+  await change(
+    host.querySelector<HTMLInputElement>('[aria-label="Name for abc123"]')!,
+    "bad\u200bname",
+  );
+  expect(host.textContent).toContain("Remove control or invisible characters.");
+  expect(button("Save changes").disabled).toBe(true);
+  await change(
+    host.querySelector<HTMLInputElement>('[aria-label="Name for abc123"]')!,
+    "👨\u200d👩\u200d👧 fam",
+  );
+  await act(async () => button("Save changes").click());
+  expect(
+    transport.mock.calls.find((call) => call[1] === "PUT")?.[2].invite_names,
+  ).toEqual({ abc123: "👨\u200d👩\u200d👧 fam" });
+});
 it("shows invite load failure without blocking the settings form", async () => {
   invites.mockRejectedValue(new Error("Invite list down"));
   await act(async () => button("Refresh invites").click());

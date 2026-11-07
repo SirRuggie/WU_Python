@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import unicodedata
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 
@@ -280,6 +281,16 @@ def _ignores(value):
     return checked
 
 
+def _name_ok(name):
+    """1 to 40 characters; no control or line separators; format characters only as ZWJ."""
+    if not 1 <= len(name) <= 40:
+        return False
+    return all(
+        (cat := unicodedata.category(char)) not in ("Cc", "Zl", "Zp") and (cat != "Cf" or char == "\u200d")
+        for char in name
+    )
+
+
 def _invite_names(value):
     if not isinstance(value, dict) or len(value) > MAX_INVITE_NAMES:
         raise web.HTTPBadRequest(text=f"Name at most {MAX_INVITE_NAMES} invites.")
@@ -292,8 +303,8 @@ def _invite_names(value):
         name = name.strip()
         if not name:  # An empty name removes the entry.
             continue
-        if len(name) > 40 or not name.isprintable():
-            raise web.HTTPBadRequest(text="Invite names use 1 to 40 printable characters.")
+        if not _name_ok(name):
+            raise web.HTTPBadRequest(text="Invite names use 1 to 40 characters without control characters.")
         checked[code] = name
     return checked
 

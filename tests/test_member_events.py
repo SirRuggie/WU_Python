@@ -541,6 +541,20 @@ class NewLogTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(row["details"]["unknown"])
         self.assertEqual(self.invites.rows[f"{GUILD_ID}:aa"]["uses"], 2)
 
+    async def test_invite_use_attributes_when_vanity_fetch_is_forbidden(self):
+        await enable(self.history, "invite_use")
+        for error in (hikari.ForbiddenError("u", {}, b""), hikari.BadRequestError("u", {}, b"")):
+            rest = NS(fetch_guild_invites=AsyncMock(return_value=[invite("aa", 1, 5)]),
+                      fetch_vanity_url=AsyncMock(side_effect=error))
+            await transport.refresh_invites(self.mongo, NS(cache=None, rest=rest))
+            self.assertEqual(self.invites.rows[f"{GUILD_ID}:aa"]["uses"], 1)
+            user = NS(id=self.uid, username="newbie", global_name=None, avatar_hash=None)
+            member = NS(guild_id=GUILD_ID, user=user, display_name="Newbie", joined_at=self.now, guild_avatar_hash=None)
+            rest.fetch_guild_invites = AsyncMock(return_value=[invite("aa", 2, 5)])
+            await transport.record_invite_use(NS(member=member), self.mongo, NS(rest=rest, cache=None))
+            self.assertEqual(self.rows("invite_use")[-1]["details"]["code"], "aa")
+            self.assertFalse(self.rows("invite_use")[-1]["details"]["unknown"])
+
     async def test_invite_use_unknown_when_ambiguous_or_fetch_fails_and_never_raises(self):
         await enable(self.history, "invite_use")
         await transport.refresh_invites(self.mongo, NS(cache=None, rest=NS(

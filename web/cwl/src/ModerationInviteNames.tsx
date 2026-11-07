@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import {
-  maxInviteNameLength,
+  inviteNameError,
   type InviteRow,
   type InvitesResponse,
 } from "./moderationSettingsModel";
@@ -57,6 +57,12 @@ export default function ModerationInviteNames({
     };
   }, [load]);
 
+  const stale = invites
+    ? Object.keys(names).filter(
+        (code) => !invites.some((invite) => invite.code === code),
+      )
+    : [];
+
   return (
     <div className="moderation-invite-names">
       <div className="moderation-invite-head">
@@ -82,15 +88,20 @@ export default function ModerationInviteNames({
                   <span className="moderation-invite-code">{label}</span>
                   <input
                     value={names[invite.code] ?? ""}
-                    maxLength={maxInviteNameLength}
                     placeholder="Name"
                     disabled={disabled}
                     aria-label={`Name for ${label}`}
+                    aria-invalid={!!inviteNameError(names[invite.code] ?? "")}
                     onChange={(event) =>
                       onName(invite.code, event.target.value)
                     }
                   />
                 </label>
+                {inviteNameError(names[invite.code] ?? "") && (
+                  <small role="alert">
+                    {inviteNameError(names[invite.code] ?? "")}
+                  </small>
+                )}
                 <small>
                   {invite.max_uses
                     ? `${invite.uses} / ${invite.max_uses} uses`
@@ -104,6 +115,37 @@ export default function ModerationInviteNames({
               </li>
             );
           })}
+        </ul>
+      )}
+      {stale.length > 0 && (
+        <ul className="moderation-invite-list">
+          {stale.map((code) => (
+            <li key={code}>
+              <label>
+                <span className="moderation-invite-code">{code}</span>
+                <input
+                  value={names[code]}
+                  placeholder="Name"
+                  disabled={disabled}
+                  aria-label={`Name for ${code}`}
+                  aria-invalid={!!inviteNameError(names[code])}
+                  onChange={(event) => onName(code, event.target.value)}
+                />
+              </label>
+              {inviteNameError(names[code]) && (
+                <small role="alert">{inviteNameError(names[code])}</small>
+              )}
+              <small>No longer active</small>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label={`Remove name for ${code}`}
+                onClick={() => onName(code, "")}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
         </ul>
       )}
     </div>
