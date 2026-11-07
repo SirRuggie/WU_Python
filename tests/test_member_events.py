@@ -1186,6 +1186,15 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         query = queries[0]
         self.assertEqual(query["audit_entry_id"], {"$eq": "77", "$type": "string"})
 
+    async def test_ban_audit_lookup_matches_the_partial_index(self):
+        queries = []
+        class Collection:
+            async def find_one(self, query, projection=None):
+                queries.append(query)
+        await MemberEventStore(Collection()).ban_audit_exists(GUILD_ID, 78)
+        self.assertEqual(queries[0]["audit_entry_id"], {"$eq": "78", "$type": "string"})
+        self.assertEqual(queries[0]["event_type"], "ban")
+
     async def test_markers_expire_after_48_hours_and_never_reach_history_or_the_queue(self):
         await enable(self.history, "role_create")
         role = NS(key=K.NAME, old_value=None, new_value="Raiders")

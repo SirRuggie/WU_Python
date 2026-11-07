@@ -396,7 +396,7 @@ class MemberEventStore:
     async def ban_audit_exists(self, guild_id: int, audit_entry_id: int):
         return bool(await self.collection.find_one(
             {"guild_id": guild_id, "event_type": "ban",
-             "audit_entry_id": str(audit_entry_id)}, {"_id": 1},
+             "audit_entry_id": {"$eq": str(int(audit_entry_id)), "$type": "string"}}, {"_id": 1},
         ))
 
     async def note_ban_audit(self, guild_id: int, user_id: int, audit_entry_id: int):
