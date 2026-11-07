@@ -88,15 +88,27 @@
   padding: var(--wu-space-1) var(--wu-space-3);
 }
 .finalize-review .publication-capacity-warning {
-  color: var(--roster-warning);
-  -webkit-text-fill-color: currentColor;
   font-variant-numeric: tabular-nums;
+}
+.finalize-review .publication-capacity-warning:not(:disabled),
+.finalize-review .publication-capacity-warning:hover:not(:disabled) {
+  background: var(--roster-warning);
+  border-color: var(--roster-warning);
+  color: var(--wu-bg);
+  -webkit-text-fill-color: var(--wu-bg);
 }
 .finalize-review .publication-finalize {
   display: grid;
   justify-items: start;
   gap: var(--wu-space-3);
   margin: 0;
+}
+.finalize-review .inline-reason {
+  padding: calc(var(--wu-space-3) - 1px);
+  border: 1px solid var(--wu-warning);
+  background: var(--wu-warning);
+  color: var(--wu-bg);
+  -webkit-text-fill-color: var(--wu-bg);
 }
 .finalize-review .publication-finalize > .inline-reason {
   margin: 0;
@@ -222,6 +234,15 @@
 .finalize-review .publication-hide {
   border-top: 1px solid var(--roster-border-subtle);
   padding-top: var(--wu-space-3);
+}
+.finalize-review .publication-hide .roster-ui-button.is-danger:not(:disabled),
+.finalize-review
+  .publication-hide
+  .roster-ui-button.is-danger:hover:not(:disabled) {
+  background: var(--wu-brand-red);
+  border-color: var(--wu-brand-red);
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
 }
 .publication-visually-hidden {
   position: absolute;
