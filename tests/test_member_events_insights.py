@@ -13,7 +13,7 @@ from utils.member_events import GUILD_ID, MemberEventStore
 
 UID = "123456789012345678"
 CHANNEL = "223456789012345678"
-AUDIT, MANAGE = 1 << 7, 1 << 5
+AUDIT, MANAGE, VIEW = 1 << 7, 1 << 5, 1 << 10
 
 
 class Cursor:
@@ -164,14 +164,24 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
             "_id": "member-events-settings:%s" % GUILD_ID, "event_key": "x", "revision": 1,
             "events": saved["events"]}
 
-    async def call(self, collection, permissions=AUDIT | MANAGE, resolve=None, bot=None):
+    @staticmethod
+    def rest(channels=None, everyone=0, roles=True):
+        channels = channels if channels is not None else {CHANNEL: {"id": CHANNEL, "type": 0, "name": "log"}}
+        async def fake(request, method, path, **kwargs):
+            if path.endswith("/roles"):
+                return [{"id": str(GUILD_ID), "permissions": str(everyone)}] if roles else []
+            return channels[path.rsplit("/", 1)[1]]
+        return AsyncMock(side_effect=fake)
+
+    async def call(self, collection, permissions=AUDIT | MANAGE, resolve=None, bot=None, rest=None):
         actor = {"permissions": permissions, "role_ids": set(), "user_id": "1"}
         bot = bot or AsyncMock(return_value=(actor, None))
         resolve = resolve or AsyncMock(return_value=option())
         with patch.object(api, "require_manage", new=AsyncMock()) as guard, \
                 patch.object(api, "mongo", return_value=context(collection)), \
                 patch.object(api, "_bot_permissions", new=bot), \
-                patch.object(api, "_resolve_option", new=resolve):
+                patch.object(api, "_resolve_option", new=resolve), \
+                patch.object(api, "discord", new=rest or self.rest(everyone=0)):
             response = await api.health(request(api.PREFIX + "/health"))
         self.assertEqual(guard.await_args.args[1], "roles")
         self.assertEqual(response.status, 200)
@@ -261,6 +271,56 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
                                                   "text": "Health check unavailable"}])
                 self.assertEqual(data["backlog"], 1)
         data = await self.call(collection, resolve=AsyncMock(side_effect=web.HTTPBadGateway()))
+        self.assertEqual([i["key"] for i in data["items"]], ["health_unavailable"])
+
+    async def test_public_channel_is_error_and_private_is_not(self):
+        collection = Collection()
+        self.settings(collection)
+        data = await self.call(collection, rest=self.rest(everyone=VIEW))
+        self.assertEqual(data["items"], [{"key": f"public_{CHANNEL}", "level": "error",
+                                          "text": "log is visible to everyone"}])
+        self.assertNotIn(CHANNEL, data["items"][0]["text"])
+        private = {CHANNEL: {"id": CHANNEL, "type": 0, "name": "log", "permission_overwrites": [
+            {"id": str(GUILD_ID), "type": 0, "allow": "0", "deny": str(VIEW)}]}}
+        self.assertEqual((await self.call(collection, rest=self.rest(private, everyone=VIEW)))["items"], [])
+
+    async def test_everyone_role_without_view_at_guild_level(self):
+        collection = Collection()
+        self.settings(collection)
+        self.assertEqual((await self.call(collection, rest=self.rest(everyone=0)))["items"], [])
+        allowed = {CHANNEL: {"id": CHANNEL, "type": 0, "name": "log", "permission_overwrites": [
+            {"id": str(GUILD_ID), "type": 0, "allow": str(VIEW), "deny": "0"}]}}
+        self.assertEqual([i["key"] for i in (await self.call(collection, rest=self.rest(allowed)))["items"]],
+                         [f"public_{CHANNEL}"])
+
+    async def test_forum_post_uses_parent_channel(self):
+        collection = Collection()
+        self.settings(collection)
+        parent = "323456789012345678"
+        channels = {CHANNEL: {"id": CHANNEL, "type": 11, "name": "post", "parent_id": parent},
+                    parent: {"id": parent, "type": 15, "name": "Forum"}}
+        data = await self.call(collection, rest=self.rest(channels, everyone=VIEW))
+        self.assertEqual(data["items"], [{"key": f"public_{parent}", "level": "error",
+                                          "text": "Forum is visible to everyone"}])
+
+    async def test_shared_channel_gives_one_item_and_one_fetch(self):
+        collection = Collection()
+        self.settings(collection, enabled=("join", "leave", "kick"))
+        rest = self.rest(everyone=VIEW)
+        data = await self.call(collection, rest=rest)
+        self.assertEqual([i["key"] for i in data["items"]], [f"public_{CHANNEL}"])
+        self.assertEqual(rest.await_count, 2)  # roles once, channel once
+
+    async def test_unknown_channel_name(self):
+        collection = Collection()
+        self.settings(collection)
+        data = await self.call(collection, rest=self.rest({CHANNEL: {"id": CHANNEL, "type": 0}}, everyone=VIEW))
+        self.assertEqual(data["items"][0]["text"], "A log channel is visible to everyone")
+
+    async def test_public_check_failure_is_unavailable(self):
+        collection = Collection()
+        self.settings(collection)
+        data = await self.call(collection, rest=AsyncMock(side_effect=web.HTTPBadGateway()))
         self.assertEqual([i["key"] for i in data["items"]], ["health_unavailable"])
 
     def test_routes_registered(self):

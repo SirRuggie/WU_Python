@@ -5,15 +5,16 @@ from datetime import timezone
 
 from aiohttp import web
 
-from utils.member_events import GUILD_ID, HISTORY_TYPES, ID_PATTERN, MemberEventStore
+from utils.member_events import GUILD_ID, HISTORY_TYPES, ID_PATTERN, MemberEventStore, effective_permissions
 from utils.member_event_settings import EVENT_TYPES, effective_event, normalize_settings
 from .member_events import PREFIX, _bot_permissions, _resolve_option, public_events_named
-from .server_management import mongo, require_manage
+from .server_management import discord, mongo, require_manage
 
 BACKLOG_LIMIT = 25
 VIEW_AUDIT_LOG = 1 << 7
 MANAGE_GUILD = 1 << 5
 ADMINISTRATOR = 1 << 3
+VIEW_CHANNEL = 1 << 10
 UNAVAILABLE = {"key": "health_unavailable", "level": "warning", "text": "Health check unavailable"}
 
 
@@ -52,6 +53,17 @@ async def timeline(request):
     return _json({"member": member, "events": events, "next_before": next_before})
 
 
+async def _public_channel(request, channel_id, everyone):
+    """Return (log channel id, name) when @everyone can view it, else None."""
+    channel = await discord(request, "GET", f"/channels/{channel_id}")
+    if channel.get("type") == 11 and channel.get("parent_id"):
+        channel = await discord(request, "GET", f"/channels/{channel['parent_id']}")
+    rights = effective_permissions(everyone, (), 0, channel.get("permission_overwrites", []), GUILD_ID)
+    if rights & (ADMINISTRATOR | VIEW_CHANNEL):
+        return str(channel["id"]), str(channel.get("name") or "")
+    return None
+
+
 async def _discord_items(request, saved):
     actor, effective = await _bot_permissions(request)
     rights = int(actor["permissions"])
@@ -61,6 +73,9 @@ async def _discord_items(request, saved):
     if not rights & ADMINISTRATOR and not rights & MANAGE_GUILD:
         items.append({"key": "manage_server", "level": "warning", "text": "Manage Server needed for invite counts"})
     options = {}
+    everyone = None
+    checked = {}
+    public = {}
     for kind in EVENT_TYPES:
         resolved = effective_event(saved, kind)
         if not resolved["enabled"]:
@@ -75,6 +90,17 @@ async def _discord_items(request, saved):
         if not option or not option["can_post"]:
             items.append({"key": f"destination_{kind}", "level": "error",
                           "text": f"{kind.replace('_', ' ').capitalize()} cannot post to its channel"})
+        if option and channel_id not in checked:
+            if everyone is None:
+                roles = await discord(request, "GET", f"/guilds/{GUILD_ID}/roles")
+                everyone = next((int(role.get("permissions", 0)) for role in roles
+                                 if str(role.get("id")) == str(GUILD_ID)), 0)
+            checked[channel_id] = await _public_channel(request, channel_id, everyone)
+            if checked[channel_id]:
+                public.setdefault(checked[channel_id][0], checked[channel_id][1])
+    for log_id, name in public.items():
+        items.append({"key": f"public_{log_id}", "level": "error",
+                      "text": f"{name} is visible to everyone" if name else "A log channel is visible to everyone"})
     return items
 
 
