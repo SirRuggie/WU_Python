@@ -86,12 +86,16 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
-from utils import clan_history, coc_maintenance, todo_data, todo_sessions
+from utils import (
+    clan_history, coc_maintenance, cwl_member_client, todo_data, todo_sessions,
+)
 from utils.dashboard_urls import TASKS_URL, WARS_URL
 
 from utils.clash_links import resolve_tags
 from utils.media_urls import THUMBNAIL, optimized
-from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
+from utils.constants import (
+    BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT, WARRIORS_UNITED_GUILD_ID,
+)
 from utils.emoji import emojis
 from utils.fwa_blacklist import blacklisted_tags
 from utils.fwa_points_parser import sanitize_tag
@@ -1400,6 +1404,36 @@ async def _load_fwa_records(mongo, war_rows: list) -> dict:
     return await load_fwa_records(mongo, war_rows)
 
 
+async def _load_published_assignments(discord_id: int) -> dict:
+    """Read the member's live publication without holding up /todo on failure."""
+    try:
+        view = await asyncio.wait_for(
+            cwl_member_client.request(
+                "view", user_id=discord_id,
+                guild_id=WARRIORS_UNITED_GUILD_ID, include_accounts=False,
+            ),
+            timeout=3,
+        )
+        if not view.get("published"):
+            return {}
+        assigned: dict[str, list[tuple[str, str | None]]] = {}
+        for row in view.get("assignments", ()):
+            if not isinstance(row, dict):
+                continue
+            tag = row.get("tag")
+            clan_tag = row.get("assigned_clan_tag")
+            if not isinstance(tag, str) or not isinstance(clan_tag, str):
+                continue
+            clan_name = row.get("assigned_clan_name")
+            assigned.setdefault(tag, []).append((
+                clan_tag, clan_name if isinstance(clan_name, str) else None,
+            ))
+        return assigned
+    except Exception as exc:  # noqa: BLE001 - optional read must not fail /todo
+        print(f"[todo] published assignments unavailable: {type(exc).__name__}")
+        return {}
+
+
 async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=None,
                 perf: "_Perf | None" = None, auto_refresh: bool = False,
                 refresh_until: datetime | None = None,
@@ -1470,11 +1504,19 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
     # bulk write. Both run beside the already-required player API fan-out so
     # cross-clan support adds no serial lookup phase to the interaction.
     with perf.timing("players"):
-        (accounts, errors), candidates, _watched = await asyncio.gather(
+        (accounts, errors), candidates, _watched, assigned = await asyncio.gather(
             todo_data.fetch_accounts(coc_client, tags, sem=sem),
             clan_history.load_candidates(mongo, tags),
             clan_history.watch_players(mongo, tags),
+            _load_published_assignments(discord_id),
         )
+    if assigned:
+        # Reuse the candidate normalizer without another history/API read.
+        assigned_candidates = await clan_history.load_candidates(
+            None, tags, assigned=assigned,
+        )
+        for player_tag, player_candidates in assigned_candidates.items():
+            candidates.setdefault(player_tag, []).extend(player_candidates)
     candidate_clans = {a.clan_tag for a in accounts if a.clan_tag}
     candidate_clans.update(
         candidate.clan_tag

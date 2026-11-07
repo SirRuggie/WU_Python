@@ -247,7 +247,7 @@ async def fresh(app, uid):
     with todo_data.fresh_reads():
         accounts, _ = await asyncio.wait_for(
             todo_data.fetch_accounts(client, tags, sem=sem), FRESH_ACCOUNTS_TIMEOUT)
-        candidates, _ = await load_recent_clans(app, tags)
+        candidates, _ = await load_recent_clans(app, tags, uid)
         builders = {'war': todo_data.build_war_view, 'cwl': todo_data.build_cwl_view}
         kinds = [kind for kind in builders if any(row[kind] for row in rows)]
         views = await asyncio.gather(*(

@@ -121,6 +121,13 @@ client, preserved cache/error contracts, and remaining third-party inventory.
 
 ### Cross-clan war discovery
 
+Published CWL assigned clans are also CWL-only candidates, read through the
+existing member view from the current member season's live publication. Draft
+placements and withdrawn publications are not used. With no live publication,
+discovery behaves as before; an assignment lookup failure falls back to the
+existing current-clan and history behavior. Assigned candidates do not add
+regular War clans.
+
 The official player endpoint returns one current clan and **no clan history**.
 coc.py's `PlayerEvents.joined_clan` / `left_clan` compare consecutive in-memory
 polls; they do not retrieve old movement and a restart loses their baseline.

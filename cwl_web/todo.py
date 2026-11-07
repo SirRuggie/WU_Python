@@ -80,18 +80,35 @@ async def get_clash_client(app):
     return client
 
 
-async def load_recent_clans(app, tags):
+async def load_recent_clans(app, tags, user_id=None):
+    # member_view applies current ownership and the live-publication boundary.
+    assigned = {}
+    if user_id is not None:
+        try:
+            from utils.cwl_member_service import member_view
+            view = member_view(app["store"], user_id)
+            if view.get("published"):
+                for row in view.get("assignments", []):
+                    if row.get("tag") and row.get("assigned_clan_tag"):
+                        assigned.setdefault(row["tag"], []).append(
+                            (row["assigned_clan_tag"], row.get("assigned_clan_name")))
+        except Exception as exc:
+            logger.warning("Todo published assignments unavailable: %s", type(exc).__name__)
+
     mongo = get_client(app)
     if mongo is None:
-        return {}, "Recent clan history is unavailable"
+        candidates = await clan_history.load_candidates(None, tags, assigned=assigned)
+        return candidates, "Recent clan history is unavailable"
     try:
         with timeout(5):
             candidates = await asyncio.wait_for(
-                clan_history.load_candidates(mongo, tags, create_indexes=False, raise_errors=True), 7)
+                clan_history.load_candidates(mongo, tags, create_indexes=False,
+                                             raise_errors=True, assigned=assigned), 7)
         return candidates, ""
     except Exception as exc:
         logger.warning("Todo clan history unavailable: %s", type(exc).__name__)
-        return {}, "Recent clan history is unavailable"
+        candidates = await clan_history.load_candidates(None, tags, assigned=assigned)
+        return candidates, "Recent clan history is unavailable"
 
 
 async def _fwa_outcomes(app, rows):
@@ -162,7 +179,7 @@ async def _task_accounts(client, tags, sem, on_progress=None):
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def _live_snapshot(app, tags, publish=None):
+async def _live_snapshot(app, tags, publish=None, user_id=None):
     client = await get_clash_client(app)
 
     sem = todo_data.new_semaphore()
@@ -175,7 +192,8 @@ async def _live_snapshot(app, tags, publish=None):
 
     accounts_result, history_result = await asyncio.gather(
         _task_accounts(client, tags, sem, on_progress=account_progress),
-        load_recent_clans(app, tags),
+        (load_recent_clans(app, tags, user_id) if user_id is not None
+         else load_recent_clans(app, tags)),
     )
     accounts, errors = accounts_result
     candidates, history_note = history_result
@@ -290,7 +308,7 @@ async def _snapshot(app, user_id, progress=None):
             result = {"checked_at": _now(), "accounts": [],
                       "views": {key: dict(empty) for key in ("war", "cwl", "raid", "private", "games")}}
         else:
-            result = _fixture(app, tags) if app["dev_fixture"] and hasattr(app["providers"], "players") else await _live_snapshot(app, tags, publish=(lambda value: progress.update(snapshot=value)) if progress is not None else None)
+            result = _fixture(app, tags) if app["dev_fixture"] and hasattr(app["providers"], "players") else await _live_snapshot(app, tags, publish=(lambda value: progress.update(snapshot=value)) if progress is not None else None, user_id=user_id)
             if len(links) > 100:
                 for view in result["views"].values():
                     view["ok"] = False
