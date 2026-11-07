@@ -104,7 +104,10 @@ export type SettingsDraft = {
   events: EventSettings;
   ignores: LinkIgnores;
   invite_names: Record<string, string>;
+  /** Absent when the backend did not send it; the block is then unavailable. */
+  ignored_bot_ids?: string[];
 };
+export type BotActor = { id: string; name: string; last_seen: string | null };
 export type InviteRow = {
   code: string;
   name: string | null;
@@ -138,6 +141,7 @@ export type SettingsResponse = SettingsDraft & {
   roles?: RoleChoice[] | null;
   roles_available?: boolean;
   warning?: string | null;
+  bot_actors?: BotActor[] | null;
   preview_names?: Record<string, string>;
   preview_cards?: Partial<Record<ModerationKind, unknown>>;
   forum_preview_cards?: Partial<Record<ModerationKind, unknown>>;
@@ -475,6 +479,7 @@ export const eventTypes = moderationRegistry.flatMap((category) =>
 );
 
 export const maxIgnoreIds = 100;
+export const maxIgnoredBots = 50;
 export const maxInviteNameLength = 40;
 const badNameCharacter = /[\p{Cc}\p{Zl}\p{Zp}]|(?!\u200d)\p{Cf}/u;
 
@@ -519,6 +524,9 @@ export function cloneSettings(settings: SettingsDraft): SettingsDraft {
     const trimmed = typeof name === "string" ? name.trim() : "";
     if (trimmed) inviteNames[code] = trimmed;
   }
+  const botIds = Array.isArray(settings.ignored_bot_ids)
+    ? { ignored_bot_ids: idList(settings.ignored_bot_ids) }
+    : {};
   return {
     main: { ...settings.main },
     categories,
@@ -528,6 +536,7 @@ export function cloneSettings(settings: SettingsDraft): SettingsDraft {
       role_ids: idList(settings.ignores?.role_ids),
     },
     invite_names: inviteNames,
+    ...botIds,
   };
 }
 

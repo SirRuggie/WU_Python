@@ -690,3 +690,66 @@ it("names a saved managed role that is hidden from the add list", async () => {
   expect(ignoredRoles().textContent).toContain("@Bots");
   expect(ignoredRoles().textContent).not.toContain("Deleted role");
 });
+
+const mountWith = async (response: SettingsResponse) => {
+  transport.mockImplementation(async (path: string, method?: string) => {
+    if (path === "/manage/member-events/settings" && method === "PUT")
+      return { ...response, revision: 5 };
+    if (path === "/manage/member-events/settings")
+      return structuredClone(response);
+    if (path === "/manage/member-events/invites") return invites();
+    throw new Error(`Unexpected ${path}`);
+  });
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () => root.render(<ModerationSettings />));
+  await settle();
+};
+const botBlock = () => host.querySelector(".moderation-ignored-bots")!;
+const withBots = (): SettingsResponse => ({
+  ...structuredClone(fixture),
+  ignored_bot_ids: ["900000000000000001", "900000000000000009"],
+  bot_actors: [
+    { id: "900000000000000001", name: "Helper", last_seen: null },
+    { id: "900000000000000002", name: "Counter", last_seen: null },
+  ],
+});
+it("shows ignored bots by name, adds and removes, and saves the ids", async () => {
+  await mountWith(withBots());
+  expect(botBlock().textContent).toContain(
+    "Changes made by these bots are not logged.",
+  );
+  expect(botBlock().textContent).toContain("@Helper");
+  expect(botBlock().textContent).toContain("Unknown bot");
+  expect(host.textContent).not.toContain("900000000000000001");
+  expect(host.textContent).not.toContain("900000000000000009");
+  const options = [...botBlock().querySelectorAll("option")].map(
+    (item) => item.textContent,
+  );
+  expect(options).toEqual(["Select a bot", "@Counter"]);
+  await change(botBlock().querySelector("select")!, "900000000000000002");
+  expect(botBlock().textContent).toContain("@Counter");
+  expect(host.textContent).toContain("Unsaved changes");
+  await act(async () =>
+    botBlock()
+      .querySelector<HTMLButtonElement>('[aria-label="Remove @Helper"]')!
+      .click(),
+  );
+  await act(async () => button("Save changes").click());
+  expect(
+    transport.mock.calls.find((call) => call[1] === "PUT")?.[2].ignored_bot_ids,
+  ).toEqual(["900000000000000009", "900000000000000002"]);
+});
+it("shows the bot list as unavailable and omits it from the save", async () => {
+  expect(botBlock().textContent).toContain("Bot list unavailable.");
+  expect(botBlock().querySelector("select")).toBeNull();
+  await act(async () => button("Change").click());
+  const override = host.querySelector<HTMLSelectElement>(
+    '[aria-label="Joins channel override"]',
+  )!;
+  await change(override, "other");
+  await act(async () => button("Save changes").click());
+  const body = transport.mock.calls.find((call) => call[1] === "PUT")?.[2];
+  expect(body).toBeDefined();
+  expect("ignored_bot_ids" in body).toBe(false);
+});
