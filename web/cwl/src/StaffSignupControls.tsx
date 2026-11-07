@@ -1,3 +1,4 @@
+import SectionTabs from "./SectionTabs";
 import useConfirmDialog from "./useConfirmDialog";
 import useSignupAction from "./useSignupAction";
 import { useEffect, useRef, useState } from "react";
@@ -355,40 +356,39 @@ export default function StaffSignupControls({
                 Cancel
               </Button>
             </div>
-            <div
-              className="workflow-tabs staff-add-modes"
-              role="group"
-              aria-label="How to add signup"
-            >
-              <button
-                type="button"
-                aria-pressed={mode === "tag"}
-                disabled={working}
-                onClick={async () => {
-                  if (mode !== "tag" && (await canDiscard())) {
-                    reset();
-                    setOpen(true);
-                    setMode("tag");
-                  }
-                }}
-              >
-                By player tag
-              </button>
-              <button
-                type="button"
-                aria-pressed={mode === "member"}
-                disabled={working}
-                onClick={async () => {
-                  if (mode !== "member" && (await canDiscard())) {
-                    reset();
-                    setOpen(true);
-                    setMode("member");
-                  }
-                }}
-              >
-                By Discord member
-              </button>
-            </div>
+            <SectionTabs
+              className="workflow-tabs staff-add-modes section-tabs--flow"
+              label="How to add signup"
+              items={[
+                { id: "tag", label: <>By player tag</> },
+                { id: "member", label: <>By Discord member</> },
+              ]}
+              value={mode}
+              onChange={async (next) => {
+                switch (next) {
+                  case "tag":
+                    {
+                      if (mode !== "tag" && (await canDiscard())) {
+                        reset();
+                        setOpen(true);
+                        setMode("tag");
+                      }
+                    }
+                    break;
+                  case "member":
+                    {
+                      if (mode !== "member" && (await canDiscard())) {
+                        reset();
+                        setOpen(true);
+                        setMode("member");
+                      }
+                    }
+                    break;
+                }
+              }}
+              disabled={working}
+              revealSelection
+            />
             {mode === "tag" ? (
               <StaffTagSignup
                 seasonId={String(season.id)}

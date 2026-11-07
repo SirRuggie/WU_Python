@@ -113,11 +113,6 @@
   outline: 2px solid var(--wu-focus);
   outline-offset: -3px;
 }
-.clan-category-filters span {
-  font-size: var(--wu-text-sm);
-  opacity: 0.8;
-  margin-left: var(--wu-space-1);
-}
 .return-status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
@@ -174,14 +169,6 @@
     padding: var(--wu-space-2) var(--wu-space-3);
   }
 }
-#clan-directory-picker .clan-category-filters {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-#clan-directory-picker .clan-category-filters button {
-  padding: var(--wu-space-2);
-  overflow-wrap: anywhere;
-}
 
 /* Activity sections read as one tab strip, rather than separate cards. */
 .shell .todo-tabs > button {
@@ -199,44 +186,9 @@
   font-weight: var(--wu-weight-regular);
 }
 .shell :is(.overview-filters, .clan-category-filters, .search-kind-filters) {
-  display: flex;
-  flex-wrap: wrap;
   width: fit-content;
   max-width: 100%;
-  gap: var(--wu-space-1);
-  padding: var(--wu-space-1);
-  border: 1px solid var(--wu-border-subtle);
-  border-radius: 24px;
-  background: var(--wu-surface);
   margin: var(--wu-space-3) 0;
-}
-.shell
-  :is(.overview-filters, .clan-category-filters, .search-kind-filters)
-  button {
-  display: inline-flex;
-  align-items: center;
-  flex-direction: row;
-  gap: var(--wu-space-1);
-  min-height: 44px;
-  border: 0;
-  border-radius: 20px;
-  padding: var(--wu-space-2) var(--wu-space-3);
-  background: transparent;
-  box-shadow: none;
-  color: #c6c3bb;
-}
-.shell
-  :is(.overview-filters, .clan-category-filters, .search-kind-filters)
-  button[aria-pressed="true"] {
-  background: transparent;
-  color: var(--wu-accent);
-  box-shadow: none;
-}
-.shell
-  :is(.overview-filters, .clan-category-filters, .search-kind-filters)
-  button:focus-visible {
-  outline: 2px solid var(--wu-focus);
-  outline-offset: 2px;
 }
 .shell .home-search-entry {
   display: flex;
@@ -395,11 +347,6 @@
 .shell .todo-tabs::-webkit-scrollbar-thumb {
   background: #807351;
   border-radius: 4px;
-}
-.shell .overview-filters button strong {
-  font-size: var(--wu-text-md);
-  font-weight: var(--wu-weight-medium);
-  margin: 0;
 }
 /* Tab geometry remains at the released baseline; only focus color is unified. */
 .shell .text-command-tabs > button:focus-visible,

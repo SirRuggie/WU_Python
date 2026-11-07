@@ -1,3 +1,4 @@
+import SectionTabs from "./SectionTabs";
 import "./rosterUi/tokens.css";
 import { useJourneyState, useJourneyPosition } from './journeyState'
 import TodoActivityStatus from './TodoActivityStatus'
@@ -89,11 +90,49 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab, 
     {error && <div className="notice error" role="alert"><div>{error}{data && <small>Showing your last update. It may be out of date.</small>}</div><button onClick={()=>setRefresh(value=>value+1)}>Retry</button></div>}
     {!data && !error && <div className="card todo-loading" role="status"><strong>Loading your tasks…</strong><p>Checking your linked accounts and clans.</p></div>}
     {data && <>
-      <div className="todo-tabs" role="group" aria-label="Activity types">{todoTabs.map(item=>{
-        const activity=data.views[item.key]
-        const count=visibleTodoRows(activity.rows,selected,search,'deadline', !!initialSearch && search === initialSearch).length
-        return <button key={item.key} aria-pressed={tab===item.key} onClick={()=>setTab(item.key)}><span aria-hidden="true"><DashboardIcon name={item.icon}/></span><strong>{item.label}</strong><small>{activity.loading ? 'Checking…' : !activity.ok ? 'Unavailable' : activity.incomplete ? count ? `${count} · Partial` : 'Not checked' : activity.unavailable ? 'Not active' : `${count} account${count===1?'':'s'}`}</small></button>
-      })}</div>
+      <SectionTabs
+        className="todo-tabs section-tabs--flow"
+        label="Activity types"
+        items={todoTabs.map((item) => {
+          const activity = data.views[item.key];
+          const count = visibleTodoRows(
+            activity.rows,
+            selected,
+            search,
+            "deadline",
+            !!initialSearch && search === initialSearch,
+          ).length;
+          return {
+            id: item.key,
+            label: (
+              <>
+                <span aria-hidden="true">
+                  <DashboardIcon name={item.icon} />
+                </span>
+                <strong>{item.label}</strong>
+                <small>
+                  {activity.loading
+                    ? "Checking…"
+                    : !activity.ok
+                      ? "Unavailable"
+                      : activity.incomplete
+                        ? count
+                          ? `${count} · Partial`
+                          : "Not checked"
+                        : activity.unavailable
+                          ? "Not active"
+                          : `${count} account${count === 1 ? "" : "s"}`}
+                </small>
+              </>
+            ),
+          };
+        })}
+        value={tab}
+        onChange={(next) => {
+          setTab(next);
+        }}
+        revealSelection
+      />
       <details className="todo-account-picker"><summary>{selected===null ? data.linked_account_count && accounts.length < data.linked_account_count ? `${accounts.length} of ${data.linked_account_count} accounts loaded` : 'All linked accounts' : `${selectedCount} account${selectedCount===1?'':'s'} selected`} <span>Select accounts</span></summary><div className="todo-picker-tools"><label>Find linked accounts<input type="search" value={accountSearch} onChange={event=>setAccountSearch(event.target.value)} placeholder="Account or clan name…" /></label><button onClick={()=>setSelected(null)}>All accounts</button><button onClick={()=>setSelected([])}>Clear</button></div><div className="todo-picker-list">{filteredAccounts.map(account=><label key={account.tag}><input type="checkbox" checked={selected===null || selected.includes(account.tag)} onChange={event=>setSelected(current=>{const previous=current===null ? accounts.map(item=>item.tag) : current;return event.target.checked ? [...new Set([...previous,account.tag])] : previous.filter(tag=>tag!==account.tag)})}/><TownHallIcon level={account.town_hall}/><span><strong>{account.name}</strong><small>{account.tag}</small></span></label>)}{!filteredAccounts.length && <p>No matching linked accounts.</p>}</div></details>
       <div className="todo-section-head"><div><h2><DashboardIcon name={config.icon}/> {config.label}</h2><p>{config.description}</p></div>{canFilter && <label>Sort tasks<select value={sort} onChange={event=>setSort(event.target.value)}><option value="deadline">Ending soonest</option><option value="th">Town Hall · highest first</option><option value="name">Account name · A–Z</option></select></label>}</div>
       {tab==='games' && view?.season ? <ClanGamesSummary view={view} now={now}/> : (tab==='raid' || tab==='games' || tab==='cwl') && <TaskEventTimer kind={tab} now={now}/>}

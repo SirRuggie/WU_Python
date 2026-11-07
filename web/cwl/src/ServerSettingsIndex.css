@@ -59,15 +59,6 @@
   display: flex;
   gap: var(--wu-space-2);
 }
-.server-operations-workspace .manage-preview-toggle button {
-  min-height: 44px;
-}
-.server-operations-workspace
-  .manage-preview-toggle
-  button[aria-pressed="true"] {
-  color: var(--wu-accent);
-  border-color: #caa434;
-}
 .server-operations-workspace .manage-editor-layout {
   grid-template-columns: minmax(0, 1fr);
 }

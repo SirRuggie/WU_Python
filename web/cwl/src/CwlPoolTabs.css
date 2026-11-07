@@ -1,21 +1,4 @@
 .cwl-pool-tabs {
   display: flex;
-  gap: var(--wu-space-2);
   margin: var(--wu-space-4) 0 var(--wu-space-4);
-  padding: var(--wu-space-1);
-  border: 1px solid #625432;
-  border-radius: 12px;
-  background: var(--wu-surface);
-}
-.cwl-pool-tabs button {
-  flex: 1;
-  min-width: 0;
-  min-height: 44px;
-  font-weight: var(--wu-weight-medium);
-}
-.cwl-pool-tabs button.active {
-  background: var(--wu-accent);
-  color: var(--wu-accent-ink);
-  -webkit-text-fill-color: var(--wu-accent-ink);
-  border-color: var(--wu-accent);
 }

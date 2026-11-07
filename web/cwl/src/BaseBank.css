@@ -8,25 +8,10 @@
   text-wrap: pretty;
 }
 .base-bank-levels {
-  display: flex;
-  gap: var(--wu-space-2);
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  padding-bottom: var(--wu-space-2);
   margin-block: var(--wu-space-5);
 }
 .base-bank-levels button {
   min-width: 48px;
-  flex: 0 0 auto;
-  min-height: 44px;
-  border-radius: 24px;
-  font-size: var(--wu-text-md);
-}
-.base-bank-levels button[aria-pressed="true"] {
-  background: #d4a017;
-  border-color: #d4a017;
-  color: #17130a;
-  font-weight: var(--wu-weight-medium);
 }
 .base-bank-grid {
   display: grid;

@@ -1,3 +1,4 @@
+import SectionTabs from "./SectionTabs";
 import { relativeTime } from "./commandTime";
 import ConfirmDialog from "./ConfirmDialog";
 import CommandScope from "./CommandScope";
@@ -430,24 +431,30 @@ export default function TextCommands({
                 {deleteWarning(draft.last_delete_error)}
               </p>
             )}
-            <div
-              className="text-command-tabs"
-              role="group"
-              aria-label="Command editor view"
-            >
-              <button
-                aria-pressed={pane === "edit"}
-                onClick={() => setPane("edit")}
-              >
-                Edit reply
-              </button>
-              <button
-                aria-pressed={pane === "preview"}
-                onClick={() => setPane("preview")}
-              >
-                Preview
-              </button>
-            </div>
+            <SectionTabs
+              className="text-command-tabs section-tabs--flow"
+              label="Command editor view"
+              items={[
+                { id: "edit", label: <>Edit reply</> },
+                { id: "preview", label: <>Preview</> },
+              ]}
+              value={pane}
+              onChange={(next) => {
+                switch (next) {
+                  case "edit":
+                    {
+                      setPane("edit");
+                    }
+                    break;
+                  case "preview":
+                    {
+                      setPane("preview");
+                    }
+                    break;
+                }
+              }}
+              revealSelection
+            />
             <div className={`text-command-editor mobile-${pane}`}>
               <form
                 className="card"

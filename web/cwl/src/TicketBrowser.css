@@ -117,17 +117,6 @@
   gap: 0;
   border-bottom: 1px solid var(--wu-border-subtle);
 }
-.ticket-conversation-tabs button {
-  border: 0;
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  background: transparent;
-}
-.ticket-conversation-tabs button[aria-pressed="true"] {
-  color: var(--wu-accent);
-  background: transparent;
-  border-color: var(--wu-accent);
-}
 .ticket-reader-tools {
   gap: var(--wu-space-2);
 }
@@ -223,10 +212,6 @@
   .ticket-browser input,
   .ticket-browser select {
     font-size: var(--wu-text-md);
-  }
-  .ticket-conversation-tabs button {
-    flex: 1;
-    white-space: normal;
   }
   .ticket-reader-tools a {
     font-size: var(--wu-text-sm);

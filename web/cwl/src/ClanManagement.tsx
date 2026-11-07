@@ -1,3 +1,6 @@
+import useChoiceGroupScroll from "./useChoiceGroupScroll";
+import "./SectionTabs.css";
+import "./ChoiceGroupLayout.css";
 import {
   clanSections as sections,
   type ClanRoute,
@@ -44,6 +47,7 @@ export default function ClanManagement({
   const [view, setView] = useState<"overview" | "clans" | "history">(
     initialRoute?.tab || "clans",
   );
+  const viewTabsRef = useChoiceGroupScroll<HTMLDivElement>(view);
   const reminderEditor = useRef<ReminderEditor | null>(null);
   const initialClanPending = useRef(initialRoute?.tag);
   const [reminderChanges, setReminderChanges] = useState(0);
@@ -434,7 +438,11 @@ export default function ClanManagement({
           + Add clan
         </button>
       </div>
-      <div className="clan-tabs" aria-label="Clan management views">
+      <div
+        ref={viewTabsRef}
+        className="clan-tabs section-tabs section-tabs--flow"
+        aria-label="Clan management views"
+      >
         {(
           [
             ["clans", "Clans"],

@@ -89,20 +89,6 @@
   border-bottom: 1px solid var(--wu-border-subtle);
   margin-bottom: var(--wu-space-4);
 }
-.applications-workspace .manage-preview-toggle button {
-  flex: 1;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  border-bottom: 3px solid transparent;
-  min-height: 44px;
-  padding: var(--wu-space-2);
-}
-.applications-workspace .manage-preview-toggle button[aria-pressed="true"] {
-  background: transparent;
-  color: var(--wu-accent);
-  border-bottom-color: var(--wu-accent);
-}
 .applications-workspace .manage-save {
   background: var(--wu-surface-raised);
   border-color: var(--wu-border);

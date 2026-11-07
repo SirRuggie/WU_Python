@@ -10,7 +10,9 @@
     .roster-menu-trigger
   ):not([role="tab"]):not(.roster-assign-clan):not(.roster-player-body):not(
     .roster-clan-chip
-  ):not(.cwl-pool-tabs > button):not(.roster-list-pool-tabs > button) {
+  ):not(.cwl-pool-tabs > button):not(.roster-list-pool-tabs > button):where(
+    :not(.section-tabs--flow > button):not(.filter-chips--flow > button)
+  ) {
   min-height: var(--roster-height-control);
   border-radius: var(--roster-radius-pill);
 }
@@ -134,37 +136,6 @@
   top: 50%;
   transform: translateY(-50%);
 }
-
-/* Section navigation uses a pill; pool navigation uses only an underline. */
-.shell .roster-workspace .roster-workflow-nav > button {
-  border: 1px solid transparent;
-  border-radius: var(--roster-radius-pill);
-}
-.shell
-  .roster-workspace
-  .roster-workflow-nav
-  > button:is(.active, [aria-pressed="true"]) {
-  background: transparent;
-  color: var(--wu-accent);
-  -webkit-text-fill-color: currentColor;
-  position: relative;
-  border-color: transparent;
-  box-shadow: none;
-}
-.shell .roster-workspace .roster-list-pool-tabs > button {
-  border-radius: 0;
-  background: transparent;
-  border: 0;
-  border-bottom: 3px solid transparent;
-}
-.shell
-  .roster-workspace
-  .roster-list-pool-tabs
-  > button:is(.active, [aria-pressed="true"]) {
-  background: transparent;
-  border-bottom-color: var(--roster-gold);
-  box-shadow: none;
-}
 @media (max-width: 680px) {
   .shell .roster-workspace :is(.roster-workflow-nav, .roster-list-pool-tabs) {
     scrollbar-width: none;
@@ -197,26 +168,4 @@
   .roster-workspace .staff-signup-bar-actions .roster-ui-button {
     padding-inline: 8px;
   }
-}
-
-/* Use the reserved border box for the section's gold underline. */
-.shell
-  .roster-workspace
-  .roster-workflow-nav
-  > button:is(.active, [aria-pressed="true"])::after {
-  content: "";
-  position: absolute;
-  left: -1px;
-  right: -1px;
-  bottom: -1px;
-  height: 3px;
-  background: var(--wu-accent);
-  pointer-events: none;
-}
-.shell
-  .roster-workspace
-  .roster-workflow-nav
-  > button:is(.active, [aria-pressed="true"]):hover:not(:disabled) {
-  background: transparent;
-  color: var(--wu-accent-hover);
 }

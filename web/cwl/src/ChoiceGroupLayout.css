@@ -1,0 +1,70 @@
+/* Opt-in flow for the migrated groups; existing Strikes/Members stay unchanged. */
+.section-tabs--flow,
+.shell .section-tabs.section-tabs--flow {
+  /* Callers retain responsive display:none and existing outer margins. */
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--wu-border-subtle);
+  border-radius: 0;
+  background: transparent;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.section-tabs--flow > :is(button, a),
+.shell .section-tabs.section-tabs--flow > :is(button, a) {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--wu-space-1);
+  min-width: max-content;
+  height: 44px;
+  min-height: 44px;
+  padding: var(--wu-space-2) var(--wu-space-3);
+  white-space: nowrap;
+}
+.filter-chips--flow,
+.shell .filter-chips.filter-chips--flow {
+  display: flex;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  gap: var(--wu-space-1);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.filter-chips--flow > button,
+.shell .filter-chips.filter-chips--flow > button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--wu-space-1);
+  height: 44px;
+  min-height: 44px;
+  padding: var(--wu-space-1) var(--wu-space-2);
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* These existing selected counts were gold before pattern adoption. */
+.shell
+  :is(
+    .clan-category-filters,
+    .overview-filters,
+    .return-clan-type
+  ).filter-chips--flow
+  > button[aria-pressed="true"]
+  > small {
+  color: inherit;
+}

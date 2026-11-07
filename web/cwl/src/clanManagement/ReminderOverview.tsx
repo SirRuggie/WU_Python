@@ -1,3 +1,4 @@
+import FilterChips from "../FilterChips";
 import ClanCategories, { clanCategory } from "./ClanCategories";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
@@ -167,22 +168,28 @@ export default function ReminderOverview({
         </p>
       ) : (
         <>
-          <div
-            className="overview-filters"
+          <FilterChips
+            className="overview-filters filter-chips--flow"
+            label="Filter reminder overview"
+            options={filters.map(([key, label, count]) => {
+              return {
+                value: key,
+                label: (
+                  <>
+                    <span>{label}</span>
+                  </>
+                ),
+                count: count,
+              };
+            })}
+            value={filter}
+            onChange={(key) => {
+              setFilter(key);
+            }}
+            variant="pill"
             role="group"
-            aria-label="Filter reminder overview"
-          >
-            {filters.map(([key, label, count]) => (
-              <button
-                key={key}
-                aria-pressed={filter === key}
-                onClick={() => setFilter(key)}
-              >
-                <span>{label}</span>
-                <strong>{count}</strong>
-              </button>
-            ))}
-          </div>
+            revealSelection
+          />
           <div className="overview-toolbar">
             <label>
               Find a clan or channel

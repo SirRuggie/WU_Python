@@ -1,25 +1,9 @@
 .shell .roster-workspace .roster-workflow-nav {
   display: flex;
   flex-wrap: nowrap;
-  gap: 6px;
   overflow-x: auto;
   margin-bottom: 8px;
-  padding-bottom: 10px;
   border-bottom: 1px solid var(--wu-border-subtle);
-}
-
-.shell .roster-workspace .roster-workflow-nav > button {
-  flex: 0 0 auto;
-  min-width: max-content;
-  min-height: 44px;
-  padding: 7px 8px;
-  white-space: nowrap;
-}
-
-.roster-workspace .roster-workflow-nav button.active {
-  background: transparent;
-  border-color: var(--wu-accent);
-  color: var(--wu-accent);
 }
 
 .roster-list-heading {
@@ -158,7 +142,6 @@
 .shell .roster-workspace .roster-workflow-nav {
   min-height: 44px;
   margin-bottom: 0;
-  padding-bottom: 0;
 }
 .roster-workspace .roster-list-pool-tabs.workflow-tabs {
   min-height: 44px;

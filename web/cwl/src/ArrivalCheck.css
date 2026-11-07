@@ -24,9 +24,6 @@
   align-items: center;
   gap: var(--wu-space-2);
 }
-.declaration-pools > button {
-  flex: 1;
-}
 .arrival-check .roster-ui-input {
   width: 100%;
 }

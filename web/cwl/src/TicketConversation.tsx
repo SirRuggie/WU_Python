@@ -1,3 +1,4 @@
+import SectionTabs from "./SectionTabs";
 import DiscordIdentity from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -155,30 +156,32 @@ export default function TicketConversation({
           )}
         </div>
       </div>
-      <div
-        className="ticket-conversation-tabs"
-        role="group"
-        aria-label="Ticket conversation"
-      >
-        <button
-          aria-pressed={space === "applicant"}
-          onClick={() => {
-            setSpace("applicant");
-            setBefore("");
-          }}
-        >
-          Applicant
-        </button>
-        <button
-          aria-pressed={space === "staff"}
-          onClick={() => {
-            setSpace("staff");
-            setBefore("");
-          }}
-        >
-          Staff
-        </button>
-      </div>
+      <SectionTabs
+        className="ticket-conversation-tabs section-tabs--flow"
+        label="Ticket conversation"
+        items={[
+          { id: "applicant", label: <>Applicant</> },
+          { id: "staff", label: <>Staff</> },
+        ]}
+        value={space}
+        onChange={(next) => {
+          switch (next) {
+            case "applicant":
+              {
+                setSpace("applicant");
+                setBefore("");
+              }
+              break;
+            case "staff":
+              {
+                setSpace("staff");
+                setBefore("");
+              }
+              break;
+          }
+        }}
+        revealSelection
+      />
       <div className="ticket-reader-tools">
         <button disabled={busy} onClick={() => setReload((n) => n + 1)}>
           Refresh messages
