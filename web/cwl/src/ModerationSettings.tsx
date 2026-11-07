@@ -32,9 +32,7 @@ import {
 import "./ModerationSettings.css";
 
 type DialogState =
-  | { type: "test"; event: ModerationKind }
-  | { type: "reload" }
-  | null;
+  { type: "test"; event: ModerationKind } | { type: "reload" } | null;
 
 export default function ModerationSettings({
   onDirty,

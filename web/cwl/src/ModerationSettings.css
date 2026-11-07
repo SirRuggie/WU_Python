@@ -305,7 +305,7 @@
 .moderation-settings-save {
   align-items: center;
   margin: 16px 0;
-  padding: 14px 16px;
+  padding: 4px 12px;
   border: 1px solid #536173;
   border-radius: 10px;
   background: #192331;
@@ -625,14 +625,30 @@
   position: sticky;
   bottom: 12px;
   z-index: 5;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
 }
 .moderation-settings-save > .moderation-destination-warning {
   display: block;
-  grid-column: 1 / -1;
+  flex-basis: 100%;
   margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.moderation-settings-save > p:not(.moderation-destination-warning) {
+  flex: 1 0 auto;
+  white-space: nowrap;
+}
+.moderation-settings-save > div {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
 }
 @media (max-width: 650px) {
   .moderation-category-summary > .moderation-category-head {
@@ -646,9 +662,6 @@
   }
   .moderation-settings .channel-keyboard-hint {
     display: none;
-  }
-  .moderation-settings-save {
-    grid-template-columns: minmax(0, 1fr);
   }
   .moderation-event-head {
     align-items: start;
