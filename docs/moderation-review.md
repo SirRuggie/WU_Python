@@ -435,7 +435,7 @@ Limits:
 
 ## Hardening (2026-11-06)
 
-Four changes on top of batch 2. Code: `extensions/events/member_events.py`,
+Four changes on top of batch 2, then a rework of audit replay. Code: `extensions/events/member_events.py`,
 `utils/member_events.py`, `utils/member_event_settings.py`, `utils/member_event_cards.py`,
 `cwl_web/member_events.py`.
 
@@ -446,25 +446,35 @@ Four changes on top of batch 2. Code: `extensions/events/member_events.py`,
   nobody is ignored. Once saved, the list is used as is, so staff may remove the own bot or
   save an empty list. Reading never writes; a PUT without the field (older clients) leaves it
   untouched. "App added" always posts. Message kinds still skip bot and webhook authors.
-- **Bot actors.** Every bot seen as an audit actor is stored in one document
+  Every bot seen as an audit actor is stored in one document
   `member-events-bot-actors:<GUILD_ID>` (`bots: {id: {name, last_seen}}`, newest 100 kept, a
   repeat within an hour is not rewritten). Settings GET adds response-only `bot_actors`
   (`id`, `name`, `last_seen`, sorted by name) from that document plus this bot, and always
-  returns the resolved `ignored_bot_ids`.
+  returns the resolved `ignored_bot_ids`; when this bot's id cannot be read and the row never
+  saved a list, `ignored_bot_ids` is omitted (the dashboard shows "Bot list unavailable.").
 - **Recovery after downtime.** The newest handled audit entry id is kept in
-  `member-events-audit-cursor:<GUILD_ID>` (`last_audit_id`, `updated_at`), only moving forward.
+  `member-events-audit-cursor:<GUILD_ID>` (`last_audit_num` as an integer, `last_audit_id` as text, `updated_at`), only moving forward
+  by one filtered update.
   After the startup invite snapshot a background task reads the audit log (newest first, 24
   hours and 500 entries at most), then replays missed entries oldest first through the same
-  handlers. The existing audit-id dedupe prevents a second post. Replayed cards carry
+  handlers. A replayed entry whose audit id is already on a stored row (`audit_entry_id` or
+  an `...:audit:<id>` key) is skipped before its handler runs, so it never posts or changes ban
+  state; unban rows record their audit id for this. A second "App added" for the same
+  application id within 10 minutes is skipped even after a restart. Replayed cards carry
   "Recovered after restart". With no cursor (first run) it only sets the cursor. Live entries
   that arrive before recovery has read the cursor are held back from the cursor until it ends.
-  A failure (for example 403 without View Audit Log) logs one warning, never delays startup,
-  and keeps the cursor so the next start retries. Both documents have no `expires_at` and no
+  A failure (for example 403 without View Audit Log) logs one warning and never delays
+  startup. That gap stays unrecovered: the hold is released, so live entries move the cursor
+  again and the next start does not retry it. Both documents have no `expires_at` and no
   `event_type`, so history queries never return them.
 - **Card size limits.** Roles 10, permission changes 15, profile and setting changes 10,
   URLs 10, attachments 10, each followed by "+N more". A final guard keeps a Components V2 card
   within 3,800 characters of text, and a forum starter description within 4,000 (fields 1,000,
-  total 5,800), cutting the longest lines first with "…".
+  total 5,800), cutting the longest lines first (never below 40 characters, never inside an
+  escape) and then dropping trailing fields; "+N more" always equals the hidden items.
+- **Public-channel health check.** Settings health adds an error `public_<channel id>` ("<name>
+  is visible to everyone") for any enabled log destination, or the parent channel of a thread,
+  that `@everyone` can view (View Channel or Administrator after channel overwrites).
 
 Limits:
 

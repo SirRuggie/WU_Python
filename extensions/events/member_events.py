@@ -44,6 +44,7 @@ _invite_born: dict[int, float] = {}  # When each waiting future was created (loo
 INVITE_STALE_SECONDS = 5
 _recent_app_adds: list[dict] = []  # Posted "App added" audit entries: time, action type, application id, matched.
 APP_ADD_WINDOW_SECONDS = 60
+APP_ADD_STORED_WINDOW = timedelta(minutes=10)
 URL_PATTERN = re.compile(r"https?://\S+")
 FORUM_LABELS = {"join": "Joined", "leave": "Left", "kick": "Kicked", "ban": "Banned",
                 "timeout_add": "Timed out", "timeout_remove": "Timeout removed",
@@ -454,6 +455,18 @@ async def handle_audit_entry(entry, mongo, bot, *, recovered=False) -> bool:
     """Route one audit entry, live or recovered. Never raises; True once handled."""
     if int(entry.guild_id) != GUILD_ID or not entry.target_id:
         return False
+    if recovered:
+        try:
+            store = MemberEventStore(mongo.member_events)
+            await ensure_indexes(store)
+            if await store.audit_handled(GUILD_ID, entry.id):
+                await note_audit_cursor(entry, mongo, recovered=True)
+                return True  # A replay of an entry already handled must not post or change state.
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Could not check a replayed audit entry")
+            return False
     token = _recovering.set(recovered)
     try:
         if entry.action_type == hikari.AuditLogEventType.MEMBER_KICK:
@@ -494,8 +507,9 @@ async def handle_audit_entry(entry, mongo, bot, *, recovered=False) -> bool:
             store = MemberEventStore(mongo.member_events)
             await ensure_indexes(store)
             uid = int(entry.target_id)
-            await emit_unban(mongo, bot, uid, await store.ban_episode(GUILD_ID, uid, banned=False),
-                             at=entry.created_at, entry=entry)
+            if not await store.audit_handled(GUILD_ID, entry.id):  # A duplicate must not flip ban state.
+                await emit_unban(mongo, bot, uid, await store.ban_episode(GUILD_ID, uid, banned=False),
+                                 at=entry.created_at, entry=entry)
         elif entry.action_type == hikari.AuditLogEventType.MEMBER_ROLE_UPDATE:
             await record_member_roles(entry, mongo, bot)
         elif entry.action_type in (hikari.AuditLogEventType.MESSAGE_DELETE,
@@ -533,8 +547,8 @@ async def note_audit_cursor(entry, mongo, *, recovered):
 async def recover_audit(mongo, bot):
     """Replay audit entries missed while down: newest 24 h / 500, oldest first.
 
-    No cursor yet (first run) only sets it. Any failure logs one warning and
-    leaves the cursor and live-entry hold as they are, so the next start retries.
+    No cursor yet (first run) only sets it. A failure logs one warning and leaves
+    that gap unrecovered; the live-entry hold is released so the cursor keeps moving.
     """
     try:
         store = MemberEventStore(mongo.member_events)
@@ -564,6 +578,14 @@ async def recover_audit(mongo, bot):
         raise
     except Exception as exc:
         log.warning("Audit recovery unavailable (%s); missed audit entries are not replayed", exc)
+        _audit_state["pending"] = False
+        if _audit_state["live_max"]:
+            try:
+                await MemberEventStore(mongo.member_events).advance_audit_cursor(_audit_state["live_max"])
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.warning("Could not save the audit cursor", exc_info=True)
 
 
 @loader.listener(hikari.BanDeleteEvent)
@@ -1141,16 +1163,19 @@ def audit_object_name(entry, bot, kind: str) -> str:
     return str(getattr(found, "name", None) or getattr(found, "username", None) or "")
 
 
+def _application_id(entry):
+    if entry.action_type == _A.BOT_ADD:
+        return str(entry.target_id)
+    change = next((c for c in entry.changes if c.key == _C.APPLICATION_ID), None)
+    value = (change.new_value or change.old_value) if change else None
+    return str(value) if value else None
+
+
 def _app_add_seen(entry) -> bool:
     """True when this entry repeats an app add already posted: BOT_ADD and INTEGRATION_CREATE pair up."""
     now = time.monotonic()
     _recent_app_adds[:] = [a for a in _recent_app_adds if now - a["at"] <= APP_ADD_WINDOW_SECONDS]
-    if entry.action_type == _A.BOT_ADD:
-        app_id = str(entry.target_id)
-    else:
-        change = next((c for c in entry.changes if c.key == _C.APPLICATION_ID), None)
-        value = (change.new_value or change.old_value) if change else None
-        app_id = str(value) if value else None
+    app_id = _application_id(entry)
     others = [a for a in _recent_app_adds if a["type"] != entry.action_type and not a["matched"]]
     same = [a for a in others if a["app_id"] and app_id and a["app_id"] == app_id]
     if not same and (app_id is None or any(a["app_id"] is None for a in others)) and len(others) == 1:
@@ -1176,8 +1201,13 @@ async def record_audit_kind(entry, mongo, bot) -> bool:
     if not (kind == "app" and action == "added") and await actor_ignored(bot, store, settings, entry.user_id):
         return True  # Only ignored bots are skipped; adding an app always posts.
     details = {"action": action, "target_id": str(entry.target_id)}
-    if kind == "app" and action == "added" and _app_add_seen(entry):
-        return True  # BOT_ADD and INTEGRATION_CREATE both describe one new app.
+    if kind == "app" and action == "added":
+        details["application_id"] = _application_id(entry)
+        if details["application_id"] and await store.app_add_posted(
+                GUILD_ID, details["application_id"], entry.created_at, APP_ADD_STORED_WINDOW):
+            return True  # The pair was posted before a restart or in another order.
+        if _app_add_seen(entry):
+            return True  # BOT_ADD and INTEGRATION_CREATE both describe one new app.
     if kind == "thread_lock":
         locked = [c for c in entry.changes if c.key in (_C.LOCKED, _C.ARCHIVED) and c.new_value is True]
         if not locked:
@@ -1224,13 +1254,18 @@ async def record_member_roles(entry, mongo, bot):
         )
 
 
-_bot_unbans: set = set()  # (user id, ban episode) whose unban audit entry was made by an app.
+_bot_unbans: set = set()  # (user id, ban episode) whose unban audit entry came from an ignored bot.
 
 
 async def emit_unban(mongo, bot, uid: int, episode: int, *, at, user=None, entry=None):
-    """Post an unban once; the gateway event and its audit entry may come in either order."""
+    """Post an unban once; the gateway event and its audit entry may come in either order.
+
+    The row keeps the audit entry id, so a replay or duplicate of that entry is skipped.
+    """
     store = MemberEventStore(mongo.member_events)
     await ensure_indexes(store)
+    if entry is not None and await store.audit_handled(GUILD_ID, entry.id):
+        return
     key = f"{GUILD_ID}:unban:{uid}:{episode}"
     settings = await store.settings()
     if entry is not None and await actor_ignored(bot, store, settings, entry.user_id):
@@ -1248,6 +1283,7 @@ async def emit_unban(mongo, bot, uid: int, episode: int, *, at, user=None, entry
         "unban", mongo, bot, settings=settings, user_id=uid, display_name=who["display_name"],
         username=who["username"], at=at, dedupe_key=key, moderator_id=moderator, reason=reason,
         details={"avatar_url": who["avatar_url"]}, hold=entry is None,
+        audit_entry_id=int(entry.id) if entry is not None else None,
     )
     return row
 

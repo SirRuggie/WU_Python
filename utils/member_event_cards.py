@@ -191,22 +191,56 @@ def _account_age(row: dict) -> str | None:
 
 
 def _cut(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[:max(limit - 1, 0)] + "…"
+    if len(text) <= limit:
+        return text
+    end = max(limit - 1, 0)
+    if text[end:end + 1] == "\u200b" and text[end - 1:end] == "@":
+        end -= 1  # Keep "@" and its zero-width space together.
+    cut = text[:end]
+    if (len(cut) - len(cut.rstrip("\\"))) % 2:
+        cut = cut[:-1]  # Never end on half an escape.
+    return cut + "…"
+
+
+FIT_FLOOR = 40  # A line is cut to this many characters before anything is dropped.
+_MORE_LINE = re.compile(r"\+(\d+) more")
+
+
+def _hide(lines: list[str], dropped: int) -> None:
+    """Fold ``dropped`` removed items into the one "+N more" line before the footer."""
+    for index in range(3, len(lines) - 1):
+        match = _MORE_LINE.fullmatch(lines[index])
+        if match:
+            lines[index] = f"+{int(match.group(1)) + dropped} more"
+            return
+    lines.insert(len(lines) - 1, f"+{dropped} more")
 
 
 def _fit(lines: list[str], budget: int, joiner: int = 0) -> list[str]:
-    """Cut the longest lines until the total fits. Name and footer go last."""
+    """Shorten the longest field lines, then drop trailing fields, until the total fits.
+
+    Name, title, main line and footer stay; every dropped field is counted in "+N more".
+    """
     lines = list(lines)
-    while True:
-        excess = sum(map(len, lines)) + joiner * (len(lines) - 1) - budget
-        if excess <= 0:
+    size = lambda: sum(map(len, lines)) + joiner * (len(lines) - 1)
+    while size() > budget:
+        excess = size() - budget
+        middle = [i for i in range(1, len(lines) - 1) if len(lines[i]) > FIT_FLOOR]
+        if middle:
+            index = max(middle, key=lambda i: len(lines[i]))
+            lines[index] = _cut(lines[index], max(len(lines[index]) - excess, FIT_FLOOR))
+            continue
+        fields = [i for i in range(3, len(lines) - 1) if not _MORE_LINE.fullmatch(lines[i])]
+        if fields:
+            del lines[fields[-1]]
+            _hide(lines, 1)
+            continue
+        longest = [i for i in range(len(lines)) if len(lines[i]) > FIT_FLOOR // 2]
+        if not longest:
             return lines
-        middle = [i for i in range(1, len(lines) - 1) if len(lines[i]) > 1]
-        pool = middle or [i for i in range(len(lines)) if len(lines[i]) > 1]
-        if not pool:
-            return lines
-        index = max(pool, key=lambda i: len(lines[i]))
-        lines[index] = _cut(lines[index], max(len(lines[index]) - excess, 1))
+        index = max(longest, key=lambda i: len(lines[i]))
+        lines[index] = _cut(lines[index], max(len(lines[index]) - excess, FIT_FLOOR // 2))
+    return lines
 
 
 def _guard_embed(embed: dict) -> dict:

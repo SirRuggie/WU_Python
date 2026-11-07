@@ -233,7 +233,10 @@ async def settings(request):
         stored_actors = await store.bot_actors()
     own = await _own_bot(request)
     # Resolved on read; a row that never saved the list is left untouched.
-    saved["ignored_bot_ids"] = resolve_ignored_bots(saved, own["id"] if own else None)
+    if own is None and saved.get("ignored_bot_ids") is None:
+        saved.pop("ignored_bot_ids", None)  # Unknown default: omit it rather than show "nobody".
+    else:
+        saved["ignored_bot_ids"] = resolve_ignored_bots(saved, own["id"] if own else None)
     bot_actors = _bot_actors(stored_actors, own)
     try:
         from .server_management import discord

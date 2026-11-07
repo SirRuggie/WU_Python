@@ -13,7 +13,7 @@ from aiohttp.test_utils import make_mocked_request
 
 from cwl_web import member_events as api
 from extensions.events import member_events as transport
-from utils.member_event_cards import build_card, sample_row
+from utils.member_event_cards import build_card, build_forum_message, sample_row
 from utils.member_event_settings import EVENT_TYPES, normalize_settings
 from utils.member_events import GUILD_ID, MemberEventStore, avatar_source, event_key, safe_text
 from tests.test_moderation_backend import MemoryCollection
@@ -983,7 +983,101 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
             await self.recover()
         self.assertEqual(len(logs.records), 1)
         self.assertEqual(await store.audit_cursor(), 1000)
-        self.assertTrue(transport._audit_state["pending"])  # Retried on the next start.
+        self.assertFalse(transport._audit_state["pending"])  # Live entries move the cursor again.
+        await enable(self.history, "role_create")
+        await self.audit(A.ROLE_CREATE, 1200, NS(key=K.NAME, old_value=None, new_value="r"))
+        self.assertEqual(await store.audit_cursor(), 1200)  # The gap before it stays unrecovered.
+
+    async def test_failed_recovery_keeps_entries_handled_live_during_the_hold(self):
+        store = MemberEventStore(self.history)
+        await store.advance_audit_cursor(1000)
+        await enable(self.history, "role_create")
+        transport._audit_state.update(pending=True, live_max=0)
+        await self.audit(A.ROLE_CREATE, 1500, NS(key=K.NAME, old_value=None, new_value="r"))
+        self.assertEqual(await store.audit_cursor(), 1000)  # Held while recovery has not read it.
+        self.audit_log(error=hikari.ForbiddenError("u", {}, b""))
+        with self.assertLogs(transport.log, "WARNING"):
+            await transport.recover_audit(self.mongo, self.bot)
+        self.assertEqual(await store.audit_cursor(), 1500)
+
+    async def test_replayed_unban_with_a_handled_audit_id_posts_nothing_and_keeps_ban_state(self):
+        await enable(self.history, "unban", "ban")
+        store = MemberEventStore(self.history)
+        self.assertEqual(await store.ban_episode(GUILD_ID, self.uid, banned=True), 1)
+        await self.audit(A.MEMBER_BAN_REMOVE, 200, target=self.uid)  # Live unban of episode 1.
+        self.assertEqual(await store.ban_episode(GUILD_ID, self.uid, banned=True), 2)  # Banned again.
+        self.history.rows.pop("member-events-audit-cursor:%d" % GUILD_ID, None)
+        await store.advance_audit_cursor(150)  # Cursor behind, as after a failed recovery.
+        self.audit_log(self.entry(A.MEMBER_BAN_REMOVE, 200, target=self.uid))
+        await self.recover()
+        (row,) = self.rows("unban")
+        self.assertEqual((row["audit_entry_id"], self.deliver.await_count), ("200", 1))
+        state = self.history.rows["ban-state:%d:%d" % (GUILD_ID, self.uid)]
+        self.assertEqual((state["banned"], state["sequence"]), (True, 2))
+        await self.audit(A.MEMBER_BAN_REMOVE, 200, target=self.uid)  # A live duplicate is skipped too.
+        self.assertEqual((len(self.rows("unban")), self.deliver.await_count), (1, 1))
+        self.assertTrue(self.history.rows["ban-state:%d:%d" % (GUILD_ID, self.uid)]["banned"])
+        self.assertEqual(await store.audit_cursor(), 200)
+
+    async def test_replay_skips_every_kind_of_entry_that_already_has_a_row(self):
+        await enable(self.history, "role_create", "roles_added", "timeout_add")
+        role = NS(key=K.NAME, old_value=None, new_value="Raiders")
+        added = NS(key=K.ADD_ROLE_TO_MEMBER, old_value=None, new_value={1: NS(name="Member")})
+        until = datetime.now(timezone.utc) + timedelta(hours=1)
+        timeout = NS(key=hikari.AuditLogChangeKey.COMMUNICATION_DISABLED_UNTIL, old_value=None, new_value=until)
+        entries = [self.entry(A.ROLE_CREATE, 301, role),
+                   self.entry(A.MEMBER_ROLE_UPDATE, 302, added, target=self.uid),
+                   self.entry(A.MEMBER_UPDATE, 303, timeout, target=self.uid)]
+        for entry in entries:
+            await transport.audited(NS(entry=entry), self.mongo, self.bot)
+        before = (len(self.history.rows), self.deliver.await_count)
+        for entry in entries:
+            self.assertTrue(await transport.handle_audit_entry(entry, self.mongo, self.bot, recovered=True))
+        self.assertEqual((len(self.history.rows), self.deliver.await_count), before)
+
+    async def test_audit_cursor_advance_is_numeric_monotonic_and_race_safe(self):
+        store = MemberEventStore(self.history)
+        await store.advance_audit_cursor(9)
+        await store.advance_audit_cursor(10)  # "10" < "9" as text; must still move.
+        self.assertEqual(await store.audit_cursor(), 10)
+        await store.advance_audit_cursor(9)
+        self.assertEqual(await store.audit_cursor(), 10)
+        real = self.history.update_one
+        async def yielding(*args, **kwargs):
+            turn = asyncio.get_running_loop().create_future()  # sleep is mocked here; yield by hand.
+            asyncio.get_running_loop().call_soon(turn.set_result, None)
+            await turn  # Let the other advances interleave.
+            return await real(*args, **kwargs)
+        self.history.update_one = yielding
+        await asyncio.gather(*(store.advance_audit_cursor(n) for n in (500, 120, 90000, 3, 70000, 1000)))
+        self.assertEqual(await store.audit_cursor(), 90000)
+
+    async def test_audit_cursor_adopts_an_older_string_only_document(self):
+        self.history.rows["member-events-audit-cursor:%d" % GUILD_ID] = {
+            "_id": "member-events-audit-cursor:%d" % GUILD_ID, "last_audit_id": "900"}
+        store = MemberEventStore(self.history)
+        self.assertEqual(await store.audit_cursor(), 900)
+        await store.advance_audit_cursor(80)
+        self.assertEqual(await store.audit_cursor(), 900)
+        await store.advance_audit_cursor(1200)
+        self.assertEqual(await store.audit_cursor(), 1200)
+
+    async def test_app_add_pairing_holds_across_a_restart_in_either_order(self):
+        await enable(self.history, "app")
+        app = lambda value: NS(key=K.APPLICATION_ID, old_value=None, new_value=value)
+        await self.audit(A.INTEGRATION_CREATE, 402, app(555), target=888, user=APP)  # Live, newer entry.
+        self.assertEqual(len(self.rows("app")), 1)
+        self.assertEqual(self.rows("app")[0]["details"]["application_id"], "555")
+        transport._recent_app_adds.clear()  # Restart: memory is gone.
+        store = MemberEventStore(self.history)
+        await store.advance_audit_cursor(400)
+        self.audit_log(self.entry(A.INTEGRATION_CREATE, 402, app(555), target=888, user=APP),
+                       self.entry(A.BOT_ADD, 401, target=555, user=APP))  # Newest first.
+        await self.recover()
+        self.assertEqual((len(self.rows("app")), self.deliver.await_count), (1, 1))
+        transport._recent_app_adds.clear()
+        await self.audit(A.BOT_ADD, 403, target=777, user=APP)  # A different app still posts.
+        self.assertEqual(len(self.rows("app")), 2)
 
     async def test_first_run_sets_the_cursor_to_the_newest_entry_and_recovers_nothing(self):
         await enable(self.history, "role_create")
@@ -1242,3 +1336,66 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CardFitTests(unittest.TestCase):
+    TOTAL = {"role_create": 12, "webhook": 12, "channel_permissions": 20}
+
+    def row(self, kind, count):
+        changes = [{"field": f"field_{i}", "before": "*" * 100, "after": "_" * 100} for i in range(count)]
+        return {**sample_row(kind), "details": {"action": "updated", "target_id": "123456789012345678",
+                                                "changes": changes}}
+
+    @staticmethod
+    def texts(card):
+        found = []
+        def walk(node):
+            if isinstance(node, dict):
+                if isinstance(node.get("content"), str):
+                    found.append(node["content"])
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+        walk(card)
+        return found
+
+    def check(self, kind, parts):
+        total = self.TOTAL[kind]
+        shown = sum(1 for part in parts if part.startswith("**Field "))
+        hidden = sum(int(part.split()[0][1:]) for part in parts if part.endswith(" more") and part.startswith("+"))
+        self.assertEqual(shown + hidden, total)
+        for part in parts:
+            self.assertNotEqual(part.strip(), "…")
+            body = part.rstrip("…")
+            self.assertEqual((len(body) - len(body.rstrip("\\"))) % 2, 0, part[-12:])  # No dangling backslash.
+        return shown, hidden
+
+    def test_oversized_cards_keep_whole_escapes_and_an_exact_more_count(self):
+        for kind, count in self.TOTAL.items():
+            with self.subTest(kind=kind):
+                row = self.row(kind, count)
+                parts = self.texts(build_card(row))
+                self.assertLessEqual(sum(map(len, parts)), 3800)
+                shown, hidden = self.check(kind, [line for part in parts for line in part.split("\n")
+                                                  if line.startswith("+") or line.startswith("**Field ")])
+                self.assertGreater(hidden, 0)
+                forum = build_forum_message(row)["embeds"][0]["description"]
+                self.check(kind, [line for line in forum.split("\n") if line.startswith(("+", "**Field "))])
+
+    def test_cut_never_splits_an_escape(self):
+        from utils.member_event_cards import _cut
+        text = "ab\\*cd"
+        self.assertEqual(_cut(text, 4), "ab…")  # Would end on a lone backslash.
+        self.assertEqual(_cut("ab\\\\cd", 5), "ab\\\\…")  # An escaped backslash is whole.
+        self.assertEqual(_cut("ab@​cd", 4), "ab…")  # "@" keeps its zero-width space.
+
+    def test_fit_drops_trailing_fields_and_counts_them(self):
+        from utils.member_event_cards import _fit
+        lines = ["**n**", "title", "main", *("f" * 30 for _ in range(6)), "+2 more", "footer"]
+        out = _fit(lines, 140)
+        self.assertEqual(out[-1], "footer")
+        kept = sum(1 for line in out if line == "f" * 30)
+        self.assertLess(kept, 6)
+        self.assertEqual(kept + int(out[-2].split()[0][1:]), 8)

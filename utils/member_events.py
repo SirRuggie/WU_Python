@@ -161,18 +161,63 @@ class MemberEventStore:
 
     async def audit_cursor(self) -> int | None:
         row = await self.collection.find_one({"_id": AUDIT_CURSOR_ID})
+        if not row:
+            return None
         try:
-            return int(row["last_audit_id"]) if row else None
+            return int(row["last_audit_num"]) if row.get("last_audit_num") is not None else int(row["last_audit_id"])
         except (KeyError, TypeError, ValueError):
             return None
 
     async def advance_audit_cursor(self, entry_id, now: datetime | None = None):
-        """Move the newest-processed audit entry forward; never backward."""
-        current = await self.audit_cursor()
-        if current is not None and current >= int(entry_id):
-            return
-        await self._write_state(AUDIT_CURSOR_ID, {
-            "last_audit_id": str(int(entry_id)), "updated_at": now or datetime.now(timezone.utc)})
+        """Move the newest-processed audit entry forward; never backward.
+
+        The id is kept as an integer in ``last_audit_num`` so Mongo compares it
+        numerically, and each move is one filtered update, safe when advances race.
+        """
+        number = int(entry_id)
+        values = {"last_audit_num": number, "last_audit_id": str(number),
+                  "updated_at": now or datetime.now(timezone.utc)}
+        for _ in range(5):
+            if (await self.collection.update_one(
+                    {"_id": AUDIT_CURSOR_ID, "last_audit_num": {"$lt": number}}, {"$set": values})).matched_count:
+                return
+            row = await self.collection.find_one({"_id": AUDIT_CURSOR_ID})
+            if row is None:
+                try:
+                    await self.collection.insert_one({"_id": AUDIT_CURSOR_ID, "event_key": AUDIT_CURSOR_ID,
+                                                      "guild_id": GUILD_ID, **values})
+                    return
+                except DuplicateKeyError:
+                    continue
+            if row.get("last_audit_num") is not None:
+                return  # Already at or past this entry.
+            try:  # Older document with only the string id: adopt it, then move on.
+                legacy = int(row["last_audit_id"])
+            except (KeyError, TypeError, ValueError):
+                legacy = 0
+            await self.collection.update_one(
+                {"_id": AUDIT_CURSOR_ID, "last_audit_num": {"$exists": False}},
+                {"$set": {**values, "last_audit_num": max(number, legacy), "last_audit_id": str(max(number, legacy))}})
+
+    async def audit_handled(self, guild_id: int, audit_entry_id) -> bool:
+        """True when any stored row already came from this audit entry."""
+        audit_id = str(int(audit_entry_id))
+        if await self.collection.find_one({"guild_id": guild_id, "audit_entry_id": audit_id}, {"_id": 1}):
+            return True
+        return bool(await self.collection.find_one(
+            {"event_key": {"$regex": f"^{guild_id}:audit:{audit_id}(:|$)"}}, {"_id": 1}))
+
+    async def app_add_posted(self, guild_id: int, application_id: str, at: datetime, window: timedelta):
+        """True when an "App added" row for this application sits within ``window`` of ``at``."""
+        rows = await self.collection.find(
+            {"guild_id": guild_id, "event_type": "app",
+             "occurred_at": {"$gte": at - window, "$lte": at + window}},
+        ).limit(50).to_list(length=50)
+        for row in rows:
+            details = row.get("details") or {}
+            if details.get("action") == "added" and details.get("application_id") == application_id:
+                return True
+        return False
 
     async def _write_state(self, state_id: str, values: dict):
         """State docs carry no event_type or expires_at: never in history, never expired."""
@@ -228,8 +273,8 @@ class MemberEventStore:
             raise ValueError("Member event is outside the configured guild")
         if avatar is not None and (len(avatar) > MAX_AVATAR_BYTES or avatar_type not in ("image/png", "image/jpeg", "image/gif", "image/webp")):
             raise ValueError("Avatar does not meet the storage bounds")
-        key = (f"{guild_id}:audit:{audit_entry_id}" if audit_entry_id else
-               dedupe_key or
+        key = (dedupe_key or
+               (f"{guild_id}:audit:{audit_entry_id}" if audit_entry_id else None) or
                event_key(guild_id, user_id, kind, at, joined_at if kind in ("join", "leave") else None))
         if kind == "ban" and episode is not None:
             key = f"{guild_id}:ban:{user_id}:{episode}"

@@ -35,6 +35,8 @@ class MemoryCollection:
                 if "$ne" in expected and value == expected["$ne"]: return False
                 if "$gte" in expected and (value is None or value < expected["$gte"]): return False
                 if "$lte" in expected and (value is None or value > expected["$lte"]): return False
+                if "$lt" in expected and (value is None or value >= expected["$lt"]): return False
+                if "$exists" in expected and (key in row) != expected["$exists"]: return False
                 if "$in" in expected and value not in expected["$in"]: return False
                 if "$regex" in expected:
                     import re
@@ -452,7 +454,7 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
             saved = {**MemberEventStore.default_settings(), "ignored_bot_ids": ids}
             self.assertEqual((await self._settings_with_discord(discord, saved))["ignored_bot_ids"], ids)
 
-    async def test_settings_get_without_own_bot_returns_empty_default_and_saves_nothing(self):
+    async def test_settings_get_without_own_bot_omits_the_unsaved_default_and_saves_nothing(self):
         async def discord(request, method, path, **kwargs):
             if path == "/users/@me":
                 raise web.HTTPServiceUnavailable()
@@ -461,7 +463,10 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
             raise web.HTTPNotFound()
         actors = {"300000000000000002": {"name": "wick", "last_seen": None}}
         result = await self._settings_with_discord(discord, actors=actors)
-        self.assertEqual(result["ignored_bot_ids"], [])
+        self.assertNotIn("ignored_bot_ids", result)  # Unknown default: omitted, not shown as empty.
+        saved = {**MemberEventStore.default_settings(), "ignored_bot_ids": ["300000000000000002"]}
+        self.assertEqual((await self._settings_with_discord(discord, saved))["ignored_bot_ids"],
+                         ["300000000000000002"])  # A stored list still shows.
         self.assertEqual([a["id"] for a in result["bot_actors"]], ["300000000000000002"])
 
     async def test_settings_get_role_failure_keeps_channels(self):
