@@ -1,0 +1,5 @@
+name = "wu_scout"
+description = "Find files, symbols, call sites and references. Locations only."
+model = "gpt-6-luna"
+model_reasoning_effort = "low"
+developer_instructions = "Report paths and line numbers, not file contents. Read only."

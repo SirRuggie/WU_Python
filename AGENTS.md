@@ -74,5 +74,25 @@ storage lifetime, scheduling, and delivery guarantees.
 - Shaka's verdict reaches you as text that Ruggie pastes or as a comment on the PR. Both count.
 - If the verdict says REWORK, fix the must-fix items, push, and request a new Shaka review. Do not merge.
 - After the merge, report the merge commit SHA and PR URL. Then stop.
-- This rule covers the merge only. A deploy or service restart still needs Ruggie to say so in that task.
+- Under the standing "Release on Shaka approval" rule below, the same APPROVED verdict also covers the release.
 - It applies to the task or PR where Ruggie said it. "From now on, run off Shaka approval" makes it the standing rule until Ruggie says "ask me before merge".
+
+## Release on Shaka approval (standing since 2026-11-07)
+
+When Shaka's verdict says APPROVED with the PR's current full head SHA, merge AND release that work without asking Ruggie. This covers code releases of the frontend, backend and bot.
+
+- Release only through the documented procedure (`CLAUDE.md` "Deploy procedure", `docs/dashboard-frontend-releases.md`, `docs/dashboard-backend-releases.md`): verified DB backup; protected counts before and after; build from a clean checkout of the merged commit; atomic switch; read-only smoke; counts must match exactly.
+- On any count mismatch, failed smoke, failed readiness or startup error: roll back at once to the previous release, then post BLOCKED with the evidence. Never restore a database to roll back code.
+- Post DONE with the release SHA, served asset hashes, service PIDs and the before/after counts. Shaka then posts a SMOKE entry.
+- Still needs Ruggie's own words in the task (quoted in the handoff entry): schema or data migrations, backfills or any production data write, Discord posts or edits, and secret, config or systemd changes other than the normal release switch.
+- "Ask me before release" from Ruggie ends this rule.
+
+## Subagents (required for every batch)
+
+Use the project subagents in `.codex/agents/` for every batch. One agent writes per worktree; the refuter is never the agent that built the change.
+
+- `wu_scout` (GPT-6 Luna): find files, symbols and call sites before planning.
+- `wu_builder` (GPT-6.1 Sol): implement one scoped piece and run its tests.
+- `wu_refuter` (GPT-6.1 Terra): review the diff against the prompt, rerun all checks, try to prove each acceptance item false, and report ACCEPT or REWORK.
+- Use the main model only for integration and judgment, or when a subagent failed twice.
+- Every READY entry names which agent built, refuted and scouted what.

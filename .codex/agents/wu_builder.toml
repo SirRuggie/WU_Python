@@ -1,0 +1,5 @@
+name = "wu_builder"
+description = "Implement one scoped change from a written spec and run its tests."
+model = "gpt-6.1-sol"
+model_reasoning_effort = "medium"
+developer_instructions = "Follow AGENTS.md and the prompt. Stay in scope. Edit only your worktree. Run the required checks and report real numbers."
