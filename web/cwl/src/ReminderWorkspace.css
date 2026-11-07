@@ -396,7 +396,6 @@ only editing opens the long forms. */
   text-wrap: pretty;
 }
 .signup-reminder-pool button {
-  min-height: 44px;
   justify-self: start;
 }
 
@@ -408,4 +407,28 @@ only editing opens the long forms. */
 .reminder-overview-note a {
   color: var(--wu-text);
   text-underline-offset: 3px;
+}
+
+@media (max-width: 650px) {
+  .signup-reminder-shared,
+  .signup-reminder-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .signup-reminder-pool {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .signup-reminder-pool > strong {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+  }
+  .signup-reminder-pool > button {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+  .signup-reminder-pool > p,
+  .signup-reminder-pool > span {
+    grid-column: 1 / -1;
+  }
 }

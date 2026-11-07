@@ -1,3 +1,4 @@
+import { Button } from "../rosterUi/primitives";
 import type { Pool } from "../api";
 import {
   nextReminderOccurrence,
@@ -82,9 +83,9 @@ export default function SignupReminderOverview({
     <div className="reminder-overview">
       <div className="reminder-overview-head">
         <h3>Messages for {targetCwlMonth(cycle)} CWL</h3>
-        <button type="button" onClick={onTiming}>
+        <Button type="button" onClick={onTiming}>
           Edit timing
-        </button>
+        </Button>
       </div>
       <p className="reminder-overview-note">
         Times in {Intl.DateTimeFormat().resolvedOptions().timeZone}.
@@ -157,14 +158,14 @@ export default function SignupReminderOverview({
                             : shortReminderTime(next?.run_at)}
                       </p>
                     )}
-                    <button type="button" onClick={() => onEdit(id, pool)}>
+                    <Button type="button" onClick={() => onEdit(id, pool)}>
                       Edit
                       <span className="reminder-visually-hidden">
                         {" "}
                         {item.label || id} for{" "}
                         {pool === "main" ? "Main" : "Lazy"}
                       </span>
-                    </button>
+                    </Button>
                   </div>
                 );
               })}
