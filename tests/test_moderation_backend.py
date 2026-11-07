@@ -53,6 +53,13 @@ class MemoryCollection:
                                          for existing in self.rows.values()):
             raise DuplicateKeyError("duplicate")
         self.rows[row["_id"]] = dict(row)
+    async def count_documents(self, query):
+        return sum(1 for row in self.rows.values() if self.matches(row, query))
+    async def delete_one(self, query):
+        key = next((key for key, row in self.rows.items() if self.matches(row, query)), None)
+        if key is not None: del self.rows[key]
+    async def create_index(self, *args, **kwargs):
+        self.indexes = getattr(self, "indexes", []) + [(args, kwargs)]
     async def find_one_and_update(self, query, update, **kwargs):
         row = next((row for row in self.rows.values() if self.matches(row, query)), None)
         if row is None: return None
@@ -551,8 +558,8 @@ class NewLogApiTests(unittest.IsolatedAsyncioTestCase):
                                 dedupe_key=f"k{index}", details={"x": 1})
         rows, _ = await store.search(guild_id=GUILD_ID)
         self.assertEqual({row["event_type"] for row in rows},
-                         {"join", "timeout_add", "timeout_remove", "member_update"})
-        for kind in ("link", "invite_use"):
+                         {"join", "timeout_add", "timeout_remove", "member_update", "invite_use"})
+        for kind in ("link", "invite_create", "invite_delete"):
             with self.subTest(kind=kind), patch.object(api, "require_manage", new=AsyncMock()):
                 with self.assertRaises(web.HTTPBadRequest):
                     await api.listing(make_request(f"?type={kind}"))
@@ -561,7 +568,8 @@ class NewLogApiTests(unittest.IsolatedAsyncioTestCase):
         class Context:
             async def __aenter__(self): return NS(member_events=object())
             async def __aexit__(self, *args): pass
-        for kind in ("timeout_add", "timeout_remove", "member_update"):
+        for kind in ("timeout_add", "timeout_remove", "member_update", "unban", "roles_added",
+                     "roles_removed", "invite_use"):
             with self.subTest(kind=kind), patch.object(api, "require_manage", new=AsyncMock()), \
                     patch.object(api, "mongo", return_value=Context()), \
                     patch.object(api, "MemberEventStore", return_value=listed), \

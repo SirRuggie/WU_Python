@@ -172,5 +172,111 @@ class DeliveryPayloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(starter["message"], build_forum_message(row))
 
 
+NEW_KINDS = ("unban", "role_create", "role_update", "role_delete", "roles_added", "roles_removed",
+             "message_delete", "message_edit", "message_bulk_delete", "channel_create", "channel_update",
+             "channel_delete", "channel_permissions", "thread_delete", "thread_lock", "server_update",
+             "emoji", "sticker", "app", "webhook", "automod")
+
+
+def buttons(payload):
+    return [c for container in payload["components"] for row in container["components"]
+            if row["type"] == 1 for c in row["components"]]
+
+
+class BatchTwoCardTests(unittest.TestCase):
+    def test_every_new_kind_renders_in_both_shapes_with_a_distinct_title(self):
+        titles = set()
+        for kind in NEW_KINDS:
+            with self.subTest(kind=kind):
+                row = sample_row(kind)
+                text = card_text(build_card(row))
+                forum = build_forum_message(row)["embeds"][0]["description"]
+                self.assertIn(row["display_name"], json.dumps(build_card(row)))
+                self.assertNotIn("Unknown", text)
+                title = next(line for line in text.split("\n") if line.startswith("###"))
+                self.assertIn(title, forum)
+                titles.add(title)
+        self.assertEqual(len(titles), len(NEW_KINDS))
+
+    def test_object_cards_state_the_action_changes_and_subject(self):
+        update = card_text(build_card(sample_row("role_update")))
+        self.assertIn("Role <@&423456789012345678> was updated by <@987654321098765432>", update)
+        self.assertIn("**Name**\nRecruit → Member", update)
+        self.assertIn("**Permissions**\nChanged", update)
+        self.assertIn("**Applies to**\n<@&423456789012345678>", card_text(build_card(sample_row("channel_permissions"))))
+        for kind, word in (("emoji", "added"), ("sticker", "changed"), ("webhook", "removed"), ("app", "added")):
+            self.assertIn(f"was {word}", card_text(build_card(sample_row(kind))))
+        row = sample_row("server_update")
+        row["details"] = {"action": "updated", "changes": [{"field": "name", "before": "https://a.example", "after": "@everyone"}]}
+        text = card_text(build_card(row))
+        self.assertNotIn("https://a", text)
+        self.assertNotIn("@everyone", text)
+
+    def test_member_cards_show_roles_messages_and_attachments_without_raw_markup(self):
+        added = card_text(build_card(sample_row("roles_added")))
+        self.assertIn("<@123456789012345678> had roles added by <@987654321098765432>", added)
+        self.assertIn("**Roles**\nCWL player, Member", added)
+        self.assertIn("was unbanned by", card_text(build_card(sample_row("unban"))))
+        deleted = sample_row("message_delete")
+        deleted["moderator_id"] = None
+        text = card_text(build_card(deleted))
+        self.assertIn("had a message deleted in <#223456789012345678>", text)
+        self.assertNotIn(" by <@", text.split("\n")[2])  # Moderator omitted when unsure.
+        self.assertIn("screenshot.png (image/png)", text)
+        edit = card_text(build_card(sample_row("message_edit")))
+        self.assertIn("**Before**\nSample message before the edit.", edit)
+        self.assertIn("**After**\nSample message after the edit.", edit)
+        bulk = card_text(build_card(sample_row("message_bulk_delete")))
+        self.assertIn("12 messages were deleted in <#223456789012345678> by <@987654321098765432>", bulk)
+
+    def test_member_history_button_only_on_member_kinds_and_only_with_a_base(self):
+        from utils import dashboard_urls
+        url = "https://dash.warriorsunited.cc/server/moderation/member/123456789012345678"
+        with_button = ("join", "leave", "member_update", "kick", "ban", "unban", "timeout_add", "timeout_remove",
+                       "roles_added", "roles_removed", "invite_use", "message_delete", "message_edit", "link")
+        for kind in ("join", "leave", "kick", "ban", "timeout_add", "timeout_remove", "member_update", "link",
+                     "invite_use", *NEW_KINDS):
+            row = sample_row(kind)
+            labels = [b["label"] for b in buttons(build_card(row))]
+            forum_labels = [b["label"] for b in buttons({"components": [{"components": build_forum_message(row).get(
+                "components", [])}]})]
+            with self.subTest(kind=kind):
+                self.assertEqual("Member history ↗" in labels, kind in with_button)
+                self.assertEqual(labels, forum_labels)
+                if kind in with_button:
+                    self.assertIn(url, [b.get("url") for b in buttons(build_card(row))])
+        with patch.object(dashboard_urls, "DASHBOARD_ORIGIN", ""):
+            self.assertEqual([b["label"] for b in buttons(build_card(sample_row("kick")))], ["View profile ↗"])
+        self.assertEqual(dashboard_urls.member_history_url(5), "https://dash.warriorsunited.cc/server/moderation/member/5")
+
+    def test_join_card_extras_account_age_new_account_ordinal_and_invite(self):
+        row = sample_row("join")
+        text = card_text(build_card(row))
+        self.assertIn("**Account age**\n6y 7mo", text)
+        self.assertNotIn("New account", text)
+        self.assertIn("**Join**\n3rd join", text)
+        self.assertIn("**Invite**\nvia Spring recruitment", text)
+        fresh = {**row, "account_created_at": datetime(2026, 10, 27, tzinfo=timezone.utc),
+                 "details": {"join_count": 1, "invite": "x_y"}}
+        text = card_text(build_card(fresh))
+        self.assertIn("**Account age**\n2d · New account", text)
+        self.assertNotIn("**Join**", text)  # First join: no ordinal.
+        self.assertIn("via x\\_y", text)
+        bare = card_text(build_card({**row, "details": None, "account_created_at": None}))
+        self.assertNotIn("Account age", bare)
+        self.assertNotIn("Invite", bare)
+        for number, word in ((2, "2nd"), (3, "3rd"), (4, "4th"), (11, "11th"), (12, "12th"), (21, "21st"), (22, "22nd")):
+            self.assertIn(f"**Join**\n{word} join", card_text(build_card({**row, "details": {"join_count": number}})))
+
+    def test_leave_card_extras_time_in_server_and_roles_omitted_when_unknown(self):
+        text = card_text(build_card(sample_row("leave")))
+        self.assertIn("**Time in server**\n2y 5mo", text)
+        self.assertIn("**Roles**\nMember, CWL player", text)
+        unknown = card_text(build_card({**sample_row("leave"), "roles": None, "joined_at": None}))
+        self.assertNotIn("Time in server", unknown)
+        self.assertNotIn("**Roles**", unknown)
+        self.assertIn("**Roles**\nUnavailable", card_text(build_card({**sample_row("kick"), "roles": None})))
+
+
 if __name__ == "__main__":
     unittest.main()

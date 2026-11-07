@@ -364,4 +364,67 @@ Limits:
   for invite create, delete and use counts. Without Manage Server every invite use is Unknown.
 - The bot needs a restart to load the intent and listeners. Deploy the frontend with the backend:
   the settings PUT now requires every event, the four categories, `ignores` and `invite_names`.
-- Link and invite rows are not pruned. There is no retention job.
+- Link and invite rows are not pruned. There is no retention job. (Superseded by batch 2 below.)
+
+## Moderation batch 2 (2026-11-06)
+
+Bot-side decisions from contract v2. The timeline, member history and health endpoints and the
+dashboard screens are owned by the API and UI work.
+
+Event keys and categories:
+
+- Categories, in order: `members`, `moderation`, `roles`, `messages`, `channels`, `server`,
+  `invites`. New categories default to mode `main`; every new event defaults to disabled with no
+  channel. An old settings row reads with defaults filled and saves as before.
+- 21 new kinds: `unban`; `role_create`, `role_update`, `role_delete`, `roles_added`,
+  `roles_removed`; `message_delete`, `message_edit`, `message_bulk_delete`; `channel_create`,
+  `channel_update`, `channel_delete`, `channel_permissions`, `thread_delete`, `thread_lock`;
+  `server_update`, `emoji`, `sticker`, `app`, `webhook`, `automod`. `emoji` to `automod` are one
+  switch each and the card states added, changed or removed.
+
+How each part works:
+
+- Roles, channels, threads, server and unban post from the audit entry and dedupe on the entry
+  id (`roles_added` and `roles_removed` add the kind, because one entry can carry both).
+- A change made by an app account is skipped. The actor is an app when the cache says so, else
+  one REST lookup is cached in the process; an unknown actor counts as human. Adding an app
+  (`BOT_ADD`, `INTEGRATION_CREATE`) always posts.
+- `role_update` and `channel_update` are skipped when only the position changed (position is
+  never shown). `thread_lock` posts only when a person set locked or archived; auto-archive has
+  no audit entry and thread creation is never posted.
+- `unban` comes from `BanDeleteEvent` and audit `MEMBER_BAN_REMOVE`, in either order. Both use
+  the ban episode as the dedupe key. The gateway-first row waits one second for the audit entry
+  to add moderator and reason; an unban made by an app is dropped.
+- `message_delete` and `message_edit` need the cached message. Bots and webhooks are skipped, and
+  the existing ignore lists (channels, thread parents, roles) apply to `link`, delete, edit and
+  bulk delete. Edit posts only when the text changed. Attachments show name and type only.
+- `message_bulk_delete` posts the count, channel, moderator when found, and a `.txt` transcript
+  of the cached human messages (200 KB cap) as an attachment. A text channel references it with
+  a file component; a forum starter attaches it. The transcript is kept on the row, so a post
+  that is retried after a restart still has it.
+- Join cards add account age ("New account" under 7 days), "Nth join" from earlier join rows
+  (shown from the second), and "via name or code" when invite attribution finishes within 3
+  seconds. The join waits on a per-user future set by the invite-use path; other joins are not
+  held. Leave cards add time in server and drop the roles line when the cached member is gone.
+- Cards for member kinds carry a "Member history" link button to
+  `/server/moderation/member/<user id>` through `utils/dashboard_urls.py`; no dashboard base
+  means no button.
+- `HISTORY_TYPES` is join, leave, kick, ban, unban, timeout_add, timeout_remove, member_update,
+  roles_added, roles_removed, invite_use. Of these, history kinds are kept when delivery is off.
+- Retention: new rows get `expires_at` (30 days for link and the three message kinds, 90 days
+  for the three invite kinds); other kinds have no field. A TTL index (`expireAfterSeconds` 0)
+  on `expires_at` removes them. Settings, snapshot and invite documents never get one.
+- `main.py` raises the hikari message cache to 10,000 messages; other cache defaults are kept.
+
+Limits:
+
+- A message that is not in the cache is never logged, and a bulk delete of uncached messages
+  posts the count with no transcript. The cache is lost on restart and holds the newest 10,000
+  messages, so older deletes and edits are missed.
+- The delete moderator is best effort. It comes from a recent audit `MESSAGE_DELETE` entry for
+  the same author and channel seen on the gateway in the last few seconds; Discord merges
+  repeated deletes into one entry, so a later delete in a run can read no moderator.
+- Changes made by apps are skipped, which includes this bot's own role changes.
+- A rejoin count reads earlier join rows, so it starts at the first join the log recorded.
+- Retention is by the Mongo TTL index only; it runs about once a minute and removes rows
+  shortly after `expires_at`.
