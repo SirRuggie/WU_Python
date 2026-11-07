@@ -60,6 +60,9 @@ it("labels CWL signup timing separately from actual clan battles", () => {
   expect(upcoming).toContain("Signup opens");
   expect(upcoming).toContain("2026-11-01T08:00:00.000Z");
   expect(upcoming).toContain("Each clan has its own battle times");
+  expect(upcoming).toContain(
+    "Your attack tasks and battle timers appear here after the game reports a war.",
+  );
   const open = renderToStaticMarkup(
     <TaskEventTimer kind="cwl" now={Date.UTC(2026, 10, 1, 8)} />,
   );
