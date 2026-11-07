@@ -32,7 +32,9 @@ import {
 import "./ModerationSettings.css";
 
 type DialogState =
-  { type: "test"; event: ModerationKind } | { type: "reload" } | null;
+  | { type: "test"; event: ModerationKind }
+  | { type: "reload" }
+  | null;
 
 export default function ModerationSettings({
   onDirty,
@@ -46,6 +48,7 @@ export default function ModerationSettings({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [dialog, setDialog] = useState<DialogState>(null);
+  const [inviteReset, setInviteReset] = useState(0);
   const request = useRef(0);
   const lastChannels = useRef<Destination[] | null>(null);
   const channels = saved?.channels || [];
@@ -260,6 +263,7 @@ export default function ModerationSettings({
   const discard = () => {
     if (!saved || busy) return;
     setDraft(cloneSettings(saved));
+    setInviteReset((value) => value + 1);
     clearFeedback();
   };
 
@@ -401,13 +405,6 @@ export default function ModerationSettings({
             />
           </div>
 
-          <ModerationIgnoredBots
-            ids={draft.ignored_bot_ids}
-            actors={saved.bot_actors || []}
-            disabled={busy}
-            onChange={updateIgnoredBots}
-          />
-
           <div className="moderation-category-list">
             {moderationRegistry.map((category) => (
               <ModerationCategoryCard
@@ -430,43 +427,51 @@ export default function ModerationSettings({
                   void resolveDestination(scope, key, id)
                 }
                 onTest={startTest}
-              >
-                {category.key === "messages" && (
-                  <>
-                    <small className="moderation-ignore-note">
-                      Applies to all message logs.
-                    </small>
-                    <ModerationIgnoreLists
-                      ignores={draft.ignores}
-                      channels={channels}
-                      roles={saved.roles}
-                      rolesAvailable={
-                        saved.roles_available === true &&
-                        Array.isArray(saved.roles)
-                      }
-                      disabled={busy}
-                      onChange={updateIgnores}
-                    />
-                  </>
-                )}
-                {category.key === "invites" && (
-                  <ModerationInviteNames
-                    names={draft.invite_names}
-                    disabled={busy}
-                    onName={updateInviteName}
-                  />
-                )}
-              </ModerationCategoryCard>
+              />
             ))}
           </div>
 
-          {invalidDestination && (
-            <p className="moderation-destination-warning" role="status">
-              An enabled notice needs an available destination and any required
-              forum tag before saving.
-            </p>
-          )}
+          <section
+            className="moderation-not-logged"
+            aria-labelledby="moderation-not-logged-title"
+          >
+            <h3 id="moderation-not-logged-title">Not logged</h3>
+            <ModerationIgnoredBots
+              ids={draft.ignored_bot_ids}
+              actors={saved.bot_actors || []}
+              disabled={busy}
+              onChange={updateIgnoredBots}
+            />
+
+            <small className="moderation-ignore-note">
+              Applies to all message logs.
+            </small>
+            <ModerationIgnoreLists
+              ignores={draft.ignores}
+              channels={channels}
+              roles={saved.roles}
+              rolesAvailable={
+                saved.roles_available === true && Array.isArray(saved.roles)
+              }
+              disabled={busy}
+              onChange={updateIgnores}
+            />
+          </section>
+          <ModerationInviteNames
+            names={draft.invite_names}
+            savedNames={saved.invite_names}
+            disabled={busy}
+            resetKey={`${saved.revision}:${inviteReset}`}
+            onName={updateInviteName}
+          />
           <div className="moderation-settings-save">
+            {invalidDestination && (
+              <p className="moderation-destination-warning" role="status">
+                An enabled notice needs an available destination and any
+                required forum tag before saving.
+              </p>
+            )}
+
             <p>
               <span
                 className={
