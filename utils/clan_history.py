@@ -371,8 +371,9 @@ async def load_candidates(
 ) -> dict[str, list[ClanCandidate]]:
     """Load history plus published CWL assignments for the requested players.
 
-    Usable assignments survive a missing or failed history store. Without
-    them, ``raise_errors`` retains its existing history failure behavior.
+    Usable assignments survive a missing history store and non-raising reads.
+    ``raise_errors`` always propagates read failures so callers retain their
+    existing history-unavailable status.
     """
     if mongo is None and not assigned:
         return {}
@@ -414,7 +415,7 @@ async def load_candidates(
     try:
         documents = await mongo.player_clan_candidates.find(query).to_list(length=None)
     except Exception as exc:  # noqa: BLE001
-        if raise_errors and not assigned_candidates:
+        if raise_errors:
             raise
         print(f"[clan-history] candidate read failed: {type(exc).__name__}: {exc}")
         return assigned_candidates

@@ -157,3 +157,38 @@ async def test_published_candidate_keeps_regular_war_and_cwl_scoped(monkeypatch)
     )
     monkeypatch.setattr(todo_data, "_get_cwl_round", league)
     assert len((await todo_data.build_cwl_view(object(), [account], candidates=candidates)).rows) == 1
+
+
+@pytest.mark.parametrize("failure", ["read", "timeout"])
+@run_async
+async def test_history_failure_keeps_note_and_published_cwl_candidate(failure):
+    class FailingHistory:
+        def find(self, query):
+            if failure == "read":
+                raise RuntimeError("fake history read failure")
+            return self
+
+        async def to_list(self, length=None):
+            await asyncio.Event().wait()
+
+    mongo = SimpleNamespace(player_clan_candidates=FailingHistory())
+    published = {"published": True, "assignments": [{
+        "tag": "#P2Y", "assigned_clan_tag": "#C2Y",
+        "assigned_clan_name": "Host",
+    }]}
+    original_wait_for = asyncio.wait_for
+
+    async def fast_wait_for(awaitable, seconds):
+        assert seconds == 7
+        return await original_wait_for(awaitable, 0.001)
+
+    with patch("utils.cwl_member_service.member_view", return_value=published), \
+         patch("cwl_web.todo.get_client", return_value=mongo), \
+         patch("cwl_web.todo.asyncio.wait_for", side_effect=fast_wait_for):
+        candidates, note = await load_recent_clans(
+            {"store": object()}, ["#P2Y"], "123"
+        )
+    assert note == "Recent clan history is unavailable"
+    assert candidates == {"#P2Y": [clan_history.ClanCandidate(
+        "#C2Y", "Host", check_war=False, check_cwl=True,
+    )]}

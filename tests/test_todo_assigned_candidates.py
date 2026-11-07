@@ -43,12 +43,11 @@ def test_assigned_candidates_normalize_and_filter_to_requested_players_without_m
     )]}
 
 
-@pytest.mark.parametrize("raise_errors", [False, True])
-def test_assigned_candidates_survive_history_read_failure(raise_errors):
+def test_assigned_candidates_survive_non_raising_history_read_failure():
     collection = Collection(failure=RuntimeError("fake history outage"))
     result = load(
         SimpleNamespace(player_clan_candidates=collection),
-        assigned={"#PLAYER": [("#BETA", None)]}, raise_errors=raise_errors,
+        assigned={"#PLAYER": [("#BETA", None)]},
     )
 
     assert collection.reads == 1
@@ -57,14 +56,16 @@ def test_assigned_candidates_survive_history_read_failure(raise_errors):
     )]
 
 
-@pytest.mark.parametrize("assigned", [None, {}, {"#OTHER": [("#B", None)]}])
-def test_history_failure_still_raises_without_usable_assignments(assigned):
+@pytest.mark.parametrize("assigned", [None, {}, {"#OTHER": [("#B", None)]},
+                                      {"#PLAYER": [("#BETA", None)]}])
+def test_history_failure_still_raises_when_requested_even_with_assignments(assigned):
     mongo = SimpleNamespace(player_clan_candidates=Collection(
         failure=RuntimeError("fake history outage"),
     ))
     with pytest.raises(RuntimeError, match="fake history outage"):
         load(mongo, assigned=assigned, raise_errors=True)
-    assert load(mongo, assigned=assigned) == {}
+    fallback = load(mongo, assigned=assigned)
+    assert bool(fallback) == bool(assigned and "#PLAYER" in assigned)
 
 
 def test_assignment_does_not_replace_same_clan_history_flags_or_current_first_dedupe():
