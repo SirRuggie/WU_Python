@@ -515,3 +515,34 @@
 .moderation-invite-code {
   overflow-wrap: anywhere;
 }
+
+.moderation-ignore-note {
+  display: block;
+  margin-top: 10px;
+  color: #c2cbd7;
+}
+
+.moderation-health {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.moderation-health li {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #8a6a2c;
+  border-radius: 10px;
+  background: #2d2616;
+  overflow-wrap: anywhere;
+}
+
+.moderation-health li.is-error {
+  border-color: #a8384b;
+  background: #301a1f;
+}

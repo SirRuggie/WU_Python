@@ -411,3 +411,40 @@ it("preserves the activity tab and every threshold through route and login state
   for (const [key, value] of new URLSearchParams(query))
     expect(login.searchParams.get(key)).toBe(value);
 });
+
+describe("moderation member timeline route", () => {
+  const id = "123456789012345678";
+  it("parses the member URL into the moderation view", () => {
+    expect(dashboardTarget("", `/server/moderation/member/${id}`)).toEqual(
+      expect.objectContaining({ view: "moderation", moderationMember: id }),
+    );
+    expect(
+      dashboardTarget("", `/server/moderation/member/${id}/`).moderationMember,
+    ).toBe(id);
+  });
+
+  it("ignores malformed member ids and the plain moderation URL", () => {
+    expect(
+      dashboardTarget("", "/server/moderation/member/123").moderationMember,
+    ).toBeUndefined();
+    expect(
+      dashboardTarget("", "/server/moderation/member/abc12345678901234").view,
+    ).toBe("home");
+    const plain = dashboardTarget("", "/server/moderation");
+    expect(plain.view).toBe("moderation");
+    expect(plain.moderationMember).toBeUndefined();
+  });
+
+  it("round-trips through dashboardPath", () => {
+    const path = dashboardPath({
+      view: "moderation",
+      season: "",
+      moderationMember: id,
+    });
+    expect(path).toBe(`/server/moderation/member/${id}`);
+    expect(dashboardTarget("", path).moderationMember).toBe(id);
+    expect(dashboardPath({ view: "moderation", season: "" })).toBe(
+      "/server/moderation",
+    );
+  });
+});

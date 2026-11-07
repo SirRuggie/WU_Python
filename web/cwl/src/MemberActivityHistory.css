@@ -172,6 +172,17 @@
   border-left-color: #a8384b;
 }
 
+.member-activity-row.is-unban {
+  border-left-color: #2ba66a;
+}
+
+.member-activity-view {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  justify-self: start;
+  min-height: 44px;
+}
+
 .member-activity-moderation {
   grid-column: 1 / -1;
   grid-row: 2;
@@ -309,6 +320,10 @@
     grid-row: 4;
   }
 
+  .member-activity-view {
+    grid-row: 5;
+  }
+
   .member-activity-heading {
     align-items: center;
   }
@@ -357,4 +372,14 @@
     width: 38px;
     height: 38px;
   }
+}
+
+.member-timeline-member {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #495563;
+  border-radius: 12px;
+  background: #1c2028;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
