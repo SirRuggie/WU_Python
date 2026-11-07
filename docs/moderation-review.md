@@ -335,6 +335,8 @@ New settings fields: `ignores` (`channel_ids`, `role_ids`, max 100 ids each, 17 
 link event only) and `invite_names` (`{code: name}`, max 200). `GET /api/cwl/manage/member-events/invites`
 reads the bot's snapshot from the `member_invites` collection (one document per guild and code).
 
+The settings GET also returns `roles` (id, name, color, position, managed; `null` when unreadable) and `roles_available` (boolean). The dashboard treats roles as available only when the flag is `true` and `roles` is a list; otherwise saved ignored roles show as "Unknown role" and adding is disabled.
+
 How each part works:
 
 - Timeouts post from the audit entry and dedupe on the audit entry id. Moderator, reason,

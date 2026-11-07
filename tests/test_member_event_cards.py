@@ -6,7 +6,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import patch
 
 from utils.member_event_cards import (
-    DEFAULT_AVATAR, accent, build_card, build_forum_message, sample_row,
+    DEFAULT_AVATAR, _content, accent, build_card, build_forum_message, sample_row,
 )
 
 
@@ -66,6 +66,17 @@ class CardTests(unittest.TestCase):
         self.assertIn("Members: unavailable", text)
         row["roles"] = []
         self.assertIn("Roles**\nNone", card_text(build_card(row)))
+
+    def test_names_of_only_joiners_use_the_fallbacks(self):
+        row = sample_row("kick")
+        row["display_name"] = "\u200d \u200d"
+        self.assertEqual(_content(row)[0][0], "Unknown member")
+        row = sample_row("timeout_add")
+        row["display_name"] = "\u200d"
+        self.assertEqual(_content(row)[0][0], "Unknown member")
+        row = sample_row("member_update")
+        row["details"] = {"changes": [{"field": "nickname", "before": "\u200d", "after": "\u200d"}]}
+        self.assertIn("None → None", card_text(build_card(row)))
 
     def test_saved_roles_and_untrusted_text_are_inert(self):
         row = sample_row("ban")

@@ -573,6 +573,25 @@ it("handles an older response without roles", async () => {
     roles_available: undefined,
     ignores: { channel_ids: [], role_ids: ["100000000000000001"] },
   });
-  expect(ignoredRoles().textContent).toContain("Deleted role");
+  expect(ignoredRoles().textContent).toContain("Unknown role");
+  expect(ignoredRoles().textContent).not.toContain("Deleted role");
+  expect(ignoredRoles().querySelector(".role-picker")).toBeNull();
   expect(host.textContent).not.toContain("100000000000000001");
+});
+it("names a saved managed role that is hidden from the add list", async () => {
+  await remount({
+    roles: [
+      ...fixture.roles!,
+      {
+        id: "100000000000000003",
+        name: "Bots",
+        color: 0,
+        position: 2,
+        managed: true,
+      },
+    ],
+    ignores: { channel_ids: [], role_ids: ["100000000000000003"] },
+  });
+  expect(ignoredRoles().textContent).toContain("@Bots");
+  expect(ignoredRoles().textContent).not.toContain("Deleted role");
 });

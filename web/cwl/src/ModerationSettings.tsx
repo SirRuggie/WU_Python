@@ -420,7 +420,10 @@ export default function ModerationSettings({
                       ignores={draft.ignores}
                       channels={channels}
                       roles={saved.roles}
-                      rolesAvailable={saved.roles_available !== false}
+                      rolesAvailable={
+                        saved.roles_available === true &&
+                        Array.isArray(saved.roles)
+                      }
                       disabled={busy}
                       onChange={updateIgnores}
                     />

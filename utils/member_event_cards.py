@@ -121,6 +121,11 @@ def _mention(prefix: str, value: object, fallback: object = None) -> str:
     return safe_text(fallback, 60) or "Unknown"
 
 
+def _named(value: object, limit: int = 120) -> str:
+    text = safe_text(value, limit)
+    return text if text.replace("\u200d", "").strip() else ""
+
+
 def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], str | None]:
     kind = row["event_type"]
     icon, title, action, _ = EVENT_STYLE[kind]
@@ -128,7 +133,7 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
     uid = _snowflake(row.get("user_id")) if kind in USER_KINDS else None
     if kind in USER_KINDS and uid is None:
         raise ValueError("A trusted member ID is required for a profile card")
-    name = safe_text(row.get("display_name")) or ("Unknown member" if uid else "Unknown invite")
+    name = _named(row.get("display_name")) or ("Unknown member" if uid else "Unknown invite")
     moderator = _snowflake(row.get("moderator_id"))
     by = f" by <@{moderator}>" if moderator else " by an unknown moderator"
     reason = f"**Reason**\n{safe_text(row.get('reason'), 500) or 'No reason given'}"
@@ -150,8 +155,8 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
             if change.get("field") in ("avatar", "guild_avatar"):
                 fields.append(f"**{label}**\nChanged")
             else:
-                before = safe_text(change.get("before"), 100) or "None"
-                after = safe_text(change.get("after"), 100) or "None"
+                before = _named(change.get("before"), 100) or "None"
+                after = _named(change.get("after"), 100) or "None"
                 fields.append(f"**{label}**\n{before} → {after}")
         actor = _snowflake(details.get("actor_id"))
         if actor:
@@ -211,7 +216,7 @@ def _content(row: dict, test_staff_id: object = None) -> tuple[list[str], str | 
     uid = _snowflake(row.get("user_id"))
     if uid is None:
         raise ValueError("A trusted member ID is required for a profile card")
-    name = safe_text(row.get("display_name")) or "Unknown member"
+    name = _named(row.get("display_name")) or "Unknown member"
     moderator = _snowflake(row.get("moderator_id"))
     main = f"<@{uid}> {action}"
     if kind in ("kick", "ban"):
