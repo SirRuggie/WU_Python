@@ -37,7 +37,7 @@ AUDIT_RECOVERY_LIMIT = 500
 _audit_state = {"pending": True, "live_max": 0}
 _recovering: contextvars.ContextVar[bool] = contextvars.ContextVar("member_events_recovering", default=False)
 _audit_entry: contextvars.ContextVar[int | None] = contextvars.ContextVar("member_events_audit_entry", default=None)
-# Rows an audit entry's handler persisted; delivered only after the entry is marked handled.
+# Rows an audit entry's handler persisted; delivered after the entry is marked handled, or when the marker write fails.
 _deferred: contextvars.ContextVar[list | None] = contextvars.ContextVar("member_events_deferred", default=None)
 _index_lock = asyncio.Lock()
 _invite_lock = asyncio.Lock()  # One join diff at a time; create/delete share it.
@@ -1299,7 +1299,8 @@ _bot_unbans: set = set()  # (user id, ban episode) whose unban audit entry came 
 async def emit_unban(mongo, bot, uid: int, episode: int, *, at, user=None, entry=None):
     """Post an unban once; the gateway event and its audit entry may come in either order.
 
-    A handled-entry marker (not the row) makes a replay or duplicate of that entry skip.
+    A handled-entry marker makes a replay or duplicate of that entry skip; the replay
+    guard also skips an entry whose log row already exists.
     """
     store = MemberEventStore(mongo.member_events)
     await ensure_indexes(store)

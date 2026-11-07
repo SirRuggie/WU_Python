@@ -216,9 +216,10 @@ class MemberEventStore:
         """True when a persisted log row carries this audit entry id (the second replay guard).
 
         Ban rows and ban-audit facts are left out: the ban handler finishes them idempotently.
+        The ``$type`` test lets the planner use the partial ``member_event_audit_entry`` index.
         """
         return bool(await self.collection.find_one(
-            {"guild_id": guild_id, "audit_entry_id": str(int(audit_entry_id)),
+            {"guild_id": guild_id, "audit_entry_id": {"$eq": str(int(audit_entry_id)), "$type": "string"},
              "event_type": {"$exists": True, "$ne": "ban"}}, {"_id": 1}))
 
     async def mark_audit_handled(self, guild_id: int, audit_entry_id, now: datetime | None = None):

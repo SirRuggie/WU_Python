@@ -32,6 +32,8 @@ class MemoryCollection:
         for key, expected in query.items():
             value = row.get(key)
             if isinstance(expected, dict):
+                if "$eq" in expected and value != expected["$eq"]: return False
+                if "$type" in expected and expected["$type"] == "string" and not isinstance(value, str): return False
                 if "$ne" in expected and value == expected["$ne"]: return False
                 if "$gte" in expected and (value is None or value < expected["$gte"]): return False
                 if "$lte" in expected and (value is None or value > expected["$lte"]): return False
