@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from pymongo import UpdateOne
 
@@ -367,13 +367,37 @@ async def load_candidates(
     observed_at: datetime | None = None,
     create_indexes: bool = True,
     raise_errors: bool = False,
+    assigned: Mapping[str, Iterable[tuple[str, str | None]]] | None = None,
 ) -> dict[str, list[ClanCandidate]]:
-    """Bulk-load recent-clan and active-war candidates for linked players."""
-    if mongo is None:
+    """Load history plus published CWL assignments for the requested players.
+
+    Usable assignments survive a missing or failed history store. Without
+    them, ``raise_errors`` retains its existing history failure behavior.
+    """
+    if mongo is None and not assigned:
         return {}
     tags = list(dict.fromkeys(_tag(tag) for tag in player_tags if _tag(tag)))
     if not tags:
         return {}
+
+    assigned_candidates: dict[str, list[ClanCandidate]] = {}
+    requested = set(tags)
+    for player_tag, clans in (assigned or {}).items():
+        player_tag = _tag(player_tag)
+        if player_tag not in requested:
+            continue
+        for clan_tag, clan_name in clans:
+            clan_tag = _tag(clan_tag)
+            if clan_tag:
+                assigned_candidates.setdefault(player_tag, []).append(
+                    ClanCandidate(
+                        clan_tag, clan_name, check_war=False, check_cwl=True
+                    )
+                )
+    for player_candidates in assigned_candidates.values():
+        player_candidates.sort(key=lambda candidate: candidate.clan_tag)
+    if mongo is None:
+        return assigned_candidates
 
     if create_indexes:
         await ensure_indexes(mongo)
@@ -390,10 +414,10 @@ async def load_candidates(
     try:
         documents = await mongo.player_clan_candidates.find(query).to_list(length=None)
     except Exception as exc:  # noqa: BLE001
-        if raise_errors:
+        if raise_errors and not assigned_candidates:
             raise
         print(f"[clan-history] candidate read failed: {type(exc).__name__}: {exc}")
-        return {}
+        return assigned_candidates
 
     result: dict[str, list[ClanCandidate]] = {}
     seen: set[tuple[str, str]] = set()
@@ -412,6 +436,10 @@ async def load_candidates(
             check_war=recent or _at_or_after(document.get("war_until"), now),
             check_cwl=recent or _at_or_after(document.get("cwl_until"), now),
         ))
+    # Keep history flags intact when a published assignment names the same
+    # clan; the existing per-view player/clan dedupe combines their coverage.
+    for player_tag, player_candidates in assigned_candidates.items():
+        result.setdefault(player_tag, []).extend(player_candidates)
     for player_candidates in result.values():
         player_candidates.sort(key=lambda candidate: candidate.clan_tag)
     return result

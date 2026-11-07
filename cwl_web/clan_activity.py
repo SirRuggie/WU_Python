@@ -39,7 +39,7 @@ async def build_snapshot(app, user_id, scope, kind):
         clans = {account.clan_tag: account.clan_name or account.clan_tag for account in accounts if account.clan_tag}
         current_tags = set(clans)
         if kind == 'war':
-            candidates, note = await load_recent_clans(app, tags)
+            candidates, note = await load_recent_clans(app, tags, user_id)
             if note:
                 warnings.append('Recent CWL clans could not be checked. Current clans are shown.')
             for account in accounts:

@@ -165,6 +165,23 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
             response = await self.client.get(self.url(kind='cwl'), headers=self.auth())
             self.assertEqual(response.status, 403)
 
+    async def test_published_cwl_candidate_survives_history_outage(self):
+        from utils.clan_history import ClanCandidate
+
+        self.accounts_mock.return_value = ([NS(
+            tag='#P8Y', name='One', clan_tag='#R2Y', clan_name='Elsewhere'
+        )], [])
+        candidate = ClanCandidate('#P2Y', check_war=False, check_cwl=True)
+        with patch('cwl_web.war_detail.load_recent_clans', new=AsyncMock(
+            return_value=({'#P8Y': [candidate]}, 'Recent clan history is unavailable')
+        )) as history:
+            response = await self.client.get(self.url(kind='cwl'), headers=self.auth())
+            self.assertEqual(response.status, 200)
+            self.assertEqual(history.await_args.args[2], '100')
+            self.obj.clan.members[0].tag = '#U8Y'
+            response = await self.client.get(self.url(kind='cwl'), headers=self.auth())
+            self.assertEqual(response.status, 403)
+
     async def test_family_directory_and_unknown_link_highlights(self):
         headers = self.auth('505227988229554179')
         self.providers.linked_tags.side_effect = RuntimeError('offline')

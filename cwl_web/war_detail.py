@@ -66,12 +66,12 @@ async def detail(request):
         if clan_tag not in current:
             if kind != 'cwl':
                 raise web.HTTPForbidden(text='Clan is not in your available war activity')
-            candidates, note = await load_recent_clans(app, linked_tags)
-            if note:
-                raise ProviderUnavailable('Recent CWL clans could not be checked')
+            candidates, note = await load_recent_clans(app, linked_tags, user_id)
             eligible = any(candidate.check_cwl and candidate.clan_tag == clan_tag
                            for account in accounts
                            for candidate in candidates.get(account.tag.upper(), []))
+            if not eligible and note:
+                raise ProviderUnavailable('Recent CWL clans could not be checked')
             if not eligible:
                 raise web.HTTPForbidden(text='Clan is not in your available war activity')
             status, war = await todo_data.fetch_current_war(client, clan_tag, kind)
