@@ -15,8 +15,16 @@ EVENT_CATEGORIES = {
     "member_update": "members",
     "link": "messages",
     "invite_create": "invites", "invite_delete": "invites", "invite_use": "invites",
+    "unban": "moderation",
+    "role_create": "roles", "role_update": "roles", "role_delete": "roles",
+    "roles_added": "roles", "roles_removed": "roles",
+    "message_delete": "messages", "message_edit": "messages", "message_bulk_delete": "messages",
+    "channel_create": "channels", "channel_update": "channels", "channel_delete": "channels",
+    "channel_permissions": "channels", "thread_delete": "channels", "thread_lock": "channels",
+    "server_update": "server", "emoji": "server", "sticker": "server",
+    "app": "server", "webhook": "server", "automod": "server",
 }
-CATEGORIES = ("members", "moderation", "messages", "invites")
+CATEGORIES = ("members", "moderation", "roles", "messages", "channels", "server", "invites")
 EVENT_TYPES = tuple(EVENT_CATEGORIES)
 LEGACY_EVENT_TYPES = ("join", "leave", "kick", "ban")  # Events-only API clients.
 SCHEMA_VERSION = 2

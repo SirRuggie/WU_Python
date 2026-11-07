@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import collections
+import enum
 import hashlib
 import json
 import logging
@@ -16,7 +18,7 @@ from utils.member_events import (
     DEFAULT_CHANNEL_ID, GUILD_ID, HISTORY_TYPES, MAX_AVATAR_BYTES, MemberEventStore,
     avatar_source, effective_permissions, event_key, safe_text,
 )
-from utils.member_event_cards import avatar_filename, build_card, build_forum_message
+from utils.member_event_cards import avatar_filename, build_card, build_forum_message, transcript_file
 from utils.member_event_settings import effective_event
 from utils.member_invites import MemberInviteStore, attribute_join, snapshot_row
 from utils.mongo import MongoClient
@@ -28,12 +30,23 @@ _start_task = None
 _indexes_ready = False
 _index_lock = asyncio.Lock()
 _invite_lock = asyncio.Lock()  # One join diff at a time; create/delete share it.
+INVITE_WAIT_SECONDS = 3
+_invite_waits: dict[int, asyncio.Future] = {}  # Join card waits here for its invite name.
 URL_PATTERN = re.compile(r"https?://\S+")
 FORUM_LABELS = {"join": "Joined", "leave": "Left", "kick": "Kicked", "ban": "Banned",
                 "timeout_add": "Timed out", "timeout_remove": "Timeout removed",
                 "member_update": "Profile changed", "link": "Link",
                 "invite_create": "Invite created", "invite_delete": "Invite deleted",
-                "invite_use": "Invite used"}
+                "invite_use": "Invite used", "unban": "Unbanned",
+                "role_create": "Role created", "role_update": "Role updated",
+                "role_delete": "Role deleted", "roles_added": "Roles added",
+                "roles_removed": "Roles removed", "message_delete": "Message deleted",
+                "message_edit": "Message edited", "message_bulk_delete": "Bulk delete",
+                "channel_create": "Channel created", "channel_update": "Channel updated",
+                "channel_delete": "Channel deleted", "channel_permissions": "Permissions",
+                "thread_delete": "Thread deleted", "thread_lock": "Thread locked",
+                "server_update": "Server updated", "emoji": "Emoji", "sticker": "Sticker",
+                "app": "App", "webhook": "Webhook", "automod": "AutoMod"}
 
 
 async def ensure_indexes(store):
@@ -111,12 +124,16 @@ async def post_card(row, *, forum=False):
         payload = build_card(row)
         endpoint = f"https://discord.com/api/v10/channels/{channel_id}/messages"
         message = payload
-    if filename:
-        message["attachments"] = [{"id": 0, "filename": filename}]
+    files = [(filename, row["avatar"], row["avatar_type"])] if filename else []
+    transcript = transcript_file(row)
+    if transcript:
+        files.append(transcript)
+    if files:
+        message["attachments"] = [{"id": index, "filename": name} for index, (name, _, _) in enumerate(files)]
         form = aiohttp.FormData()
         form.add_field("payload_json", json.dumps(payload))
-        form.add_field("files[0]", row["avatar"], filename=filename,
-                       content_type=row["avatar_type"])
+        for index, (name, data, content_type) in enumerate(files):
+            form.add_field(f"files[{index}]", data, filename=name, content_type=content_type)
         request_args = {"data": form}
     else:
         request_args = {"json": payload}
@@ -247,6 +264,7 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
     enabled = config["enabled"] and bool(config["channel_id"])
     channel_id = int(config["channel_id"]) if enabled else None
     forum_tag_id = int(config["forum_tag_id"]) if enabled and config.get("forum_tag_id") else None
+    join_details = {"join_count": await store.count_joins(GUILD_ID, uid) + 1} if kind == "join" else None
     row = await store.capture(
         guild_id=GUILD_ID, user_id=uid, kind=kind,
         display_name=display_name, username=username, avatar=None, avatar_type=None,
@@ -254,7 +272,7 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
         forum_tag_id=forum_tag_id, reason=reason, moderator_id=moderator_id,
         audit_entry_id=audit_entry_id, episode=episode,
         account_created_at=account_created_at, member_count=member_count,
-        roles=roles,
+        roles=roles, details=join_details,
     )
     if not row:
         return
@@ -298,6 +316,10 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
     if kind == "ban":
         # Give a near-simultaneous audit entry a chance to enrich the queued card.
         await asyncio.sleep(1)
+    if kind == "join":
+        label = await wait_invite_label(uid, enabled)
+        if label:
+            await store.save_details(row["_id"], {**join_details, "invite": label})
     ready_row = await store.ready(row["_id"], enabled=enabled)
     if ready_row and kind == "leave":
         await store.enrich_recent_kick(GUILD_ID, uid, now, ready_row["display_name"],
@@ -448,6 +470,19 @@ async def audited(event: hikari.AuditLogEntryCreateEvent, mongo: MongoClient = l
                     moderator_id=entry.user_id, reason=entry.reason,
                     audit_entry_id=audit_id, episode_override=episode,
                 )
+        elif entry.action_type == hikari.AuditLogEventType.MEMBER_BAN_REMOVE:
+            store = MemberEventStore(mongo.member_events)
+            await ensure_indexes(store)
+            uid = int(entry.target_id)
+            await emit_unban(mongo, bot, uid, await store.ban_episode(GUILD_ID, uid, banned=False),
+                             at=entry.created_at, entry=entry)
+        elif entry.action_type == hikari.AuditLogEventType.MEMBER_ROLE_UPDATE:
+            await record_member_roles(entry, mongo, bot)
+        elif entry.action_type in (hikari.AuditLogEventType.MESSAGE_DELETE,
+                                   hikari.AuditLogEventType.MESSAGE_BULK_DELETE):
+            note_message_audit(entry)
+        else:
+            await record_audit_kind(entry, mongo, bot)
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -456,17 +491,26 @@ async def audited(event: hikari.AuditLogEntryCreateEvent, mongo: MongoClient = l
 
 @loader.listener(hikari.BanDeleteEvent)
 @lightbulb.di.with_di
-async def unbanned(event: hikari.BanDeleteEvent, mongo: MongoClient = lightbulb.di.INJECTED):
+async def unbanned(event: hikari.BanDeleteEvent, mongo: MongoClient = lightbulb.di.INJECTED,
+                   bot: hikari.GatewayBot = lightbulb.di.INJECTED):
     if int(event.guild_id) != GUILD_ID:
         return
     try:
         store = MemberEventStore(mongo.member_events)
         await ensure_indexes(store)
-        await store.ban_episode(GUILD_ID, int(event.user.id), banned=False)
+        uid = int(event.user.id)
+        episode = await store.ban_episode(GUILD_ID, uid, banned=False)
     except asyncio.CancelledError:
         raise
     except Exception:
         log.exception("Could not advance a member ban episode")
+        return
+    try:
+        await emit_unban(mongo, bot, uid, episode, at=datetime.now(timezone.utc), user=event.user)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("Failed to archive an unban")
 
 
 def _text(value):
@@ -528,11 +572,12 @@ async def member_identity(bot, user_id: int):
 
 async def record_extra(kind, mongo, bot, *, user_id, display_name, username, at, details,
                        settings=None, dedupe_key=None, audit_entry_id=None, moderator_id=None,
-                       reason=None, joined_at=None):
+                       reason=None, joined_at=None, hold=False):
     """Capture and deliver one of the newer logs. No avatar bytes are stored.
 
-    History kinds keep a row even when delivery is off; link and invite rows are
-    only delivery receipts, so they are not written unless delivery is on.
+    History kinds keep a row even when delivery is off; other rows are only
+    delivery receipts, so they are not written unless delivery is on. ``hold``
+    gives a near-simultaneous audit entry a second to enrich the unsent row.
     """
     store = MemberEventStore(mongo.member_events)
     await ensure_indexes(store)
@@ -550,6 +595,8 @@ async def record_extra(kind, mongo, bot, *, user_id, display_name, username, at,
     )
     if not row:
         return None
+    if hold:
+        await asyncio.sleep(1)
     ready_row = await store.ready(row["_id"], enabled=enabled)
     if ready_row and enabled:
         await deliver(store, bot, ready_row)
@@ -635,6 +682,18 @@ async def thread_parent_id(bot, channel_id: int):
     return getattr(channel, "parent_id", None) if getattr(channel, "type", None) in threads else None
 
 
+async def message_ignored(bot, settings, channel_id: int, role_ids=()) -> bool:
+    """Staff ignore lists: a channel (or its thread parent) or an author role."""
+    ignored_channels = set(settings["ignores"]["channel_ids"])
+    if str(channel_id) in ignored_channels:
+        return True
+    if ignored_channels:
+        parent = await thread_parent_id(bot, channel_id)
+        if parent is not None and str(parent) in ignored_channels:
+            return True
+    return bool({str(role) for role in role_ids or ()} & set(settings["ignores"]["role_ids"]))
+
+
 async def record_link(event, mongo, bot):
     message = event.message
     if message.guild_id is None or int(message.guild_id) != GUILD_ID:
@@ -651,16 +710,9 @@ async def record_link(event, mongo, bot):
     config = effective_event(settings, "link")
     if not (config["enabled"] and config["channel_id"]):
         return
-    ignored_channels = set(settings["ignores"]["channel_ids"])
     channel_id = int(message.channel_id)
-    if str(channel_id) in ignored_channels:
-        return
-    if ignored_channels:
-        parent = await thread_parent_id(bot, channel_id)
-        if parent is not None and str(parent) in ignored_channels:
-            return
     member = message.member
-    if {str(role) for role in getattr(member, "role_ids", ())} & set(settings["ignores"]["role_ids"]):
+    if await message_ignored(bot, settings, channel_id, getattr(member, "role_ids", ())):
         return
     uid = int(author.id)
     username = _text(getattr(author, "username", None)) or str(uid)
@@ -766,10 +818,49 @@ async def record_invite_delete(event, mongo, bot):
     )
 
 
+def _invite_future(uid: int):
+    """One future per joining user; whichever of join or invite-use runs first creates it."""
+    loop = asyncio.get_running_loop()
+    future = _invite_waits.get(uid)
+    if future is None:
+        future = _invite_waits[uid] = loop.create_future()
+        loop.call_later(30, lambda: _invite_waits.pop(uid, None) if _invite_waits.get(uid) is future else None)
+    return future
+
+
+def settle_invite_label(uid: int, label: str | None):
+    future = _invite_future(uid)
+    if not future.done():
+        future.set_result(label)
+
+
+async def wait_invite_label(uid: int, wanted: bool = True) -> str | None:
+    """Invite name or code for this join, if attribution finishes within the wait."""
+    if not wanted:
+        _invite_waits.pop(uid, None)
+        return None
+    future = _invite_future(uid)
+    try:
+        return await asyncio.wait_for(asyncio.shield(future), INVITE_WAIT_SECONDS)
+    except TimeoutError:
+        return None
+    finally:
+        if _invite_waits.get(uid) is future:
+            del _invite_waits[uid]
+
+
 async def record_invite_use(event, mongo, bot):
     member = event.member
     if int(member.guild_id) != GUILD_ID:
         return
+    try:
+        await _record_invite_use(event, mongo, bot)
+    finally:
+        settle_invite_label(int(member.user.id), None)  # No effect once a label was set.
+
+
+async def _record_invite_use(event, mongo, bot):
+    member = event.member
     store = MemberInviteStore(mongo.member_invites)
     before, after, unavailable = {}, {}, False
     async with _invite_lock:
@@ -787,6 +878,7 @@ async def record_invite_use(event, mongo, bot):
     code = None if unavailable else attribute_join(before, after)
     settings = await MemberEventStore(mongo.member_events).settings()
     uid, now = int(member.user.id), datetime.now(timezone.utc)
+    settle_invite_label(uid, str(settings["invite_names"].get(code) or code)[:40] if code else None)
     if code:
         matched = dict(after.get(code) or before[code])
         if code not in after:  # Spent its last use on this join.
@@ -802,6 +894,350 @@ async def record_invite_use(event, mongo, bot):
         display_name=_text(member.display_name) or member.user.username,
         username=member.user.username, at=now, details=details, joined_at=joined_at,
         dedupe_key=event_key(GUILD_ID, uid, "invite_use", now, joined_at),
+    )
+
+
+_bot_users: dict[int, bool] = {}  # Fetched answers only; a failed lookup is not cached.
+
+
+async def is_bot_actor(bot, user_id) -> bool:
+    """Bot account per cache, else one fetch; unknown is treated as human."""
+    if not user_id:
+        return False
+    uid = int(user_id)
+    cache = getattr(bot, "cache", None)
+    cached = cache.get_user(uid) if cache and hasattr(cache, "get_user") else None
+    if cached is not None:
+        return bool(getattr(cached, "is_bot", False))
+    if uid not in _bot_users:
+        try:
+            _bot_users[uid] = bool((await bot.rest.fetch_user(uid)).is_bot)
+        except Exception:
+            return False
+        if len(_bot_users) > 500:
+            _bot_users.pop(next(iter(_bot_users)))
+    return _bot_users[uid]
+
+
+def _enabled(settings, kind) -> bool:
+    config = effective_event(settings, kind)
+    return bool(config["enabled"] and config["channel_id"])
+
+
+def _brief(value):
+    """Short text for an audit value; None for structures shown as 'Changed'."""
+    if value is None or isinstance(value, (dict, list, tuple, set, frozenset)) or hasattr(value, "values"):
+        return None
+    if isinstance(value, enum.Enum):
+        return value.name.replace("_", " ").title()
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)[:100]
+
+
+def audit_changes(entry, *, drop=("position",)) -> list[dict]:
+    changes = []
+    for change in entry.changes:
+        field = str(getattr(change.key, "value", change.key)).lower()
+        if field in drop:
+            continue
+        changes.append({"field": field, "before": _brief(change.old_value), "after": _brief(change.new_value)})
+    return changes[:8]
+
+
+def _roles_named(value) -> list[str]:
+    items = value.values() if hasattr(value, "values") else (value or ())
+    return [str(getattr(item, "name", None) or "Unknown role")[:60] for item in items][:15]
+
+
+async def user_identity(bot, user_id: int, user=None):
+    """Public identity for someone who may not be in the guild (for example, unbanned)."""
+    if user is None:
+        cache = getattr(bot, "cache", None)
+        user = cache.get_user(user_id) if cache and hasattr(cache, "get_user") else None
+    if user is None:
+        try:
+            user = await bot.rest.fetch_user(user_id)
+        except Exception:
+            user = None
+    username = _text(getattr(user, "username", None)) or str(user_id)
+    return {"display_name": _text(getattr(user, "global_name", None)) or username, "username": username,
+            "avatar_url": avatar_source(GUILD_ID, user_id, getattr(user, "avatar_hash", None))}
+
+
+# Audit-sourced guild-object logs: action type -> (event kind, action word on the card).
+_A = hikari.AuditLogEventType
+AUDIT_KINDS = {
+    _A.ROLE_CREATE: ("role_create", "created"), _A.ROLE_UPDATE: ("role_update", "updated"),
+    _A.ROLE_DELETE: ("role_delete", "deleted"),
+    _A.CHANNEL_CREATE: ("channel_create", "created"), _A.CHANNEL_UPDATE: ("channel_update", "updated"),
+    _A.CHANNEL_DELETE: ("channel_delete", "deleted"),
+    _A.CHANNEL_OVERWRITE_CREATE: ("channel_permissions", "added"),
+    _A.CHANNEL_OVERWRITE_UPDATE: ("channel_permissions", "changed"),
+    _A.CHANNEL_OVERWRITE_DELETE: ("channel_permissions", "removed"),
+    _A.THREAD_DELETE: ("thread_delete", "deleted"), _A.THREAD_UPDATE: ("thread_lock", "locked"),
+    _A.GUILD_UPDATE: ("server_update", "updated"),
+    _A.EMOJI_CREATE: ("emoji", "added"), _A.EMOJI_UPDATE: ("emoji", "changed"),
+    _A.EMOJI_DELETE: ("emoji", "removed"),
+    _A.STICKER_CREATE: ("sticker", "added"), _A.STICKER_UPDATE: ("sticker", "changed"),
+    _A.STICKER_DELETE: ("sticker", "removed"),
+    _A.BOT_ADD: ("app", "added"), _A.INTEGRATION_CREATE: ("app", "added"),
+    _A.INTEGRATION_UPDATE: ("app", "changed"), _A.INTEGRATION_DELETE: ("app", "removed"),
+    _A.WEBHOOK_CREATE: ("webhook", "added"), _A.WEBHOOK_UPDATE: ("webhook", "changed"),
+    _A.WEBHOOK_DELETE: ("webhook", "removed"),
+    _A.AUTO_MODERATION_RULE_CREATE: ("automod", "added"), _A.AUTO_MODERATION_RULE_UPDATE: ("automod", "changed"),
+    _A.AUTO_MODERATION_RULE_DELETE: ("automod", "removed"),
+}
+_C = hikari.AuditLogChangeKey
+
+
+def audit_object_name(entry, bot, kind: str) -> str:
+    for change in entry.changes:
+        if change.key == _C.NAME:
+            value = change.new_value or change.old_value
+            if isinstance(value, str) and value:
+                return value
+    cache = getattr(bot, "cache", None)
+    target, found = int(entry.target_id), None
+    if cache:
+        if kind.startswith("role"):
+            found = cache.get_role(target)
+        elif kind.startswith(("channel", "thread")):
+            found = cache.get_thread(target) or cache.get_guild_channel(target)
+        elif kind == "app":
+            found = cache.get_user(target)
+        elif kind == "server_update":
+            found = cache.get_guild(GUILD_ID)
+    return str(getattr(found, "name", None) or getattr(found, "username", None) or "")
+
+
+async def record_audit_kind(entry, mongo, bot) -> bool:
+    """Roles, channels, threads and server logs from one audit entry. False when not ours."""
+    spec = AUDIT_KINDS.get(entry.action_type)
+    if spec is None:
+        return False
+    kind, action = spec
+    store = MemberEventStore(mongo.member_events)
+    await ensure_indexes(store)
+    settings = await store.settings()
+    if not _enabled(settings, kind):
+        return True
+    if not (kind == "app" and action == "added") and await is_bot_actor(bot, entry.user_id):
+        return True  # An app's own change is never a staff action; adding an app always posts.
+    details = {"action": action, "target_id": str(entry.target_id)}
+    if kind == "thread_lock":
+        locked = [c for c in entry.changes if c.key in (_C.LOCKED, _C.ARCHIVED) and c.new_value is True]
+        if not locked:
+            return True  # Reopened, renamed or auto-archived threads are not lock events.
+        details["action"] = "locked" if any(c.key == _C.LOCKED for c in locked) else "archived"
+    elif action in ("updated", "changed"):
+        changes = audit_changes(entry)
+        if kind in ("role_update", "channel_update") and not changes:
+            return True  # Position-only moves are noise.
+        details["changes"] = changes
+    if kind == "channel_permissions":
+        options = entry.options
+        subject = str(getattr(getattr(options, "type", None), "name", getattr(options, "type", ""))).lower()
+        details["subject_type"] = "role" if "role" in subject else "member" if "member" in subject else None
+        details["subject_id"] = str(getattr(options, "id", "") or "") or None
+        details["subject_name"] = _text(getattr(options, "role_name", None))
+    await record_extra(
+        kind, mongo, bot, settings=settings, user_id=0, display_name=audit_object_name(entry, bot, kind),
+        username="", at=entry.created_at, details=details, audit_entry_id=int(entry.id),
+        moderator_id=entry.user_id, reason=entry.reason,
+    )
+    return True
+
+
+async def record_member_roles(entry, mongo, bot):
+    store = MemberEventStore(mongo.member_events)
+    await ensure_indexes(store)
+    settings = await store.settings()
+    if await is_bot_actor(bot, entry.user_id):
+        return
+    uid = int(entry.target_id)
+    for key, kind in ((_C.ADD_ROLE_TO_MEMBER, "roles_added"), (_C.REMOVE_ROLE_FROM_MEMBER, "roles_removed")):
+        change = next((c for c in entry.changes if c.key == key), None)
+        names = _roles_named(change.new_value if change else None)
+        if not names:
+            continue
+        who = await member_identity(bot, uid)
+        await record_extra(
+            kind, mongo, bot, settings=settings, user_id=uid, display_name=who["display_name"],
+            username=who["username"], at=entry.created_at,
+            details={"roles": names, "avatar_url": who["avatar_url"]},
+            dedupe_key=f"{GUILD_ID}:audit:{entry.id}:{kind}", moderator_id=entry.user_id,
+            joined_at=who["joined_at"],
+        )
+
+
+_bot_unbans: set = set()  # (user id, ban episode) whose unban audit entry was made by an app.
+
+
+async def emit_unban(mongo, bot, uid: int, episode: int, *, at, user=None, entry=None):
+    """Post an unban once; the gateway event and its audit entry may come in either order."""
+    store = MemberEventStore(mongo.member_events)
+    await ensure_indexes(store)
+    key = f"{GUILD_ID}:unban:{uid}:{episode}"
+    if entry is not None and await is_bot_actor(bot, entry.user_id):
+        _bot_unbans.add((uid, episode))
+        await store.discard_unsent(key)
+        return
+    if (uid, episode) in _bot_unbans:
+        return
+    moderator = int(entry.user_id) if entry is not None and entry.user_id else None
+    reason = entry.reason if entry is not None else None
+    if entry is not None and await store.enrich_unban(key, moderator, reason, int(entry.id)):
+        return
+    who = await user_identity(bot, uid, user)
+    settings = await store.settings()
+    row = await record_extra(
+        "unban", mongo, bot, settings=settings, user_id=uid, display_name=who["display_name"],
+        username=who["username"], at=at, dedupe_key=key, moderator_id=moderator, reason=reason,
+        details={"avatar_url": who["avatar_url"]}, hold=entry is None,
+    )
+    return row
+
+
+_recent_deletes: collections.deque = collections.deque(maxlen=200)  # Audit MESSAGE_DELETE facts.
+_recent_bulk: collections.deque = collections.deque(maxlen=50)  # Audit MESSAGE_BULK_DELETE facts.
+
+
+def note_message_audit(entry):
+    options = getattr(entry, "options", None)
+    channel = getattr(options, "channel_id", None)
+    if entry.action_type == hikari.AuditLogEventType.MESSAGE_DELETE:
+        _recent_deletes.append((int(entry.target_id), int(channel or 0), entry.user_id, entry.created_at))
+    else:
+        _recent_bulk.append((int(entry.target_id), 0, entry.user_id, entry.created_at))
+
+
+async def audit_moderator(facts, target: int, channel: int = 0):
+    """Moderator of a message delete from recent audit facts; None when unsure."""
+    await asyncio.sleep(1)  # The audit entry can trail the gateway event.
+    now = datetime.now(timezone.utc)
+    for known_target, known_channel, moderator, created in reversed(facts):
+        if (known_target == target and (not channel or known_channel == channel)
+                and abs((now - created.replace(tzinfo=created.tzinfo or timezone.utc)).total_seconds()) <= 10):
+            return str(moderator) if moderator else None
+    return None
+
+
+def attachment_info(message) -> list[dict]:
+    return [{"name": str(getattr(a, "filename", "") or "File")[:80],
+             "type": str(getattr(a, "media_type", None) or "unknown")[:40]}
+            for a in (getattr(message, "attachments", None) or ())][:10]
+
+
+def _human_message(message) -> bool:
+    return not (getattr(message.author, "is_bot", False) or getattr(message, "webhook_id", None))
+
+
+async def record_message_delete(event, mongo, bot):
+    message = event.old_message
+    if message is None or int(event.guild_id) != GUILD_ID or not _human_message(message):
+        return  # Uncached messages are never logged.
+    store = MemberEventStore(mongo.member_events)
+    await ensure_indexes(store)
+    settings = await store.settings()
+    channel_id = int(event.channel_id)
+    member = getattr(message, "member", None)
+    if not _enabled(settings, "message_delete") or await message_ignored(
+            bot, settings, channel_id, getattr(member, "role_ids", ())):
+        return
+    author = message.author
+    uid, username = int(author.id), _text(getattr(author, "username", None)) or str(author.id)
+    moderator = await audit_moderator(_recent_deletes, uid, channel_id)
+    await record_extra(
+        "message_delete", mongo, bot, settings=settings, user_id=uid,
+        display_name=_text(getattr(member, "display_name", None)) or _text(getattr(author, "global_name", None)) or username,
+        username=username, at=datetime.now(timezone.utc), moderator_id=moderator,
+        details={"channel_id": str(channel_id), "message_id": str(message.id),
+                 "content": (message.content or "")[:500], "attachments": attachment_info(message),
+                 "avatar_url": avatar_source(GUILD_ID, uid, getattr(author, "avatar_hash", None),
+                                             getattr(member, "guild_avatar_hash", None))},
+        dedupe_key=f"{GUILD_ID}:message_delete:{message.id}",
+        joined_at=getattr(member, "joined_at", None),
+    )
+
+
+async def record_message_edit(event, mongo, bot):
+    old = event.old_message
+    content = event.content
+    if old is None or int(event.guild_id) != GUILD_ID or content is hikari.UNDEFINED or not _human_message(old):
+        return
+    after, before = content or "", old.content or ""
+    if after == before:
+        return  # Embed unfurls and pin changes arrive as updates too.
+    store = MemberEventStore(mongo.member_events)
+    await ensure_indexes(store)
+    settings = await store.settings()
+    channel_id = int(event.channel_id)
+    member = getattr(old, "member", None) or getattr(event, "member", None)
+    if not _enabled(settings, "message_edit") or await message_ignored(
+            bot, settings, channel_id, getattr(member, "role_ids", ())):
+        return
+    author = old.author
+    uid, username = int(author.id), _text(getattr(author, "username", None)) or str(author.id)
+    digest = hashlib.sha1(after.encode()).hexdigest()[:12]
+    await record_extra(
+        "message_edit", mongo, bot, settings=settings, user_id=uid,
+        display_name=_text(getattr(member, "display_name", None)) or _text(getattr(author, "global_name", None)) or username,
+        username=username, at=datetime.now(timezone.utc),
+        details={"channel_id": str(channel_id), "message_id": str(old.id), "before": before[:500],
+                 "after": after[:500], "attachments": attachment_info(old),
+                 "avatar_url": avatar_source(GUILD_ID, uid, getattr(author, "avatar_hash", None),
+                                             getattr(member, "guild_avatar_hash", None))},
+        dedupe_key=f"{GUILD_ID}:message_edit:{old.id}:{digest}",
+        joined_at=getattr(member, "joined_at", None),
+    )
+
+
+TRANSCRIPT_LIMIT = 200 * 1024
+
+
+def build_transcript(messages) -> str:
+    """Cached human messages, oldest first, capped at 200 KB of UTF-8."""
+    lines, size = [], 0
+    for message in sorted(messages, key=lambda m: int(m.id)):
+        if not _human_message(message):
+            continue
+        files = ", ".join(a["name"] for a in attachment_info(message))
+        line = (f"[{message.created_at:%Y-%m-%d %H:%M:%S} UTC] {getattr(message.author, 'username', 'unknown')} "
+                f"({message.author.id}): {(message.content or '').replace(chr(10), ' / ')}"
+                + (f" [files: {files}]" if files else ""))
+        size += len(line.encode("utf-8")) + 1
+        if size > TRANSCRIPT_LIMIT:
+            lines.append("[transcript truncated]")
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
+
+async def record_bulk_delete(event, mongo, bot):
+    if int(event.guild_id) != GUILD_ID:
+        return
+    store = MemberEventStore(mongo.member_events)
+    await ensure_indexes(store)
+    settings = await store.settings()
+    channel_id = int(event.channel_id)
+    if not _enabled(settings, "message_bulk_delete") or await message_ignored(bot, settings, channel_id):
+        return
+    moderator = await audit_moderator(_recent_bulk, channel_id)
+    details = {"channel_id": str(channel_id), "count": len(event.message_ids)}
+    transcript = build_transcript((event.old_messages or {}).values())
+    if transcript:
+        details["transcript"] = transcript
+    cache = getattr(bot, "cache", None)
+    channel = cache.get_guild_channel(channel_id) if cache and hasattr(cache, "get_guild_channel") else None
+    await record_extra(
+        "message_bulk_delete", mongo, bot, settings=settings, user_id=0,
+        display_name=_text(getattr(channel, "name", None)) or "Channel", username="",
+        at=datetime.now(timezone.utc), details=details, moderator_id=moderator,
+        dedupe_key=f"{GUILD_ID}:message_bulk_delete:{channel_id}:{min(int(i) for i in event.message_ids)}:{details['count']}"
+        if event.message_ids else None,
     )
 
 
@@ -862,3 +1298,24 @@ async def invite_deleted(event: hikari.InviteDeleteEvent, mongo: MongoClient = l
 async def invite_used(event: hikari.MemberCreateEvent, mongo: MongoClient = lightbulb.di.INJECTED,
                       bot: hikari.GatewayBot = lightbulb.di.INJECTED):
     await _safely(record_invite_use, "Failed to log an invite use")(event, mongo, bot)
+
+
+@loader.listener(hikari.GuildMessageDeleteEvent)
+@lightbulb.di.with_di
+async def message_deleted(event: hikari.GuildMessageDeleteEvent, mongo: MongoClient = lightbulb.di.INJECTED,
+                          bot: hikari.GatewayBot = lightbulb.di.INJECTED):
+    await _safely(record_message_delete, "Failed to log a deleted message")(event, mongo, bot)
+
+
+@loader.listener(hikari.GuildMessageUpdateEvent)
+@lightbulb.di.with_di
+async def message_edited(event: hikari.GuildMessageUpdateEvent, mongo: MongoClient = lightbulb.di.INJECTED,
+                         bot: hikari.GatewayBot = lightbulb.di.INJECTED):
+    await _safely(record_message_edit, "Failed to log an edited message")(event, mongo, bot)
+
+
+@loader.listener(hikari.GuildBulkMessageDeleteEvent)
+@lightbulb.di.with_di
+async def messages_bulk_deleted(event: hikari.GuildBulkMessageDeleteEvent, mongo: MongoClient = lightbulb.di.INJECTED,
+                                bot: hikari.GatewayBot = lightbulb.di.INJECTED):
+    await _safely(record_bulk_delete, "Failed to log a bulk delete")(event, mongo, bot)

@@ -84,7 +84,9 @@ def test_text_notice_has_v2_and_disables_mentions():
                for row in container['components'] if row['type'] == 1
                for component in row['components']]
     assert actions == [{'type': 2, 'style': 5, 'label': 'View profile ↗',
-                        'url': 'https://discord.com/users/123456789012345678'}]
+                        'url': 'https://discord.com/users/123456789012345678'},
+                       {'type': 2, 'style': 5, 'label': 'Member history ↗',
+                        'url': 'https://dash.warriorsunited.cc/server/moderation/member/123456789012345678'}]
 
 
 def test_forum_notice_uploads_avatar_in_initial_request_and_returns_message_receipt():
@@ -109,7 +111,9 @@ def test_forum_notice_uploads_avatar_in_initial_request_and_returns_message_rece
     assert message['embeds'][0]['thumbnail']['url'] == 'attachment://member-avatar.png'
     assert message['components'] == [{'type': 1, 'components': [
         {'type': 2, 'style': 5, 'label': 'View profile ↗',
-         'url': 'https://discord.com/users/123456789012345678'}]}]
+         'url': 'https://discord.com/users/123456789012345678'},
+        {'type': 2, 'style': 5, 'label': 'Member history ↗',
+         'url': 'https://dash.warriorsunited.cc/server/moderation/member/123456789012345678'}]}]
     assert fields['files[0]'][0] == b'avatar-bytes'
     assert fields['files[0]'][1]['content_type'] == 'image/png'
 
@@ -125,8 +129,12 @@ def test_failed_create_is_not_retried_or_replaced_with_another_format(forum):
     assert len(calls) == 1
 
 
+BATCH_TWO_KINDS = ['unban', 'role_create', 'role_update', 'role_delete', 'roles_added', 'roles_removed',
+                   'message_delete', 'message_edit', 'message_bulk_delete', 'channel_create', 'channel_update',
+                   'channel_delete', 'channel_permissions', 'thread_delete', 'thread_lock', 'server_update',
+                   'emoji', 'sticker', 'app', 'webhook', 'automod']
 NEW_KINDS = ['timeout_add', 'timeout_remove', 'member_update', 'link',
-             'invite_create', 'invite_delete', 'invite_use']
+             'invite_create', 'invite_delete', 'invite_use', *BATCH_TWO_KINDS]
 
 
 @pytest.mark.parametrize('kind', NEW_KINDS)
@@ -191,3 +199,47 @@ def test_invite_use_card_names_vanity_and_unknown_attribution():
     assert 'Vanity URL' in vanity and 'Unknown invite' in unknown and 'Inviter' not in unknown
     named = json.dumps(build_card(row), ensure_ascii=False)
     assert 'Spring recruitment' in named and '8 of 10' in named
+
+
+def bulk_row(**changes):
+    from utils.member_event_cards import sample_row
+    row = sample_row('message_bulk_delete')
+    row['details'] = {**row['details'], 'transcript': '[2026-11-06 12:00:00 UTC] alice (1): hello\n'}
+    return {**row, 'channel_id': 1004519991648997447, **changes}
+
+
+def test_bulk_delete_transcript_is_a_referenced_file_in_a_text_channel_post():
+    calls = []
+    with patch.dict('os.environ', {'DISCORD_TOKEN': 'test-token'}), patch.object(
+        transport.aiohttp, 'ClientSession', return_value=Session(calls)
+    ), patch.object(transport.aiohttp, 'FormData', Form):
+        assert asyncio.run(transport.post_card(bulk_row())) == '123456789012345678'
+    fields = calls[0][1]['data'].fields
+    payload = json.loads(fields['payload_json'][0])
+    assert payload['flags'] == 32768 and payload['attachments'] == [{'id': 0, 'filename': 'message-transcript.txt'}]
+    container = payload['components'][0]['components']
+    assert {'type': 13, 'file': {'url': 'attachment://message-transcript.txt'}} in container
+    data, meta = fields['files[0]']
+    assert data.decode().startswith('[2026-11-06') and meta['filename'] == 'message-transcript.txt'
+    assert meta['content_type'].startswith('text/plain')
+
+
+def test_bulk_delete_transcript_is_an_attachment_on_a_forum_starter_and_absent_without_one():
+    calls = []
+    with patch.dict('os.environ', {'DISCORD_TOKEN': 'test-token'}), patch.object(
+        transport.aiohttp, 'ClientSession', return_value=Session(calls)
+    ), patch.object(transport.aiohttp, 'FormData', Form):
+        asyncio.run(transport.post_card(bulk_row(), forum=True))
+    fields = calls[0][1]['data'].fields
+    message = json.loads(fields['payload_json'][0])['message']
+    assert message['attachments'] == [{'id': 0, 'filename': 'message-transcript.txt'}]
+    assert 'flags' not in message and fields['files[0]'][1]['filename'] == 'message-transcript.txt'
+    calls.clear()
+    plain = bulk_row()
+    plain['details'] = {k: v for k, v in plain['details'].items() if k != 'transcript'}
+    with patch.dict('os.environ', {'DISCORD_TOKEN': 'test-token'}), patch.object(
+        transport.aiohttp, 'ClientSession', return_value=Session(calls)
+    ):
+        asyncio.run(transport.post_card(plain))
+    assert 'data' not in calls[0][1] and 'attachments' not in calls[0][1]['json']
+    assert 13 not in [c['type'] for c in calls[0][1]['json']['components'][0]['components']]

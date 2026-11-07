@@ -32,7 +32,8 @@ class LayeredSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(normalized["revision"], 0)
         self.assertEqual(normalized["main"], {"channel_id": None, "forum_tag_id": None})
         self.assertEqual({key: value["mode"] for key, value in normalized["categories"].items()},
-                         {"members": "main", "moderation": "main", "messages": "main", "invites": "main"})
+                         {"members": "main", "moderation": "main", "roles": "main", "messages": "main",
+                          "channels": "main", "server": "main", "invites": "main"})
         for kind in EVENT_TYPES:
             self.assertEqual(effective_event(normalized, kind), legacy["events"][kind])
         self.assertEqual(normalized["ignores"], {"channel_ids": [], "role_ids": []})
@@ -92,6 +93,45 @@ class LayeredSettingsTests(unittest.IsolatedAsyncioTestCase):
         settings["ignores"] = {"users": ["1"]}
         with self.assertRaises(web.HTTPBadRequest):
             api._checked_settings(settings)
+
+    async def test_put_accepts_every_kind_and_category_and_rejects_partial_sets(self):
+        from utils.member_event_settings import CATEGORIES
+        from utils.member_events import SETTINGS_ID
+        self.assertEqual(CATEGORIES, ("members", "moderation", "roles", "messages", "channels", "server", "invites"))
+        settings = normalize_settings(None, MemberEventStore.default_settings())
+        for kind in EVENT_TYPES:
+            settings["events"][kind] = {"enabled": True, "channel_id": "111111111111111111", "forum_tag_id": None}
+        for category in ("roles", "channels", "server"):
+            settings["categories"][category] = {"mode": "own", "channel_id": "222222222222222222",
+                                                "forum_tag_id": None}
+        self.assertEqual(len(EVENT_TYPES), 32)
+        collection = MemoryCollection()
+
+        class Context:
+            async def __aenter__(self): return NS(member_events=collection)
+            async def __aexit__(self, *args): pass
+        request = NS(json=AsyncMock(return_value={**settings, "revision": 0}))
+        actor = {"permissions": 8, "role_ids": set(), "user_id": "100"}
+        with patch.object(api, "require_manage", new=AsyncMock(return_value=actor)), \
+             patch.object(api, "_bot_permissions", new=AsyncMock(return_value=(actor, None))), \
+             patch.object(api, "_validate_destination", new=AsyncMock()) as validate, \
+             patch.object(api, "mongo", return_value=Context()):
+            response = await api.save_settings(request)
+            self.assertEqual(response.status, 200)
+        self.assertEqual(validate.await_count, len(EVENT_TYPES))  # Every enabled kind is destination-checked.
+        stored = collection.rows[SETTINGS_ID]
+        self.assertEqual(set(stored["events"]), set(EVENT_TYPES))
+        self.assertEqual(set(stored["categories"]), set(CATEGORIES))
+        self.assertEqual(stored["categories"]["roles"]["mode"], "own")
+        for missing in ("roles", "channels", "server"):
+            partial = normalize_settings(None, MemberEventStore.default_settings())
+            del partial["categories"][missing]
+            with self.assertRaises(web.HTTPBadRequest):
+                api._checked_settings(partial)
+        partial = normalize_settings(None, MemberEventStore.default_settings())
+        del partial["events"]["unban"]
+        with self.assertRaises(web.HTTPBadRequest):
+            api._checked_settings(partial)
 
     def test_malformed_legacy_settings_fail_closed(self):
         events = MemberEventStore.default_settings()["events"]

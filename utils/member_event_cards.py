@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
+from utils import dashboard_urls
 from utils.member_events import GUILD_ID, safe_text
 
 EVENT_STYLE = {
@@ -18,10 +19,51 @@ EVENT_STYLE = {
     "invite_create": ("✉️", "Invite created", "created", 0x2BA6A6),
     "invite_delete": ("🗑️", "Invite deleted", "deleted", 0x7A7F87),
     "invite_use": ("📨", "Invite used", "joined using", 0x3FA34D),
+    "unban": ("🔓", "Member unbanned", "was unbanned", 0x4CAF82),
+    "role_create": ("🏷️", "Role created", "created", 0x2BA66A),
+    "role_update": ("🏷️", "Role updated", "updated", 0x6B7FD7),
+    "role_delete": ("🏷️", "Role deleted", "deleted", 0xD34A4A),
+    "roles_added": ("➕", "Roles added", "had roles added", 0x2BA66A),
+    "roles_removed": ("➖", "Roles removed", "had roles removed", 0xD34A4A),
+    "message_delete": ("🗑️", "Message deleted", "had a message deleted", 0xD34A4A),
+    "message_edit": ("📝", "Message edited", "edited a message", 0x6B7FD7),
+    "message_bulk_delete": ("🧹", "Messages bulk deleted", "bulk deleted", 0xA8384B),
+    "channel_create": ("#️⃣", "Channel created", "created", 0x2BA66A),
+    "channel_update": ("#️⃣", "Channel updated", "updated", 0x6B7FD7),
+    "channel_delete": ("#️⃣", "Channel deleted", "deleted", 0xD34A4A),
+    "channel_permissions": ("🔐", "Permissions changed", "changed", 0xD8B13A),
+    "thread_delete": ("🧵", "Thread deleted", "deleted", 0xD34A4A),
+    "thread_lock": ("🔒", "Thread locked", "locked", 0xE69935),
+    "server_update": ("⚙️", "Server updated", "updated", 0x6B7FD7),
+    "emoji": ("😀", "Emoji changed", "changed", 0x8A8F98),
+    "sticker": ("🖼️", "Sticker changed", "changed", 0x8A8F98),
+    "app": ("🧩", "App changed", "changed", 0x4C9BE8),
+    "webhook": ("🪝", "Webhook changed", "changed", 0x8A8F98),
+    "automod": ("🛡️", "AutoMod rule changed", "changed", 0xE69935),
 }
+# Kinds about a guild object (role, channel, ...) rather than a member.
+OBJECT_NOUNS = {
+    "role_create": "Role", "role_update": "Role", "role_delete": "Role",
+    "channel_create": "Channel", "channel_update": "Channel", "channel_delete": "Channel",
+    "channel_permissions": "Channel", "thread_delete": "Thread", "thread_lock": "Thread",
+    "server_update": "Server", "emoji": "Emoji", "sticker": "Sticker", "app": "App",
+    "webhook": "Webhook", "automod": "AutoMod rule",
+}
+OBJECT_KINDS = tuple(OBJECT_NOUNS)
+# Kinds whose subject can be shown as a live mention (it resolves in Discord).
+MENTIONS = {"role_update": "@&", "channel_create": "#", "channel_update": "#",
+            "channel_permissions": "#", "thread_lock": "#"}
+OPAQUE_FIELDS = ("permissions", "allow", "deny", "permission_overwrites")
 EXTRA_KINDS = ("timeout_add", "timeout_remove", "member_update", "link",
-               "invite_create", "invite_delete", "invite_use")
-USER_KINDS = ("timeout_add", "timeout_remove", "member_update", "link", "invite_use")
+               "invite_create", "invite_delete", "invite_use", "unban", "roles_added",
+               "roles_removed", "message_delete", "message_edit", "message_bulk_delete",
+               *OBJECT_KINDS)
+USER_KINDS = ("timeout_add", "timeout_remove", "member_update", "link", "invite_use", "unban",
+              "roles_added", "roles_removed", "message_delete", "message_edit")
+HISTORY_BUTTON_KINDS = ("join", "leave", "member_update", "kick", "ban", "unban", "timeout_add",
+                        "timeout_remove", "roles_added", "roles_removed", "invite_use",
+                        "message_delete", "message_edit", "link")
+TRANSCRIPT_NAME = "message-transcript.txt"
 FIELD_LABELS = {"nickname": "Nickname", "username": "Username", "global_name": "Display name",
                 "avatar": "Avatar", "guild_avatar": "Server avatar", "discriminator": "Discriminator"}
 DEFAULT_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"
@@ -126,6 +168,53 @@ def _named(value: object, limit: int = 120) -> str:
     return text if text.replace("\u200d", "").strip() else ""
 
 
+def _ordinal(number: int) -> str:
+    suffix = "th" if 10 <= number % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(number % 10, "th")
+    return f"{number}{suffix}"
+
+
+def _account_age(row: dict) -> str | None:
+    created, now = _moment(row.get("account_created_at")), _moment(row.get("occurred_at"))
+    if not created or not now:
+        return None
+    age = _since(created, now)
+    days = (now.replace(tzinfo=now.tzinfo or timezone.utc)
+            - created.replace(tzinfo=created.tzinfo or timezone.utc)).days
+    return f"{age} · New account" if days < 7 else age
+
+
+def _change_lines(details: dict) -> list[str]:
+    lines = []
+    for change in (details.get("changes") or [])[:8]:
+        if not isinstance(change, dict) or not change.get("field"):
+            continue
+        field = str(change["field"])
+        label = safe_text(field.replace("_", " ").capitalize(), 40)
+        if field in OPAQUE_FIELDS or (change.get("before") is None and change.get("after") is None):
+            lines.append(f"**{label}**\nChanged")
+        else:
+            before = _inert(change.get("before"), 100) or "None"
+            after = _inert(change.get("after"), 100) or "None"
+            lines.append(f"**{label}**\n{before} → {after}")
+    return lines
+
+
+def _attachment_line(details: dict) -> str | None:
+    items = [item for item in (details.get("attachments") or [])[:10] if isinstance(item, dict)]
+    names = [f"{safe_text(item.get('name'), 80) or 'File'} ({safe_text(item.get('type'), 40) or 'unknown'})"
+             for item in items]
+    return "**Attachments**\n" + "\n".join(names) if names else None
+
+
+def transcript_file(row: dict) -> tuple[str, bytes, str] | None:
+    """The bulk-delete transcript as an upload (name, bytes, content type)."""
+    details = row.get("details") if isinstance(row.get("details"), dict) else {}
+    text = details.get("transcript")
+    if row.get("event_type") != "message_bulk_delete" or not isinstance(text, str) or not text:
+        return None
+    return TRANSCRIPT_NAME, text.encode("utf-8"), "text/plain; charset=utf-8"
+
+
 def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], str | None]:
     kind = row["event_type"]
     icon, title, action, _ = EVENT_STYLE[kind]
@@ -133,7 +222,9 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
     uid = _snowflake(row.get("user_id")) if kind in USER_KINDS else None
     if kind in USER_KINDS and uid is None:
         raise ValueError("A trusted member ID is required for a profile card")
-    name = _named(row.get("display_name")) or ("Unknown member" if uid else "Unknown invite")
+    name = _named(row.get("display_name")) or (
+        "Unknown member" if uid else OBJECT_NOUNS.get(kind)
+        or ("Channel" if kind == "message_bulk_delete" else "Unknown invite"))
     moderator = _snowflake(row.get("moderator_id"))
     by = f" by <@{moderator}>" if moderator else " by an unknown moderator"
     reason = f"**Reason**\n{safe_text(row.get('reason'), 500) or 'No reason given'}"
@@ -169,6 +260,45 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
         urls = [str(url).replace("`", "")[:200] for url in (details.get("urls") or [])[:10]]
         if urls:
             fields.append("**Links**\n" + "\n".join(f"`{url}`" for url in urls))
+    elif kind == "unban":
+        main += by
+        fields = [reason]
+    elif kind in ("roles_added", "roles_removed"):
+        main += f" by <@{moderator}>" if moderator else ""
+        names = [safe_text(item, 60) for item in (details.get("roles") or [])[:15]]
+        fields.append("**Roles**\n" + (", ".join(name for name in names if name) or "Unavailable"))
+    elif kind in ("message_delete", "message_edit"):
+        channel = _snowflake(details.get("channel_id"))
+        main += f" in <#{channel}>" if channel else ""
+        if kind == "message_delete":
+            main += f" by <@{moderator}>" if moderator else ""
+            fields.append(f"**Message**\n{_inert(details.get('content'), 500) or 'No text'}")
+        else:
+            fields.append(f"**Before**\n{_inert(details.get('before'), 500) or 'No text'}")
+            fields.append(f"**After**\n{_inert(details.get('after'), 500) or 'No text'}")
+        attachments = _attachment_line(details)
+        if attachments:
+            fields.append(attachments)
+    elif kind == "message_bulk_delete":
+        channel = _snowflake(details.get("channel_id"))
+        count = details.get("count")
+        main = f"{count:,} messages were deleted" if isinstance(count, int) and count >= 0 else "Messages were deleted"
+        main += f" in <#{channel}>" if channel else ""
+        main += f" by <@{moderator}>" if moderator else ""
+        if transcript_file(row):
+            fields.append("**Transcript**\nAttached")
+    elif kind in OBJECT_KINDS:
+        target = _snowflake(details.get("target_id"))
+        prefix = MENTIONS.get(kind)
+        ref = f"<{prefix}{target}>" if prefix and target else f"**{name}**"
+        verb = safe_text(details.get("action"), 20) or action
+        main = f"{OBJECT_NOUNS[kind]} {ref} was {verb}" + (f" by <@{moderator}>" if moderator else "")
+        fields = _change_lines(details)
+        subject = _snowflake(details.get("subject_id"))
+        if subject and details.get("subject_type") in ("role", "member"):
+            fields.append(f"**Applies to**\n<{'@&' if details['subject_type'] == 'role' else '@'}{subject}>")
+        elif details.get("subject_name"):
+            fields.append(f"**Applies to**\n{safe_text(details['subject_name'], 80)}")
     else:
         code = "Vanity URL" if details.get("vanity") else f"`{_code(details.get('code'))}`"
         invite_name = safe_text(details.get("name"), 40)
@@ -227,9 +357,25 @@ def _content(row: dict, test_staff_id: object = None) -> tuple[list[str], str | 
         count = row.get("member_count")
         members = f"{count:,}" if isinstance(count, int) and count >= 0 else "unavailable"
         fields.append(f"**Members**\n{members}")
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        age = _account_age(row)
+        if age:
+            fields.append(f"**Account age**\n{age}")
+        joins = details.get("join_count")
+        if isinstance(joins, int) and joins >= 2:
+            fields.append(f"**Join**\n{_ordinal(joins)} join")
+        via = _named(details.get("invite"), 60)
+        if via:
+            fields.append(f"**Invite**\nvia {via}")
     else:
         fields.append(f"**Joined**\n{_date(row.get('joined_at'))}")
-        fields.append(f"**Roles**\n{_roles(row)}")
+        if kind == "leave":
+            if isinstance(row.get("joined_at"), datetime):
+                fields.append(f"**Time in server**\n{_since(row.get('joined_at'), row.get('occurred_at'))}")
+            if row.get("roles") is not None:
+                fields.append(f"**Roles**\n{_roles(row)}")
+        else:
+            fields.append(f"**Roles**\n{_roles(row)}")
         if kind in ("kick", "ban"):
             fields.insert(0, f"**Reason**\n{safe_text(row.get('reason'), 500) or 'No reason given'}")
         count = row.get("member_count")
@@ -260,7 +406,10 @@ def _buttons(row: dict, uid: str | None) -> list[dict]:
     buttons = [_profile_button(uid)] if uid else []
     details = row.get("details") if isinstance(row.get("details"), dict) else {}
     channel, message = _snowflake(details.get("channel_id")), _snowflake(details.get("message_id"))
-    if row["event_type"] == "link" and channel and message:
+    history = dashboard_urls.member_history_url(uid) if uid and row["event_type"] in HISTORY_BUTTON_KINDS else None
+    if history:
+        buttons.append({"type": 2, "style": 5, "label": "Member history ↗", "url": history})
+    if row["event_type"] in ("link", "message_edit") and channel and message:
         buttons.append({"type": 2, "style": 5, "label": "Jump to message ↗",
                         "url": f"https://discord.com/channels/{GUILD_ID}/{channel}/{message}"})
     return buttons
@@ -287,6 +436,7 @@ def build_card(row: dict, test_staff_id: object = None) -> dict:
         {"type": 10, "content": title},
         {"type": 10, "content": main},
         *({"type": 10, "content": field} for field in rest),
+        *([{"type": 13, "file": {"url": f"attachment://{TRANSCRIPT_NAME}"}}] if transcript_file(row) else []),
         {"type": 14, "divider": True, "spacing": 1},
         {"type": 10, "content": footer},
         *([{"type": 1, "components": buttons}] if buttons else []),
@@ -312,6 +462,37 @@ def build_forum_message(row: dict, test_staff_id: object = None) -> dict:
 
 
 SAMPLE_DETAILS = {
+    "join": {"join_count": 3, "invite": "Spring recruitment"},
+    "role_create": {"action": "created", "target_id": "423456789012345678"},
+    "role_update": {"action": "updated", "target_id": "423456789012345678",
+                    "changes": [{"field": "name", "before": "Recruit", "after": "Member"},
+                                {"field": "permissions", "before": None, "after": None}]},
+    "role_delete": {"action": "deleted", "target_id": "423456789012345678"},
+    "roles_added": {"roles": ["CWL player", "Member"]},
+    "roles_removed": {"roles": ["Recruit"]},
+    "message_delete": {"channel_id": "223456789012345678", "message_id": "323456789012345678",
+                       "content": "Sample message that was deleted.",
+                       "attachments": [{"name": "screenshot.png", "type": "image/png"}]},
+    "message_edit": {"channel_id": "223456789012345678", "message_id": "323456789012345678",
+                     "before": "Sample message before the edit.", "after": "Sample message after the edit."},
+    "message_bulk_delete": {"channel_id": "223456789012345678", "count": 12},
+    "channel_create": {"action": "created", "target_id": "223456789012345678", "type": "text"},
+    "channel_update": {"action": "updated", "target_id": "223456789012345678",
+                       "changes": [{"field": "topic", "before": "Old topic", "after": "New topic"}]},
+    "channel_delete": {"action": "deleted", "target_id": "223456789012345678"},
+    "channel_permissions": {"action": "changed", "target_id": "223456789012345678",
+                            "subject_type": "role", "subject_id": "423456789012345678",
+                            "changes": [{"field": "allow", "before": None, "after": None}]},
+    "thread_delete": {"action": "deleted", "target_id": "523456789012345678"},
+    "thread_lock": {"action": "locked", "target_id": "523456789012345678"},
+    "server_update": {"action": "updated", "changes": [
+        {"field": "name", "before": "Old server", "after": "Warriors United"}]},
+    "emoji": {"action": "added", "target_id": "623456789012345678"},
+    "sticker": {"action": "changed", "target_id": "623456789012345678",
+                "changes": [{"field": "name", "before": "Old", "after": "New"}]},
+    "app": {"action": "added", "target_id": "723456789012345678"},
+    "webhook": {"action": "removed", "target_id": "823456789012345678"},
+    "automod": {"action": "added", "target_id": "923456789012345678"},
     "timeout_add": {"until": "2026-10-30T18:00:00+00:00", "duration_seconds": 86400},
     "member_update": {"changes": [{"field": "nickname", "before": "Sample", "after": "Sample member"},
                                   {"field": "avatar", "before": None, "after": None}],
@@ -333,9 +514,12 @@ def sample_row(event_type: str) -> dict:
     """Fixed sample identity; never represents a live member or moderator."""
     if event_type not in EVENT_STYLE:
         raise ValueError("Unsupported member event")
+    about_member = event_type not in OBJECT_KINDS and event_type != "message_bulk_delete"
     return {
-        "event_type": event_type, "user_id": "123456789012345678",
-        "display_name": "Sample member", "username": "sample_member",
+        "event_type": event_type, "user_id": "123456789012345678" if about_member else "0",
+        "display_name": "Sample member" if about_member else (
+            f"Sample {OBJECT_NOUNS.get(event_type, 'channel').lower()}"),
+        "username": "sample_member",
         "occurred_at": datetime(2026, 10, 29, 18, 0, tzinfo=timezone.utc),
         "joined_at": datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc),
         "account_created_at": datetime(2020, 3, 15, 9, 30, tzinfo=timezone.utc),
