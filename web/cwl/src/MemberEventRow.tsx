@@ -14,7 +14,24 @@ export type MemberEvent = {
   moderator_id?: string | null;
   moderator_name?: string | null;
   delivery_status?: string | null;
+  details?: { roles?: unknown } | null;
 };
+
+const roleNameLimit = 5;
+
+function roleSummary(item: MemberEvent) {
+  if (item.event_type !== "roles_added" && item.event_type !== "roles_removed")
+    return "";
+  const roles = Array.isArray(item.details?.roles) ? item.details.roles : [];
+  const names = roles.filter(
+    (role): role is string => typeof role === "string" && role.trim() !== "",
+  );
+  if (!names.length) return "";
+  const shown = names.slice(0, roleNameLimit).join(", ");
+  return names.length > roleNameLimit
+    ? `${shown} +${names.length - roleNameLimit} more`
+    : shown;
+}
 
 export const eventLabels: Record<string, string> = {
   join: "Joined",
@@ -85,6 +102,8 @@ export default function MemberEventRow({
     ? deliveryLabels[item.delivery_status] || ""
     : "";
 
+  const roles = roleSummary(item);
+
   return (
     <li className={`member-activity-row is-${item.event_type}`}>
       <div className="member-activity-identity">
@@ -121,6 +140,7 @@ export default function MemberEventRow({
           {" · "}“{item.reason?.trim() || "No reason given"}”
         </p>
       )}
+      {roles && <p className="member-activity-roles">{roles}</p>}
       <div className="member-activity-meta">
         <time className="member-activity-date" dateTime={item.occurred_at}>
           {formatDate(item.occurred_at)}

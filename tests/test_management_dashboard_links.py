@@ -37,6 +37,30 @@ class ManagementDashboardLinksTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await client.get("/settings/not-a-page")).status, 404)
                 self.assertEqual((await client.get("/api/cwl/seasons/1/signups")).status, 401)
 
+    async def test_moderation_member_deep_link_serves_dashboard(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "index.html").write_text("<html>Management dashboard</html>")
+            app = create_app(db_path=str(root / "test.sqlite"), static_dir=root, dev_fixture=True, secure_cookies=False)
+            async with TestClient(TestServer(app)) as client:
+                for path in ("/server/moderation/member/12345678901234567", "/server/moderation/member/123456789012345678/",
+                             "/server/moderation/member/12345678901234567890"):
+                    with self.subTest(path=path):
+                        response = await client.get(path)
+                        self.assertEqual(response.status, 200)
+                        self.assertIn("Management dashboard", await response.text())
+                for path in ("/server/moderation/member/1234", "/server/moderation/member/abc",
+                             "/server/moderation/member/123456789012345678901", "/server/moderation/other",
+                             "/server/moderation/member/123456789012345678/x"):
+                    with self.subTest(path=path):
+                        self.assertEqual((await client.get(path)).status, 404)
+
+    def test_moderation_member_path_survives_login_round_trip(self):
+        path = "/server/moderation/member/123456789012345678"
+        self.assertEqual(saved_login_destination(SimpleNamespace(cookies={"wu_login_page": path})), path)
+        for bad in ("/server/moderation/member/12", "/server/moderation/member/123456789012345678/x"):
+            self.assertEqual(saved_login_destination(SimpleNamespace(cookies={"wu_login_page": bad})), "")
+
     async def test_auth_start_saves_only_allowlisted_destination(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

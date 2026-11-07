@@ -584,6 +584,19 @@ class NewLogApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(public_event(row, api_prefix="/x")["details"], {"until": "2026-11-07T00:00:00+00:00"})
         json.dumps(public_event(row, api_prefix="/x"))
 
+    def test_public_event_never_carries_transcript(self):
+        from utils.member_events import public_event
+        details = {"count": 3, "transcript": "x" * 1000}
+        row = {"_id": "1792972800000:" + "a" * 32, "user_id": "1", "event_type": "message_bulk_delete",
+               "display_name": "A", "username": "a", "occurred_at": datetime(2026, 11, 6),
+               "delivery_status": "sent", "details": details}
+        public = public_event(row, api_prefix="/x")
+        self.assertEqual(public["details"], {"count": 3})
+        self.assertNotIn("transcript", json.dumps(public))
+        self.assertIn("transcript", row["details"])
+        row["details"] = None
+        self.assertIsNone(public_event(row, api_prefix="/x")["details"])
+
 
 def make_request(query=""):
     from aiohttp.test_utils import make_mocked_request

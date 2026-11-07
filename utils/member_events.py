@@ -507,7 +507,8 @@ def public_event(row: dict, *, api_prefix: str) -> dict:
         "occurred_at": at, "delivery_status": "queued" if row["delivery_status"] == "capturing" else row["delivery_status"],
         "joined_at": row.get("joined_at").replace(tzinfo=row["joined_at"].tzinfo or timezone.utc).isoformat() if isinstance(row.get("joined_at"), datetime) else None,
         "reason": row.get("reason"), "moderator_id": row.get("moderator_id"),
-        "details": row.get("details"),
+        "details": {k: v for k, v in row["details"].items() if k != "transcript"}
+        if isinstance(row.get("details"), dict) else row.get("details"),
     }
 
 

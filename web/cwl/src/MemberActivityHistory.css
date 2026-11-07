@@ -183,7 +183,8 @@
   min-height: 44px;
 }
 
-.member-activity-moderation {
+.member-activity-moderation,
+.member-activity-roles {
   grid-column: 1 / -1;
   grid-row: 2;
   min-width: 0;
@@ -305,7 +306,8 @@
     grid-row: 1;
   }
 
-  .member-activity-moderation {
+  .member-activity-moderation,
+  .member-activity-roles {
     grid-column: 1 / -1;
     grid-row: 2;
   }

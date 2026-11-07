@@ -262,6 +262,7 @@ CWL_PAGE_PATHS = {
     "exports": "/cwl/exports",
     "staff": "/cwl/settings",
 }
+MODERATION_MEMBER_PATH = re.compile(r"/server/moderation/member/[0-9]{17,20}")
 MANAGEMENT_PAGE_PATHS = {
     "staff-overview": "/staff",
     "clan-management": "/clans",
@@ -344,7 +345,7 @@ def saved_login_destination(request):
             params = {key: values[0] for key, values in parse_qs(query).items()}
             params['view'] = 'members-settings'
             return login_destination(params)
-        if path in MANAGEMENT_PAGE_PATHS.values():
+        if path in MANAGEMENT_PAGE_PATHS.values() or MODERATION_MEMBER_PATH.fullmatch(path):
             return path
         for view, destination in CWL_PAGE_PATHS.items():
             if path == destination:
@@ -2158,6 +2159,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'bases', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups', *(path.lstrip('/') for path in CWL_PAGE_PATHS.values()), *(path.lstrip('/') for path in MANAGEMENT_PAGE_PATHS.values())):
             app.router.add_get('/' + path, index_page)
             app.router.add_get('/' + path + '/', index_page)
+        app.router.add_get(r"/server/moderation/member/{user_id:[0-9]{17,20}}", index_page)
+        app.router.add_get(r"/server/moderation/member/{user_id:[0-9]{17,20}}/", index_page)
         for page in ("reminders", "history", "strikes", "replacements"):
             app.router.add_get("/clans/" + page, index_page)
             app.router.add_get("/clans/" + page + "/", index_page)
