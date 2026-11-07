@@ -62,3 +62,17 @@ storage lifetime, scheduling, and delivery guarantees.
 - For approved deployments, record backup/count evidence, retain rollback assets,
   verify public hashes, and use read-only smoke checks unless writes are explicitly
   authorized. A successful local build is not deployment evidence.
+
+## Run off Shaka approval
+
+"Shaka" is Claude, the reviewer. When Ruggie says "run off Shaka approval" (or "merge on Shaka approval") for a task or PR, Ruggie has already approved the merge. Do not ask Ruggie again.
+
+- Merge the PR when all of these are true:
+  1. Shaka's verdict says APPROVED and names the PR's current head SHA (full or first 7 characters).
+  2. The PR head SHA has not changed since that verdict. Any new commit voids the approval; get a new Shaka review.
+  3. Required checks pass and the PR has no merge conflicts.
+- Shaka's verdict reaches you as text that Ruggie pastes or as a comment on the PR. Both count.
+- If the verdict says REWORK, fix the must-fix items, push, and request a new Shaka review. Do not merge.
+- After the merge, report the merge commit SHA and PR URL. Then stop.
+- This rule covers the merge only. A deploy or service restart still needs Ruggie to say so in that task.
+- It applies to the task or PR where Ruggie said it. "From now on, run off Shaka approval" makes it the standing rule until Ruggie says "ask me before merge".
