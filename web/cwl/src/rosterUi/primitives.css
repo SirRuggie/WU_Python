@@ -75,21 +75,24 @@
 }
 .roster-ui-status.is-success,
 .roster-ui-chip.is-success {
-  border-color: #37644c;
-  background: #1b3025;
-  color: var(--roster-success);
+  border-color: #00d659;
+  background: #00d659;
+  color: var(--wu-bg);
+  -webkit-text-fill-color: currentColor;
 }
 .roster-ui-status.is-warning,
 .roster-ui-chip.is-warning {
-  border-color: var(--wu-warning-border);
-  background: var(--wu-warning-surface);
-  color: var(--roster-warning);
+  border-color: var(--roster-warning);
+  background: var(--roster-warning);
+  color: var(--wu-bg);
+  -webkit-text-fill-color: currentColor;
 }
 .roster-ui-status.is-danger,
 .roster-ui-chip.is-danger {
-  border-color: #754040;
-  background: #321d1e;
-  color: var(--roster-danger);
+  border-color: var(--wu-brand-red);
+  background: var(--wu-brand-red);
+  color: #fff;
+  -webkit-text-fill-color: currentColor;
 }
 .roster-ui-status.is-info,
 .roster-ui-chip.is-info {
