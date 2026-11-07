@@ -4,6 +4,7 @@ import ConfirmDialog from "./ConfirmDialog";
 import ModerationCategoryCard from "./ModerationCategoryCard";
 import ModerationDestinationPicker from "./ModerationDestinationPicker";
 import ModerationHealth from "./ModerationHealth";
+import ModerationIgnoredBots from "./ModerationIgnoredBots";
 import ModerationIgnoreLists from "./ModerationIgnoreLists";
 import ModerationInviteNames from "./ModerationInviteNames";
 import {
@@ -142,6 +143,12 @@ export default function ModerationSettings({
     setDraft((current) => (current ? { ...current, ignores } : current));
     clearFeedback();
   };
+  const updateIgnoredBots = (ids: string[]) => {
+    setDraft((current) =>
+      current ? { ...current, ignored_bot_ids: ids } : current,
+    );
+    clearFeedback();
+  };
   const updateInviteName = (code: string, name: string) => {
     setDraft((current) => {
       if (!current) return current;
@@ -232,6 +239,7 @@ export default function ModerationSettings({
         preview_names: saved.preview_names,
         preview_cards: saved.preview_cards,
         forum_preview_cards: saved.forum_preview_cards,
+        bot_actors: result.bot_actors ?? saved.bot_actors,
       });
       setDraft(cloneSettings(result));
       setNotice("Moderation settings saved.");
@@ -392,6 +400,13 @@ export default function ModerationSettings({
               onChange={updateMain}
             />
           </div>
+
+          <ModerationIgnoredBots
+            ids={draft.ignored_bot_ids}
+            actors={saved.bot_actors || []}
+            disabled={busy}
+            onChange={updateIgnoredBots}
+          />
 
           <div className="moderation-category-list">
             {moderationRegistry.map((category) => (

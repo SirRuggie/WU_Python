@@ -52,6 +52,7 @@
 }
 
 .moderation-main-route,
+.moderation-ignored-bots,
 .moderation-category-card {
   min-width: 0;
   padding: 16px;
@@ -60,8 +61,19 @@
   background: #1c2028;
 }
 
-.moderation-main-route {
+.moderation-main-route,
+.moderation-ignored-bots {
   margin-bottom: 14px;
+}
+
+.moderation-ignored-bots h3 {
+  margin: 0;
+}
+
+.moderation-ignored-bots p {
+  margin: 6px 0 10px;
+  color: #c7d1de;
+  line-height: 1.5;
 }
 
 .moderation-category-list {

@@ -355,6 +355,24 @@ it("round-trips ignores and invite names through clone and save", async () => {
   expect(body.invite_names).toEqual({ abc123: "Spring ad", vanity: "Site" });
 });
 
+it("round-trips ignored bot ids and omits them when the response lacks them", async () => {
+  const draft = cloneSettings({
+    ...settings,
+    ignored_bot_ids: ["900000000000000001", 5 as unknown as string],
+  });
+  expect(draft.ignored_bot_ids).toEqual(["900000000000000001"]);
+  expect(changedSettings(settings, draft)).toBe(true);
+  expect("ignored_bot_ids" in cloneSettings(settings)).toBe(false);
+  transport.mockResolvedValue({ ...settings, revision: 8 });
+  await saveModerationSettings(settings, draft);
+  expect(transport.mock.calls[0][2].ignored_bot_ids).toEqual([
+    "900000000000000001",
+  ]);
+  transport.mockClear();
+  await saveModerationSettings(settings, cloneSettings(settings));
+  expect("ignored_bot_ids" in transport.mock.calls[0][2]).toBe(false);
+});
+
 it("fills missing keys when an old response lacks the new fields", () => {
   const old = {
     ...settings,
