@@ -203,29 +203,33 @@ export default function MemberEventRow({
         <span aria-hidden="true">{eventIcon}</span>
         {eventLabel}
       </span>
-      {isModeration && (
-        <div className="member-activity-moderation">
-          <p className="member-activity-by">
-            by{" "}
-            {item.moderator_id ? (
-              <DiscordIdentity
-                userId={item.moderator_id}
-                displayName={moderatorName}
-                resolvedMember={null}
-                variant="compact"
-                contact={false}
-              />
-            ) : (
-              "an unknown moderator"
-            )}
-          </p>
-          <p className="member-activity-reason">
-            “{item.reason?.trim() || "No reason given"}”
-          </p>
+      {(isModeration || roles || summary) && (
+        <div className="member-activity-body">
+          {isModeration && (
+            <div className="member-activity-moderation">
+              <p className="member-activity-by">
+                by{" "}
+                {item.moderator_id ? (
+                  <DiscordIdentity
+                    userId={item.moderator_id}
+                    displayName={moderatorName}
+                    resolvedMember={null}
+                    variant="compact"
+                    contact={false}
+                  />
+                ) : (
+                  "an unknown moderator"
+                )}
+              </p>
+              <p className="member-activity-reason">
+                “{item.reason?.trim() || "No reason given"}”
+              </p>
+            </div>
+          )}
+          {roles && <p className="member-activity-roles">{roles}</p>}
+          {summary && <p className="member-activity-roles">{summary}</p>}
         </div>
       )}
-      {roles && <p className="member-activity-roles">{roles}</p>}
-      {summary && <p className="member-activity-roles">{summary}</p>}
       <div className="member-activity-meta">
         <time className="member-activity-date" dateTime={item.occurred_at}>
           {formatDate(item.occurred_at)}

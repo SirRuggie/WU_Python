@@ -949,7 +949,7 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_transcript_with_marker_never_exceeds_the_cap_at_the_boundary(self):
         empty = len(transport.build_transcript([self.message(100, "")]).encode())
-        for width in sorted({*range(4990, 5011), 5120 - empty}):
+        for width in sorted({*range(4990, 5011), *range(5115 - empty, 5125 - empty)}):  # 5119 - empty is the old cap's edge.
             with self.subTest(width=width):
                 text = transport.build_transcript(self.message(i, "y" * width) for i in range(100, 160))
                 self.assertLessEqual(len(text.encode()), transport.TRANSCRIPT_LIMIT)

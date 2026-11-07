@@ -10,6 +10,7 @@ import { ApiError } from "./api";
 import {
   changedSettings,
   cloneSettings,
+  destinationName,
   effectiveDestination,
   eventTypes,
   hasInvalidDestination,
@@ -393,4 +394,13 @@ it("fills missing keys when an old response lacks the new fields", () => {
   expect(effectiveDestination(copy, "link")).toMatchObject({ source: "main" });
   copy.categories.messages.mode = "off";
   expect(effectiveDestination(copy, "link")).toMatchObject({ source: "off" });
+});
+
+it("names a missing channel without showing its id", () => {
+  const target = { channel_id: "999000111", forum_tag_id: null };
+  expect(destinationName(target, channels)).toBe("Unavailable channel");
+  expect(destinationName(target, channels)).not.toContain("999000111");
+  expect(destinationName({ ...target, channel_id: "main" }, channels)).toBe(
+    "#logs",
+  );
 });

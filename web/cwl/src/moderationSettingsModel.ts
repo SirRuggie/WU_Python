@@ -584,9 +584,7 @@ export function destinationName(
 ): string {
   if (!target?.channel_id) return "No channel set";
   const channel = channels?.find((item) => item.id === target.channel_id);
-  return channel
-    ? `#${channel.name}`
-    : `Channel ${target.channel_id} (unavailable)`;
+  return channel ? `#${channel.name}` : "Unavailable channel";
 }
 
 function invalidTarget(

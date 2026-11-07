@@ -119,3 +119,24 @@ it("renders the moderator and the quoted reason on separate lines", () => {
   expect(html).toContain('<p class="member-activity-reason">“Spam”</p>');
   expect(html).not.toContain("· “");
 });
+
+it("puts the moderator block and the detail line in one body, in order", () => {
+  const html = render({
+    ...base,
+    event_type: "timeout_add",
+    reason: "Cool off",
+    moderator_id: null,
+    details: { duration_seconds: 3600 },
+  });
+  const body = html.indexOf('class="member-activity-body"');
+  const moderation = html.indexOf('class="member-activity-moderation"');
+  const detail = html.indexOf('class="member-activity-roles"');
+  expect(body).toBeGreaterThan(-1);
+  expect(moderation).toBeGreaterThan(body);
+  expect(detail).toBeGreaterThan(moderation);
+  expect(html.match(/member-activity-body/g)).toHaveLength(1);
+  expect(html.indexOf("member-activity-meta")).toBeGreaterThan(detail);
+  expect(render({ ...base, event_type: "join", details: null })).not.toContain(
+    "member-activity-body",
+  );
+});
