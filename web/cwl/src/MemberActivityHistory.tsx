@@ -6,49 +6,31 @@ import {
   type FormEvent,
 } from "react";
 import { api, ApiError } from "./api";
-import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import "./MemberActivityHistory.css";
-import { eventTypes } from "./moderationSettingsModel";
+import MemberEventRow, { type MemberEvent } from "./MemberEventRow";
 
-type MemberEvent = {
-  id: string;
-  user_id: string;
-  event_type: "join" | "leave" | "kick" | "ban";
-  display_name?: string | null;
-  username?: string | null;
-  avatar_url?: string | null;
-  occurred_at: string;
-  joined_at?: string | null;
-  reason?: string | null;
-  moderator_id?: string | null;
-  moderator_name?: string | null;
-  delivery_status?: string | null;
-};
 type Response = { events: MemberEvent[]; next_cursor: string | null };
-type EventType = "all" | "join" | "leave" | "kick" | "ban";
+type EventType =
+  | "all"
+  | "join"
+  | "leave"
+  | "kick"
+  | "ban"
+  | "unban"
+  | "timeout_add"
+  | "timeout_remove"
+  | "member_update"
+  | "roles_added"
+  | "roles_removed"
+  | "invite_use";
 type Filters = { query: string; type: EventType; from: string; to: string };
-
-const deliveryLabels: Record<string, string> = {
-  queued: "Delivery queued",
-  sending: "Delivery in progress",
-  uncertain: "Delivery uncertain",
-  skipped: "Delivery skipped while disabled",
-};
-
-function formatDate(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "Date unavailable"
-    : date.toLocaleString(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      });
-}
 
 export default function MemberActivityHistory({
   active = true,
+  onViewMember,
 }: {
   active?: boolean;
+  onViewMember?: (userId: string) => void;
 }) {
   const [rows, setRows] = useState<MemberEvent[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -155,8 +137,9 @@ export default function MemberActivityHistory({
         <div>
           <h2 id="member-activity-title">Activity history</h2>
           <p>
-            Recent joins, leaves, kicks and bans. A kick or ban can also create
-            a separate leave event.
+            Recent joins, leaves, kicks, bans, timeouts, role changes and
+            profile changes. A kick or ban can also create a separate leave
+            event.
           </p>
         </div>
         <button
@@ -188,6 +171,13 @@ export default function MemberActivityHistory({
             <option value="leave">Leaves</option>
             <option value="kick">Kicks</option>
             <option value="ban">Bans</option>
+            <option value="unban">Unbans</option>
+            <option value="timeout_add">Timeouts</option>
+            <option value="timeout_remove">Timeout removals</option>
+            <option value="member_update">Profile changes</option>
+            <option value="roles_added">Roles added</option>
+            <option value="roles_removed">Roles removed</option>
+            <option value="invite_use">Invite uses</option>
           </select>
         </label>
         <details className="member-activity-date-range">
@@ -277,113 +267,13 @@ export default function MemberActivityHistory({
             className="member-activity-list"
             aria-label="Member join and leave history"
           >
-            {rows.map((item) => {
-              const username =
-                discordIdentityName(item.user_id, {
-                  id: item.user_id,
-                  username: item.username || undefined,
-                }) || "";
-              const name =
-                discordIdentityName(item.user_id, {
-                  id: item.user_id,
-                  display_name: item.display_name || undefined,
-                  username,
-                }) || "Discord member unavailable";
-              const moderatorName = discordIdentityName(
-                item.moderator_id,
-                null,
-                item.moderator_name,
-              );
-              const eventLabel = {
-                join: "Joined",
-                leave: "Left",
-                kick: "Kicked",
-                ban: "Banned",
-              }[item.event_type];
-              const eventIcon =
-                eventTypes.find((event) => event.key === item.event_type)
-                  ?.icon || "●";
-              const isModeration =
-                item.event_type === "kick" || item.event_type === "ban";
-              const deliveryText = item.delivery_status
-                ? deliveryLabels[item.delivery_status] || ""
-                : "";
-
-              return (
-                <li
-                  key={item.id}
-                  className={`member-activity-row is-${item.event_type}`}
-                >
-                  <div className="member-activity-identity">
-                    <DiscordIdentity
-                      userId={item.user_id}
-                      resolvedMember={{
-                        id: item.user_id,
-                        display_name: name,
-                        username: username || "",
-                        avatar_url: item.avatar_url,
-                      }}
-                      variant="compact"
-                      contact={false}
-                    />
-                  </div>
-                  <span className={`member-activity-kind ${item.event_type}`}>
-                    <span aria-hidden="true">{eventIcon}</span>
-                    {eventLabel}
-                  </span>
-                  {isModeration && (
-                    <p className="member-activity-moderation">
-                      by{" "}
-                      {item.moderator_id ? (
-                        <DiscordIdentity
-                          userId={item.moderator_id}
-                          displayName={moderatorName}
-                          resolvedMember={null}
-                          variant="compact"
-                          contact={false}
-                        />
-                      ) : (
-                        "an unknown moderator"
-                      )}
-                      {" · "}“{item.reason?.trim() || "No reason given"}”
-                    </p>
-                  )}
-                  <div className="member-activity-meta">
-                    <time
-                      className="member-activity-date"
-                      dateTime={item.occurred_at}
-                    >
-                      {formatDate(item.occurred_at)}
-                    </time>
-                    {deliveryText && (
-                      <small
-                        className={`member-activity-delivery ${item.delivery_status === "uncertain" ? "uncertain" : ""}`}
-                      >
-                        {deliveryText}
-                      </small>
-                    )}
-                  </div>
-                  <details className="member-activity-details">
-                    <summary>Details</summary>
-                    <p title={item.user_id}>Member: {name}</p>
-                    {item.joined_at && (
-                      <p>Member joined {formatDate(item.joined_at)}</p>
-                    )}
-                    {item.reason && <p>Reason: {item.reason}</p>}
-                    {item.moderator_id && (
-                      <p title={item.moderator_id}>
-                        Moderator: {moderatorName || "Unknown moderator"}
-                      </p>
-                    )}
-                    {deliveryText && <p>{deliveryText}</p>}
-                    {!item.joined_at &&
-                      !item.reason &&
-                      !item.moderator_id &&
-                      !deliveryText && <p>No additional details recorded.</p>}
-                  </details>
-                </li>
-              );
-            })}
+            {rows.map((item) => (
+              <MemberEventRow
+                key={item.id}
+                item={item}
+                onViewMember={onViewMember}
+              />
+            ))}
           </ul>
           {nextCursor && (
             <div className="member-activity-more">

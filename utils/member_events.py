@@ -13,14 +13,25 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from pymongo.write_concern import WriteConcern
 
-from .member_event_settings import normalize_settings
+from .member_event_settings import EVENT_TYPES, normalize_settings
 
 GUILD_ID = 644963518025826315
 MAX_AVATAR_BYTES = 256 * 1024
 ID_PATTERN = re.compile(r"\d{13}:[0-9a-f]{32}\Z")
-EVENT_TYPES = ("join", "leave", "kick", "ban")
+# EVENT_TYPES covers every deliverable log. Only HISTORY_TYPES are searchable;
+# link and invite rows are delivery receipts, and IDENTITY_TYPES carry avatars.
+HISTORY_TYPES = ("join", "leave", "kick", "ban", "unban", "timeout_add", "timeout_remove",
+                 "member_update", "roles_added", "roles_removed", "invite_use")
+# Days a row lives before the Mongo TTL index removes it; absent kinds are kept.
+RETENTION_DAYS = {"link": 30, "message_delete": 30, "message_edit": 30, "message_bulk_delete": 30,
+                  "invite_create": 90, "invite_delete": 90, "invite_use": 90}
+IDENTITY_TYPES = ("join", "leave", "kick", "ban")
 DEFAULT_CHANNEL_ID = 1004519991648997447
 SETTINGS_ID = f"member-events-settings:{GUILD_ID}"
+BOT_ACTORS_ID = f"member-events-bot-actors:{GUILD_ID}"
+AUDIT_CURSOR_ID = f"member-events-audit-cursor:{GUILD_ID}"
+MAX_BOT_ACTORS = 100
+AUDIT_MARKER_TTL = timedelta(hours=48)
 AVATAR_HASH = re.compile(r"(?:a_)?[0-9a-fA-F]{32}\Z")
 
 
@@ -37,7 +48,7 @@ def event_key(guild_id: int, user_id: int, kind: str, at: datetime, joined_at=No
 def safe_text(value: object, limit: int = 120) -> str:
     """Render untrusted Discord names as inert V2 Markdown text."""
     value = str(value or "").replace("\n", " ").replace("\r", " ").strip()[:limit]
-    value = "".join(ch for ch in value if ch.isprintable())
+    value = "".join(ch for ch in value if ch.isprintable() or ch == "\u200d")
     return re.sub(r"([\\`*_~|>\[\]()])", r"\\\1", value).replace("<", "\\<").replace("@", "@\u200b")
 
 
@@ -86,6 +97,10 @@ class MemberEventStore:
         await self.collection.create_index([("guild_id", 1), ("_id", -1)], name="member_event_recent")
         await self.collection.create_index([("guild_id", 1), ("user_id", 1), ("_id", -1)], name="member_event_user")
         await self.collection.create_index([("guild_id", 1), ("delivery_status", 1), ("_id", 1)], name="member_event_queue")
+        await self.collection.create_index("expires_at", expireAfterSeconds=0, name="member_event_expiry")
+        await self.collection.create_index(
+            [("guild_id", 1), ("audit_entry_id", 1)], name="member_event_audit_entry",
+            partialFilterExpression={"audit_entry_id": {"$type": "string"}})
 
     @staticmethod
     def default_settings():
@@ -106,7 +121,10 @@ class MemberEventStore:
         if "events" not in settings:
             settings = {"events": settings}
         normalized = normalize_settings({"revision": revision, **settings}, self.default_settings())
-        values = {key: normalized[key] for key in ("schema_version", "main", "categories", "events", "ignores")}
+        values = {key: normalized[key] for key in (
+            "schema_version", "main", "categories", "events", "ignores", "invite_names")}
+        if normalized["ignored_bot_ids"] is not None:  # Absent keeps the own-bot default.
+            values["ignored_bot_ids"] = normalized["ignored_bot_ids"]
         if revision == 0:
             try:
                 await self.collection.insert_one({"_id": SETTINGS_ID, "event_key": SETTINGS_ID,
@@ -122,6 +140,125 @@ class MemberEventStore:
         if not row:
             raise SettingsConflict("Member log settings changed")
         return normalize_settings(row, self.default_settings())
+
+    async def bot_actors(self) -> dict:
+        row = await self.collection.find_one({"_id": BOT_ACTORS_ID})
+        bots = row.get("bots") if row else None
+        return dict(bots) if isinstance(bots, dict) else {}
+
+    async def note_bot_actor(self, user_id, name: str, now: datetime | None = None):
+        """Remember a bot seen as an audit actor; keeps the 100 most recent."""
+        now = now or datetime.now(timezone.utc)
+        bots = await self.bot_actors()
+        uid, name = str(user_id), str(name or user_id)[:80]
+        seen = bots.get(uid)
+        if seen and seen.get("name") == name and isinstance(seen.get("last_seen"), datetime) and (
+                now - seen["last_seen"].replace(tzinfo=seen["last_seen"].tzinfo or timezone.utc)
+        ) < timedelta(hours=1):
+            return  # Fresh enough; avoid a write per audit entry.
+        bots.pop(uid, None)
+        bots[uid] = {"name": name, "last_seen": now}
+        ordered = sorted(bots.items(), key=lambda item: item[1]["last_seen"].replace(
+            tzinfo=item[1]["last_seen"].tzinfo or timezone.utc))
+        bots = dict(ordered[-MAX_BOT_ACTORS:])
+        await self._write_state(BOT_ACTORS_ID, {"bots": bots})
+
+    async def audit_cursor(self) -> int | None:
+        row = await self.collection.find_one({"_id": AUDIT_CURSOR_ID})
+        if not row:
+            return None
+        try:
+            return int(row["last_audit_num"]) if row.get("last_audit_num") is not None else int(row["last_audit_id"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    async def advance_audit_cursor(self, entry_id, now: datetime | None = None):
+        """Move the newest-processed audit entry forward; never backward.
+
+        The id is kept as an integer in ``last_audit_num`` so Mongo compares it
+        numerically, and each move is one filtered update, safe when advances race.
+        """
+        number = int(entry_id)
+        values = {"last_audit_num": number, "last_audit_id": str(number),
+                  "updated_at": now or datetime.now(timezone.utc)}
+        for _ in range(5):
+            if (await self.collection.update_one(
+                    {"_id": AUDIT_CURSOR_ID, "last_audit_num": {"$lt": number}}, {"$set": values})).matched_count:
+                return
+            row = await self.collection.find_one({"_id": AUDIT_CURSOR_ID})
+            if row is None:
+                try:
+                    await self.collection.insert_one({"_id": AUDIT_CURSOR_ID, "event_key": AUDIT_CURSOR_ID,
+                                                      "guild_id": GUILD_ID, **values})
+                    return
+                except DuplicateKeyError:
+                    continue
+            if row.get("last_audit_num") is not None:
+                return  # Already at or past this entry.
+            try:  # Older document with only the string id: adopt it, then move on.
+                legacy = int(row["last_audit_id"])
+            except (KeyError, TypeError, ValueError):
+                legacy = 0
+            await self.collection.update_one(
+                {"_id": AUDIT_CURSOR_ID, "last_audit_num": {"$exists": False}},
+                {"$set": {**values, "last_audit_num": max(number, legacy), "last_audit_id": str(max(number, legacy))}})
+
+    @staticmethod
+    def _audit_marker_id(guild_id: int, audit_entry_id) -> str:
+        return f"member-events-audit:{guild_id}:{int(audit_entry_id)}"
+
+    async def audit_handled(self, guild_id: int, audit_entry_id) -> bool:
+        """True once this audit entry was fully handled (see ``mark_audit_handled``)."""
+        return bool(await self.collection.find_one(
+            {"_id": self._audit_marker_id(guild_id, audit_entry_id)}, {"_id": 1}))
+
+    async def audit_row_exists(self, guild_id: int, audit_entry_id) -> bool:
+        """True when a persisted log row carries this audit entry id (the second replay guard).
+
+        Ban rows and ban-audit facts are left out: the ban handler finishes them idempotently.
+        The ``$type`` test lets the planner use the partial ``member_event_audit_entry`` index.
+        """
+        return bool(await self.collection.find_one(
+            {"guild_id": guild_id, "audit_entry_id": {"$eq": str(int(audit_entry_id)), "$type": "string"},
+             "event_type": {"$exists": True, "$ne": "ban"}}, {"_id": 1}))
+
+    async def mark_audit_handled(self, guild_id: int, audit_entry_id, now: datetime | None = None):
+        """Record that an audit entry is done, whatever its outcome, so a replay skips it.
+
+        Written after every row of the entry. The marker has no event_type, so it never
+        reaches history or counts, and the expiry index removes it after 48 hours.
+        """
+        now = now or datetime.now(timezone.utc)
+        key = self._audit_marker_id(guild_id, audit_entry_id)
+        values = {"handled_at": now, "expires_at": now + AUDIT_MARKER_TTL}
+        row = await self.collection.find_one_and_update({"_id": key}, {"$set": values})
+        if row is None:
+            try:
+                await self.collection.insert_one({"_id": key, "event_key": key, **values})
+            except DuplicateKeyError:
+                await self.collection.update_one({"_id": key}, {"$set": values})
+
+    async def app_add_posted(self, guild_id: int, application_id: str, at: datetime, window: timedelta):
+        """True when an "App added" row for this application sits within ``window`` of ``at``."""
+        rows = await self.collection.find(
+            {"guild_id": guild_id, "event_type": "app",
+             "occurred_at": {"$gte": at - window, "$lte": at + window}},
+        ).limit(50).to_list(length=50)
+        for row in rows:
+            details = row.get("details") or {}
+            if details.get("action") == "added" and details.get("application_id") == application_id:
+                return True
+        return False
+
+    async def _write_state(self, state_id: str, values: dict):
+        """State docs carry no event_type or expires_at: never in history, never expired."""
+        row = await self.collection.find_one_and_update({"_id": state_id}, {"$set": values})
+        if row is None:
+            try:
+                await self.collection.insert_one({"_id": state_id, "event_key": state_id,
+                                                  "guild_id": GUILD_ID, **values})
+            except DuplicateKeyError:
+                await self.collection.update_one({"_id": state_id}, {"$set": values})
 
     async def reserve_test(self, kind: str, staff_id: str, now: datetime):
         """Atomically rate-limit a test without touching event history."""
@@ -161,12 +298,14 @@ class MemberEventStore:
                       forum_tag_id: int | None = None, reason: str | None = None,
                       moderator_id: int | None = None, audit_entry_id: int | None = None,
                       episode: int | None = None, account_created_at: datetime | None = None,
-                      member_count: int | None = None, roles: list[str] | None = None):
+                      member_count: int | None = None, roles: list[str] | None = None,
+                      details: dict | None = None, dedupe_key: str | None = None):
         if guild_id != GUILD_ID or kind not in EVENT_TYPES:
             raise ValueError("Member event is outside the configured guild")
         if avatar is not None and (len(avatar) > MAX_AVATAR_BYTES or avatar_type not in ("image/png", "image/jpeg", "image/gif", "image/webp")):
             raise ValueError("Avatar does not meet the storage bounds")
-        key = (f"{guild_id}:audit:{audit_entry_id}" if audit_entry_id else
+        key = (dedupe_key or
+               (f"{guild_id}:audit:{audit_entry_id}" if audit_entry_id else None) or
                event_key(guild_id, user_id, kind, at, joined_at if kind in ("join", "leave") else None))
         if kind == "ban" and episode is not None:
             key = f"{guild_id}:ban:{user_id}:{episode}"
@@ -183,8 +322,11 @@ class MemberEventStore:
             "roles": [str(role)[:100] for role in roles[:30]] if isinstance(roles, list) else None,
             "moderator_id": str(moderator_id) if moderator_id else None,
             "audit_entry_id": str(audit_entry_id) if audit_entry_id else None,
+            "details": details if isinstance(details, dict) else None,
             "delivery_status": "capturing", "message_id": None,
         }
+        if kind in RETENTION_DAYS:
+            row["expires_at"] = at + timedelta(days=RETENTION_DAYS[kind])
         try:
             await self.collection.insert_one(row)
         except DuplicateKeyError:
@@ -199,6 +341,34 @@ class MemberEventStore:
         )
         value = row.get("joined_at") if row else None
         return value if isinstance(value, datetime) else None
+
+    async def count_joins(self, guild_id: int, user_id: int) -> int:
+        return await self.collection.count_documents(
+            {"guild_id": guild_id, "user_id": str(user_id), "event_type": "join"})
+
+    async def save_details(self, row_id: str, details: dict):
+        await self.collection.update_one(
+            {"_id": row_id, "delivery_status": "capturing"}, {"$set": {"details": details}})
+
+    async def enrich_unban(self, event_key: str, moderator_id: int | None, reason: str | None,
+                           audit_entry_id: int):
+        """Add the audit facts to an unsent unban whose gateway event came first."""
+        values = {"audit_entry_id": str(audit_entry_id)}
+        if moderator_id:
+            values["moderator_id"] = str(moderator_id)
+        if reason:
+            values["reason"] = str(reason)[:500]
+        result = await self.collection.update_one(
+            {"event_key": event_key, "event_type": "unban", "audit_entry_id": None,
+             "delivery_status": {"$in": ["capturing", "queued"]}},
+            {"$set": values},
+        )
+        return bool(result.matched_count)
+
+    async def discard_unsent(self, event_key: str):
+        """Drop a row that was never sent, for an event that must not be logged."""
+        await self.collection.delete_one(
+            {"event_key": event_key, "delivery_status": {"$in": ["capturing", "queued"]}})
 
     async def ban_episode(self, guild_id: int, user_id: int, *, banned: bool):
         key = f"ban-state:{guild_id}:{user_id}"
@@ -226,7 +396,7 @@ class MemberEventStore:
     async def ban_audit_exists(self, guild_id: int, audit_entry_id: int):
         return bool(await self.collection.find_one(
             {"guild_id": guild_id, "event_type": "ban",
-             "audit_entry_id": str(audit_entry_id)}, {"_id": 1},
+             "audit_entry_id": {"$eq": str(int(audit_entry_id)), "$type": "string"}}, {"_id": 1},
         ))
 
     async def note_ban_audit(self, guild_id: int, user_id: int, audit_entry_id: int):
@@ -299,7 +469,7 @@ class MemberEventStore:
 
     async def latest_identity(self, guild_id: int, user_id: int):
         return await self.collection.find_one(
-            {"guild_id": guild_id, "user_id": str(user_id), "event_type": {"$in": EVENT_TYPES}},
+            {"guild_id": guild_id, "user_id": str(user_id), "event_type": {"$in": IDENTITY_TYPES}},
             {"display_name": 1, "username": 1, "avatar": 1, "avatar_type": 1,
              "joined_at": 1, "occurred_at": 1, "account_created_at": 1,
              "member_count": 1, "roles": 1}, sort=[("_id", -1)],
@@ -431,7 +601,7 @@ class MemberEventStore:
         )
 
     async def search(self, *, guild_id: int, query="", kind="", start=None, end=None, before=None, limit=50):
-        filters = {"guild_id": guild_id, "event_type": kind if kind else {"$in": EVENT_TYPES}}
+        filters = {"guild_id": guild_id, "event_type": kind if kind else {"$in": HISTORY_TYPES}}
         if before:
             filters["_id"] = {"$lt": before}
         if start or end:
@@ -465,6 +635,8 @@ def public_event(row: dict, *, api_prefix: str) -> dict:
         "occurred_at": at, "delivery_status": "queued" if row["delivery_status"] == "capturing" else row["delivery_status"],
         "joined_at": row.get("joined_at").replace(tzinfo=row["joined_at"].tzinfo or timezone.utc).isoformat() if isinstance(row.get("joined_at"), datetime) else None,
         "reason": row.get("reason"), "moderator_id": row.get("moderator_id"),
+        "details": {k: v for k, v in row["details"].items() if k != "transcript"}
+        if isinstance(row.get("details"), dict) else row.get("details"),
     }
 
 

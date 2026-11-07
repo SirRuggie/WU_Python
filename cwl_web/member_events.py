@@ -3,18 +3,22 @@ from __future__ import annotations
 
 import asyncio
 import time
+import unicodedata
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 
 from aiohttp import web
 
 from utils.member_events import (
-    GUILD_ID, ID_PATTERN, MemberEventStore, SettingsConflict,
+    GUILD_ID, HISTORY_TYPES, ID_PATTERN, MemberEventStore, SettingsConflict,
     TestRateLimited, public_event,
 )
 from utils.member_event_settings import (
-    CATEGORIES, EVENT_TYPES, SCHEMA_VERSION, effective_event, normalize_settings,
+    CATEGORIES, EVENT_TYPES, INVITE_CODE, LEGACY_EVENT_TYPES, MAX_IGNORE_IDS,
+    MAX_INVITE_NAMES, SCHEMA_VERSION, checked_ignored_bot_ids, default_ignores, effective_event,
+    normalize_settings, resolve_ignored_bots,
 )
+from utils.member_invites import MemberInviteStore, public_invite
 from .server_management import API, mongo, require_manage
 
 PREFIX = API + "/member-events"
@@ -39,8 +43,8 @@ async def listing(request):
     raw_limit = request.query.get("limit", "50")
     if len(q) > 80 or any(ord(c) < 32 for c in q):
         raise web.HTTPBadRequest(text="Keep searches to 80 printable characters.")
-    if kind not in ("", "join", "leave", "kick", "ban"):
-        raise web.HTTPBadRequest(text="Select join, leave, kick or ban.")
+    if kind not in ("", *HISTORY_TYPES):
+        raise web.HTTPBadRequest(text="Select a valid event type.")
     if before and not ID_PATTERN.fullmatch(before):
         raise web.HTTPBadRequest(text="Invalid page cursor.")
     try:
@@ -58,14 +62,18 @@ async def listing(request):
             guild_id=GUILD_ID, query=q, kind=kind, start=start, end=end,
             before=before or None, limit=limit,
         )
-    from .moderation_names import resolve_names
-    names = await resolve_names(request, [row.get("moderator_id") for row in rows])
-    payload = {"events": [{**public_event(row, api_prefix=PREFIX),
-                           "moderator_name": names.get(str(row.get("moderator_id")))} for row in rows],
-               "next_cursor": cursor}
+    payload = {"events": await public_events_named(request, rows), "next_cursor": cursor}
     response = web.json_response(payload)
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+async def public_events_named(request, rows):
+    """Public rows with moderator display names resolved; shared by history and timeline."""
+    from .moderation_names import resolve_names
+    names = await resolve_names(request, [row.get("moderator_id") for row in rows])
+    return [{**public_event(row, api_prefix=PREFIX),
+             "moderator_name": names.get(str(row.get("moderator_id")))} for row in rows]
 
 
 async def avatar(request):
@@ -94,7 +102,23 @@ async def avatar(request):
     return response
 
 
-routes = [web.get(PREFIX, listing), web.get(PREFIX + "/{event_id}/avatar", avatar)]
+async def invites(request):
+    await require_manage(request, "roles")
+    async with mongo(request) as db:
+        saved = await MemberEventStore(db.member_events).settings()
+        rows = await MemberInviteStore(db.member_invites).load(GUILD_ID)
+    items = [public_invite(row, saved["invite_names"]) for row in rows.values()]
+    items.sort(key=lambda item: (-item["uses"], item["code"]))
+    stamps = [row["updated_at"].replace(tzinfo=row["updated_at"].tzinfo or timezone.utc)
+              for row in rows.values() if isinstance(row.get("updated_at"), datetime)]
+    response = web.json_response({"invites": items,
+                                  "updated_at": max(stamps).isoformat() if stamps else None})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+routes = [web.get(PREFIX, listing), web.get(PREFIX + "/invites", invites),
+          web.get(PREFIX + "/{event_id}/avatar", avatar)]
 
 
 async def _bot_permissions(request):
@@ -180,11 +204,40 @@ async def destination(request):
     return response
 
 
+async def _own_bot(request):
+    """This bot's {id, username} from Discord; None when the lookup fails."""
+    from .server_management import discord
+    try:
+        me = await discord(request, "GET", "/users/@me")
+        return {"id": str(me["id"]), "username": str(me.get("global_name") or me.get("username") or me["id"])}
+    except Exception:
+        return None
+
+
+def _bot_actors(stored, own):
+    """Bots seen as audit actors plus this bot, sorted by name."""
+    actors = {str(uid): {"id": str(uid), "name": str(item.get("name") or uid),
+                         "last_seen": item["last_seen"].replace(tzinfo=item["last_seen"].tzinfo or timezone.utc).isoformat()
+                         if isinstance(item.get("last_seen"), datetime) else None}
+              for uid, item in stored.items() if isinstance(item, dict)}
+    if own and own["id"] not in actors:
+        actors[own["id"]] = {"id": own["id"], "name": own["username"], "last_seen": None}
+    return sorted(actors.values(), key=lambda actor: (actor["name"].casefold(), actor["id"]))
+
+
 async def settings(request):
     staff = await require_manage(request, "roles")
     async with mongo(request) as db:
-        saved = normalize_settings(await MemberEventStore(db.member_events).settings(),
-                                   MemberEventStore.default_settings())
+        store = MemberEventStore(db.member_events)
+        saved = normalize_settings(await store.settings(), MemberEventStore.default_settings())
+        stored_actors = await store.bot_actors()
+    own = await _own_bot(request)
+    # Resolved on read; a row that never saved the list is left untouched.
+    if own is None and saved.get("ignored_bot_ids") is None:
+        saved.pop("ignored_bot_ids", None)  # Unknown default: omit it rather than show "nobody".
+    else:
+        saved["ignored_bot_ids"] = resolve_ignored_bots(saved, own["id"] if own else None)
+    bot_actors = _bot_actors(stored_actors, own)
     try:
         from .server_management import discord
         actor, effective = await _bot_permissions(request)
@@ -216,14 +269,28 @@ async def settings(request):
         options = None
         channels_available = False
         warning = "Discord channel inventory is unavailable; saved settings are shown."
+    try:
+        from .server_management import discord
+        rows = await discord(request, "GET", f"/guilds/{GUILD_ID}/roles")
+        roles = sorted(({"id": str(row["id"]), "name": str(row.get("name") or ""),
+                         "color": int(row.get("color") or 0), "position": int(row.get("position") or 0),
+                         "managed": bool(row.get("managed"))}
+                        for row in rows if str(row.get("id")) != str(GUILD_ID)),
+                       key=lambda row: row["position"], reverse=True)
+        roles_available = True
+    except (web.HTTPException, KeyError, TypeError, ValueError, AttributeError):
+        roles = None
+        roles_available = False
     from utils.member_event_cards import build_card, build_forum_message, sample_row
     preview_cards = {kind: build_card(sample_row(kind)) for kind in EVENT_TYPES}
     forum_preview_cards = {kind: build_forum_message(sample_row(kind)) for kind in EVENT_TYPES}
     sample = sample_row("kick")
     preview_names = {sample["user_id"]: sample["display_name"], sample["moderator_id"]: "Sample moderator"}
-    response = web.json_response({**saved, "preview_names": preview_names, "preview_cards": preview_cards,
+    response = web.json_response({**saved, "bot_actors": bot_actors,
+                                  "preview_names": preview_names, "preview_cards": preview_cards,
                                   "forum_preview_cards": forum_preview_cards, "channels": options,
-                                  "channels_available": channels_available, "warning": warning})
+                                  "channels_available": channels_available, "warning": warning,
+                                  "roles": roles, "roles_available": roles_available})
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -245,14 +312,59 @@ def _destination(value, label):
     return {"channel_id": channel_id, "forum_tag_id": tag_id}
 
 
+def _ignores(value):
+    if value == {}:  # Clients from before link ignores existed.
+        return default_ignores()
+    if not isinstance(value, dict) or set(value) != set(default_ignores()):
+        raise web.HTTPBadRequest(text="Invalid link ignore lists.")
+    checked = {}
+    for key in default_ignores():
+        ids = value[key]
+        if not isinstance(ids, list) or len(ids) > MAX_IGNORE_IDS:
+            raise web.HTTPBadRequest(text=f"Select at most {MAX_IGNORE_IDS} ignored IDs per list.")
+        for item in ids:
+            if not isinstance(item, str) or not item.isascii() or not item.isdigit() or not 17 <= len(item) <= 20:
+                raise web.HTTPBadRequest(text="Invalid ignored ID.")
+        checked[key] = list(dict.fromkeys(ids))
+    return checked
+
+
+def _name_ok(name):
+    """1 to 40 characters; no control or line separators; format characters only as ZWJ."""
+    if not 1 <= len(name) <= 40:
+        return False
+    return all(
+        (cat := unicodedata.category(char)) not in ("Cc", "Zl", "Zp") and (cat != "Cf" or char == "\u200d")
+        for char in name
+    )
+
+
+def _invite_names(value):
+    if not isinstance(value, dict) or len(value) > MAX_INVITE_NAMES:
+        raise web.HTTPBadRequest(text=f"Name at most {MAX_INVITE_NAMES} invites.")
+    checked = {}
+    for code, name in value.items():
+        if not isinstance(code, str) or not INVITE_CODE.fullmatch(code):
+            raise web.HTTPBadRequest(text="Invalid invite code.")
+        if not isinstance(name, str):
+            raise web.HTTPBadRequest(text="Invalid invite name.")
+        name = name.strip()
+        if not name:  # An empty name removes the entry.
+            continue
+        if not _name_ok(name):
+            raise web.HTTPBadRequest(text="Invite names use 1 to 40 characters without control characters.")
+        checked[code] = name
+    return checked
+
+
 def _checked_settings(body):
     if not isinstance(body, dict) or type(body.get("revision")) is not int or body["revision"] < 0:
         raise web.HTTPBadRequest(text="Select a valid settings revision.")
     if set(body) == {"revision", "events"}:  # Original API clients.
         legacy = body["events"]
-        if not isinstance(legacy, dict) or set(legacy) != set(EVENT_TYPES):
+        if not isinstance(legacy, dict) or set(legacy) not in (set(LEGACY_EVENT_TYPES), set(EVENT_TYPES)):
             raise web.HTTPBadRequest(text="Select all four event settings.")
-        for kind in EVENT_TYPES:
+        for kind in legacy:
             value = legacy[kind]
             if not isinstance(value, dict) or set(value) != {"enabled", "channel_id", "forum_tag_id"}:
                 raise web.HTTPBadRequest(text=f"Invalid {kind} settings.")
@@ -261,16 +373,23 @@ def _checked_settings(body):
             _destination({"channel_id": value["channel_id"],
                           "forum_tag_id": value["forum_tag_id"]}, kind)
         body = normalize_settings(body, MemberEventStore.default_settings())
-    if set(body) == {"revision", "main", "categories", "events", "ignores"}:
-        body = {"schema_version": SCHEMA_VERSION, **body}
-    if set(body) != {"schema_version", "revision", "main", "categories", "events", "ignores"}:
+    body = {"schema_version": SCHEMA_VERSION, **body}
+    required = {"schema_version", "revision", "main", "categories", "events", "ignores", "invite_names"}
+    if not required <= set(body) <= required | {"ignored_bot_ids"}:  # Older clients omit the bot list.
         raise web.HTTPBadRequest(text="Select all member log settings.")
-    if body["schema_version"] != SCHEMA_VERSION or body["ignores"] != {}:
+    if body["schema_version"] != SCHEMA_VERSION:
         raise web.HTTPBadRequest(text="Unsupported member log settings schema.")
+    try:  # Absent or null leaves the saved bot list (or its own-bot default) alone.
+        ignored_bots = (checked_ignored_bot_ids(body["ignored_bot_ids"])
+                        if body.get("ignored_bot_ids") is not None else None)
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from None
+    ignores = _ignores(body["ignores"])
+    invite_names = _invite_names(body["invite_names"])
     main = _destination(body["main"], "main")
     categories = body["categories"]
     if not isinstance(categories, dict) or set(categories) != set(CATEGORIES):
-        raise web.HTTPBadRequest(text="Select both member log categories.")
+        raise web.HTTPBadRequest(text="Select all member log categories.")
     checked_categories = {}
     for category in CATEGORIES:
         value = categories[category]
@@ -282,7 +401,7 @@ def _checked_settings(body):
             {"channel_id": value["channel_id"], "forum_tag_id": value["forum_tag_id"]}, category)}
     events = body["events"]
     if not isinstance(events, dict) or set(events) != set(EVENT_TYPES):
-        raise web.HTTPBadRequest(text="Select all four event settings.")
+        raise web.HTTPBadRequest(text="Select all event settings.")
     checked_events = {}
     for kind in EVENT_TYPES:
         value = events[kind]
@@ -294,7 +413,7 @@ def _checked_settings(body):
             {"channel_id": value["channel_id"], "forum_tag_id": value["forum_tag_id"]}, kind)}
     return {"schema_version": SCHEMA_VERSION, "revision": body["revision"],
             "main": main, "categories": checked_categories, "events": checked_events,
-            "ignores": {}}
+            "ignores": ignores, "invite_names": invite_names, "ignored_bot_ids": ignored_bots}
 
 
 async def _validate_destination(request, kind, resolved, actor, effective, staff):
@@ -337,6 +456,9 @@ async def save_settings(request):
             saved = await MemberEventStore(db.member_events).save_settings(checked["revision"], checked)
         except SettingsConflict:
             raise web.HTTPConflict(text="Member log settings changed. Reload before saving.") from None
+    if saved.get("ignored_bot_ids") is None:  # Client left it unsaved: show the default in force.
+        own = await _own_bot(request)
+        saved["ignored_bot_ids"] = resolve_ignored_bots(saved, own["id"] if own else None)
     response = web.json_response(saved)
     response.headers["Cache-Control"] = "no-store"
     return response

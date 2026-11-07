@@ -1,7 +1,90 @@
 import { api, ApiError } from "./api";
+import type { RoleChoice } from "./RolePicker";
 
-export type ModerationKind = "join" | "leave" | "kick" | "ban";
-export type CategoryKind = "members" | "moderation";
+export type ModerationKind =
+  | "join"
+  | "leave"
+  | "member_update"
+  | "kick"
+  | "ban"
+  | "unban"
+  | "timeout_add"
+  | "timeout_remove"
+  | "role_create"
+  | "role_update"
+  | "role_delete"
+  | "roles_added"
+  | "roles_removed"
+  | "link"
+  | "message_delete"
+  | "message_edit"
+  | "message_bulk_delete"
+  | "channel_create"
+  | "channel_update"
+  | "channel_delete"
+  | "channel_permissions"
+  | "thread_delete"
+  | "thread_lock"
+  | "server_update"
+  | "emoji"
+  | "sticker"
+  | "app"
+  | "webhook"
+  | "automod"
+  | "invite_create"
+  | "invite_delete"
+  | "invite_use";
+export type CategoryKind =
+  | "members"
+  | "moderation"
+  | "roles"
+  | "messages"
+  | "channels"
+  | "server"
+  | "invites";
+const categoryKinds: CategoryKind[] = [
+  "members",
+  "moderation",
+  "roles",
+  "messages",
+  "channels",
+  "server",
+  "invites",
+];
+const moderationKinds: ModerationKind[] = [
+  "join",
+  "leave",
+  "member_update",
+  "kick",
+  "ban",
+  "unban",
+  "timeout_add",
+  "timeout_remove",
+  "role_create",
+  "role_update",
+  "role_delete",
+  "roles_added",
+  "roles_removed",
+  "link",
+  "message_delete",
+  "message_edit",
+  "message_bulk_delete",
+  "channel_create",
+  "channel_update",
+  "channel_delete",
+  "channel_permissions",
+  "thread_delete",
+  "thread_lock",
+  "server_update",
+  "emoji",
+  "sticker",
+  "app",
+  "webhook",
+  "automod",
+  "invite_create",
+  "invite_delete",
+  "invite_use",
+];
 export type RouteTarget = {
   channel_id: string | null;
   forum_tag_id: string | null;
@@ -14,11 +97,32 @@ export type EventConfig = RouteTarget & {
 };
 export type EventSettings = Record<ModerationKind, EventConfig>;
 export type CategorySettings = Record<CategoryKind, CategoryConfig>;
+export type LinkIgnores = { channel_ids: string[]; role_ids: string[] };
 export type SettingsDraft = {
   main: RouteTarget;
   categories: CategorySettings;
   events: EventSettings;
-  ignores: Record<string, never>;
+  ignores: LinkIgnores;
+  invite_names: Record<string, string>;
+  /** Absent when the backend did not send it; the block is then unavailable. */
+  ignored_bot_ids?: string[];
+};
+export type BotActor = { id: string; name: string; last_seen: string | null };
+export type InviteRow = {
+  code: string;
+  name: string | null;
+  inviter_id: string | null;
+  inviter_name: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  uses: number;
+  max_uses: number | null;
+  expires_at: string | null;
+  vanity: boolean;
+};
+export type InvitesResponse = {
+  invites: InviteRow[];
+  updated_at: string | null;
 };
 export type Destination = {
   id: string;
@@ -34,7 +138,10 @@ export type SettingsResponse = SettingsDraft & {
   revision: number;
   channels?: Destination[] | null;
   channels_available?: boolean;
+  roles?: RoleChoice[] | null;
+  roles_available?: boolean;
   warning?: string | null;
+  bot_actors?: BotActor[] | null;
   preview_names?: Record<string, string>;
   preview_cards?: Partial<Record<ModerationKind, unknown>>;
   forum_preview_cards?: Partial<Record<ModerationKind, unknown>>;
@@ -49,7 +156,7 @@ type RegistryEvent = {
   supported: boolean;
 };
 export const moderationRegistry: {
-  key: CategoryKind | "messages" | "server";
+  key: CategoryKind;
   label: string;
   icon: string;
   events: RegistryEvent[];
@@ -76,28 +183,12 @@ export const moderationRegistry: {
         supported: true,
       },
       {
-        key: "nickname",
-        label: "Nickname changes",
+        key: "member_update",
+        label: "Profile changes",
         icon: "✏️",
         color: "#398fc9",
-        explanation: "",
-        supported: false,
-      },
-      {
-        key: "roles_added",
-        label: "Roles added",
-        icon: "🏷️",
-        color: "#398fc9",
-        explanation: "",
-        supported: false,
-      },
-      {
-        key: "roles_removed",
-        label: "Roles removed",
-        icon: "🏷️",
-        color: "#398fc9",
-        explanation: "",
-        supported: false,
+        explanation: "Nickname, name or avatar changes.",
+        supported: true,
       },
     ],
   },
@@ -127,24 +218,71 @@ export const moderationRegistry: {
         label: "Unbans",
         icon: "🔓",
         color: "#2ba66a",
-        explanation: "",
-        supported: false,
+        explanation: "Member unbanned.",
+        supported: true,
       },
       {
         key: "timeout_add",
         label: "Timeouts",
         icon: "⏱️",
         color: "#e69935",
-        explanation: "",
-        supported: false,
+        explanation: "Member timed out.",
+        supported: true,
       },
       {
         key: "timeout_remove",
         label: "Timeout removals",
         icon: "✅",
         color: "#2ba66a",
-        explanation: "",
-        supported: false,
+        explanation: "Timeout removed by a moderator.",
+        supported: true,
+      },
+    ],
+  },
+  {
+    key: "roles",
+    label: "Roles",
+    icon: "🏷️",
+    events: [
+      {
+        key: "role_create",
+        label: "Roles created",
+        icon: "🏷️",
+        color: "#2ba66a",
+        explanation: "Role created.",
+        supported: true,
+      },
+      {
+        key: "role_update",
+        label: "Roles updated",
+        icon: "🏷️",
+        color: "#398fc9",
+        explanation: "Role name, color or permissions changed.",
+        supported: true,
+      },
+      {
+        key: "role_delete",
+        label: "Roles deleted",
+        icon: "🏷️",
+        color: "#d34a4a",
+        explanation: "Role deleted.",
+        supported: true,
+      },
+      {
+        key: "roles_added",
+        label: "Roles added",
+        icon: "➕",
+        color: "#398fc9",
+        explanation: "Role added to a member.",
+        supported: true,
+      },
+      {
+        key: "roles_removed",
+        label: "Roles removed",
+        icon: "➖",
+        color: "#e69935",
+        explanation: "Role removed from a member.",
+        supported: true,
       },
     ],
   },
@@ -154,28 +292,91 @@ export const moderationRegistry: {
     icon: "💬",
     events: [
       {
-        key: "delete",
+        key: "link",
+        label: "Links",
+        icon: "🔗",
+        color: "#398fc9",
+        explanation: "Message with a link.",
+        supported: true,
+      },
+      {
+        key: "message_delete",
         label: "Deletes",
         icon: "🗑️",
         color: "#d34a4a",
-        explanation: "",
-        supported: false,
+        explanation: "Message deleted.",
+        supported: true,
       },
       {
-        key: "edit",
+        key: "message_edit",
         label: "Edits",
         icon: "✏️",
         color: "#398fc9",
-        explanation: "",
-        supported: false,
+        explanation: "Message edited.",
+        supported: true,
       },
       {
-        key: "bulk_delete",
+        key: "message_bulk_delete",
         label: "Bulk deletes",
         icon: "🗑️",
         color: "#d34a4a",
-        explanation: "",
-        supported: false,
+        explanation: "Many messages deleted at once.",
+        supported: true,
+      },
+    ],
+  },
+  {
+    key: "channels",
+    label: "Channels",
+    icon: "📚",
+    events: [
+      {
+        key: "channel_create",
+        label: "Channels created",
+        icon: "📚",
+        color: "#2ba66a",
+        explanation: "Channel created.",
+        supported: true,
+      },
+      {
+        key: "channel_update",
+        label: "Channels updated",
+        icon: "📚",
+        color: "#398fc9",
+        explanation: "Channel name, topic or settings changed.",
+        supported: true,
+      },
+      {
+        key: "channel_delete",
+        label: "Channels deleted",
+        icon: "📚",
+        color: "#d34a4a",
+        explanation: "Channel deleted.",
+        supported: true,
+      },
+      {
+        key: "channel_permissions",
+        label: "Permission changes",
+        icon: "🔐",
+        color: "#e69935",
+        explanation: "Channel permissions changed.",
+        supported: true,
+      },
+      {
+        key: "thread_delete",
+        label: "Threads deleted",
+        icon: "🧵",
+        color: "#d34a4a",
+        explanation: "Thread deleted.",
+        supported: true,
+      },
+      {
+        key: "thread_lock",
+        label: "Threads locked",
+        icon: "🔒",
+        color: "#e69935",
+        explanation: "Thread locked or archived by a person.",
+        supported: true,
       },
     ],
   },
@@ -185,52 +386,83 @@ export const moderationRegistry: {
     icon: "🏰",
     events: [
       {
-        key: "channel_create",
-        label: "Channels created",
-        icon: "📚",
+        key: "server_update",
+        label: "Server settings",
+        icon: "🏰",
         color: "#c9a84f",
-        explanation: "",
-        supported: false,
+        explanation: "Server settings changed.",
+        supported: true,
       },
       {
-        key: "channel_delete",
-        label: "Channels deleted",
-        icon: "📚",
+        key: "emoji",
+        label: "Emoji",
+        icon: "😀",
         color: "#c9a84f",
-        explanation: "",
-        supported: false,
+        explanation: "Emoji added, changed or removed.",
+        supported: true,
       },
       {
-        key: "channel_change",
-        label: "Channels changed",
-        icon: "📚",
-        color: "#c9a84f",
-        explanation: "",
-        supported: false,
-      },
-      {
-        key: "role_create",
-        label: "Roles created",
+        key: "sticker",
+        label: "Stickers",
         icon: "🏷️",
         color: "#c9a84f",
-        explanation: "",
-        supported: false,
+        explanation: "Sticker added, changed or removed.",
+        supported: true,
       },
       {
-        key: "role_delete",
-        label: "Roles deleted",
-        icon: "🏷️",
+        key: "app",
+        label: "Apps",
+        icon: "🧩",
         color: "#c9a84f",
-        explanation: "",
-        supported: false,
+        explanation: "App added, changed or removed.",
+        supported: true,
       },
       {
-        key: "role_change",
-        label: "Roles changed",
-        icon: "🏷️",
+        key: "webhook",
+        label: "Webhooks",
+        icon: "🪝",
         color: "#c9a84f",
-        explanation: "",
-        supported: false,
+        explanation: "Webhook added, changed or removed.",
+        supported: true,
+      },
+      {
+        key: "automod",
+        label: "AutoMod rules",
+        icon: "🤖",
+        color: "#c9a84f",
+        explanation: "AutoMod rule added, changed or removed.",
+        supported: true,
+      },
+    ],
+  },
+  {
+    key: "invites",
+    label: "Invites",
+    icon: "📨",
+    events: [
+      {
+        key: "invite_create",
+        label: "Invites created",
+        icon: "📨",
+        color: "#2ba66a",
+        explanation: "Invite created.",
+        supported: true,
+      },
+      {
+        key: "invite_delete",
+        label: "Invites deleted",
+        icon: "🗑️",
+        color: "#d34a4a",
+        explanation: "Invite deleted.",
+        supported: true,
+      },
+      {
+        key: "invite_use",
+        label: "Invite uses",
+        icon: "🎟️",
+        color: "#c9a84f",
+        explanation: "Member joins with an invite.",
+        supported: true,
       },
     ],
   },
@@ -246,20 +478,65 @@ export const eventTypes = moderationRegistry.flatMap((category) =>
     })),
 );
 
+export const maxIgnoreIds = 100;
+export const maxIgnoredBots = 50;
+export const maxInviteNameLength = 40;
+const badNameCharacter = /[\p{Cc}\p{Zl}\p{Zp}]|(?!\u200d)\p{Cf}/u;
+
+/** Same rule as the backend: 1 to 40 characters, no control or separator characters. */
+export function inviteNameError(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "";
+  if ([...trimmed].length > maxInviteNameLength)
+    return `Use at most ${maxInviteNameLength} characters.`;
+  if (badNameCharacter.test(trimmed))
+    return "Remove control or invisible characters.";
+  return "";
+}
+
+function idList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
 export function cloneSettings(settings: SettingsDraft): SettingsDraft {
+  const categories = {} as CategorySettings;
+  for (const key of categoryKinds) {
+    const fallback: CategoryConfig = {
+      mode: "main",
+      channel_id: null,
+      forum_tag_id: null,
+    };
+    categories[key] = { ...fallback, ...settings.categories?.[key] };
+  }
+  const events = {} as EventSettings;
+  for (const key of moderationKinds) {
+    const fallback: EventConfig = {
+      enabled: false,
+      channel_id: null,
+      forum_tag_id: null,
+    };
+    events[key] = { ...fallback, ...settings.events?.[key] };
+  }
+  const inviteNames: Record<string, string> = {};
+  for (const [code, name] of Object.entries(settings.invite_names || {})) {
+    const trimmed = typeof name === "string" ? name.trim() : "";
+    if (trimmed) inviteNames[code] = trimmed;
+  }
+  const botIds = Array.isArray(settings.ignored_bot_ids)
+    ? { ignored_bot_ids: idList(settings.ignored_bot_ids) }
+    : {};
   return {
     main: { ...settings.main },
-    categories: {
-      members: { ...settings.categories.members },
-      moderation: { ...settings.categories.moderation },
+    categories,
+    events,
+    ignores: {
+      channel_ids: idList(settings.ignores?.channel_ids),
+      role_ids: idList(settings.ignores?.role_ids),
     },
-    events: {
-      join: { ...settings.events.join },
-      leave: { ...settings.events.leave },
-      kick: { ...settings.events.kick },
-      ban: { ...settings.events.ban },
-    },
-    ignores: { ...settings.ignores },
+    invite_names: inviteNames,
+    ...botIds,
   };
 }
 
@@ -274,7 +551,9 @@ export function changedSettings(
 }
 
 export function categoryForEvent(kind: ModerationKind): CategoryKind {
-  return kind === "join" || kind === "leave" ? "members" : "moderation";
+  return (
+    eventTypes.find((event) => event.key === kind)?.category || "moderation"
+  );
 }
 
 export function effectiveDestination(
@@ -314,9 +593,7 @@ export function destinationName(
 ): string {
   if (!target?.channel_id) return "No channel set";
   const channel = channels?.find((item) => item.id === target.channel_id);
-  return channel
-    ? `#${channel.name}`
-    : `Channel ${target.channel_id} (unavailable)`;
+  return channel ? `#${channel.name}` : "Unavailable channel";
 }
 
 function invalidTarget(

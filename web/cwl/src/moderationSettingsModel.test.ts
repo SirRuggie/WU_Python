@@ -10,6 +10,7 @@ import { ApiError } from "./api";
 import {
   changedSettings,
   cloneSettings,
+  destinationName,
   effectiveDestination,
   eventTypes,
   hasInvalidDestination,
@@ -49,6 +50,29 @@ const channels: Destination[] = [
     available_tags: [],
   },
 ];
+const newKinds = [
+  "unban",
+  "role_create",
+  "role_update",
+  "role_delete",
+  "roles_added",
+  "roles_removed",
+  "message_delete",
+  "message_edit",
+  "message_bulk_delete",
+  "channel_create",
+  "channel_update",
+  "channel_delete",
+  "channel_permissions",
+  "thread_delete",
+  "thread_lock",
+  "server_update",
+  "emoji",
+  "sticker",
+  "app",
+  "webhook",
+  "automod",
+];
 const settings: SettingsResponse = {
   schema_version: 2,
   revision: 7,
@@ -56,14 +80,33 @@ const settings: SettingsResponse = {
   categories: {
     members: { mode: "main", channel_id: null, forum_tag_id: null },
     moderation: { mode: "main", channel_id: null, forum_tag_id: null },
+    roles: { mode: "main", channel_id: null, forum_tag_id: null },
+    messages: { mode: "main", channel_id: null, forum_tag_id: null },
+    channels: { mode: "main", channel_id: null, forum_tag_id: null },
+    server: { mode: "main", channel_id: null, forum_tag_id: null },
+    invites: { mode: "main", channel_id: null, forum_tag_id: null },
   },
   events: {
     join: { enabled: true, channel_id: null, forum_tag_id: null },
     leave: { enabled: true, channel_id: null, forum_tag_id: null },
     kick: { enabled: true, channel_id: null, forum_tag_id: null },
     ban: { enabled: true, channel_id: null, forum_tag_id: null },
-  },
-  ignores: {},
+    member_update: { enabled: false, channel_id: null, forum_tag_id: null },
+    timeout_add: { enabled: false, channel_id: null, forum_tag_id: null },
+    timeout_remove: { enabled: false, channel_id: null, forum_tag_id: null },
+    link: { enabled: false, channel_id: null, forum_tag_id: null },
+    invite_create: { enabled: false, channel_id: null, forum_tag_id: null },
+    invite_delete: { enabled: false, channel_id: null, forum_tag_id: null },
+    invite_use: { enabled: false, channel_id: null, forum_tag_id: null },
+    ...Object.fromEntries(
+      newKinds.map((key) => [
+        key,
+        { enabled: false, channel_id: null, forum_tag_id: null },
+      ]),
+    ),
+  } as SettingsResponse["events"],
+  ignores: { channel_ids: [], role_ids: [] },
+  invite_names: {},
   channels_available: true,
   channels,
 };
@@ -162,35 +205,123 @@ it("accepts an authorized existing forum post and hides unsupported future event
   expect(eventTypes.map((event) => event.key)).toEqual([
     "join",
     "leave",
+    "member_update",
     "kick",
     "ban",
+    "unban",
+    "timeout_add",
+    "timeout_remove",
+    "role_create",
+    "role_update",
+    "role_delete",
+    "roles_added",
+    "roles_removed",
+    "link",
+    "message_delete",
+    "message_edit",
+    "message_bulk_delete",
+    "channel_create",
+    "channel_update",
+    "channel_delete",
+    "channel_permissions",
+    "thread_delete",
+    "thread_lock",
+    "server_update",
+    "emoji",
+    "sticker",
+    "app",
+    "webhook",
+    "automod",
+    "invite_create",
+    "invite_delete",
+    "invite_use",
   ]);
   expect(
     moderationRegistry.map((category) => [
       category.key,
-      category.events.map((event) => event.key),
+      category.label,
+      category.events.map((event) => event.label),
     ]),
   ).toEqual([
-    ["members", ["join", "leave", "nickname", "roles_added", "roles_removed"]],
-    ["moderation", ["kick", "ban", "unban", "timeout_add", "timeout_remove"]],
-    ["messages", ["delete", "edit", "bulk_delete"]],
+    ["members", "Members", ["Joins", "Leaves", "Profile changes"]],
+    [
+      "moderation",
+      "Moderation",
+      ["Kicks", "Bans", "Unbans", "Timeouts", "Timeout removals"],
+    ],
+    [
+      "roles",
+      "Roles",
+      [
+        "Roles created",
+        "Roles updated",
+        "Roles deleted",
+        "Roles added",
+        "Roles removed",
+      ],
+    ],
+    ["messages", "Messages", ["Links", "Deletes", "Edits", "Bulk deletes"]],
+    [
+      "channels",
+      "Channels",
+      [
+        "Channels created",
+        "Channels updated",
+        "Channels deleted",
+        "Permission changes",
+        "Threads deleted",
+        "Threads locked",
+      ],
+    ],
     [
       "server",
+      "Server",
       [
-        "channel_create",
-        "channel_delete",
-        "channel_change",
-        "role_create",
-        "role_delete",
-        "role_change",
+        "Server settings",
+        "Emoji",
+        "Stickers",
+        "Apps",
+        "Webhooks",
+        "AutoMod rules",
       ],
+    ],
+    [
+      "invites",
+      "Invites",
+      ["Invites created", "Invites deleted", "Invite uses"],
     ],
   ]);
   expect(
     moderationRegistry.flatMap((category) =>
       category.events.filter((event) => !event.supported),
     ),
-  ).toHaveLength(15);
+  ).toHaveLength(0);
+});
+
+it("saves every supported key and category", async () => {
+  const draft = cloneSettings(settings);
+  expect(Object.keys(draft.categories)).toEqual([
+    "members",
+    "moderation",
+    "roles",
+    "messages",
+    "channels",
+    "server",
+    "invites",
+  ]);
+  expect(Object.keys(draft.events).sort()).toEqual(
+    eventTypes.map((event) => event.key).sort(),
+  );
+  transport.mockResolvedValue({ ...settings, revision: 8 });
+  await saveModerationSettings(settings, draft);
+  const body = transport.mock.calls[0][2];
+  expect(Object.keys(body.events)).toHaveLength(32);
+  expect(body.categories.roles).toEqual({
+    mode: "main",
+    channel_id: null,
+    forum_tag_id: null,
+  });
+  expect(body.events.automod.enabled).toBe(false);
 });
 
 it("preserves edits on conflict and distinguishes uncertain test delivery", () => {
@@ -202,5 +333,92 @@ it("preserves edits on conflict and distinguishes uncertain test delivery", () =
   ).toMatchObject({ denied: true });
   expect(moderationSettingsError(null, "test").message).toContain(
     "Check Discord before trying again",
+  );
+});
+
+it("round-trips ignores and invite names through clone and save", async () => {
+  const draft = cloneSettings(settings);
+  draft.ignores.channel_ids.push("123456789012345678");
+  draft.ignores.role_ids.push("223456789012345678");
+  draft.invite_names = { abc123: " Spring ad ", gone: "  ", vanity: "Site" };
+  const copy = cloneSettings(draft);
+  expect(copy.invite_names).toEqual({ abc123: "Spring ad", vanity: "Site" });
+  expect(copy.ignores).not.toBe(draft.ignores);
+  expect(changedSettings(settings, draft)).toBe(true);
+  transport.mockResolvedValue({ ...settings, revision: 8 });
+  await saveModerationSettings(settings, draft);
+  const body = transport.mock.calls[0][2];
+  expect(body.ignores).toEqual({
+    channel_ids: ["123456789012345678"],
+    role_ids: ["223456789012345678"],
+  });
+  expect(body.invite_names).toEqual({ abc123: "Spring ad", vanity: "Site" });
+});
+
+it("round-trips ignored bot ids and omits them when the response lacks them", async () => {
+  const draft = cloneSettings({
+    ...settings,
+    ignored_bot_ids: ["900000000000000001", 5 as unknown as string],
+  });
+  expect(draft.ignored_bot_ids).toEqual(["900000000000000001"]);
+  expect(changedSettings(settings, draft)).toBe(true);
+  expect("ignored_bot_ids" in cloneSettings(settings)).toBe(false);
+  transport.mockResolvedValue({ ...settings, revision: 8 });
+  await saveModerationSettings(settings, draft);
+  expect(transport.mock.calls[0][2].ignored_bot_ids).toEqual([
+    "900000000000000001",
+  ]);
+  transport.mockClear();
+  await saveModerationSettings(settings, cloneSettings(settings));
+  expect("ignored_bot_ids" in transport.mock.calls[0][2]).toBe(false);
+});
+
+it("fills missing keys when an old response lacks the new fields", () => {
+  const old = {
+    ...settings,
+    categories: {
+      members: settings.categories.members,
+      moderation: settings.categories.moderation,
+    },
+    events: {
+      join: settings.events.join,
+      leave: settings.events.leave,
+      kick: settings.events.kick,
+      ban: settings.events.ban,
+    },
+    ignores: {},
+    invite_names: undefined,
+  } as unknown as SettingsResponse;
+  const copy = cloneSettings(old);
+  expect(copy.ignores).toEqual({ channel_ids: [], role_ids: [] });
+  expect(copy.invite_names).toEqual({});
+  expect(copy.categories.invites).toEqual({
+    mode: "main",
+    channel_id: null,
+    forum_tag_id: null,
+  });
+  expect(copy.categories.channels.mode).toBe("main");
+  expect(copy.events.thread_lock).toEqual({
+    enabled: false,
+    channel_id: null,
+    forum_tag_id: null,
+  });
+  expect(copy.events.invite_use).toEqual({
+    enabled: false,
+    channel_id: null,
+    forum_tag_id: null,
+  });
+  expect(changedSettings(settings, old)).toBe(false);
+  expect(effectiveDestination(copy, "link")).toMatchObject({ source: "main" });
+  copy.categories.messages.mode = "off";
+  expect(effectiveDestination(copy, "link")).toMatchObject({ source: "off" });
+});
+
+it("names a missing channel without showing its id", () => {
+  const target = { channel_id: "999000111", forum_tag_id: null };
+  expect(destinationName(target, channels)).toBe("Unavailable channel");
+  expect(destinationName(target, channels)).not.toContain("999000111");
+  expect(destinationName({ ...target, channel_id: "main" }, channels)).toBe(
+    "#logs",
   );
 });

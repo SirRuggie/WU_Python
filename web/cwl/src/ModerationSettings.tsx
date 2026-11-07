@@ -3,10 +3,15 @@ import { api } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
 import ModerationCategoryCard from "./ModerationCategoryCard";
 import ModerationDestinationPicker from "./ModerationDestinationPicker";
+import ModerationHealth from "./ModerationHealth";
+import ModerationIgnoredBots from "./ModerationIgnoredBots";
+import ModerationIgnoreLists from "./ModerationIgnoreLists";
+import ModerationInviteNames from "./ModerationInviteNames";
 import {
   changedSettings,
   cloneSettings,
   destinationName,
+  inviteNameError,
   effectiveDestination,
   eventTypes,
   hasInvalidDestination,
@@ -18,6 +23,7 @@ import {
   type CategoryKind,
   type Destination,
   type EventConfig,
+  type LinkIgnores,
   type ModerationKind,
   type RouteTarget,
   type SettingsDraft,
@@ -26,9 +32,7 @@ import {
 import "./ModerationSettings.css";
 
 type DialogState =
-  | { type: "test"; event: ModerationKind }
-  | { type: "reload" }
-  | null;
+  { type: "test"; event: ModerationKind } | { type: "reload" } | null;
 
 export default function ModerationSettings({
   onDirty,
@@ -68,6 +72,7 @@ export default function ModerationSettings({
       if (fresh) lastChannels.current = result.channels || [];
       setSaved({
         ...result,
+        ...cloneSettings(result),
         channels: fresh
           ? result.channels || []
           : lastChannels.current || result.channels || null,
@@ -134,6 +139,27 @@ export default function ModerationSettings({
     clearFeedback();
   };
 
+  const updateIgnores = (ignores: LinkIgnores) => {
+    setDraft((current) => (current ? { ...current, ignores } : current));
+    clearFeedback();
+  };
+  const updateIgnoredBots = (ids: string[]) => {
+    setDraft((current) =>
+      current ? { ...current, ignored_bot_ids: ids } : current,
+    );
+    clearFeedback();
+  };
+  const updateInviteName = (code: string, name: string) => {
+    setDraft((current) => {
+      if (!current) return current;
+      const names = { ...current.invite_names };
+      if (name) names[code] = name;
+      else delete names[code];
+      return { ...current, invite_names: names };
+    });
+    clearFeedback();
+  };
+
   const resolveDestination = async (
     scope: "main" | "category" | "event",
     key: string,
@@ -189,8 +215,13 @@ export default function ModerationSettings({
     (saved.channels_available === false ||
       hasInvalidDestination(draft, saved.channels));
 
+  const invalidName =
+    !!draft &&
+    Object.values(draft.invite_names).some((name) => !!inviteNameError(name));
+
   const save = async () => {
-    if (!saved || !draft || !dirty || busy || invalidDestination) return;
+    if (!saved || !draft || !dirty || busy || invalidDestination || invalidName)
+      return;
     const id = ++request.current;
     setBusy(true);
     clearFeedback();
@@ -199,12 +230,16 @@ export default function ModerationSettings({
       if (request.current !== id) return;
       setSaved({
         ...result,
+        ...cloneSettings(result),
         channels: saved.channels,
         channels_available: saved.channels_available,
+        roles: saved.roles,
+        roles_available: saved.roles_available,
         warning: saved.warning,
         preview_names: saved.preview_names,
         preview_cards: saved.preview_cards,
         forum_preview_cards: saved.forum_preview_cards,
+        bot_actors: result.bot_actors ?? saved.bot_actors,
       });
       setDraft(cloneSettings(result));
       setNotice("Moderation settings saved.");
@@ -300,6 +335,8 @@ export default function ModerationSettings({
         </button>
       </header>
 
+      <ModerationHealth />
+
       {error && (
         <div className="moderation-settings-error" role="alert">
           <p>{error}</p>
@@ -364,35 +401,63 @@ export default function ModerationSettings({
             />
           </div>
 
+          <ModerationIgnoredBots
+            ids={draft.ignored_bot_ids}
+            actors={saved.bot_actors || []}
+            disabled={busy}
+            onChange={updateIgnoredBots}
+          />
+
           <div className="moderation-category-list">
-            {moderationRegistry
-              .filter(
-                (category) =>
-                  category.key === "members" || category.key === "moderation",
-              )
-              .map((category) => (
-                <ModerationCategoryCard
-                  key={category.key}
-                  category={category.key as CategoryKind}
-                  label={category.label}
-                  icon={category.icon}
-                  events={eventTypes.filter(
-                    (event) => event.category === category.key,
-                  )}
-                  draft={draft}
-                  saved={saved}
-                  channels={channels}
-                  busy={busy}
-                  inventoryAvailable={inventoryAvailable}
-                  dirty={dirty}
-                  onCategory={updateCategory}
-                  onEvent={updateEvent}
-                  onResolve={(scope, key, id) =>
-                    void resolveDestination(scope, key, id)
-                  }
-                  onTest={startTest}
-                />
-              ))}
+            {moderationRegistry.map((category) => (
+              <ModerationCategoryCard
+                key={category.key}
+                category={category.key as CategoryKind}
+                label={category.label}
+                icon={category.icon}
+                events={eventTypes.filter(
+                  (event) => event.category === category.key,
+                )}
+                draft={draft}
+                saved={saved}
+                channels={channels}
+                busy={busy}
+                inventoryAvailable={inventoryAvailable}
+                dirty={dirty}
+                onCategory={updateCategory}
+                onEvent={updateEvent}
+                onResolve={(scope, key, id) =>
+                  void resolveDestination(scope, key, id)
+                }
+                onTest={startTest}
+              >
+                {category.key === "messages" && (
+                  <>
+                    <small className="moderation-ignore-note">
+                      Applies to all message logs.
+                    </small>
+                    <ModerationIgnoreLists
+                      ignores={draft.ignores}
+                      channels={channels}
+                      roles={saved.roles}
+                      rolesAvailable={
+                        saved.roles_available === true &&
+                        Array.isArray(saved.roles)
+                      }
+                      disabled={busy}
+                      onChange={updateIgnores}
+                    />
+                  </>
+                )}
+                {category.key === "invites" && (
+                  <ModerationInviteNames
+                    names={draft.invite_names}
+                    disabled={busy}
+                    onName={updateInviteName}
+                  />
+                )}
+              </ModerationCategoryCard>
+            ))}
           </div>
 
           {invalidDestination && (
@@ -418,7 +483,9 @@ export default function ModerationSettings({
               <button
                 className="primary"
                 type="button"
-                disabled={!dirty || busy || loading || invalidDestination}
+                disabled={
+                  !dirty || busy || loading || invalidDestination || invalidName
+                }
                 onClick={() => void save()}
               >
                 {busy ? "Saving…" : "Save changes"}

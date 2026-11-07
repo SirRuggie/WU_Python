@@ -1,4 +1,5 @@
 """Moderation archive settings, provenance, and queue isolation regressions."""
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
@@ -31,9 +32,13 @@ class MemoryCollection:
         for key, expected in query.items():
             value = row.get(key)
             if isinstance(expected, dict):
+                if "$eq" in expected and value != expected["$eq"]: return False
+                if "$type" in expected and expected["$type"] == "string" and not isinstance(value, str): return False
                 if "$ne" in expected and value == expected["$ne"]: return False
                 if "$gte" in expected and (value is None or value < expected["$gte"]): return False
                 if "$lte" in expected and (value is None or value > expected["$lte"]): return False
+                if "$lt" in expected and (value is None or value >= expected["$lt"]): return False
+                if "$exists" in expected and (key in row) != expected["$exists"]: return False
                 if "$in" in expected and value not in expected["$in"]: return False
                 if "$regex" in expected:
                     import re
@@ -52,6 +57,13 @@ class MemoryCollection:
                                          for existing in self.rows.values()):
             raise DuplicateKeyError("duplicate")
         self.rows[row["_id"]] = dict(row)
+    async def count_documents(self, query):
+        return sum(1 for row in self.rows.values() if self.matches(row, query))
+    async def delete_one(self, query):
+        key = next((key for key, row in self.rows.items() if self.matches(row, query)), None)
+        if key is not None: del self.rows[key]
+    async def create_index(self, *args, **kwargs):
+        self.indexes = getattr(self, "indexes", []) + [(args, kwargs)]
     async def find_one_and_update(self, query, update, **kwargs):
         row = next((row for row in self.rows.values() if self.matches(row, query)), None)
         if row is None: return None
@@ -374,7 +386,7 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_settings_get_retains_saved_values_when_inventory_unavailable(self):
         saved = MemberEventStore.default_settings()
-        store = NS(settings=AsyncMock(return_value=saved))
+        store = NS(settings=AsyncMock(return_value=saved), bot_actors=AsyncMock(return_value={}))
         class Context:
             async def __aenter__(self): return NS(member_events=object())
             async def __aexit__(self, *args): pass
@@ -389,6 +401,88 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["channels_available"])
         self.assertIsNone(result["channels"])
         self.assertEqual(result["events"], saved["events"])
+
+    async def _settings_with_discord(self, discord, saved=None, actors=None):
+        store = NS(settings=AsyncMock(return_value=saved or MemberEventStore.default_settings()),
+                   bot_actors=AsyncMock(return_value=actors or {}))
+        class Context:
+            async def __aenter__(self): return NS(member_events=object())
+            async def __aexit__(self, *args): pass
+        from cwl_web import server_management
+        bot_actor = {"permissions": 8, "role_ids": set(), "user_id": "1"}
+        with patch.object(api, "require_manage", new=AsyncMock(return_value=bot_actor)), \
+             patch.object(api, "mongo", return_value=Context()), \
+             patch.object(api, "MemberEventStore", return_value=store), \
+             patch.object(api, "_bot_permissions", new=AsyncMock(return_value=(bot_actor, effective_permissions))), \
+             patch.object(server_management, "discord", new=discord):
+            return json.loads((await api.settings(NS())).text)
+
+    async def test_settings_get_lists_roles_without_everyone_by_position(self):
+        async def discord(request, method, path, **kwargs):
+            if path.endswith("/roles"):
+                return [{"id": str(GUILD_ID), "name": "@everyone", "color": 0, "position": 0},
+                        {"id": "200000000000000001", "name": "Low", "color": 1, "position": 1},
+                        {"id": "200000000000000002", "name": "Bot", "color": 0, "position": 5, "managed": True}]
+            if path.endswith("/channels"):
+                return []
+            raise web.HTTPNotFound()
+        result = await self._settings_with_discord(discord)
+        self.assertTrue(result["roles_available"])
+        self.assertEqual(result["roles"], [
+            {"id": "200000000000000002", "name": "Bot", "color": 0, "position": 5, "managed": True},
+            {"id": "200000000000000001", "name": "Low", "color": 1, "position": 1, "managed": False}])
+        self.assertTrue(result["channels_available"])
+
+    async def test_settings_get_resolves_ignored_bots_and_lists_actors_with_own_bot(self):
+        seen = datetime(2026, 11, 6, 12, tzinfo=timezone.utc)
+        actors = {"300000000000000002": {"name": "wick", "last_seen": seen},
+                  "300000000000000003": {"name": "Alpha", "last_seen": seen}}
+        async def discord(request, method, path, **kwargs):
+            if path == "/users/@me":
+                return {"id": "300000000000000001", "username": "wu-bot"}
+            if path.endswith("/channels"):
+                return []
+            raise web.HTTPNotFound()
+        # A row that never saved the list: the own bot id is the default, and nothing is saved.
+        result = await self._settings_with_discord(discord, actors=actors)
+        self.assertEqual(result["ignored_bot_ids"], ["300000000000000001"])
+        self.assertEqual([(a["id"], a["name"]) for a in result["bot_actors"]], [
+            ("300000000000000003", "Alpha"), ("300000000000000002", "wick"),
+            ("300000000000000001", "wu-bot")])
+        self.assertEqual(result["bot_actors"][1]["last_seen"], seen.isoformat())
+        self.assertIsNone(result["bot_actors"][2]["last_seen"])
+        # A saved list (even empty) is used as is.
+        for ids in ([], ["300000000000000002"]):
+            saved = {**MemberEventStore.default_settings(), "ignored_bot_ids": ids}
+            self.assertEqual((await self._settings_with_discord(discord, saved))["ignored_bot_ids"], ids)
+
+    async def test_settings_get_without_own_bot_omits_the_unsaved_default_and_saves_nothing(self):
+        async def discord(request, method, path, **kwargs):
+            if path == "/users/@me":
+                raise web.HTTPServiceUnavailable()
+            if path.endswith("/channels"):
+                return []
+            raise web.HTTPNotFound()
+        actors = {"300000000000000002": {"name": "wick", "last_seen": None}}
+        result = await self._settings_with_discord(discord, actors=actors)
+        self.assertNotIn("ignored_bot_ids", result)  # Unknown default: omitted, not shown as empty.
+        saved = {**MemberEventStore.default_settings(), "ignored_bot_ids": ["300000000000000002"]}
+        self.assertEqual((await self._settings_with_discord(discord, saved))["ignored_bot_ids"],
+                         ["300000000000000002"])  # A stored list still shows.
+        self.assertEqual([a["id"] for a in result["bot_actors"]], ["300000000000000002"])
+
+    async def test_settings_get_role_failure_keeps_channels(self):
+        async def discord(request, method, path, **kwargs):
+            if path.endswith("/roles"):
+                raise web.HTTPServiceUnavailable()
+            if path.endswith("/channels"):
+                return []
+            raise web.HTTPNotFound()
+        result = await self._settings_with_discord(discord)
+        self.assertFalse(result["roles_available"])
+        self.assertIsNone(result["roles"])
+        self.assertTrue(result["channels_available"])
+        self.assertEqual(result["channels"], [])
 
     async def test_only_exact_kick_audit_creates_kick(self):
         target = self.uid
@@ -406,6 +500,167 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(transport, "record_identity", new=AsyncMock()) as record:
             await transport.audited(event, NS(), bot)
         record.assert_not_awaited()
+
+
+class NewLogApiTests(unittest.IsolatedAsyncioTestCase):
+    def body(self, **changes):
+        from utils.member_event_settings import normalize_settings
+        body = normalize_settings(None, MemberEventStore.default_settings())
+        body.pop("schema_version")
+        body.update(changes)
+        return body
+
+    def test_put_accepts_and_normalizes_ignores_and_invite_names(self):
+        ids = ["123456789012345678", "12345678901234567890"]
+        checked = api._checked_settings(self.body(
+            ignores={"channel_ids": ids + ids[:1], "role_ids": []},
+            invite_names={"abc-12": "  Spring  ", "gone": "   "}))
+        self.assertEqual(checked["ignores"], {"channel_ids": ids, "role_ids": []})
+        self.assertEqual(checked["invite_names"], {"abc-12": "Spring"})  # Empty name removes the entry.
+        self.assertEqual(api._checked_settings(self.body(ignores={}))["ignores"],
+                         {"channel_ids": [], "role_ids": []})
+        self.assertEqual(set(checked["events"]), set(api.EVENT_TYPES))
+
+    def test_put_validates_ignored_bot_ids(self):
+        ids = ["123456789012345678", "12345678901234567890"]
+        self.assertEqual(api._checked_settings(self.body(ignored_bot_ids=ids + ids[:1]))["ignored_bot_ids"], ids)
+        self.assertEqual(api._checked_settings(self.body(ignored_bot_ids=[]))["ignored_bot_ids"], [])
+        self.assertIsNone(api._checked_settings(self.body())["ignored_bot_ids"])  # Older client: unchanged.
+        body = self.body()
+        del body["ignored_bot_ids"]
+        self.assertIsNone(api._checked_settings(body)["ignored_bot_ids"])
+        bad = [["1234567890123456"], ["123456789012345678901"], ["12345678901234567a"],
+               [123456789012345678], [str(10 ** 17 + i) for i in range(51)], "123456789012345678",
+               {"a": 1}, [None]]
+        for value in bad:
+            with self.subTest(ignored_bot_ids=value), self.assertRaises(web.HTTPBadRequest):
+                api._checked_settings(self.body(ignored_bot_ids=value))
+        self.assertEqual(len(api._checked_settings(
+            self.body(ignored_bot_ids=[str(10 ** 17 + i) for i in range(50)]))["ignored_bot_ids"]), 50)
+
+    def test_put_rejects_bad_ignores_and_invite_names(self):
+        bad_ignores = [
+            {"channel_ids": ["1234567890123456"], "role_ids": []},  # 16 digits
+            {"channel_ids": ["1234567890123456789012"], "role_ids": []},  # 22 digits
+            {"channel_ids": ["12345678901234567a"], "role_ids": []},
+            {"channel_ids": [123456789012345678], "role_ids": []},
+            {"channel_ids": [str(10 ** 17 + i) for i in range(101)], "role_ids": []},
+            {"channel_ids": [], "role_ids": "123456789012345678"},
+            {"channel_ids": []},
+            {"channel_ids": [], "role_ids": [], "user_ids": []},
+            None,
+        ]
+        for value in bad_ignores:
+            with self.subTest(ignores=value), self.assertRaises(web.HTTPBadRequest):
+                api._checked_settings(self.body(ignores=value))
+        self.assertEqual(api._checked_settings(self.body(invite_names={"ok-code": "👨\u200d👩\u200d👧 fam\ufe0f"}))["invite_names"],
+                         {"ok-code": "👨\u200d👩\u200d👧 fam\ufe0f"})
+        bad_names = [{"ok-code": "a\u200bb"}, {"ok-code": "a\x07b"}, {"ok-code": "a\u2028b"}, {"a": "x"}, {"has space": "x"}, {"ok-code": "x" * 41}, {"ok-code": "bad\nname"},
+                     {"ok-code": 5}, {"x" * 33: "x"}, {f"code{i:04d}": "n" for i in range(201)}, [], None]
+        for value in bad_names:
+            with self.subTest(invite_names=value), self.assertRaises(web.HTTPBadRequest):
+                api._checked_settings(self.body(invite_names=value))
+        with self.assertRaises(web.HTTPBadRequest):
+            api._checked_settings({**self.body(), "extra": 1})
+        events = self.body()["events"]
+        with self.assertRaises(web.HTTPBadRequest):
+            api._checked_settings(self.body(events={k: v for k, v in events.items() if k != "link"}))
+        with self.assertRaises(web.HTTPBadRequest):
+            api._checked_settings(self.body(categories={"members": {"mode": "main", "channel_id": None, "forum_tag_id": None}}))
+        self.assertEqual(len(api._checked_settings(self.body(invite_names={f"code{i:04d}": "n" for i in range(200)}))["invite_names"]), 200)
+
+    async def test_invites_endpoint_shape_order_and_names(self):
+        from tests.test_member_events import InviteCollection
+        invites, history = InviteCollection(), MemoryCollection()
+        later = datetime(2026, 11, 6, 9, 0)  # Mongo returns naive UTC.
+        for code, uses, max_uses, vanity in (("bb", 3, 0, False), ("aa", 3, 10, False), ("zz", 9, None, False), ("wu", 40, None, True)):
+            invites.rows[f"{GUILD_ID}:{code}"] = {
+                "_id": f"{GUILD_ID}:{code}", "guild_id": GUILD_ID, "code": code, "uses": uses, "max_uses": max_uses,
+                "inviter_id": "987654321098765432", "inviter_name": "host", "channel_id": "223456789012345678",
+                "channel_name": "welcome", "expires_at": later if code == "aa" else None, "vanity": vanity,
+                "updated_at": later}
+        store = MemberEventStore(history)
+        saved = (await store.settings())
+        saved["invite_names"] = {"aa": "Spring"}
+        await store.save_settings(0, saved)
+
+        class Context:
+            async def __aenter__(self): return NS(member_events=history, member_invites=invites)
+            async def __aexit__(self, *args): pass
+        with patch.object(api, "require_manage", new=AsyncMock()) as guard, patch.object(api, "mongo", return_value=Context()):
+            response = await api.invites(make_request())
+        guard.assert_awaited_once()
+        self.assertEqual(guard.await_args.args[1], "roles")  # Same permission as the settings GET.
+        data = json.loads(response.text)
+        self.assertEqual([row["code"] for row in data["invites"]], ["wu", "zz", "aa", "bb"])
+        self.assertEqual(set(data["invites"][0]), {"code", "name", "inviter_id", "inviter_name", "channel_id",
+                                                   "channel_name", "uses", "max_uses", "expires_at", "vanity"})
+        by = {row["code"]: row for row in data["invites"]}
+        self.assertEqual((by["aa"]["name"], by["aa"]["max_uses"], by["aa"]["expires_at"]),
+                         ("Spring", 10, "2026-11-06T09:00:00+00:00"))
+        self.assertIsNone(by["bb"]["max_uses"])  # 0 means unlimited.
+        self.assertTrue(by["wu"]["vanity"])
+        self.assertEqual(data["updated_at"], "2026-11-06T09:00:00+00:00")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        invites.rows.clear()
+        with patch.object(api, "require_manage", new=AsyncMock()), patch.object(api, "mongo", return_value=Context()):
+            empty = json.loads((await api.invites(make_request())).text)
+        self.assertEqual(empty, {"invites": [], "updated_at": None})
+
+    async def test_history_search_excludes_link_and_invite_rows(self):
+        collection = MemoryCollection()
+        store = MemberEventStore(collection)
+        at = datetime(2026, 11, 6, tzinfo=timezone.utc)
+        for index, kind in enumerate(("join", "timeout_add", "timeout_remove", "member_update",
+                                      "link", "invite_create", "invite_delete", "invite_use")):
+            await store.capture(guild_id=GUILD_ID, user_id=123456789012345678, kind=kind, display_name="A",
+                                username="a", avatar=None, avatar_type=None, at=at + timedelta(seconds=index),
+                                dedupe_key=f"k{index}", details={"x": 1})
+        rows, _ = await store.search(guild_id=GUILD_ID)
+        self.assertEqual({row["event_type"] for row in rows},
+                         {"join", "timeout_add", "timeout_remove", "member_update", "invite_use"})
+        for kind in ("link", "invite_create", "invite_delete"):
+            with self.subTest(kind=kind), patch.object(api, "require_manage", new=AsyncMock()):
+                with self.assertRaises(web.HTTPBadRequest):
+                    await api.listing(make_request(f"?type={kind}"))
+        listed = NS(search=AsyncMock(return_value=([], None)))
+
+        class Context:
+            async def __aenter__(self): return NS(member_events=object())
+            async def __aexit__(self, *args): pass
+        for kind in ("timeout_add", "timeout_remove", "member_update", "unban", "roles_added",
+                     "roles_removed", "invite_use"):
+            with self.subTest(kind=kind), patch.object(api, "require_manage", new=AsyncMock()), \
+                    patch.object(api, "mongo", return_value=Context()), \
+                    patch.object(api, "MemberEventStore", return_value=listed), \
+                    patch("cwl_web.moderation_names.resolve_names", new=AsyncMock(return_value={})):
+                self.assertEqual((await api.listing(make_request(f"?type={kind}"))).status, 200)
+
+    def test_public_event_carries_details_as_plain_json(self):
+        from utils.member_events import public_event
+        row = {"_id": "1792972800000:" + "a" * 32, "user_id": "1", "event_type": "timeout_add",
+               "display_name": "A", "username": "a", "occurred_at": datetime(2026, 11, 6),
+               "delivery_status": "sent", "details": {"until": "2026-11-07T00:00:00+00:00"}}
+        self.assertEqual(public_event(row, api_prefix="/x")["details"], {"until": "2026-11-07T00:00:00+00:00"})
+        json.dumps(public_event(row, api_prefix="/x"))
+
+    def test_public_event_never_carries_transcript(self):
+        from utils.member_events import public_event
+        details = {"count": 3, "transcript": "x" * 1000}
+        row = {"_id": "1792972800000:" + "a" * 32, "user_id": "1", "event_type": "message_bulk_delete",
+               "display_name": "A", "username": "a", "occurred_at": datetime(2026, 11, 6),
+               "delivery_status": "sent", "details": details}
+        public = public_event(row, api_prefix="/x")
+        self.assertEqual(public["details"], {"count": 3})
+        self.assertNotIn("transcript", json.dumps(public))
+        self.assertIn("transcript", row["details"])
+        row["details"] = None
+        self.assertIsNone(public_event(row, api_prefix="/x")["details"])
+
+
+def make_request(query=""):
+    from aiohttp.test_utils import make_mocked_request
+    return make_mocked_request("GET", api.PREFIX + query)
 
 
 if __name__ == "__main__":

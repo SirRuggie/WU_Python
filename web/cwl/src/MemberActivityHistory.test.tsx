@@ -218,7 +218,9 @@ it("shows kick and ban reasons and moderators in the compact history card", () =
   expect(html).toContain("Banned");
   expect(html).toContain("&lt;b&gt;Moderator &amp; Name&lt;/b&gt;");
   expect(html.replace(/<[^>]+>/g, "")).not.toContain("987654321");
-  expect(html.replace(/<[^>]+>/g, "")).toContain("an unknown moderator · “No reason given”");
+  expect(html.replace(/<[^>]+>/g, "")).toContain("by an unknown moderator");
+  expect(html.replace(/<[^>]+>/g, "")).toContain("“No reason given”");
+  expect(html.replace(/<[^>]+>/g, "")).not.toContain("· “");
 });
 
 it("does not display archived raw-ID identity fallbacks", () => {
@@ -237,4 +239,71 @@ it("does not display archived raw-ID identity fallbacks", () => {
   expect(visible).toContain("Moderator: Unknown moderator");
   expect(visible).not.toContain(fixture.user_id);
   expect(visible).not.toContain("987654321");
+});
+
+it("labels timeout and profile rows and falls back for unknown types", () => {
+  hook.states[0] = [
+    {
+      ...fixture,
+      id: "t1",
+      event_type: "timeout_add",
+      reason: "Spam",
+      moderator_id: "987654321",
+      moderator_name: "Mod",
+    },
+    { ...fixture, id: "t2", event_type: "timeout_remove" },
+    { ...fixture, id: "t3", event_type: "member_update" },
+    { ...fixture, id: "t4", event_type: "future_kind" },
+  ];
+  const html = render();
+  expect(html).toContain("Timed out");
+  expect(html).toContain("Timeout removed");
+  expect(html).toContain("Profile changed");
+  expect(html).toContain("Activity</span>");
+  expect(html).toContain("“Spam”");
+  expect(html).toContain('<option value="timeout_add">Timeouts</option>');
+  expect(html).toContain(
+    '<option value="timeout_remove">Timeout removals</option>',
+  );
+  expect(html).toContain(
+    '<option value="member_update">Profile changes</option>',
+  );
+});
+
+it("labels the new history kinds, filters them and links to the member", () => {
+  hook.states[0] = [
+    {
+      ...fixture,
+      id: "u1",
+      event_type: "unban",
+      reason: "Appeal",
+      moderator_id: "987654321",
+      moderator_name: "Mod",
+    },
+    { ...fixture, id: "u2", event_type: "roles_added" },
+    { ...fixture, id: "u3", event_type: "roles_removed" },
+    { ...fixture, id: "u4", event_type: "invite_use" },
+  ];
+  const html = render();
+  expect(html).toContain("Unbanned");
+  expect(html).toContain("Roles added</span>");
+  expect(html).toContain("Roles removed</span>");
+  expect(html).toContain("Invite used");
+  expect(html).toContain("“Appeal”");
+  for (const value of ["unban", "roles_added", "roles_removed", "invite_use"])
+    expect(html).toContain(`<option value="${value}">`);
+});
+
+it("keeps the unknown-type fallback", () => {
+  hook.states[0] = [{ ...fixture, id: "x", event_type: "something_new" }];
+  expect(render()).toContain("Activity</span>");
+});
+
+it("offers a View member action on every row without showing the raw id", () => {
+  hook.states[0] = [fixture];
+  const html = renderToStaticMarkup(
+    createElement(MemberActivityHistory, { onViewMember: () => undefined }),
+  );
+  expect(html).toContain("View member");
+  expect(html.replace(/<[^>]+>/g, "")).not.toContain(fixture.user_id);
 });

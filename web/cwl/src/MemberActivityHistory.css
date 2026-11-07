@@ -172,14 +172,42 @@
   border-left-color: #a8384b;
 }
 
-.member-activity-moderation {
+.member-activity-row.is-unban {
+  border-left-color: #2ba66a;
+}
+
+.member-activity-view {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  justify-self: start;
+  min-height: 44px;
+}
+
+.member-activity-body {
+  display: grid;
   grid-column: 1 / -1;
   grid-row: 2;
+  gap: 4px;
   min-width: 0;
-  margin: 0;
   color: #d7e0ea;
   font-size: 0.85rem;
   overflow-wrap: anywhere;
+}
+
+.member-activity-moderation,
+.member-activity-roles {
+  min-width: 0;
+  margin: 0;
+}
+
+.member-activity-by,
+.member-activity-reason {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+  margin: 0;
 }
 
 .member-activity-identity {
@@ -294,7 +322,7 @@
     grid-row: 1;
   }
 
-  .member-activity-moderation {
+  .member-activity-body {
     grid-column: 1 / -1;
     grid-row: 2;
   }
@@ -307,6 +335,10 @@
   .member-activity-details {
     grid-column: 1 / -1;
     grid-row: 4;
+  }
+
+  .member-activity-view {
+    grid-row: 5;
   }
 
   .member-activity-heading {
@@ -357,4 +389,14 @@
     width: 38px;
     height: 38px;
   }
+}
+
+.member-timeline-member {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #495563;
+  border-radius: 12px;
+  background: #1c2028;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

@@ -21,6 +21,7 @@ export type DashboardRoute = {
   season: string;
   weightPlayer?: string;
   weightClan?: string;
+  moderationMember?: string;
   signupPanel?: "register" | "saved";
   step?: "review" | "announce";
   activityFilter?: string;
@@ -41,12 +42,16 @@ export function dashboardTarget(
   const family = clanRoute(pathname);
   const params = new URLSearchParams(search);
   const saved = savedSignupTarget(search, pathname);
+  const moderationMember = /^\/server\/moderation\/member\/(\d{17,20})$/.exec(
+    pathname,
+  )?.[1];
   const pathView = Object.entries({ ...memberPaths, ...staffPaths }).find(
     ([, path]) => path !== "/" && path === pathname,
   )?.[0];
   const requested =
     (family ? "clan-management" : undefined) ||
     (saved ? "signup" : undefined) ||
+    (moderationMember ? "moderation" : undefined) ||
     (weightAliases.includes(pathname) ? "weight-trial" : pathView) ||
     (params.get("view") === "signups" ? "signup" : params.get("view"));
   const value =
@@ -79,6 +84,7 @@ export function dashboardTarget(
           ).toString(),
         }
       : {}),
+    ...(value === "moderation" && moderationMember ? { moderationMember } : {}),
     ...(saved ? { signupPanel: "saved" as const } : {}),
     view: dashboardViews.includes(value as DashboardView)
       ? (value as DashboardView)
@@ -122,6 +128,11 @@ export function dashboardPath(route: DashboardRoute) {
     return clanPath(route.familyClan);
   if (route.view === "signup" && route.signupPanel === "saved")
     return "/my-signups";
+  if (
+    route.view === "moderation" &&
+    /^\d{17,20}$/.test(route.moderationMember || "")
+  )
+    return `/server/moderation/member/${route.moderationMember}`;
   if (memberPaths[route.view]) return memberPaths[route.view];
   const path =
     route.view === "member-timezones"

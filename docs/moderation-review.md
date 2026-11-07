@@ -313,3 +313,185 @@ no-store avatar reads returned 200. No backend 503 or traceback appeared in the
 checked journal; nothing was saved or sent. Deployment tooling needed a recursive
 manifest finalizer for nested shared assets; this was a staging-tool issue, not an
 application or production check failure.
+
+
+## Four new logs (2026-11-06)
+
+Seven event keys join the existing four in the same settings document (schema stays 2,
+revision-checked PUT). All default to off with no destination.
+
+| key | category | source |
+|---|---|---|
+| `timeout_add`, `timeout_remove` | moderation | audit-log `MEMBER_UPDATE` entry whose `communication_disabled_until` change sets a future time, or clears it |
+| `member_update` | members | `MemberUpdateEvent` diff: nickname, username, display name, avatar, server avatar, discriminator (only when not `0`) |
+| `link` | messages | `GuildMessageCreateEvent` with at least one `http(s)://` URL |
+| `invite_create`, `invite_delete` | invites | `InviteCreateEvent`, `InviteDeleteEvent` |
+| `invite_use` | invites | `MemberCreateEvent` plus a diff of invite use counts |
+
+Categories are now `members`, `moderation`, `messages`, `invites`. Reading an old row fills the
+missing keys from defaults; nothing is written until a revision-checked save.
+
+New settings fields: `ignores` (`channel_ids`, `role_ids`, max 100 ids each, 17 to 20 digits;
+link event only) and `invite_names` (`{code: name}`, max 200). `GET /api/cwl/manage/member-events/invites`
+reads the bot's snapshot from the `member_invites` collection (one document per guild and code).
+
+The settings GET also returns `roles` (id, name, color, position, managed; `null` when unreadable) and `roles_available` (boolean). The dashboard treats roles as available only when the flag is `true` and `roles` is a list; otherwise saved ignored roles show as "Unknown role" and adding is disabled.
+
+How each part works:
+
+- Timeouts post from the audit entry and dedupe on the audit entry id. Moderator, reason,
+  duration and expiry come from it.
+- `member_update` needs the cached previous member, so it is skipped when that is missing.
+  Username, display-name and avatar changes arrive on `MemberUpdateEvent` because Discord sends
+  the updated user object in `GUILD_MEMBER_UPDATE`. The nickname actor is read from a single
+  audit-log page; when no entry matches the actor is omitted.
+- `link` skips bot and webhook authors, ignored channels, threads whose parent channel is
+  ignored, and authors with an ignored role. It dedupes on the message id.
+- `invite_use` snapshots invites at start and after every join, under one lock so two joins do
+  not share a diff. An invite is named only when exactly one explains the join: one use count
+  rose by 1, the vanity count rose, or an invite one use short of its limit vanished. Anything
+  else, and any fetch or permission failure, shows "Unknown invite".
+- `link` and `invite_*` rows are written only while their log is on and are excluded from
+  history search. Timeout and `member_update` rows are kept even when delivery is off.
+- No avatar bytes are downloaded or stored for the new kinds; cards use the Discord CDN URL.
+
+Limits:
+
+- A timeout that runs out by itself is not logged; Discord writes no audit entry for it.
+- Invite uses are joins, not link clicks. Attribution can be Unknown, and a join that races an
+  invite delete can also read Unknown.
+- The `GUILD_INVITES` intent (added in `main.py`) and the Manage Server permission are needed
+  for invite create, delete and use counts. Without Manage Server every invite use is Unknown.
+- The bot needs a restart to load the intent and listeners. Deploy the frontend with the backend:
+  the settings PUT now requires every event, the four categories, `ignores` and `invite_names`.
+- Link and invite rows are not pruned. There is no retention job. (Superseded by batch 2 below.)
+
+## Moderation batch 2 (2026-11-06)
+
+Bot-side decisions from contract v2. The timeline, member history and health endpoints and the
+dashboard screens are owned by the API and UI work.
+
+Event keys and categories:
+
+- Categories, in order: `members`, `moderation`, `roles`, `messages`, `channels`, `server`,
+  `invites`. New categories default to mode `main`; every new event defaults to disabled with no
+  channel. An old settings row reads with defaults filled and saves as before.
+- 21 new kinds: `unban`; `role_create`, `role_update`, `role_delete`, `roles_added`,
+  `roles_removed`; `message_delete`, `message_edit`, `message_bulk_delete`; `channel_create`,
+  `channel_update`, `channel_delete`, `channel_permissions`, `thread_delete`, `thread_lock`;
+  `server_update`, `emoji`, `sticker`, `app`, `webhook`, `automod`. `emoji` to `automod` are one
+  switch each and the card states added, changed or removed.
+
+How each part works:
+
+- Roles, channels, threads, server and unban post from the audit entry and dedupe on the entry
+  id (`roles_added` and `roles_removed` add the kind, because one entry can carry both).
+- A change made by an app account is skipped. The actor is an app when the cache says so, else
+  one REST lookup is cached in the process; an unknown actor counts as human. Adding an app
+  (`BOT_ADD`, `INTEGRATION_CREATE`) always posts.
+- `role_update` and `channel_update` are skipped when only the position changed (position is
+  never shown). `thread_lock` posts only when a person set locked or archived; auto-archive has
+  no audit entry and thread creation is never posted.
+- `unban` comes from `BanDeleteEvent` and audit `MEMBER_BAN_REMOVE`, in either order. Both use
+  the ban episode as the dedupe key. The gateway-first row waits one second for the audit entry
+  to add moderator and reason; an unban made by an app is dropped.
+- `message_delete` and `message_edit` need the cached message. Bots and webhooks are skipped, and
+  the existing ignore lists (channels, thread parents, roles) apply to `link`, delete, edit and
+  bulk delete. Edit posts only when the text changed. Attachments show name and type only.
+- Audit facts for message deletes are consumed once: Discord's entry `count` is a running total, so
+  only the increase since the last seen count (per entry id) can attribute new deletes.
+- One "App added" card per application: `BOT_ADD` and `INTEGRATION_CREATE` within 60 seconds pair
+  by application id, or when an id is missing and only one entry of the other type is waiting.
+- `message_bulk_delete` posts the count, channel, moderator when found, and a `.txt` transcript
+  of the cached human messages (200 KB cap) as an attachment. A text channel references it with
+  a file component; a forum starter attaches it. The transcript is kept on the row, so a post
+  that is retried after a restart still has it.
+- Join cards add account age ("New account" under 7 days), "Nth join" from earlier join rows
+  (shown from the second), and "via name or code" when invite attribution finishes within 3
+  seconds. The join waits on a per-user future set by the invite-use path; other joins are not
+  held. Leave cards add time in server and drop the roles line when the cached member is gone.
+- Cards for member kinds carry a "Member history" link button to
+  `/server/moderation/member/<user id>` through `utils/dashboard_urls.py`; no dashboard base
+  means no button.
+- `HISTORY_TYPES` is join, leave, kick, ban, unban, timeout_add, timeout_remove, member_update,
+  roles_added, roles_removed, invite_use. Of these, history kinds are kept when delivery is off.
+- Retention: new rows get `expires_at` (30 days for link and the three message kinds, 90 days
+  for the three invite kinds); other kinds have no field. A TTL index (`expireAfterSeconds` 0)
+  on `expires_at` removes them. Settings, snapshot and invite documents never get one.
+- `main.py` raises the hikari message cache to 10,000 messages; other cache defaults are kept.
+
+Limits:
+
+- A message that is not in the cache is never logged, and a bulk delete of uncached messages
+  posts the count with no transcript. The cache is lost on restart and holds the newest 10,000
+  messages, so older deletes and edits are missed.
+- The delete moderator is best effort. It comes from a recent audit `MESSAGE_DELETE` entry for
+  the same author and channel seen on the gateway in the last few seconds; Discord merges
+  repeated deletes into one entry, so a later delete in a run can read no moderator.
+- Changes made by apps are skipped, which includes this bot's own role changes.
+- A rejoin count reads earlier join rows, so it starts at the first join the log recorded.
+- Retention is by the Mongo TTL index only; it runs about once a minute and removes rows
+  shortly after `expires_at`.
+
+## Hardening (2026-11-06)
+
+Four changes on top of batch 2, then a rework of audit replay. Code: `extensions/events/member_events.py`,
+`utils/member_events.py`, `utils/member_event_settings.py`, `utils/member_event_cards.py`,
+`cwl_web/member_events.py`.
+
+- **Ignored bots replace "skip all bots".** Audit-sourced logs (roles, channels, server, app
+  changes, member roles, unban) skip an actor only when its id is in settings
+  `ignored_bot_ids` (17 to 20 digit ids, at most 50). A row that never saved the field ignores
+  this bot's own id, resolved at runtime (`bot.get_me()`, else REST); if that id cannot be read,
+  nobody is ignored. Once saved, the list is used as is, so staff may remove the own bot or
+  save an empty list. Reading never writes; a PUT without the field (older clients) leaves it
+  untouched. "App added" always posts. Message kinds still skip bot and webhook authors.
+  Every bot seen as an audit actor is stored in one document
+  `member-events-bot-actors:<GUILD_ID>` (`bots: {id: {name, last_seen}}`, newest 100 kept, a
+  repeat within an hour is not rewritten). Settings GET adds response-only `bot_actors`
+  (`id`, `name`, `last_seen`, sorted by name) from that document plus this bot, and always
+  returns the resolved `ignored_bot_ids`; when this bot's id cannot be read and the row never
+  saved a list, `ignored_bot_ids` is omitted (the dashboard shows "Bot list unavailable.").
+- **Recovery after downtime.** The newest handled audit entry id is kept in
+  `member-events-audit-cursor:<GUILD_ID>` (`last_audit_num` as an integer, `last_audit_id` as text, `updated_at`), only moving forward
+  by one filtered update.
+  After the startup invite snapshot a background task reads the audit log (newest first, 24
+  hours and 500 entries at most), then replays missed entries oldest first through the same
+  handlers. Once an audit entry is fully handled, live or replayed, whatever the outcome
+  (posted, skipped as an ignored bot, enrichment only, duplicate), one marker document
+  `member-events-audit:<GUILD_ID>:<entry id>` (`handled_at`, `expires_at` 48 hours later; the
+  expiry index removes it) is written once the entry's state change and rows are persisted,
+  before any Discord delivery; a delivery failure leaves the row queued for the recovery loop
+  and does not stop the marker. If the marker write fails, the cursor does not advance past
+  that entry. A replayed entry is skipped before its handler runs when it has a marker or when
+  any log row already carries its audit entry id (indexed on guild and audit entry id; ban
+  rows are excluded), so it never posts or changes ban state. An entry whose handler failed
+  before persisting anything has neither and is replayed. Markers
+  have no `event_type` or `delivery_status`, so history and the backlog never include them. A second "App added" for the same
+  application id within 10 minutes is skipped even after a restart. Replayed cards carry
+  "Recovered after restart". With no cursor (first run) it only sets the cursor. Live entries
+  that arrive before recovery has read the cursor are held back from the cursor until it ends.
+  A failure (for example 403 without View Audit Log) logs one warning and never delays
+  startup. That gap stays unrecovered: the hold is released, so live entries move the cursor
+  again and the next start does not retry it. Both documents have no `expires_at` and no
+  `event_type`, so history queries never return them.
+- **Card size limits.** Roles 10, permission changes 15, profile and setting changes 10,
+  URLs 10, attachments 10, each followed by "+N more". A final guard keeps a Components V2 card
+  within 3,800 characters of text, and a forum starter description within 4,000 (fields 1,000,
+  total 5,800), cutting the longest lines first (never below 40 characters, a field line keeping at least 12 characters of its value, never
+  inside an escape) and then dropping trailing fields; "+N more" always equals the hidden items.
+- **Public-channel health check.** Settings health adds an error `public_<channel id>` ("<name>
+  is visible to everyone") for any enabled log destination, or the parent channel of a thread,
+  that `@everyone` can view (View Channel or Administrator after channel overwrites).
+
+Limits:
+
+- Gateway-only events (message delete and edit, joins and leaves, invite create and delete) are
+  not recovered. Audit `MESSAGE_DELETE` entries are skipped in recovery.
+- Recovery uses hikari's `before` paging (newest first); hikari 2.6 has no `after` parameter.
+  Past 500 missed entries, or beyond 24 hours, the older ones are not replayed.
+- The ignore list is read at replay time, not when the entry was made.
+- The bot-actor document is read and rewritten whole, so two near-simultaneous first sightings
+  can drop one name until that bot acts again.
+- A recovered kick or ban waits the same 1 to 2 seconds as a live one, so a long backlog posts
+  slowly.
