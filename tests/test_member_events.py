@@ -651,7 +651,8 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         self.patches[2].start()
         self.addCleanup(lambda: [p.stop() for p in self.patches])
         for state in (transport._bot_users, transport._recent_deletes, transport._recent_bulk,
-                      transport._bot_unbans, transport._invite_waits):
+                      transport._bot_unbans, transport._invite_waits, transport._invite_born,
+                      transport._recent_app_adds):
             state.clear()
         users = {HUMAN: NS(is_bot=False), APP: NS(is_bot=True)}
         self.bot = NS(cache=NS(get_user=users.get, get_role=lambda r: None, get_guild_channel=lambda c: None,
@@ -742,7 +743,39 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         await self.audit(A.BOT_ADD, 1, user=APP)
         await self.audit(A.INTEGRATION_CREATE, 2, NS(key=K.NAME, old_value=None, new_value="Tool"), user=APP)
         await self.audit(A.INTEGRATION_DELETE, 3, NS(key=K.NAME, old_value="Tool", new_value=None), user=APP)
-        self.assertEqual([row["details"]["action"] for row in self.rows("app")], ["added", "added"])
+        self.assertEqual([row["details"]["action"] for row in self.rows("app")], ["added"])  # One card per app.
+
+    async def test_bot_add_and_integration_create_for_one_app_post_one_card(self):
+        await enable(self.history, "app")
+        name = NS(key=K.NAME, old_value=None, new_value="Tool")
+        await self.audit(A.INTEGRATION_CREATE, 1, name, target=555, user=APP)
+        await self.audit(A.BOT_ADD, 2, target=555, user=APP)
+        self.assertEqual(len(self.rows("app")), 1)
+        await self.audit(A.BOT_ADD, 3, target=556, user=APP)  # A different app still posts.
+        await self.audit(A.INTEGRATION_DELETE, 4, NS(key=K.NAME, old_value="Tool", new_value=None), target=555)
+        self.assertEqual(sorted(r["details"]["action"] for r in self.rows("app")), ["added", "added", "removed"])
+
+    async def test_delete_audit_fact_attributes_at_most_one_delete(self):
+        await enable(self.history, "message_delete")
+        channel = 777777777777777777
+        event = lambda old: NS(guild_id=GUILD_ID, channel_id=channel, message_id=old.id, old_message=old)
+        transport.note_message_audit(self.entry(A.MESSAGE_DELETE, 70, target=self.uid,
+                                                options=NS(channel_id=channel)))
+        await transport.record_message_delete(event(self.message(6)), self.mongo, self.bot)
+        await transport.record_message_delete(event(self.message(8)), self.mongo, self.bot)  # Self-delete.
+        moderators = {r["details"]["message_id"]: r["moderator_id"] for r in self.rows("message_delete")}
+        self.assertEqual(moderators, {"6": str(HUMAN), "8": None})
+
+    async def test_delete_audit_count_allows_that_many_attributions(self):
+        await enable(self.history, "message_delete")
+        channel = 777777777777777777
+        event = lambda old: NS(guild_id=GUILD_ID, channel_id=channel, message_id=old.id, old_message=old)
+        transport.note_message_audit(self.entry(A.MESSAGE_DELETE, 71, target=self.uid,
+                                                options=NS(channel_id=channel, count=2)))
+        for mid in (6, 7, 8):
+            await transport.record_message_delete(event(self.message(mid)), self.mongo, self.bot)
+        moderators = {r["details"]["message_id"]: r["moderator_id"] for r in self.rows("message_delete")}
+        self.assertEqual(moderators, {"6": str(HUMAN), "7": str(HUMAN), "8": None})
 
     async def test_roles_added_and_removed_use_names_skip_apps_and_keep_history_when_off(self):
         added = NS(key=K.ADD_ROLE_TO_MEMBER, old_value=None, new_value={1: NS(name="CWL player"), 2: NS(name="Member")})
@@ -874,7 +907,7 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("from app", row["details"]["transcript"])
         big = {i: self.message(i, "y" * 5000) for i in range(100, 160)}
         text = transport.build_transcript(big.values())
-        self.assertLessEqual(len(text.encode()), 200 * 1024 + 64)
+        self.assertLessEqual(len(text.encode()), 200 * 1024)
         self.assertTrue(text.endswith("[transcript truncated]"))
         ignored = NS(**{**vars(event), "channel_id": 333333333333333333})
         await transport.record_bulk_delete(ignored, self.mongo, self.bot)
@@ -882,6 +915,38 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         await transport.record_bulk_delete(empty, self.mongo, self.bot)
         self.assertEqual(len(self.rows("message_bulk_delete")), 2)
         self.assertNotIn("transcript", self.rows("message_bulk_delete")[-1]["details"])  # Uncached: count only.
+
+    async def test_transcript_with_marker_never_exceeds_the_cap_at_the_boundary(self):
+        for width in range(4990, 5011):
+            with self.subTest(width=width):
+                text = transport.build_transcript(self.message(i, "y" * width) for i in range(100, 160))
+                self.assertLessEqual(len(text.encode()), transport.TRANSCRIPT_LIMIT)
+                self.assertTrue(text.endswith("[transcript truncated]"))
+        one = len(transport.build_transcript([self.message(1, "y" * 100)]).encode()) + 1
+        fits = transport.build_transcript(self.message(i, "y" * 100) for i in range(1, 100))
+        self.assertEqual(len(fits.encode()), 99 * one - 1)  # Under the cap: untouched.
+        self.assertNotIn("truncated", fits)
+
+    async def test_rejoin_does_not_read_the_previous_joins_invite_future(self):
+        loop = asyncio.get_running_loop()
+        future = transport._invite_future(self.uid)
+        future.set_result("Old")
+        transport._invite_born[self.uid] = loop.time() - 60  # Left over from an earlier join.
+        transport.discard_stale_invite(self.uid)
+        self.assertNotIn(self.uid, transport._invite_waits)
+        fresh = transport._invite_future(self.uid)
+        fresh.set_result("New")  # This join's own label arrived first: kept.
+        transport.discard_stale_invite(self.uid)
+        self.assertIs(transport._invite_waits[self.uid], fresh)
+        transport._invite_waits.pop(self.uid)
+        stale = transport._invite_future(self.uid)
+        stale.set_result("Old")
+        transport._invite_born[self.uid] = loop.time() - 60
+        await enable(self.history, "join")
+        transport.asyncio.sleep.side_effect = None
+        await self.join(self.uid)
+        (row,) = self.rows("join")
+        self.assertNotIn("invite", row["details"])
 
     async def join(self, uid, *, with_invite=None):
         user = NS(id=uid, username=f"user{uid % 100}", global_name=None, avatar_hash=None)

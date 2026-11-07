@@ -233,7 +233,7 @@ class BatchTwoCardTests(unittest.TestCase):
         from utils import dashboard_urls
         url = "https://dash.warriorsunited.cc/server/moderation/member/123456789012345678"
         with_button = ("join", "leave", "member_update", "kick", "ban", "unban", "timeout_add", "timeout_remove",
-                       "roles_added", "roles_removed", "invite_use", "message_delete", "message_edit", "link")
+                       "roles_added", "roles_removed", "invite_use")
         for kind in ("join", "leave", "kick", "ban", "timeout_add", "timeout_remove", "member_update", "link",
                      "invite_use", *NEW_KINDS):
             row = sample_row(kind)

@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
 
 from utils import dashboard_urls
-from utils.member_events import GUILD_ID, safe_text
+from utils.member_events import GUILD_ID, HISTORY_TYPES, safe_text
 
 EVENT_STYLE = {
     "join": ("👋", "Member joined", "joined", 0x2BA66A),
@@ -60,9 +60,7 @@ EXTRA_KINDS = ("timeout_add", "timeout_remove", "member_update", "link",
                *OBJECT_KINDS)
 USER_KINDS = ("timeout_add", "timeout_remove", "member_update", "link", "invite_use", "unban",
               "roles_added", "roles_removed", "message_delete", "message_edit")
-HISTORY_BUTTON_KINDS = ("join", "leave", "member_update", "kick", "ban", "unban", "timeout_add",
-                        "timeout_remove", "roles_added", "roles_removed", "invite_use",
-                        "message_delete", "message_edit", "link")
+HISTORY_BUTTON_KINDS = HISTORY_TYPES
 TRANSCRIPT_NAME = "message-transcript.txt"
 FIELD_LABELS = {"nickname": "Nickname", "username": "Username", "global_name": "Display name",
                 "avatar": "Avatar", "guild_avatar": "Server avatar", "discriminator": "Discriminator"}

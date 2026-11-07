@@ -61,14 +61,18 @@ async def listing(request):
             guild_id=GUILD_ID, query=q, kind=kind, start=start, end=end,
             before=before or None, limit=limit,
         )
-    from .moderation_names import resolve_names
-    names = await resolve_names(request, [row.get("moderator_id") for row in rows])
-    payload = {"events": [{**public_event(row, api_prefix=PREFIX),
-                           "moderator_name": names.get(str(row.get("moderator_id")))} for row in rows],
-               "next_cursor": cursor}
+    payload = {"events": await public_events_named(request, rows), "next_cursor": cursor}
     response = web.json_response(payload)
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+async def public_events_named(request, rows):
+    """Public rows with moderator display names resolved; shared by history and timeline."""
+    from .moderation_names import resolve_names
+    names = await resolve_names(request, [row.get("moderator_id") for row in rows])
+    return [{**public_event(row, api_prefix=PREFIX),
+             "moderator_name": names.get(str(row.get("moderator_id")))} for row in rows]
 
 
 async def avatar(request):

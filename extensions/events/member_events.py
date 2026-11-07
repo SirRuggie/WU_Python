@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 
 import aiohttp
@@ -32,6 +33,10 @@ _index_lock = asyncio.Lock()
 _invite_lock = asyncio.Lock()  # One join diff at a time; create/delete share it.
 INVITE_WAIT_SECONDS = 3
 _invite_waits: dict[int, asyncio.Future] = {}  # Join card waits here for its invite name.
+_invite_born: dict[int, float] = {}  # When each waiting future was created (loop time).
+INVITE_STALE_SECONDS = 5
+_recent_app_adds: dict[str, float] = {}  # Application id -> monotonic time of its posted "App added".
+APP_ADD_WINDOW_SECONDS = 60
 URL_PATTERN = re.compile(r"https?://\S+")
 FORUM_LABELS = {"join": "Joined", "leave": "Left", "kick": "Kicked", "ban": "Banned",
                 "timeout_add": "Timed out", "timeout_remove": "Timeout removed",
@@ -239,6 +244,8 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
         return
     now = at or datetime.now(timezone.utc)
     uid = int(user_id)
+    if kind == "join":
+        discard_stale_invite(uid)
     store = MemberEventStore(mongo.member_events)
     await ensure_indexes(store)
     saved = await store.latest_identity(GUILD_ID, uid) if kind in ("leave", "kick", "ban") else None
@@ -824,8 +831,17 @@ def _invite_future(uid: int):
     future = _invite_waits.get(uid)
     if future is None:
         future = _invite_waits[uid] = loop.create_future()
+        _invite_born[uid] = loop.time()
         loop.call_later(30, lambda: _invite_waits.pop(uid, None) if _invite_waits.get(uid) is future else None)
     return future
+
+
+def discard_stale_invite(uid: int):
+    """A new join must not read the previous join's label; keep a fresh one set for this join."""
+    future = _invite_waits.get(uid)
+    if future is not None and future.done() and (
+            asyncio.get_running_loop().time() - _invite_born.get(uid, 0)) > INVITE_STALE_SECONDS:
+        del _invite_waits[uid]
 
 
 def settle_invite_label(uid: int, label: str | None):
@@ -1013,6 +1029,16 @@ def audit_object_name(entry, bot, kind: str) -> str:
     return str(getattr(found, "name", None) or getattr(found, "username", None) or "")
 
 
+def _app_add_seen(app_id: str) -> bool:
+    now = time.monotonic()
+    for key in [k for k, at in _recent_app_adds.items() if now - at > APP_ADD_WINDOW_SECONDS]:
+        del _recent_app_adds[key]
+    if app_id in _recent_app_adds:
+        return True
+    _recent_app_adds[app_id] = now
+    return False
+
+
 async def record_audit_kind(entry, mongo, bot) -> bool:
     """Roles, channels, threads and server logs from one audit entry. False when not ours."""
     spec = AUDIT_KINDS.get(entry.action_type)
@@ -1027,6 +1053,8 @@ async def record_audit_kind(entry, mongo, bot) -> bool:
     if not (kind == "app" and action == "added") and await is_bot_actor(bot, entry.user_id):
         return True  # An app's own change is never a staff action; adding an app always posts.
     details = {"action": action, "target_id": str(entry.target_id)}
+    if kind == "app" and action == "added" and _app_add_seen(str(entry.target_id)):
+        return True  # BOT_ADD and INTEGRATION_CREATE both describe one new app.
     if kind == "thread_lock":
         locked = [c for c in entry.changes if c.key in (_C.LOCKED, _C.ARCHIVED) and c.new_value is True]
         if not locked:
@@ -1109,18 +1137,28 @@ def note_message_audit(entry):
     options = getattr(entry, "options", None)
     channel = getattr(options, "channel_id", None)
     if entry.action_type == hikari.AuditLogEventType.MESSAGE_DELETE:
-        _recent_deletes.append((int(entry.target_id), int(channel or 0), entry.user_id, entry.created_at))
+        try:
+            uses = max(1, int(getattr(options, "count", None) or 1))
+        except (TypeError, ValueError):
+            uses = 1
+        _recent_deletes.append([int(entry.target_id), int(channel or 0), entry.user_id, entry.created_at, uses])
     else:
-        _recent_bulk.append((int(entry.target_id), 0, entry.user_id, entry.created_at))
+        _recent_bulk.append([int(entry.target_id), 0, entry.user_id, entry.created_at, 1])
 
 
 async def audit_moderator(facts, target: int, channel: int = 0):
-    """Moderator of a message delete from recent audit facts; None when unsure."""
+    """Moderator of a message delete from recent audit facts; None when unsure.
+
+    A fact attributes at most as many deletes as its entry counted, so a later
+    self-delete by the same author is never credited to the moderator.
+    """
     await asyncio.sleep(1)  # The audit entry can trail the gateway event.
     now = datetime.now(timezone.utc)
-    for known_target, known_channel, moderator, created in reversed(facts):
-        if (known_target == target and (not channel or known_channel == channel)
+    for fact in reversed(facts):
+        known_target, known_channel, moderator, created, remaining = fact
+        if (remaining > 0 and known_target == target and (not channel or known_channel == channel)
                 and abs((now - created.replace(tzinfo=created.tzinfo or timezone.utc)).total_seconds()) <= 10):
+            fact[4] = remaining - 1
             return str(moderator) if moderator else None
     return None
 
@@ -1199,7 +1237,8 @@ TRANSCRIPT_LIMIT = 200 * 1024
 
 
 def build_transcript(messages) -> str:
-    """Cached human messages, oldest first, capped at 200 KB of UTF-8."""
+    """Cached human messages, oldest first, capped at 200 KB of UTF-8 including the marker."""
+    marker = "[transcript truncated]"
     lines, size = [], 0
     for message in sorted(messages, key=lambda m: int(m.id)):
         if not _human_message(message):
@@ -1209,8 +1248,8 @@ def build_transcript(messages) -> str:
                 f"({message.author.id}): {(message.content or '').replace(chr(10), ' / ')}"
                 + (f" [files: {files}]" if files else ""))
         size += len(line.encode("utf-8")) + 1
-        if size > TRANSCRIPT_LIMIT:
-            lines.append("[transcript truncated]")
+        if size > TRANSCRIPT_LIMIT - len(marker) - 1:
+            lines.append(marker)
             break
         lines.append(line)
     return "\n".join(lines)

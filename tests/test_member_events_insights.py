@@ -124,6 +124,17 @@ class TimelineTests(unittest.IsolatedAsyncioTestCase):
                                                   "timeout_remove", "member_update", "roles_added",
                                                   "roles_removed", "invite_use"})
 
+    async def test_events_carry_resolved_moderator_names(self):
+        collection = Collection()
+        mod = "223456789012345679"
+        add(collection, 1, "kick", moderator_id=mod)
+        add(collection, 2, "join")
+        with patch("cwl_web.moderation_names.resolve_names", new=AsyncMock(return_value={mod: "Mod Mike"})) as names:
+            data = json.loads((await self.call(collection)).text)
+        self.assertEqual({e["event_type"]: e["moderator_name"] for e in data["events"]},
+                         {"kick": "Mod Mike", "join": None})
+        self.assertIn(mod, names.await_args.args[1])
+
     async def test_pagination_cursor(self):
         collection = Collection()
         for n in range(1, 6):

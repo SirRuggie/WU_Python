@@ -5,18 +5,11 @@ from datetime import timezone
 
 from aiohttp import web
 
-from utils import member_events as store_module
-from utils.member_events import GUILD_ID, ID_PATTERN, MemberEventStore, public_event
+from utils.member_events import GUILD_ID, HISTORY_TYPES, ID_PATTERN, MemberEventStore
 from utils.member_event_settings import EVENT_TYPES, effective_event, normalize_settings
-from .member_events import PREFIX, _bot_permissions, _resolve_option
+from .member_events import PREFIX, _bot_permissions, _resolve_option, public_events_named
 from .server_management import mongo, require_manage
 
-# Contract v2 history list. utils.member_events owns it once updated; until then
-# fall back to the same tuple so the timeline never lags the contract.
-_CONTRACT_HISTORY = ("join", "leave", "kick", "ban", "unban", "timeout_add", "timeout_remove",
-                     "member_update", "roles_added", "roles_removed", "invite_use")
-HISTORY_TYPES = (store_module.HISTORY_TYPES if "unban" in store_module.HISTORY_TYPES
-                 else _CONTRACT_HISTORY)
 BACKLOG_LIMIT = 25
 VIEW_AUDIT_LOG = 1 << 7
 MANAGE_GUILD = 1 << 5
@@ -52,7 +45,7 @@ async def timeline(request):
     if not rows:
         raise web.HTTPNotFound(text="No history for this member.")
     next_before = rows[limit - 1]["_id"] if len(rows) > limit else None
-    events = [public_event(row, api_prefix=PREFIX) for row in rows[:limit]]
+    events = await public_events_named(request, rows[:limit])
     newest = events[0]
     member = {"user_id": user_id, "display_name": newest["display_name"],
               "username": newest["username"], "avatar_url": newest["avatar_url"]}
