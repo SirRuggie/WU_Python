@@ -194,6 +194,16 @@
   overflow-wrap: anywhere;
 }
 
+.member-activity-by,
+.member-activity-reason {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+  margin: 0;
+}
+
 .member-activity-identity {
   display: flex;
   align-items: center;

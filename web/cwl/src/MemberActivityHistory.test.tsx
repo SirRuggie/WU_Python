@@ -218,9 +218,9 @@ it("shows kick and ban reasons and moderators in the compact history card", () =
   expect(html).toContain("Banned");
   expect(html).toContain("&lt;b&gt;Moderator &amp; Name&lt;/b&gt;");
   expect(html.replace(/<[^>]+>/g, "")).not.toContain("987654321");
-  expect(html.replace(/<[^>]+>/g, "")).toContain(
-    "an unknown moderator · “No reason given”",
-  );
+  expect(html.replace(/<[^>]+>/g, "")).toContain("by an unknown moderator");
+  expect(html.replace(/<[^>]+>/g, "")).toContain("“No reason given”");
+  expect(html.replace(/<[^>]+>/g, "")).not.toContain("· “");
 });
 
 it("does not display archived raw-ID identity fallbacks", () => {

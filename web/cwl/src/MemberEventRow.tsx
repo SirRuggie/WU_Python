@@ -14,7 +14,14 @@ export type MemberEvent = {
   moderator_id?: string | null;
   moderator_name?: string | null;
   delivery_status?: string | null;
-  details?: { roles?: unknown } | null;
+  details?: {
+    roles?: unknown;
+    changes?: unknown;
+    name?: unknown;
+    code?: unknown;
+    duration_seconds?: unknown;
+    until?: unknown;
+  } | null;
 };
 
 const roleNameLimit = 5;
@@ -31,6 +38,77 @@ function roleSummary(item: MemberEvent) {
   return names.length > roleNameLimit
     ? `${shown} +${names.length - roleNameLimit} more`
     : shown;
+}
+
+const changeLimit = 3;
+const fieldLabels: Record<string, string> = {
+  nickname: "Nickname",
+  username: "Username",
+  global_name: "Display name",
+  avatar: "Avatar",
+  guild_avatar: "Server avatar",
+  discriminator: "Discriminator",
+};
+
+function changeSummary(item: MemberEvent) {
+  if (item.event_type !== "member_update") return "";
+  const raw = Array.isArray(item.details?.changes) ? item.details.changes : [];
+  const lines: string[] = [];
+  for (const change of raw) {
+    if (!change || typeof change !== "object") continue;
+    const { field, before, after } = change as Record<string, unknown>;
+    const label = typeof field === "string" ? fieldLabels[field] : undefined;
+    if (!label) continue;
+    const text = (value: unknown) =>
+      typeof value === "string" && value.trim() ? value : "none";
+    lines.push(
+      field === "avatar" || field === "guild_avatar"
+        ? `${label}: changed`
+        : `${label}: ${text(before)} → ${text(after)}`,
+    );
+  }
+  if (!lines.length) return "";
+  const shown = lines.slice(0, changeLimit).join(" · ");
+  return lines.length > changeLimit
+    ? `${shown} +${lines.length - changeLimit} more`
+    : shown;
+}
+
+function inviteSummary(item: MemberEvent) {
+  if (item.event_type !== "invite_use") return "";
+  const label = [item.details?.name, item.details?.code].find(
+    (value): value is string =>
+      typeof value === "string" && value.trim() !== "",
+  );
+  return label ? `via ${label}` : "";
+}
+
+function durationText(seconds: number) {
+  const units: [string, number][] = [
+    ["day", 86400],
+    ["hour", 3600],
+    ["minute", 60],
+  ];
+  for (const [unit, size] of units) {
+    if (seconds >= size && seconds % size === 0) {
+      const count = seconds / size;
+      return `${count} ${unit}${count === 1 ? "" : "s"}`;
+    }
+  }
+  return "";
+}
+
+function timeoutSummary(item: MemberEvent) {
+  if (item.event_type !== "timeout_add") return "";
+  const seconds = item.details?.duration_seconds;
+  const duration =
+    typeof seconds === "number" && seconds > 0 ? durationText(seconds) : "";
+  const until =
+    typeof item.details?.until === "string" &&
+    !Number.isNaN(new Date(item.details.until).getTime())
+      ? `until ${formatDate(item.details.until)}`
+      : "";
+  return [duration && `For ${duration}`, until].filter(Boolean).join(" · ");
 }
 
 export const eventLabels: Record<string, string> = {
@@ -103,6 +181,8 @@ export default function MemberEventRow({
     : "";
 
   const roles = roleSummary(item);
+  const summary =
+    changeSummary(item) || inviteSummary(item) || timeoutSummary(item);
 
   return (
     <li className={`member-activity-row is-${item.event_type}`}>
@@ -124,23 +204,28 @@ export default function MemberEventRow({
         {eventLabel}
       </span>
       {isModeration && (
-        <p className="member-activity-moderation">
-          by{" "}
-          {item.moderator_id ? (
-            <DiscordIdentity
-              userId={item.moderator_id}
-              displayName={moderatorName}
-              resolvedMember={null}
-              variant="compact"
-              contact={false}
-            />
-          ) : (
-            "an unknown moderator"
-          )}
-          {" · "}“{item.reason?.trim() || "No reason given"}”
-        </p>
+        <div className="member-activity-moderation">
+          <p className="member-activity-by">
+            by{" "}
+            {item.moderator_id ? (
+              <DiscordIdentity
+                userId={item.moderator_id}
+                displayName={moderatorName}
+                resolvedMember={null}
+                variant="compact"
+                contact={false}
+              />
+            ) : (
+              "an unknown moderator"
+            )}
+          </p>
+          <p className="member-activity-reason">
+            “{item.reason?.trim() || "No reason given"}”
+          </p>
+        </div>
       )}
       {roles && <p className="member-activity-roles">{roles}</p>}
+      {summary && <p className="member-activity-roles">{summary}</p>}
       <div className="member-activity-meta">
         <time className="member-activity-date" dateTime={item.occurred_at}>
           {formatDate(item.occurred_at)}

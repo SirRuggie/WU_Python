@@ -151,8 +151,8 @@ export default function ModerationCategoryCard({
             effective.source === "event"
               ? "its own"
               : effective.source === "category"
-                ? `${label}'s`
-                : "main's";
+                ? `the ${label}`
+                : "the main";
           const hint =
             effective.source === "off"
               ? `${label} is off · no log sent`

@@ -39,6 +39,7 @@ export default function ModerationDestinationPicker({
         channels={options}
         value={value.channel_id || ""}
         disabled={disabled}
+        nameOnly
         onResolve={onResolve}
         onChange={(channelId) =>
           onChange({

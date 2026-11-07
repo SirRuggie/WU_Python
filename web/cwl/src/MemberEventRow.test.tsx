@@ -48,3 +48,74 @@ it("shows no role line for other kinds or missing names", () => {
     "member-activity-roles",
   );
 });
+
+it("shows what changed on profile rows, three at most", () => {
+  const change = (
+    field: string,
+    before: string | null,
+    after: string | null,
+  ) => ({
+    field,
+    before,
+    after,
+  });
+  const html = render({
+    ...base,
+    event_type: "member_update",
+    details: {
+      changes: [
+        change("nickname", "A", "B"),
+        change("username", "ace", "ace2"),
+        change("avatar", null, null),
+        change("global_name", "G", "H"),
+        change("discriminator", "1", "2"),
+      ],
+    },
+  });
+  expect(html).toContain("Nickname: A → B");
+  expect(html).toContain("Username: ace → ace2");
+  expect(html).toContain("Avatar: changed");
+  expect(html).toContain("+2 more");
+  expect(html).not.toContain("Display name");
+  expect(
+    render({ ...base, event_type: "member_update", details: null }),
+  ).not.toContain("→");
+});
+
+it("shows the invite name or code and omits the line when missing", () => {
+  const invite = { ...base, event_type: "invite_use" };
+  expect(
+    render({ ...invite, details: { name: "Reddit", code: "abc" } }),
+  ).toContain("via Reddit");
+  expect(render({ ...invite, details: { name: null, code: "abc" } })).toContain(
+    "via abc",
+  );
+  expect(render({ ...invite, details: {} })).not.toContain("via ");
+});
+
+it("shows timeout duration and expiry and omits missing parts", () => {
+  const timeout = { ...base, event_type: "timeout_add" };
+  const html = render({
+    ...timeout,
+    details: { duration_seconds: 3600, until: "2026-11-06T11:00:00Z" },
+  });
+  expect(html).toContain("For 1 hour · until ");
+  expect(
+    render({ ...timeout, details: { duration_seconds: 604800 } }),
+  ).toContain("For 7 days");
+  expect(render({ ...timeout, details: {} })).not.toContain("For ");
+});
+
+it("renders the moderator and the quoted reason on separate lines", () => {
+  const html = render({
+    ...base,
+    event_type: "kick",
+    reason: "Spam",
+    moderator_id: null,
+  });
+  expect(html).toContain(
+    '<p class="member-activity-by">by an unknown moderator</p>',
+  );
+  expect(html).toContain('<p class="member-activity-reason">“Spam”</p>');
+  expect(html).not.toContain("· “");
+});

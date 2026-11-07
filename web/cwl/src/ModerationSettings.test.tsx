@@ -244,7 +244,7 @@ it("requires explicit save and supports discard of an event override", async () 
     0,
   );
   await act(async () => button("Discard").click());
-  expect(host.textContent).toContain("Uses main's channel · #main-logs");
+  expect(host.textContent).toContain("Uses the main channel · #main-logs");
   const joinSwitch = host.querySelector<HTMLInputElement>(
     '[aria-label="Joins logging"]',
   )!;
@@ -418,7 +418,7 @@ it("restores the last active mode despite a retained own channel", async () => {
   await act(async () => toggle.click());
   await act(async () => toggle.click());
   expect(mode.value).toBe("main");
-  expect(card.textContent).toContain("Uses main's channel");
+  expect(card.textContent).toContain("Uses the main channel");
   await change(mode, "own");
   expect(
     card.querySelector<HTMLSelectElement>('[aria-label="Members channel"]')!
