@@ -92,6 +92,15 @@ it("groups one person across three accounts and saves only the checked account",
   expect(host.querySelectorAll("a.discord-contact")).toHaveLength(1);
   expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(3);
   expect(host.querySelectorAll(".declaration-member-account")).toHaveLength(3);
+  expect(
+    host.querySelectorAll(".shared-account-card.declaration-member-card"),
+  ).toHaveLength(3);
+  expect(host.querySelector(".account-card-meta")?.textContent).toBe(
+    "TH 9 · #P",
+  );
+  expect(host.querySelector(".account-card-status")?.textContent).toBe(
+    "Assigned to Fixture",
+  );
   await act(async () =>
     host.querySelectorAll<HTMLInputElement>("input")[2].click(),
   );
@@ -128,4 +137,53 @@ it("keeps unlinked accounts separate and deduplicates shared low/filler tags", a
   expect(host.querySelectorAll(".declaration-member-account")).toHaveLength(2);
   expect(host.querySelectorAll(".discord-identity-compact,a")).toHaveLength(0);
   expect(transport).not.toHaveBeenCalled();
+});
+
+it("keeps checked and disabled controls, unpublished wording and missing TH in the shared card", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  const onChanged = vi.fn();
+  await act(async () =>
+    root!.render(
+      <DeclarationMemberMarks
+        rows={[
+          {
+            tag: "#UNKNOWN",
+            name: "Unpublished account",
+            town_hall: null,
+            context: "Original context",
+            assigned_clan_tag: null,
+            not_published_yet: true,
+            roster_filler: true,
+            roster_filler_revision: 7,
+          },
+        ]}
+        control={{ seasonId: "1", revision: 11, disabled: true, onChanged }}
+      />,
+    ),
+  );
+  const card = host.querySelector(".declaration-member-card")!;
+  expect(card.querySelector(".player-card-name-text")?.textContent).toBe(
+    "Unpublished account",
+  );
+  expect(card.querySelector(".account-card-meta")?.textContent).toBe(
+    "TH unavailable · #UNKNOWN",
+  );
+  expect(card.querySelector(".account-card-status")?.textContent).toBe(
+    "Moved here · not published yet",
+  );
+  expect(
+    host.querySelector(".declaration-member-account.is-unpublished"),
+  ).not.toBeNull();
+  expect(host.textContent).not.toContain("Original context");
+  const box = card.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(box.getAttribute("aria-label")).toBe("Filler: Unpublished account");
+  expect(box.checked).toBe(true);
+  expect(box.disabled).toBe(true);
+  expect(card.querySelector("label")?.textContent).toBe("Filler");
+  await act(async () => box.click());
+  expect(transport).not.toHaveBeenCalled();
+  expect(onChanged).not.toHaveBeenCalled();
 });

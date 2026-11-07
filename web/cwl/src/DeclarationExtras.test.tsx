@@ -79,7 +79,15 @@ it("lists account identity and context without a send action or external HTML", 
   expect(host.textContent).toContain("⚠ 1 players not on the roster");
   expect(host.textContent).toContain("TH 16");
   expect(host.textContent).toContain("Assigned to Other clan");
-  expect(host.querySelector("img")).toBeNull();
+  expect(host.querySelector(".player-card-name-text")?.textContent).toBe(
+    "<img src=x> @everyone",
+  );
+  expect(host.querySelector('img[src="x"]')).toBeNull();
+  expect(host.querySelector("img:not(.town-hall-icon)")).toBeNull();
+  expect(host.querySelectorAll("img.town-hall-icon")).toHaveLength(1);
+  expect(host.querySelector("img.town-hall-icon")?.getAttribute("alt")).toBe(
+    "Town Hall 16",
+  );
   expect(host.querySelector("button")).toBeNull();
 });
 
@@ -126,7 +134,9 @@ it("separates a neutral draft move from intruders without changing account count
       />,
     ),
   );
-  expect(host.textContent).toContain("1 players not on the roster · 1 not published yet");
+  expect(host.textContent).toContain(
+    "1 players not on the roster · 1 not published yet",
+  );
   expect(host.textContent).toContain("Moved here · not published yet");
   expect(host.querySelector(".is-unpublished")?.textContent).not.toContain(
     "Assigned to Fixture",
@@ -146,7 +156,9 @@ it("separates a neutral draft move from intruders without changing account count
   expect(host.querySelector("details")?.classList.contains("is-neutral")).toBe(
     true,
   );
-  expect(host.textContent).toContain("0 players not on the roster · 1 not published yet");
+  expect(host.textContent).toContain(
+    "0 players not on the roster · 1 not published yet",
+  );
 });
 it("does not turn incomplete unpublished counts into zero", async () => {
   await act(async () =>

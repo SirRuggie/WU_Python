@@ -1,3 +1,4 @@
+import AccountCard from "./AccountCard";
 import type { FillerMarkQueue } from "./fillerMarkQueue";
 import DiscordIdentity from "./DiscordIdentity";
 import DiscordContact from "./DiscordContact";
@@ -55,24 +56,10 @@ export default function DeclarationMemberMarks({
                   key={member.tag}
                   className={`declaration-member-account${member.not_published_yet === true ? " is-unpublished" : ""}`}
                 >
-                  <strong>{member.name}</strong> ·{" "}
-                  {member.town_hall
-                    ? `TH ${member.town_hall}`
-                    : "TH unavailable"}{" "}
-                  · <code>{member.tag}</code>
-                  {member.not_published_yet === true && (
-                    <span className="declaration-member-context">
-                      Moved here · not published yet
-                    </span>
-                  )}
-                  {member.not_published_yet !== true && (
-                    <span className="declaration-member-context">
-                      {member.context}
-                    </span>
-                  )}
-                  {(control || (index === 0 && group.userId)) && (
-                    <div className="declaration-member-actions">
-                      {control && (
+                  <AccountCard
+                    className="declaration-member-card"
+                    select={
+                      control && (
                         <RosterFillerCheckbox
                           {...control}
                           tag={member.tag}
@@ -80,16 +67,34 @@ export default function DeclarationMemberMarks({
                           value={!!member.roster_filler}
                           markRevision={member.roster_filler_revision || 0}
                         />
-                      )}
-                      {index === 0 && group.userId && (
+                      )
+                    }
+                    thLevel={member.town_hall}
+                    name={member.name}
+                    action={
+                      index === 0 &&
+                      group.userId && (
                         <DiscordContact
                           userId={group.userId}
                           compact
                           className="declaration-member-dm"
                         />
-                      )}
-                    </div>
-                  )}
+                      )
+                    }
+                    meta={[
+                      member.town_hall
+                        ? `TH ${member.town_hall}`
+                        : "TH unavailable",
+                      <code key="tag">{member.tag}</code>,
+                    ]}
+                    status={{
+                      tone: "neutral",
+                      content:
+                        member.not_published_yet === true
+                          ? "Moved here · not published yet"
+                          : member.context,
+                    }}
+                  />
                 </li>
               ))}
             </ul>
