@@ -88,6 +88,12 @@
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-regular);
 }
+.arrival-check
+  .declaration-clan:is(.is-ready, .is-not-ready)
+  .declaration-clan-toggle
+  small {
+  color: var(--wu-text);
+}
 .declaration-clan-toggle:focus-visible {
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
