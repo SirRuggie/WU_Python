@@ -20,7 +20,11 @@ MAX_AVATAR_BYTES = 256 * 1024
 ID_PATTERN = re.compile(r"\d{13}:[0-9a-f]{32}\Z")
 # EVENT_TYPES covers every deliverable log. Only HISTORY_TYPES are searchable;
 # link and invite rows are delivery receipts, and IDENTITY_TYPES carry avatars.
-HISTORY_TYPES = ("join", "leave", "kick", "ban", "timeout_add", "timeout_remove", "member_update")
+HISTORY_TYPES = ("join", "leave", "kick", "ban", "unban", "timeout_add", "timeout_remove",
+                 "member_update", "roles_added", "roles_removed", "invite_use")
+# Days a row lives before the Mongo TTL index removes it; absent kinds are kept.
+RETENTION_DAYS = {"link": 30, "message_delete": 30, "message_edit": 30, "message_bulk_delete": 30,
+                  "invite_create": 90, "invite_delete": 90, "invite_use": 90}
 IDENTITY_TYPES = ("join", "leave", "kick", "ban")
 DEFAULT_CHANNEL_ID = 1004519991648997447
 SETTINGS_ID = f"member-events-settings:{GUILD_ID}"
@@ -89,6 +93,7 @@ class MemberEventStore:
         await self.collection.create_index([("guild_id", 1), ("_id", -1)], name="member_event_recent")
         await self.collection.create_index([("guild_id", 1), ("user_id", 1), ("_id", -1)], name="member_event_user")
         await self.collection.create_index([("guild_id", 1), ("delivery_status", 1), ("_id", 1)], name="member_event_queue")
+        await self.collection.create_index("expires_at", expireAfterSeconds=0, name="member_event_expiry")
 
     @staticmethod
     def default_settings():
@@ -192,6 +197,8 @@ class MemberEventStore:
             "details": details if isinstance(details, dict) else None,
             "delivery_status": "capturing", "message_id": None,
         }
+        if kind in RETENTION_DAYS:
+            row["expires_at"] = at + timedelta(days=RETENTION_DAYS[kind])
         try:
             await self.collection.insert_one(row)
         except DuplicateKeyError:
@@ -206,6 +213,34 @@ class MemberEventStore:
         )
         value = row.get("joined_at") if row else None
         return value if isinstance(value, datetime) else None
+
+    async def count_joins(self, guild_id: int, user_id: int) -> int:
+        return await self.collection.count_documents(
+            {"guild_id": guild_id, "user_id": str(user_id), "event_type": "join"})
+
+    async def save_details(self, row_id: str, details: dict):
+        await self.collection.update_one(
+            {"_id": row_id, "delivery_status": "capturing"}, {"$set": {"details": details}})
+
+    async def enrich_unban(self, event_key: str, moderator_id: int | None, reason: str | None,
+                           audit_entry_id: int):
+        """Add the audit facts to an unsent unban whose gateway event came first."""
+        values = {"audit_entry_id": str(audit_entry_id)}
+        if moderator_id:
+            values["moderator_id"] = str(moderator_id)
+        if reason:
+            values["reason"] = str(reason)[:500]
+        result = await self.collection.update_one(
+            {"event_key": event_key, "event_type": "unban", "audit_entry_id": None,
+             "delivery_status": {"$in": ["capturing", "queued"]}},
+            {"$set": values},
+        )
+        return bool(result.matched_count)
+
+    async def discard_unsent(self, event_key: str):
+        """Drop a row that was never sent, for an event that must not be logged."""
+        await self.collection.delete_one(
+            {"event_key": event_key, "delivery_status": {"$in": ["capturing", "queued"]}})
 
     async def ban_episode(self, guild_id: int, user_id: int, *, banned: bool):
         key = f"ban-state:{guild_id}:{user_id}"

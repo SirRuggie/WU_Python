@@ -76,6 +76,8 @@ bot = hikari.GatewayBot(
         | hikari.Intents.GUILD_INVITES
         | hikari.Intents.GUILD_MESSAGE_REACTIONS
     ),
+    # Message delete/edit logs need the old message: raise the 300-message default cache.
+    cache_settings=hikari.impl.CacheSettings(max_messages=10000),
     # Fix hikari's overly aggressive rate limiting
     max_rate_limit=120.0,  # Guild channel-create bucket slides to a 60s window; 30s made those a user-facing error
 )
