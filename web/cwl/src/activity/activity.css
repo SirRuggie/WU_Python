@@ -242,7 +242,6 @@
   overflow-x: auto;
   max-width: 100%;
   scrollbar-width: thin;
-  scrollbar-color: #807351 #191919;
 }
 .shell .clan-activity-workspace > .workflow-tabs > button {
   flex: 0 0 auto;

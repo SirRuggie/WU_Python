@@ -68,3 +68,61 @@
   > small {
   color: inherit;
 }
+
+/* Shared visible rails; narrow roster rails retain their hidden scrollbar palette. */
+@media (width > 680px) {
+  .section-tabs,
+  .filter-chips {
+    scrollbar-color: var(--wu-text-muted) var(--wu-surface);
+  }
+  .section-tabs::-webkit-scrollbar,
+  .filter-chips::-webkit-scrollbar {
+    height: 6px;
+  }
+  .section-tabs::-webkit-scrollbar-track,
+  .filter-chips::-webkit-scrollbar-track {
+    background: var(--wu-surface);
+  }
+  .section-tabs::-webkit-scrollbar-thumb,
+  .filter-chips::-webkit-scrollbar-thumb {
+    background: var(--wu-text-muted);
+    border-radius: 4px;
+  }
+}
+@media (max-width: 680px) {
+  .section-tabs:not(.roster-workflow-nav, .roster-list-pool-tabs),
+  .filter-chips:not(.roster-workflow-nav, .roster-list-pool-tabs) {
+    scrollbar-color: var(--wu-text-muted) var(--wu-surface);
+  }
+  .section-tabs:not(
+      .roster-workflow-nav,
+      .roster-list-pool-tabs
+    )::-webkit-scrollbar,
+  .filter-chips:not(
+      .roster-workflow-nav,
+      .roster-list-pool-tabs
+    )::-webkit-scrollbar {
+    height: 6px;
+  }
+  .section-tabs:not(
+      .roster-workflow-nav,
+      .roster-list-pool-tabs
+    )::-webkit-scrollbar-track,
+  .filter-chips:not(
+      .roster-workflow-nav,
+      .roster-list-pool-tabs
+    )::-webkit-scrollbar-track {
+    background: var(--wu-surface);
+  }
+  .section-tabs:not(
+      .roster-workflow-nav,
+      .roster-list-pool-tabs
+    )::-webkit-scrollbar-thumb,
+  .filter-chips:not(
+      .roster-workflow-nav,
+      .roster-list-pool-tabs
+    )::-webkit-scrollbar-thumb {
+    background: var(--wu-text-muted);
+    border-radius: 4px;
+  }
+}
