@@ -124,17 +124,26 @@
   pointer-events: none;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 650px) {
   .roster-list-heading {
     flex-wrap: wrap;
     padding-inline: 10px;
     gap: 0 12px;
   }
 
+  .roster-quick-select {
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+
   .roster-list-heading > span {
-    width: 100%;
-    padding: 0 0 8px;
-    text-align: left;
+    flex: 0 0 auto;
+    width: auto;
+    margin-left: auto;
+    padding: 0;
+    text-align: right;
+    white-space: nowrap;
   }
 }
 
