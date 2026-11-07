@@ -453,10 +453,10 @@
   gap: var(--wu-space-4);
   padding: var(--wu-space-4) var(--wu-space-4);
   margin: var(--wu-space-3) 0 var(--wu-space-4);
-  border: 1px solid var(--roster-attention-border);
-  border-left: 3px solid var(--wu-text-muted);
+  border: 1px solid #f8dc8e;
+  border-left: 5px solid #b57900;
   border-radius: 10px;
-  background: var(--roster-surface);
+  background: var(--wu-accent);
   font-variant-numeric: tabular-nums;
 }
 .todo-event-timer > div {
@@ -466,17 +466,14 @@
   font-variant-numeric: tabular-nums;
 }
 .todo-event-label {
-  color: var(--roster-warning);
   font-size: var(--wu-text-sm);
 }
 .todo-event-timer strong {
   font-size: var(--wu-text-xl);
-  color: var(--wu-text-muted);
   font-variant-numeric: tabular-nums;
 }
 .todo-event-timer time,
 .todo-event-timer small {
-  color: var(--roster-text-muted);
   font-size: var(--wu-text-xs);
   font-variant-numeric: tabular-nums;
 }
@@ -492,13 +489,8 @@
   margin-top: var(--wu-space-1);
   font-variant-numeric: tabular-nums;
 }
-.todo-event-timer.is-cwl {
-  background: var(--wu-accent);
-  border: 1px solid #f8dc8e;
-  border-left: 5px solid #b57900;
-}
-.todo-event-timer.is-cwl,
-.todo-event-timer.is-cwl :is(.todo-event-label, strong, time, p, small) {
+.todo-event-timer,
+.todo-event-timer :is(.todo-event-label, strong, time, p, small) {
   color: var(--wu-accent-ink);
   -webkit-text-fill-color: currentColor;
 }
