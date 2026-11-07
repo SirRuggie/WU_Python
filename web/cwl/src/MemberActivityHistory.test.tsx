@@ -269,3 +269,41 @@ it("labels timeout and profile rows and falls back for unknown types", () => {
     '<option value="member_update">Profile changes</option>',
   );
 });
+
+it("labels the new history kinds, filters them and links to the member", () => {
+  hook.states[0] = [
+    {
+      ...fixture,
+      id: "u1",
+      event_type: "unban",
+      reason: "Appeal",
+      moderator_id: "987654321",
+      moderator_name: "Mod",
+    },
+    { ...fixture, id: "u2", event_type: "roles_added" },
+    { ...fixture, id: "u3", event_type: "roles_removed" },
+    { ...fixture, id: "u4", event_type: "invite_use" },
+  ];
+  const html = render();
+  expect(html).toContain("Unbanned");
+  expect(html).toContain("Roles added</span>");
+  expect(html).toContain("Roles removed</span>");
+  expect(html).toContain("Invite used");
+  expect(html).toContain("“Appeal”");
+  for (const value of ["unban", "roles_added", "roles_removed", "invite_use"])
+    expect(html).toContain(`<option value="${value}">`);
+});
+
+it("keeps the unknown-type fallback", () => {
+  hook.states[0] = [{ ...fixture, id: "x", event_type: "something_new" }];
+  expect(render()).toContain("Activity</span>");
+});
+
+it("offers a View member action on every row without showing the raw id", () => {
+  hook.states[0] = [fixture];
+  const html = renderToStaticMarkup(
+    createElement(MemberActivityHistory, { onViewMember: () => undefined }),
+  );
+  expect(html).toContain("View member");
+  expect(html.replace(/<[^>]+>/g, "")).not.toContain(fixture.user_id);
+});

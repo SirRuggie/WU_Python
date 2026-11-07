@@ -1,17 +1,31 @@
 import { useState } from 'react'
 import MemberActivityHistory from './MemberActivityHistory'
+import MemberTimeline from './MemberTimeline'
 import ModerationSettings from './ModerationSettings'
 import './ModerationWorkspace.css'
 
 type Section = 'history' | 'settings'
 
-export default function ModerationWorkspace({ onDirty }: { onDirty?: (dirty: boolean) => void }) {
+export default function ModerationWorkspace({
+  onDirty,
+  memberId = '',
+  onMemberRoute,
+}: {
+  onDirty?: (dirty: boolean) => void
+  memberId?: string
+  onMemberRoute?: (userId: string) => void
+}) {
   const [section, setSection] = useState<Section>('history')
   const [openedSettings, setOpenedSettings] = useState(false)
+  const timeline = !!memberId && section === 'history'
 
   const showSettings = () => {
     setOpenedSettings(true)
     setSection('settings')
+  }
+  const showHistory = () => {
+    setSection('history')
+    if (memberId) onMemberRoute?.('')
   }
 
   return (
@@ -27,7 +41,7 @@ export default function ModerationWorkspace({ onDirty }: { onDirty?: (dirty: boo
         <button
           type="button"
           aria-pressed={section === 'history'}
-          onClick={() => setSection('history')}
+          onClick={showHistory}
         >
           Activity history
         </button>
@@ -39,9 +53,19 @@ export default function ModerationWorkspace({ onDirty }: { onDirty?: (dirty: boo
           Log settings
         </button>
       </nav>
-      <div hidden={section !== 'history'}>
-        <MemberActivityHistory active={section === 'history'} />
+      <div hidden={section !== 'history' || timeline}>
+        <MemberActivityHistory
+          active={section === 'history' && !timeline}
+          onViewMember={onMemberRoute}
+        />
       </div>
+      {timeline && (
+        <MemberTimeline
+          key={memberId}
+          userId={memberId}
+          onBack={() => onMemberRoute?.('')}
+        />
+      )}
       {openedSettings && (
         <div hidden={section !== 'settings'}>
           <ModerationSettings onDirty={onDirty} />

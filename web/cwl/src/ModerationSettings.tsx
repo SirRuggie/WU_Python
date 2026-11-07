@@ -3,6 +3,7 @@ import { api } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
 import ModerationCategoryCard from "./ModerationCategoryCard";
 import ModerationDestinationPicker from "./ModerationDestinationPicker";
+import ModerationHealth from "./ModerationHealth";
 import ModerationIgnoreLists from "./ModerationIgnoreLists";
 import ModerationInviteNames from "./ModerationInviteNames";
 import {
@@ -326,6 +327,8 @@ export default function ModerationSettings({
         </button>
       </header>
 
+      <ModerationHealth />
+
       {error && (
         <div className="moderation-settings-error" role="alert">
           <p>{error}</p>
@@ -391,31 +394,33 @@ export default function ModerationSettings({
           </div>
 
           <div className="moderation-category-list">
-            {moderationRegistry
-              .filter((category) => category.key !== "server")
-              .map((category) => (
-                <ModerationCategoryCard
-                  key={category.key}
-                  category={category.key as CategoryKind}
-                  label={category.label}
-                  icon={category.icon}
-                  events={eventTypes.filter(
-                    (event) => event.category === category.key,
-                  )}
-                  draft={draft}
-                  saved={saved}
-                  channels={channels}
-                  busy={busy}
-                  inventoryAvailable={inventoryAvailable}
-                  dirty={dirty}
-                  onCategory={updateCategory}
-                  onEvent={updateEvent}
-                  onResolve={(scope, key, id) =>
-                    void resolveDestination(scope, key, id)
-                  }
-                  onTest={startTest}
-                >
-                  {category.key === "messages" && (
+            {moderationRegistry.map((category) => (
+              <ModerationCategoryCard
+                key={category.key}
+                category={category.key as CategoryKind}
+                label={category.label}
+                icon={category.icon}
+                events={eventTypes.filter(
+                  (event) => event.category === category.key,
+                )}
+                draft={draft}
+                saved={saved}
+                channels={channels}
+                busy={busy}
+                inventoryAvailable={inventoryAvailable}
+                dirty={dirty}
+                onCategory={updateCategory}
+                onEvent={updateEvent}
+                onResolve={(scope, key, id) =>
+                  void resolveDestination(scope, key, id)
+                }
+                onTest={startTest}
+              >
+                {category.key === "messages" && (
+                  <>
+                    <small className="moderation-ignore-note">
+                      Applies to all message logs.
+                    </small>
                     <ModerationIgnoreLists
                       ignores={draft.ignores}
                       channels={channels}
@@ -427,16 +432,17 @@ export default function ModerationSettings({
                       disabled={busy}
                       onChange={updateIgnores}
                     />
-                  )}
-                  {category.key === "invites" && (
-                    <ModerationInviteNames
-                      names={draft.invite_names}
-                      disabled={busy}
-                      onName={updateInviteName}
-                    />
-                  )}
-                </ModerationCategoryCard>
-              ))}
+                  </>
+                )}
+                {category.key === "invites" && (
+                  <ModerationInviteNames
+                    names={draft.invite_names}
+                    disabled={busy}
+                    onName={updateInviteName}
+                  />
+                )}
+              </ModerationCategoryCard>
+            ))}
           </div>
 
           {invalidDestination && (

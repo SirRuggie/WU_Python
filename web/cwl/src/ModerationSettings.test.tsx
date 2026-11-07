@@ -71,7 +71,10 @@ const fixture: SettingsResponse = {
   categories: {
     members: { mode: "main", channel_id: null, forum_tag_id: null },
     moderation: { mode: "main", channel_id: null, forum_tag_id: null },
+    roles: { mode: "main", channel_id: null, forum_tag_id: null },
     messages: { mode: "main", channel_id: null, forum_tag_id: null },
+    channels: { mode: "main", channel_id: null, forum_tag_id: null },
+    server: { mode: "main", channel_id: null, forum_tag_id: null },
     invites: { mode: "main", channel_id: null, forum_tag_id: null },
   },
   events: Object.fromEntries(
@@ -87,6 +90,27 @@ const fixture: SettingsResponse = {
       "invite_create",
       "invite_delete",
       "invite_use",
+      "unban",
+      "role_create",
+      "role_update",
+      "role_delete",
+      "roles_added",
+      "roles_removed",
+      "message_delete",
+      "message_edit",
+      "message_bulk_delete",
+      "channel_create",
+      "channel_update",
+      "channel_delete",
+      "channel_permissions",
+      "thread_delete",
+      "thread_lock",
+      "server_update",
+      "emoji",
+      "sticker",
+      "app",
+      "webhook",
+      "automod",
     ].map((key) => [
       key,
       { enabled: true, channel_id: null, forum_tag_id: null },
@@ -138,6 +162,7 @@ const fixture: SettingsResponse = {
   },
 };
 const invites = vi.hoisted(() => vi.fn());
+const health = vi.hoisted(() => vi.fn());
 let root: Root, host: HTMLDivElement;
 const button = (label: string) =>
   [...host.querySelectorAll("button")].find(
@@ -153,6 +178,8 @@ beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   transport.mockReset();
   invites.mockReset();
+  health.mockReset();
+  health.mockResolvedValue({ items: [], backlog: 0, last_sent_at: null });
   invites.mockResolvedValue({
     invites: [
       {
@@ -188,6 +215,7 @@ beforeEach(async () => {
     if (path === "/manage/member-events/settings")
       return structuredClone(fixture);
     if (path === "/manage/member-events/test") return { sent: true };
+    if (path === "/manage/member-events/health") return health();
     if (path === "/manage/member-events/invites") return invites();
     throw new Error(`Unexpected ${path}`);
   });
@@ -256,11 +284,75 @@ it("renders the payload preview and confirms a test without saving", async () =>
     0,
   );
 });
-it("hides unsupported future event controls", () => {
+it("renders every supported event control and no placeholders", () => {
   expect(host.textContent).not.toContain("Nickname changes");
-  expect(host.textContent).not.toContain("Roles added");
-  expect(host.textContent).not.toContain("Channels created");
-  expect(host.querySelectorAll(".moderation-event-row")).toHaveLength(11);
+  expect(host.textContent).toContain("Roles added");
+  expect(host.textContent).toContain("Channels created");
+  expect(host.textContent).toContain("AutoMod rules");
+  expect(host.querySelectorAll(".moderation-event-row")).toHaveLength(32);
+});
+it("puts the shared ignore note after the message rows", () => {
+  const card = [...host.querySelectorAll(".moderation-category-card")].find(
+    (el) => el.querySelector("h3")?.textContent?.includes("Messages"),
+  )!;
+  const rows = card.querySelectorAll(".moderation-event-row");
+  expect(rows).toHaveLength(4);
+  const note = card.querySelector(".moderation-ignore-note")!;
+  expect(note.textContent).toBe("Applies to all message logs.");
+  expect(
+    rows[3].compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    note.compareDocumentPosition(
+      card.querySelector(".moderation-ignore-lists")!,
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+it("saves new keys and categories in the payload", async () => {
+  await act(async () =>
+    host
+      .querySelector<HTMLInputElement>('[aria-label="Emoji logging"]')!
+      .click(),
+  );
+  await act(async () => button("Save changes").click());
+  const body = transport.mock.calls.find((call) => call[1] === "PUT")?.[2];
+  expect(body.events.emoji.enabled).toBe(false);
+  expect(Object.keys(body.events)).toHaveLength(32);
+  expect(Object.keys(body.categories)).toHaveLength(7);
+});
+it("renders nothing for an empty health list", () => {
+  expect(host.querySelector(".moderation-health")).toBeNull();
+});
+it("shows health items with error and warning styling", async () => {
+  health.mockResolvedValue({
+    items: [
+      { key: "audit", level: "error", text: "View Audit Log needed" },
+      { key: "backlog", level: "warning", text: "30 waiting" },
+    ],
+    backlog: 30,
+    last_sent_at: null,
+  });
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () => root.render(<ModerationSettings />));
+  await settle();
+  const items = [...host.querySelectorAll(".moderation-health li")];
+  expect(items.map((item) => item.textContent)).toEqual([
+    "⛔View Audit Log needed",
+    "⚠️30 waiting",
+  ]);
+  expect(items[0].classList.contains("is-error")).toBe(true);
+  expect(items[1].classList.contains("is-warning")).toBe(true);
+});
+it("renders no health line and keeps the form when the health read fails", async () => {
+  health.mockRejectedValue(new Error("down"));
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () => root.render(<ModerationSettings />));
+  await settle();
+  expect(host.querySelector(".moderation-health")).toBeNull();
+  expect(host.querySelector(".moderation-settings-error")).toBeNull();
+  expect(host.textContent).toContain("Main log channel");
 });
 
 it("uses accessible track-and-thumb switches for categories and events", () => {
@@ -352,7 +444,7 @@ it("shows the missing effective channel without changing enabled settings", asyn
   expect(
     card.querySelector(".moderation-category-switch")?.textContent,
   ).toContain("Not posting — no channel set");
-  expect(card.querySelectorAll(".moderation-event-row")).toHaveLength(4);
+  expect(card.querySelectorAll(".moderation-event-row")).toHaveLength(5);
   for (const row of card.querySelectorAll(".moderation-event-row")) {
     expect(row.textContent).toContain("Not posting — no channel set");
     const test = [...row.querySelectorAll("button")].find(
@@ -383,14 +475,17 @@ const change = async (element: HTMLElement, value: string) => {
     );
   });
 };
-it("renders the four categories with Links and Invites events", () => {
+it("renders all seven categories", () => {
   const titles = [...host.querySelectorAll(".moderation-category-head h3")].map(
     (item) => item.textContent?.trim(),
   );
   expect(titles).toEqual([
     "👥 Members",
     "🛡️ Moderation",
+    "🏷️ Roles",
     "💬 Messages",
+    "📚 Channels",
+    "🏰 Server",
     "📨 Invites",
   ]);
   expect(host.textContent).toContain("Profile changes");

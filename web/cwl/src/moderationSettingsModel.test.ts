@@ -49,6 +49,29 @@ const channels: Destination[] = [
     available_tags: [],
   },
 ];
+const newKinds = [
+  "unban",
+  "role_create",
+  "role_update",
+  "role_delete",
+  "roles_added",
+  "roles_removed",
+  "message_delete",
+  "message_edit",
+  "message_bulk_delete",
+  "channel_create",
+  "channel_update",
+  "channel_delete",
+  "channel_permissions",
+  "thread_delete",
+  "thread_lock",
+  "server_update",
+  "emoji",
+  "sticker",
+  "app",
+  "webhook",
+  "automod",
+];
 const settings: SettingsResponse = {
   schema_version: 2,
   revision: 7,
@@ -56,7 +79,10 @@ const settings: SettingsResponse = {
   categories: {
     members: { mode: "main", channel_id: null, forum_tag_id: null },
     moderation: { mode: "main", channel_id: null, forum_tag_id: null },
+    roles: { mode: "main", channel_id: null, forum_tag_id: null },
     messages: { mode: "main", channel_id: null, forum_tag_id: null },
+    channels: { mode: "main", channel_id: null, forum_tag_id: null },
+    server: { mode: "main", channel_id: null, forum_tag_id: null },
     invites: { mode: "main", channel_id: null, forum_tag_id: null },
   },
   events: {
@@ -71,7 +97,13 @@ const settings: SettingsResponse = {
     invite_create: { enabled: false, channel_id: null, forum_tag_id: null },
     invite_delete: { enabled: false, channel_id: null, forum_tag_id: null },
     invite_use: { enabled: false, channel_id: null, forum_tag_id: null },
-  },
+    ...Object.fromEntries(
+      newKinds.map((key) => [
+        key,
+        { enabled: false, channel_id: null, forum_tag_id: null },
+      ]),
+    ),
+  } as SettingsResponse["events"],
   ignores: { channel_ids: [], role_ids: [] },
   invite_names: {},
   channels_available: true,
@@ -175,9 +207,30 @@ it("accepts an authorized existing forum post and hides unsupported future event
     "member_update",
     "kick",
     "ban",
+    "unban",
     "timeout_add",
     "timeout_remove",
+    "role_create",
+    "role_update",
+    "role_delete",
+    "roles_added",
+    "roles_removed",
     "link",
+    "message_delete",
+    "message_edit",
+    "message_bulk_delete",
+    "channel_create",
+    "channel_update",
+    "channel_delete",
+    "channel_permissions",
+    "thread_delete",
+    "thread_lock",
+    "server_update",
+    "emoji",
+    "sticker",
+    "app",
+    "webhook",
+    "automod",
     "invite_create",
     "invite_delete",
     "invite_use",
@@ -185,33 +238,89 @@ it("accepts an authorized existing forum post and hides unsupported future event
   expect(
     moderationRegistry.map((category) => [
       category.key,
-      category.events.map((event) => event.key),
+      category.label,
+      category.events.map((event) => event.label),
     ]),
   ).toEqual([
+    ["members", "Members", ["Joins", "Leaves", "Profile changes"]],
     [
-      "members",
-      ["join", "leave", "member_update", "roles_added", "roles_removed"],
+      "moderation",
+      "Moderation",
+      ["Kicks", "Bans", "Unbans", "Timeouts", "Timeout removals"],
     ],
-    ["moderation", ["kick", "ban", "unban", "timeout_add", "timeout_remove"]],
-    ["messages", ["link", "delete", "edit", "bulk_delete"]],
-    ["invites", ["invite_create", "invite_delete", "invite_use"]],
+    [
+      "roles",
+      "Roles",
+      [
+        "Roles created",
+        "Roles updated",
+        "Roles deleted",
+        "Roles added",
+        "Roles removed",
+      ],
+    ],
+    ["messages", "Messages", ["Links", "Deletes", "Edits", "Bulk deletes"]],
+    [
+      "channels",
+      "Channels",
+      [
+        "Channels created",
+        "Channels updated",
+        "Channels deleted",
+        "Permission changes",
+        "Threads deleted",
+        "Threads locked",
+      ],
+    ],
     [
       "server",
+      "Server",
       [
-        "channel_create",
-        "channel_delete",
-        "channel_change",
-        "role_create",
-        "role_delete",
-        "role_change",
+        "Server settings",
+        "Emoji",
+        "Stickers",
+        "Apps",
+        "Webhooks",
+        "AutoMod rules",
       ],
+    ],
+    [
+      "invites",
+      "Invites",
+      ["Invites created", "Invites deleted", "Invite uses"],
     ],
   ]);
   expect(
     moderationRegistry.flatMap((category) =>
       category.events.filter((event) => !event.supported),
     ),
-  ).toHaveLength(12);
+  ).toHaveLength(0);
+});
+
+it("saves every supported key and category", async () => {
+  const draft = cloneSettings(settings);
+  expect(Object.keys(draft.categories)).toEqual([
+    "members",
+    "moderation",
+    "roles",
+    "messages",
+    "channels",
+    "server",
+    "invites",
+  ]);
+  expect(Object.keys(draft.events).sort()).toEqual(
+    eventTypes.map((event) => event.key).sort(),
+  );
+  transport.mockResolvedValue({ ...settings, revision: 8 });
+  await saveModerationSettings(settings, draft);
+  const body = transport.mock.calls[0][2];
+  expect(Object.keys(body.events)).toHaveLength(32);
+  expect(body.categories.roles).toEqual({
+    mode: "main",
+    channel_id: null,
+    forum_tag_id: null,
+  });
+  expect(body.events.automod.enabled).toBe(false);
 });
 
 it("preserves edits on conflict and distinguishes uncertain test delivery", () => {
@@ -266,6 +375,12 @@ it("fills missing keys when an old response lacks the new fields", () => {
   expect(copy.invite_names).toEqual({});
   expect(copy.categories.invites).toEqual({
     mode: "main",
+    channel_id: null,
+    forum_tag_id: null,
+  });
+  expect(copy.categories.channels.mode).toBe("main");
+  expect(copy.events.thread_lock).toEqual({
+    enabled: false,
     channel_id: null,
     forum_tag_id: null,
   });

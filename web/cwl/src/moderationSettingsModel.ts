@@ -4,31 +4,83 @@ import type { RoleChoice } from "./RolePicker";
 export type ModerationKind =
   | "join"
   | "leave"
+  | "member_update"
   | "kick"
   | "ban"
-  | "member_update"
+  | "unban"
   | "timeout_add"
   | "timeout_remove"
+  | "role_create"
+  | "role_update"
+  | "role_delete"
+  | "roles_added"
+  | "roles_removed"
   | "link"
+  | "message_delete"
+  | "message_edit"
+  | "message_bulk_delete"
+  | "channel_create"
+  | "channel_update"
+  | "channel_delete"
+  | "channel_permissions"
+  | "thread_delete"
+  | "thread_lock"
+  | "server_update"
+  | "emoji"
+  | "sticker"
+  | "app"
+  | "webhook"
+  | "automod"
   | "invite_create"
   | "invite_delete"
   | "invite_use";
-export type CategoryKind = "members" | "moderation" | "messages" | "invites";
+export type CategoryKind =
+  | "members"
+  | "moderation"
+  | "roles"
+  | "messages"
+  | "channels"
+  | "server"
+  | "invites";
 const categoryKinds: CategoryKind[] = [
   "members",
   "moderation",
+  "roles",
   "messages",
+  "channels",
+  "server",
   "invites",
 ];
 const moderationKinds: ModerationKind[] = [
   "join",
   "leave",
+  "member_update",
   "kick",
   "ban",
-  "member_update",
+  "unban",
   "timeout_add",
   "timeout_remove",
+  "role_create",
+  "role_update",
+  "role_delete",
+  "roles_added",
+  "roles_removed",
   "link",
+  "message_delete",
+  "message_edit",
+  "message_bulk_delete",
+  "channel_create",
+  "channel_update",
+  "channel_delete",
+  "channel_permissions",
+  "thread_delete",
+  "thread_lock",
+  "server_update",
+  "emoji",
+  "sticker",
+  "app",
+  "webhook",
+  "automod",
   "invite_create",
   "invite_delete",
   "invite_use",
@@ -100,7 +152,7 @@ type RegistryEvent = {
   supported: boolean;
 };
 export const moderationRegistry: {
-  key: CategoryKind | "server";
+  key: CategoryKind;
   label: string;
   icon: string;
   events: RegistryEvent[];
@@ -134,22 +186,6 @@ export const moderationRegistry: {
         explanation: "Nickname, name or avatar changes.",
         supported: true,
       },
-      {
-        key: "roles_added",
-        label: "Roles added",
-        icon: "🏷️",
-        color: "#398fc9",
-        explanation: "",
-        supported: false,
-      },
-      {
-        key: "roles_removed",
-        label: "Roles removed",
-        icon: "🏷️",
-        color: "#398fc9",
-        explanation: "",
-        supported: false,
-      },
     ],
   },
   {
@@ -178,8 +214,8 @@ export const moderationRegistry: {
         label: "Unbans",
         icon: "🔓",
         color: "#2ba66a",
-        explanation: "",
-        supported: false,
+        explanation: "Member unbanned.",
+        supported: true,
       },
       {
         key: "timeout_add",
@@ -200,6 +236,53 @@ export const moderationRegistry: {
     ],
   },
   {
+    key: "roles",
+    label: "Roles",
+    icon: "🏷️",
+    events: [
+      {
+        key: "role_create",
+        label: "Roles created",
+        icon: "🏷️",
+        color: "#2ba66a",
+        explanation: "Role created.",
+        supported: true,
+      },
+      {
+        key: "role_update",
+        label: "Roles updated",
+        icon: "🏷️",
+        color: "#398fc9",
+        explanation: "Role name, color or permissions changed.",
+        supported: true,
+      },
+      {
+        key: "role_delete",
+        label: "Roles deleted",
+        icon: "🏷️",
+        color: "#d34a4a",
+        explanation: "Role deleted.",
+        supported: true,
+      },
+      {
+        key: "roles_added",
+        label: "Roles added",
+        icon: "➕",
+        color: "#398fc9",
+        explanation: "Role added to a member.",
+        supported: true,
+      },
+      {
+        key: "roles_removed",
+        label: "Roles removed",
+        icon: "➖",
+        color: "#e69935",
+        explanation: "Role removed from a member.",
+        supported: true,
+      },
+    ],
+  },
+  {
     key: "messages",
     label: "Messages",
     icon: "💬",
@@ -213,28 +296,138 @@ export const moderationRegistry: {
         supported: true,
       },
       {
-        key: "delete",
+        key: "message_delete",
         label: "Deletes",
         icon: "🗑️",
         color: "#d34a4a",
-        explanation: "",
-        supported: false,
+        explanation: "Message deleted.",
+        supported: true,
       },
       {
-        key: "edit",
+        key: "message_edit",
         label: "Edits",
         icon: "✏️",
         color: "#398fc9",
-        explanation: "",
-        supported: false,
+        explanation: "Message edited.",
+        supported: true,
       },
       {
-        key: "bulk_delete",
+        key: "message_bulk_delete",
         label: "Bulk deletes",
         icon: "🗑️",
         color: "#d34a4a",
-        explanation: "",
-        supported: false,
+        explanation: "Many messages deleted at once.",
+        supported: true,
+      },
+    ],
+  },
+  {
+    key: "channels",
+    label: "Channels",
+    icon: "📚",
+    events: [
+      {
+        key: "channel_create",
+        label: "Channels created",
+        icon: "📚",
+        color: "#2ba66a",
+        explanation: "Channel created.",
+        supported: true,
+      },
+      {
+        key: "channel_update",
+        label: "Channels updated",
+        icon: "📚",
+        color: "#398fc9",
+        explanation: "Channel name, topic or settings changed.",
+        supported: true,
+      },
+      {
+        key: "channel_delete",
+        label: "Channels deleted",
+        icon: "📚",
+        color: "#d34a4a",
+        explanation: "Channel deleted.",
+        supported: true,
+      },
+      {
+        key: "channel_permissions",
+        label: "Permission changes",
+        icon: "🔐",
+        color: "#e69935",
+        explanation: "Channel permissions changed.",
+        supported: true,
+      },
+      {
+        key: "thread_delete",
+        label: "Threads deleted",
+        icon: "🧵",
+        color: "#d34a4a",
+        explanation: "Thread deleted.",
+        supported: true,
+      },
+      {
+        key: "thread_lock",
+        label: "Threads locked",
+        icon: "🔒",
+        color: "#e69935",
+        explanation: "Thread locked or archived by a person.",
+        supported: true,
+      },
+    ],
+  },
+  {
+    key: "server",
+    label: "Server",
+    icon: "🏰",
+    events: [
+      {
+        key: "server_update",
+        label: "Server settings",
+        icon: "🏰",
+        color: "#c9a84f",
+        explanation: "Server settings changed.",
+        supported: true,
+      },
+      {
+        key: "emoji",
+        label: "Emoji",
+        icon: "😀",
+        color: "#c9a84f",
+        explanation: "Emoji added, changed or removed.",
+        supported: true,
+      },
+      {
+        key: "sticker",
+        label: "Stickers",
+        icon: "🏷️",
+        color: "#c9a84f",
+        explanation: "Sticker added, changed or removed.",
+        supported: true,
+      },
+      {
+        key: "app",
+        label: "Apps",
+        icon: "🧩",
+        color: "#c9a84f",
+        explanation: "App added, changed or removed.",
+        supported: true,
+      },
+      {
+        key: "webhook",
+        label: "Webhooks",
+        icon: "🪝",
+        color: "#c9a84f",
+        explanation: "Webhook added, changed or removed.",
+        supported: true,
+      },
+      {
+        key: "automod",
+        label: "AutoMod rules",
+        icon: "🤖",
+        color: "#c9a84f",
+        explanation: "AutoMod rule added, changed or removed.",
+        supported: true,
       },
     ],
   },
@@ -266,61 +459,6 @@ export const moderationRegistry: {
         color: "#c9a84f",
         explanation: "Member joins with an invite.",
         supported: true,
-      },
-    ],
-  },
-  {
-    key: "server",
-    label: "Server",
-    icon: "🏰",
-    events: [
-      {
-        key: "channel_create",
-        label: "Channels created",
-        icon: "📚",
-        color: "#c9a84f",
-        explanation: "",
-        supported: false,
-      },
-      {
-        key: "channel_delete",
-        label: "Channels deleted",
-        icon: "📚",
-        color: "#c9a84f",
-        explanation: "",
-        supported: false,
-      },
-      {
-        key: "channel_change",
-        label: "Channels changed",
-        icon: "📚",
-        color: "#c9a84f",
-        explanation: "",
-        supported: false,
-      },
-      {
-        key: "role_create",
-        label: "Roles created",
-        icon: "🏷️",
-        color: "#c9a84f",
-        explanation: "",
-        supported: false,
-      },
-      {
-        key: "role_delete",
-        label: "Roles deleted",
-        icon: "🏷️",
-        color: "#c9a84f",
-        explanation: "",
-        supported: false,
-      },
-      {
-        key: "role_change",
-        label: "Roles changed",
-        icon: "🏷️",
-        color: "#c9a84f",
-        explanation: "",
-        supported: false,
       },
     ],
   },

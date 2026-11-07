@@ -370,6 +370,7 @@ function App() {
   );
   const [replacementTag, setReplacementTag] = useState(entryTarget.replacementTag || "");
   const [strikeTag, setStrikeTag] = useState(entryTarget.strikeTag || "");
+  const [moderationMember, setModerationMember] = useState(entryTarget.moderationMember || "");
   const [strikeFilterState, setStrikeFilterState] = useState(entryTarget.strikeState || "");
   const [flowFrom, setFlowFrom] = useState(entryTarget.flowFrom);
   const [replacementClan, setReplacementClan] = useState(entryTarget.replacementClan || '')
@@ -600,6 +601,7 @@ function App() {
       setReplacementClan(target.replacementClan || "");
       setReplacementTag(target.replacementTag || "");
       setStrikeTag(target.strikeTag || "");
+      setModerationMember(target.moderationMember || "");
       setStrikeFilterState(target.strikeState || "");
       setFlowFrom(target.flowFrom);
       setWeightTarget({ player: target.weightPlayer, clan: target.weightClan });
@@ -632,6 +634,7 @@ function App() {
           ? { weightPlayer: weightTarget.player, weightClan: weightTarget.clan }
           : {}),
         ...(["strikes", "replacements"].includes(destination) ? {strikeState: strikeFilterState} : {}),
+        ...(destination === "moderation" ? { moderationMember } : {}),
         activityFilter: activitySearch,
         activityKind,
         ...(destination === "signup" ? { signupPanel } : {}),
@@ -640,12 +643,18 @@ function App() {
       },
       false,
     );
-  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, replacementTag, strikeTag, strikeFilterState, flowFrom, weightTarget, familyRoute])
+  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, replacementTag, strikeTag, moderationMember, strikeFilterState, flowFrom, weightTarget, familyRoute])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
     try { await action(); await refresh(); setNotice({ kind: 'success', text: success }) }
     catch (error) { setNotice({ kind: 'error', text: message(error) }) }
     finally { setPending(false) }
+  }
+  const openModerationMember = (userId: string) => {
+    if (navigation.current?.pending) return
+    navigation.current?.write({ view: 'moderation', season: '', moderationMember: userId }, true)
+    setModerationMember(userId)
+    setView('moderation')
   }
   const signOut = () => {
     const proceed = () => void run(
@@ -979,7 +988,7 @@ function App() {
         {view === 'image-gallery' && <ImageGallery onDirty={setManageDirty} />}
         {view === 'bases' && <BaseBank key={session.user.id} />}
         {view === 'tickets' && <TicketBrowser />}
-        {(view === 'member-activity' || view === 'moderation') && <ModerationWorkspace onDirty={setManageDirty} />}
+        {(view === 'member-activity' || view === 'moderation') && <ModerationWorkspace onDirty={setManageDirty} memberId={moderationMember} onMemberRoute={openModerationMember} />}
         {view === 'clan-management' && <ClanManagement key={familyVisit} initialRoute={familyRoute} onWorking={setFamilyWorking} onDirty={setManageDirty} onNavigate={route => {
           setFamilyRoute(route);
           navigation.current?.write({view: 'clan-management', season: '', familyClan: route}, true);
