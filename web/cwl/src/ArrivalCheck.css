@@ -52,13 +52,33 @@
   border: 0;
   border-radius: 0;
   text-align: left;
-  background: #302327;
-  color: #ffb9bd;
+  background: #3a1014;
+  color: var(--wu-text);
   -webkit-text-fill-color: currentColor;
 }
 .arrival-check .is-ready .declaration-clan-toggle {
-  background: #1e3025;
-  color: #a3e7bc;
+  background: #123d24;
+  color: var(--wu-text);
+}
+.arrival-check .is-ready .declaration-clan-toggle > span:nth-of-type(2) {
+  color: #00d659;
+}
+.arrival-check :is(.is-not-ready, .is-ready) .declaration-clan-toggle {
+  position: relative;
+}
+.arrival-check :is(.is-not-ready, .is-ready) .declaration-clan-toggle::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 5px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: var(--wu-brand-red);
+}
+.arrival-check .is-ready .declaration-clan-toggle::before {
+  background: #00d659;
 }
 .declaration-clan-toggle span:first-child {
   font-weight: var(--wu-weight-bold);
