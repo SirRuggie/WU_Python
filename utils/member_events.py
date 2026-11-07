@@ -31,6 +31,7 @@ SETTINGS_ID = f"member-events-settings:{GUILD_ID}"
 BOT_ACTORS_ID = f"member-events-bot-actors:{GUILD_ID}"
 AUDIT_CURSOR_ID = f"member-events-audit-cursor:{GUILD_ID}"
 MAX_BOT_ACTORS = 100
+AUDIT_MARKER_TTL = timedelta(hours=48)
 AVATAR_HASH = re.compile(r"(?:a_)?[0-9a-fA-F]{32}\Z")
 
 
@@ -199,13 +200,30 @@ class MemberEventStore:
                 {"_id": AUDIT_CURSOR_ID, "last_audit_num": {"$exists": False}},
                 {"$set": {**values, "last_audit_num": max(number, legacy), "last_audit_id": str(max(number, legacy))}})
 
+    @staticmethod
+    def _audit_marker_id(guild_id: int, audit_entry_id) -> str:
+        return f"member-events-audit:{guild_id}:{int(audit_entry_id)}"
+
     async def audit_handled(self, guild_id: int, audit_entry_id) -> bool:
-        """True when any stored row already came from this audit entry."""
-        audit_id = str(int(audit_entry_id))
-        if await self.collection.find_one({"guild_id": guild_id, "audit_entry_id": audit_id}, {"_id": 1}):
-            return True
+        """True once this audit entry was fully handled (see ``mark_audit_handled``)."""
         return bool(await self.collection.find_one(
-            {"event_key": {"$regex": f"^{guild_id}:audit:{audit_id}(:|$)"}}, {"_id": 1}))
+            {"_id": self._audit_marker_id(guild_id, audit_entry_id)}, {"_id": 1}))
+
+    async def mark_audit_handled(self, guild_id: int, audit_entry_id, now: datetime | None = None):
+        """Record that an audit entry is done, whatever its outcome, so a replay skips it.
+
+        Written after every row of the entry. The marker has no event_type, so it never
+        reaches history or counts, and the expiry index removes it after 48 hours.
+        """
+        now = now or datetime.now(timezone.utc)
+        key = self._audit_marker_id(guild_id, audit_entry_id)
+        values = {"handled_at": now, "expires_at": now + AUDIT_MARKER_TTL}
+        row = await self.collection.find_one_and_update({"_id": key}, {"$set": values})
+        if row is None:
+            try:
+                await self.collection.insert_one({"_id": key, "event_key": key, **values})
+            except DuplicateKeyError:
+                await self.collection.update_one({"_id": key}, {"$set": values})
 
     async def app_add_posted(self, guild_id: int, application_id: str, at: datetime, window: timedelta):
         """True when an "App added" row for this application sits within ``window`` of ``at``."""

@@ -344,6 +344,19 @@ class CardLimitTests(unittest.TestCase):
         files = lines("message_delete", "attachments", 13, lambda i: {"name": f"f{i}", "type": "t"})
         self.assertIn("+3 more", files)
 
+    def test_oversized_permission_cards_drop_whole_entries_instead_of_bare_field_labels(self):
+        row = oversized("channel_permissions")
+        row["details"]["changes"] = [{"field": f"{'p' * 60}{i}", "before": "<>&*" * 80, "after": "<>&*" * 80}
+                                     for i in range(15)]
+        children = build_card(row)["components"][0]["components"]
+        texts = [child["content"] for child in children if child["type"] == 10]
+        fields = [text for text in texts if text.startswith("**P")]
+        self.assertTrue(fields)
+        for field in fields:
+            value = field.partition("\n")[2]
+            self.assertGreaterEqual(len(value.rstrip("…")), 8, field)
+        self.assertLessEqual(sum(map(len, texts)), 3800)
+
     def test_recovered_cards_carry_one_line_before_the_footer(self):
         for kind in ("kick", "role_create", "unban"):
             row = sample_row(kind)

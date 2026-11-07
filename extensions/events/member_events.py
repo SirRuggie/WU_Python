@@ -525,6 +525,14 @@ async def handle_audit_entry(entry, mongo, bot, *, recovered=False) -> bool:
         return False
     finally:
         _recovering.reset(token)
+    try:  # After every row of the entry is written, so a crash before this lets a replay finish it.
+        store = MemberEventStore(mongo.member_events)
+        await ensure_indexes(store)
+        await store.mark_audit_handled(GUILD_ID, entry.id)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.warning("Could not mark an audit entry as handled", exc_info=True)
     await note_audit_cursor(entry, mongo, recovered=recovered)
     return True
 
@@ -1260,7 +1268,7 @@ _bot_unbans: set = set()  # (user id, ban episode) whose unban audit entry came 
 async def emit_unban(mongo, bot, uid: int, episode: int, *, at, user=None, entry=None):
     """Post an unban once; the gateway event and its audit entry may come in either order.
 
-    The row keeps the audit entry id, so a replay or duplicate of that entry is skipped.
+    A handled-entry marker (not the row) makes a replay or duplicate of that entry skip.
     """
     store = MemberEventStore(mongo.member_events)
     await ensure_indexes(store)

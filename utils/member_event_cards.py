@@ -203,6 +203,7 @@ def _cut(text: str, limit: int) -> str:
 
 
 FIT_FLOOR = 40  # A line is cut to this many characters before anything is dropped.
+FIELD_VALUE_FLOOR = 12  # A field line keeps at least this much of its value.
 _MORE_LINE = re.compile(r"\+(\d+) more")
 
 
@@ -223,12 +224,17 @@ def _fit(lines: list[str], budget: int, joiner: int = 0) -> list[str]:
     """
     lines = list(lines)
     size = lambda: sum(map(len, lines)) + joiner * (len(lines) - 1)
+
+    def floor(index: int) -> int:  # A field keeps its label and some of its value, never a bare "…".
+        line = lines[index]
+        return max(FIT_FLOOR, line.index("\n") + 1 + FIELD_VALUE_FLOOR) if 3 <= index and "\n" in line else FIT_FLOOR
+
     while size() > budget:
         excess = size() - budget
-        middle = [i for i in range(1, len(lines) - 1) if len(lines[i]) > FIT_FLOOR]
+        middle = [i for i in range(1, len(lines) - 1) if len(lines[i]) > floor(i)]
         if middle:
             index = max(middle, key=lambda i: len(lines[i]))
-            lines[index] = _cut(lines[index], max(len(lines[index]) - excess, FIT_FLOOR))
+            lines[index] = _cut(lines[index], max(len(lines[index]) - excess, floor(index)))
             continue
         fields = [i for i in range(3, len(lines) - 1) if not _MORE_LINE.fullmatch(lines[i])]
         if fields:

@@ -459,7 +459,7 @@ class NewLogTests(unittest.IsolatedAsyncioTestCase):
                   action_type=hikari.AuditLogEventType.MEMBER_UPDATE, created_at=self.now,
                   changes=[NS(key=hikari.AuditLogChangeKey.NICK, new_value="x", old_value="y")])
         await transport.audited(NS(entry=nick), self.mongo, bot)
-        self.assertEqual(len(self.history.rows), 3)  # settings + two timeout rows only.
+        self.assertEqual(len([k for k in self.history.rows if not k.startswith("member-events-audit:")]), 3)  # settings + two timeout rows only.
 
     async def test_timeout_history_is_kept_when_delivery_is_off(self):
         member = NS(user=NS(username="alice", global_name=None, avatar_hash=None), display_name="Alice",
@@ -1020,7 +1020,13 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.history.rows["ban-state:%d:%d" % (GUILD_ID, self.uid)]["banned"])
         self.assertEqual(await store.audit_cursor(), 200)
 
-    async def test_replay_skips_every_kind_of_entry_that_already_has_a_row(self):
+    def markers(self):
+        return {key: row for key, row in self.history.rows.items() if key.startswith("member-events-audit:")}
+
+    def event_rows(self):
+        return {key: row for key, row in self.history.rows.items() if row.get("event_type")}
+
+    async def test_replay_skips_every_kind_of_entry_that_already_has_a_marker(self):
         await enable(self.history, "role_create", "roles_added", "timeout_add")
         role = NS(key=K.NAME, old_value=None, new_value="Raiders")
         added = NS(key=K.ADD_ROLE_TO_MEMBER, old_value=None, new_value={1: NS(name="Member")})
@@ -1031,10 +1037,84 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
                    self.entry(A.MEMBER_UPDATE, 303, timeout, target=self.uid)]
         for entry in entries:
             await transport.audited(NS(entry=entry), self.mongo, self.bot)
-        before = (len(self.history.rows), self.deliver.await_count)
+        self.assertEqual(len(self.markers()), 3)
+        for key in list(self.event_rows()):  # Only the markers remain: a handler would write the rows again.
+            del self.history.rows[key]
+        delivered = self.deliver.await_count
         for entry in entries:
             self.assertTrue(await transport.handle_audit_entry(entry, self.mongo, self.bot, recovered=True))
-        self.assertEqual((len(self.history.rows), self.deliver.await_count), before)
+        self.assertEqual((self.event_rows(), self.deliver.await_count), ({}, delivered))
+
+    async def test_ignored_bot_unban_replayed_after_a_reban_changes_nothing(self):
+        await enable(self.history, "unban", "ban")
+        store = MemberEventStore(self.history)
+        await store.ban_episode(GUILD_ID, self.uid, banned=True)
+        await self.audit(A.MEMBER_BAN_REMOVE, 200, target=self.uid, user=APP)  # An ignored bot unbans.
+        self.assertEqual(self.rows("unban"), [])
+        self.assertIn("member-events-audit:%d:200" % GUILD_ID, self.history.rows)
+        await store.ban_episode(GUILD_ID, self.uid, banned=True)  # Banned again.
+        self.history.rows.pop("member-events-audit-cursor:%d" % GUILD_ID, None)
+        await store.advance_audit_cursor(150)
+        self.audit_log(self.entry(A.MEMBER_BAN_REMOVE, 200, target=self.uid, user=APP))
+        await self.recover()
+        state = self.history.rows["ban-state:%d:%d" % (GUILD_ID, self.uid)]
+        self.assertEqual((state["banned"], state["sequence"]), (True, 2))
+        self.assertEqual((self.rows("unban"), self.deliver.await_count), ([], 0))
+
+    async def test_late_audit_entry_after_a_delivered_gateway_unban_is_still_not_replayed(self):
+        await enable(self.history, "unban", "ban")
+        store = MemberEventStore(self.history)
+        await store.ban_episode(GUILD_ID, self.uid, banned=True)
+        await transport.unbanned(NS(guild_id=GUILD_ID, user=NS(id=self.uid, username="Alice", global_name=None,
+                                                              avatar_hash=None, discriminator="0")),
+                                 self.mongo, self.bot)
+        for row in self.rows("unban"):
+            row["delivery_status"] = "sent"  # Delivered before the audit entry arrived.
+        await self.audit(A.MEMBER_BAN_REMOVE, 200, target=self.uid)
+        await store.ban_episode(GUILD_ID, self.uid, banned=True)  # Banned again.
+        self.history.rows.pop("member-events-audit-cursor:%d" % GUILD_ID, None)
+        await store.advance_audit_cursor(150)
+        self.audit_log(self.entry(A.MEMBER_BAN_REMOVE, 200, target=self.uid))
+        before = (len(self.rows("unban")), self.deliver.await_count)
+        await self.recover()
+        state = self.history.rows["ban-state:%d:%d" % (GUILD_ID, self.uid)]
+        self.assertEqual((state["banned"], state["sequence"]), (True, 2))
+        self.assertEqual((len(self.rows("unban")), self.deliver.await_count), before)
+        await self.audit(A.MEMBER_BAN_REMOVE, 201, target=self.uid)  # The real unban of episode 2 still posts.
+        self.assertEqual([row["event_key"] for row in self.rows("unban")][-1], "%d:unban:%d:2" % (GUILD_ID, self.uid))
+        self.assertEqual(self.deliver.await_count, before[1] + 1)
+
+    async def test_replay_after_a_crash_before_the_marker_writes_only_the_missing_row(self):
+        await enable(self.history, "roles_added", "roles_removed")
+        added = NS(key=K.ADD_ROLE_TO_MEMBER, old_value=None, new_value={1: NS(name="Member")})
+        removed = NS(key=K.REMOVE_ROLE_FROM_MEMBER, old_value=None, new_value={3: NS(name="Recruit")})
+        entry = self.entry(A.MEMBER_ROLE_UPDATE, 400, added, removed, target=self.uid)
+        await transport.audited(NS(entry=entry), self.mongo, self.bot)
+        (first,) = self.rows("roles_added")
+        # Crash: only the first row was written; the second row and the marker never were.
+        for key in [k for k, r in self.history.rows.items() if r.get("event_type") == "roles_removed"]:
+            del self.history.rows[key]
+        del self.history.rows["member-events-audit:%d:400" % GUILD_ID]
+        delivered = self.deliver.await_count
+        self.assertTrue(await transport.handle_audit_entry(entry, self.mongo, self.bot, recovered=True))
+        self.assertEqual(self.rows("roles_added"), [first])
+        self.assertEqual(len(self.rows("roles_removed")), 1)
+        self.assertEqual(self.deliver.await_count, delivered + 1)
+        self.assertIn("member-events-audit:%d:400" % GUILD_ID, self.history.rows)
+
+    async def test_markers_expire_after_48_hours_and_never_reach_history_or_the_queue(self):
+        await enable(self.history, "role_create")
+        role = NS(key=K.NAME, old_value=None, new_value="Raiders")
+        await self.audit(A.ROLE_CREATE, 500, role)
+        marker = self.history.rows["member-events-audit:%d:500" % GUILD_ID]
+        self.assertEqual(marker["expires_at"] - marker["handled_at"], timedelta(hours=48))
+        self.assertNotIn("event_type", marker)
+        store = MemberEventStore(self.history)
+        rows, _ = await store.search(guild_id=GUILD_ID)
+        self.assertNotIn(marker["_id"], [row["_id"] for row in rows])
+        self.assertNotIn("delivery_status", marker)  # Never queued, so never counted in the backlog.
+        self.assertFalse(await store.audit_handled(GUILD_ID, 501))
+        self.assertTrue(await store.audit_handled(GUILD_ID, 500))
 
     async def test_audit_cursor_advance_is_numeric_monotonic_and_race_safe(self):
         store = MemberEventStore(self.history)

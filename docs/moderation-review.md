@@ -457,9 +457,13 @@ Four changes on top of batch 2, then a rework of audit replay. Code: `extensions
   by one filtered update.
   After the startup invite snapshot a background task reads the audit log (newest first, 24
   hours and 500 entries at most), then replays missed entries oldest first through the same
-  handlers. A replayed entry whose audit id is already on a stored row (`audit_entry_id` or
-  an `...:audit:<id>` key) is skipped before its handler runs, so it never posts or changes ban
-  state; unban rows record their audit id for this. A second "App added" for the same
+  handlers. Once an audit entry is fully handled, live or replayed, whatever the outcome
+  (posted, skipped as an ignored bot, enrichment only, duplicate), one marker document
+  `member-events-audit:<GUILD_ID>:<entry id>` (`handled_at`, `expires_at` 48 hours later; the
+  expiry index removes it) is written after all of that entry's rows. A replayed entry with a
+  marker is skipped before its handler runs, so it never posts or changes ban state; an entry
+  that crashed before its marker is replayed and only writes the rows still missing. Markers
+  have no `event_type` or `delivery_status`, so history and the backlog never include them. A second "App added" for the same
   application id within 10 minutes is skipped even after a restart. Replayed cards carry
   "Recovered after restart". With no cursor (first run) it only sets the cursor. Live entries
   that arrive before recovery has read the cursor are held back from the cursor until it ends.
@@ -470,8 +474,8 @@ Four changes on top of batch 2, then a rework of audit replay. Code: `extensions
 - **Card size limits.** Roles 10, permission changes 15, profile and setting changes 10,
   URLs 10, attachments 10, each followed by "+N more". A final guard keeps a Components V2 card
   within 3,800 characters of text, and a forum starter description within 4,000 (fields 1,000,
-  total 5,800), cutting the longest lines first (never below 40 characters, never inside an
-  escape) and then dropping trailing fields; "+N more" always equals the hidden items.
+  total 5,800), cutting the longest lines first (never below 40 characters, a field line keeping at least 12 characters of its value, never
+  inside an escape) and then dropping trailing fields; "+N more" always equals the hidden items.
 - **Public-channel health check.** Settings health adds an error `public_<channel id>` ("<name>
   is visible to everyone") for any enabled log destination, or the parent channel of a thread,
   that `@everyone` can view (View Channel or Administrator after channel overwrites).
