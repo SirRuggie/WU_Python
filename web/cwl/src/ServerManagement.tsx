@@ -657,9 +657,9 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                 ? "SETTINGS"
                 : "SERVER TOOLS"}
           </p>
-          <h2 ref={editorHeading} tabIndex={-1}>
+          <h1 ref={editorHeading} tabIndex={-1}>
             {selected?.label || areaInfo?.title || "Manage your server"}
-          </h2>
+          </h1>
           <p>
             {document?.description ||
               selected?.description ||
