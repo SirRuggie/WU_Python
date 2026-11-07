@@ -58,6 +58,28 @@
   --player-card-glow: rgb(224 0 16 / 10%);
   --player-card-edge: var(--wu-brand-red);
 }
+.roster-ui
+  .player-card:is(
+    .roster-player-card,
+    .compare-account,
+    .declaration-player
+  ):not(.is-assigned, .compare-account-arrived, .compare-account-missing) {
+  --player-card-fill: var(--wu-surface);
+  --player-card-glow: transparent;
+  border-color: var(--wu-border-subtle);
+}
+.roster-ui
+  .player-card:is(
+    .roster-player-card,
+    .compare-account,
+    .declaration-player
+  ):not(
+    .is-assigned,
+    .compare-account-arrived,
+    .compare-account-missing
+  )::before {
+  content: none;
+}
 .roster-ui .player-card > button.player-card-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
