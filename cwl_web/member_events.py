@@ -235,6 +235,18 @@ async def settings(request):
         options = None
         channels_available = False
         warning = "Discord channel inventory is unavailable; saved settings are shown."
+    try:
+        from .server_management import discord
+        rows = await discord(request, "GET", f"/guilds/{GUILD_ID}/roles")
+        roles = sorted(({"id": str(row["id"]), "name": str(row.get("name") or ""),
+                         "color": int(row.get("color") or 0), "position": int(row.get("position") or 0),
+                         "managed": bool(row.get("managed"))}
+                        for row in rows if str(row.get("id")) != str(GUILD_ID)),
+                       key=lambda row: row["position"], reverse=True)
+        roles_available = True
+    except (web.HTTPException, KeyError, TypeError, ValueError, AttributeError):
+        roles = None
+        roles_available = False
     from utils.member_event_cards import build_card, build_forum_message, sample_row
     preview_cards = {kind: build_card(sample_row(kind)) for kind in EVENT_TYPES}
     forum_preview_cards = {kind: build_forum_message(sample_row(kind)) for kind in EVENT_TYPES}
@@ -242,7 +254,8 @@ async def settings(request):
     preview_names = {sample["user_id"]: sample["display_name"], sample["moderator_id"]: "Sample moderator"}
     response = web.json_response({**saved, "preview_names": preview_names, "preview_cards": preview_cards,
                                   "forum_preview_cards": forum_preview_cards, "channels": options,
-                                  "channels_available": channels_available, "warning": warning})
+                                  "channels_available": channels_available, "warning": warning,
+                                  "roles": roles, "roles_available": roles_available})
     response.headers["Cache-Control"] = "no-store"
     return response
 

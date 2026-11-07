@@ -95,6 +95,23 @@ const fixture: SettingsResponse = {
   ignores: { channel_ids: [], role_ids: [] },
   invite_names: {},
   channels_available: true,
+  roles_available: true,
+  roles: [
+    {
+      id: "100000000000000001",
+      name: "Mods",
+      color: 255,
+      position: 3,
+      managed: false,
+    },
+    {
+      id: "100000000000000002",
+      name: "Guests",
+      color: 0,
+      position: 1,
+      managed: false,
+    },
+  ],
   channels: ["main", "other", "forum"].map((id) => ({
     id,
     name: id + "-logs",
@@ -387,20 +404,14 @@ it("saves link ignores with the draft and flags them as unsaved", async () => {
   await change(channelSelect, "other");
   expect(host.textContent).toContain("#other-logs");
   expect(host.textContent).toContain("Unsaved changes");
-  const roleInput = host.querySelector<HTMLInputElement>(
-    '.moderation-ignore-group input[placeholder="Role ID"]',
-  )!;
-  await change(roleInput, "12");
-  await act(async () => button("Add").click());
-  expect(host.textContent).toContain("17 to 20 digits");
-  await change(roleInput, "123456789012345678");
-  await act(async () => button("Add").click());
-  expect(host.textContent).toContain("Role 123456789012345678");
+  await act(async () => button("Guests＋").click());
+  expect(host.textContent).toContain("@Guests");
+  expect(host.textContent).not.toContain("100000000000000002");
   await act(async () => button("Save changes").click());
   expect(
     transport.mock.calls.find((call) => call[1] === "PUT")?.[2],
   ).toMatchObject({
-    ignores: { channel_ids: ["other"], role_ids: ["123456789012345678"] },
+    ignores: { channel_ids: ["other"], role_ids: ["100000000000000002"] },
   });
 });
 it("lists invites with uses and saves edited names; clearing removes", async () => {
@@ -491,4 +502,77 @@ it("loads an old response that lacks the new keys", async () => {
   await settle();
   expect(host.textContent).toContain("Ignored channels");
   expect(host.textContent).toContain("All changes saved");
+});
+
+const remount = async (changes: Record<string, unknown>) => {
+  await act(async () => root.unmount());
+  const body = { ...structuredClone(fixture), ...changes };
+  transport.mockImplementation(async (path: string) => {
+    if (path === "/manage/member-events/settings") return structuredClone(body);
+    if (path === "/manage/member-events/invites") return invites();
+    throw new Error(`Unexpected ${path}`);
+  });
+  root = createRoot(host);
+  await act(async () => root.render(<ModerationSettings />));
+  await settle();
+};
+const ignoredRoles = () =>
+  host.querySelectorAll(".moderation-ignore-group")[1] as HTMLElement;
+it("names ignored roles, removes them, and never shows numeric ids", async () => {
+  await remount({
+    ignores: { channel_ids: [], role_ids: ["100000000000000001"] },
+  });
+  expect(ignoredRoles().textContent).toContain("@Mods");
+  expect(ignoredRoles().textContent).toContain("Guests");
+  expect(host.textContent).not.toMatch(/\d{15,}/);
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('[aria-label="Remove @Mods"]')!
+      .click(),
+  );
+  expect(ignoredRoles().textContent).toContain("None");
+  await act(async () => button("Save changes").click());
+  const put = transport.mock.calls.find((call) => call[1] === "PUT");
+  expect(put?.[2].ignores.role_ids).toEqual([]);
+});
+it("shows a removable Deleted role chip for a role missing from the list", async () => {
+  await remount({
+    ignores: { channel_ids: [], role_ids: ["300000000000000009"] },
+  });
+  expect(ignoredRoles().textContent).toContain("Deleted role");
+  expect(host.textContent).not.toContain("300000000000000009");
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('[aria-label="Remove Deleted role"]')!
+      .click(),
+  );
+  expect(ignoredRoles().textContent).toContain("None");
+});
+it("keeps chips removable but blocks adding when roles are unavailable", async () => {
+  await remount({
+    roles: null,
+    roles_available: false,
+    ignores: { channel_ids: [], role_ids: ["100000000000000001"] },
+  });
+  expect(ignoredRoles().textContent).toContain("Roles unavailable.");
+  expect(ignoredRoles().textContent).toContain("Unknown role");
+  expect(host.textContent).not.toContain("100000000000000001");
+  expect(ignoredRoles().querySelector(".role-picker")).toBeNull();
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('[aria-label="Remove Unknown role"]')!
+      .click(),
+  );
+  expect(ignoredRoles().textContent).toContain("None");
+});
+it("handles an older response without roles", async () => {
+  const { roles: _roles, roles_available: _flag, ...old } = fixture;
+  await remount({
+    ...old,
+    roles: undefined,
+    roles_available: undefined,
+    ignores: { channel_ids: [], role_ids: ["100000000000000001"] },
+  });
+  expect(ignoredRoles().textContent).toContain("Deleted role");
+  expect(host.textContent).not.toContain("100000000000000001");
 });

@@ -13,7 +13,7 @@ from aiohttp.test_utils import make_mocked_request
 
 from cwl_web import member_events as api
 from extensions.events import member_events as transport
-from utils.member_event_cards import build_card
+from utils.member_event_cards import build_card, sample_row
 from utils.member_event_settings import normalize_settings
 from utils.member_events import GUILD_ID, MemberEventStore, avatar_source, event_key, safe_text
 from tests.test_moderation_backend import MemoryCollection
@@ -42,6 +42,15 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
                             event_key(GUILD_ID, 123, "leave", self.now + timedelta(seconds=4), joined_two))
         self.assertNotEqual(event_key(GUILD_ID, 123, "join", self.now, joined_one),
                             event_key(GUILD_ID, 123, "leave", self.now, joined_one))
+
+    def test_safe_text_keeps_emoji_joiners_but_still_strips_and_escapes(self):
+        family = "👨\u200d👩\u200d👧 fam"
+        self.assertEqual(safe_text(family), family)
+        self.assertEqual(safe_text("a\x00b\u200bc\u202ed"), "abcd")
+        self.assertEqual(safe_text("**@everyone** <@1>"), "\\*\\*@\u200beveryone\\*\\* \\<@\u200b1\\>")
+        for kind in ("invite_use", "invite_create"):
+            row = {**sample_row(kind), "details": {**sample_row(kind)["details"], "name": family}}
+            self.assertIn(family, json.dumps(build_card(row), ensure_ascii=False))
 
     def test_avatar_source_and_rendering_reject_external_identity_markup(self):
         self.assertIsNone(avatar_source(GUILD_ID, 123, "../../escape"))

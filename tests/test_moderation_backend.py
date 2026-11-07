@@ -391,6 +391,49 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result["channels"])
         self.assertEqual(result["events"], saved["events"])
 
+    async def _settings_with_discord(self, discord):
+        store = NS(settings=AsyncMock(return_value=MemberEventStore.default_settings()))
+        class Context:
+            async def __aenter__(self): return NS(member_events=object())
+            async def __aexit__(self, *args): pass
+        from cwl_web import server_management
+        bot_actor = {"permissions": 8, "role_ids": set(), "user_id": "1"}
+        with patch.object(api, "require_manage", new=AsyncMock(return_value=bot_actor)), \
+             patch.object(api, "mongo", return_value=Context()), \
+             patch.object(api, "MemberEventStore", return_value=store), \
+             patch.object(api, "_bot_permissions", new=AsyncMock(return_value=(bot_actor, effective_permissions))), \
+             patch.object(server_management, "discord", new=discord):
+            return json.loads((await api.settings(NS())).text)
+
+    async def test_settings_get_lists_roles_without_everyone_by_position(self):
+        async def discord(request, method, path, **kwargs):
+            if path.endswith("/roles"):
+                return [{"id": str(GUILD_ID), "name": "@everyone", "color": 0, "position": 0},
+                        {"id": "200000000000000001", "name": "Low", "color": 1, "position": 1},
+                        {"id": "200000000000000002", "name": "Bot", "color": 0, "position": 5, "managed": True}]
+            if path.endswith("/channels"):
+                return []
+            raise web.HTTPNotFound()
+        result = await self._settings_with_discord(discord)
+        self.assertTrue(result["roles_available"])
+        self.assertEqual(result["roles"], [
+            {"id": "200000000000000002", "name": "Bot", "color": 0, "position": 5, "managed": True},
+            {"id": "200000000000000001", "name": "Low", "color": 1, "position": 1, "managed": False}])
+        self.assertTrue(result["channels_available"])
+
+    async def test_settings_get_role_failure_keeps_channels(self):
+        async def discord(request, method, path, **kwargs):
+            if path.endswith("/roles"):
+                raise web.HTTPServiceUnavailable()
+            if path.endswith("/channels"):
+                return []
+            raise web.HTTPNotFound()
+        result = await self._settings_with_discord(discord)
+        self.assertFalse(result["roles_available"])
+        self.assertIsNone(result["roles"])
+        self.assertTrue(result["channels_available"])
+        self.assertEqual(result["channels"], [])
+
     async def test_only_exact_kick_audit_creates_kick(self):
         target = self.uid
         entry = NS(guild_id=GUILD_ID, target_id=target,

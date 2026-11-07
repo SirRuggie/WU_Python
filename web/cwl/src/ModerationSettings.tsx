@@ -225,6 +225,8 @@ export default function ModerationSettings({
         ...cloneSettings(result),
         channels: saved.channels,
         channels_available: saved.channels_available,
+        roles: saved.roles,
+        roles_available: saved.roles_available,
         warning: saved.warning,
         preview_names: saved.preview_names,
         preview_cards: saved.preview_cards,
@@ -417,6 +419,8 @@ export default function ModerationSettings({
                     <ModerationIgnoreLists
                       ignores={draft.ignores}
                       channels={channels}
+                      roles={saved.roles}
+                      rolesAvailable={saved.roles_available !== false}
                       disabled={busy}
                       onChange={updateIgnores}
                     />

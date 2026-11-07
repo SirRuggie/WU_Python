@@ -1,7 +1,6 @@
-import { useState } from "react";
+import RolePicker, { type RoleChoice } from "./RolePicker";
 import {
   maxIgnoreIds,
-  normalizeRoleId,
   type Destination,
   type LinkIgnores,
 } from "./moderationSettingsModel";
@@ -9,6 +8,8 @@ import {
 type Props = {
   ignores: LinkIgnores;
   channels: Destination[];
+  roles?: RoleChoice[] | null;
+  rolesAvailable: boolean;
   disabled: boolean;
   onChange: (value: LinkIgnores) => void;
 };
@@ -47,11 +48,11 @@ function Chips({
 export default function ModerationIgnoreLists({
   ignores,
   channels,
+  roles,
+  rolesAvailable,
   disabled,
   onChange,
 }: Props) {
-  const [roleText, setRoleText] = useState("");
-  const [roleError, setRoleError] = useState("");
   const channelName = (id: string) => {
     const channel = channels.find((item) => item.id === id);
     return channel ? `#${channel.name}` : `Channel ${id}`;
@@ -59,23 +60,10 @@ export default function ModerationIgnoreLists({
   const available = channels.filter(
     (item) => !ignores.channel_ids.includes(item.id),
   );
-  const addRole = () => {
-    const id = normalizeRoleId(roleText);
-    if (!id) {
-      setRoleError("Enter a role ID with 17 to 20 digits.");
-      return;
-    }
-    if (ignores.role_ids.includes(id)) {
-      setRoleError("That role is already ignored.");
-      return;
-    }
-    if (ignores.role_ids.length >= maxIgnoreIds) {
-      setRoleError(`At most ${maxIgnoreIds} roles.`);
-      return;
-    }
-    setRoleError("");
-    setRoleText("");
-    onChange({ ...ignores, role_ids: [...ignores.role_ids, id] });
+  const roleName = (id: string) => {
+    if (!rolesAvailable) return "Unknown role";
+    const role = roles?.find((item) => item.id === id);
+    return role ? `@${role.name}` : "Deleted role";
   };
 
   return (
@@ -119,34 +107,26 @@ export default function ModerationIgnoreLists({
         />
       </div>
       <div className="moderation-ignore-group">
-        <label>
-          Ignored roles
-          <span className="moderation-ignore-add">
-            <input
-              value={roleText}
-              inputMode="numeric"
-              placeholder="Role ID"
-              disabled={disabled}
-              onChange={(event) => {
-                setRoleText(event.target.value);
-                setRoleError("");
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  addRole();
-                }
-              }}
-            />
-            <button type="button" disabled={disabled} onClick={addRole}>
-              Add
-            </button>
-          </span>
-        </label>
-        {roleError && <small role="alert">{roleError}</small>}
+        {rolesAvailable ? (
+          <RolePicker
+            roles={roles || []}
+            selected={ignores.role_ids}
+            disabled={disabled || ignores.role_ids.length >= maxIgnoreIds}
+            label="Ignored roles"
+            optionsLabel="Available ignored roles"
+            onChoose={(role) =>
+              onChange({ ...ignores, role_ids: [...ignores.role_ids, role.id] })
+            }
+          />
+        ) : (
+          <>
+            <span>Ignored roles</span>
+            <small>Roles unavailable.</small>
+          </>
+        )}
         <Chips
           ids={ignores.role_ids}
-          name={(id) => `Role ${id}`}
+          name={roleName}
           disabled={disabled}
           onRemove={(id) =>
             onChange({

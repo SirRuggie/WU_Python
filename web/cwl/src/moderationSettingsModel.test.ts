@@ -15,7 +15,6 @@ import {
   hasInvalidDestination,
   moderationRegistry,
   moderationSettingsError,
-  normalizeRoleId,
   saveModerationSettings,
   type Destination,
   type SettingsResponse,
@@ -279,11 +278,4 @@ it("fills missing keys when an old response lacks the new fields", () => {
   expect(effectiveDestination(copy, "link")).toMatchObject({ source: "main" });
   copy.categories.messages.mode = "off";
   expect(effectiveDestination(copy, "link")).toMatchObject({ source: "off" });
-});
-
-it("accepts only valid role ids for the ignore list", () => {
-  expect(normalizeRoleId(" 123456789012345678 ")).toBe("123456789012345678");
-  expect(normalizeRoleId("12345")).toBeNull();
-  expect(normalizeRoleId("12345678901234567890123")).toBeNull();
-  expect(normalizeRoleId("abc")).toBeNull();
 });

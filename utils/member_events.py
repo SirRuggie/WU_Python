@@ -40,7 +40,7 @@ def event_key(guild_id: int, user_id: int, kind: str, at: datetime, joined_at=No
 def safe_text(value: object, limit: int = 120) -> str:
     """Render untrusted Discord names as inert V2 Markdown text."""
     value = str(value or "").replace("\n", " ").replace("\r", " ").strip()[:limit]
-    value = "".join(ch for ch in value if ch.isprintable())
+    value = "".join(ch for ch in value if ch.isprintable() or ch == "\u200d")
     return re.sub(r"([\\`*_~|>\[\]()])", r"\\\1", value).replace("<", "\\<").replace("@", "@\u200b")
 
 

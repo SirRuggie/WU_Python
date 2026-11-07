@@ -1,4 +1,5 @@
 import { api, ApiError } from "./api";
+import type { RoleChoice } from "./RolePicker";
 
 export type ModerationKind =
   | "join"
@@ -82,6 +83,8 @@ export type SettingsResponse = SettingsDraft & {
   revision: number;
   channels?: Destination[] | null;
   channels_available?: boolean;
+  roles?: RoleChoice[] | null;
+  roles_available?: boolean;
   warning?: string | null;
   preview_names?: Record<string, string>;
   preview_cards?: Partial<Record<ModerationKind, unknown>>;
@@ -333,7 +336,6 @@ export const eventTypes = moderationRegistry.flatMap((category) =>
     })),
 );
 
-const idPattern = /^\d{17,20}$/;
 export const maxIgnoreIds = 100;
 export const maxInviteNameLength = 40;
 const badNameCharacter = /[\p{Cc}\p{Zl}\p{Zp}]|(?!\u200d)\p{Cf}/u;
@@ -347,11 +349,6 @@ export function inviteNameError(name: string): string {
   if (badNameCharacter.test(trimmed))
     return "Remove control or invisible characters.";
   return "";
-}
-
-export function normalizeRoleId(value: string): string | null {
-  const id = value.trim();
-  return idPattern.test(id) ? id : null;
 }
 
 function idList(value: unknown): string[] {
