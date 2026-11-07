@@ -53,18 +53,21 @@
   flex: none;
 }
 .state-inWar {
-  color: #aee4c8;
-  background: var(--wu-success-surface);
+  color: var(--wu-bg);
+  background: #00d659;
+  -webkit-text-fill-color: currentColor;
 }
 .state-preparation {
-  color: var(--wu-warning);
-  background: var(--wu-warning-surface);
+  color: var(--wu-bg);
+  background: var(--wu-warning);
+  -webkit-text-fill-color: currentColor;
 }
 .state-private,
 .state-error,
 .state-awaitingResult {
-  color: var(--wu-warning);
-  background: var(--wu-warning-surface);
+  color: var(--wu-bg);
+  background: var(--wu-warning);
+  -webkit-text-fill-color: currentColor;
 }
 .calendar-title {
   display: flex;

@@ -321,9 +321,10 @@
 }
 
 .hub-state.saved {
-  color: #b8efdc;
-  background: var(--wu-success-surface);
-  border-color: var(--wu-success-border);
+  color: var(--wu-bg);
+  background: #00d659;
+  border-color: #00d659;
+  -webkit-text-fill-color: currentColor;
 }
 
 .hub-account-action {
