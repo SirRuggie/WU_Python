@@ -7,3 +7,6 @@
   white-space: normal;
   border-radius: var(--roster-radius-card);
 }
+.seasons-page > .card ~ .card {
+  margin-top: var(--wu-space-3);
+}
