@@ -36,3 +36,12 @@ speech output, OS text scaling and every combination of staff forms remain
 unverified. This is scoped evidence, not a WCAG conformance certification.
 
 Deployment uses static assets only; no bot or web-service restart is needed.
+
+## November 7, 2026 audit fixes
+
+Impeccable audit of release ca1bb020 (16/20). Fixed: the mobile menu moves focus into the drawer
+after it becomes visible and returns it to Menu on close; Server tools pages use their existing title as the
+h1; the top-bar title wraps to 2 lines at 650 px and below and the header grows with it; the account footer
+name and handle no longer overlap; the Members search field has its own row at 650 px and below.
+Not changed by decision: field border contrast (WCAG 1.4.11 at risk, 1.33–2.19:1), the global
+reduced-motion rule, and the staff-read 503s on fast navigation.

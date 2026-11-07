@@ -341,7 +341,7 @@ div.shell {
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    word-break: break-all;
+    overflow-wrap: anywhere;
     text-overflow: clip;
     white-space: normal;
   }
