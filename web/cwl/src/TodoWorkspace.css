@@ -491,6 +491,16 @@
   margin-top: var(--wu-space-1);
   font-variant-numeric: tabular-nums;
 }
+.todo-event-timer.is-cwl {
+  background: var(--wu-accent);
+  border: 1px solid #f8dc8e;
+  border-left: 5px solid #b57900;
+}
+.todo-event-timer.is-cwl,
+.todo-event-timer.is-cwl :is(.todo-event-label, strong, time, p, small) {
+  color: var(--wu-accent-ink);
+  -webkit-text-fill-color: currentColor;
+}
 @media (max-width: 650px) {
   .todo-event-timer {
     flex-direction: column;
