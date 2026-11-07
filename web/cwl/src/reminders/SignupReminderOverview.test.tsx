@@ -42,7 +42,7 @@ function fixture() {
     ),
   } as Campaign;
 }
-function render(campaign: Campaign, activated = true) {
+function render(campaign: Campaign, activated = true, timing = vi.fn()) {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -57,7 +57,7 @@ function render(campaign: Campaign, activated = true) {
         destination={(id) => `channel-${id}`}
         recipient={(ids) => ids.join(",")}
         onEdit={edit}
-        onTiming={() => {}}
+        onTiming={timing}
       />,
     ),
   );
@@ -77,6 +77,18 @@ describe("signup reminder overview", () => {
     const buttons = [...host.querySelectorAll("article button")];
     expect(buttons).toHaveLength(12);
     buttons.forEach((button, index) => {
+      expect(button.classList.contains("roster-ui-button")).toBe(true);
+      expect(button.classList.contains("is-secondary")).toBe(true);
+      expect(button.classList.contains("is-primary")).toBe(false);
+      expect(button.getAttribute("type")).toBe("button");
+      expect(button.getAttribute("aria-label")).toBeNull();
+      expect(button.textContent?.replace(/\s+/g, " ").trim()).toBe(
+        `Edit Message ${Math.floor(index / 2)} for ${index % 2 ? "Lazy" : "Main"}`,
+      );
+      expect(button.querySelector(".reminder-visually-hidden")).not.toBeNull();
+      const pool = button.closest(".signup-reminder-pool")!;
+      expect(pool.firstElementChild?.tagName).toBe("STRONG");
+      expect(pool.lastElementChild).toBe(button);
       act(() =>
         button.dispatchEvent(new MouseEvent("click", { bubbles: true })),
       );
@@ -106,4 +118,30 @@ it("inactive campaign never labels a row On or an upcoming send", () => {
   render(fixture(), false);
   expect(host.textContent).not.toMatch(/\bOn\b/);
   expect(host.textContent).not.toContain("No upcoming send");
+});
+
+it("uses the same secondary timing action and preserves native action order", () => {
+  const timing = vi.fn();
+  render(fixture(), true, timing);
+  const buttons = [...host.querySelectorAll<HTMLButtonElement>("button")];
+  expect(buttons).toHaveLength(13);
+  const first = buttons[0];
+  expect(first.textContent?.trim()).toBe("Edit timing");
+  expect(first.classList.contains("roster-ui-button")).toBe(true);
+  expect(first.classList.contains("is-secondary")).toBe(true);
+  expect(first.type).toBe("button");
+  expect(first.disabled).toBe(false);
+  act(() => first.click());
+  expect(timing).toHaveBeenCalledTimes(1);
+  expect(buttons.every((button) => button.tabIndex === 0)).toBe(true);
+  expect(
+    buttons
+      .slice(1)
+      .map((button) => button.textContent?.replace(/\s+/g, " ").trim()),
+  ).toEqual(
+    Array.from({ length: 6 }, (_, index) => [
+      `Edit Message ${index} for Main`,
+      `Edit Message ${index} for Lazy`,
+    ]).flat(),
+  );
 });
