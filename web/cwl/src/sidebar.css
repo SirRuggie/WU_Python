@@ -332,8 +332,18 @@ div.shell {
     padding: var(--wu-space-4) var(--wu-space-4) 80px;
   }
   .shell .topbar {
-    height: 64px;
+    height: auto;
+    min-height: 64px;
     padding: 0 var(--wu-space-4);
+  }
+  .shell .topbar > div > strong {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
   }
   .cwl-workspace-nav {
     flex-wrap: wrap;

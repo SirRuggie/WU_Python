@@ -77,7 +77,7 @@ export const membersText = {
   selectOne: (name: string) => `Select ${name}`,
   selectedOnly: "Selected people",
   search: "Find a person",
-  searchHint: "Name, nickname, username or Discord ID",
+  searchHint: "Name, nickname, username or ID",
   all: "All",
   needsFlag: "Needs flag",
   noTimeZone: "No time zone",

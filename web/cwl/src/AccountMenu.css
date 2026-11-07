@@ -34,7 +34,11 @@
 
 .account-menu-profile-trigger {
   position: relative;
-  justify-content: flex-start;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  justify-content: center;
+  padding-block: 0;
   padding-left: 43px;
   padding-right: var(--wu-space-5);
 }
@@ -70,9 +74,9 @@
 }
 
 .account-menu-handle {
-  position: absolute;
-  left: 43px;
-  bottom: 2px;
+  display: block;
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
@@ -84,6 +88,10 @@
   position: absolute;
   right: 8px;
   color: var(--wu-text-muted);
+}
+
+.account-menu-profile-trigger .account-menu-chevron {
+  top: 13px;
 }
 
 .account-menu-avatar-trigger {

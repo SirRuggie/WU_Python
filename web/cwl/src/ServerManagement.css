@@ -10,6 +10,7 @@
   gap: var(--wu-space-4);
   margin-bottom: var(--wu-space-5);
 }
+.manage-heading h1,
 .manage-heading h2 {
   margin: var(--wu-space-1) 0 var(--wu-space-2);
   font-size: var(--wu-text-2xl);
@@ -19,7 +20,12 @@
   text-wrap: balance;
 }
 
+.manage-heading h1 {
+  color: inherit;
+}
+
 @media (max-width: 480px) {
+  .manage-heading h1,
   .manage-heading h2 {
     font-size: var(--wu-text-xl);
   }

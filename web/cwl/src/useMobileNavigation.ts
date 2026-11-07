@@ -1,63 +1,101 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from "react";
 
 /** Keep the mobile drawer keyboard-accessible without changing navigation guards. */
-export function useMobileNavigation(open: boolean, close: () => void, enabled: boolean) {
-  const drawerRef = useRef<HTMLElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches)
-  const closeRef = useRef(close)
-  closeRef.current = close
+export function useMobileNavigation(
+  open: boolean,
+  close: () => void,
+  enabled: boolean,
+) {
+  const drawerRef = useRef<HTMLElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [mobile, setMobile] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 900px)").matches,
+  );
+  const closeRef = useRef(close);
+  closeRef.current = close;
 
   useEffect(() => {
-    const query = window.matchMedia('(max-width: 900px)')
+    const query = window.matchMedia("(max-width: 900px)");
     const update = () => {
-      setMobile(query.matches)
-      if (!query.matches) closeRef.current()
-    }
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
-  }, [])
+      setMobile(query.matches);
+      if (!query.matches) closeRef.current();
+    };
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
-    if (!enabled || !mobile || !open) return
-    const drawer = drawerRef.current
-    if (!drawer) return
-    const controls = () => Array.from(drawer.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
-    )).filter(element => element.getClientRects().length > 0 && !element.closest('[hidden], [inert]'))
-    const first = () => controls()[0] || drawer
-    first().focus()
+    if (!enabled || !mobile || !open) return;
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+    const controls = () =>
+      Array.from(
+        drawer.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+        ),
+      ).filter(
+        (element) =>
+          element.getClientRects().length > 0 &&
+          !element.closest("[hidden], [inert]"),
+      );
+    const first = () => controls()[0] || drawer;
+    let focusFrame: number | null = null;
+    let focusAttempts = 0;
+    const focusWhenVisible = () => {
+      focusFrame = null;
+      if (
+        document.querySelector("dialog[open]") ||
+        (document.activeElement instanceof Element &&
+          document.activeElement.closest(".account-menu-popover"))
+      )
+        return;
+      if (getComputedStyle(drawer).visibility === "visible") {
+        first().focus();
+      } else if (++focusAttempts < 10) {
+        focusFrame = requestAnimationFrame(focusWhenVisible);
+      } else {
+        drawer.focus();
+      }
+    };
+    focusFrame = requestAnimationFrame(focusWhenVisible);
     const keydown = (event: KeyboardEvent) => {
       // Native dialogs own keyboard focus while they are open.
-      if (document.querySelector('dialog[open]')) return
+      if (document.querySelector("dialog[open]")) return;
       // AccountMenu's portalled React Aria popover owns Escape and Tab.
       if (
         event.defaultPrevented ||
         (event.target instanceof Element &&
-          event.target.closest('.account-menu-popover'))
-      ) return
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        closeRef.current()
+          event.target.closest(".account-menu-popover"))
+      )
+        return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
       }
-      if (event.key !== 'Tab') return
-      const items = controls()
-      const target = document.activeElement
-      const atStart = target === items[0] || !drawer.contains(target)
-      const atEnd = target === items[items.length - 1] || !drawer.contains(target)
+      if (event.key !== "Tab") return;
+      const items = controls();
+      const target = document.activeElement;
+      const atStart = target === items[0] || !drawer.contains(target);
+      const atEnd =
+        target === items[items.length - 1] || !drawer.contains(target);
       if (!items.length || (event.shiftKey ? atStart : atEnd)) {
-        event.preventDefault()
-        const next = (event.shiftKey ? items[items.length - 1] : items[0]) || drawer
-        next.focus()
+        event.preventDefault();
+        const next =
+          (event.shiftKey ? items[items.length - 1] : items[0]) || drawer;
+        next.focus();
       }
-    }
-    document.addEventListener('keydown', keydown)
+    };
+    document.addEventListener("keydown", keydown);
     return () => {
-      document.removeEventListener('keydown', keydown)
+      if (focusFrame !== null) cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", keydown);
       // A desktop resize hides the trigger; do not move focus to a hidden button.
-      if (triggerRef.current?.getClientRects().length) triggerRef.current.focus()
-    }
-  }, [enabled, mobile, open])
+      if (triggerRef.current?.getClientRects().length)
+        triggerRef.current.focus();
+    };
+  }, [enabled, mobile, open]);
 
-  return { drawerRef, triggerRef, mobile }
+  return { drawerRef, triggerRef, mobile };
 }

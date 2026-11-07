@@ -275,6 +275,14 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+@media (max-width: 650px) {
+  .members-search-line {
+    flex-wrap: wrap;
+  }
+  .members-search-line > label {
+    flex-basis: 100%;
+  }
+}
 .members-search-line input[type="search"] {
   width: 100%;
   min-width: 0;
