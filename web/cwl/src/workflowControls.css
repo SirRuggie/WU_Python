@@ -335,19 +335,6 @@
   flex-wrap: nowrap;
   white-space: nowrap;
 }
-.shell .todo-tabs {
-  scrollbar-color: #807351 #191919;
-}
-.shell .todo-tabs::-webkit-scrollbar {
-  height: 6px;
-}
-.shell .todo-tabs::-webkit-scrollbar-track {
-  background: var(--wu-surface);
-}
-.shell .todo-tabs::-webkit-scrollbar-thumb {
-  background: #807351;
-  border-radius: 4px;
-}
 /* Tab geometry remains at the released baseline; only focus color is unified. */
 .shell .text-command-tabs > button:focus-visible,
 .shell .manage-preview-toggle > button:focus-visible {
