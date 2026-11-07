@@ -145,6 +145,17 @@
   background: var(--roster-danger);
 }
 
+/* Clan settings also uses clan-chip classes; only the Build strip adopts these. */
+.roster-clan-chips .roster-clan-chip .roster-ui-progress-track {
+  background: var(--wu-surface);
+}
+.roster-clan-chips .roster-clan-chip.is-room .roster-ui-progress-track > span {
+  background: #00d659;
+}
+.roster-clan-chips .roster-clan-chip.is-over .roster-ui-progress-track > span {
+  background: var(--wu-brand-red);
+}
+
 @media (max-width: 700px) {
   .roster-clan-chips {
     padding-inline-end: max(22px, calc(100% - 78vw));
