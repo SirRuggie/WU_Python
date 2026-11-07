@@ -3,7 +3,13 @@
   min-width: 0;
 }
 .declaration-extras {
-  color: #d9bd79;
+  color: var(--roster-warning);
+}
+.declaration-clan.is-not-ready > .declaration-extras {
+  background: #221316;
+}
+.declaration-clan.is-ready > .declaration-extras {
+  background: #14261a;
 }
 .declaration-extras summary {
   min-height: 44px;
@@ -15,7 +21,7 @@
 .declaration-extras p,
 .declaration-extras-status {
   font-size: var(--wu-text-sm);
-  color: #b6afa1;
+  color: var(--wu-text-muted);
   margin: var(--wu-space-2) var(--wu-space-3);
   overflow-wrap: anywhere;
   text-wrap: pretty;
@@ -27,13 +33,13 @@
   gap: var(--wu-space-2);
 }
 .declaration-member-list > li {
-  border-top: 1px solid #6f5c333b;
+  border-top: 1px solid var(--wu-border-subtle);
   padding-top: var(--wu-space-2);
   overflow-wrap: anywhere;
 }
 .declaration-member-context {
   display: block;
-  color: #b6afa1;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
   margin-top: var(--wu-space-1);
 }
@@ -47,7 +53,7 @@
   min-height: 44px;
 }
 .declaration-extras.is-neutral {
-  color: #b6afa1;
+  color: var(--wu-text);
 }
 .declaration-member-accounts {
   list-style: none;
