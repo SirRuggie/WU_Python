@@ -1084,23 +1084,98 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["event_key"] for row in self.rows("unban")][-1], "%d:unban:%d:2" % (GUILD_ID, self.uid))
         self.assertEqual(self.deliver.await_count, before[1] + 1)
 
-    async def test_replay_after_a_crash_before_the_marker_writes_only_the_missing_row(self):
+    async def test_replay_of_an_entry_with_rows_but_no_marker_is_skipped_by_the_row_guard(self):
         await enable(self.history, "roles_added", "roles_removed")
         added = NS(key=K.ADD_ROLE_TO_MEMBER, old_value=None, new_value={1: NS(name="Member")})
-        removed = NS(key=K.REMOVE_ROLE_FROM_MEMBER, old_value=None, new_value={3: NS(name="Recruit")})
-        entry = self.entry(A.MEMBER_ROLE_UPDATE, 400, added, removed, target=self.uid)
+        entry = self.entry(A.MEMBER_ROLE_UPDATE, 400, added, target=self.uid)
         await transport.audited(NS(entry=entry), self.mongo, self.bot)
         (first,) = self.rows("roles_added")
-        # Crash: only the first row was written; the second row and the marker never were.
-        for key in [k for k, r in self.history.rows.items() if r.get("event_type") == "roles_removed"]:
-            del self.history.rows[key]
-        del self.history.rows["member-events-audit:%d:400" % GUILD_ID]
+        del self.history.rows["member-events-audit:%d:400" % GUILD_ID]  # Marker missing.
         delivered = self.deliver.await_count
-        self.assertTrue(await transport.handle_audit_entry(entry, self.mongo, self.bot, recovered=True))
+        with patch.object(transport, "record_member_roles", new=AsyncMock()) as handler:
+            self.assertTrue(await transport.handle_audit_entry(entry, self.mongo, self.bot, recovered=True))
+        handler.assert_not_awaited()
         self.assertEqual(self.rows("roles_added"), [first])
-        self.assertEqual(len(self.rows("roles_removed")), 1)
-        self.assertEqual(self.deliver.await_count, delivered + 1)
-        self.assertIn("member-events-audit:%d:400" % GUILD_ID, self.history.rows)
+        self.assertEqual(self.deliver.await_count, delivered)
+
+    async def test_delivery_raising_after_persistence_still_writes_the_marker_and_cursor(self):
+        await enable(self.history, "role_create")
+        store = MemberEventStore(self.history)
+        await store.advance_audit_cursor(10)
+        self.deliver.side_effect = RuntimeError("discord down")
+        entry = self.entry(A.ROLE_CREATE, 300, NS(key=K.NAME, old_value=None, new_value="R"))
+        self.assertFalse(await transport.handle_audit_entry(entry, self.mongo, self.bot))
+        self.assertIn("member-events-audit:%d:300" % GUILD_ID, self.history.rows)
+        (row,) = self.rows("role_create")
+        self.assertEqual(row["delivery_status"], "queued")  # Left for the recovery loop.
+        self.assertEqual(await store.audit_cursor(), 300)
+
+    async def test_marker_is_written_before_any_delivery(self):
+        await enable(self.history, "role_create")
+        seen = []
+        self.deliver.side_effect = lambda *a: seen.append("member-events-audit:%d:301" % GUILD_ID in self.history.rows)
+        entry = self.entry(A.ROLE_CREATE, 301, NS(key=K.NAME, old_value=None, new_value="R"))
+        self.assertTrue(await transport.handle_audit_entry(entry, self.mongo, self.bot))
+        self.assertEqual(seen, [True])
+
+    async def test_handler_raising_before_persisting_writes_no_marker_and_keeps_the_cursor(self):
+        await enable(self.history, "role_create")
+        store = MemberEventStore(self.history)
+        await store.advance_audit_cursor(10)
+        entry = self.entry(A.ROLE_CREATE, 302, NS(key=K.NAME, old_value=None, new_value="R"))
+        with patch.object(MemberEventStore, "capture", new=AsyncMock(side_effect=RuntimeError("mongo"))):
+            self.assertFalse(await transport.handle_audit_entry(entry, self.mongo, self.bot))
+        self.assertNotIn("member-events-audit:%d:302" % GUILD_ID, self.history.rows)
+        self.assertEqual(await store.audit_cursor(), 10)
+
+    async def test_marker_write_failure_leaves_the_cursor_and_warns_once(self):
+        await enable(self.history, "role_create")
+        store = MemberEventStore(self.history)
+        await store.advance_audit_cursor(10)
+        entry = self.entry(A.ROLE_CREATE, 303, NS(key=K.NAME, old_value=None, new_value="R"))
+        with patch.object(MemberEventStore, "mark_audit_handled", new=AsyncMock(side_effect=RuntimeError("mongo"))), \
+                self.assertLogs(transport.log, "WARNING") as logs:
+            self.assertFalse(await transport.handle_audit_entry(entry, self.mongo, self.bot))
+        self.assertEqual(len(logs.records), 1)
+        self.assertEqual(await store.audit_cursor(), 10)
+        self.assertEqual(len(self.rows("role_create")), 1)
+
+    async def test_unban_delivery_raising_then_reban_then_replay_keeps_ban_state_and_queued_unban(self):
+        await enable(self.history, "ban", "unban")
+        store = MemberEventStore(self.history)
+        await store.ban_episode(GUILD_ID, self.uid, banned=True)
+        await store.advance_audit_cursor(150)
+        self.deliver.side_effect = RuntimeError("timeout")
+        unban = self.entry(A.MEMBER_BAN_REMOVE, 200, target=self.uid)
+        await transport.handle_audit_entry(unban, self.mongo, self.bot)
+        self.deliver.side_effect = None
+        (queued,) = self.rows("unban")
+        self.assertEqual(queued["delivery_status"], "queued")
+        transport._audit_state.update(pending=True, live_max=0)  # Restart: recovery pending.
+        await store.ban_episode(GUILD_ID, self.uid, banned=True)  # Re-ban.
+        ban = self.entry(A.MEMBER_BAN_ADD, 300, target=self.uid)
+        await transport.handle_audit_entry(ban, self.mongo, self.bot)
+        self.audit_log(ban, unban)
+        before = self.deliver.await_count
+        await transport.recover_audit(self.mongo, self.bot)
+        state = self.history.rows["ban-state:%d:%d" % (GUILD_ID, self.uid)]
+        self.assertTrue(state["banned"])
+        self.assertEqual([r["event_key"] for r in self.rows("unban")], [queued["event_key"]])
+        delivered = [call.args[2] for call in self.deliver.await_args_list[before:]]
+        self.assertNotIn(queued["_id"], [row["_id"] for row in delivered])  # Replay posted nothing.
+        with patch.object(MemberEventStore, "release_stale_captures", new=AsyncMock()):
+            await transport.recover(self.mongo, self.bot)  # Queue recovery re-delivers the original unban.
+        self.assertIn(queued["_id"], [call.args[2]["_id"] for call in self.deliver.await_args_list[before:]])
+        await self.audit(A.MEMBER_BAN_REMOVE, 301, target=self.uid)  # The later real unban posts.
+        self.assertEqual(len(self.rows("unban")), 2)
+
+    async def test_audit_entry_index_is_created_and_partial(self):
+        await MemberEventStore(self.history).ensure_indexes()
+        self.assertTrue(any(
+            kwargs.get("name") == "member_event_audit_entry"
+            and args[0] == [("guild_id", 1), ("audit_entry_id", 1)]
+            and kwargs.get("partialFilterExpression") == {"audit_entry_id": {"$type": "string"}}
+            for args, kwargs in self.history.indexes))
 
     async def test_markers_expire_after_48_hours_and_never_reach_history_or_the_queue(self):
         await enable(self.history, "role_create")

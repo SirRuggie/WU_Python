@@ -98,6 +98,9 @@ class MemberEventStore:
         await self.collection.create_index([("guild_id", 1), ("user_id", 1), ("_id", -1)], name="member_event_user")
         await self.collection.create_index([("guild_id", 1), ("delivery_status", 1), ("_id", 1)], name="member_event_queue")
         await self.collection.create_index("expires_at", expireAfterSeconds=0, name="member_event_expiry")
+        await self.collection.create_index(
+            [("guild_id", 1), ("audit_entry_id", 1)], name="member_event_audit_entry",
+            partialFilterExpression={"audit_entry_id": {"$type": "string"}})
 
     @staticmethod
     def default_settings():
@@ -208,6 +211,15 @@ class MemberEventStore:
         """True once this audit entry was fully handled (see ``mark_audit_handled``)."""
         return bool(await self.collection.find_one(
             {"_id": self._audit_marker_id(guild_id, audit_entry_id)}, {"_id": 1}))
+
+    async def audit_row_exists(self, guild_id: int, audit_entry_id) -> bool:
+        """True when a persisted log row carries this audit entry id (the second replay guard).
+
+        Ban rows and ban-audit facts are left out: the ban handler finishes them idempotently.
+        """
+        return bool(await self.collection.find_one(
+            {"guild_id": guild_id, "audit_entry_id": str(int(audit_entry_id)),
+             "event_type": {"$exists": True, "$ne": "ban"}}, {"_id": 1}))
 
     async def mark_audit_handled(self, guild_id: int, audit_entry_id, now: datetime | None = None):
         """Record that an audit entry is done, whatever its outcome, so a replay skips it.

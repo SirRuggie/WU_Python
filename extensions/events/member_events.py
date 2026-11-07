@@ -36,6 +36,9 @@ AUDIT_RECOVERY_LIMIT = 500
 # While "pending", live audit entries only note the newest id; recovery reads the old cursor first.
 _audit_state = {"pending": True, "live_max": 0}
 _recovering: contextvars.ContextVar[bool] = contextvars.ContextVar("member_events_recovering", default=False)
+_audit_entry: contextvars.ContextVar[int | None] = contextvars.ContextVar("member_events_audit_entry", default=None)
+# Rows an audit entry's handler persisted; delivered only after the entry is marked handled.
+_deferred: contextvars.ContextVar[list | None] = contextvars.ContextVar("member_events_deferred", default=None)
 _index_lock = asyncio.Lock()
 _invite_lock = asyncio.Lock()  # One join diff at a time; create/delete share it.
 INVITE_WAIT_SECONDS = 3
@@ -68,6 +71,14 @@ async def ensure_indexes(store):
         if not _indexes_ready:
             await store.ensure_indexes()
             _indexes_ready = True
+
+
+async def deliver_or_defer(store, bot, row):
+    pending = _deferred.get()
+    if pending is None:
+        await deliver(store, bot, row)
+    else:
+        pending.append((store, row))
 
 
 async def download_avatar(url: str | None):
@@ -342,7 +353,7 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
                                        ready_row.get("avatar"), ready_row.get("avatar_type"),
                                        roles=ready_row.get("roles"))
     if ready_row and enabled:
-        await deliver(store, bot, ready_row)
+        await deliver_or_defer(store, bot, ready_row)
 
 
 async def record(event, kind: str, mongo: MongoClient, bot: hikari.GatewayBot):
@@ -459,7 +470,8 @@ async def handle_audit_entry(entry, mongo, bot, *, recovered=False) -> bool:
         try:
             store = MemberEventStore(mongo.member_events)
             await ensure_indexes(store)
-            if await store.audit_handled(GUILD_ID, entry.id):
+            if (await store.audit_handled(GUILD_ID, entry.id)
+                    or await store.audit_row_exists(GUILD_ID, entry.id)):
                 await note_audit_cursor(entry, mongo, recovered=True)
                 return True  # A replay of an entry already handled must not post or change state.
         except asyncio.CancelledError:
@@ -468,6 +480,9 @@ async def handle_audit_entry(entry, mongo, bot, *, recovered=False) -> bool:
             log.exception("Could not check a replayed audit entry")
             return False
     token = _recovering.set(recovered)
+    pending: list = []
+    deferred = _deferred.set(pending)
+    current = _audit_entry.set(int(entry.id))
     try:
         if entry.action_type == hikari.AuditLogEventType.MEMBER_KICK:
             cache = getattr(bot, "cache", None)
@@ -525,16 +540,30 @@ async def handle_audit_entry(entry, mongo, bot, *, recovered=False) -> bool:
         return False
     finally:
         _recovering.reset(token)
-    try:  # After every row of the entry is written, so a crash before this lets a replay finish it.
+        _deferred.reset(deferred)
+        _audit_entry.reset(current)
+    marked = True
+    try:  # Once the entry's state and rows are persisted, before any Discord delivery.
         store = MemberEventStore(mongo.member_events)
         await ensure_indexes(store)
         await store.mark_audit_handled(GUILD_ID, entry.id)
     except asyncio.CancelledError:
         raise
     except Exception:
+        marked = False
         log.warning("Could not mark an audit entry as handled", exc_info=True)
-    await note_audit_cursor(entry, mongo, recovered=recovered)
-    return True
+    delivered = True
+    for store, row in pending:  # A failure leaves the row queued for the recovery loop.
+        try:
+            await deliver(store, bot, row)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            delivered = False
+            log.exception("Failed to deliver a moderation audit log row")
+    if marked:  # Persisted effects, not delivery, decide whether the entry is done.
+        await note_audit_cursor(entry, mongo, recovered=recovered)
+    return marked and delivered
 
 
 async def note_audit_cursor(entry, mongo, *, recovered):
@@ -694,6 +723,8 @@ async def record_extra(kind, mongo, bot, *, user_id, display_name, username, at,
         return None
     if _recovering.get():
         details = {**(details or {}), "recovered": True}
+    if audit_entry_id is None:
+        audit_entry_id = _audit_entry.get()  # Every row of an audit entry carries its id for the replay guard.
     row = await store.capture(
         guild_id=GUILD_ID, user_id=int(user_id), kind=kind, display_name=display_name,
         username=username, avatar=None, avatar_type=None, at=at, joined_at=joined_at,
@@ -708,7 +739,7 @@ async def record_extra(kind, mongo, bot, *, user_id, display_name, username, at,
         await asyncio.sleep(1)
     ready_row = await store.ready(row["_id"], enabled=enabled)
     if ready_row and enabled:
-        await deliver(store, bot, ready_row)
+        await deliver_or_defer(store, bot, ready_row)
     return ready_row
 
 

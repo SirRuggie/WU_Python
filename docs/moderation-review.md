@@ -460,9 +460,13 @@ Four changes on top of batch 2, then a rework of audit replay. Code: `extensions
   handlers. Once an audit entry is fully handled, live or replayed, whatever the outcome
   (posted, skipped as an ignored bot, enrichment only, duplicate), one marker document
   `member-events-audit:<GUILD_ID>:<entry id>` (`handled_at`, `expires_at` 48 hours later; the
-  expiry index removes it) is written after all of that entry's rows. A replayed entry with a
-  marker is skipped before its handler runs, so it never posts or changes ban state; an entry
-  that crashed before its marker is replayed and only writes the rows still missing. Markers
+  expiry index removes it) is written once the entry's state change and rows are persisted,
+  before any Discord delivery; a delivery failure leaves the row queued for the recovery loop
+  and does not stop the marker. If the marker write fails, the cursor does not advance past
+  that entry. A replayed entry is skipped before its handler runs when it has a marker or when
+  any log row already carries its audit entry id (indexed on guild and audit entry id; ban
+  rows are excluded), so it never posts or changes ban state. An entry whose handler failed
+  before persisting anything has neither and is replayed. Markers
   have no `event_type` or `delivery_status`, so history and the backlog never include them. A second "App added" for the same
   application id within 10 minutes is skipped even after a restart. Replayed cards carry
   "Recovered after restart". With no cursor (first run) it only sets the cursor. Live entries
