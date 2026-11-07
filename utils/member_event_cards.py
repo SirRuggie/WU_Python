@@ -66,6 +66,15 @@ FIELD_LABELS = {"nickname": "Nickname", "username": "Username", "global_name": "
                 "avatar": "Avatar", "guild_avatar": "Server avatar", "discriminator": "Discriminator"}
 DEFAULT_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"
 CDN_PREFIX = "https://cdn.discordapp.com/"
+# List caps; the rest is summarized as "+N more".
+MAX_ROLES = MAX_CHANGES = MAX_URLS = MAX_ATTACHMENTS = 10
+MAX_PERMISSION_CHANGES = 15
+# Discord limits, with margin: V2 text is capped at 4,000 in total.
+V2_TEXT_LIMIT = 3800
+EMBED_DESCRIPTION_LIMIT = 4000
+EMBED_FIELD_LIMIT = 1000
+EMBED_TOTAL_LIMIT = 5800
+RECOVERED_LINE = "Recovered after restart"
 
 
 def accent(kind: str) -> int:
@@ -142,7 +151,7 @@ def _roles(row: dict) -> str:
     names = [name for name in names if name]
     if not names:
         return "None"
-    return ", ".join(names[:15]) + (f" +{len(names) - 15} more" if len(names) > 15 else "")
+    return ", ".join(names[:MAX_ROLES]) + (f" +{len(names) - MAX_ROLES} more" if len(names) > MAX_ROLES else "")
 
 
 def _inert(value: object, limit: int) -> str:
@@ -181,9 +190,43 @@ def _account_age(row: dict) -> str | None:
     return f"{age} · New account" if days < 7 else age
 
 
-def _change_lines(details: dict) -> list[str]:
+def _cut(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:max(limit - 1, 0)] + "…"
+
+
+def _fit(lines: list[str], budget: int, joiner: int = 0) -> list[str]:
+    """Cut the longest lines until the total fits. Name and footer go last."""
+    lines = list(lines)
+    while True:
+        excess = sum(map(len, lines)) + joiner * (len(lines) - 1) - budget
+        if excess <= 0:
+            return lines
+        middle = [i for i in range(1, len(lines) - 1) if len(lines[i]) > 1]
+        pool = middle or [i for i in range(len(lines)) if len(lines[i]) > 1]
+        if not pool:
+            return lines
+        index = max(pool, key=lambda i: len(lines[i]))
+        lines[index] = _cut(lines[index], max(len(lines[index]) - excess, 1))
+
+
+def _guard_embed(embed: dict) -> dict:
+    """Forum starter embed within Discord's description, field and total limits."""
+    embed["description"] = _cut(embed.get("description", ""), EMBED_DESCRIPTION_LIMIT)
+    for field in embed.get("fields", ()):
+        field["value"] = _cut(field["value"], EMBED_FIELD_LIMIT)
+    other = sum(len(field.get("name", "")) + len(field["value"]) for field in embed.get("fields", ()))
+    embed["description"] = _cut(embed["description"], EMBED_TOTAL_LIMIT - other)
+    return embed
+
+
+def _more(total: int, shown: int) -> list[str]:
+    return [f"+{total - shown} more"] if total > shown else []
+
+
+def _change_lines(details: dict, limit: int = MAX_CHANGES) -> list[str]:
     lines = []
-    for change in (details.get("changes") or [])[:8]:
+    changes = details.get("changes") or []
+    for change in changes[:limit]:
         if not isinstance(change, dict) or not change.get("field"):
             continue
         field = str(change["field"])
@@ -194,14 +237,15 @@ def _change_lines(details: dict) -> list[str]:
             before = _inert(change.get("before"), 100) or "None"
             after = _inert(change.get("after"), 100) or "None"
             lines.append(f"**{label}**\n{before} → {after}")
-    return lines
+    return lines + _more(len(changes), limit)
 
 
 def _attachment_line(details: dict) -> str | None:
-    items = [item for item in (details.get("attachments") or [])[:10] if isinstance(item, dict)]
+    raw = details.get("attachments") or []
+    items = [item for item in raw[:MAX_ATTACHMENTS] if isinstance(item, dict)]
     names = [f"{safe_text(item.get('name'), 80) or 'File'} ({safe_text(item.get('type'), 40) or 'unknown'})"
              for item in items]
-    return "**Attachments**\n" + "\n".join(names) if names else None
+    return "**Attachments**\n" + "\n".join(names + _more(len(raw), MAX_ATTACHMENTS)) if names else None
 
 
 def transcript_file(row: dict) -> tuple[str, bytes, str] | None:
@@ -237,7 +281,8 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
         main += by
         fields = [reason, served]
     elif kind == "member_update":
-        for change in (details.get("changes") or [])[:6]:
+        changes = details.get("changes") or []
+        for change in changes[:MAX_CHANGES]:
             label = FIELD_LABELS.get(change.get("field"))
             if not label:
                 continue
@@ -247,6 +292,7 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
                 before = _named(change.get("before"), 100) or "None"
                 after = _named(change.get("after"), 100) or "None"
                 fields.append(f"**{label}**\n{before} → {after}")
+        fields += _more(len(changes), MAX_CHANGES)
         actor = _snowflake(details.get("actor_id"))
         if actor:
             fields.append(f"**Changed by**\n<@{actor}>")
@@ -255,16 +301,20 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
         if channel:
             main += f" in <#{channel}>"
         fields.append(f"**Message**\n{_inert(details.get('content'), 500) or 'No text'}")
-        urls = [str(url).replace("`", "")[:200] for url in (details.get("urls") or [])[:10]]
+        raw_urls = details.get("urls") or []
+        urls = [str(url).replace("`", "")[:200] for url in raw_urls[:MAX_URLS]]
         if urls:
-            fields.append("**Links**\n" + "\n".join(f"`{url}`" for url in urls))
+            fields.append("**Links**\n" + "\n".join(
+                [f"`{url}`" for url in urls] + _more(len(raw_urls), MAX_URLS)))
     elif kind == "unban":
         main += by
         fields = [reason]
     elif kind in ("roles_added", "roles_removed"):
         main += f" by <@{moderator}>" if moderator else ""
-        names = [safe_text(item, 60) for item in (details.get("roles") or [])[:15]]
-        fields.append("**Roles**\n" + (", ".join(name for name in names if name) or "Unavailable"))
+        raw_roles = details.get("roles") or []
+        names = [name for name in (safe_text(item, 60) for item in raw_roles[:MAX_ROLES]) if name]
+        fields.append("**Roles**\n" + (", ".join(names) or "Unavailable")
+                      + "".join(f" {line}" for line in _more(len(raw_roles), MAX_ROLES)))
     elif kind in ("message_delete", "message_edit"):
         channel = _snowflake(details.get("channel_id"))
         main += f" in <#{channel}>" if channel else ""
@@ -291,7 +341,7 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
         ref = f"<{prefix}{target}>" if prefix and target else f"**{name}**"
         verb = safe_text(details.get("action"), 20) or action
         main = f"{OBJECT_NOUNS[kind]} {ref} was {verb}" + (f" by <@{moderator}>" if moderator else "")
-        fields = _change_lines(details)
+        fields = _change_lines(details, MAX_PERMISSION_CHANGES if kind == "channel_permissions" else MAX_CHANGES)
         subject = _snowflake(details.get("subject_id"))
         if subject and details.get("subject_type") in ("role", "member"):
             fields.append(f"**Applies to**\n<{'@&' if details['subject_type'] == 'role' else '@'}{subject}>")
@@ -337,6 +387,14 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
 
 
 def _content(row: dict, test_staff_id: object = None) -> tuple[list[str], str | None]:
+    lines, uid = _body(row, test_staff_id)
+    details = row.get("details")
+    if isinstance(details, dict) and details.get("recovered"):
+        lines.insert(-1, RECOVERED_LINE)  # Before the footer.
+    return lines, uid
+
+
+def _body(row: dict, test_staff_id: object = None) -> tuple[list[str], str | None]:
     kind = row["event_type"]
     if kind in EXTRA_KINDS:
         return _extra_content(row, test_staff_id)
@@ -421,13 +479,13 @@ def _profile_button(uid: str) -> dict:
 def build_card(row: dict, test_staff_id: object = None) -> dict:
     """Components V2 message for text channels and existing forum-post replies."""
     lines, uid = _content(row, test_staff_id)
-    name, title, main, *rest = lines
+    name, title, main, *rest = _fit([f"**{lines[0]}**", *lines[1:]], V2_TEXT_LIMIT)
     footer = rest.pop()
     avatar = _avatar_url(row)
-    header = ({"type": 9, "components": [{"type": 10, "content": f"**{name}**"}],
+    header = ({"type": 9, "components": [{"type": 10, "content": name}],
                "accessory": {"type": 11, "media": {"url": avatar},
                              "description": "Member avatar"}} if avatar
-              else {"type": 10, "content": f"**{name}**"})
+              else {"type": 10, "content": name})
     buttons = _buttons(row, uid)
     children = [
         header,
@@ -447,13 +505,13 @@ def build_card(row: dict, test_staff_id: object = None) -> dict:
 def build_forum_message(row: dict, test_staff_id: object = None) -> dict:
     """Forum starters cannot set the V2 flag; retain one embed-based starter."""
     lines, uid = _content(row, test_staff_id)
-    name, title, main, *rest = lines
-    description = "\n\n".join([f"**{name}**", title, main, *rest])
+    fitted = _fit([f"**{lines[0]}**", *lines[1:]], EMBED_DESCRIPTION_LIMIT, joiner=2)
+    description = "\n\n".join(fitted)
     avatar = _avatar_url(row)
     buttons = _buttons(row, uid)
     return {
-        "embeds": [{"description": description, "color": accent(row["event_type"]),
-                    **({"thumbnail": {"url": avatar}} if avatar else {})}],
+        "embeds": [_guard_embed({"description": description, "color": accent(row["event_type"]),
+                                 **({"thumbnail": {"url": avatar}} if avatar else {})})],
         **({"components": [{"type": 1, "components": buttons}]} if buttons else {}),
         "allowed_mentions": {"parse": []},
     }

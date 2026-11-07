@@ -382,7 +382,7 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_settings_get_retains_saved_values_when_inventory_unavailable(self):
         saved = MemberEventStore.default_settings()
-        store = NS(settings=AsyncMock(return_value=saved))
+        store = NS(settings=AsyncMock(return_value=saved), bot_actors=AsyncMock(return_value={}))
         class Context:
             async def __aenter__(self): return NS(member_events=object())
             async def __aexit__(self, *args): pass
@@ -398,8 +398,9 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result["channels"])
         self.assertEqual(result["events"], saved["events"])
 
-    async def _settings_with_discord(self, discord):
-        store = NS(settings=AsyncMock(return_value=MemberEventStore.default_settings()))
+    async def _settings_with_discord(self, discord, saved=None, actors=None):
+        store = NS(settings=AsyncMock(return_value=saved or MemberEventStore.default_settings()),
+                   bot_actors=AsyncMock(return_value=actors or {}))
         class Context:
             async def __aenter__(self): return NS(member_events=object())
             async def __aexit__(self, *args): pass
@@ -427,6 +428,41 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
             {"id": "200000000000000002", "name": "Bot", "color": 0, "position": 5, "managed": True},
             {"id": "200000000000000001", "name": "Low", "color": 1, "position": 1, "managed": False}])
         self.assertTrue(result["channels_available"])
+
+    async def test_settings_get_resolves_ignored_bots_and_lists_actors_with_own_bot(self):
+        seen = datetime(2026, 11, 6, 12, tzinfo=timezone.utc)
+        actors = {"300000000000000002": {"name": "wick", "last_seen": seen},
+                  "300000000000000003": {"name": "Alpha", "last_seen": seen}}
+        async def discord(request, method, path, **kwargs):
+            if path == "/users/@me":
+                return {"id": "300000000000000001", "username": "wu-bot"}
+            if path.endswith("/channels"):
+                return []
+            raise web.HTTPNotFound()
+        # A row that never saved the list: the own bot id is the default, and nothing is saved.
+        result = await self._settings_with_discord(discord, actors=actors)
+        self.assertEqual(result["ignored_bot_ids"], ["300000000000000001"])
+        self.assertEqual([(a["id"], a["name"]) for a in result["bot_actors"]], [
+            ("300000000000000003", "Alpha"), ("300000000000000002", "wick"),
+            ("300000000000000001", "wu-bot")])
+        self.assertEqual(result["bot_actors"][1]["last_seen"], seen.isoformat())
+        self.assertIsNone(result["bot_actors"][2]["last_seen"])
+        # A saved list (even empty) is used as is.
+        for ids in ([], ["300000000000000002"]):
+            saved = {**MemberEventStore.default_settings(), "ignored_bot_ids": ids}
+            self.assertEqual((await self._settings_with_discord(discord, saved))["ignored_bot_ids"], ids)
+
+    async def test_settings_get_without_own_bot_returns_empty_default_and_saves_nothing(self):
+        async def discord(request, method, path, **kwargs):
+            if path == "/users/@me":
+                raise web.HTTPServiceUnavailable()
+            if path.endswith("/channels"):
+                return []
+            raise web.HTTPNotFound()
+        actors = {"300000000000000002": {"name": "wick", "last_seen": None}}
+        result = await self._settings_with_discord(discord, actors=actors)
+        self.assertEqual(result["ignored_bot_ids"], [])
+        self.assertEqual([a["id"] for a in result["bot_actors"]], ["300000000000000002"])
 
     async def test_settings_get_role_failure_keeps_channels(self):
         async def discord(request, method, path, **kwargs):
@@ -477,6 +513,23 @@ class NewLogApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(api._checked_settings(self.body(ignores={}))["ignores"],
                          {"channel_ids": [], "role_ids": []})
         self.assertEqual(set(checked["events"]), set(api.EVENT_TYPES))
+
+    def test_put_validates_ignored_bot_ids(self):
+        ids = ["123456789012345678", "12345678901234567890"]
+        self.assertEqual(api._checked_settings(self.body(ignored_bot_ids=ids + ids[:1]))["ignored_bot_ids"], ids)
+        self.assertEqual(api._checked_settings(self.body(ignored_bot_ids=[]))["ignored_bot_ids"], [])
+        self.assertIsNone(api._checked_settings(self.body())["ignored_bot_ids"])  # Older client: unchanged.
+        body = self.body()
+        del body["ignored_bot_ids"]
+        self.assertIsNone(api._checked_settings(body)["ignored_bot_ids"])
+        bad = [["1234567890123456"], ["123456789012345678901"], ["12345678901234567a"],
+               [123456789012345678], [str(10 ** 17 + i) for i in range(51)], "123456789012345678",
+               {"a": 1}, [None]]
+        for value in bad:
+            with self.subTest(ignored_bot_ids=value), self.assertRaises(web.HTTPBadRequest):
+                api._checked_settings(self.body(ignored_bot_ids=value))
+        self.assertEqual(len(api._checked_settings(
+            self.body(ignored_bot_ids=[str(10 ** 17 + i) for i in range(50)]))["ignored_bot_ids"]), 50)
 
     def test_put_rejects_bad_ignores_and_invite_names(self):
         bad_ignores = [

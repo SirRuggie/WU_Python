@@ -432,3 +432,48 @@ Limits:
 - A rejoin count reads earlier join rows, so it starts at the first join the log recorded.
 - Retention is by the Mongo TTL index only; it runs about once a minute and removes rows
   shortly after `expires_at`.
+
+## Hardening (2026-11-06)
+
+Four changes on top of batch 2. Code: `extensions/events/member_events.py`,
+`utils/member_events.py`, `utils/member_event_settings.py`, `utils/member_event_cards.py`,
+`cwl_web/member_events.py`.
+
+- **Ignored bots replace "skip all bots".** Audit-sourced logs (roles, channels, server, app
+  changes, member roles, unban) skip an actor only when its id is in settings
+  `ignored_bot_ids` (17 to 20 digit ids, at most 50). A row that never saved the field ignores
+  this bot's own id, resolved at runtime (`bot.get_me()`, else REST); if that id cannot be read,
+  nobody is ignored. Once saved, the list is used as is, so staff may remove the own bot or
+  save an empty list. Reading never writes; a PUT without the field (older clients) leaves it
+  untouched. "App added" always posts. Message kinds still skip bot and webhook authors.
+- **Bot actors.** Every bot seen as an audit actor is stored in one document
+  `member-events-bot-actors:<GUILD_ID>` (`bots: {id: {name, last_seen}}`, newest 100 kept, a
+  repeat within an hour is not rewritten). Settings GET adds response-only `bot_actors`
+  (`id`, `name`, `last_seen`, sorted by name) from that document plus this bot, and always
+  returns the resolved `ignored_bot_ids`.
+- **Recovery after downtime.** The newest handled audit entry id is kept in
+  `member-events-audit-cursor:<GUILD_ID>` (`last_audit_id`, `updated_at`), only moving forward.
+  After the startup invite snapshot a background task reads the audit log (newest first, 24
+  hours and 500 entries at most), then replays missed entries oldest first through the same
+  handlers. The existing audit-id dedupe prevents a second post. Replayed cards carry
+  "Recovered after restart". With no cursor (first run) it only sets the cursor. Live entries
+  that arrive before recovery has read the cursor are held back from the cursor until it ends.
+  A failure (for example 403 without View Audit Log) logs one warning, never delays startup,
+  and keeps the cursor so the next start retries. Both documents have no `expires_at` and no
+  `event_type`, so history queries never return them.
+- **Card size limits.** Roles 10, permission changes 15, profile and setting changes 10,
+  URLs 10, attachments 10, each followed by "+N more". A final guard keeps a Components V2 card
+  within 3,800 characters of text, and a forum starter description within 4,000 (fields 1,000,
+  total 5,800), cutting the longest lines first with "…".
+
+Limits:
+
+- Gateway-only events (message delete and edit, joins and leaves, invite create and delete) are
+  not recovered. Audit `MESSAGE_DELETE` entries are skipped in recovery.
+- Recovery uses hikari's `before` paging (newest first); hikari 2.6 has no `after` parameter.
+  Past 500 missed entries, or beyond 24 hours, the older ones are not replayed.
+- The ignore list is read at replay time, not when the entry was made.
+- The bot-actor document is read and rewritten whole, so two near-simultaneous first sightings
+  can drop one name until that bot acts again.
+- A recovered kick or ban waits the same 1 to 2 seconds as a live one, so a long backlog posts
+  slowly.

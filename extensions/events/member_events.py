@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextvars
 import enum
 import hashlib
 import json
@@ -10,7 +11,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import aiohttp
 import hikari
@@ -20,7 +21,7 @@ from utils.member_events import (
     avatar_source, effective_permissions, event_key, safe_text,
 )
 from utils.member_event_cards import avatar_filename, build_card, build_forum_message, transcript_file
-from utils.member_event_settings import effective_event
+from utils.member_event_settings import effective_event, resolve_ignored_bots
 from utils.member_invites import MemberInviteStore, attribute_join, snapshot_row
 from utils.mongo import MongoClient
 
@@ -28,7 +29,13 @@ loader = lightbulb.Loader()
 log = logging.getLogger(__name__)
 CHANNEL_ID = DEFAULT_CHANNEL_ID  # Kept for existing imports and deployment checks.
 _start_task = None
+_audit_task = None
 _indexes_ready = False
+AUDIT_RECOVERY_WINDOW = timedelta(hours=24)
+AUDIT_RECOVERY_LIMIT = 500
+# While "pending", live audit entries only note the newest id; recovery reads the old cursor first.
+_audit_state = {"pending": True, "live_max": 0}
+_recovering: contextvars.ContextVar[bool] = contextvars.ContextVar("member_events_recovering", default=False)
 _index_lock = asyncio.Lock()
 _invite_lock = asyncio.Lock()  # One join diff at a time; create/delete share it.
 INVITE_WAIT_SECONDS = 3
@@ -279,7 +286,7 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
         forum_tag_id=forum_tag_id, reason=reason, moderator_id=moderator_id,
         audit_entry_id=audit_entry_id, episode=episode,
         account_created_at=account_created_at, member_count=member_count,
-        roles=roles, details=join_details,
+        roles=roles, details=join_details or ({"recovered": True} if _recovering.get() else None),
     )
     if not row:
         return
@@ -391,12 +398,13 @@ async def started(event: hikari.StartedEvent, mongo: MongoClient = lightbulb.di.
 
 @loader.listener(hikari.StoppingEvent)
 async def stopping(event: hikari.StoppingEvent):
-    if _start_task:
-        _start_task.cancel()
-        try:
-            await _start_task
-        except asyncio.CancelledError:
-            pass
+    for task in (_start_task, _audit_task):
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 @loader.listener(hikari.MemberCreateEvent)
@@ -439,9 +447,14 @@ async def banned(event: hikari.BanCreateEvent, mongo: MongoClient = lightbulb.di
 @lightbulb.di.with_di
 async def audited(event: hikari.AuditLogEntryCreateEvent, mongo: MongoClient = lightbulb.di.INJECTED,
                   bot: hikari.GatewayBot = lightbulb.di.INJECTED):
-    entry = event.entry
+    await handle_audit_entry(event.entry, mongo, bot)
+
+
+async def handle_audit_entry(entry, mongo, bot, *, recovered=False) -> bool:
+    """Route one audit entry, live or recovered. Never raises; True once handled."""
     if int(entry.guild_id) != GUILD_ID or not entry.target_id:
-        return
+        return False
+    token = _recovering.set(recovered)
     try:
         if entry.action_type == hikari.AuditLogEventType.MEMBER_KICK:
             cache = getattr(bot, "cache", None)
@@ -487,13 +500,70 @@ async def audited(event: hikari.AuditLogEntryCreateEvent, mongo: MongoClient = l
             await record_member_roles(entry, mongo, bot)
         elif entry.action_type in (hikari.AuditLogEventType.MESSAGE_DELETE,
                                    hikari.AuditLogEventType.MESSAGE_BULK_DELETE):
-            note_message_audit(entry)
+            if not recovered:  # Delete facts only help a live gateway event.
+                note_message_audit(entry)
         else:
             await record_audit_kind(entry, mongo, bot)
     except asyncio.CancelledError:
         raise
     except Exception:
         log.exception("Failed to archive or enrich a moderation audit entry")
+        return False
+    finally:
+        _recovering.reset(token)
+    await note_audit_cursor(entry, mongo, recovered=recovered)
+    return True
+
+
+async def note_audit_cursor(entry, mongo, *, recovered):
+    entry_id = int(entry.id)
+    if not recovered and _audit_state["pending"]:
+        _audit_state["live_max"] = max(_audit_state["live_max"], entry_id)
+        return
+    try:
+        store = MemberEventStore(mongo.member_events)
+        await ensure_indexes(store)
+        await store.advance_audit_cursor(entry_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.warning("Could not save the audit cursor", exc_info=True)
+
+
+async def recover_audit(mongo, bot):
+    """Replay audit entries missed while down: newest 24 h / 500, oldest first.
+
+    No cursor yet (first run) only sets it. Any failure logs one warning and
+    leaves the cursor and live-entry hold as they are, so the next start retries.
+    """
+    try:
+        store = MemberEventStore(mongo.member_events)
+        await ensure_indexes(store)
+        cursor = await store.audit_cursor()
+        floor = datetime.now(timezone.utc) - AUDIT_RECOVERY_WINDOW
+        missed, done = [], False
+        async for page in bot.rest.fetch_audit_log(GUILD_ID):
+            for entry in sorted(page.entries.values(), key=lambda item: int(item.id), reverse=True):
+                if cursor is None:  # First run: start from now, recover nothing.
+                    await store.advance_audit_cursor(entry.id)
+                    done = True
+                    break
+                if (int(entry.id) <= cursor or entry.created_at < floor
+                        or len(missed) >= AUDIT_RECOVERY_LIMIT):
+                    done = True
+                    break
+                missed.append(entry)
+            if done:
+                break
+        for entry in reversed(missed):
+            await handle_audit_entry(entry, mongo, bot, recovered=True)
+        _audit_state["pending"] = False
+        if _audit_state["live_max"]:
+            await store.advance_audit_cursor(_audit_state["live_max"])
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.warning("Audit recovery unavailable (%s); missed audit entries are not replayed", exc)
 
 
 @loader.listener(hikari.BanDeleteEvent)
@@ -592,6 +662,8 @@ async def record_extra(kind, mongo, bot, *, user_id, display_name, username, at,
     enabled = config["enabled"] and bool(config["channel_id"])
     if not enabled and kind not in HISTORY_TYPES:
         return None
+    if _recovering.get():
+        details = {**(details or {}), "recovered": True}
     row = await store.capture(
         guild_id=GUILD_ID, user_id=int(user_id), kind=kind, display_name=display_name,
         username=username, avatar=None, avatar_type=None, at=at, joined_at=joined_at,
@@ -918,26 +990,61 @@ async def _record_invite_use(event, mongo, bot):
     )
 
 
-_bot_users: dict[int, bool] = {}  # Fetched answers only; a failed lookup is not cached.
+_bot_users: dict[int, str | None] = {}  # Fetched answers (bot name, None for a human); a failed lookup is not cached.
 
 
-async def is_bot_actor(bot, user_id) -> bool:
-    """Bot account per cache, else one fetch; unknown is treated as human."""
+def _bot_name(user, uid: int) -> str:
+    return _text(getattr(user, "global_name", None)) or _text(getattr(user, "username", None)) or str(uid)
+
+
+async def bot_actor(bot, user_id) -> str | None:
+    """Name of the bot account per cache, else one fetch; None for humans and unknowns."""
     if not user_id:
-        return False
+        return None
     uid = int(user_id)
     cache = getattr(bot, "cache", None)
     cached = cache.get_user(uid) if cache and hasattr(cache, "get_user") else None
     if cached is not None:
-        return bool(getattr(cached, "is_bot", False))
+        return _bot_name(cached, uid) if getattr(cached, "is_bot", False) else None
     if uid not in _bot_users:
         try:
-            _bot_users[uid] = bool((await bot.rest.fetch_user(uid)).is_bot)
+            user = await bot.rest.fetch_user(uid)
+            _bot_users[uid] = _bot_name(user, uid) if user.is_bot else None
         except Exception:
-            return False
+            return None
         if len(_bot_users) > 500:
             _bot_users.pop(next(iter(_bot_users)))
     return _bot_users[uid]
+
+
+async def own_bot_id(bot) -> str | None:
+    me = bot.get_me() if hasattr(bot, "get_me") else None
+    if me is None:
+        try:
+            me = await bot.rest.fetch_my_user()
+        except Exception:
+            return None
+    return str(me.id) if getattr(me, "id", None) else None
+
+
+async def actor_ignored(bot, store, settings, user_id) -> bool:
+    """True when the audit actor is a bot staff chose to ignore (default: this bot).
+
+    Every bot seen as an actor is remembered so staff can pick it in the dashboard.
+    """
+    name = await bot_actor(bot, user_id)
+    if name is None:
+        return False
+    try:
+        await store.note_bot_actor(user_id, name)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.warning("Could not remember a bot actor", exc_info=True)
+    ignored = settings.get("ignored_bot_ids")
+    if not isinstance(ignored, list):
+        ignored = resolve_ignored_bots(settings, await own_bot_id(bot))
+    return str(user_id) in ignored
 
 
 def _enabled(settings, kind) -> bool:
@@ -1066,8 +1173,8 @@ async def record_audit_kind(entry, mongo, bot) -> bool:
     settings = await store.settings()
     if not _enabled(settings, kind):
         return True
-    if not (kind == "app" and action == "added") and await is_bot_actor(bot, entry.user_id):
-        return True  # An app's own change is never a staff action; adding an app always posts.
+    if not (kind == "app" and action == "added") and await actor_ignored(bot, store, settings, entry.user_id):
+        return True  # Only ignored bots are skipped; adding an app always posts.
     details = {"action": action, "target_id": str(entry.target_id)}
     if kind == "app" and action == "added" and _app_add_seen(entry):
         return True  # BOT_ADD and INTEGRATION_CREATE both describe one new app.
@@ -1099,7 +1206,7 @@ async def record_member_roles(entry, mongo, bot):
     store = MemberEventStore(mongo.member_events)
     await ensure_indexes(store)
     settings = await store.settings()
-    if await is_bot_actor(bot, entry.user_id):
+    if await actor_ignored(bot, store, settings, entry.user_id):
         return
     uid = int(entry.target_id)
     for key, kind in ((_C.ADD_ROLE_TO_MEMBER, "roles_added"), (_C.REMOVE_ROLE_FROM_MEMBER, "roles_removed")):
@@ -1125,7 +1232,8 @@ async def emit_unban(mongo, bot, uid: int, episode: int, *, at, user=None, entry
     store = MemberEventStore(mongo.member_events)
     await ensure_indexes(store)
     key = f"{GUILD_ID}:unban:{uid}:{episode}"
-    if entry is not None and await is_bot_actor(bot, entry.user_id):
+    settings = await store.settings()
+    if entry is not None and await actor_ignored(bot, store, settings, entry.user_id):
         _bot_unbans.add((uid, episode))
         await store.discard_unsent(key)
         return
@@ -1136,7 +1244,6 @@ async def emit_unban(mongo, bot, uid: int, episode: int, *, at, user=None, entry
     if entry is not None and await store.enrich_unban(key, moderator, reason, int(entry.id)):
         return
     who = await user_identity(bot, uid, user)
-    settings = await store.settings()
     row = await record_extra(
         "unban", mongo, bot, settings=settings, user_id=uid, display_name=who["display_name"],
         username=who["username"], at=at, dedupe_key=key, moderator_id=moderator, reason=reason,
@@ -1327,6 +1434,8 @@ async def invites_started(event: hikari.StartedEvent, mongo: MongoClient = light
         raise
     except Exception as exc:
         log.warning("Invite snapshot unavailable (%s); invite uses will read Unknown invite", exc)
+    global _audit_task  # After the snapshot; a background task never delays other startup work.
+    _audit_task = asyncio.create_task(recover_audit(mongo, bot), name="member-events-audit-recover")
 
 
 @loader.listener(hikari.MemberUpdateEvent)

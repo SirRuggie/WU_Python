@@ -29,6 +29,7 @@ EVENT_TYPES = tuple(EVENT_CATEGORIES)
 LEGACY_EVENT_TYPES = ("join", "leave", "kick", "ban")  # Events-only API clients.
 SCHEMA_VERSION = 2
 MAX_IGNORE_IDS = 100
+MAX_IGNORED_BOTS = 50
 MAX_INVITE_NAMES = 200
 INVITE_CODE = re.compile(r"[A-Za-z0-9-]{2,32}\Z")
 
@@ -58,8 +59,29 @@ def normalize_settings(row: dict | None, legacy_defaults: dict) -> dict:
         "events": {kind: deepcopy(events.get(kind, legacy_defaults["events"][kind])) for kind in EVENT_TYPES},
         "ignores": {key: deepcopy(ignores.get(key, [])) for key in default_ignores()},
         "invite_names": deepcopy(source.get("invite_names") or {}),
+        # None means never saved: the runtime default is this bot's own id.
+        "ignored_bot_ids": (deepcopy(source["ignored_bot_ids"])
+                            if isinstance(source.get("ignored_bot_ids"), list) else None),
     }
     return result
+
+
+def resolve_ignored_bots(settings: dict, own_bot_id) -> list[str]:
+    """Saved list as is; a row that never saved one ignores only this bot."""
+    saved = settings.get("ignored_bot_ids")
+    if isinstance(saved, list):
+        return [str(item) for item in saved]
+    return [str(own_bot_id)] if own_bot_id else []
+
+
+def checked_ignored_bot_ids(value) -> list[str]:
+    """Distinct snowflake strings, at most MAX_IGNORED_BOTS; raises ValueError."""
+    if not isinstance(value, list) or len(value) > MAX_IGNORED_BOTS:
+        raise ValueError(f"Select at most {MAX_IGNORED_BOTS} ignored bots.")
+    for item in value:
+        if not isinstance(item, str) or not item.isascii() or not item.isdigit() or not 17 <= len(item) <= 20:
+            raise ValueError("Invalid ignored bot ID.")
+    return list(dict.fromkeys(value))
 
 
 def effective_event(settings: dict, kind: str) -> dict:
