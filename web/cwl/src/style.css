@@ -2069,6 +2069,53 @@ img.site-logo {
   -webkit-text-fill-color: var(--wu-text-muted);
   cursor: not-allowed;
 }
+/* Busy neutral actions retain their ready paint while remaining disabled. */
+.shell
+  button:disabled[aria-busy="true"]:not(
+    :where(
+      .primary,
+      .danger,
+      .is-primary,
+      .is-danger,
+      .roster-action-danger,
+      .active,
+      [aria-pressed],
+      [aria-selected],
+      [aria-current],
+      [role="tab"],
+      .section-tabs *,
+      .filter-chips *,
+      .roster-ui-chip,
+      .chip,
+      [role="tablist"] *
+    )
+  ),
+.roster-ui-button.is-secondary:disabled[aria-busy="true"]:not(
+    :where(
+      .primary,
+      .danger,
+      .is-primary,
+      .is-danger,
+      .roster-action-danger,
+      .active,
+      [aria-pressed],
+      [aria-selected],
+      [aria-current],
+      [role="tab"],
+      .section-tabs *,
+      .filter-chips *,
+      .roster-ui-chip,
+      .chip,
+      [role="tablist"] *
+    )
+  ) {
+  opacity: 1;
+  background: var(--wu-surface);
+  border-color: var(--wu-border-subtle);
+  color: var(--wu-text);
+  -webkit-text-fill-color: currentColor;
+  cursor: progress;
+}
 .shell .signup-flow {
   max-width: none;
 }

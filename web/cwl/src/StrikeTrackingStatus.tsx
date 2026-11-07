@@ -208,6 +208,10 @@ export default function StrikeTrackingStatus({
                 )}
                 {canRetry && status !== "healthy" && (
                   <button
+                    aria-busy={
+                      (!item.retry_pending && busyClan === item.clan_tag) ||
+                      undefined
+                    }
                     type="button"
                     disabled={!!busyClan || item.retry_pending}
                     onClick={() => void retry(item.clan_tag)}

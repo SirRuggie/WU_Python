@@ -315,6 +315,7 @@ it("blocks live preview and replaces the zero label while locations are pending 
   );
   await flush();
   expect(button("Checking locations…").disabled).toBe(true);
+  expect(button("Checking locations…").getAttribute("aria-busy")).toBe("true");
   expect(host.textContent).not.toContain("Ping 0 missing");
   await act(async () => button("Checking locations…").click());
   expect(mock.api.mock.calls.some((c) => c[1] === "POST")).toBe(false);
@@ -329,6 +330,7 @@ it("blocks live preview and replaces the zero label while locations are pending 
     ),
   );
   expect(button("Locations unavailable").disabled).toBe(true);
+  expect(button("Locations unavailable").hasAttribute("aria-busy")).toBe(false);
   await act(async () =>
     root.render(<DeclarationPingPanel seasonId="1" pool="lazy" missing={26} />),
   );
@@ -559,4 +561,31 @@ it("recomputes cooldown from wall time after a hidden minute without extending i
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("does not mark an unavailable label while an older preview is still pending", async () => {
+  await mount();
+  let finish!: (value: unknown) => void;
+  mock.api.mockImplementation((path: string) =>
+    path.endsWith("/preview")
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : Promise.resolve(state),
+  );
+  await act(async () => button("Ping 26 missing").click());
+  expect(button("Checking…").getAttribute("aria-busy")).toBe("true");
+  await act(async () =>
+    root.render(
+      <DeclarationPingPanel
+        seasonId="1"
+        pool="lazy"
+        missing={26}
+        locationStatus="unavailable"
+      />,
+    ),
+  );
+  expect(button("Locations unavailable").disabled).toBe(true);
+  expect(button("Locations unavailable").hasAttribute("aria-busy")).toBe(false);
+  await act(async () => finish(review));
 });

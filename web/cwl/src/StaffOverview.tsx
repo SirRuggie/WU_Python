@@ -83,7 +83,11 @@ export default function StaffOverview({
           <h1>Staff overview</h1>
           <p>What needs attention across your areas.</p>
         </div>
-        <button disabled={busy} onClick={() => setRefresh((v) => v + 1)}>
+        <button
+          aria-busy={busy || undefined}
+          disabled={busy}
+          onClick={() => setRefresh((v) => v + 1)}
+        >
           {busy ? "Refreshing…" : "Refresh"}
         </button>
       </header>

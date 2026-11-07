@@ -15,7 +15,9 @@ export default function AccountLinkHelp({
           <code>/link create</code> command.
         </li>
         <li>
-          Enter your player tag. Follow the instructions from the bot. If the bot asks for verification, find your API token in Clash of Clans under Settings → More Settings.
+          Enter your player tag. Follow the instructions from the bot. If the
+          bot asks for verification, find your API token in Clash of Clans under
+          Settings → More Settings.
         </li>
         <li>
           Return here and check your linked accounts. New links may take a
@@ -31,7 +33,11 @@ export default function AccountLinkHelp({
         >
           Open Discord
         </a>
-        <button disabled={busy} onClick={onRefresh}>
+        <button
+          aria-busy={busy || undefined}
+          disabled={busy}
+          onClick={onRefresh}
+        >
           {busy ? "Checking accounts…" : "Check linked accounts"}
         </button>
       </div>

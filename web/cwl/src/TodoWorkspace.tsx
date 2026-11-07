@@ -227,6 +227,7 @@ export default function TodoWorkspace({
           </p>
         </div>
         <button
+          aria-busy={loading || undefined}
           onClick={() => setRefresh((value) => value + 1)}
           disabled={loading}
         >

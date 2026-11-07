@@ -267,14 +267,12 @@ it("forces a post-retry read and ignores the older poll", async () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
-    transport
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({
-        clans: statusRows.map((r) => ({
-          ...r,
-          retry_pending: r.clan_tag === "#B",
-        })),
-      });
+    transport.mockResolvedValueOnce({}).mockResolvedValueOnce({
+      clans: statusRows.map((r) => ({
+        ...r,
+        retry_pending: r.clan_tag === "#B",
+      })),
+    });
     const retry = [
       ...host.querySelectorAll<HTMLButtonElement>(
         ".strikes-tracking-clan button",
@@ -288,4 +286,43 @@ it("forces a post-retry read and ignores the older poll", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("marks Queuing but not the completed Retry queued label", async () => {
+  let finish!: (value: unknown) => void;
+  transport.mockImplementation((path) =>
+    path.endsWith("/retry")
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : Promise.resolve({ clans: statusRows }),
+  );
+  await render(true);
+  const retry = host.querySelector<HTMLButtonElement>(
+    ".strikes-tracking-clan:nth-child(2) button",
+  )!;
+  expect(retry.hasAttribute("aria-busy")).toBe(false);
+  await act(async () => retry.click());
+  expect(retry.textContent?.trim()).toBe("Queuing…");
+  expect(retry.getAttribute("aria-busy")).toBe("true");
+  expect(retry.disabled).toBe(true);
+  await act(async () => retry.click());
+  expect(
+    transport.mock.calls.filter(([path]) => path.endsWith("/retry")),
+  ).toHaveLength(1);
+  await act(async () => finish({ queued: true }));
+  transport.mockResolvedValue({
+    clans: statusRows.map((row) =>
+      row.clan_tag === "#B" ? { ...row, retry_pending: true } : row,
+    ),
+  });
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render(true);
+  const queued = host.querySelector<HTMLButtonElement>(
+    ".strikes-tracking-clan:nth-child(2) button",
+  )!;
+  expect(queued.textContent?.trim()).toBe("Retry queued");
+  expect(queued.disabled).toBe(true);
+  expect(queued.hasAttribute("aria-busy")).toBe(false);
 });
