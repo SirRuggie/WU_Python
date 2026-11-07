@@ -873,8 +873,9 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         await self.audit(A.ROLE_CREATE, 1, role, user=APP)
         await self.audit(A.ROLE_CREATE, 2, role, user=WICK)  # Wick-like bot is logged.
         await self.audit(A.ROLE_CREATE, 3, role, user=HUMAN)
-        self.assertEqual([r["moderator_id"] for r in sorted(self.rows("role_create"), key=lambda r: r["_id"])],
-                         [str(WICK), str(HUMAN)])
+        self.assertEqual([(r["audit_entry_id"], r["moderator_id"])
+                          for r in sorted(self.rows("role_create"), key=lambda r: r["audit_entry_id"])],
+                         [("2", str(WICK)), ("3", str(HUMAN))])
         actors = await MemberEventStore(self.history).bot_actors()
         self.assertEqual({k: v["name"] for k, v in actors.items()}, {str(APP): str(APP), str(WICK): "Wick"})
         self.assertNotIn("ignored_bot_ids", self.history.rows["member-events-settings:%d" % GUILD_ID])
