@@ -549,7 +549,7 @@ hashes. Do not restore either database during code rollback.
 
 `owner-prank-1` (`f95830b5b774ba34b29f4756a1cc9e3747148f1b`, PR #46) was the previous isolated backend. Ruggie explicitly approved its additive state table, owner-only endpoints/private assets, private configuration and dashboard restart. Existing data is preserved; durable notification claims precede background transport and uncertain delivery is never automatically retried. Bot was unchanged by that release.
 
-Backup/migration, effective paths/imports, readiness, journal, 97 public hashes and protected counts passed. Main22/18/18 and Lazy116/92/73 unchanged. Claude infrastructure smoke passed; owner experience and live DM delivery not claimed. The PWA Tasks landing-page start bug is a separate frontend fix (handoff42). See CLAUDE.md for complete rollback commands and evidence.
+Backup/migration, effective paths/imports, readiness, journal, 97 public hashes and protected counts passed. Main22/18/18 and Lazy116/92/73 unchanged. Claude infrastructure smoke passed; owner experience and live DM delivery not claimed. The PWA Tasks landing-page start bug is a separate frontend fix (handoff42). See docs/release-history.md for complete rollback commands and evidence.
 
 ## Member tour + timing released — 2026-10-29
 
