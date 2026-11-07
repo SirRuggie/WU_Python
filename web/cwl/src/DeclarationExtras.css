@@ -33,15 +33,7 @@
   gap: var(--wu-space-2);
 }
 .declaration-member-list > li {
-  border-top: 1px solid var(--wu-border-subtle);
-  padding-top: var(--wu-space-2);
   overflow-wrap: anywhere;
-}
-.declaration-member-context {
-  display: block;
-  color: var(--wu-text-muted);
-  font-size: var(--wu-text-sm);
-  margin-top: var(--wu-space-1);
 }
 .arrival-check .declaration-clan > .declaration-extras-status {
   margin: var(--wu-space-2) var(--wu-space-3);
@@ -60,30 +52,40 @@
   padding: 0;
   margin: 0;
   display: grid;
-  gap: var(--wu-space-2);
+  gap: 6px;
 }
 .declaration-member-account {
-  padding: var(--wu-space-2) 0;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.declaration-member-account.is-unpublished {
-  color: #d4cfc5;
-  background: var(--wu-surface);
-  border-radius: 6px;
-  padding: var(--wu-space-2);
+.declaration-member-account > .shared-account-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
-.declaration-member-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--wu-space-3);
-  min-height: 44px;
+.declaration-member-card > .roster-ui > .player-card {
+  --player-card-fill: var(--wu-surface);
+  --player-card-glow: transparent;
+  border-color: var(--wu-border-subtle);
 }
-.declaration-member-actions .roster-filler-control {
+.declaration-member-card > .roster-ui > .player-card::before {
+  content: none;
+}
+.declaration-member-card .account-card-meta {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.declaration-member-card .account-card-status .roster-player-placement {
+  white-space: normal;
+}
+.declaration-member-card .account-card-status .roster-player-placement strong {
+  color: var(--roster-card-text-muted);
+  font-weight: 400;
+}
+.declaration-member-card .roster-filler-control {
   min-width: 0;
 }
-.declaration-member-actions .declaration-member-dm {
+.declaration-member-card .declaration-member-dm {
   margin-top: 0;
   min-width: 44px;
   min-height: 44px;
