@@ -398,6 +398,10 @@ How each part works:
 - `message_delete` and `message_edit` need the cached message. Bots and webhooks are skipped, and
   the existing ignore lists (channels, thread parents, roles) apply to `link`, delete, edit and
   bulk delete. Edit posts only when the text changed. Attachments show name and type only.
+- Audit facts for message deletes are consumed once: Discord's entry `count` is a running total, so
+  only the increase since the last seen count (per entry id) can attribute new deletes.
+- One "App added" card per application: `BOT_ADD` and `INTEGRATION_CREATE` within 60 seconds pair
+  by application id, or when an id is missing and only one entry of the other type is waiting.
 - `message_bulk_delete` posts the count, channel, moderator when found, and a `.txt` transcript
   of the cached human messages (200 KB cap) as an attachment. A text channel references it with
   a file component; a forum starter attaches it. The transcript is kept on the row, so a post

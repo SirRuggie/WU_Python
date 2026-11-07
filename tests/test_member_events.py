@@ -652,7 +652,7 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(lambda: [p.stop() for p in self.patches])
         for state in (transport._bot_users, transport._recent_deletes, transport._recent_bulk,
                       transport._bot_unbans, transport._invite_waits, transport._invite_born,
-                      transport._recent_app_adds):
+                      transport._recent_app_adds, transport._delete_counts):
             state.clear()
         users = {HUMAN: NS(is_bot=False), APP: NS(is_bot=True)}
         self.bot = NS(cache=NS(get_user=users.get, get_role=lambda r: None, get_guild_channel=lambda c: None,
@@ -755,6 +755,25 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         await self.audit(A.INTEGRATION_DELETE, 4, NS(key=K.NAME, old_value="Tool", new_value=None), target=555)
         self.assertEqual(sorted(r["details"]["action"] for r in self.rows("app")), ["added", "added", "removed"])
 
+    async def test_bot_add_pairs_with_integration_create_by_application_id(self):
+        await enable(self.history, "app")
+        app = lambda value: NS(key=K.APPLICATION_ID, old_value=None, new_value=value)
+        await self.audit(A.BOT_ADD, 1, target=555, user=APP)
+        await self.audit(A.INTEGRATION_CREATE, 2, app(999), target=999, user=APP)  # Other app: posts.
+        await self.audit(A.INTEGRATION_CREATE, 3, app(555), target=888, user=APP)  # Integration id differs.
+        self.assertEqual(len(self.rows("app")), 2)
+
+    async def test_bot_add_pairs_with_integration_create_without_an_id_only_when_alone(self):
+        await enable(self.history, "app")
+        await self.audit(A.BOT_ADD, 1, target=555, user=APP)
+        await self.audit(A.BOT_ADD, 2, target=556, user=APP)
+        await self.audit(A.INTEGRATION_CREATE, 3, target=888, user=APP)  # Two candidates: unsure, posts.
+        self.assertEqual(len(self.rows("app")), 3)
+        transport._recent_app_adds.clear()
+        await self.audit(A.BOT_ADD, 4, target=557, user=APP)
+        await self.audit(A.INTEGRATION_CREATE, 5, target=889, user=APP)  # Lone BOT_ADD: same app.
+        self.assertEqual(len(self.rows("app")), 4)
+
     async def test_delete_audit_fact_attributes_at_most_one_delete(self):
         await enable(self.history, "message_delete")
         channel = 777777777777777777
@@ -772,6 +791,18 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         event = lambda old: NS(guild_id=GUILD_ID, channel_id=channel, message_id=old.id, old_message=old)
         transport.note_message_audit(self.entry(A.MESSAGE_DELETE, 71, target=self.uid,
                                                 options=NS(channel_id=channel, count=2)))
+        for mid in (6, 7, 8):
+            await transport.record_message_delete(event(self.message(mid)), self.mongo, self.bot)
+        moderators = {r["details"]["message_id"]: r["moderator_id"] for r in self.rows("message_delete")}
+        self.assertEqual(moderators, {"6": str(HUMAN), "7": str(HUMAN), "8": None})
+
+    async def test_running_audit_count_attributes_only_new_deletes(self):
+        await enable(self.history, "message_delete")
+        channel = 777777777777777777
+        event = lambda old: NS(guild_id=GUILD_ID, channel_id=channel, message_id=old.id, old_message=old)
+        for count in (1, 2, 2):  # Discord updates one entry with a running total.
+            transport.note_message_audit(self.entry(A.MESSAGE_DELETE, 73, target=self.uid,
+                                                    options=NS(channel_id=channel, count=count)))
         for mid in (6, 7, 8):
             await transport.record_message_delete(event(self.message(mid)), self.mongo, self.bot)
         moderators = {r["details"]["message_id"]: r["moderator_id"] for r in self.rows("message_delete")}
@@ -917,7 +948,8 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("transcript", self.rows("message_bulk_delete")[-1]["details"])  # Uncached: count only.
 
     async def test_transcript_with_marker_never_exceeds_the_cap_at_the_boundary(self):
-        for width in range(4990, 5011):
+        empty = len(transport.build_transcript([self.message(100, "")]).encode())
+        for width in sorted({*range(4990, 5011), 5120 - empty}):
             with self.subTest(width=width):
                 text = transport.build_transcript(self.message(i, "y" * width) for i in range(100, 160))
                 self.assertLessEqual(len(text.encode()), transport.TRANSCRIPT_LIMIT)
@@ -995,6 +1027,7 @@ class BatchTwoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by["123456789012345601"], {"join_count": 1})  # Timed out: no invite line.
         self.assertEqual(by["123456789012345602"], {"join_count": 1, "invite": "aa"})
         self.assertEqual(transport._invite_waits, {})
+        self.assertEqual(transport._invite_born, {})
 
     async def test_expires_at_is_set_per_kind_and_only_for_those_kinds(self):
         store = MemberEventStore(self.history)

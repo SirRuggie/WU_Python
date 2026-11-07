@@ -35,7 +35,7 @@ INVITE_WAIT_SECONDS = 3
 _invite_waits: dict[int, asyncio.Future] = {}  # Join card waits here for its invite name.
 _invite_born: dict[int, float] = {}  # When each waiting future was created (loop time).
 INVITE_STALE_SECONDS = 5
-_recent_app_adds: dict[str, float] = {}  # Application id -> monotonic time of its posted "App added".
+_recent_app_adds: list[dict] = []  # Posted "App added" audit entries: time, action type, application id, matched.
 APP_ADD_WINDOW_SECONDS = 60
 URL_PATTERN = re.compile(r"https?://\S+")
 FORUM_LABELS = {"join": "Joined", "leave": "Left", "kick": "Kicked", "ban": "Banned",
@@ -832,8 +832,13 @@ def _invite_future(uid: int):
     if future is None:
         future = _invite_waits[uid] = loop.create_future()
         _invite_born[uid] = loop.time()
-        loop.call_later(30, lambda: _invite_waits.pop(uid, None) if _invite_waits.get(uid) is future else None)
+        loop.call_later(30, lambda: _drop_invite(uid) if _invite_waits.get(uid) is future else None)
     return future
+
+
+def _drop_invite(uid: int):
+    _invite_waits.pop(uid, None)
+    _invite_born.pop(uid, None)
 
 
 def discard_stale_invite(uid: int):
@@ -841,7 +846,7 @@ def discard_stale_invite(uid: int):
     future = _invite_waits.get(uid)
     if future is not None and future.done() and (
             asyncio.get_running_loop().time() - _invite_born.get(uid, 0)) > INVITE_STALE_SECONDS:
-        del _invite_waits[uid]
+        _drop_invite(uid)
 
 
 def settle_invite_label(uid: int, label: str | None):
@@ -853,7 +858,7 @@ def settle_invite_label(uid: int, label: str | None):
 async def wait_invite_label(uid: int, wanted: bool = True) -> str | None:
     """Invite name or code for this join, if attribution finishes within the wait."""
     if not wanted:
-        _invite_waits.pop(uid, None)
+        _drop_invite(uid)
         return None
     future = _invite_future(uid)
     try:
@@ -862,7 +867,7 @@ async def wait_invite_label(uid: int, wanted: bool = True) -> str | None:
         return None
     finally:
         if _invite_waits.get(uid) is future:
-            del _invite_waits[uid]
+            _drop_invite(uid)
 
 
 async def record_invite_use(event, mongo, bot):
@@ -1029,13 +1034,24 @@ def audit_object_name(entry, bot, kind: str) -> str:
     return str(getattr(found, "name", None) or getattr(found, "username", None) or "")
 
 
-def _app_add_seen(app_id: str) -> bool:
+def _app_add_seen(entry) -> bool:
+    """True when this entry repeats an app add already posted: BOT_ADD and INTEGRATION_CREATE pair up."""
     now = time.monotonic()
-    for key in [k for k, at in _recent_app_adds.items() if now - at > APP_ADD_WINDOW_SECONDS]:
-        del _recent_app_adds[key]
-    if app_id in _recent_app_adds:
+    _recent_app_adds[:] = [a for a in _recent_app_adds if now - a["at"] <= APP_ADD_WINDOW_SECONDS]
+    if entry.action_type == _A.BOT_ADD:
+        app_id = str(entry.target_id)
+    else:
+        change = next((c for c in entry.changes if c.key == _C.APPLICATION_ID), None)
+        value = (change.new_value or change.old_value) if change else None
+        app_id = str(value) if value else None
+    others = [a for a in _recent_app_adds if a["type"] != entry.action_type and not a["matched"]]
+    same = [a for a in others if a["app_id"] and app_id and a["app_id"] == app_id]
+    if not same and (app_id is None or any(a["app_id"] is None for a in others)) and len(others) == 1:
+        same = others  # No id on one side: a lone entry of the other type in the window is the same app.
+    if same:
+        same[0]["matched"] = True
         return True
-    _recent_app_adds[app_id] = now
+    _recent_app_adds.append({"at": now, "type": entry.action_type, "app_id": app_id, "matched": False})
     return False
 
 
@@ -1053,7 +1069,7 @@ async def record_audit_kind(entry, mongo, bot) -> bool:
     if not (kind == "app" and action == "added") and await is_bot_actor(bot, entry.user_id):
         return True  # An app's own change is never a staff action; adding an app always posts.
     details = {"action": action, "target_id": str(entry.target_id)}
-    if kind == "app" and action == "added" and _app_add_seen(str(entry.target_id)):
+    if kind == "app" and action == "added" and _app_add_seen(entry):
         return True  # BOT_ADD and INTEGRATION_CREATE both describe one new app.
     if kind == "thread_lock":
         locked = [c for c in entry.changes if c.key in (_C.LOCKED, _C.ARCHIVED) and c.new_value is True]
@@ -1130,6 +1146,7 @@ async def emit_unban(mongo, bot, uid: int, episode: int, *, at, user=None, entry
 
 
 _recent_deletes: collections.deque = collections.deque(maxlen=200)  # Audit MESSAGE_DELETE facts.
+_delete_counts: collections.OrderedDict = collections.OrderedDict()  # Audit entry id -> last count seen.
 _recent_bulk: collections.deque = collections.deque(maxlen=50)  # Audit MESSAGE_BULK_DELETE facts.
 
 
@@ -1138,9 +1155,17 @@ def note_message_audit(entry):
     channel = getattr(options, "channel_id", None)
     if entry.action_type == hikari.AuditLogEventType.MESSAGE_DELETE:
         try:
-            uses = max(1, int(getattr(options, "count", None) or 1))
+            total = max(1, int(getattr(options, "count", None) or 1))
         except (TypeError, ValueError):
-            uses = 1
+            total = 1
+        entry_id = int(entry.id)
+        uses = max(0, total - _delete_counts.get(entry_id, 0))  # Discord's count is a running total.
+        _delete_counts[entry_id] = total
+        _delete_counts.move_to_end(entry_id)
+        while len(_delete_counts) > 500:
+            _delete_counts.popitem(last=False)
+        if uses == 0:
+            return
         _recent_deletes.append([int(entry.target_id), int(channel or 0), entry.user_id, entry.created_at, uses])
     else:
         _recent_bulk.append([int(entry.target_id), 0, entry.user_id, entry.created_at, 1])
