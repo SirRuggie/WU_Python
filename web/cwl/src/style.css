@@ -2116,6 +2116,28 @@ img.site-logo {
   -webkit-text-fill-color: currentColor;
   cursor: progress;
 }
+.roster-ui-button.is-secondary:disabled[aria-busy="true"]:not(
+    :where(
+      .primary,
+      .danger,
+      .is-primary,
+      .is-danger,
+      .roster-action-danger,
+      .active,
+      [aria-pressed],
+      [aria-selected],
+      [aria-current],
+      [role="tab"],
+      .section-tabs *,
+      .filter-chips *,
+      .roster-ui-chip,
+      .chip,
+      [role="tablist"] *
+    )
+  ) {
+  background: var(--roster-surface-raised);
+  border-color: var(--roster-border);
+}
 .shell .signup-flow {
   max-width: none;
 }
