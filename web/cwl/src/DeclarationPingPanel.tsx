@@ -342,6 +342,11 @@ export default function DeclarationPingPanel({
                 </>
               )}
               <button
+                aria-busy={
+                  locationStatus === "checking" ||
+                  (!locationStatus && busy) ||
+                  undefined
+                }
                 disabled={
                   busy ||
                   edited ||
@@ -406,7 +411,9 @@ export default function DeclarationPingPanel({
           )
         )}
         {(active?.state === "sending" || state?.test_running) && (
-          <p role="status">Sending the reviewed messages… You can leave this page.</p>
+          <p role="status">
+            Sending the reviewed messages… You can leave this page.
+          </p>
         )}
         {state?.can_send && active?.state === "uncertain" && (
           <button disabled={busy} onClick={() => setClosing(true)}>

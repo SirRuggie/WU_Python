@@ -147,6 +147,7 @@ export default function CommandTest({
       />
       {!review && (
         <button
+          aria-busy={busy || undefined}
           type="button"
           disabled={disabled || busy || uncertain || !channel}
           onClick={() => setReview(true)}

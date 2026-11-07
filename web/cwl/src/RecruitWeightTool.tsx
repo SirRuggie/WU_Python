@@ -77,7 +77,11 @@ export default function RecruitWeightTool({
           placeholder="149 or 149000"
         />
       </label>
-      <button disabled={busy} onClick={() => void find()}>
+      <button
+        aria-busy={busy || undefined}
+        disabled={busy}
+        onClick={() => void find()}
+      >
         {busy ? "Finding…" : "Find closest weights"}
       </button>
       {error && <p role="alert">{error}</p>}

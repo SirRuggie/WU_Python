@@ -110,7 +110,7 @@ export default function AddClan({
             }}
           />
         </label>
-        <button disabled={disabled || busy}>
+        <button aria-busy={busy || undefined} disabled={disabled || busy}>
           {busy ? "Working…" : "Look up clan"}
         </button>
       </form>

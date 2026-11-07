@@ -129,6 +129,7 @@ export default function ReminderOverview({
           <p>See what needs attention, then open a clan to make changes.</p>
         </div>
         <button
+          aria-busy={loading || undefined}
           disabled={loading}
           onClick={() => {
             void load();
@@ -403,10 +404,10 @@ export default function ReminderOverview({
             <summary>About reminder status</summary>
             <p>
               The next reminder time depends on when the active war ends. This
-              overview does not show that time. A channel in the server list does
-              not prove that the bot can send there. The status comes from the
-              saved settings and the last bot checks. Test messages show only in
-              each clan’s delivery history.
+              overview does not show that time. A channel in the server list
+              does not prove that the bot can send there. The status comes from
+              the saved settings and the last bot checks. Test messages show
+              only in each clan’s delivery history.
             </p>
           </details>
         </>

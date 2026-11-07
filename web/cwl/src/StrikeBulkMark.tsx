@@ -153,6 +153,7 @@ export default function StrikeBulkMark({
         />
       </label>
       <button
+        aria-busy={busy || undefined}
         disabled={busy || conflict || !rows.length}
         onClick={() => void save()}
       >

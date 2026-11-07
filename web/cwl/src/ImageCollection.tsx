@@ -1,143 +1,143 @@
-import { useEffect, useRef, useState } from 'react'
-import { api, apiUpload, ApiError } from './api'
-import { imageCategory, defaultImageCategories } from './imageCategories'
-import './ImageGallery.css'
+import { useEffect, useRef, useState } from "react";
+import { api, apiUpload, ApiError } from "./api";
+import { imageCategory, defaultImageCategories } from "./imageCategories";
+import "./ImageGallery.css";
 export type ImageItem = {
-  url: string
-  name: string
-  commands: string[]
-  stored: boolean
-  archived: boolean
-  folder?: string
-}
+  url: string;
+  name: string;
+  commands: string[];
+  stored: boolean;
+  archived: boolean;
+  folder?: string;
+};
 const expected = (item: ImageItem) => ({
   name: item.name,
-  folder: item.folder || '',
+  folder: item.folder || "",
   archived: item.archived,
-})
+});
 export default function ImageCollection({
   onChoose,
   onDirty,
   onGuard,
 }: {
-  onChoose?: (url: string) => void
-  onDirty?: (value: boolean) => void
-  onGuard?: (guard: () => boolean) => void
+  onChoose?: (url: string) => void;
+  onDirty?: (value: boolean) => void;
+  onGuard?: (guard: () => boolean) => void;
 }) {
   const [images, setImages] = useState<ImageItem[]>([]),
-    [query, setQuery] = useState(''),
-    [filter, setFilter] = useState('active'),
-    [folder, setFolder] = useState('*'),
-    [page, setPage] = useState(0)
+    [query, setQuery] = useState(""),
+    [filter, setFilter] = useState("active"),
+    [folder, setFolder] = useState("*"),
+    [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [notice, setNotice] = useState('')
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState("");
   const [editing, setEditing] = useState<ImageItem | null>(null),
-    [name, setName] = useState(''),
-    [category, setCategory] = useState('')
+    [name, setName] = useState(""),
+    [category, setCategory] = useState("");
   const [adding, setAdding] = useState(false),
-    [link, setLink] = useState(''),
+    [link, setLink] = useState(""),
     [files, setFiles] = useState<File[]>([]),
-    [uploadCategory, setUploadCategory] = useState('')
+    [uploadCategory, setUploadCategory] = useState("");
   const [selected, setSelected] = useState<string[]>([]),
-    [destination, setDestination] = useState(''),
-    [copied, setCopied] = useState('')
-  const [failed, setFailed] = useState<string[]>([])
+    [destination, setDestination] = useState(""),
+    [copied, setCopied] = useState("");
+  const [failed, setFailed] = useState<string[]>([]);
   const alive = useRef(true),
     operation = useRef(false),
-    sequence = useRef(0)
+    sequence = useRef(0);
   const dirty =
     !!(
       editing &&
       (name !== editing.name || category !== imageCategory(editing.folder))
     ) ||
     !!link.trim() ||
-    files.length > 0
+    files.length > 0;
   const guard = () =>
     !operation.current &&
     (!dirty ||
-      window.confirm('Discard unsaved image details or pending uploads?'))
+      window.confirm("Discard unsaved image details or pending uploads?"));
   useEffect(() => {
-    onDirty?.(dirty || busy)
-    onGuard?.(guard)
+    onDirty?.(dirty || busy);
+    onGuard?.(guard);
     const protect = (e: BeforeUnloadEvent) => {
       if (dirty || busy) {
-        e.preventDefault()
-        e.returnValue = ''
+        e.preventDefault();
+        e.returnValue = "";
       }
-    }
-    window.addEventListener('beforeunload', protect)
+    };
+    window.addEventListener("beforeunload", protect);
     return () => {
-      onDirty?.(false)
-      window.removeEventListener('beforeunload', protect)
-    }
-  }, [dirty, busy, onDirty, onGuard])
+      onDirty?.(false);
+      window.removeEventListener("beforeunload", protect);
+    };
+  }, [dirty, busy, onDirty, onGuard]);
   function failure(e: unknown, fallback: string) {
     if (e instanceof ApiError && [401, 403].includes(e.status)) {
-      setImages([])
-      setSelected([])
-      setEditing(null)
-      setFiles([])
-      setLink('')
+      setImages([]);
+      setSelected([]);
+      setEditing(null);
+      setFiles([]);
+      setLink("");
     }
-    setError(e instanceof Error ? e.message : fallback)
+    setError(e instanceof Error ? e.message : fallback);
   }
   async function load() {
-    const turn = ++sequence.current
-    setLoading(true)
+    const turn = ++sequence.current;
+    setLoading(true);
     try {
       const result = await api<{ images: ImageItem[] }>(
-        '/manage/text-command-images',
-      )
+        "/manage/text-command-images",
+      );
       if (alive.current && turn === sequence.current) {
-        setImages(result.images)
-        setFailed([])
+        setImages(result.images);
+        setFailed([]);
       }
     } catch (e) {
       if (alive.current && turn === sequence.current)
-        failure(e, 'Could not load images.')
+        failure(e, "Could not load images.");
     } finally {
-      if (alive.current && turn === sequence.current) setLoading(false)
+      if (alive.current && turn === sequence.current) setLoading(false);
     }
   }
   useEffect(() => {
-    alive.current = true
-    void load()
+    alive.current = true;
+    void load();
     return () => {
-      alive.current = false
-      sequence.current++
-    }
-  }, [])
-  useEffect(() => setPage(0), [query, filter, folder])
+      alive.current = false;
+      sequence.current++;
+    };
+  }, []);
+  useEffect(() => setPage(0), [query, filter, folder]);
   async function run(action: () => Promise<void>) {
-    if (operation.current) return
-    operation.current = true
-    sequence.current++
-    setLoading(false)
-    setBusy(true)
-    setError('')
-    setNotice('')
+    if (operation.current) return;
+    operation.current = true;
+    sequence.current++;
+    setLoading(false);
+    setBusy(true);
+    setError("");
+    setNotice("");
     try {
-      await action()
+      await action();
     } catch (e) {
       if (alive.current)
         failure(
           e,
-          'The change could not be confirmed. Refresh the gallery before trying again.',
-        )
+          "The change could not be confirmed. Refresh the gallery before trying again.",
+        );
     } finally {
-      operation.current = false
-      if (alive.current) setBusy(false)
+      operation.current = false;
+      if (alive.current) setBusy(false);
     }
   }
   async function update(item: ImageItem, changes: Partial<ImageItem>) {
-    return api<ImageItem>('/manage/text-command-images', 'PATCH', {
+    return api<ImageItem>("/manage/text-command-images", "PATCH", {
       url: item.url,
       ...expected(item),
       ...changes,
       expected: expected(item),
-    })
+    });
   }
   async function saveDetails(item: ImageItem) {
     await run(async () => {
@@ -145,133 +145,133 @@ export default function ImageCollection({
         name: name.trim(),
         folder:
           category === imageCategory(item.folder)
-            ? item.folder || ''
+            ? item.folder || ""
             : category.trim(),
-      })
+      });
       setImages((rows) =>
         rows.map((row) => (row.url === item.url ? result : row)),
-      )
-      setEditing(null)
-      setNotice('Image details saved. Links stay the same.')
-    })
+      );
+      setEditing(null);
+      setNotice("Image details saved. Links stay the same.");
+    });
   }
   async function archive(item: ImageItem) {
-    if (!guard()) return
+    if (!guard()) return;
     await run(async () => {
-      const result = await update(item, { archived: !item.archived })
+      const result = await update(item, { archived: !item.archived });
       setImages((rows) =>
         rows.map((row) => (row.url === item.url ? result : row)),
-      )
-      setSelected((rows) => rows.filter((url) => url !== item.url))
-      setEditing(null)
+      );
+      setSelected((rows) => rows.filter((url) => url !== item.url));
+      setEditing(null);
       setNotice(
         result.archived
-          ? 'Image archived. Existing messages still work.'
-          : 'Image restored to the gallery.',
-      )
-    })
+          ? "Image archived. Existing messages still work."
+          : "Image restored to the gallery.",
+      );
+    });
   }
   async function moveSelected() {
-    if (!guard()) return
+    if (!guard()) return;
     await run(async () => {
-      const completed: string[] = []
+      const completed: string[] = [];
       try {
         for (const url of selected) {
-          if (!alive.current) break
-          const item = images.find((row) => row.url === url)
-          if (!item) continue
-          await update(item, { folder: destination.trim() })
-          completed.push(url)
+          if (!alive.current) break;
+          const item = images.find((row) => row.url === url);
+          if (!item) continue;
+          await update(item, { folder: destination.trim() });
+          completed.push(url);
         }
       } finally {
-        setSelected((rows) => rows.filter((url) => !completed.includes(url)))
+        setSelected((rows) => rows.filter((url) => !completed.includes(url)));
         setNotice(
           `${completed.length} of ${selected.length} images moved. Any remaining selections were not confirmed.`,
-        )
-        await load()
+        );
+        await load();
       }
-    })
+    });
   }
   async function upload() {
     await run(async () => {
-      let count = 0
+      let count = 0;
       // Validate every file before beginning the batch.
       for (const file of files)
         if (!file.size || file.size > 10 * 1024 * 1024)
-          throw new Error(`${file.name}: select an image up to 10 MB.`)
+          throw new Error(`${file.name}: select an image up to 10 MB.`);
       try {
         if (files.length) {
           for (const file of files) {
-            if (!alive.current) break
+            if (!alive.current) break;
             await apiUpload(
-              '/manage/text-command-images/upload?name=' +
+              "/manage/text-command-images/upload?name=" +
                 encodeURIComponent(file.name) +
-                '&category=' +
+                "&category=" +
                 encodeURIComponent(uploadCategory.trim()),
               file,
-            )
-            count++
-            setFiles((rows) => rows.filter((row) => row !== file))
+            );
+            count++;
+            setFiles((rows) => rows.filter((row) => row !== file));
           }
         } else {
-          await api('/manage/text-command-images/import', 'POST', {
+          await api("/manage/text-command-images/import", "POST", {
             url: link.trim(),
             category: uploadCategory.trim(),
-          })
-          count++
-          setLink('')
+          });
+          count++;
+          setLink("");
         }
-        setFolder(imageCategory(uploadCategory))
-        setAdding(false)
+        setFolder(imageCategory(uploadCategory));
+        setAdding(false);
       } finally {
         setNotice(
-          `${count} image${count === 1 ? '' : 's'} added. Check the gallery before retrying an interrupted upload.`,
-        )
-        await load()
+          `${count} image${count === 1 ? "" : "s"} added. Check the gallery before retrying an interrupted upload.`,
+        );
+        await load();
       }
-    })
+    });
   }
   async function sync() {
     await run(async () => {
       let cursor: string | null = null,
-        count = 0
-      const seen = new Set<string>()
+        count = 0;
+      const seen = new Set<string>();
       do {
         const result: { indexed: number; cursor: string | null } = await api(
-          '/manage/text-command-images/sync',
-          'POST',
+          "/manage/text-command-images/sync",
+          "POST",
           { cursor },
-        )
-        count += result.indexed
-        cursor = result.cursor
+        );
+        count += result.indexed;
+        cursor = result.cursor;
         if (cursor && seen.has(cursor))
           throw new Error(
-            'Storage refresh stopped because the next page repeated. Saved images are still available.',
-          )
-        if (cursor) seen.add(cursor)
-      } while (cursor && alive.current)
-      setNotice(`Storage checked · ${count} images found.`)
-      await load()
-    })
+            "Storage refresh stopped because the next page repeated. Saved images are still available.",
+          );
+        if (cursor) seen.add(cursor);
+      } while (cursor && alive.current);
+      setNotice(`Storage checked · ${count} images found.`);
+      await load();
+    });
   }
   const folders = [
     ...new Set([
       ...defaultImageCategories,
       ...images.map((item) => imageCategory(item.folder)).filter(Boolean),
     ]),
-  ].sort()
+  ].sort();
   const matches = images.filter(
     (item) =>
-      (filter === 'archived' ? item.archived : !item.archived) &&
-      (filter !== 'used' || item.commands.length > 0) &&
-      (filter !== 'unused' || !item.commands.length) &&
-      (folder === '*' || imageCategory(item.folder) === folder) &&
-      [item.name, item.folder || '', ...item.commands].some((value) =>
+      (filter === "archived" ? item.archived : !item.archived) &&
+      (filter !== "used" || item.commands.length > 0) &&
+      (filter !== "unused" || !item.commands.length) &&
+      (folder === "*" || imageCategory(item.folder) === folder) &&
+      [item.name, item.folder || "", ...item.commands].some((value) =>
         value.toLowerCase().includes(query.trim().toLowerCase()),
       ),
-  )
+  );
   const pages = Math.max(1, Math.ceil(matches.length / 24)),
-    current = Math.min(page, pages - 1)
+    current = Math.min(page, pages - 1);
   return (
     <div className="image-collection">
       <div className="gallery-toolbar">
@@ -279,26 +279,26 @@ export default function ImageCollection({
           className="primary"
           disabled={busy}
           onClick={() => {
-            if (!guard()) return
-            setEditing(null)
-            setLink('')
-            setFiles([])
-            setUploadCategory(folder === '*' ? '' : folder)
-            setAdding(!adding)
+            if (!guard()) return;
+            setEditing(null);
+            setLink("");
+            setFiles([]);
+            setUploadCategory(folder === "*" ? "" : folder);
+            setAdding(!adding);
           }}
         >
-          {adding ? 'Cancel adding' : '+ Add images'}
+          {adding ? "Cancel adding" : "+ Add images"}
         </button>
         <button
           disabled={busy || loading}
           onClick={() => {
-            if (!guard()) return
-            setEditing(null)
-            setLink('')
-            setFiles([])
-            setError('')
-            setNotice('')
-            void load()
+            if (!guard()) return;
+            setEditing(null);
+            setLink("");
+            setFiles([]);
+            setError("");
+            setNotice("");
+            void load();
           }}
         >
           Refresh gallery
@@ -331,15 +331,15 @@ export default function ImageCollection({
               disabled={busy || !!link.trim()}
               accept="image/png,image/jpeg,image/gif,image/webp"
               onChange={(e) => {
-                setFiles(Array.from(e.target.files || []))
-                e.target.value = ''
+                setFiles(Array.from(e.target.files || []));
+                e.target.value = "";
               }}
             />
           </label>
           {files.length > 0 && (
             <p>
-              {files.length} selected ·{' '}
-              {files.map((file) => file.name).join(', ')}
+              {files.length} selected ·{" "}
+              {files.map((file) => file.name).join(", ")}
             </p>
           )}
           <label>
@@ -357,10 +357,11 @@ export default function ImageCollection({
             save.
           </small>
           <button
+            aria-busy={busy || undefined}
             disabled={busy || (!files.length && !link.trim())}
             onClick={() => void upload()}
           >
-            {busy ? 'Adding…' : 'Save images'}
+            {busy ? "Adding…" : "Save images"}
           </button>
         </section>
       )}
@@ -371,9 +372,9 @@ export default function ImageCollection({
             type="search"
             value={query}
             onChange={(e) => {
-              if (!guard()) return
-              setEditing(null)
-              setQuery(e.target.value)
+              if (!guard()) return;
+              setEditing(null);
+              setQuery(e.target.value);
             }}
             placeholder="Name, category or command"
           />
@@ -384,10 +385,10 @@ export default function ImageCollection({
             disabled={busy}
             value={folder}
             onChange={(e) => {
-              if (!guard()) return
-              setEditing(null)
-              setFolder(e.target.value)
-              setSelected([])
+              if (!guard()) return;
+              setEditing(null);
+              setFolder(e.target.value);
+              setSelected([]);
             }}
           >
             <option value="*">All images</option>
@@ -403,10 +404,10 @@ export default function ImageCollection({
             disabled={busy}
             value={filter}
             onChange={(e) => {
-              if (!guard()) return
-              setEditing(null)
-              setFilter(e.target.value)
-              setSelected([])
+              if (!guard()) return;
+              setEditing(null);
+              setFilter(e.target.value);
+              setSelected([]);
             }}
           >
             <option value="active">Available</option>
@@ -485,9 +486,9 @@ export default function ImageCollection({
                   </a>
                 )}
                 <small>
-                  {imageCategory(item.folder) || 'Unsorted'} ·{' '}
+                  {imageCategory(item.folder) || "Unsorted"} ·{" "}
                   {item.commands.length} command
-                  {item.commands.length === 1 ? '' : 's'}
+                  {item.commands.length === 1 ? "" : "s"}
                 </small>
                 <div className="gallery-card-actions">
                   {onChoose && (
@@ -495,7 +496,7 @@ export default function ImageCollection({
                       className="primary"
                       disabled={busy || item.archived}
                       onClick={() => {
-                        if (guard()) onChoose(item.url)
+                        if (guard()) onChoose(item.url);
                       }}
                     >
                       Use image
@@ -505,24 +506,24 @@ export default function ImageCollection({
                     <button
                       onClick={async () => {
                         try {
-                          await navigator.clipboard.writeText(item.url)
-                          setCopied(item.url)
+                          await navigator.clipboard.writeText(item.url);
+                          setCopied(item.url);
                         } catch {
-                          setError('Open the image and copy its address.')
+                          setError("Open the image and copy its address.");
                         }
                       }}
                     >
-                      {copied === item.url ? 'Copied' : 'Copy link'}
+                      {copied === item.url ? "Copied" : "Copy link"}
                     </button>
                   )}
                   <button
                     disabled={busy}
                     aria-expanded={editing?.url === item.url}
                     onClick={() => {
-                      if (!guard()) return
-                      setEditing(editing?.url === item.url ? null : item)
-                      setName(item.name)
-                      setCategory(imageCategory(item.folder))
+                      if (!guard()) return;
+                      setEditing(editing?.url === item.url ? null : item);
+                      setName(item.name);
+                      setCategory(imageCategory(item.folder));
                     }}
                   >
                     Details
@@ -551,8 +552,8 @@ export default function ImageCollection({
                     </label>
                     <p>
                       {item.commands.length
-                        ? `Commands: ${item.commands.join(', ')}`
-                        : 'No command use found. This image may be used elsewhere.'}
+                        ? `Commands: ${item.commands.join(", ")}`
+                        : "No command use found. This image may be used elsewhere."}
                     </p>
                     <p>
                       Names and categories keep the same link. Archiving hides
@@ -565,7 +566,7 @@ export default function ImageCollection({
                       Save details
                     </button>
                     <button disabled={busy} onClick={() => void archive(item)}>
-                      {item.archived ? 'Restore image' : 'Archive image'}
+                      {item.archived ? "Restore image" : "Archive image"}
                     </button>
                   </div>
                 )}
@@ -581,8 +582,8 @@ export default function ImageCollection({
                 disabled={busy || current === 0}
                 onClick={() => {
                   if (guard()) {
-                    setEditing(null)
-                    setPage(current - 1)
+                    setEditing(null);
+                    setPage(current - 1);
                   }
                 }}
               >
@@ -595,8 +596,8 @@ export default function ImageCollection({
                 disabled={busy || current === pages - 1}
                 onClick={() => {
                   if (guard()) {
-                    setEditing(null)
-                    setPage(current + 1)
+                    setEditing(null);
+                    setPage(current + 1);
                   }
                 }}
               >
@@ -615,7 +616,7 @@ export default function ImageCollection({
         <button
           disabled={busy || loading}
           onClick={() => {
-            if (guard()) void sync()
+            if (guard()) void sync();
           }}
         >
           Check storage for images
@@ -627,5 +628,5 @@ export default function ImageCollection({
         ))}
       </datalist>
     </div>
-  )
+  );
 }

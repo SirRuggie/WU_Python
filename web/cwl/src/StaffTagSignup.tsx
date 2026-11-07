@@ -109,7 +109,9 @@ export default function StaffTagSignup({
 
   return (
     <div className="staff-tag-signup">
-      <p>Enter a player tag. The dashboard checks for a linked Discord account.</p>
+      <p>
+        Enter a player tag. The dashboard checks for a linked Discord account.
+      </p>
       <div className="staff-tag-lookup">
         <Input
           label="Player tag"
@@ -131,6 +133,7 @@ export default function StaffTagSignup({
           }}
         />
         <Button
+          aria-busy={(busy && !result) || undefined}
           icon={Search}
           disabled={busy || !tag.trim()}
           onClick={() => void lookup()}

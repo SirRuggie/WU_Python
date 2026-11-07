@@ -32,7 +32,6 @@
   display: block;
   margin-top: var(--wu-space-4);
   min-height: 44px;
-  color: var(--roster-text-muted, var(--wu-text-muted));
   font-size: var(--wu-text-sm);
 }
 

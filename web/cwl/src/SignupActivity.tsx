@@ -145,6 +145,7 @@ export default function SignupActivity({
                   className="roster-ui roster-ui-button is-secondary"
                 />
                 <Button
+                  aria-busy={activity.busy === item.id || undefined}
                   className="signup-activity-review"
                   disabled={busy}
                   onClick={() => void activity.review([item])}

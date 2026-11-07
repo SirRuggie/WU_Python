@@ -20,16 +20,18 @@ vi.mock("./DeclarationPingPanel", () => ({
     pingCallbacks.value = props;
     const { missing, locationStatus, onDirty } = props;
     return (
-    <div data-ping-count={missing}>
-      {extraState.allowPingDirty && (
-        <button onClick={() => onDirty?.(true)}>Edit local ping channel</button>
-      )}
-      {locationStatus
-        ? locationStatus === "checking"
-          ? "Checking locations…"
-          : "Locations unavailable"
-        : `Ping ${missing} missing`}
-    </div>
+      <div data-ping-count={missing}>
+        {extraState.allowPingDirty && (
+          <button onClick={() => onDirty?.(true)}>
+            Edit local ping channel
+          </button>
+        )}
+        {locationStatus
+          ? locationStatus === "checking"
+            ? "Checking locations…"
+            : "Locations unavailable"
+          : `Ping ${missing} missing`}
+      </div>
     );
   },
 }));
@@ -1301,12 +1303,15 @@ it("states unavailable locations once and keeps only differing clan readiness la
   ).not.toContain("Not ready");
 });
 
-
 it("integrates moved Ping callbacks and pool discard without clearing held filler guards", async () => {
   let finish!: (saved: any) => void;
-  const working = vi.fn(), dirty = vi.fn();
+  const working = vi.fn(),
+    dirty = vi.fn();
   const page = await queue148Page(
-    () => new Promise(resolve => { finish = resolve; }),
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
     { onWorking: working, onDirty: dirty },
   );
   await act(async () => page.box(0).click());
@@ -1319,10 +1324,20 @@ it("integrates moved Ping callbacks and pool discard without clearing held fille
   expect(working).toHaveBeenLastCalledWith(true);
   expect(dirty).toHaveBeenLastCalledWith(true);
   await act(async () => pingCallbacks.value.onDirty(true));
-  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
-  HTMLDialogElement.prototype.close = function () { this.open = false; };
-  const main = () => [...host.querySelectorAll<HTMLButtonElement>(".declaration-pools button")].find(b => b.textContent?.trim().startsWith("Main"))!;
-  const dialogButton = (label: string) => [...document.querySelectorAll<HTMLButtonElement>(".confirm-dialog button")].find(b => b.textContent?.trim() === label)!;
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  const main = () =>
+    [
+      ...host.querySelectorAll<HTMLButtonElement>(".declaration-pools button"),
+    ].find((b) => b.textContent?.trim().startsWith("Main"))!;
+  const dialogButton = (label: string) =>
+    [
+      ...document.querySelectorAll<HTMLButtonElement>(".confirm-dialog button"),
+    ].find((b) => b.textContent?.trim() === label)!;
   await act(async () => main().click());
   await act(async () => dialogButton("Cancel").click());
   expect(main().getAttribute("aria-pressed")).toBe("false");
@@ -1332,7 +1347,9 @@ it("integrates moved Ping callbacks and pool discard without clearing held fille
   expect(main().getAttribute("aria-pressed")).toBe("true");
   expect(dirty).toHaveBeenLastCalledWith(true);
   expect(working).toHaveBeenLastCalledWith(true);
-  await act(async () => finish({ tag: "#X0", revision: 2, roster_filler: true, mark_revision: 1 }));
+  await act(async () =>
+    finish({ tag: "#X0", revision: 2, roster_filler: true, mark_revision: 1 }),
+  );
   expect(working).toHaveBeenLastCalledWith(false);
   expect(dirty).toHaveBeenLastCalledWith(false);
 });
@@ -1381,4 +1398,29 @@ it("pool discard Cancel keeps the pool and confirmation changes it without a wri
   expect(
     transport.mock.calls.filter((call) => call[1] && call[1] !== "GET"),
   ).toEqual([]);
+});
+
+it("marks the visible Checking label without changing its enabled state", async () => {
+  extraState.value.loading = false;
+  const props = { seasonId: "1" };
+  await act(async () => root.render(<ArrivalCheck {...props} />));
+  const refresh = () =>
+    [
+      ...host.querySelectorAll<HTMLButtonElement>(
+        ".declaration-refresh button",
+      ),
+    ].find((button) => /Refresh|Checking/.test(button.textContent || ""))!;
+  expect(refresh().hasAttribute("aria-busy")).toBe(false);
+  state.value.checking = true;
+  await act(async () => root.render(<ArrivalCheck {...props} />));
+  expect(refresh().textContent?.trim()).toBe("Checking…");
+  expect(refresh().getAttribute("aria-busy")).toBe("true");
+  expect(refresh().disabled).toBe(false);
+  state.value.checking = false;
+  extraState.value.loading = true;
+  await act(async () => root.render(<ArrivalCheck {...props} />));
+  expect(refresh().getAttribute("aria-busy")).toBe("true");
+  extraState.value.loading = false;
+  await act(async () => root.render(<ArrivalCheck {...props} />));
+  expect(refresh().hasAttribute("aria-busy")).toBe(false);
 });

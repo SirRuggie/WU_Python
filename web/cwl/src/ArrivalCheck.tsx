@@ -404,9 +404,7 @@ export default function ArrivalCheck({
             {fillerQueue.notSaved.length === 1 ? "it" : "them"} again.
           </p>
           {fillerQueue.unknownOutcome && (
-            <p>
-              The save may have worked. Refresh to see the result.
-            </p>
+            <p>The save may have worked. Refresh to see the result.</p>
           )}
           <ul>
             {fillerQueue.notSaved.map((row) => (
@@ -519,8 +517,8 @@ export default function ArrivalCheck({
             )}
             {helpOpen && (
               <p className="declaration-help">
-                Ready = clan is full, checked in the last 5 minutes.
-                This check works only for Lazy hosting clans.
+                Ready = clan is full, checked in the last 5 minutes. This check
+                works only for Lazy hosting clans.
               </p>
             )}
             {data.arrival.publication_outdated && (
@@ -551,7 +549,9 @@ export default function ArrivalCheck({
                             {
                               hosts.filter(
                                 (g) =>
-                                  g.pool === p && !locationStatus(g) && g.readiness.ready,
+                                  g.pool === p &&
+                                  !locationStatus(g) &&
+                                  g.readiness.ready,
                               ).length
                             }{" "}
                             of {hosts.filter((g) => g.pool === p).length}
@@ -561,8 +561,12 @@ export default function ArrivalCheck({
                           ) ? null : (
                           <>
                             {" · "}
-                            {hosts.filter((g) => g.pool === p && g.readiness.ready).length}/
-                            {hosts.filter((g) => g.pool === p).length} ready
+                            {
+                              hosts.filter(
+                                (g) => g.pool === p && g.readiness.ready,
+                              ).length
+                            }
+                            /{hosts.filter((g) => g.pool === p).length} ready
                           </>
                         )}
                       </>
@@ -598,6 +602,12 @@ export default function ArrivalCheck({
               />
               <div className="declaration-refresh">
                 <Button
+                  aria-busy={
+                    explicitRefreshing ||
+                    checking ||
+                    extras.loading ||
+                    undefined
+                  }
                   icon={RefreshCw}
                   disabled={explicitRefreshing || fillerWorking}
                   onClick={() => {
