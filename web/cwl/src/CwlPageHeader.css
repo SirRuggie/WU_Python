@@ -5,8 +5,9 @@
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
+  align-self: start;
   gap: var(--roster-space-3);
-  height: var(--roster-height-control);
+  height: auto;
   min-height: var(--roster-height-control);
   margin-bottom: var(--roster-space-4);
 }
@@ -80,6 +81,9 @@
   }
 }
 @media (max-width: 480px) {
+  .cwl-page-header-title {
+    padding-block: 8px;
+  }
   .cwl-page-header .cwl-page-header-title > h1,
   .shell .cwl-page-header .cwl-page-header-title > h1,
   .shell .cwl-page-header .cwl-page-header-title > h1 {
