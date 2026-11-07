@@ -1,12 +1,7 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import ModerationDestinationPicker from "./ModerationDestinationPicker";
 import ModerationPreviewCard from "./ModerationPreviewCard";
+import { Button } from "./rosterUi/primitives";
 import {
   destinationName,
   effectiveDestination,
@@ -24,12 +19,7 @@ type Props = {
   category: CategoryKind;
   label: string;
   icon: string;
-  events: {
-    key: ModerationKind;
-    label: string;
-    icon: string;
-    color: string;
-  }[];
+  events: { key: ModerationKind; label: string; icon: string; color: string }[];
   draft: SettingsDraft;
   saved: SettingsResponse;
   channels: Destination[];
@@ -40,8 +30,50 @@ type Props = {
   onEvent: (kind: ModerationKind, values: Partial<EventConfig>) => void;
   onResolve: (scope: "category" | "event", key: string, id: string) => void;
   onTest: (kind: ModerationKind) => void;
-  children?: ReactNode;
 };
+
+function postingState(
+  draft: SettingsDraft,
+  kind: ModerationKind,
+  channels: Destination[],
+  inventoryAvailable: boolean,
+) {
+  const effective = effectiveDestination(draft, kind);
+  const unavailable =
+    !!effective.target?.channel_id &&
+    (!inventoryAvailable || hasInvalidEventDestination(draft, kind, channels));
+  const posting =
+    draft.events[kind].enabled &&
+    effective.source !== "off" &&
+    !!effective.target?.channel_id &&
+    !unavailable;
+  return { ...effective, unavailable, posting };
+}
+
+export function moderationRoutingSummary(
+  events: ModerationKind[],
+  draft: SettingsDraft,
+  channels: Destination[],
+  inventoryAvailable: boolean,
+) {
+  const destinations = new Map<string, string>();
+  let notPosting = 0;
+  for (const kind of events) {
+    const state = postingState(draft, kind, channels, inventoryAvailable);
+    if (state.posting && state.target?.channel_id) {
+      destinations.set(
+        state.target.channel_id,
+        destinationName(state.target, channels),
+      );
+    } else notPosting++;
+  }
+  if (destinations.size === 0) return "Not posting";
+  const place =
+    destinations.size === 1
+      ? [...destinations.values()][0]
+      : `${destinations.size} channels`;
+  return `Posts to ${place}${notPosting ? ` · ${notPosting} not posting` : ""}`;
+}
 
 export default function ModerationCategoryCard({
   category,
@@ -58,15 +90,19 @@ export default function ModerationCategoryCard({
   onEvent,
   onResolve,
   onTest,
-  children,
 }: Props) {
+  const [open, setOpen] = useState(() =>
+    events.some(
+      (event) =>
+        postingState(draft, event.key, channels, inventoryAvailable)
+          .unavailable,
+    ),
+  );
+  const [categoryEditing, setCategoryEditing] = useState(false);
   const [openPicker, setOpenPicker] = useState<ModerationKind | null>(null);
   const [openPreview, setOpenPreview] = useState<ModerationKind | null>(null);
   const config = draft.categories[category];
   const active = config.mode !== "off";
-  const hasChannel = events.some(
-    (event) => effectiveDestination(draft, event.key).target?.channel_id,
-  );
   const previousMode = useRef<"main" | "own">(
     config.mode === "own" ? "own" : "main",
   );
@@ -76,89 +112,109 @@ export default function ModerationCategoryCard({
   const selectedCategoryChannel = channels.find(
     (channel) => channel.id === config.channel_id,
   );
+  const summary = moderationRoutingSummary(
+    events.map((event) => event.key),
+    draft,
+    channels,
+    inventoryAvailable,
+  );
 
   return (
-    <section
+    <details
       className="moderation-category-card"
-      aria-labelledby={`moderation-${category}-title`}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <header className="moderation-category-head">
-        <h3 id={`moderation-${category}-title`}>
-          <span aria-hidden="true">{icon}</span> {label}
-        </h3>
-        <label className="moderation-category-switch">
-          <input
-            type="checkbox"
-            role="switch"
-            aria-label={`${label} logging`}
-            checked={active}
-            disabled={busy}
-            onChange={(event) =>
-              onCategory(category, {
-                mode: event.target.checked ? previousMode.current : "off",
-              })
-            }
-          />
-          <span className="moderation-category-track" aria-hidden="true" />
-          <span>
-            {!active
-              ? "Off"
-              : hasChannel
-                ? "On"
-                : "Not posting — no channel set"}
+      <summary className="moderation-category-summary">
+        <h3
+          id={`moderation-${category}-title`}
+          className="moderation-category-head"
+        >
+          <span className="moderation-category-title">
+            <span className="moderation-category-name">
+              <span aria-hidden="true">{icon}</span> {label}
+            </span>
+            <small>{summary}</small>
           </span>
-        </label>
-      </header>
-      <div className="moderation-category-routing">
-        <label>
-          {label} destination
-          <select
-            value={config.mode}
-            disabled={busy}
-            onChange={(event) =>
-              onCategory(category, {
-                mode: event.target.value as CategoryConfig["mode"],
-              })
-            }
+          <label
+            className="moderation-category-switch"
+            onClick={(event) => event.stopPropagation()}
           >
-            <option value="main">Use main</option>
-            <option value="own">Own channel</option>
-            <option value="off">Off</option>
-          </select>
-        </label>
-        {config.mode === "own" && (
-          <ModerationDestinationPicker
-            label={`${label} channel`}
-            value={config}
-            channels={channels}
-            disabled={busy || !inventoryAvailable}
-            onResolve={(id) => onResolve("category", category, id)}
-            onChange={(value) => onCategory(category, value)}
-          />
-        )}
-        {config.mode === "own" && selectedCategoryChannel?.type === "forum" && (
-          <small>New notices create posts in this forum.</small>
-        )}
-      </div>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label={`${label} logging`}
+              checked={active}
+              disabled={busy}
+              onChange={(event) =>
+                onCategory(category, {
+                  mode: event.target.checked ? previousMode.current : "off",
+                })
+              }
+            />
+            <span className="moderation-category-track" aria-hidden="true" />
+            <span>{active ? "On" : "Off"}</span>
+          </label>
+          <Button
+            aria-expanded={categoryEditing}
+            disabled={busy}
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpen(true);
+              setCategoryEditing((value) => !value);
+            }}
+          >
+            Change
+          </Button>
+        </h3>
+      </summary>
+      {categoryEditing && (
+        <div className="moderation-category-routing">
+          <label>
+            {label} destination
+            <select
+              value={config.mode}
+              disabled={busy}
+              onChange={(event) =>
+                onCategory(category, {
+                  mode: event.target.value as CategoryConfig["mode"],
+                })
+              }
+            >
+              <option value="main">Use main</option>
+              <option value="own">Own channel</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          {config.mode === "own" && (
+            <ModerationDestinationPicker
+              label={`${label} channel`}
+              value={config}
+              channels={channels}
+              disabled={busy || !inventoryAvailable}
+              onResolve={(id) => onResolve("category", category, id)}
+              onChange={(value) => onCategory(category, value)}
+            />
+          )}
+          {config.mode === "own" &&
+            selectedCategoryChannel?.type === "forum" && (
+              <small>New notices create posts in this forum.</small>
+            )}
+        </div>
+      )}
       <div className="moderation-event-list">
         {events.map((event) => {
           const value = draft.events[event.key];
           const effective = effectiveDestination(draft, event.key);
+          const state = postingState(
+            draft,
+            event.key,
+            channels,
+            inventoryAvailable,
+          );
           const channel = channels.find(
             (item) => item.id === effective.target?.channel_id,
           );
-          const sourceName =
-            effective.source === "event"
-              ? "its own"
-              : effective.source === "category"
-                ? `the ${label}`
-                : "the main";
-          const hint =
-            effective.source === "off"
-              ? `${label} is off · no log sent`
-              : !effective.target?.channel_id
-                ? "Not posting — no channel set"
-                : `Uses ${sourceName} channel · ${destinationName(effective.target, channels)}`;
           const testDisabled =
             busy ||
             dirty ||
@@ -174,141 +230,148 @@ export default function ModerationCategoryCard({
           const preview = forumPreview
             ? saved.forum_preview_cards?.[event.key]
             : saved.preview_cards?.[event.key];
-
+          const editing = openPicker === event.key;
           return (
             <div
               className="moderation-event-row"
+              data-event={event.key}
               key={event.key}
-              style={{ "--moderation-accent": event.color } as CSSProperties}
             >
-              <label className="moderation-event-pill">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  aria-label={`${event.label} logging`}
-                  checked={value.enabled}
-                  disabled={busy}
-                  onChange={(change) =>
-                    onEvent(event.key, { enabled: change.target.checked })
-                  }
-                />
-                <span
-                  aria-hidden="true"
-                  className="moderation-event-pill-track"
-                />
-                <span aria-hidden="true">{event.icon}</span>
-                <span>{event.label}</span>
-              </label>
-              <div className="moderation-event-tools">
-                <small>{hint}</small>
-                <div className="moderation-event-actions">
-                  <button
-                    type="button"
+              <div className="moderation-event-head">
+                <label className="moderation-event-pill">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label={`${event.label} logging`}
+                    checked={value.enabled}
                     disabled={busy}
-                    aria-expanded={openPicker === event.key}
-                    onClick={() =>
-                      setOpenPicker(openPicker === event.key ? null : event.key)
+                    onChange={(change) =>
+                      onEvent(event.key, { enabled: change.target.checked })
                     }
-                  >
-                    Change
-                  </button>
-                  <button
-                    type="button"
-                    aria-expanded={openPreview === event.key}
-                    onClick={() =>
-                      setOpenPreview(
-                        openPreview === event.key ? null : event.key,
-                      )
-                    }
-                  >
-                    Preview
-                  </button>
-                  <button
-                    type="button"
-                    disabled={testDisabled}
-                    title={
-                      !effective.target?.channel_id
-                        ? "Select a channel first"
-                        : dirty
-                          ? "Save changes first"
-                          : undefined
-                    }
-                    onClick={() => onTest(event.key)}
-                  >
-                    Send test
-                  </button>
-                </div>
-                {!effective.target?.channel_id && (
-                  <small>Select a channel first</small>
-                )}
-                {dirty && <small>Save changes first to send a test.</small>}
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="moderation-event-pill-track"
+                  />
+                  <span aria-hidden="true">{event.icon}</span>
+                  <span>{event.label}</span>
+                </label>
+                <Button
+                  disabled={busy}
+                  aria-expanded={editing}
+                  onClick={() => {
+                    setOpenPicker(editing ? null : event.key);
+                    if (editing) setOpenPreview(null);
+                  }}
+                >
+                  Change
+                </Button>
               </div>
-              {openPicker === event.key && (
-                <div className="moderation-event-override">
-                  <div
-                    className="moderation-override-options"
-                    role="group"
-                    aria-label={`${event.label} destination mode`}
-                  >
-                    <button
-                      type="button"
-                      aria-pressed={!value.channel_id}
-                      disabled={busy}
+              <p
+                className={`moderation-event-status roster-ui${state.unavailable ? " is-unavailable" : ""}`}
+              >
+                {state.unavailable
+                  ? "Channel unavailable · not posting"
+                  : state.posting
+                    ? `Posts to ${destinationName(state.target, channels)}`
+                    : "Not posting"}
+              </p>
+              {editing && (
+                <div className="moderation-event-editor">
+                  <div className="moderation-event-override">
+                    <div
+                      className="moderation-override-options"
+                      role="group"
+                      aria-label={`${event.label} destination mode`}
+                    >
+                      <button
+                        type="button"
+                        aria-pressed={!value.channel_id}
+                        disabled={busy}
+                        onClick={() =>
+                          onEvent(event.key, {
+                            channel_id: null,
+                            forum_tag_id: null,
+                          })
+                        }
+                      >
+                        Use category
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={!!value.channel_id}
+                        disabled={busy}
+                        onClick={() => {
+                          if (!value.channel_id) {
+                            const inherited = effectiveDestination(
+                              draft,
+                              event.key,
+                            ).target;
+                            if (inherited?.channel_id)
+                              onEvent(event.key, inherited);
+                          }
+                        }}
+                      >
+                        Own channel
+                      </button>
+                    </div>
+                    <ModerationDestinationPicker
+                      label={`${event.label} channel override`}
+                      value={value}
+                      channels={channels}
+                      disabled={busy || !inventoryAvailable}
+                      onResolve={(id) => onResolve("event", event.key, id)}
+                      onChange={(target) => onEvent(event.key, target)}
+                    />
+                    {selectedOverride?.type === "forum" && (
+                      <small>New notices create posts in this forum.</small>
+                    )}
+                  </div>
+                  <div className="moderation-event-actions">
+                    <Button
+                      aria-expanded={openPreview === event.key}
                       onClick={() =>
-                        onEvent(event.key, {
-                          channel_id: null,
-                          forum_tag_id: null,
-                        })
+                        setOpenPreview(
+                          openPreview === event.key ? null : event.key,
+                        )
                       }
                     >
-                      Use category
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={!!value.channel_id}
-                      disabled={busy}
-                      onClick={() => {
-                        if (!value.channel_id) {
-                          const inherited = effectiveDestination(
-                            draft,
-                            event.key,
-                          ).target;
-                          if (inherited?.channel_id)
-                            onEvent(event.key, inherited);
-                        }
-                      }}
+                      Preview
+                    </Button>
+                    <Button
+                      disabled={testDisabled}
+                      title={
+                        !effective.target?.channel_id
+                          ? "Select a channel first"
+                          : dirty
+                            ? "Save changes first"
+                            : undefined
+                      }
+                      onClick={() => onTest(event.key)}
                     >
-                      Own channel
-                    </button>
+                      Send test
+                    </Button>
                   </div>
-                  <ModerationDestinationPicker
-                    label={`${event.label} channel override`}
-                    value={value}
-                    channels={channels}
-                    disabled={busy || !inventoryAvailable}
-                    onResolve={(id) => onResolve("event", event.key, id)}
-                    onChange={(target) => onEvent(event.key, target)}
-                  />
-                  {selectedOverride?.type === "forum" && (
-                    <small>New notices create posts in this forum.</small>
+                  {!effective.target?.channel_id && (
+                    <small>Select a channel first</small>
                   )}
-                </div>
-              )}
-              {openPreview === event.key && (
-                <div className="moderation-event-preview">
-                  <h4>{event.label} preview</h4>
-                  <ModerationPreviewCard
-                    payload={preview}
-                    names={saved.preview_names}
-                    forum={forumPreview}
-                  />
+                  {dirty && <small>Save changes first to send a test.</small>}
+                  {openPreview === event.key && (
+                    <div className="moderation-event-preview">
+                      <h4>{event.label} preview</h4>
+                      <ModerationPreviewCard
+                        payload={preview}
+                        names={saved.preview_names}
+                        forum={forumPreview}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           );
         })}
       </div>
-      {children}
-    </section>
+    </details>
   );
 }

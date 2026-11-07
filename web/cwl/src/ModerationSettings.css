@@ -6,7 +6,6 @@
 }
 
 .moderation-settings-heading,
-.moderation-category-head,
 .moderation-settings-save {
   display: flex;
   align-items: flex-start;
@@ -53,7 +52,8 @@
 
 .moderation-main-route,
 .moderation-ignored-bots,
-.moderation-category-card {
+.moderation-category-card,
+.moderation-not-logged {
   min-width: 0;
   padding: 16px;
   border: 1px solid #536173;
@@ -79,17 +79,6 @@
 .moderation-category-list {
   display: grid;
   gap: 14px;
-}
-
-.moderation-category-head {
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.moderation-category-head h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .moderation-category-switch {
@@ -205,7 +194,7 @@
 
 .moderation-event-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -216,7 +205,6 @@
   gap: 8px;
   padding: 12px;
   border: 1px solid #495563;
-  border-left: 4px solid var(--moderation-accent);
   border-radius: 10px;
   background: #252b35;
 }
@@ -248,19 +236,6 @@
   outline-offset: 3px;
 }
 
-.moderation-event-tools {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.moderation-event-tools small {
-  color: #c7d1de;
-  font-size: 12px;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
 .moderation-event-actions,
 .moderation-override-options {
   display: flex;
@@ -269,7 +244,6 @@
   gap: 4px;
 }
 
-.moderation-event-actions button,
 .moderation-override-options button {
   min-height: 44px;
   padding: 0 8px;
@@ -331,7 +305,7 @@
 .moderation-settings-save {
   align-items: center;
   margin: 16px 0;
-  padding: 14px 16px;
+  padding: 4px 12px;
   border: 1px solid #536173;
   border-radius: 10px;
   background: #192331;
@@ -406,10 +380,6 @@
   }
 }
 
-.moderation-category-head {
-  flex-wrap: wrap;
-}
-
 .moderation-category-switch {
   max-width: 100%;
   min-width: 0;
@@ -425,7 +395,7 @@
   display: grid;
   min-width: 0;
   gap: 10px;
-  margin-top: 10px;
+  margin-top: 0;
   padding: 12px;
   border: 1px solid #495563;
   border-radius: 10px;
@@ -504,15 +474,15 @@
   gap: 8px;
 }
 
-.moderation-invite-head h4 {
-  margin: 0;
-}
-
 .moderation-invite-list {
   display: grid;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.moderation-settings .moderation-invite-list a {
+  color: var(--wu-text);
 }
 
 .moderation-invite-list li {
@@ -557,4 +527,147 @@
 .moderation-health li.is-error {
   border-color: #a8384b;
   background: #301a1f;
+}
+
+/* Routing disclosures keep status visible while occasional controls stay closed. */
+.moderation-category-summary {
+  cursor: pointer;
+}
+.moderation-category-summary > .moderation-category-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+}
+.moderation-category-title {
+  min-width: 0;
+}
+.moderation-category-title small {
+  display: block;
+  margin-top: 6px;
+  color: #c7d1de;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.moderation-category-routing {
+  margin-top: 12px;
+}
+.moderation-category-card > .moderation-event-list {
+  margin-top: 12px;
+}
+.moderation-event-head,
+.moderation-invite-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.moderation-event-pill {
+  min-width: 0;
+}
+.moderation-event-status {
+  margin: 0;
+  color: #c7d1de;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.moderation-event-status.is-unavailable {
+  color: var(--roster-card-text-danger);
+  -webkit-text-fill-color: currentColor;
+}
+.moderation-event-editor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.moderation-event-editor > small {
+  color: #c7d1de;
+  font-size: 12px;
+}
+.moderation-not-logged {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+.moderation-not-logged .moderation-ignored-bots {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+.moderation-not-logged .moderation-ignore-lists {
+  margin: 0;
+}
+.moderation-invite-names {
+  margin-top: 14px;
+}
+.moderation-invite-row-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.moderation-invite-editor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.moderation-other-invites > summary {
+  min-height: 44px;
+  cursor: pointer;
+}
+.moderation-invite-unsaved {
+  color: #f5d995;
+}
+.moderation-settings-save {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+}
+.moderation-settings-save > .moderation-destination-warning {
+  display: block;
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.moderation-settings-save > p:not(.moderation-destination-warning) {
+  flex: 1 0 auto;
+  white-space: nowrap;
+}
+.moderation-settings-save > div {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+@media (max-width: 650px) {
+  .moderation-category-summary > .moderation-category-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .moderation-category-title {
+    grid-column: 1 / -1;
+  }
+  .moderation-category-summary > .moderation-category-head > .roster-ui-button {
+    justify-self: end;
+  }
+  .moderation-settings .channel-keyboard-hint {
+    display: none;
+  }
+  .moderation-event-head {
+    align-items: start;
+  }
+  .moderation-event-pill {
+    flex-wrap: wrap;
+    padding-block: 6px;
+  }
 }

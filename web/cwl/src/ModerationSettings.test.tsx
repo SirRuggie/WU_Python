@@ -2,7 +2,12 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { SettingsResponse } from "./moderationSettingsModel";
+import {
+  moderationRegistry,
+  eventTypes,
+  type SettingsResponse,
+} from "./moderationSettingsModel";
+import { moderationRoutingSummary } from "./ModerationCategoryCard";
 const transport = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (original) => ({
   ...(await original<typeof import("./api")>()),
@@ -230,7 +235,7 @@ afterEach(async () => {
   host.remove();
 });
 it("requires explicit save and supports discard of an event override", async () => {
-  await act(async () => button("Change").click());
+  await openEvent("join");
   const override = host.querySelector<HTMLSelectElement>(
     '[aria-label="Joins channel override"]',
   )!;
@@ -238,13 +243,13 @@ it("requires explicit save and supports discard of an event override", async () 
     override.value = "other";
     override.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  expect(host.textContent).toContain("Uses its own channel · #other-logs");
+  expect(host.textContent).toContain("Posts to #other-logs");
   expect(button("Send test").hasAttribute("disabled")).toBe(true);
   expect(transport.mock.calls.filter((call) => call[1] === "PUT")).toHaveLength(
     0,
   );
   await act(async () => button("Discard").click());
-  expect(host.textContent).toContain("Uses the main channel · #main-logs");
+  expect(host.textContent).toContain("Posts to #main-logs");
   const joinSwitch = host.querySelector<HTMLInputElement>(
     '[aria-label="Joins logging"]',
   )!;
@@ -255,6 +260,7 @@ it("requires explicit save and supports discard of an event override", async () 
   ).toMatchObject({ revision: 4, events: { join: { enabled: false } } });
 });
 it("renders the payload preview and confirms a test without saving", async () => {
+  await openEvent("kick");
   const kick = [...host.querySelectorAll(".moderation-event-row")].find((row) =>
     row.textContent?.includes("Kicks"),
   )!;
@@ -291,20 +297,21 @@ it("renders every supported event control and no placeholders", () => {
   expect(host.textContent).toContain("AutoMod rules");
   expect(host.querySelectorAll(".moderation-event-row")).toHaveLength(32);
 });
-it("puts the shared ignore note after the message rows", () => {
+it("puts the shared message ignores in Not logged after routing", () => {
   const card = [...host.querySelectorAll(".moderation-category-card")].find(
     (el) => el.querySelector("h3")?.textContent?.includes("Messages"),
   )!;
   const rows = card.querySelectorAll(".moderation-event-row");
   expect(rows).toHaveLength(4);
-  const note = card.querySelector(".moderation-ignore-note")!;
+  const notLogged = host.querySelector(".moderation-not-logged")!;
+  const note = notLogged.querySelector(".moderation-ignore-note")!;
   expect(note.textContent).toBe("Applies to all message logs.");
   expect(
     rows[3].compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
     note.compareDocumentPosition(
-      card.querySelector(".moderation-ignore-lists")!,
+      notLogged.querySelector(".moderation-ignore-lists")!,
     ) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });
@@ -393,6 +400,7 @@ it("keeps unsaved edits after a revision conflict", async () => {
 });
 
 it("restores the last active mode despite a retained own channel", async () => {
+  await openCategory("members");
   const card = host.querySelector(".moderation-category-card")!;
   const mode = card.querySelector<HTMLSelectElement>(
     ".moderation-category-routing select",
@@ -418,7 +426,7 @@ it("restores the last active mode despite a retained own channel", async () => {
   await act(async () => toggle.click());
   await act(async () => toggle.click());
   expect(mode.value).toBe("main");
-  expect(card.textContent).toContain("Uses the main channel");
+  expect(card.textContent).toContain("Posts to #main-logs");
   await change(mode, "own");
   expect(
     card.querySelector<HTMLSelectElement>('[aria-label="Members channel"]')!
@@ -441,12 +449,18 @@ it("shows the missing effective channel without changing enabled settings", asyn
   const card = [...host.querySelectorAll(".moderation-category-card")].find(
     (el) => el.textContent?.includes("Kicks"),
   )!;
+  expect(card.querySelector(".moderation-category-switch")?.textContent).toBe(
+    "On",
+  );
   expect(
-    card.querySelector(".moderation-category-switch")?.textContent,
-  ).toContain("Not posting — no channel set");
+    card.querySelector(".moderation-category-title small")?.textContent,
+  ).toBe("Not posting");
   expect(card.querySelectorAll(".moderation-event-row")).toHaveLength(5);
   for (const row of card.querySelectorAll(".moderation-event-row")) {
-    expect(row.textContent).toContain("Not posting — no channel set");
+    expect(row.querySelector(".moderation-event-status")?.textContent).toBe(
+      "Not posting",
+    );
+    await openEvent(row.getAttribute("data-event")!);
     const test = [...row.querySelectorAll("button")].find(
       (b) => b.textContent === "Send test",
     )!;
@@ -476,7 +490,7 @@ const change = async (element: HTMLElement, value: string) => {
   });
 };
 it("renders all seven categories", () => {
-  const titles = [...host.querySelectorAll(".moderation-category-head h3")].map(
+  const titles = [...host.querySelectorAll(".moderation-category-name")].map(
     (item) => item.textContent?.trim(),
   );
   expect(titles).toEqual([
@@ -512,7 +526,10 @@ it("saves link ignores with the draft and flags them as unsaved", async () => {
 it("lists invites with uses and saves edited names; clearing removes", async () => {
   expect(host.textContent).toContain("3 / 10 uses");
   expect(host.textContent).toContain("40 uses");
-  expect(host.textContent).toContain("Vanity URL");
+  expect(
+    host.querySelector('a[href="https://discord.gg/wu"]')?.textContent,
+  ).toBe("discord.gg/wu");
+  await openInvite("abc123");
   const input = host.querySelector<HTMLInputElement>(
     '[aria-label="Name for abc123"]',
   )!;
@@ -521,7 +538,11 @@ it("lists invites with uses and saves edited names; clearing removes", async () 
   expect(
     transport.mock.calls.find((call) => call[1] === "PUT")?.[2].invite_names,
   ).toEqual({ abc123: "Spring ad" });
-  await change(input, "");
+  await openInvite("abc123");
+  await change(
+    host.querySelector<HTMLInputElement>('[aria-label="Name for abc123"]')!,
+    "",
+  );
   expect(host.textContent).toContain("All changes saved");
 });
 it("lists stale saved names, removes them from the draft only, and validates names", async () => {
@@ -545,6 +566,7 @@ it("lists stale saved names, removes them from the draft only, and validates nam
   await act(async () => button("Remove").click());
   expect(host.textContent).not.toContain("No longer active");
   expect(button("Save changes").disabled).toBe(false);
+  await openInvite("abc123");
   await change(
     host.querySelector<HTMLInputElement>('[aria-label="Name for abc123"]')!,
     "👨\u200d👩\u200d👧 fam",
@@ -743,7 +765,7 @@ it("shows ignored bots by name, adds and removes, and saves the ids", async () =
 it("shows the bot list as unavailable and omits it from the save", async () => {
   expect(botBlock().textContent).toContain("Bot list unavailable.");
   expect(botBlock().querySelector("select")).toBeNull();
-  await act(async () => button("Change").click());
+  await openEvent("join");
   const override = host.querySelector<HTMLSelectElement>(
     '[aria-label="Joins channel override"]',
   )!;
@@ -753,3 +775,237 @@ it("shows the bot list as unavailable and omits it from the save", async () => {
   expect(body).toBeDefined();
   expect("ignored_bot_ids" in body).toBe(false);
 });
+
+async function openCategory(category: string) {
+  const card = host.querySelector<HTMLDetailsElement>(
+    `details:has(#moderation-${category}-title)`,
+  )!;
+  const toggle = card.querySelector<HTMLButtonElement>(
+    ".moderation-category-head > button",
+  )!;
+  if (toggle.getAttribute("aria-expanded") !== "true")
+    await act(async () => toggle.click());
+  return card;
+}
+async function openEvent(kind: string) {
+  const row = host.querySelector<HTMLElement>(`[data-event="${kind}"]`)!;
+  const group = row.closest("details")!;
+  if (!group.open)
+    await act(async () => group.querySelector("summary")!.click());
+  const toggle = row.querySelector<HTMLButtonElement>(
+    ".moderation-event-head > button",
+  )!;
+  if (toggle.getAttribute("aria-expanded") !== "true")
+    await act(async () => toggle.click());
+  return row;
+}
+async function openInvite(code: string) {
+  const row = [
+    ...host.querySelectorAll<HTMLElement>("[data-invite-code]"),
+  ].find((node) => node.dataset.inviteCode === code)!;
+  const group = row.closest("details");
+  if (group && !group.open)
+    await act(async () => group.querySelector("summary")!.click());
+  const action = row.querySelector<HTMLButtonElement>("[data-invite-action]")!;
+  if (action.getAttribute("aria-expanded") !== "true")
+    await act(async () => action.click());
+}
+
+it("starts valid groups closed and hides destination, preview and test controls", () => {
+  expect(
+    [
+      ...host.querySelectorAll<HTMLDetailsElement>(".moderation-category-card"),
+    ].every((group) => !group.open),
+  ).toBe(true);
+  expect(host.querySelector(".moderation-category-routing")).toBeNull();
+  expect(host.querySelector(".moderation-event-editor")).toBeNull();
+  expect(button("Preview")).toBeUndefined();
+  expect(button("Send test")).toBeUndefined();
+  expect(
+    host.querySelector(".moderation-other-invites")?.hasAttribute("open"),
+  ).toBe(false);
+});
+it.each([
+  ["all", "Posts to #main-logs"],
+  ["none", "Not posting"],
+  ["mixed", "Posts to #main-logs · 1 not posting"],
+  ["dead", "Posts to #main-logs · 1 not posting"],
+  ["different", "Posts to 2 channels"],
+  ["different-mixed", "Posts to 2 channels · 1 not posting"],
+  ["cannot-post", "Posts to #main-logs · 1 not posting"],
+  ["inventory", "Not posting"],
+])(
+  "summarizes %s routes without hiding nonposting notices",
+  (scenario, expected) => {
+    const draft = structuredClone(fixture);
+    const channels = structuredClone(fixture.channels!);
+    if (scenario === "none") draft.categories.members.mode = "off";
+    if (scenario === "mixed" || scenario === "different-mixed")
+      draft.events.join.enabled = false;
+    if (scenario === "dead") draft.events.join.channel_id = "gone";
+    if (scenario === "different" || scenario === "different-mixed")
+      draft.events.leave.channel_id = "other";
+    if (scenario === "cannot-post") {
+      draft.events.join.channel_id = "other";
+      channels.find((channel) => channel.id === "other")!.can_post = false;
+    }
+    expect(
+      moderationRoutingSummary(
+        ["join", "leave", "member_update"],
+        draft,
+        channels,
+        scenario !== "inventory",
+      ),
+    ).toBe(expected);
+  },
+);
+it("starts a dead-channel group open and preserves enabled switches and test guards", async () => {
+  const broken = structuredClone(fixture);
+  broken.events.join.channel_id = "gone";
+  transport.mockImplementation(async (path) =>
+    path === "/manage/member-events/settings"
+      ? broken
+      : path.endsWith("invites")
+        ? invites()
+        : health(),
+  );
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () => root.render(<ModerationSettings />));
+  await settle();
+  const row = host.querySelector('[data-event="join"]')!;
+  expect(row.closest("details")!.open).toBe(true);
+  expect(
+    row
+      .querySelector(".moderation-event-status")
+      ?.classList.contains("is-unavailable"),
+  ).toBe(true);
+  expect(row.textContent).toContain("Channel unavailable · not posting");
+  await openEvent("join");
+  expect(
+    [...row.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Send test",
+    )!.disabled,
+  ).toBe(true);
+  expect(
+    host.querySelector<HTMLInputElement>('[aria-label="Joins logging"]')!
+      .checked,
+  ).toBe(true);
+});
+
+function baselineWire(settings: SettingsResponse) {
+  return {
+    revision: settings.revision,
+    main: structuredClone(settings.main),
+    categories: Object.fromEntries(
+      moderationRegistry.map(({ key }) => [
+        key,
+        structuredClone(settings.categories[key]),
+      ]),
+    ),
+    events: Object.fromEntries(
+      eventTypes.map(({ key }) => [key, structuredClone(settings.events[key])]),
+    ),
+    ignores: structuredClone(settings.ignores),
+    invite_names: Object.fromEntries(
+      Object.entries(settings.invite_names)
+        .map(([code, name]) => [code, name.trim()])
+        .filter(([, name]) => name),
+    ),
+    ...(Array.isArray(settings.ignored_bot_ids)
+      ? { ignored_bot_ids: [...settings.ignored_bot_ids] }
+      : {}),
+  };
+}
+it.each([
+  "notice-own",
+  "group-main",
+  "group-off",
+  "invite-name",
+  "bot-add",
+  "bot-remove",
+])(
+  "keeps the baseline save body byte-equal for %s and Discard restores it",
+  async (scenario) => {
+    const settings = structuredClone(fixture);
+    settings.ignored_bot_ids = ["900000000000000001"];
+    settings.bot_actors = [
+      { id: "900000000000000001", name: "Helper", last_seen: null },
+      { id: "900000000000000002", name: "Other", last_seen: null },
+    ];
+    if (scenario === "group-main")
+      settings.categories.members = {
+        mode: "own",
+        channel_id: "other",
+        forum_tag_id: null,
+      };
+    transport.mockImplementation(async (path, method, body) => {
+      if (path.endsWith("/settings"))
+        return method === "PUT"
+          ? { ...settings, ...body, revision: 5 }
+          : structuredClone(settings);
+      if (path.endsWith("/invites")) return invites();
+      if (path.endsWith("/health")) return health();
+      throw Error(`Unexpected ${path}`);
+    });
+    await act(async () => button("Refresh settings").click());
+    await settle();
+    const expected = baselineWire(settings);
+    if (scenario === "notice-own") expected.events.join.channel_id = "other";
+    if (scenario === "group-main") expected.categories.members.mode = "main";
+    if (scenario === "group-off") expected.categories.members.mode = "off";
+    if (scenario === "invite-name")
+      expected.invite_names = { abc123: "Reddit" };
+    if (scenario === "bot-add")
+      expected.ignored_bot_ids!.push("900000000000000002");
+    if (scenario === "bot-remove") expected.ignored_bot_ids = [];
+    const edit = async () => {
+      if (scenario === "notice-own") {
+        await openEvent("join");
+        await change(
+          host.querySelector('[aria-label="Joins channel override"]')!,
+          "other",
+        );
+      }
+      if (scenario.startsWith("group-")) {
+        const card = await openCategory("members");
+        await change(
+          card.querySelector(".moderation-category-routing select")!,
+          scenario === "group-main" ? "main" : "off",
+        );
+      }
+      if (scenario === "invite-name") {
+        await openInvite("abc123");
+        const input = host.querySelector<HTMLInputElement>(
+          '[aria-label="Name for abc123"]',
+        )!;
+        await change(input, " Reddit ");
+        await act(async () =>
+          input.dispatchEvent(new FocusEvent("focusout", { bubbles: true })),
+        );
+      }
+      if (scenario === "bot-add")
+        await change(botBlock().querySelector("select")!, "900000000000000002");
+      if (scenario === "bot-remove")
+        await act(async () =>
+          botBlock()
+            .querySelector<HTMLButtonElement>('[aria-label="Remove @Helper"]')!
+            .click(),
+        );
+    };
+    await edit();
+    expect(button("Save changes").disabled).toBe(false);
+    await act(async () => button("Discard").click());
+    expect(button("Save changes").disabled).toBe(true);
+    expect(
+      transport.mock.calls.filter(([, method]) => method === "PUT"),
+    ).toHaveLength(0);
+    await edit();
+    await act(async () => button("Save changes").click());
+    const writes = transport.mock.calls.filter(
+      ([, method]) => method === "PUT",
+    );
+    expect(writes).toHaveLength(1);
+    expect(JSON.stringify(writes[0][2])).toBe(JSON.stringify(expected));
+  },
+);
