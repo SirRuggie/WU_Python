@@ -343,10 +343,13 @@ div.shell {
     padding: 0 var(--wu-space-3);
   }
   .shell .topbar > div > strong {
-    display: block;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
   }
   .cwl-workspace-nav {
     flex-wrap: wrap;
