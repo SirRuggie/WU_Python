@@ -22,11 +22,11 @@ ASSET_NAMES = frozenset({
     '52519.webp', '145450.webp', '134729.webp', '160043.webp',
 })
 TITLES = (
-    '', 'Remove all signups?', 'Working...', 'HEY!! WHAT ARE YOU DOING?!',
+    '', 'Remove all signups?', 'Working…', 'HEY!! WHAT ARE YOU DOING?!',
     'Buttons Fear You', 'Trust Me, He Says', 'Relax, Nothing Broke',
     "We've Got Your Back", 'A Promise From Your Troops', 'Sound Familiar Yet?',
     "YOU'VE BEEN RICKROLLED!", 'LOL. You Thought.', 'A Message From Your Troops',
-    'Am I Annoying You Yet?', 'One Last Thing, Chief...', 'Well, Look Who Survived.',
+    'Am I Annoying You Yet?', 'One Last Thing, Chief…', 'Well, Look Who Survived.',
 )
 MESSAGES = {
     'prank_opened': '😈 He opened the bait. The trap is officially armed.',
