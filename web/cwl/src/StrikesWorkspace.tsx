@@ -1481,6 +1481,8 @@ export default function StrikesWorkspace({
                     setSelectedMember("");
                     setLeaveTags([]);
                   }}
+                  spellCheck={false}
+                  autoComplete="off"
                   placeholder="Name or Discord ID"
                 />
               </label>

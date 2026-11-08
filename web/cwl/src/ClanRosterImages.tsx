@@ -302,6 +302,7 @@ export default function ClanRosterImages({
                             <a
                               target="_blank"
                               rel="noopener noreferrer"
+                              className="target-44"
                               href={`https://discord.com/channels/${DISCORD_GUILD_ID}/${post.channel_id}/${post.message_id}`}
                             >
                               View in Discord ↗

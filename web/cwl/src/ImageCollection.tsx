@@ -1,3 +1,11 @@
+import useConfirmDialog from "./useConfirmDialog";
+import {
+  registerActionPanel,
+  isTopActionPanel,
+  panelHistoryState,
+  installPanelBackHandler,
+  backOutOfPanelEntry,
+} from "./actionPanelHistory";
 import { useEffect, useRef, useState } from "react";
 import { api, apiUpload, ApiError } from "./api";
 import { imageCategory, defaultImageCategories } from "./imageCategories";
@@ -15,6 +23,49 @@ const expected = (item: ImageItem) => ({
   folder: item.folder || "",
   archived: item.archived,
 });
+
+let imageConfirmationSerial = 0;
+function useImageConfirmation() {
+  const [decision, setDecision] = useState(0);
+  const pending = useRef(false);
+  const { confirm, dialog } = useConfirmDialog(String(decision));
+  async function ask(text: string, label = "Discard changes") {
+    if (pending.current) return false;
+    pending.current = true;
+    const marker = `image-confirm-${++imageConfirmationSerial}`;
+    const unregister = registerActionPanel(marker);
+    const state = panelHistoryState(window.history.state, marker);
+    let consumed = false;
+    window.history.pushState(state, "", window.location.href);
+    const uninstall = installPanelBackHandler({
+      windowPort: window,
+      historyPort: window.history,
+      marker,
+      panelState: state,
+      isBusy: () => false,
+      isTop: () => isTopActionPanel(marker),
+      close: () => {
+        consumed = true;
+        setDecision((value) => value + 1);
+      },
+    });
+    try {
+      return await confirm(text, label);
+    } finally {
+      uninstall();
+      unregister();
+      if (!consumed)
+        backOutOfPanelEntry({
+          windowPort: window,
+          historyPort: window.history,
+          marker,
+        });
+      pending.current = false;
+    }
+  }
+  return { ask, dialog };
+}
+
 export default function ImageCollection({
   onChoose,
   onDirty,
@@ -22,7 +73,7 @@ export default function ImageCollection({
 }: {
   onChoose?: (url: string) => void;
   onDirty?: (value: boolean) => void;
-  onGuard?: (guard: () => boolean) => void;
+  onGuard?: (guard: () => Promise<boolean>) => void;
 }) {
   const [images, setImages] = useState<ImageItem[]>([]),
     [query, setQuery] = useState(""),
@@ -54,10 +105,26 @@ export default function ImageCollection({
     ) ||
     !!link.trim() ||
     files.length > 0;
-  const guard = () =>
-    !operation.current &&
-    (!dirty ||
-      window.confirm("Discard unsaved image details or pending uploads?"));
+  const { ask, dialog } = useImageConfirmation();
+  const guarding = useRef(false);
+  const guard = async () => {
+    if (operation.current || guarding.current) return false;
+    guarding.current = true;
+    const turn = sequence.current;
+    try {
+      const allowed =
+        !dirty ||
+        (await ask("Discard unsaved image details or pending uploads?"));
+      return (
+        allowed &&
+        alive.current &&
+        !operation.current &&
+        turn === sequence.current
+      );
+    } finally {
+      guarding.current = false;
+    }
+  };
   useEffect(() => {
     onDirty?.(dirty || busy);
     onGuard?.(guard);
@@ -156,7 +223,7 @@ export default function ImageCollection({
     });
   }
   async function archive(item: ImageItem) {
-    if (!guard()) return;
+    if (!(await guard())) return;
     await run(async () => {
       const result = await update(item, { archived: !item.archived });
       setImages((rows) =>
@@ -172,7 +239,7 @@ export default function ImageCollection({
     });
   }
   async function moveSelected() {
-    if (!guard()) return;
+    if (!(await guard())) return;
     await run(async () => {
       const completed: string[] = [];
       try {
@@ -274,12 +341,13 @@ export default function ImageCollection({
     current = Math.min(page, pages - 1);
   return (
     <div className="image-collection">
+      {dialog}
       <div className="gallery-toolbar">
         <button
           className="primary"
           disabled={busy}
-          onClick={() => {
-            if (!guard()) return;
+          onClick={async () => {
+            if (!(await guard())) return;
             setEditing(null);
             setLink("");
             setFiles([]);
@@ -291,8 +359,8 @@ export default function ImageCollection({
         </button>
         <button
           disabled={busy || loading}
-          onClick={() => {
-            if (!guard()) return;
+          onClick={async () => {
+            if (!(await guard())) return;
             setEditing(null);
             setLink("");
             setFiles([]);
@@ -371,10 +439,11 @@ export default function ImageCollection({
           <input
             type="search"
             value={query}
-            onChange={(e) => {
-              if (!guard()) return;
+            onChange={async (e) => {
+              const value = e.currentTarget.value;
+              if (!(await guard())) return;
               setEditing(null);
-              setQuery(e.target.value);
+              setQuery(value);
             }}
             placeholder="Name, category or command"
           />
@@ -384,10 +453,11 @@ export default function ImageCollection({
           <select
             disabled={busy}
             value={folder}
-            onChange={(e) => {
-              if (!guard()) return;
+            onChange={async (e) => {
+              const value = e.currentTarget.value;
+              if (!(await guard())) return;
               setEditing(null);
-              setFolder(e.target.value);
+              setFolder(value);
               setSelected([]);
             }}
           >
@@ -403,10 +473,11 @@ export default function ImageCollection({
           <select
             disabled={busy}
             value={filter}
-            onChange={(e) => {
-              if (!guard()) return;
+            onChange={async (e) => {
+              const value = e.currentTarget.value;
+              if (!(await guard())) return;
               setEditing(null);
-              setFilter(e.target.value);
+              setFilter(value);
               setSelected([]);
             }}
           >
@@ -495,8 +566,8 @@ export default function ImageCollection({
                     <button
                       className="primary"
                       disabled={busy || item.archived}
-                      onClick={() => {
-                        if (guard()) onChoose(item.url);
+                      onClick={async () => {
+                        if (await guard()) onChoose(item.url);
                       }}
                     >
                       Use image
@@ -519,8 +590,8 @@ export default function ImageCollection({
                   <button
                     disabled={busy}
                     aria-expanded={editing?.url === item.url}
-                    onClick={() => {
-                      if (!guard()) return;
+                    onClick={async () => {
+                      if (!(await guard())) return;
                       setEditing(editing?.url === item.url ? null : item);
                       setName(item.name);
                       setCategory(imageCategory(item.folder));
@@ -580,8 +651,8 @@ export default function ImageCollection({
             <nav className="gallery-pages" aria-label="Image pages">
               <button
                 disabled={busy || current === 0}
-                onClick={() => {
-                  if (guard()) {
+                onClick={async () => {
+                  if (await guard()) {
                     setEditing(null);
                     setPage(current - 1);
                   }
@@ -594,8 +665,8 @@ export default function ImageCollection({
               </span>
               <button
                 disabled={busy || current === pages - 1}
-                onClick={() => {
-                  if (guard()) {
+                onClick={async () => {
+                  if (await guard()) {
                     setEditing(null);
                     setPage(current + 1);
                   }
@@ -615,8 +686,8 @@ export default function ImageCollection({
         </p>
         <button
           disabled={busy || loading}
-          onClick={() => {
-            if (guard()) void sync();
+          onClick={async () => {
+            if (await guard()) void sync();
           }}
         >
           Check storage for images

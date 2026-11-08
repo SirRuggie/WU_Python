@@ -199,15 +199,15 @@ export default function PublicationWorkspace({
   const hasWarnings = checks.some((check) => check.accounts.length > 0);
   const canPublish = Boolean(
     draft &&
-      canManage &&
-      !locked &&
-      !loading &&
-      !error &&
-      !archived &&
-      instructions.length <= 2000 &&
-      changesReady &&
-      draft.preview.accounts.length &&
-      (draft.preview.unassigned_count === 0 || acknowledged),
+    canManage &&
+    !locked &&
+    !loading &&
+    !error &&
+    !archived &&
+    instructions.length <= 2000 &&
+    changesReady &&
+    draft.preview.accounts.length &&
+    (draft.preview.unassigned_count === 0 || acknowledged),
   );
 
   const publishReason = publicationBlockingReason({
@@ -443,9 +443,13 @@ export default function PublicationWorkspace({
         />
       )}
 
-      <CwlPageHeader title={<h1 ref={pageHeading} tabIndex={-1}>
-        {step === "announce" ? "Announcements" : "Finalize roster"}
-      </h1>}>
+      <CwlPageHeader
+        title={
+          <h1 ref={pageHeading} tabIndex={-1}>
+            {step === "announce" ? "Announcements" : "Finalize roster"}
+          </h1>
+        }
+      >
         <RosterMenu
           label="Season"
           value={seasonId}
@@ -743,7 +747,7 @@ export default function PublicationWorkspace({
             className="card"
             onToggle={(event) => setImagesOpen(event.currentTarget.open)}
           >
-            <summary>Testing and images</summary>
+            <summary className="target-summary-44">Testing and images</summary>
             {imagesOpen && (
               <ClanRosterImages
                 key={seasonId}

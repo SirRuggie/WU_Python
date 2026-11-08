@@ -332,15 +332,17 @@
   background: #69bf86;
 }
 
-.moderation-settings-save .primary {
-  border: 1px solid #f8dc8e;
-  background: #f4cd64;
-  color: #241b08;
-  -webkit-text-fill-color: #241b08;
+.moderation-settings-save .primary:not(:disabled) {
+  border: 1px solid var(--wu-accent);
+  background: var(--wu-accent);
+  color: var(--wu-accent-ink);
+  -webkit-text-fill-color: var(--wu-accent-ink);
 }
-
-.moderation-settings-save .primary:hover:not(:disabled) {
-  background: #ffdc7b;
+@media (hover: hover) and (pointer: fine) {
+  .moderation-settings-save .primary:hover:not(:disabled) {
+    background: var(--wu-accent-hover);
+    border-color: var(--wu-accent-hover);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

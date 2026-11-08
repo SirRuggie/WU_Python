@@ -801,3 +801,11 @@ integration must preserve the accepted background filler queue predecessor.
 - Press feedback: scale 0.97 (rows and cards 0.99), 120ms cubic-bezier(0.23,1,0.32,1). No tap highlight.
 - All :hover rules sit inside @media (hover: hover) and (pointer: fine). Moderation files are not yet gated.
 - Load status lines must not change page height after first paint (Build roster target: layout shift < 0.01).
+
+## Web guidelines (219)
+
+- :root uses color-scheme: dark. The Sign up guide keeps color-scheme: only light.
+- Page sections under the h1 start at h2. Change the tag, not the look.
+- Disclosures (summary) and standalone arrow links are at least 44px high. Links inside a sentence are not.
+- Confirms use useConfirmDialog, never window.confirm. beforeunload stays native.
+- theme-color and the manifest use #0c0c0e.

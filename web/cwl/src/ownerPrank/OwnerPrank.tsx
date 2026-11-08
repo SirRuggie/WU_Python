@@ -22,6 +22,22 @@ type Props = {
   onError: (message: string) => void;
 };
 
+const artWidths: Record<string, number> = {
+  "78096": 342,
+  "97730": 255,
+  "102860": 328,
+  "97711": 182,
+  "160053": 240,
+  "52519": 243,
+  "145450": 340,
+  "102809": 430,
+  "134729": 292,
+  "102888": 335,
+  "102845": 407,
+  "160043": 335,
+  "final-aq": 209,
+};
+
 const hasOtherDialog = () =>
   Boolean(
     document.querySelector(
@@ -103,12 +119,10 @@ export default function OwnerPrank({
   };
 
   const reconcileStale = async (error: unknown, token: number) => {
-    if (
-      !(
-        error instanceof ApiError &&
-        (error.status === 400 || error.status === 409)
-      )
-    )
+    if (!(
+      error instanceof ApiError &&
+      (error.status === 400 || error.status === 409)
+    ))
       return false;
     try {
       const fresh = await api<PrankState>("/prank/state");
@@ -431,7 +445,13 @@ export default function OwnerPrank({
           <X size={20} aria-hidden="true" />
         </button>
         {card.art && (
-          <img className="owner-prank-character" src={card.art} alt="" />
+          <img
+            className="owner-prank-character"
+            src={card.art}
+            alt=""
+            width={artWidths[card.art.split("/").pop()!.replace(".webp", "")]}
+            height={340}
+          />
         )}
         <div className="owner-prank-copy">
           <h2 id="owner-prank-title">{card.title}</h2>
@@ -444,6 +464,8 @@ export default function OwnerPrank({
           {state.card === 10 && (
             <img
               className="owner-prank-rickroll"
+              width={220}
+              height={220}
               src={rickrollUrl}
               alt="Rick Astley dancing"
             />

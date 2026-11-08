@@ -136,7 +136,7 @@ export default function RosterClanChips({
             key={group.label}
             aria-label={`${group.label} hosting clans`}
           >
-            <h3>{group.label}</h3>
+            <h2>{group.label}</h2>
             <div className="roster-clan-chips-list">
               {!members.some((member) => member.assignedCount > 0) && (
                 <p className="roster-clan-empty-note">

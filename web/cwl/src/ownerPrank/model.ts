@@ -43,7 +43,7 @@ export function cardFor(number: number, branch: Branch, count: number): Card {
       };
     case 2:
       return {
-        title: "Working...",
+        title: "Working…",
         body: `Deleted ${count}/${count} signups`,
         buttons: [],
       };
@@ -133,7 +133,7 @@ export function cardFor(number: number, branch: Branch, count: number): Card {
       };
     case 14:
       return {
-        title: "One Last Thing, Chief...",
+        title: "One Last Thing, Chief…",
         body: "Next time you see a big scary button, maybe ask Ruggie to supervise you. Just a thought.",
         buttons: ["I'm begging"],
         art: asset("160043"),
