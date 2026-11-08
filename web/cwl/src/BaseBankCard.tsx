@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 import { baseLink, variantLabel, type BankBase } from "./baseBank";
+import { DiscordText } from "./DiscordPreview";
+
+// Details are read-only; retain mention context without exposing Discord IDs.
+function detailsText(text: string) {
+  return text
+    .replace(/<@&\d+>/g, "@role")
+    .replace(/<@!?\d+>/g, "@member")
+    .replace(/<#\d+>/g, "#channel");
+}
 
 type Details = {
   key: string;
@@ -58,7 +67,7 @@ export default function BaseBankCard({
             src={base.war_base_image}
             alt={`TH${base.town_hall} ${label.toLowerCase()} war base`}
             width={480}
-            height={480}
+            height={300}
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
@@ -70,7 +79,6 @@ export default function BaseBankCard({
       </div>
       <div className="base-bank-card-body">
         <div className="base-bank-tags">
-          <span>TH{base.town_hall}</span>
           <span>{label}</span>
         </div>
         {link ? (
@@ -100,12 +108,20 @@ export default function BaseBankCard({
               ) : !details ? (
                 <p role="status">Loading details…</p>
               ) : (
-                <div className="base-bank-details">
+                <div>
                   {details.base_information && (
-                    <p>{details.base_information}</p>
+                    <div className="base-bank-details">
+                      <DiscordText
+                        text={detailsText(details.base_information)}
+                      />
+                    </div>
                   )}
                   {details.base_upgrade_notes && (
-                    <p>{details.base_upgrade_notes}</p>
+                    <div className="base-bank-details">
+                      <DiscordText
+                        text={detailsText(details.base_upgrade_notes)}
+                      />
+                    </div>
                   )}
                 </div>
               ))}

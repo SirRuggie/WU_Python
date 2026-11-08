@@ -87,7 +87,7 @@ it("sorts merged first, shows no copy button for missing link, uses uncropped im
   expect(host.textContent).toContain("Base image not available yet");
   expect(mock.api).toHaveBeenCalledTimes(1);
 });
-it("does not fetch details until open; renders external text as plain text", async () => {
+it("does not fetch details until open and never renders external HTML", async () => {
   await mount();
   expect(mock.api).toHaveBeenCalledTimes(1);
   mock.api.mockResolvedValue({
@@ -102,8 +102,105 @@ it("does not fetch details until open; renders external text as plain text", asy
   });
   await flush();
   expect(mock.api).toHaveBeenCalledTimes(2);
-  expect(host.textContent).toContain("<img src=x onerror=alert(1)>");
   expect(host.querySelector("img")).toBeNull();
+  expect(host.querySelector("[onerror]")).toBeNull();
+});
+
+it("renders both Details blocks with safe Discord formatting and non-clickable links", async () => {
+  await mount();
+  mock.api.mockResolvedValue({
+    key: "th18_new",
+    base_information: [
+      "# Title",
+      "### Sub",
+      "**bold** :white_check_mark:",
+      "- item",
+      "<:TH18:1447965910735519906>",
+      "[Guide](https://example.com/guide)",
+      "<script>alert('unsafe')</script>",
+      '<img src="x" onerror="alert(1)">',
+    ].join("\n\n"),
+    base_upgrade_notes: "## Upgrade notes\n\n**Keep heroes available**",
+  });
+  const details = host.querySelector("details")!;
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  await flush();
+  const blocks = details.querySelectorAll(".base-bank-details");
+  expect(blocks).toHaveLength(2);
+  expect(blocks[0].querySelector("h1")?.textContent).toBe("Title");
+  expect(blocks[0].querySelector("h3")?.textContent).toBe("Sub");
+  expect(blocks[0].querySelector("strong")?.textContent).toBe("bold");
+  expect(blocks[0].querySelector("li")?.textContent).toBe("item");
+  expect(blocks[0].textContent).toContain("✅");
+  expect(blocks[0].querySelector('img[alt="TH18"]')?.getAttribute("src")).toBe(
+    "https://cdn.discordapp.com/emojis/1447965910735519906.png",
+  );
+  expect(blocks[0].textContent).not.toMatch(/\*\*|#|:white_check_mark:|<:/);
+  expect(blocks[0].querySelector(".discord-preview-link")?.textContent).toBe(
+    "Guide",
+  );
+  expect(blocks[1].querySelector("h2")?.textContent).toBe("Upgrade notes");
+  expect(blocks[1].querySelector("strong")?.textContent).toBe(
+    "Keep heroes available",
+  );
+  expect(details.querySelector("a, script, [onerror]")).toBeNull();
+  expect(details.querySelectorAll("img")).toHaveLength(1);
+  await act(async () =>
+    details.querySelector("img")!.dispatchEvent(new Event("error")),
+  );
+  expect(details.querySelector("img")).toBeNull();
+  expect(details.querySelector(".discord-image-placeholder")?.textContent).toBe(
+    "TH18",
+  );
+  expect(mock.api.mock.calls.every((call) => call[1] === "GET")).toBe(true);
+});
+
+it("keeps mention context in either Details block without exposing Discord IDs", async () => {
+  await mount();
+  mock.api.mockResolvedValue({
+    key: "th18_new",
+    base_information: "Ask <@&123456789012345678> or <@!234567890123456789>.",
+    base_upgrade_notes: "See <#345678901234567890> and <@456789012345678901>.",
+  });
+  const details = host.querySelector("details")!;
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  await flush();
+  expect(details.textContent).toContain("Ask @role or @member.");
+  expect(details.textContent).toContain("See #channel and @member.");
+  expect(details.textContent).not.toMatch(/\d{17,20}|<[@#]/);
+  expect(details.querySelector("a")).toBeNull();
+});
+
+it("keeps Town Hall in accessible names while showing only the variant tag", async () => {
+  mock.api.mockResolvedValue({
+    bases: [{ ...bases[0], war_base_image: "https://example.com/base.png" }],
+  });
+  await mount();
+  expect(host.querySelector("article")?.getAttribute("aria-label")).toBe(
+    "TH18 Non-merged defenses",
+  );
+  expect(
+    host.querySelector(".base-bank-copy")?.getAttribute("aria-label"),
+  ).toBe("Copy TH18 non-merged defenses base");
+  expect(
+    [...host.querySelectorAll(".base-bank-tags span")].map(
+      (tag) => tag.textContent,
+    ),
+  ).toEqual(["Non-merged defenses"]);
+  const image = host.querySelector(".base-bank-image img")!;
+  expect(image.getAttribute("width")).toBe("480");
+  expect(image.getAttribute("height")).toBe("300");
+  await act(async () => image.dispatchEvent(new Event("error")));
+  expect(host.querySelector(".base-bank-image img")).toBeNull();
+  expect(host.querySelector(".base-bank-image")?.textContent).toBe(
+    "Base image not available yet",
+  );
 });
 it("late linked accounts choose their TH but cannot override an explicit selection", async () => {
   await mount(null);

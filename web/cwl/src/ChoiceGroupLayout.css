@@ -90,39 +90,60 @@
   }
 }
 @media (max-width: 680px) {
-  .section-tabs:not(.roster-workflow-nav, .roster-list-pool-tabs),
-  .filter-chips:not(.roster-workflow-nav, .roster-list-pool-tabs) {
+  .section-tabs:not(
+    .roster-workflow-nav,
+    .roster-list-pool-tabs,
+    .base-bank-levels
+  ),
+  .filter-chips:not(
+    .roster-workflow-nav,
+    .roster-list-pool-tabs,
+    .base-bank-levels
+  ) {
     scrollbar-color: var(--wu-text-muted) var(--wu-surface);
   }
   .section-tabs:not(
       .roster-workflow-nav,
-      .roster-list-pool-tabs
+      .roster-list-pool-tabs,
+      .base-bank-levels
     )::-webkit-scrollbar,
   .filter-chips:not(
       .roster-workflow-nav,
-      .roster-list-pool-tabs
+      .roster-list-pool-tabs,
+      .base-bank-levels
     )::-webkit-scrollbar {
     height: 6px;
   }
   .section-tabs:not(
       .roster-workflow-nav,
-      .roster-list-pool-tabs
+      .roster-list-pool-tabs,
+      .base-bank-levels
     )::-webkit-scrollbar-track,
   .filter-chips:not(
       .roster-workflow-nav,
-      .roster-list-pool-tabs
+      .roster-list-pool-tabs,
+      .base-bank-levels
     )::-webkit-scrollbar-track {
     background: var(--wu-surface);
   }
   .section-tabs:not(
       .roster-workflow-nav,
-      .roster-list-pool-tabs
+      .roster-list-pool-tabs,
+      .base-bank-levels
     )::-webkit-scrollbar-thumb,
   .filter-chips:not(
       .roster-workflow-nav,
-      .roster-list-pool-tabs
+      .roster-list-pool-tabs,
+      .base-bank-levels
     )::-webkit-scrollbar-thumb {
     background: var(--wu-text-muted);
     border-radius: 4px;
   }
+}
+
+.filter-chips.base-bank-levels {
+  scrollbar-width: none;
+}
+.filter-chips.base-bank-levels::-webkit-scrollbar {
+  display: none;
 }

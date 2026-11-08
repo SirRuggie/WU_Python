@@ -307,9 +307,13 @@ div.shell {
     flex-shrink: 1;
     min-width: 0;
   }
-  .shell .topbar > div {
+  .shell .topbar > div:not(.account-menu) {
     flex: 1;
     overflow: hidden;
+  }
+  .shell .topbar > .account-menu {
+    flex: 0 0 auto;
+    margin-left: auto;
   }
   .shell .topbar > div > strong {
     overflow: hidden;
@@ -336,7 +340,7 @@ div.shell {
   .shell .topbar {
     height: auto;
     min-height: 64px;
-    padding: 0 var(--wu-space-4);
+    padding: 0 var(--wu-space-3);
   }
   .shell .topbar > div > strong {
     display: -webkit-box;
