@@ -28,10 +28,10 @@ export default function SignupWalkthrough({
   const steps = [
     {
       number: 1 as const,
-      title: "Choose your CWL",
+      title: "Select your CWL",
       summary: "Main or Lazy CWL",
       instruction:
-        "Choose Main or Lazy CWL. You can choose a different option for each account.",
+        "Select Main or Lazy CWL. You can select a different option for each account.",
       art: "villager-52545",
       available: true,
     },
@@ -88,7 +88,10 @@ export default function SignupWalkthrough({
                 src={`/assets/tour/${step.art}.webp`}
                 alt=""
                 loading="eager"
-                width={Math.round(120 * artDimensions[step.art].width / artDimensions[step.art].height)}
+                width={Math.round(
+                  (120 * artDimensions[step.art].width) /
+                    artDimensions[step.art].height,
+                )}
                 height={120}
               />
             )}

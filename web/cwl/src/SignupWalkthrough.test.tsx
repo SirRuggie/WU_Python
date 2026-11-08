@@ -31,7 +31,7 @@ it("shows art and a large title only on the current step, with compact inactive 
         host.querySelector(".current .walkthrough-instruction")?.textContent,
       ).toBe(
         [
-          "Choose Main or Lazy CWL. You can choose a different option for each account.",
+          "Select Main or Lazy CWL. You can select a different option for each account.",
           "Select the accounts you want to sign up for Lazy CWL.",
           "Check your accounts. Select Sign up below to finish.",
         ][stage - 1],
