@@ -190,8 +190,10 @@
   padding: var(--wu-space-3) 0;
   min-height: 44px;
 }
-.todo-clan > header a:hover {
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .todo-clan > header a:hover {
+    text-decoration: underline;
+  }
 }
 .todo-task {
   display: grid;

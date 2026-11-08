@@ -21,9 +21,14 @@
   margin: 0;
 }
 
-.account-menu-trigger:hover,
 .account-menu-trigger[data-hovered] {
   background: var(--wu-surface-soft);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .account-menu-trigger:hover {
+    background: var(--wu-surface-soft);
+  }
 }
 
 .account-menu-trigger:focus-visible,

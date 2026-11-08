@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import DeclarationMemberMarks, {
   type DeclarationMarkControl,
 } from "./DeclarationMemberMarks";
@@ -64,7 +65,7 @@ export default function DeclarationExtras({
     ).values(),
   ];
   const counts = [
-    `${row.count} players not on the roster`,
+    `${countLabel(row.count, "player")} not on the roster`,
     ...(unpublishedCount ? [`${unpublishedCount} not published yet`] : []),
     ...(low.length ? [`${low.length} low TH in clan`] : []),
     ...(otherFillers.length

@@ -163,7 +163,7 @@ it("filters extra-member clans without changing the pool-wide ping count", async
   expect(
     host.querySelector("[data-ping-count]")?.getAttribute("data-ping-count"),
   ).toBe(count);
-  expect(host.textContent).toContain("1 players not on the roster");
+  expect(host.textContent).toContain("1 player not on the roster");
 });
 
 it("renders ordinary roster rows before a slow extra-members read completes", async () => {

@@ -434,7 +434,14 @@ export default function CommandBuilder({
                   const block = document.getElementById(
                     "command-block-" + ids[index],
                   );
-                  block?.scrollIntoView({ block: "start", behavior: "smooth" });
+                  block?.scrollIntoView({
+                    block: "start",
+                    behavior: window.matchMedia(
+                      "(prefers-reduced-motion: reduce)",
+                    ).matches
+                      ? "auto"
+                      : "smooth",
+                  });
                   block
                     ?.querySelector<HTMLButtonElement>(".command-block-title")
                     ?.focus({ preventScroll: true });

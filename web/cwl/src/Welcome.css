@@ -41,9 +41,10 @@
   color: var(--wu-info);
 }
 .welcome-screen .primary {
-  background: #2055aa;
-  color: #fff;
-  border-color: #80b5ff;
+  background: var(--wu-accent);
+  border-color: var(--wu-accent);
+  color: var(--wu-accent-ink);
+  border-radius: 999px;
   min-height: 48px;
 }
 .page-link-row {
@@ -61,4 +62,11 @@
 .page-link-row span {
   font-size: var(--wu-text-sm);
   color: #a4dfc4;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .welcome-screen .primary:hover {
+    background: var(--wu-accent-hover);
+    border-color: var(--wu-accent-hover);
+  }
 }

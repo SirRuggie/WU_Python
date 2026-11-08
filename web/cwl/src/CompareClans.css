@@ -359,8 +359,10 @@
     scroll-snap-align: start;
     text-align: left;
   }
-  .compare-workspace button.compare-mobile-card:hover {
-    border-color: var(--wu-text-muted);
+  @media (hover: hover) and (pointer: fine) {
+    .compare-workspace button.compare-mobile-card:hover {
+      border-color: var(--wu-text-muted);
+    }
   }
   .compare-workspace button.compare-mobile-card.is-active {
     box-shadow: none;

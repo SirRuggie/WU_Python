@@ -27,8 +27,10 @@
   font-weight: 650;
   cursor: pointer;
 }
-.roster-ui-button:hover:not(:disabled) {
-  border-color: var(--wu-text-muted);
+@media (hover: hover) and (pointer: fine) {
+  .roster-ui-button:hover:not(:disabled) {
+    border-color: var(--wu-text-muted);
+  }
 }
 .roster-ui-button:disabled {
   cursor: not-allowed;
@@ -39,8 +41,10 @@
   background: var(--roster-gold);
   color: var(--wu-accent-ink);
 }
-.roster-ui-button.is-primary:hover:not(:disabled) {
-  background: var(--roster-gold-strong);
+@media (hover: hover) and (pointer: fine) {
+  .roster-ui-button.is-primary:hover:not(:disabled) {
+    background: var(--roster-gold-strong);
+  }
 }
 .roster-ui-button.is-danger {
   border-color: #8e4545;
@@ -284,16 +288,18 @@
   outline: none;
   outline-offset: 0;
 }
-.roster-ui
-  :is(
-    .roster-ui-button,
-    .roster-menu-trigger,
-    .roster-menu-item,
-    .roster-ui-chip button,
-    .roster-header-more summary
-  ):hover:where(:not(:disabled):not([aria-disabled="true"])) {
-  --roster-control-state-border: var(--wu-text-muted);
-  border-color: var(--roster-control-state-border);
+@media (hover: hover) and (pointer: fine) {
+  .roster-ui
+    :is(
+      .roster-ui-button,
+      .roster-menu-trigger,
+      .roster-menu-item,
+      .roster-ui-chip button,
+      .roster-header-more summary
+    ):hover:where(:not(:disabled):not([aria-disabled="true"])) {
+    --roster-control-state-border: var(--wu-text-muted);
+    border-color: var(--roster-control-state-border);
+  }
 }
 .roster-ui .roster-ui-button.roster-ui[aria-pressed="true"],
 .roster-ui .roster-menu-item:has(.roster-menu-item-check),
@@ -325,8 +331,10 @@
 .roster-ui .roster-ui-chip:has(button:focus-visible) {
   border-color: transparent;
 }
-.roster-ui .roster-ui-button.is-danger:hover:not(:focus-visible) {
-  border-color: var(--roster-danger);
+@media (hover: hover) and (pointer: fine) {
+  .roster-ui .roster-ui-button.is-danger:hover:not(:focus-visible) {
+    border-color: var(--roster-danger);
+  }
 }
 .roster-ui .roster-ui-input input:focus-visible {
   outline: 2px solid var(--roster-text);
@@ -336,11 +344,19 @@
 /* Pseudo-element controls use the same states without a second outer edge. */
 .roster-ui
   .roster-header-working
-  .roster-ui-button:is(:hover, :focus-visible, [aria-pressed="true"]),
-.roster-workspace.roster-ui .roster-header-finalize:is(:hover, :focus-visible) {
+  .roster-ui-button:is(:focus-visible, [aria-pressed="true"]),
+.roster-workspace.roster-ui .roster-header-finalize:focus-visible {
   border-color: transparent;
   background: transparent;
   outline: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .roster-ui .roster-header-working .roster-ui-button:hover,
+  .roster-workspace.roster-ui .roster-header-finalize:hover {
+    border-color: transparent;
+    background: transparent;
+    outline: none;
+  }
 }
 .roster-ui .roster-header-working .roster-ui-button::before,
 .roster-ui .roster-header-finalize::before {

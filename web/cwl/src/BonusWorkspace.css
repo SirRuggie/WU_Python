@@ -237,9 +237,11 @@
   padding: var(--wu-space-2) var(--wu-space-3);
   text-align: center;
 }
-.bonus-quiet-action:hover,
-.bonus-context button:hover {
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .bonus-quiet-action:hover,
+  .bonus-context button:hover {
+    text-decoration: underline;
+  }
 }
 .bonus-empty {
   margin: var(--wu-space-3) 0;

@@ -29,7 +29,7 @@ function opaqueRgba(value: string): [number, number, number, number] {
   return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), 1];
 }
 
-it("keeps the actual signed-out welcome CTA's winning brand colors", async () => {
+it("keeps the actual signed-out welcome CTA gold", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   history.replaceState({}, "", "/home");
   const { ApiError } = await import("./api");
@@ -64,9 +64,10 @@ it("keeps the actual signed-out welcome CTA's winning brand colors", async () =>
     expect(cta?.textContent).toBe("Continue with Discord");
     expect(cta?.getAttribute("href")).toContain("/api/cwl/auth/discord?");
     const computed = getComputedStyle(cta!);
-    expect(opaqueRgba(computed.backgroundColor)).toEqual([32, 85, 170, 1]);
-    expect(opaqueRgba(computed.borderTopColor)).toEqual([128, 181, 255, 1]);
-    expect(opaqueRgba(computed.color)).toEqual([255, 255, 255, 1]);
+    expect(opaqueRgba(computed.backgroundColor)).toEqual([242, 182, 42, 1]);
+    expect(opaqueRgba(computed.borderTopColor)).toEqual([242, 182, 42, 1]);
+    expect(opaqueRgba(computed.color)).toEqual([36, 27, 8, 1]);
+    expect(computed.borderRadius).toBe("999px");
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -80,7 +81,7 @@ it("keeps the actual signed-out welcome CTA's winning brand colors", async () =>
 it("separately preserves the base primary gold declarations, not the welcome CTA", () => {
   const css = readFileSync("src/style.css", "utf8");
   const base = css.match(/(?:^|\n)\.primary\s*\{([^}]+)\}/)?.[1];
-  const hover = css.match(/(?:^|\n)\.primary:hover\s*\{([^}]+)\}/)?.[1];
+  const hover = css.match(/(?:^|\n)\s*\.primary:hover\s*\{([^}]+)\}/)?.[1];
   expect(base).toBeTruthy();
   expect(base).toMatch(/background:\s*#d9a628\s*;/i);
   expect(base).toMatch(/border-color:\s*#d9a628\s*;/i);

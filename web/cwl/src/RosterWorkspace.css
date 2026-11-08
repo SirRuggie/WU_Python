@@ -215,11 +215,13 @@
 .shell .roster-workspace :is(button.active, button[aria-pressed="true"]) {
   border-color: var(--wu-accent);
 }
-.shell
-  .roster-workspace
-  :is(button.active, button[aria-pressed="true"]):hover:not(:disabled) {
-  background: transparent;
-  color: var(--wu-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .shell
+    .roster-workspace
+    :is(button.active, button[aria-pressed="true"]):hover:not(:disabled) {
+    background: transparent;
+    color: var(--wu-accent-hover);
+  }
 }
 /* Portaled controls inherit no page ancestor; this context exists only on Build. */
 body:has(.roster-workspace)
@@ -231,4 +233,32 @@ body:has(.roster-workspace)
   ) {
   color: var(--wu-accent);
   -webkit-text-fill-color: currentColor;
+}
+
+.roster-list-count {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  flex: 1 1 0;
+  gap: var(--wu-space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+.roster-list-count-text {
+  grid-column: 2;
+  grid-row: 1;
+  white-space: nowrap;
+}
+.roster-list-updating {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 650px) {
+  .roster-list-heading > .roster-list-count {
+    width: 100%;
+  }
 }

@@ -36,9 +36,11 @@
   border-radius: var(--roster-radius-card);
   padding: 0.85rem;
 }
-.roster-ui .roster-assign-clan:hover:not(:disabled) {
-  border-color: var(--wu-text-muted);
-  background: var(--roster-surface-soft);
+@media (hover: hover) and (pointer: fine) {
+  .roster-ui .roster-assign-clan:hover:not(:disabled) {
+    border-color: var(--wu-text-muted);
+    background: var(--roster-surface-soft);
+  }
 }
 .roster-ui .roster-assign-clan-head {
   align-items: start;
@@ -153,8 +155,10 @@
     display: none;
   }
 }
-.roster-ui .roster-assign-unassign:hover:not(:disabled) {
-  border-color: var(--roster-text-muted);
+@media (hover: hover) and (pointer: fine) {
+  .roster-ui .roster-assign-unassign:hover:not(:disabled) {
+    border-color: var(--roster-text-muted);
+  }
 }
 .roster-workspace .staff-signup-bar .roster-ui-status,
 .roster-workspace .staff-signup-bar-actions .roster-ui-button {

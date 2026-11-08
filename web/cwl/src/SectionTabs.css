@@ -37,64 +37,68 @@
   border-color: transparent;
   box-shadow: inset 0 -2px var(--wu-accent);
 }
-.section-tabs
-  > :is(button, a):not(
-    :is(
-      [aria-pressed="true"],
-      [aria-selected="true"],
-      [aria-current="page"],
-      [aria-current="step"]
-    )
-  ):hover:not(:disabled),
-.shell
+@media (hover: hover) and (pointer: fine) {
   .section-tabs
-  > :is(button, a):not(
-    :is(
-      [aria-pressed="true"],
-      [aria-selected="true"],
-      [aria-current="page"],
-      [aria-current="step"]
-    )
-  ):hover:not(:disabled),
-.shell
-  .section-tabs.section-tabs--flow
-  > :is(button, a):not(
-    :is(
-      [aria-pressed="true"],
-      [aria-selected="true"],
-      [aria-current="page"],
-      [aria-current="step"]
-    )
-  ):hover:not(:disabled) {
-  background: transparent;
-  color: var(--wu-text);
-  box-shadow: none;
+    > :is(button, a):not(
+      :is(
+        [aria-pressed="true"],
+        [aria-selected="true"],
+        [aria-current="page"],
+        [aria-current="step"]
+      )
+    ):hover:not(:disabled),
+  .shell
+    .section-tabs
+    > :is(button, a):not(
+      :is(
+        [aria-pressed="true"],
+        [aria-selected="true"],
+        [aria-current="page"],
+        [aria-current="step"]
+      )
+    ):hover:not(:disabled),
+  .shell
+    .section-tabs.section-tabs--flow
+    > :is(button, a):not(
+      :is(
+        [aria-pressed="true"],
+        [aria-selected="true"],
+        [aria-current="page"],
+        [aria-current="step"]
+      )
+    ):hover:not(:disabled) {
+    background: transparent;
+    color: var(--wu-text);
+    box-shadow: none;
+  }
 }
-.section-tabs
-  > :is(button, a):is(
-    [aria-pressed="true"],
-    [aria-selected="true"],
-    [aria-current="page"],
-    [aria-current="step"]
-  ):hover:not(:disabled),
-.shell
+@media (hover: hover) and (pointer: fine) {
   .section-tabs
-  > :is(button, a):is(
-    [aria-pressed="true"],
-    [aria-selected="true"],
-    [aria-current="page"],
-    [aria-current="step"]
-  ):hover:not(:disabled),
-.shell
-  .section-tabs.section-tabs--flow
-  > :is(button, a):is(
-    [aria-pressed="true"],
-    [aria-selected="true"],
-    [aria-current="page"],
-    [aria-current="step"]
-  ):hover:not(:disabled) {
-  background: transparent;
-  color: var(--wu-accent);
+    > :is(button, a):is(
+      [aria-pressed="true"],
+      [aria-selected="true"],
+      [aria-current="page"],
+      [aria-current="step"]
+    ):hover:not(:disabled),
+  .shell
+    .section-tabs
+    > :is(button, a):is(
+      [aria-pressed="true"],
+      [aria-selected="true"],
+      [aria-current="page"],
+      [aria-current="step"]
+    ):hover:not(:disabled),
+  .shell
+    .section-tabs.section-tabs--flow
+    > :is(button, a):is(
+      [aria-pressed="true"],
+      [aria-selected="true"],
+      [aria-current="page"],
+      [aria-current="step"]
+    ):hover:not(:disabled) {
+    background: transparent;
+    color: var(--wu-accent);
+  }
 }
 .section-tabs
   > :is(button, a):is(

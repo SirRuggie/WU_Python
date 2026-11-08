@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import SectionTabs from "./SectionTabs";
 import useConfirmDialog from "./useConfirmDialog";
 import useSignupAction from "./useSignupAction";
@@ -596,7 +597,7 @@ export default function StaffSignupControls({
                         >
                           {busy
                             ? "Saving…"
-                            : `Add ${selected.length || ""} ${selected.length === 1 ? "account" : "accounts"}`}
+                            : `Add ${selected.length ? countLabel(selected.length, "account") : "accounts"}`}
                         </Button>
                       </div>
                     </>

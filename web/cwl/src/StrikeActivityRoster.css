@@ -109,9 +109,11 @@
   color: inherit;
   min-width: 0;
 }
-.strike-activity-row:hover {
-  border-color: #8a7449;
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .strike-activity-row:hover {
+    border-color: #8a7449;
+    background: var(--wu-surface-raised);
+  }
 }
 .strike-activity-row:focus-visible {
   outline: 2px solid var(--wu-focus);
@@ -340,8 +342,10 @@
   cursor: pointer;
   height: 44px;
 }
-.strike-activity-table tbody tr:hover {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .strike-activity-table tbody tr:hover {
+    background: var(--wu-surface-raised);
+  }
 }
 .strike-activity-table .strike-activity-row {
   padding: 0;

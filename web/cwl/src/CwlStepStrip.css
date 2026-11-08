@@ -3,11 +3,6 @@
   gap: var(--wu-space-2);
   margin-bottom: var(--wu-space-3);
 }
-.shell .member-step-strip > button {
-  white-space: nowrap;
-  padding: var(--wu-space-1) var(--wu-space-1);
-  font-size: var(--wu-text-md);
-}
 .shell .cwl-step-strip > button {
   flex: 1 1 0;
   min-width: 0;
@@ -17,6 +12,22 @@
   border-radius: 999px;
   border: 4px solid transparent;
   background-clip: padding-box;
+}
+.shell .member-step-strip > button {
+  background-color: transparent;
+  border-radius: 0;
+  color: var(--wu-text-muted);
+  white-space: nowrap;
+  padding: var(--wu-space-1) var(--wu-space-1);
+  font-size: var(--wu-text-md);
+}
+@media (hover: hover) and (pointer: fine) {
+  .shell
+    .member-step-strip
+    > button:not([aria-current="step"]):hover:not(:disabled) {
+    color: var(--wu-text);
+    background-color: transparent;
+  }
 }
 .shell .cwl-step-strip > button[aria-current="step"] {
   position: relative;
@@ -68,7 +79,9 @@
   background: var(--wu-accent);
   pointer-events: none;
 }
-.shell .cwl-step-strip > button[aria-current="step"]:hover:not(:disabled) {
-  background-color: transparent;
-  color: var(--wu-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .shell .cwl-step-strip > button[aria-current="step"]:hover:not(:disabled) {
+    background-color: transparent;
+    color: var(--wu-accent-hover);
+  }
 }

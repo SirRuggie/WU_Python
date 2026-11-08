@@ -41,8 +41,10 @@
 .server-settings-list > button + button {
   border-top: 1px solid var(--wu-border-subtle);
 }
-.server-settings-list > button:hover {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .server-settings-list > button:hover {
+    background: var(--wu-surface-raised);
+  }
 }
 .server-settings-list > button > span:first-child {
   min-width: 0;

@@ -80,7 +80,7 @@ it("adds the counted checkbox, applies it, shows the active chip and clears it w
     await act(async () =>
       label.querySelector<HTMLInputElement>("input")!.click(),
     );
-    await act(async () => button("Show 1 accounts").click());
+    await act(async () => button("Show 1 account").click());
     expect(host.querySelector("output")?.textContent).toBe("Outside");
     expect(
       host.querySelector('[aria-label="Remove Outside family filter"]'),

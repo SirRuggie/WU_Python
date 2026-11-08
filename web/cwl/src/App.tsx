@@ -312,7 +312,12 @@ function App() {
   useEffect(() => {
     if (!jumpTarget || completion) return
     const target = jumpTarget === 'registered' ? registeredHeadingRef.current : selectionHeadingRef.current
-    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    target?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "start",
+    })
     target?.focus({ preventScroll: true })
     setJumpTarget(null)
   }, [jumpTarget, completion])

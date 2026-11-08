@@ -243,8 +243,10 @@
   white-space: nowrap;
 }
 
-.hub-clan-link:hover {
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .hub-clan-link:hover {
+    text-decoration: underline;
+  }
 }
 
 .hub-account {
@@ -817,8 +819,10 @@
   color: var(--wu-accent);
   -webkit-text-fill-color: currentColor;
 }
-.shell .hub-stats button[aria-pressed="true"]:hover:not(:disabled) {
-  background: transparent;
+@media (hover: hover) and (pointer: fine) {
+  .shell .hub-stats button[aria-pressed="true"]:hover:not(:disabled) {
+    background: transparent;
+  }
 }
 .dashboard-home .member-signup-summary a {
   color: var(--wu-accent);
@@ -833,11 +837,13 @@
   border-color: var(--wu-accent);
   -webkit-text-fill-color: currentColor;
 }
-.shell
-  .dashboard-home
-  :is(button.active, button[aria-pressed="true"]):not(
-    .hub-stats button
-  ):hover:not(:disabled) {
-  background: transparent;
-  color: var(--wu-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .shell
+    .dashboard-home
+    :is(button.active, button[aria-pressed="true"]):not(
+      .hub-stats button
+    ):hover:not(:disabled) {
+    background: transparent;
+    color: var(--wu-accent-hover);
+  }
 }

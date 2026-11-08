@@ -37,8 +37,10 @@
 .member-options label:last-child {
   border-bottom: 0;
 }
-.member-options label:hover {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .member-options label:hover {
+    background: var(--wu-surface-raised);
+  }
 }
 .member-options label.selected {
   background: transparent;

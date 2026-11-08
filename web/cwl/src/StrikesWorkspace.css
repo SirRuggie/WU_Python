@@ -326,9 +326,11 @@
   background: transparent;
   -webkit-text-fill-color: currentColor;
 }
-.strikes-picked-member:hover:not(:disabled) {
-  background: transparent;
-  color: var(--wu-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .strikes-picked-member:hover:not(:disabled) {
+    background: transparent;
+    color: var(--wu-accent-hover);
+  }
 }
 .strikes-search-matches {
   position: absolute;
@@ -500,9 +502,11 @@
   padding: var(--wu-space-3) var(--wu-space-4);
   text-align: left;
 }
-.strikes-account-row:hover {
-  border-color: var(--wu-text-muted);
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .strikes-account-row:hover {
+    border-color: var(--wu-text-muted);
+    background: var(--wu-surface-raised);
+  }
 }
 .strikes-account-name {
   display: grid;

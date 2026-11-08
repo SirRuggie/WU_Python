@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import { useState } from "react";
 import ActionPanel from "./ActionPanel";
 import RosterFilterOptions from "./RosterFilterOptions";
@@ -52,7 +53,7 @@ export default function CompareFilterPanel({
             variant="primary"
             onClick={() => onApply(draftLeagues, draftHalls)}
           >
-            Show {options.count} players
+            Show {countLabel(options.count, "player")}
           </Button>
         </div>
       }
