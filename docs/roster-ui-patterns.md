@@ -809,3 +809,7 @@ integration must preserve the accepted background filler queue predecessor.
 - Disclosures (summary) and standalone arrow links are at least 44px high. Links inside a sentence are not.
 - Confirms use useConfirmDialog, never window.confirm. beforeunload stays native.
 - theme-color and the manifest use #0c0c0e.
+
+## Top bar
+
+- On phones the account menu is fixed width at the right edge; only the title block flexes.

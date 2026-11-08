@@ -23,11 +23,11 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--wu-border);
-  border-radius: 16px;
+  border-radius: var(--roster-radius-card, 14px);
   background: var(--wu-surface);
 }
 .base-bank-image {
-  aspect-ratio: 1;
+  aspect-ratio: 16 / 10;
   background: var(--wu-surface);
   display: grid;
   place-items: center;
@@ -50,18 +50,17 @@
 .base-bank-tags {
   display: flex;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  padding-bottom: var(--wu-space-2);
   gap: var(--wu-space-2);
   margin-bottom: var(--wu-space-4);
 }
 .base-bank-tags span {
   background: var(--wu-surface-soft);
-  border-radius: 18px;
+  border-radius: var(--roster-radius-pill, 999px);
   padding: var(--wu-space-2) var(--wu-space-3);
   font-size: var(--wu-text-sm);
 }
 .base-bank-copy {
+  border-radius: var(--roster-radius-pill, 999px);
   width: 100%;
   min-height: 48px;
   display: flex;
@@ -79,10 +78,41 @@
   align-content: center;
   color: var(--wu-text-muted);
 }
-.base-bank-details p {
-  white-space: pre-wrap;
+.base-bank-details,
+.base-bank-details .discord-markdown {
+  color: var(--wu-text);
+  font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
+}
+.base-bank-details .discord-markdown p {
+  margin-block: var(--wu-space-2);
   text-wrap: pretty;
+}
+.base-bank-details .discord-markdown :is(h1, h2, h3) {
+  color: var(--wu-text);
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-medium);
+  margin-block: var(--wu-space-4) var(--wu-space-2);
+}
+.base-bank-details .discord-markdown :is(ul, ol) {
+  padding-left: var(--wu-space-4);
+  margin-block: var(--wu-space-2);
+}
+.base-bank-details .discord-emoji {
+  display: inline;
+  width: auto;
+  height: 1.25em;
+  vertical-align: middle;
+}
+.base-bank-details .discord-image-placeholder {
+  display: inline;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  color: var(--wu-text-muted);
+}
+.base-bank-details .discord-preview-link {
+  color: inherit;
 }
 .base-bank button:focus-visible,
 .base-bank a:focus-visible,

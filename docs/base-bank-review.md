@@ -39,3 +39,11 @@ Discord OAuth, real-phone behavior or a complete assistive-technology audit.
 Signed-out `/bases` now survives the existing member login target allowlist. Town Hall chips are a single horizontal scrolling line with the selected chip brought into view; the isolated fixture now contains ten levels. Details-only config entries do not create selectable levels or a default. The frontend rejects an invalid copy link even if an upstream response bypasses validation; skipping baseLink now fails the new behavioral regression.
 
 Current-main integration:1339 frontend tests,16 focused frontend tests,4 guarded backend tests,TypeScript/build pass. The link-validation mutant was killed, source restored, and production/preview builds repeated after restoration. All7 isolated browser states pass at320/360/390/1440, including ten-chip one-row/active-visible assertions; no live copy link opened. Final narrow/wide screenshots visually reviewed. Shared FWA constant extraction does not change bot behavior; this release needs backend/frontend only.
+
+## Polish 220 (2026-11-08)
+
+- Details renders Discord formatting through the shared DiscordText, styled with dashboard tokens. Raw IDs never show.
+- The image frame is 16:10 (images are 1.6:1). object-fit: contain stays.
+- Town Hall chips stay one scrolling row; the scrollbar is hidden.
+- Cards show only the variant tag. Merged and Non-merged may share one image; the links differ.
+- Later: stored Details text refers to Discord-only items ("Click Me", "screenshot below").
