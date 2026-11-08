@@ -162,6 +162,8 @@ export default function RosterFilters({
           icon={Search}
           value={value.search}
           disabled={disabled}
+          spellCheck={false}
+          autoComplete="off"
           placeholder="Name, player tag or Discord ID"
           onChange={(event) =>
             onChange({ ...value, search: event.target.value })

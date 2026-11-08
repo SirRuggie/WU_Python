@@ -82,7 +82,7 @@ export default function SignupReminderOverview({
   return (
     <div className="reminder-overview">
       <div className="reminder-overview-head">
-        <h3>Messages for {targetCwlMonth(cycle)} CWL</h3>
+        <h2>Messages for {targetCwlMonth(cycle)} CWL</h2>
         <Button type="button" onClick={onTiming}>
           Edit timing
         </Button>
@@ -124,7 +124,7 @@ export default function SignupReminderOverview({
               key={id}
               aria-label={item.label || id}
             >
-              <h4>{item.label || id}</h4>
+              <h3>{item.label || id}</h3>
               {(sameState || sameTime) && (
                 <p className="signup-reminder-common">
                   {sameState && status(mainEnabled)}

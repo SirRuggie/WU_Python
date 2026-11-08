@@ -157,6 +157,8 @@ export default function MemberActivityHistory({
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            spellCheck={false}
+            autoComplete="off"
             placeholder="Name or Discord ID"
           />
         </label>

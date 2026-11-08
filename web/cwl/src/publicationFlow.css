@@ -51,6 +51,7 @@
   gap: var(--wu-space-3);
   margin: 0;
 }
+.finalize-review .publication-change-list > h2,
 .finalize-review .publication-change-list > h3 {
   margin: 0;
 }
@@ -422,4 +423,12 @@ body:has(.announcement-preview-dialog[open]) {
     justify-content: flex-start;
     text-align: left;
   }
+}
+
+.finalize-review .publication-change-list > h2 {
+  font-size: var(--wu-text-lg);
+  font-weight: var(--wu-weight-medium);
+  line-height: 1.3;
+  letter-spacing: normal;
+  text-wrap: balance;
 }

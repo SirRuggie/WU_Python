@@ -213,7 +213,11 @@ export default function ClanFields({
                 />
               </label>
               {draft[slot] && (
-                <img src={draft[slot]} alt={slot} loading="lazy" />
+                <img
+                  src={draft[slot]}
+                  alt={slot === "logo" ? "Clan logo" : "Clan banner"}
+                  loading="lazy"
+                />
               )}
               <div className="clan-tabs">
                 <button

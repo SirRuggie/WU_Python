@@ -29,7 +29,7 @@
   min-width: 0;
 }
 
-.roster-clan-chips-group h3 {
+.roster-clan-chips-group h2 {
   margin: 0 0 6px;
   color: var(--roster-text-muted);
   font-size: var(--wu-text-xs);
@@ -185,6 +185,10 @@
 }
 
 /* MAIN/LAZY are grouping labels, not page/subsection headings. */
-.roster-workspace .roster-clan-chips-group h3 {
+.roster-workspace .roster-clan-chips-group h2 {
   color: var(--wu-accent);
+}
+
+.roster-clan-chips-group h2 {
+  line-height: 1.3;
 }

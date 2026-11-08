@@ -25,6 +25,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.publication-change-list > h2,
 .publication-change-list h3,
 .publication-change-list li strong {
   color: var(--wu-text);
@@ -33,6 +34,7 @@
 .publication-change-list li strong {
   font-size: var(--wu-text-md);
 }
+.publication-change-list > h2,
 .publication-change-list h3 {
   font-size: var(--wu-text-lg);
   font-weight: var(--wu-weight-medium);
@@ -54,6 +56,7 @@
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
 }
+.publication-change-list > h2,
 .publication-change-list h3 {
   margin: 0 0 var(--wu-space-1);
 }
@@ -76,4 +79,8 @@
 .publication-change-caveat {
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
+}
+
+.publication-change-list > h2 {
+  letter-spacing: normal;
 }

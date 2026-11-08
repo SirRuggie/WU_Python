@@ -381,7 +381,7 @@ export default function DeclarationPingPanel({
               </p>
             )}
             <details>
-              <summary>No-ping test</summary>
+              <summary className="target-summary-44">No-ping test</summary>
               <button
                 disabled={
                   busy ||
@@ -465,7 +465,7 @@ export default function DeclarationPingPanel({
         )}
         {last && last.posted.length > 0 && (
           <details>
-            <summary>Posted message IDs</summary>
+            <summary className="target-summary-44">Posted message IDs</summary>
             <ul>
               {last.posted.map((p) => (
                 <li key={p.message_id}>

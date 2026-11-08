@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   font-family:
     "WU Inter",
     "WU Inter Fallback",
@@ -2373,4 +2374,14 @@ html {
 }
 .command-drag:active {
   scale: none;
+}
+
+.target-44 {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+summary.target-summary-44 {
+  min-height: 44px;
+  align-content: center;
 }

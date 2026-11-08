@@ -41,7 +41,7 @@ export default function AnnouncementPoolCard({
   const [moreTarget, setMoreTarget] = useState<HTMLDivElement | null>(null);
   return (
     <article className="announcement-pool-card" aria-label={poolLabel(pool)}>
-      <h3>{poolLabel(pool)}</h3>
+      <h2>{poolLabel(pool)}</h2>
       <div className="announcement-pool-status" role="status">
         {status}
       </div>

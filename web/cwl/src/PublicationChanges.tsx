@@ -80,11 +80,11 @@ export default function PublicationChanges({
           republished.
         </p>
       ) : (
-        <h3>
+        <h2>
           {draft.next_version == null
             ? "Publishing creates a new version"
             : `Publishing creates version ${draft.next_version}`}
-        </h3>
+        </h2>
       )}
       <p>For Main and Lazy · no Discord message is sent</p>
       {error ? (

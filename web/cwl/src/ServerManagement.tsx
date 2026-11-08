@@ -1,3 +1,11 @@
+import useConfirmDialog from "./useConfirmDialog";
+import {
+  registerActionPanel,
+  isTopActionPanel,
+  panelHistoryState,
+  installPanelBackHandler,
+  backOutOfPanelEntry,
+} from "./actionPanelHistory";
 import { countLabel } from "./countLabel";
 import SectionTabs from "./SectionTabs";
 import ServerSettingsIndex from "./ServerSettingsIndex";
@@ -330,6 +338,49 @@ async function hydrateFields(fields: ManagementField[]) {
         },
   );
 }
+
+let managementConfirmationSerial = 0;
+function useManagementConfirmation() {
+  const [decision, setDecision] = useState(0);
+  const pending = useRef(false);
+  const { confirm, dialog } = useConfirmDialog(String(decision));
+  async function ask(text: string, label = "Discard changes") {
+    if (pending.current) return false;
+    pending.current = true;
+    const marker = `management-confirm-${++managementConfirmationSerial}`;
+    const unregister = registerActionPanel(marker);
+    const state = panelHistoryState(window.history.state, marker);
+    let consumed = false;
+    window.history.pushState(state, "", window.location.href);
+    const uninstall = installPanelBackHandler({
+      windowPort: window,
+      historyPort: window.history,
+      marker,
+      panelState: state,
+      isBusy: () => false,
+      isTop: () => isTopActionPanel(marker),
+      close: () => {
+        consumed = true;
+        setDecision((value) => value + 1);
+      },
+    });
+    try {
+      return await confirm(text, label);
+    } finally {
+      uninstall();
+      unregister();
+      if (!consumed)
+        backOutOfPanelEntry({
+          windowPort: window,
+          historyPort: window.history,
+          marker,
+        });
+      pending.current = false;
+    }
+  }
+  return { ask, dialog };
+}
+
 export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
   const [sections, setSections] = useState<ManagementSection[]>([]),
     [query, setQuery] = useState(""),
@@ -464,15 +515,25 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     busy,
     previewKey,
   ]);
-  const mayLeave = () =>
-    !writing.current &&
-    !statusUrl &&
-    (!(dirty || publishDirty) ||
-      window.confirm(
-        "You have changes that are not saved. Leave without saving?",
-      ));
+  const { ask, dialog } = useManagementConfirmation();
+  const leaving = useRef(false);
+  const mayLeave = async () => {
+    if (writing.current || statusUrl || leaving.current) return false;
+    leaving.current = true;
+    const turn = sequence.current;
+    try {
+      const allowed =
+        !(dirty || publishDirty) ||
+        (await ask(
+          "You have changes that are not saved. Leave without saving?",
+        ));
+      return allowed && !writing.current && turn === sequence.current;
+    } finally {
+      leaving.current = false;
+    }
+  };
   const open = async (section: ManagementSection, keepDocuments = false) => {
-    if (!mayLeave()) return;
+    if (!(await mayLeave())) return;
     if (section.destination) {
       onNavigate?.(section.destination);
       return;
@@ -518,8 +579,8 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       if (turn === sequence.current) setBusy(false);
     }
   };
-  const home = () => {
-    if (!mayLeave()) return;
+  const home = async () => {
+    if (!(await mayLeave())) return;
     ++sequence.current;
     setSelected(null);
     setActionResult(null);
@@ -649,6 +710,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     <section
       className={`server-management ${area === "applications-settings" ? "applications-workspace" : ""} ${operationsWorkspace ? "server-operations-workspace" : ""}`}
     >
+      {dialog}
       <header className="manage-heading">
         <div>
           <p className="eyebrow">
@@ -715,6 +777,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
           )}
           {safeDiscordUrl(actionResult.url) && (
             <a
+              className="target-44"
               href={safeDiscordUrl(actionResult.url)!}
               target="_blank"
               rel="noopener noreferrer"
@@ -1218,17 +1281,21 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                             setError(invalid);
                             return;
                           }
+                          const turn = sequence.current;
                           if (
                             actionNeedsConfirmation(document.id, action.id) &&
-                            !window.confirm(
+                            !(await ask(
                               actionConfirmation(
                                 action.confirm ||
                                   `${action.label}? This changes the shared server settings.`,
                                 document.fields,
                                 draft,
                               ),
-                            )
+                              action.label,
+                            ))
                           )
+                            return;
+                          if (writing.current || turn !== sequence.current)
                             return;
                           writing.current = true;
                           setBusy(true);

@@ -1,27 +1,27 @@
-import type { ManagementSection } from './serverManagement'
-import { filterSections } from './serverManagement'
-import './ServerSettingsIndex.css'
+import type { ManagementSection } from "./serverManagement";
+import { filterSections } from "./serverManagement";
+import "./ServerSettingsIndex.css";
 
 type Props = {
-  sections: ManagementSection[]
-  query: string
-  onQuery: (value: string) => void
-  onOpen: (section: ManagementSection, trigger: HTMLButtonElement) => void
-}
+  sections: ManagementSection[];
+  query: string;
+  onQuery: (value: string) => void;
+  onOpen: (section: ManagementSection, trigger: HTMLButtonElement) => void;
+};
 
 export function settingsCategory(section: ManagementSection) {
-  if (section.id === 'band_monitor') return 'Connections'
-  if (section.id === 'fwa_sync' || section.id === 'fwa_points')
-    return 'Monitoring & reminders'
+  if (section.id === "band_monitor") return "Connections";
+  if (section.id === "fwa_sync" || section.id === "fwa_points")
+    return "Monitoring & reminders";
   if (
-    section.id === 'fwa_bases' ||
-    section.id === 'fwa_weight' ||
-    section.id === 'fwa_blacklist'
+    section.id === "fwa_bases" ||
+    section.id === "fwa_weight" ||
+    section.id === "fwa_blacklist"
   )
-    return 'Clan resources'
-  if (section.id.startsWith('war--') || section.id === 'fwa_war_messages')
-    return 'War messages'
-  return section.group
+    return "Clan resources";
+  if (section.id.startsWith("war--") || section.id === "fwa_war_messages")
+    return "War messages";
+  return section.group;
 }
 
 export default function ServerSettingsIndex({
@@ -30,8 +30,8 @@ export default function ServerSettingsIndex({
   onQuery,
   onOpen,
 }: Props) {
-  const visible = filterSections(sections, query)
-  const categories = [...new Set(visible.map(settingsCategory))]
+  const visible = filterSections(sections, query);
+  const categories = [...new Set(visible.map(settingsCategory))];
   return (
     <div className="server-settings-index">
       <label>
@@ -46,7 +46,7 @@ export default function ServerSettingsIndex({
       {categories.map((category) => {
         const items = visible.filter(
           (item) => settingsCategory(item) === category,
-        )
+        );
         const list = (
           <div className="server-settings-list">
             {items.map((item) => (
@@ -62,12 +62,12 @@ export default function ServerSettingsIndex({
               </button>
             ))}
           </div>
-        )
+        );
         return (
           <section key={category}>
             {items.length > 4 ? (
               <details
-                key={query ? 'search' : 'browse'}
+                key={query ? "search" : "browse"}
                 open={query ? true : undefined}
               >
                 <summary>
@@ -78,23 +78,23 @@ export default function ServerSettingsIndex({
               </details>
             ) : (
               <>
-                <h3>{category}</h3>
+                <h2>{category}</h2>
                 {list}
               </>
             )}
           </section>
-        )
+        );
       })}
       {!visible.length && (
         <div className="empty">
           <p>
             {query
-              ? 'No settings match this search.'
-              : 'No settings are available for your access.'}
+              ? "No settings match this search."
+              : "No settings are available for your access."}
           </p>
-          {query && <button onClick={() => onQuery('')}>Clear search</button>}
+          {query && <button onClick={() => onQuery("")}>Clear search</button>}
         </div>
       )}
     </div>
-  )
+  );
 }

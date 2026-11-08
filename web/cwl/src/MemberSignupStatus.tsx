@@ -109,7 +109,9 @@ export default function MemberSignupStatus({
   const dateLines = publicationLoading
     ? []
     : memberDateLines(season, published, now).map((line) =>
-        savedView ? line.replace(/^Signups closed · you will/, "You will") : line,
+        savedView
+          ? line.replace(/^Signups closed · you will/, "You will")
+          : line,
       );
   const signupDeadlineLine = signupCloseLine(season, now);
   const checkingAccounts =
@@ -144,6 +146,7 @@ export default function MemberSignupStatus({
               <>
                 Clan assignments could not be checked.{" "}
                 <a
+                  className="target-44"
                   href="/assignments"
                   onClick={(event) => {
                     if (onAssignments) {
@@ -158,6 +161,7 @@ export default function MemberSignupStatus({
             ) : published ? (
               <>
                 <a
+                  className="target-44"
                   href="/assignments"
                   onClick={(event) => {
                     if (onAssignments) {

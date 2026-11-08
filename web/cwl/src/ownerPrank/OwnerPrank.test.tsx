@@ -376,7 +376,7 @@ it("starts card two's timer while the bait write is still pending", async () => 
   );
   await render();
   await press("Yes");
-  expect(visibleText()).toContain("Working...");
+  expect(visibleText()).toContain("Working…");
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 2100));
   });
@@ -398,7 +398,7 @@ it("advances card two after two seconds even when the bait write failed", async 
   );
   await render();
   await press("Yes");
-  expect(visibleText()).toContain("Working...");
+  expect(visibleText()).toContain("Working…");
   expect(document.querySelector(".owner-prank-error")?.textContent).toContain(
     "failed",
   );

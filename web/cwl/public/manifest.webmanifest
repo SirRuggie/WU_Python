@@ -6,8 +6,8 @@
   "start_url": "/tasks",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#111113",
-  "theme_color": "#111113",
+  "background_color": "#0c0c0e",
+  "theme_color": "#0c0c0e",
   "icons": [
     {
       "src": "/icons/wu-192.png",

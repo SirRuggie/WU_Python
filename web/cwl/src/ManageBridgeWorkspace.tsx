@@ -848,6 +848,7 @@ export default function ManageBridgeWorkspace({
                           </span>
                           {safeMessageUrl(delivery?.message_url) && (
                             <a
+                              className="target-44"
                               href={delivery!.message_url!}
                               target="_blank"
                               rel="noopener noreferrer"
