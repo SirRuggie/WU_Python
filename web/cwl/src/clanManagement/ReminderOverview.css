@@ -67,9 +67,13 @@
 .overview-table tbody tr {
   background: var(--wu-surface);
 }
-.overview-table tbody tr:hover,
 .overview-table tbody tr:focus-within {
   background: var(--wu-surface-raised);
+}
+@media (hover: hover) and (pointer: fine) {
+  .overview-table tbody tr:hover {
+    background: var(--wu-surface-raised);
+  }
 }
 .overview-table th:first-child {
   width: 18%;

@@ -126,8 +126,10 @@
   color: #30220b;
   font-weight: var(--wu-weight-bold);
 }
-.owner-prank-card button:not(.primary):hover:not(:disabled) {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .owner-prank-card button:not(.primary):hover:not(:disabled) {
+    background: var(--wu-surface-raised);
+  }
 }
 .owner-prank-card button:disabled {
   cursor: default;

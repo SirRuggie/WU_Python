@@ -76,6 +76,8 @@ describe("roster header counts", () => {
   it("uses the status line without duplicate Draft pills", () => {
     const html = render("all");
     expect(html).toContain("Checking publication…");
+    expect(html.match(/Checking publication…/g)).toHaveLength(1);
+    expect(html).not.toContain('class="publication-awareness"');
     expect(html).not.toContain("roster-header-draft-pill");
   });
   it("shows one top capacity warning for an assigned hosting clan with a settings action", () => {

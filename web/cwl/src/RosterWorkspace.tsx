@@ -1190,11 +1190,6 @@ export default function RosterWorkspace({
         </div>
       )}
       {loading && <p role="status">Loading roster…</p>}
-      {roster?.metadata_updating && (
-        <p className="muted" role="status">
-          Updating live clan details… Saved assignments are ready.
-        </p>
-      )}
       {metadataNotice && <p role="status">{metadataNotice}</p>}
       {roster && (
         <>
@@ -1545,8 +1540,15 @@ export default function RosterWorkspace({
                     </Button>
                   )}
                 </div>
-                <span>
-                  {`${filtered.length} matching · ${selectedTags.length} selected`}
+                <span className="roster-list-count">
+                  <span className="roster-list-count-text">
+                    {`${filtered.length} matching · ${selectedTags.length} selected`}
+                  </span>
+                  {roster.metadata_updating && (
+                    <span className="roster-list-updating" role="status">
+                      Updating live clan details…
+                    </span>
+                  )}
                 </span>
               </div>
               {selectionNotice && (

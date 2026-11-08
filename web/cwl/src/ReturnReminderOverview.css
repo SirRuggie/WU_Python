@@ -59,8 +59,10 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.return-row-actions button:hover {
-  background: #ffffff10;
+@media (hover: hover) and (pointer: fine) {
+  .return-row-actions button:hover {
+    background: #ffffff10;
+  }
 }
 .return-overview .return-health-note {
   margin: var(--wu-space-3) 0;

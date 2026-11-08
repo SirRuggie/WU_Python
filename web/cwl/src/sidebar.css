@@ -105,8 +105,10 @@ div.shell {
   white-space: normal;
 }
 
-.shell .sidebar nav button:hover {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .shell .sidebar nav button:hover {
+    background: var(--wu-surface-raised);
+  }
 }
 .shell .sidebar nav button:focus-visible {
   outline: 2px solid var(--wu-focus);
@@ -391,9 +393,11 @@ div.shell {
   }
 }
 
-.shell .sidebar .navigation-section button[aria-current="page"]:hover {
-  background: transparent;
-  color: var(--wu-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .shell .sidebar .navigation-section button[aria-current="page"]:hover {
+    background: transparent;
+    color: var(--wu-accent-hover);
+  }
 }
 .topbar-logo {
   display: none;

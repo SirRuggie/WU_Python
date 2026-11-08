@@ -59,9 +59,11 @@ button:where(
   padding: var(--wu-space-2) var(--wu-space-3);
   gap: var(--wu-space-1);
 }
-button:hover,
-.button:hover {
-  background: var(--wu-surface-soft);
+@media (hover: hover) and (pointer: fine) {
+  button:hover,
+  .button:hover {
+    background: var(--wu-surface-soft);
+  }
 }
 button:disabled {
   opacity: 0.48;
@@ -72,8 +74,10 @@ button:disabled {
   border-color: #d9a628;
   color: var(--wu-accent-ink);
 }
-.primary:hover {
-  background: #e7b73f;
+@media (hover: hover) and (pointer: fine) {
+  .primary:hover {
+    background: #e7b73f;
+  }
 }
 .danger-link {
   color: #e9a7a7;
@@ -328,8 +332,10 @@ small {
   margin: var(--wu-space-1) 0;
   gap: var(--wu-space-3);
 }
-.sidebar nav button:not([aria-current]):hover {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .sidebar nav button:not([aria-current]):hover {
+    background: var(--wu-surface-raised);
+  }
 }
 .sidebar-foot {
   margin: auto var(--wu-space-4) var(--wu-space-4);
@@ -824,6 +830,8 @@ small {
     visibility: visible;
   }
   .sidebar.open + .scrim {
+    opacity: 1;
+    transition: opacity 180ms ease;
     display: block;
     position: fixed;
     inset: 0;
@@ -831,6 +839,11 @@ small {
     border: 0;
     border-radius: 0;
     z-index: 4;
+  }
+  @starting-style {
+    .sidebar.open + .scrim {
+      opacity: 0;
+    }
   }
   .menu-open,
   .menu-close {
@@ -1922,8 +1935,10 @@ textarea:focus-visible {
   border: 0;
   background: transparent;
 }
-.channel-results button:not(.active):not([aria-selected="true"]):hover {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .channel-results button:not(.active):not([aria-selected="true"]):hover {
+    background: var(--wu-surface-raised);
+  }
 }
 .channel-results button.active,
 .channel-results button[aria-selected="true"] {
@@ -1982,10 +1997,12 @@ img.site-logo {
   border-color: var(--wu-danger-border);
   color: #fff;
 }
-.withdraw-button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--wu-danger-surface) 85%, black);
-  border-color: var(--wu-danger-border);
-  color: #fff;
+@media (hover: hover) and (pointer: fine) {
+  .withdraw-button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--wu-danger-surface) 85%, black);
+    border-color: var(--wu-danger-border);
+    color: #fff;
+  }
 }
 
 .registered-card .signed-up-name {
@@ -2030,10 +2047,12 @@ img.site-logo {
   color: var(--wu-accent-ink);
   -webkit-text-fill-color: var(--wu-accent-ink);
 }
-.shell .primary:hover {
-  background: var(--wu-accent-hover);
-  color: var(--wu-accent-ink);
-  -webkit-text-fill-color: var(--wu-accent-ink);
+@media (hover: hover) and (pointer: fine) {
+  .shell .primary:hover {
+    background: var(--wu-accent-hover);
+    color: var(--wu-accent-ink);
+    -webkit-text-fill-color: var(--wu-accent-ink);
+  }
 }
 .shell .primary :is(span, strong, small) {
   color: inherit;
@@ -2047,10 +2066,12 @@ img.site-logo {
   -webkit-text-fill-color: currentColor;
   box-shadow: inset 0 -3px var(--wu-accent);
 }
-.shell button.active:hover,
-.shell button[aria-pressed="true"]:hover {
-  background: transparent;
-  color: var(--wu-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .shell button.active:hover,
+  .shell button[aria-pressed="true"]:hover {
+    background: transparent;
+    color: var(--wu-accent-hover);
+  }
 }
 .shell button.active span,
 .shell button[aria-pressed="true"] span {
@@ -2207,9 +2228,11 @@ img.site-logo {
   background: var(--wu-surface-soft);
   color: #fff;
 }
-.shell .signup-flow .pool-choice-grid button:hover {
-  background: var(--wu-surface-raised);
-  border-color: var(--wu-text-muted);
+@media (hover: hover) and (pointer: fine) {
+  .shell .signup-flow .pool-choice-grid button:hover {
+    background: var(--wu-surface-raised);
+    border-color: var(--wu-text-muted);
+  }
 }
 .shell
   .signup-flow
@@ -2220,13 +2243,15 @@ img.site-logo {
   color: var(--wu-accent);
   -webkit-text-fill-color: currentColor;
 }
-.shell
-  .signup-flow
-  .pool-choice-grid
-  button:is(.active, [aria-pressed="true"]):hover {
-  background: transparent;
-  border-color: var(--wu-accent);
-  color: var(--wu-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .shell
+    .signup-flow
+    .pool-choice-grid
+    button:is(.active, [aria-pressed="true"]):hover {
+    background: transparent;
+    border-color: var(--wu-accent);
+    color: var(--wu-accent-hover);
+  }
 }
 .shell .signup-flow .pool-choice-grid small {
   color: var(--wu-text-muted);
@@ -2326,4 +2351,26 @@ textarea::placeholder {
 .completion-card h1:focus-visible {
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
+}
+
+/* Phone press feedback uses scale independently of positional transforms. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+:where(button, .button, [role="button"], summary):not(:disabled) {
+  transition: scale 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+:where(button, .button, [role="button"], summary):not(:disabled):active {
+  scale: 0.97;
+}
+:where(
+    .player-card > button.player-card-body,
+    .roster-assign-clan,
+    .strikes-account-row,
+    .compare-mobile-card
+  ):not(:disabled):active {
+  scale: 0.99;
+}
+.command-drag:active {
+  scale: none;
 }

@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import RosterFilterOptions from "./RosterFilterOptions";
 import { useEffect, useState, type ReactNode } from "react";
 import { Filter, Search, SlidersHorizontal } from "lucide-react";
@@ -67,7 +68,8 @@ function parseWeightRange(minimum: string, maximum: string) {
       return {
         minWeight: null,
         maxWeight: null,
-        error: "The maximum weight must be the same as or more than the minimum weight.",
+        error:
+          "The maximum weight must be the same as or more than the minimum weight.",
       };
     }
     return { minWeight, maxWeight, error: "" };
@@ -283,7 +285,7 @@ export default function RosterFilters({
                 disabled={disabled || !!range.error}
                 onClick={apply}
               >
-                Show {result.matches.length} accounts
+                Show {countLabel(result.matches.length, "account")}
               </Button>
             </div>
           }

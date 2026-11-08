@@ -216,3 +216,20 @@ it("announces Archived instead of closed signups in the restored status region",
     view.cleanup();
   }
 });
+
+it("keeps loading publication in the summary without a standalone status box", async () => {
+  const view = await renderHeader(rosterWithAssignments([]));
+  try {
+    expect(
+      view.host.querySelector(".roster-header-status")?.textContent,
+    ).toContain("Checking publication…");
+    expect(view.host.querySelector(".publication-awareness")).toBeNull();
+    expect(
+      [...view.host.querySelectorAll("button")].some(
+        (button) => button.textContent === "Retry status",
+      ),
+    ).toBe(false);
+  } finally {
+    view.cleanup();
+  }
+});

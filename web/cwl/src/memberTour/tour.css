@@ -15,8 +15,10 @@
   font-weight: var(--wu-weight-medium);
   text-align: left;
 }
-.tour-launcher:hover {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .tour-launcher:hover {
+    background: var(--wu-surface-raised);
+  }
 }
 .tour-launcher:focus-visible {
   outline: 2px solid var(--wu-focus);
@@ -27,8 +29,10 @@
   border-color: transparent;
   background: transparent;
 }
-.shell .sidebar-foot > .tour-launcher:hover {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .shell .sidebar-foot > .tour-launcher:hover {
+    background: var(--wu-surface-raised);
+  }
 }
 .shell .sidebar-foot > .tour-launcher:focus-visible {
   outline-offset: 2px;
@@ -122,8 +126,10 @@
   background: transparent;
   color: var(--wu-accent);
 }
-.member-tour button:hover:not(:disabled) {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .member-tour button:hover:not(:disabled) {
+    background: var(--wu-surface-raised);
+  }
 }
 .member-tour button:focus-visible,
 .member-tour a:focus-visible,
@@ -209,7 +215,7 @@
   box-shadow:
     0 0 0 9999px #000a,
     0 0 22px #ef9f2780;
-  animation: tour-pulse 1.6s ease-in-out infinite;
+  animation: tour-pulse 1.6s ease-in-out 2;
 }
 .tour-glove {
   position: absolute;
@@ -255,11 +261,11 @@
 @keyframes tour-enter {
   from {
     opacity: 0;
-    margin-top: var(--wu-space-3);
+    translate: 0 var(--wu-space-3);
   }
   to {
     opacity: 1;
-    margin-top: 0;
+    translate: 0 0;
   }
 }
 @keyframes tour-hop {

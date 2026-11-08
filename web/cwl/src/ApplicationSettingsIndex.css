@@ -65,8 +65,10 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.application-setting-list button:hover {
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .application-setting-list button:hover {
+    background: var(--wu-surface-raised);
+  }
 }
 .application-index :focus-visible {
   outline: 2px solid var(--wu-focus);

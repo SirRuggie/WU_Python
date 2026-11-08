@@ -312,10 +312,12 @@
   box-shadow: var(--roster-shadow-soft);
   text-decoration: none;
 }
-.member-assignments .member-clan-head a.member-open-clan:hover {
-  background: var(--wu-accent-hover);
-  border-color: var(--wu-accent-hover);
-  color: var(--wu-accent-ink);
+@media (hover: hover) and (pointer: fine) {
+  .member-assignments .member-clan-head a.member-open-clan:hover {
+    background: var(--wu-accent-hover);
+    border-color: var(--wu-accent-hover);
+    color: var(--wu-accent-ink);
+  }
 }
 .member-assignments .member-clan-head a.member-open-clan:focus-visible {
   outline: 2px solid var(--wu-focus);

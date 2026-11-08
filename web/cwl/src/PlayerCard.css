@@ -217,8 +217,10 @@
   height: 44px;
   min-height: 44px;
 }
-.roster-ui .player-card > button.player-card-body:hover:not(:disabled) {
-  background: var(--roster-card-hover);
+@media (hover: hover) and (pointer: fine) {
+  .roster-ui .player-card > button.player-card-body:hover:not(:disabled) {
+    background: var(--roster-card-hover);
+  }
 }
 /* Accounts alone gains the wide layout; Compare remains compact at any width. */
 @media (min-width: 701px) {

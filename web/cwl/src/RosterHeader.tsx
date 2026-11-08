@@ -224,7 +224,13 @@ export default function RosterHeader({
                   : publicationStatus === "unpublished"
                     ? "Not published"
                     : "Checking publication…"}
-            <span className="roster-header-view-label"> · {viewLabel}</span>
+            <span
+              className="roster-header-view-label"
+              style={{ whiteSpace: "nowrap" }}
+            >
+              {" "}
+              · {viewLabel}
+            </span>
             <span className="roster-header-details-label">
               {" "}
               · Signup &amp; status
@@ -305,23 +311,19 @@ export default function RosterHeader({
             onReview={onFinalize}
             disabled={uiLocked}
           />
-        ) : (
+        ) : publicationStatus === "unavailable" ? (
           <div className="publication-awareness" role="status">
             <span className="publication-awareness-status">
-              {publicationStatus === "unavailable"
-                ? "Publication status unavailable"
-                : "Checking publication…"}
+              Publication status unavailable
             </span>
-            {publicationStatus === "unavailable" && (
-              <Button
-                disabled={uiLocked}
-                onClick={() => setPublicationAttempt((value) => value + 1)}
-              >
-                Retry status
-              </Button>
-            )}
+            <Button
+              disabled={uiLocked}
+              onClick={() => setPublicationAttempt((value) => value + 1)}
+            >
+              Retry status
+            </Button>
           </div>
-        ))}
+        ) : null)}
       {seasonId && canSignups && (
         <SignupActivity
           key={seasonId}

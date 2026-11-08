@@ -76,7 +76,7 @@ it("lists account identity and context without a send action or external HTML", 
       />,
     ),
   );
-  expect(host.textContent).toContain("⚠ 1 players not on the roster");
+  expect(host.textContent).toContain("⚠ 1 player not on the roster");
   expect(host.textContent).toContain("TH 16");
   expect(host.textContent).toContain("Assigned to Other clan");
   expect(host.querySelector(".player-card-name-text")?.textContent).toBe(
@@ -135,7 +135,7 @@ it("separates a neutral draft move from intruders without changing account count
     ),
   );
   expect(host.textContent).toContain(
-    "1 players not on the roster · 1 not published yet",
+    "1 player not on the roster · 1 not published yet",
   );
   expect(host.textContent).toContain("Moved here · not published yet");
   expect(host.querySelector(".is-unpublished")?.textContent).not.toContain(
@@ -210,6 +210,6 @@ it("uses one identity and DM across low TH, intruder and unpublished categories"
   expect(host.querySelectorAll("a.discord-contact")).toHaveLength(1);
   expect(host.querySelectorAll(".declaration-member-account")).toHaveLength(3);
   expect(host.textContent).toContain(
-    "1 players not on the roster · 1 not published yet · 1 low TH in clan",
+    "1 player not on the roster · 1 not published yet · 1 low TH in clan",
   );
 });

@@ -793,3 +793,11 @@ and wide before/after headers were visually reviewed. The separately documented
 Declaration Back URL/menu mismatch remains unproven and unchanged. No production
 operation or task 123 implementation occurred. Release remains held; later
 integration must preserve the accepted background filler queue predecessor.
+
+## Motion (217)
+
+- Action panels enter only: centered panel 180ms scale 0.97 + fade, side panel 200ms 16px slide, phone sheet
+  240ms from the bottom edge with cubic-bezier(0.32,0.72,0,1). Close is instant. Reduced motion: 150ms fade only.
+- Press feedback: scale 0.97 (rows and cards 0.99), 120ms cubic-bezier(0.23,1,0.32,1). No tap highlight.
+- All :hover rules sit inside @media (hover: hover) and (pointer: fine). Moderation files are not yet gated.
+- Load status lines must not change page height after first paint (Build roster target: layout shift < 0.01).

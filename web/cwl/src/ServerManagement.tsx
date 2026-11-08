@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import SectionTabs from "./SectionTabs";
 import ServerSettingsIndex from "./ServerSettingsIndex";
 import BandStatusSummary, { bandStatusWarning } from "./BandStatusSummary";
@@ -723,7 +724,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
           )}
           {actionResult.accounts && (
             <>
-              <p>{actionResult.accounts.length} accounts</p>
+              <p>{countLabel(actionResult.accounts.length, "account")}</p>
               <ul>
                 {actionResult.accounts.map((account, index) => (
                   <li key={`${account.tag || account.player_tag || index}`}>

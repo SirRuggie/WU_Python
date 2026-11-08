@@ -68,14 +68,15 @@
   white-space: normal;
   cursor: pointer;
 }
-.roster-assign-clan:hover:not(:disabled) {
-  border-color: var(--wu-text-muted);
-  background: var(--wu-surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .roster-assign-clan:hover:not(:disabled) {
+    border-color: var(--wu-text-muted);
+    background: var(--wu-surface-raised);
+  }
 }
 .roster-assign-clan:active:not(:disabled) {
   border-color: #d5b95e;
   background: var(--wu-surface-soft);
-  transform: translateY(1px);
 }
 .roster-assign-unassign {
   border-color: var(--wu-border);

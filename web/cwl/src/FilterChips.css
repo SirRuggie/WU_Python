@@ -19,9 +19,11 @@
   color: var(--wu-accent);
   -webkit-text-fill-color: currentColor;
 }
-.filter-chips button[aria-pressed="true"]:hover:not(:disabled) {
-  background: transparent;
-  color: var(--wu-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .filter-chips button[aria-pressed="true"]:hover:not(:disabled) {
+    background: transparent;
+    color: var(--wu-accent-hover);
+  }
 }
 
 .filter-chips small {
@@ -42,14 +44,18 @@
   color: var(--wu-accent);
   -webkit-text-fill-color: currentColor;
 }
-.filter-chips--pill button[aria-pressed="true"]:hover:not(:disabled),
-.shell .filter-chips--pill button[aria-pressed="true"]:hover:not(:disabled) {
-  background: transparent;
-  color: var(--wu-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .filter-chips--pill button[aria-pressed="true"]:hover:not(:disabled),
+  .shell .filter-chips--pill button[aria-pressed="true"]:hover:not(:disabled) {
+    background: transparent;
+    color: var(--wu-accent-hover);
+  }
 }
-.filter-chips--pill button[aria-pressed="false"]:hover:not(:disabled),
-.shell .filter-chips--pill button[aria-pressed="false"]:hover:not(:disabled) {
-  border-color: var(--wu-text-muted);
+@media (hover: hover) and (pointer: fine) {
+  .filter-chips--pill button[aria-pressed="false"]:hover:not(:disabled),
+  .shell .filter-chips--pill button[aria-pressed="false"]:hover:not(:disabled) {
+    border-color: var(--wu-text-muted);
+  }
 }
 .filter-chips--pill button:focus-visible,
 .shell .filter-chips--pill button:focus-visible {

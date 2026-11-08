@@ -166,8 +166,10 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.participation-row-action:hover {
-  background: #ffffff10;
+@media (hover: hover) and (pointer: fine) {
+  .participation-row-action:hover {
+    background: #ffffff10;
+  }
 }
 .participation-visually-hidden {
   position: absolute;

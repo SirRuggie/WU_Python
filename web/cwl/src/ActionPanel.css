@@ -20,22 +20,37 @@
   background: var(--wu-surface);
   color: var(--wu-text);
   box-shadow: 0 12px 42px #0008;
-  transform: translate(-50%, calc(-50% - 0.35rem));
-  opacity: 0;
+  transform: translate(-50%, -50%);
+  opacity: 1;
   transition:
-    transform 160ms ease,
-    opacity 160ms ease;
+    opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .action-panel[open] {
   display: flex;
   flex-direction: column;
-  transform: translate(-50%, -50%);
-  opacity: 1;
+}
+
+@starting-style {
+  .action-panel[open] {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+  .action-panel-side[open] {
+    transform: translateX(16px);
+  }
 }
 
 .action-panel::backdrop {
   background: rgb(0 0 0 / 46%);
+  opacity: 1;
+  transition: opacity 180ms ease-out;
+}
+@starting-style {
+  .action-panel[open]::backdrop {
+    opacity: 0;
+  }
 }
 .action-panel-heading {
   display: flex;
@@ -91,10 +106,10 @@
   height: 100dvh;
   max-height: 100dvh;
   border-radius: 0;
-  transform: translateX(1rem);
-}
-.action-panel-side[open] {
   transform: translateX(0);
+  transition:
+    opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @media (max-width: 680px) {
@@ -110,11 +125,21 @@
     max-height: 78dvh;
     border-radius: 18px 18px 0 0;
     border-bottom: 0;
-    transform: translateY(1rem);
+    transform: translateY(0);
+    transition:
+      transform 240ms cubic-bezier(0.32, 0.72, 0, 1),
+      opacity 240ms cubic-bezier(0.32, 0.72, 0, 1);
     box-shadow: 0 -18px 48px #0008;
   }
-  .action-panel[open] {
-    transform: translateY(0);
+  @starting-style {
+    .action-panel[open],
+    .action-panel-side[open] {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+  }
+  .action-panel::backdrop {
+    transition-duration: 240ms;
   }
   .action-panel.is-search-focused {
     height: 100dvh;
@@ -132,7 +157,24 @@
 
 @media (prefers-reduced-motion: reduce) {
   .action-panel {
-    transition: none;
+    transition: opacity 150ms ease-out !important;
+  }
+  @starting-style {
+    .action-panel[open] {
+      opacity: 0;
+      transform: translate(-50%, -50%);
+    }
+    .action-panel-side[open] {
+      transform: translateX(0);
+    }
+  }
+  @media (max-width: 680px) {
+    @starting-style {
+      .action-panel[open],
+      .action-panel-side[open] {
+        transform: translateY(0);
+      }
+    }
   }
 }
 
