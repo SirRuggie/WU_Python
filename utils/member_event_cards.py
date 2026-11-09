@@ -175,6 +175,25 @@ def _named(value: object, limit: int = 120) -> str:
     return text if text.replace("\u200d", "").strip() else ""
 
 
+def _user_reference(value: object, names: dict | None = None, name: object = None) -> str:
+    """A cached/stored name links only to its trusted Discord profile."""
+    uid = _snowflake(value)
+    label = name if _named(name) else (names or {}).get(uid)
+    if uid and _named(label) and _named(label) != uid:
+        return f"[{_inert(label, 120)}](https://discord.com/users/{uid})"
+    return f"<@{uid}>" if uid else (_inert(label, 60) or "Unknown")
+
+
+def _subject(row: dict, uid: str) -> str:
+    name = _named(row.get("display_name"))
+    label = row.get("display_name") if name and name != uid else "Unknown member"
+    reference = _user_reference(uid, name=label)
+    username = _named(row.get("username"))
+    if username and username != uid and username.casefold() != name.casefold():
+        reference += f" ({_inert(row['username'], 120)})"
+    return reference
+
+
 def _ordinal(number: int) -> str:
     suffix = "th" if 10 <= number % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(number % 10, "th")
     return f"{number}{suffix}"
@@ -225,9 +244,16 @@ def _fit(lines: list[str], budget: int, joiner: int = 0) -> list[str]:
     lines = list(lines)
     size = lambda: sum(map(len, lines)) + joiner * (len(lines) - 1)
 
+    def profile_end(index: int) -> int:
+        # A literal trailing backslash is escaped as a pair before the delimiter.
+        links = list(re.finditer(r"(?<!\\)(?:\\\\)*\]\(https://discord\.com/users/[0-9]+\)", lines[index]))
+        return links[-1].end() + 1 if links else 0
+
     def floor(index: int) -> int:  # A field keeps its label and some of its value, never a bare "…".
         line = lines[index]
-        return max(FIT_FLOOR, line.index("\n") + 1 + FIELD_VALUE_FLOOR) if 3 <= index and "\n" in line else FIT_FLOOR
+        minimum = max(FIT_FLOOR, line.index("\n") + 1 + FIELD_VALUE_FLOOR) if 3 <= index and "\n" in line else FIT_FLOOR
+        # Fitting may trim prose after a reference, but never split a profile link.
+        return max(minimum, profile_end(index))
 
     while size() > budget:
         excess = size() - budget
@@ -236,16 +262,17 @@ def _fit(lines: list[str], budget: int, joiner: int = 0) -> list[str]:
             index = max(middle, key=lambda i: len(lines[i]))
             lines[index] = _cut(lines[index], max(len(lines[index]) - excess, floor(index)))
             continue
-        fields = [i for i in range(3, len(lines) - 1) if not _MORE_LINE.fullmatch(lines[i])]
+        fields = [i for i in range(3, len(lines) - 1)
+                  if not _MORE_LINE.fullmatch(lines[i]) and not profile_end(i)]
         if fields:
             del lines[fields[-1]]
             _hide(lines, 1)
             continue
-        longest = [i for i in range(len(lines)) if len(lines[i]) > FIT_FLOOR // 2]
+        longest = [i for i in range(len(lines)) if len(lines[i]) > max(FIT_FLOOR // 2, profile_end(i))]
         if not longest:
             return lines
         index = max(longest, key=lambda i: len(lines[i]))
-        lines[index] = _cut(lines[index], max(len(lines[index]) - excess, FIT_FLOOR // 2))
+        lines[index] = _cut(lines[index], max(len(lines[index]) - excess, FIT_FLOOR // 2, profile_end(index)))
     return lines
 
 
@@ -297,7 +324,7 @@ def transcript_file(row: dict) -> tuple[str, bytes, str] | None:
     return TRANSCRIPT_NAME, text.encode("utf-8"), "text/plain; charset=utf-8"
 
 
-def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], str | None]:
+def _extra_content(row: dict, test_staff_id: object = None, names: dict | None = None) -> tuple[list[str], str | None]:
     kind = row["event_type"]
     icon, title, action, _ = EVENT_STYLE[kind]
     details = row.get("details") if isinstance(row.get("details"), dict) else {}
@@ -308,11 +335,11 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
         "Unknown member" if uid else OBJECT_NOUNS.get(kind)
         or ("Channel" if kind == "message_bulk_delete" else "Unknown invite"))
     moderator = _snowflake(row.get("moderator_id"))
-    by = f" by <@{moderator}>" if moderator else " by an unknown moderator"
+    by = f" by {_user_reference(moderator, names)}" if moderator else " by an unknown moderator"
     reason = f"**Reason**\n{safe_text(row.get('reason'), 500) or 'No reason given'}"
     served = f"**Time in server**\n{_since(row.get('joined_at'), row.get('occurred_at'))}"
     fields: list[str] = []
-    main = f"<@{uid}> {action}" if uid else ""
+    main = f"{_subject(row, uid)} {action}" if uid else ""
     if kind == "timeout_add":
         main += by
         fields = [reason, f"**Duration**\n{_duration(details.get('duration_seconds'))}",
@@ -335,7 +362,7 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
         fields += _more(len(changes), MAX_CHANGES)
         actor = _snowflake(details.get("actor_id"))
         if actor:
-            fields.append(f"**Changed by**\n<@{actor}>")
+            fields.append(f"**Changed by**\n{_user_reference(actor, names)}")
     elif kind == "link":
         channel = _snowflake(details.get("channel_id"))
         if channel:
@@ -350,16 +377,16 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
         main += by
         fields = [reason]
     elif kind in ("roles_added", "roles_removed"):
-        main += f" by <@{moderator}>" if moderator else ""
+        main += f" by {_user_reference(moderator, names)}" if moderator else ""
         raw_roles = details.get("roles") or []
-        names = [name for name in (safe_text(item, 60) for item in raw_roles[:MAX_ROLES]) if name]
-        fields.append("**Roles**\n" + (", ".join(names) or "Unavailable")
+        role_names = [name for name in (safe_text(item, 60) for item in raw_roles[:MAX_ROLES]) if name]
+        fields.append("**Roles**\n" + (", ".join(role_names) or "Unavailable")
                       + "".join(f" {line}" for line in _more(len(raw_roles), MAX_ROLES)))
     elif kind in ("message_delete", "message_edit"):
         channel = _snowflake(details.get("channel_id"))
         main += f" in <#{channel}>" if channel else ""
         if kind == "message_delete":
-            main += f" by <@{moderator}>" if moderator else ""
+            main += f" by {_user_reference(moderator, names)}" if moderator else ""
             fields.append(f"**Message**\n{_inert(details.get('content'), 500) or 'No text'}")
         else:
             fields.append(f"**Before**\n{_inert(details.get('before'), 500) or 'No text'}")
@@ -372,7 +399,7 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
         count = details.get("count")
         main = f"{count:,} messages were deleted" if isinstance(count, int) and count >= 0 else "Messages were deleted"
         main += f" in <#{channel}>" if channel else ""
-        main += f" by <@{moderator}>" if moderator else ""
+        main += f" by {_user_reference(moderator, names)}" if moderator else ""
         if transcript_file(row):
             fields.append("**Transcript**\nAttached")
     elif kind in OBJECT_KINDS:
@@ -380,17 +407,20 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
         prefix = MENTIONS.get(kind)
         ref = f"<{prefix}{target}>" if prefix and target else f"**{name}**"
         verb = safe_text(details.get("action"), 20) or action
-        main = f"{OBJECT_NOUNS[kind]} {ref} was {verb}" + (f" by <@{moderator}>" if moderator else "")
+        main = f"{OBJECT_NOUNS[kind]} {ref} was {verb}" + (f" by {_user_reference(moderator, names)}" if moderator else "")
         fields = _change_lines(details, MAX_PERMISSION_CHANGES if kind == "channel_permissions" else MAX_CHANGES)
         subject = _snowflake(details.get("subject_id"))
         if subject and details.get("subject_type") in ("role", "member"):
-            fields.append(f"**Applies to**\n<{'@&' if details['subject_type'] == 'role' else '@'}{subject}>")
+            subject_ref = f"<@&{subject}>" if details['subject_type'] == 'role' else _user_reference(subject, names)
+            fields.append(f"**Applies to**\n{subject_ref}")
         elif details.get("subject_name"):
             fields.append(f"**Applies to**\n{safe_text(details['subject_name'], 80)}")
     else:
         code = "Vanity URL" if details.get("vanity") else f"`{_code(details.get('code'))}`"
         invite_name = safe_text(details.get("name"), 40)
-        inviter = _mention("@", details.get("inviter_id"), details.get("inviter_name"))
+        inviter_id = _snowflake(details.get("inviter_id"))
+        inviter = (_user_reference(inviter_id, names, details.get("inviter_name")) if inviter_id
+                   else _mention("@", None, details.get("inviter_name")))
         channel = _mention("#", details.get("channel_id"), details.get("channel_name"))
         limit = details.get("max_uses")
         limit_text = f"{int(limit):,}" if isinstance(limit, int) and limit > 0 else "Unlimited"
@@ -422,31 +452,31 @@ def _extra_content(row: dict, test_staff_id: object = None) -> tuple[list[str], 
     footer = (f"ID {uid} · " if uid else "") + (f"<t:{occurred}:f>" if occurred is not None else "Date unavailable")
     staff = _snowflake(test_staff_id)
     if test_staff_id is not None:
-        footer += f" · Test log · sent by <@{staff}>" if staff else " · Test log · staff unavailable"
+        footer += f" · Test log · sent by {_user_reference(staff, names)}" if staff else " · Test log · staff unavailable"
     return [name, f"### {icon} {title}", main, *fields, footer], uid
 
 
-def _content(row: dict, test_staff_id: object = None) -> tuple[list[str], str | None]:
-    lines, uid = _body(row, test_staff_id)
+def _content(row: dict, test_staff_id: object = None, names: dict | None = None) -> tuple[list[str], str | None]:
+    lines, uid = _body(row, test_staff_id, names)
     details = row.get("details")
     if isinstance(details, dict) and details.get("recovered"):
         lines.insert(-1, RECOVERED_LINE)  # Before the footer.
     return lines, uid
 
 
-def _body(row: dict, test_staff_id: object = None) -> tuple[list[str], str | None]:
+def _body(row: dict, test_staff_id: object = None, names: dict | None = None) -> tuple[list[str], str | None]:
     kind = row["event_type"]
     if kind in EXTRA_KINDS:
-        return _extra_content(row, test_staff_id)
+        return _extra_content(row, test_staff_id, names)
     icon, title, action, _ = EVENT_STYLE[kind]
     uid = _snowflake(row.get("user_id"))
     if uid is None:
         raise ValueError("A trusted member ID is required for a profile card")
     name = _named(row.get("display_name")) or "Unknown member"
     moderator = _snowflake(row.get("moderator_id"))
-    main = f"<@{uid}> {action}"
+    main = f"{_subject(row, uid)} {action}"
     if kind in ("kick", "ban"):
-        main += f" by <@{moderator}>" if moderator else " by an unknown moderator"
+        main += f" by {_user_reference(moderator, names)}" if moderator else " by an unknown moderator"
     fields = []
     if kind == "join":
         fields.append(f"**Account created**\n{_date(row.get('account_created_at'))}")
@@ -481,7 +511,7 @@ def _body(row: dict, test_staff_id: object = None) -> tuple[list[str], str | Non
     footer = f"Members: {members} · ID {uid} · {when}"
     staff = _snowflake(test_staff_id)
     if test_staff_id is not None:
-        footer += f" · Test log · sent by <@{staff}>" if staff else " · Test log · staff unavailable"
+        footer += f" · Test log · sent by {_user_reference(staff, names)}" if staff else " · Test log · staff unavailable"
     return [name, f"### {icon} {title}", main, *fields, footer], uid
 
 
@@ -516,9 +546,9 @@ def _profile_button(uid: str) -> dict:
             "url": f"https://discord.com/users/{uid}"}
 
 
-def build_card(row: dict, test_staff_id: object = None) -> dict:
+def build_card(row: dict, test_staff_id: object = None, names: dict | None = None) -> dict:
     """Components V2 message for text channels and existing forum-post replies."""
-    lines, uid = _content(row, test_staff_id)
+    lines, uid = _content(row, test_staff_id, names)
     name, title, main, *rest = _fit([f"**{lines[0]}**", *lines[1:]], V2_TEXT_LIMIT)
     footer = rest.pop()
     avatar = _avatar_url(row)
@@ -542,9 +572,9 @@ def build_card(row: dict, test_staff_id: object = None) -> dict:
     ], "allowed_mentions": {"parse": []}}
 
 
-def build_forum_message(row: dict, test_staff_id: object = None) -> dict:
+def build_forum_message(row: dict, test_staff_id: object = None, names: dict | None = None) -> dict:
     """Forum starters cannot set the V2 flag; retain one embed-based starter."""
-    lines, uid = _content(row, test_staff_id)
+    lines, uid = _content(row, test_staff_id, names)
     fitted = _fit([f"**{lines[0]}**", *lines[1:]], EMBED_DESCRIPTION_LIMIT, joiner=2)
     description = "\n\n".join(fitted)
     avatar = _avatar_url(row)

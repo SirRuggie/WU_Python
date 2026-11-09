@@ -282,10 +282,10 @@ async def settings(request):
         roles = None
         roles_available = False
     from utils.member_event_cards import build_card, build_forum_message, sample_row
-    preview_cards = {kind: build_card(sample_row(kind)) for kind in EVENT_TYPES}
-    forum_preview_cards = {kind: build_forum_message(sample_row(kind)) for kind in EVENT_TYPES}
     sample = sample_row("kick")
     preview_names = {sample["user_id"]: sample["display_name"], sample["moderator_id"]: "Sample moderator"}
+    preview_cards = {kind: build_card(sample_row(kind), names=preview_names) for kind in EVENT_TYPES}
+    forum_preview_cards = {kind: build_forum_message(sample_row(kind), names=preview_names) for kind in EVENT_TYPES}
     response = web.json_response({**saved, "bot_actors": bot_actors,
                                   "preview_names": preview_names, "preview_cards": preview_cards,
                                   "forum_preview_cards": forum_preview_cards, "channels": options,
@@ -464,6 +464,22 @@ async def save_settings(request):
     return response
 
 
+def _test_staff_name(staff):
+    """Optional existing identity only; malformed data never blocks a test receipt."""
+    try:
+        if not isinstance(staff, dict):
+            return None
+        member = staff.get("member")
+        member = member if isinstance(member, dict) else {}
+        user = member.get("user")
+        user = user if isinstance(user, dict) else {}
+        candidates = (staff.get("display_name"), member.get("nick"), user.get("global_name"),
+                      staff.get("username"), user.get("username"))
+        return next((value for value in candidates if isinstance(value, str) and value.strip()), None)
+    except Exception:
+        return None
+
+
 async def send_test(request):
     staff = await require_manage(request, "roles", write=True)
     try:
@@ -488,6 +504,7 @@ async def send_test(request):
         from utils.member_event_cards import build_card, build_forum_message, sample_row
         from .server_management import DiscordDeliveryUncertain, discord
         now = datetime.now(timezone.utc)
+        names = {str(staff["user_id"]): _test_staff_name(staff)}
         try:
             audit_id = await store.reserve_test(kind, str(staff["user_id"]), now)
         except TestRateLimited as exc:
@@ -501,8 +518,8 @@ async def send_test(request):
         sample = sample_row(kind)
         sample["occurred_at"] = now
         forum = option["type"] == "forum"
-        payload = build_forum_message(sample, test_staff_id=str(staff["user_id"])) if forum else build_card(
-            sample, test_staff_id=str(staff["user_id"]))
+        payload = build_forum_message(sample, test_staff_id=str(staff["user_id"]), names=names) if forum else build_card(
+            sample, test_staff_id=str(staff["user_id"]), names=names)
         if forum:
             title = f"Test {kind} · {now.strftime('%Y-%m-%d %H:%M UTC')}"
             data = {"name": title[:100], "message": payload}

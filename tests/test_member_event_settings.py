@@ -190,9 +190,9 @@ class TestSendApiTests(unittest.IsolatedAsyncioTestCase):
                         finish_test=AsyncMock())
         self.card_module = types.ModuleType("utils.member_event_cards")
         self.card_module.sample_row = lambda kind: {"event_type": kind}
-        self.card_module.build_card = lambda row, test_staff_id=None: {
+        self.card_module.build_card = lambda row, test_staff_id=None, names=None: {
             "flags": 32768, "components": [{"type": 17}], "allowed_mentions": {"parse": []}}
-        self.card_module.build_forum_message = lambda row, test_staff_id=None: {
+        self.card_module.build_forum_message = lambda row, test_staff_id=None, names=None: {
             "embeds": [{"description": "Test log"}], "allowed_mentions": {"parse": []}}
 
     async def _call(self, kind="kick", revision=3, *, option_type="text",

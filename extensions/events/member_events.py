@@ -128,10 +128,42 @@ def identity_metadata(bot, user_id: int, member, saved):
     return created_at, member_count, roles
 
 
-async def post_card(row, *, forum=False):
+def cached_reference_names(bot, row):
+    """Best-effort send-time names, using only the bot's in-memory cache."""
+    names = {}
+    details = row.get("details") if isinstance(row.get("details"), dict) else {}
+    references = [row.get("moderator_id"), details.get("actor_id"), details.get("inviter_id")]
+    if details.get("subject_type") == "member":
+        references.append(details.get("subject_id"))
+    for value in references:
+        try:
+            uid = int(value)
+        except (TypeError, ValueError):
+            continue
+        if uid <= 0 or str(uid) in names:
+            continue
+        name = None
+        try:
+            member = bot.cache.get_member(GUILD_ID, uid)
+            name = getattr(member, "display_name", None)
+        except Exception:
+            pass
+        if not name:
+            try:
+                user = bot.cache.get_user(uid)
+                name = getattr(user, "global_name", None) or getattr(user, "username", None)
+            except Exception:
+                pass
+        if isinstance(name, str) and name:
+            names[str(uid)] = name
+    return names
+
+
+async def post_card(row, *, forum=False, bot=None):
     """One HTTP attempt for either message or forum thread creation."""
     channel_id = int(row["channel_id"])
     filename = avatar_filename(row)
+    names = cached_reference_names(bot, row)
     if forum:
         label = FORUM_LABELS[row["event_type"]]
         occurred = row["occurred_at"].replace(tzinfo=row["occurred_at"].tzinfo or timezone.utc)
@@ -139,13 +171,13 @@ async def post_card(row, *, forum=False):
         suffix = f" · {row['user_id']} · {date}" if row["user_id"] != "0" else f" · {date}"
         name_budget = max(1, 100 - len(label) - len(suffix) - 3)
         title = f"{label} · {safe_text(row['display_name'], name_budget)}{suffix}"
-        payload = {"name": title[:100], "message": build_forum_message(row)}
+        payload = {"name": title[:100], "message": build_forum_message(row, names=names)}
         if row.get("forum_tag_id"):
             payload["applied_tags"] = [str(row["forum_tag_id"])]
         endpoint = f"https://discord.com/api/v10/channels/{channel_id}/threads"
         message = payload["message"]
     else:
-        payload = build_card(row)
+        payload = build_card(row, names=names)
         endpoint = f"https://discord.com/api/v10/channels/{channel_id}/messages"
         message = payload
     files = [(filename, row["avatar"], row["avatar_type"])] if filename else []
@@ -244,7 +276,7 @@ async def deliver(store: MemberEventStore, bot, row):
     if not row:
         return False
     try:
-        message_id = await post_card(row, forum=channel.type == hikari.ChannelType.GUILD_FORUM)
+        message_id = await post_card(row, forum=channel.type == hikari.ChannelType.GUILD_FORUM, bot=bot)
         await store.finish(row["_id"], status="sent", message_id=message_id)
         return True
     except BaseException:

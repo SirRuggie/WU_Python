@@ -19,6 +19,80 @@ class TestSendPolish(unittest.IsolatedAsyncioTestCase):
     setUp = existing.TestSendApiTests.setUp
     _call = existing.TestSendApiTests._call
 
+    async def test_malformed_optional_staff_names_never_strand_a_reserved_test(self):
+        self.card_module.sample_row = sample_row
+        self.card_module.build_card = build_card
+        self.card_module.build_forum_message = build_forum_message
+        cases = [
+            ({}, None),
+            ({'member': 'malformed'}, None),
+            ({'member': {'user': 'malformed'}}, None),
+            ({'member': {'user': ['malformed']}}, None),
+            ({'member': {'user': {'global_name': 42, 'username': ['bad']}}}, None),
+            ({'display_name': ['bad'], 'member': {'nick': {'bad': True}}}, None),
+            ({'member': {'user': {'global_name': '  ', 'username': ''}}}, None),
+            ({'member': {'nick': 'Normal staff', 'user': {'username': 'staff_user'}}}, 'Normal staff'),
+        ]
+        original = dict(self.staff)
+        for extra, expected in cases:
+            for destination in ('text', 'forum'):
+                with self.subTest(extra=extra, destination=destination):
+                    self.staff = {**original, **extra}
+                    self.store.reserve_test.reset_mock()
+                    self.store.finish_test.reset_mock()
+                    self.store.cancel_test = AsyncMock()
+                    _, transport = await self._call(option_type=destination)
+                    payload = transport.await_args.kwargs['json']
+                    rendered = json.dumps(payload, ensure_ascii=False)
+                    if expected:
+                        self.assertIn(f'Test log · sent by [{expected}](https://discord.com/users/{original["user_id"]})', rendered)
+                    else:
+                        self.assertIn(f'Test log · sent by <@{original["user_id"]}>', rendered)
+                    self.store.reserve_test.assert_awaited_once()
+                    self.store.finish_test.assert_awaited_once_with('test-audit-id', status='sent', destination='111111111111111111')
+                    self.store.cancel_test.assert_not_awaited()
+                    transport.assert_awaited_once()
+
+    def test_staff_name_helper_cannot_raise_on_broken_identity_mappings(self):
+        class Broken(dict):
+            def get(self, *_args):
+                raise RuntimeError('fixture optional identity error')
+        for staff in (None, [], 'bad', Broken(), {'member': Broken()}, {'member': {'user': Broken()}}):
+            self.assertIsNone(api._test_staff_name(staff))
+
+    async def test_existing_staff_identity_is_used_without_an_extra_lookup(self):
+        self.card_module.sample_row = sample_row
+        self.card_module.build_card = build_card
+        self.card_module.build_forum_message = build_forum_message
+        self.staff['member'] = {'nick': 'Staff [name]', 'user': {'username': 'staff_user'}}
+        for destination in ('text', 'forum'):
+            _, transport = await self._call(option_type=destination)
+            payload = transport.await_args.kwargs['json']
+            message = payload.get('message') or payload
+            text = json.dumps(message, ensure_ascii=False)
+            self.assertIn('https://discord.com/users/123456789012345678', text)
+            self.assertIn('Test log · sent by [Staff', text)
+            self.assertNotIn('Test log · sent by <@', text)
+            transport.assert_awaited_once()
+
+    async def test_settings_previews_share_the_sample_moderator_link(self):
+        @asynccontextmanager
+        async def database(_request):
+            yield NS(member_events=object())
+        self.store.bot_actors = AsyncMock(return_value={})
+        request = make_mocked_request('GET', api.PREFIX + '/settings')
+        with patch.object(api, 'require_manage', new=AsyncMock(return_value=self.staff)), \
+             patch.object(api, 'mongo', database), \
+             patch.object(api, 'MemberEventStore', return_value=self.store), \
+             patch.object(api, '_own_bot', new=AsyncMock(return_value=None)), \
+             patch.object(api, '_bot_permissions', new=AsyncMock(side_effect=web.HTTPServiceUnavailable())), \
+             patch.object(server_management, 'discord', new=AsyncMock(return_value=[])):
+            result = json.loads((await api.settings(request)).text)
+        for key in ('preview_cards', 'forum_preview_cards'):
+            for kind in ('kick', 'roles_added', 'member_update', 'invite_create'):
+                text = json.dumps(result[key][kind], ensure_ascii=False)
+                self.assertIn('[Sample moderator](https://discord.com/users/987654321098765432)', text)
+
     async def test_real_card_and_forum_test_labels_reach_transport(self):
         self.card_module.sample_row = sample_row
         self.card_module.build_card = build_card
