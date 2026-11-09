@@ -107,7 +107,7 @@ def test_calculator_uses_saved_settings(monkeypatch):
     monkeypatch.setattr(store, 'load', AsyncMock(return_value=config))
     ctx = SimpleNamespace(guild_id=2, channel_id=3, defer=AsyncMock(), interaction=SimpleNamespace(delete_initial_response=AsyncMock()))
     bot = SimpleNamespace(cache=SimpleNamespace(get_emojis_view=lambda: {}), rest=SimpleNamespace(create_message=AsyncMock()))
-    run(weight.WeightCommand.invoke(SimpleNamespace(weight=38000), ctx, bot, object()))
+    run(weight.WeightCommand.invoke(SimpleNamespace(weight=38000, user=None), ctx, bot, object()))
     nodes = list(walk([r.build()[0] for r in bot.rest.create_message.call_args.kwargs['components']]))
     text = '\n'.join(n.get('content', '') for n in nodes)
     assert 'Town Hall 19' in text and 'TH13–TH19' in text

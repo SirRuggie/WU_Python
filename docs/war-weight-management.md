@@ -15,6 +15,62 @@ Owner: `utils/war_weight.py`. Permanent `war_weight_settings` collection in the 
 
 Private editor sessions use the existing TTL-backed `component_state` collection for 30 minutes and bind the guild, user, editor type, and revision. Durable settings survive restarts independently of these sessions.
 
+## Save from /fwa weight
+
+Decisions confirmed by Ruggie on 2026-11-09 (thread "Save weight from /fwa weight").
+
+- `/fwa weight storage-weight:<loot> user:<member>` shows a private question:
+  weight, Town Hall and "Save this weight for @user?" with **Save** and
+  **Post only**. Without `user`, the command posts the panel at once as before.
+- The public panel posts once, after the choice. A saved weight adds the line
+  "💾 Saved for Name `#TAG`". Post only adds nothing and saves nothing.
+- **Save** lists the user's linked accounts from ClashKing and ClashPerk
+  (`lookup_links`, fail-closed) with Town Hall emoji, name, tag and the current
+  saved weight. **Other account** asks for a player tag. No links: "This user has no linked
+  accounts. Link the accounts first, or enter a player tag." A link outage offers
+  Try again, Enter player tag and Post only; it is never shown as "no links".
+  The bot never creates links.
+- Same saved weight: "Already saved", no write. Different saved weight:
+  "Saved: X → New: Y" with Replace or Back. When the account Town Hall does not
+  fit the weight (another TH, outside both ends of a "between" gap, or a weight
+  outside all ranges), the confirm step shows a warning; saving is still allowed.
+- Saved weights must be a multiple of 1,000 (`validate_weight`). An invalid
+  result offers Post only. Storages are recorded as 5.
+- Permission: **Save weights from Discord** on the Access page (user or role).
+  It is independent of Edit clan weights.
+
+Storage: the bot does not write the dashboard SQLite file. The dashboard service
+holds the Mongo-checkpointed writer lease and restores SQLite from Mongo at
+startup, so a direct bot write could be lost. The bot calls the existing loopback
+bridge (`CWL_DISCORD_BRIDGE_URL` + `CWL_DISCORD_BRIDGE_SECRET`, no new setting) at
+`POST /api/cwl/discord/weight` (`cwl_web/discord_weight.py`). Actions: `access`,
+`accounts`, `lookup`, `save`. Each action rechecks the permission from the
+Access document and a fresh Discord role lookup. If the role lookup fails, direct
+grants still work and role-only access fails closed.
+
+`ClanWeightStore.save_discord` is the only path that may create a first saved row
+for any Clash account, including applicants outside the family. It reads the
+player from the Clash API, records the current clan (blank when the player is
+in no clan; each history entry keeps the clan of that save), uses the same revision check, history (source
+`Discord /fwa weight`, actor ID and name), draft-roster invalidation and Mongo
+checkpoint as dashboard saves. The dashboard has no per-entry history list; the
+clan's "last saved" line shows the latest save in that clan.
+
+Failure handling: a stale revision returns "Changed by someone else. Try again."
+An unconfirmed save is never retried automatically; Try again re-reads the saved
+weight, and an equal value then reports Already saved. The private session lives
+30 minutes in `component_state`, is bound to the staff member and guild, and is
+claimed atomically before posting, so a double click cannot post twice. Before
+any bridge save the bot takes the session's single save slot (90-second lock,
+longer than the 45-second bridge timeout); a second save or Post only in the same
+session waits ("still running") and a failed save releases the slot. Each confirm
+preview has its own button token. A button works once, and only while its preview
+is the current screen: Back, Try again, another account, Post only or a save
+attempt voids it, and an old button shows "This confirm button is out of date." If Post
+only wins a race with a save, the private reply still reports the save. If the
+permission is removed mid-flow, or the session cannot be stored, the panel posts
+once and nothing is saved.
+
 ## Manual CWL player weights
 
 Dashboard manual weights carry into later signups by normalized player tag. Existing season values and published snapshots are not rewritten. “Restore source” stops carrying the manual override into future signups; previous values remain in history. Staff account details show the first saved manual weight.
@@ -33,7 +89,8 @@ remain for compatibility; there is no copied or second weight ledger.
 Precedence: saved clan weight, then explicit staff override, then FWA Stats only
 for a tag with no saved row. A saved blank deliberately means Not Available and
 suppresses external fallback. The official source follows the player if they
-leave their clan. Current FWA members can be edited from their clan; Find any player can update an existing saved row after the player leaves. It cannot create a saved row for a random non-member.
+leave their clan. Current FWA members can be edited from their clan; Find any player can update an existing saved row after the player leaves. It cannot create a saved row for a random non-member. Only
+[Save from /fwa weight](#save-from-fwa-weight) can create a first row for any account.
 
 Current roster reads, placement calculations, member account weights, refreshes,
 and replacement suggestions use the saved source. A changed saved weight bumps

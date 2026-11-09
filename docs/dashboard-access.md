@@ -17,6 +17,13 @@ permission includes configuring automated schedules and manual return reminders.
 Clan settings and official clan-weight editing have separate checkboxes. Other
 existing tool areas retain their own grants and Discord hierarchy constraints.
 
+**Save weights from Discord** (`discord_weights`, Clan management group) is the
+one Discord-side permission on this page. It allows only the Save step of
+`/fwa weight` and does not open Clan weights on the dashboard. Edit clan weights
+does not include it, and it does not include Edit clan weights. Grant it to a
+member or a role. The dashboard service rechecks it on every bridge action; see
+[War Weight management](war-weight-management.md#save-from-fwa-weight).
+
 ## Storage and migration
 
 `utils/dashboard_access.py` owns the `settings.bot_config` document with ID
