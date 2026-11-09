@@ -7,6 +7,7 @@ Private administrator tools, omitted from the public help catalog:
 /manage-links unlink user:@CurrentUser player:all
 /manage-links transfer user:@CurrentUser new-user:@NewUser player:#PLAYER_TAG
 /manage-links transfer user:@CurrentUser new-user:@NewUser player:all
+/manage-links link user:@Owner player:#PLAYER_TAG
 ```
 
 The user options are Discord user pickers. `player` is required: enter a tag
@@ -63,3 +64,31 @@ for the account-management inventory. No live links were changed.
 API references: [OpenAPI](https://api.clashk.ing/openapi.json),
 [authentication](https://github.com/ClashKingInc/ClashKingAPI/blob/main/workers/api/src/auth.ts),
 [link mutations](https://github.com/ClashKingInc/ClashKingAPI/blob/main/workers/api/src/link-mutations.ts).
+
+## ClashPerk link (`/manage-links link`)
+
+Test command for ClashPerk link writes. Ticket linking will reuse the helper
+`utils/clashperk_link_writes.create_link(user_id, player_tag)`; the command
+only checks access and formats the reply. Reads stay in
+`utils/clashperk_links.py`.
+
+- Access: `CLASHPERK_PASSKEY` (the same passkey as the read lookup). The
+  ClashPerk owner confirmed on 2026-11-09 that this access may link players
+  outside our clans. Not yet tested live.
+- Request: `POST https://api.clashperk.com/v1/links` with
+  `{"playerTag": "#TAG", "userId": "<discord id>", "apiToken": null}`
+  (`CreateLinkInputDto`, read from the public OpenAPI spec on 2026-11-09).
+  New links are unverified. Verification is never required.
+- Before the write, the helper reads the current owner with `QUERY /links/query`.
+  Unreadable owner: no write. Same user: no write ("already linked"). Different
+  user: no write; the command never overwrites another user's link and never
+  asks for a player's in-game API token.
+- One write per call, serialized in-process. A 401 is refused before any write,
+  so one fresh token is tried. A timeout, connection error or 5xx may have
+  reached ClashPerk: it is never retried. The helper reads the owner back and
+  reports "linked" only when ClashPerk shows the link; otherwise "unknown".
+- ClashPerk error codes map to fixed text. Raw ClashPerk error text is never
+  shown.
+
+Development validation uses mocked HTTP only (`tests/test_clashperk_link_writes.py`).
+No live link was created.
