@@ -2,6 +2,9 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+import aiohttp
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 
 from utils import recruit_links, clashperk_links
 from extensions.commands.tickets import account_sync, player_info
@@ -123,8 +126,12 @@ class Session:
     async def __aenter__(self): return self
     async def __aexit__(self,*a): pass
     def post(self,url,**kwargs):
+        assert url.endswith('/auth/login')
+        return self.request('POST',url,**kwargs)
+    def request(self,method,url,**kwargs):
         assert kwargs['allow_redirects'] is False
-        self.calls.append((url,kwargs))
+        assert method == ('QUERY' if url.endswith('/links/query') else 'POST')
+        self.calls.append((method,url,kwargs))
         return self.responses.pop(0)
 
 
@@ -141,9 +148,11 @@ def test_token_401_refresh_and_batching(monkeypatch):
     session=setup_session(monkeypatch,[Response(201,{'accessToken':'first'}),Response(401,{}),Response(201,{'accessToken':'second'}),Response(200,[]),Response(200,[])])
     result=asyncio.run(clashperk_links.lookup(discord_ids=[str(i) for i in range(101)]))
     assert result == []
-    queries=[body for url,body in session.calls if url.endswith('/query')]
+    queries=[body for method,url,body in session.calls if url.endswith('/query')]
     assert [len(b['json']['userIds']) for b in queries]==[100,100,1]
     assert queries[-1]['headers']['Authorization']=='Bearer second'
+    assert [method for method,url,_ in session.calls if url.endswith('/links/query')] == ['QUERY'] * 3
+    assert [method for method,url,_ in session.calls if url.endswith('/auth/login')] == ['POST'] * 2
 
 
 def test_failed_second_batch_is_not_partial_success(monkeypatch):
@@ -155,6 +164,68 @@ def test_failed_second_batch_is_not_partial_success(monkeypatch):
 def test_malformed_response_is_unavailable(monkeypatch,payload):
     setup_session(monkeypatch,[Response(200,{'accessToken':'token'}),Response(200,payload)])
     assert asyncio.run(clashperk_links.lookup(discord_ids=['123'])) is None
+
+
+@pytest.mark.parametrize('status',[301,302,400,403,429,500,503])
+def test_query_failure_never_falls_back_to_post_or_empty(monkeypatch,status):
+    session=setup_session(monkeypatch,[Response(200,{'accessToken':'fixture-token'}),Response(status,[])])
+    assert asyncio.run(clashperk_links.lookup(player_tags=['#PYY'])) is None
+    assert [(method,body['json']) for method,url,body in session.calls if url.endswith('/links/query')] == [
+        ('QUERY',{'playerTags':['#PYY']})]
+
+
+def test_second_401_is_unavailable_without_post_fallback(monkeypatch):
+    session=setup_session(monkeypatch,[Response(200,{'accessToken':'first'}),Response(401,{}),
+                                     Response(200,{'accessToken':'second'}),Response(401,{})])
+    assert asyncio.run(clashperk_links.lookup(discord_ids=['123'])) is None
+    assert [method for method,url,_ in session.calls if url.endswith('/links/query')] == ['QUERY','QUERY']
+    assert len(session.calls)==4
+
+
+def test_query_timeout_is_unavailable_and_does_not_log_secrets(monkeypatch,caplog,capsys):
+    class Timeout(Response):
+        async def __aenter__(self):
+            raise asyncio.TimeoutError('fixture response must stay private')
+    session=setup_session(monkeypatch,[Response(200,{'accessToken':'fixture-private-token'}),Timeout(200,[])])
+    assert asyncio.run(clashperk_links.lookup(discord_ids=['123'])) is None
+    assert len(session.calls)==2
+    output=capsys.readouterr()
+    for secret in ('test-only-key','fixture-private-token','fixture response must stay private'):
+        assert secret not in caplog.text+output.out+output.err
+
+
+@pytest.mark.parametrize('argument,field,values',[
+    ('discord_ids','userIds',['123','456']),('player_tags','playerTags',['#PYY','#QCC']),
+])
+def test_installed_aiohttp_sends_query_method_and_json_unchanged(monkeypatch,argument,field,values):
+    calls=[]
+    async def login(request):
+        calls.append((request.method,request.path,await request.json()))
+        assert request.method=='POST'
+        return web.json_response({'accessToken':'fixture-local-token'},status=201)
+    async def query(request):
+        calls.append((request.method,request.path,await request.json()))
+        assert request.method=='QUERY'
+        assert request.headers['Authorization']=='Bearer fixture-local-token'
+        return web.json_response([])
+    async def run():
+        app=web.Application()
+        app.router.add_route('*','/auth/login',login)
+        app.router.add_route('*','/links/query',query)
+        server=TestServer(app,host='127.0.0.1')
+        await server.start_server()
+        try:
+            monkeypatch.setattr(clashperk_links,'BASE_URL',str(server.make_url('')).rstrip('/'))
+            monkeypatch.setenv('CLASHPERK_PASSKEY','fixture-local-passkey')
+            monkeypatch.setattr(clashperk_links,'_token','')
+            monkeypatch.setattr(clashperk_links,'_lock',asyncio.Lock())
+            assert await clashperk_links.lookup(**{argument:values})==[]
+        finally:
+            await server.close()
+    asyncio.run(run())
+    assert calls==[('POST','/auth/login',{'passKey':'fixture-local-passkey'}),
+                   ('QUERY','/links/query',{field:values})]
+    assert isinstance(aiohttp.__version__,str)
 
 
 @pytest.mark.parametrize('unavailable,conflicts,expected',[((),(),True),(('ClashKing',),(),True),((),('#QCC',),True)])
