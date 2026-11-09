@@ -342,6 +342,16 @@ it("reads member, grouping and Find slots parameters, bounded and repeated", () 
   expect(clearActivityFilters(f).slotWeights).toEqual(f.slotWeights);
   expect(clearActivityFilters(f).member).toBe("");
 });
+it.each([
+  "?view=replacements",
+  "?view=replacements&slot_clan=%23PQQ",
+  "?view=replacements&slot_member=100000000000000001",
+  "?slot_clan=%23PQQ",
+])("%s opens Replacements without any weights", (search) => {
+  const f = parseActivityFilters(search);
+  expect(f.view).toBe("replacements");
+  expect(f.slotWeights).toEqual([]);
+});
 it("a selected member shows every account of that member, ignoring the tab rule only", () => {
   const rows = [
     row({ discord_id: "100000000000000002", no_attack_wars: 0 }),

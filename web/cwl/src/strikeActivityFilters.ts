@@ -200,7 +200,9 @@ export function parseActivityFilters(
   const p = new URLSearchParams(search);
   const requested =
     p.get("activity_view") ||
-    (p.has("slot_weight") ? "replacements" : p.get("view"));
+    (["slot_weight", "slot_clan", "slot_member"].some((key) => p.has(key))
+      ? "replacements"
+      : p.get("view"));
   const view: ActivityView = activityViews.includes(requested as ActivityView)
     ? (requested as ActivityView)
     : p.get("marked") === "0"

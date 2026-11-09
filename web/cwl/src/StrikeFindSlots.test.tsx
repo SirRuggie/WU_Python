@@ -223,6 +223,35 @@ it("shows an empty group message and opens a selected result", async () => {
   expect(choose.mock.calls[0][0].player_tag).toBe("#PYY");
 });
 
+it("keeps an FWA clan prefilled by Find a fill for this slot and drops a non-FWA one", async () => {
+  // The same query App builds in onFindReplacement, against the backend clan shape.
+  const prefill = new URLSearchParams({ activity_view: "replacements" });
+  prefill.append("slot_weight", "143000");
+  prefill.append("slot_clan", "#PQQ");
+  prefill.append("slot_clan", "#PGG");
+  await mount(`/strikes?${prefill}`);
+  expect(replacementCalls()).toHaveLength(1);
+  expect(
+    new URL(replacementCalls()[0], "http://x").searchParams.getAll("clan"),
+  ).toEqual(["#PQQ"]);
+  expect(host.querySelector(".strike-find-slots")!.textContent).toContain(
+    "Family",
+  );
+});
+
+it("opens Replacements with the box restored and no search when a link has no weights", async () => {
+  await mount("/strikes?view=replacements&slot_clan=%23PQQ");
+  expect(
+    host.querySelector(".strike-activity-tabs [aria-pressed=true]")!
+      .textContent,
+  ).toContain("Replacements");
+  expect(host.querySelector(".strike-find-slots")).not.toBeNull();
+  expect(replacementCalls()).toHaveLength(0);
+  expect(host.querySelector(".strike-find-slots")!.textContent).toContain(
+    "Family",
+  );
+});
+
 it("shows the box only on the Replacements tab", async () => {
   await mount("/strikes?activity_view=all");
   expect(host.querySelector(".strike-find-slots")).toBeNull();

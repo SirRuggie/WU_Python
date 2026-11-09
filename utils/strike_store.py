@@ -616,7 +616,7 @@ class StrikeService:
             'filler', 'filler_clan_tag', 'revision')}
         profile_fields['_id'] = 0
         clan_fields = {name: 1 for name in ('tag', 'name', 'archived', 'removed', 'deleted',
-            'removed_at', 'deleted_at', 'active', 'status')}
+            'removed_at', 'deleted_at', 'active', 'status', 'type')}
         clan_fields['_id'] = 0
         async def counts():
             return decode_counts(await (await self.mongo.strike_records.aggregate(

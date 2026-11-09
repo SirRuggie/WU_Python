@@ -317,13 +317,30 @@ def replacement_slot_line(row, clan_names, *, index=None):
             + (f"\n{note}" if note else ''))
 
 
-def replacement_dashboard_url(state):
+LINK_BUTTON_URL_LIMIT = 512
+
+
+def replacement_dashboard_link(state):
+    """Return (url, clans_left_out). Discord rejects link buttons over 512 characters."""
     query = [('view', 'replacements')]
     query += [('slot_weight', str(value)) for value in state.get('weights') or []]
-    query += [('slot_clan', value) for value in state.get('clan_tags') or []]
     if state.get('member_id'):
         query.append(('slot_member', str(state['member_id'])))
-    return f'{STRIKES_URL}?{urlencode(query)}'
+    clans = state.get('clan_tags') or []
+    kept = []
+    for value in clans:
+        trial = query + [('slot_clan', item) for item in kept + [value]]
+        if len(f'{STRIKES_URL}?{urlencode(trial)}') > LINK_BUTTON_URL_LIMIT:
+            break
+        kept.append(value)
+    # Keep the documented parameter order: weights, clans, member.
+    ordered = [pair for pair in query if pair[0] != 'slot_member'] + [
+        ('slot_clan', item) for item in kept] + [pair for pair in query if pair[0] == 'slot_member']
+    return f'{STRIKES_URL}?{urlencode(ordered)}', len(kept) < len(clans)
+
+
+def replacement_dashboard_url(state):
+    return replacement_dashboard_link(state)[0]
 
 
 def parse_weights(text):
@@ -370,8 +387,11 @@ async def replacement_panel(store, state, *, notice=''):
     messages = []
     if state.get('refresh_warning'):
         messages.append('Could not update some clans. The data shown is old.')
+    link, clans_left_out = replacement_dashboard_link({**state, 'clan_tags': chosen_clans})
     if len(ranked) > CLAN_MENU_LIMIT:
         messages.append('Some clans hidden; use the dashboard.')
+    if clans_left_out:
+        messages.append('Some clans not in link')
     if notice:
         messages.append(safe(notice, 180))
     if messages:
@@ -417,8 +437,7 @@ async def replacement_panel(store, state, *, notice=''):
              bool(weights_chosen or chosen_clans or member_id))):
         buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id,
                                        label=label, is_disabled=not enabled)
-    buttons.add_link_button(replacement_dashboard_url({**state, 'clan_tags': chosen_clans}),
-                            label='Open on dashboard')
+    buttons.add_link_button(link, label='Open on dashboard')
     children.append(buttons)
     return [Container(accent_color=0xD9A441, components=children)]
 

@@ -89,6 +89,33 @@ def test_activity_read_keeps_the_existing_authorization_gate():
     asyncio.run(run())
 
 
+def test_activity_response_clans_carry_is_fwa_from_the_clan_type():
+    import asyncio
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+    from cwl_web import strikes
+    async def run():
+        @asynccontextmanager
+        async def mongo(request):
+            yield SimpleNamespace(player_activity=SimpleNamespace())
+        ledger = activity_ledger({'profiles': [], 'records': [], 'clans': [
+            {'tag': '#FWA', 'name': 'Family', 'type': 'FWA'},
+            {'tag': '#CWL', 'name': 'Lazy', 'type': 'normal'},
+            {'tag': '#OLD', 'name': 'Untyped'},
+            {'tag': '#WARN'}]})
+        request = SimpleNamespace(app={'store': object(), 'providers': object()})
+        with patch.object(strikes.shared, 'mongo', mongo), patch.object(strikes, 'service', AsyncMock(return_value=ledger)), \
+             patch('utils.player_activity_store.PlayerActivityStore.overview', AsyncMock(return_value=[])):
+            result = json.loads((await ready_activity_accounts(request)).body)
+        assert result['clans'] == [
+            {'tag': '#FWA', 'name': 'Family', 'is_fwa': True},
+            {'tag': '#CWL', 'name': 'Lazy', 'is_fwa': False},
+            {'tag': '#OLD', 'name': 'Untyped', 'is_fwa': False},
+            {'tag': '#WARN', 'name': '#WARN', 'is_fwa': False}]
+    asyncio.run(run())
+
+
 def test_route_uses_public_weight_owner_and_preserves_rows_on_upstream_failure():
     import asyncio
     from contextlib import asynccontextmanager

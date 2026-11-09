@@ -75,13 +75,20 @@ export function dashboardTarget(
         }
       : {}),
     ...(["strikes", "replacements"].includes(value || "") &&
-    activityFilterKeys.some((key) => params.has(key))
+    (activityFilterKeys.some((key) => params.has(key)) ||
+      (value === "strikes" && params.get("view") === "replacements"))
       ? {
-          strikeState: new URLSearchParams(
-            activityFilterKeys.flatMap((key) =>
+          strikeState: new URLSearchParams([
+            // Discord links say view=replacements; the roster reads activity_view.
+            ...(value === "strikes" &&
+            params.get("view") === "replacements" &&
+            !params.has("activity_view")
+              ? [["activity_view", "replacements"]]
+              : []),
+            ...activityFilterKeys.flatMap((key) =>
               params.getAll(key).map((value) => [key, value]),
             ),
-          ).toString(),
+          ]).toString(),
         }
       : {}),
     ...(value === "moderation" && moderationMember ? { moderationMember } : {}),

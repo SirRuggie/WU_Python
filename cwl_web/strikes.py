@@ -433,7 +433,11 @@ async def activity_accounts(request):
                 "activity_as_of": activity_as_of,
                 "history_warning": history_warning,
                 "clans": [
-                    {"tag": row["tag"], "name": row.get("name") or row["tag"]}
+                    {
+                        "tag": row["tag"],
+                        "name": row.get("name") or row["tag"],
+                        "is_fwa": row.get("type") == "FWA",
+                    }
                     for row in context["clans"]
                 ],
             }

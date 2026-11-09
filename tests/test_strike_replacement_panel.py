@@ -158,6 +158,23 @@ def test_dashboard_link_carries_weights_clans_and_member():
     assert query['slot_clan'] == ['#ABC123']
 
 
+def test_dashboard_link_stays_within_512_characters_and_says_when_clans_are_left_out():
+    alphabet = '0289PYLQGRJCUV'
+    clans = [f'#{alphabet[index // 5]}{alphabet[index % 5]}YYLQ0G8' for index in range(25)]
+    state = {'weights': [143000, 173000, 150000, 160000, 170000], 'clan_tags': clans,
+             'member_id': 123456789012345678}
+    url, left_out = strikes.replacement_dashboard_link(state)
+    assert len(url) <= 512 and left_out
+    query = parse_qs(urlparse(url).query)
+    assert len(query['slot_weight']) == 5 and query['slot_member'] == ['123456789012345678']
+    assert query['slot_clan'] == clans[:len(query['slot_clan'])] and 0 < len(query['slot_clan']) < 25
+    assert strikes.replacement_dashboard_url(state) == url
+    fwa = [{'tag': value, 'name': f'Clan {value}', 'type': 'FWA'} for value in clans]
+    payload, _ = render([candidate('#A', count=3)], state, fwa)
+    assert 'Some clans not in link' in text_of(payload)
+    assert not strikes.replacement_dashboard_link({'weights': [143000], 'clan_tags': clans[:2]})[1]
+
+
 def test_command_replies_privately_with_mentions_suppressed_and_member_option():
     ctx = SimpleNamespace(user=SimpleNamespace(id=1), guild_id=123, defer=AsyncMock(), respond=AsyncMock())
     inserted = AsyncMock()
