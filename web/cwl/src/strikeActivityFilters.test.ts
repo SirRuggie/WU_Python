@@ -12,6 +12,8 @@ import {
   copyActivityList,
   activityRuleText,
   memberName,
+  memberAccountsState,
+  findReplacementState,
 } from "./strikeActivityFilters";
 import type { ActivityAccount } from "./strikeActivityView";
 const row = (patch: Partial<ActivityAccount> = {}): ActivityAccount => ({
@@ -379,4 +381,31 @@ it("a selected member shows every account of that member, ignoring the tab rule 
       discord_name: "100000000000000002",
     }),
   ).toBeNull();
+});
+it("All accounts of a member opens the All tab filtered to that member", () => {
+  const state = memberAccountsState("100000000000000002");
+  const params = new URLSearchParams(state);
+  expect(params.get("activity_view")).toBe("all");
+  expect(params.get("member")).toBe("100000000000000002");
+  const f = parseActivityFilters(state);
+  expect([f.view, f.member]).toEqual(["all", "100000000000000002"]);
+});
+it("Find a fill for this slot opens Replacements with the slot weight and clan", () => {
+  const state = findReplacementState("#PQQ", 143400.4);
+  const params = new URLSearchParams(state);
+  expect(params.get("activity_view")).toBe("replacements");
+  expect(params.getAll("slot_weight")).toEqual(["143400"]);
+  expect(params.getAll("slot_clan")).toEqual(["#PQQ"]);
+  const f = parseActivityFilters(state);
+  expect([f.view, f.slotWeights, f.slotClans]).toEqual([
+    "replacements",
+    [143400],
+    ["#PQQ"],
+  ]);
+  // A slot without a weight still carries its clan.
+  for (const weight of [null, undefined, 0]) {
+    const bare = new URLSearchParams(findReplacementState("#PQQ", weight));
+    expect(bare.has("slot_weight")).toBe(false);
+    expect(bare.getAll("slot_clan")).toEqual(["#PQQ"]);
+  }
 });

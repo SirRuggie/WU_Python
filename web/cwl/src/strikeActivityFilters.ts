@@ -497,6 +497,18 @@ export function activityViewCounts(
     }),
   ) as Record<ActivityView, number>;
 }
+/** Link state for "All accounts of @name": the All tab filtered to one member. */
+export function memberAccountsState(member: string) {
+  return new URLSearchParams({ activity_view: "all", member }).toString();
+}
+/** Link state for "Find a fill for this slot": Replacements with the slot's weight and clan. */
+export function findReplacementState(clan: string, weight?: number | null) {
+  const query = new URLSearchParams({ activity_view: "replacements" });
+  if (weight && weight > 0)
+    query.append("slot_weight", String(Math.round(weight)));
+  query.append("slot_clan", clan);
+  return query.toString();
+}
 /** The member name shown on rows; never an ID. */
 export function memberName(
   row: Pick<ActivityAccount, "discord_id" | "discord_name">,

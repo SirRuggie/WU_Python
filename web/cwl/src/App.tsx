@@ -48,6 +48,7 @@ import RouteLoadBoundary from './RouteLoadBoundary'
 import { lazy, Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react'
 import OwnerPrankBoundary from './ownerPrank/OwnerPrankBoundary'
 import ConfirmDialog from './ConfirmDialog'
+import { findReplacementState, memberAccountsState } from './strikeActivityFilters'
 import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
@@ -1058,16 +1059,13 @@ function App() {
                 setStrikeFilterState(state); setStrikeTag(tag); setReplacementTag(''); acceptRoute('strikes');
               }}
               onMemberAccounts={(member) => {
-                const state = new URLSearchParams({activity_view:'all', member}).toString();
+                const state = memberAccountsState(member);
                 navigation.current?.write({view:'strikes',season:'',strikeState:state},true);
                 setActivityVisit(window.history.state?.wuDashboardIndex || 0);
                 setStrikeFilterState(state);setStrikeTag('');acceptRoute('strikes');
               }}
               onFindReplacement={(clan, _tag, weight) => {
-                const query = new URLSearchParams({activity_view:'replacements'});
-                if (weight && weight > 0) query.append('slot_weight', String(Math.round(weight)));
-                query.append('slot_clan', clan);
-                const state = query.toString();
+                const state = findReplacementState(clan, weight);
                 navigation.current?.write({view:'strikes',season:'',strikeState:state},true);
                 setActivityVisit(window.history.state?.wuDashboardIndex || 0);
                 setStrikeFilterState(state);setStrikeTag('');acceptRoute('strikes');

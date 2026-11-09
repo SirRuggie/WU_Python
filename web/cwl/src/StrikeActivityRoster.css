@@ -410,6 +410,7 @@
 
   .strike-activity-toolbar {
     top: 0;
+    grid-column: 1 / -1;
   }
 }
 .strike-activity-roster h2.sr-only {

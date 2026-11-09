@@ -268,3 +268,42 @@ it("lays Find slots out as weights plus Find, then clan and member halves", asyn
     [...row.children].map((node) => node.getAttribute("aria-label")),
   ).toEqual(["Clans: All FWA clans", "Member: any"]);
 });
+
+it("names a result from the account row when the endpoint has no name, never an ID", async () => {
+  const bare = (account: ActivityAccount) => ({
+    ...candidate(account, 0),
+    discord_name: null,
+  });
+  const rows = [
+    accounts[0],
+    { ...accounts[1], discord_id: "100000000000000002", discord_name: null },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      return new Response(
+        JSON.stringify(
+          url.includes("/strikes/replacements")
+            ? {
+                slots: [
+                  {
+                    weight: 143000,
+                    weight_label: "143k",
+                    candidates: [bare(rows[0]), bare(rows[1])],
+                  },
+                ],
+              }
+            : { accounts: rows, clans },
+        ),
+      );
+    }),
+  );
+  await mount("/strikes?view=replacements&slot_weight=143000");
+  const items = [...host.querySelectorAll(".strike-slot-group li")].map(
+    (node) => node.textContent!,
+  );
+  expect(items[0]).toContain("@slayer");
+  expect(items[1]).not.toContain("@");
+  expect(items[1]).not.toMatch(/\d{15}/);
+});

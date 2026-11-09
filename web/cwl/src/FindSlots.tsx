@@ -211,7 +211,7 @@ export default function FindSlots({
                 const row = accounts.find(
                   (account) => account.player_tag === item.player_tag,
                 );
-                const who = memberName(item);
+                const who = (row && memberName(row)) || memberName(item);
                 const priority = priorityLabel(item.priority);
                 return (
                   <li key={item.player_tag}>
