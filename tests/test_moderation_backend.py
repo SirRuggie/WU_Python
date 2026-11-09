@@ -311,7 +311,7 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
         store = NS(settings=AsyncMock(return_value=settings), claim=AsyncMock(return_value=self.row), finish=AsyncMock())
         with patch.object(transport, "post_card", new=AsyncMock(return_value="123")) as send:
             self.assertTrue(await transport.deliver(store, bot, self.row))
-            send.assert_awaited_once_with(self.row, forum=False)
+            send.assert_awaited_once_with(self.row, forum=False, bot=bot)
         post.is_locked = True
         self.assertIsNone(await transport.channel_ready(bot, self.row))
         post.is_locked = False

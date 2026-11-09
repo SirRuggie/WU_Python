@@ -9,14 +9,54 @@ const children = (value: unknown): unknown[] =>
 const text = (value: unknown): string =>
   typeof value === "string" ? value : "";
 
+function profileBoundary(prefix: string): boolean {
+  let labelDepth = 0;
+  let urlDepth = 0;
+  for (let index = 0; index < prefix.length; index++) {
+    const char = prefix[index];
+    if (char === "\\") {
+      if (++index === prefix.length) return false;
+      continue;
+    }
+    if (char === "[") labelDepth++;
+    else if (char === "]") labelDepth = Math.max(0, labelDepth - 1);
+    else if (char === "(" && (urlDepth || prefix[index - 1] === "]"))
+      urlDepth++;
+    else if (char === ")" && urlDepth) urlDepth--;
+  }
+  return labelDepth === 0 && urlDepth === 0;
+}
+
 function discordText(value: string, names: Record<string, string>): ReactNode {
   return value.split("\n").map((line, lineIndex) => {
     const heading = line.startsWith("### ");
     const content = heading ? line.slice(4) : line;
     const parts = content.split(
-      /(\*\*[^*]+\*\*|<@!?\d+>|<t:\d+:[fFR]>|ID \d+)/g,
+      /(\[(?:\\.|[^\[\]\\\n])+\]\(https:\/\/discord\.com\/users\/\d+\)|\*\*[^*]+\*\*|<@!?\d+>|<t:\d+:[fFR]>|ID \d+)/g,
     );
+    let offset = 0;
     const rendered = parts.map((part, index) => {
+      const start = offset;
+      offset += part.length;
+      const profile =
+        /^\[((?:\\.|[^\[\]\\\n])+)\]\(https:\/\/discord\.com\/users\/(\d+)\)$/.exec(
+          part,
+        );
+      if (profile && profileBoundary(content.slice(0, start))) {
+        const label = profile[1]
+          .replace(/\\(.)/g, "$1")
+          .replace(/@\u200b/g, "@");
+        return (
+          <a
+            key={index}
+            href={`https://discord.com/users/${profile[2]}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {label}
+          </a>
+        );
+      }
       if (part.startsWith("**") && part.endsWith("**")) {
         return <strong key={index}>{part.slice(2, -2)}</strong>;
       }

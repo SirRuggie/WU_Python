@@ -1,5 +1,6 @@
 """Exact moderation card content and one-attempt transport payloads."""
 import json
+import re
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace as NS
@@ -8,6 +9,127 @@ from unittest.mock import patch
 from utils.member_event_cards import (
     DEFAULT_AVATAR, _content, accent, build_card, build_forum_message, sample_row,
 )
+from utils.member_event_cards import USER_KINDS, OBJECT_KINDS, V2_TEXT_LIMIT, EMBED_DESCRIPTION_LIMIT, _fit
+from utils.member_events import safe_text
+
+
+class ProfileLinkTests(unittest.TestCase):
+    uid = "123456789012345678"
+    moderator = "987654321098765432"
+
+    def text(self, payload):
+        return payload["embeds"][0]["description"] if "embeds" in payload else card_text(payload)
+
+    def test_each_subject_kind_uses_stored_name_in_both_formats(self):
+        for kind in ("join", "leave", "kick", "ban", *USER_KINDS):
+            for builder in (build_card, build_forum_message):
+                with self.subTest(kind=kind, builder=builder.__name__):
+                    row = {**sample_row(kind), "display_name": "Sagan", "username": "sagan_123"}
+                    text = self.text(builder(row))
+                    self.assertIn(f"[Sagan](https://discord.com/users/{self.uid}) (sagan\\_123)", text)
+                    self.assertNotIn(f"<@{self.uid}>", text)
+
+    def test_username_suffix_and_unknown_display_name(self):
+        for builder in (build_card, build_forum_message):
+            for username in ("SAGAN", "", None, self.uid):
+                row = {**sample_row("leave"), "display_name": "Sagan", "username": username}
+                text = self.text(builder(row))
+                self.assertIn(f"[Sagan](https://discord.com/users/{self.uid}) left", text)
+            for name in ("", None, self.uid, "\u200d"):
+                row = {**sample_row("leave"), "display_name": name, "username": self.uid}
+                self.assertIn(f"[Unknown member](https://discord.com/users/{self.uid}) left", self.text(builder(row)))
+
+    def test_hostile_labels_and_suffixes_cannot_break_out_or_ping(self):
+        hostile = ["]", "(", ")", "[x](https://evil)", "https://evil.example", "@everyone", "@here",
+                   "<@42>", "**bold**", "name\nnext", "A\u200dB", "\\", "](" * 90]
+        pattern = re.compile(r"\[((?:\\.|[^\]\\])*)\]\(https://discord\.com/users/([0-9]+)\)")
+        for name in hostile:
+            for builder in (build_card, build_forum_message):
+                with self.subTest(name=name, builder=builder.__name__):
+                    row = {**sample_row("leave"), "display_name": name, "username": name + " extra"}
+                    payload = builder(row)
+                    text = self.text(payload)
+                    links = pattern.findall(text)
+                    self.assertEqual(len(links), 1)
+                    self.assertEqual(links[0][1], self.uid)
+                    self.assertNotRegex(links[0][0], r"(?<!\\)[\]\)]")
+                    self.assertEqual(text.count("https://discord.com/users/"), 1)
+                    self.assertNotIn("https://evil", text.split("\n\n")[2] if "embeds" in payload else text)
+                    for ping in ("@everyone", "@here"):
+                        self.assertNotIn(ping, text)
+                    self.assertNotRegex(text, r"(?<!\\)<@[!&]?[0-9]+>")
+                    self.assertEqual(payload["allowed_mentions"], {"parse": []})
+
+    def test_all_other_user_references_resolve_or_keep_mentions(self):
+        for builder in (build_card, build_forum_message):
+            for kind in ("kick", "ban", "timeout_add", "timeout_remove", "unban", "roles_added",
+                         "roles_removed", "message_delete", "message_bulk_delete", *OBJECT_KINDS):
+                row = sample_row(kind)
+                known = self.text(builder(row, names={self.moderator: "Mod [one]"}))
+                self.assertIn(f"by [Mod \\[one\\]](https://discord.com/users/{self.moderator})", known)
+                self.assertIn(f"by <@{self.moderator}>", self.text(builder(row)))
+            row = sample_row("member_update")
+            self.assertIn(f"**Changed by**\n[Actor](https://discord.com/users/{self.moderator})",
+                          self.text(builder(row, names={self.moderator: "Actor"})))
+            self.assertIn(f"**Changed by**\n<@{self.moderator}>", self.text(builder(row)))
+            row = sample_row("channel_permissions")
+            row["details"] = {**row["details"], "subject_type": "member", "subject_id": self.uid}
+            self.assertIn(f"**Applies to**\n[Target](https://discord.com/users/{self.uid})",
+                          self.text(builder(row, names={self.uid: "Target"})))
+            self.assertIn(f"**Applies to**\n<@{self.uid}>", self.text(builder(row)))
+            for kind in ("invite_use", "invite_create"):
+                row = sample_row(kind)
+                for stored, expected in (("Stored", "Stored"), ("", "Cached"), (None, "Cached")):
+                    row["details"] = {**row["details"], "inviter_name": stored}
+                    self.assertIn(f"[{expected}](https://discord.com/users/{self.moderator})",
+                                  self.text(builder(row, names={self.moderator: "Cached"})))
+                row["details"]["inviter_id"] = None
+                row["details"]["inviter_name"] = "Plain inviter"
+                self.assertIn("Plain inviter", self.text(builder(row)))
+                self.assertNotIn("[Plain inviter]", self.text(builder(row)))
+            row = sample_row("leave")
+            self.assertIn(f"Test log · sent by [Staff](https://discord.com/users/{self.moderator})",
+                          self.text(builder(row, self.moderator, {self.moderator: "Staff"})))
+            self.assertIn(f"Test log · sent by <@{self.moderator}>", self.text(builder(row, self.moderator)))
+
+    def test_length_fitting_preserves_complete_profile_links(self):
+        for kind in ("kick", "roles_added", "member_update", "channel_permissions"):
+            row = {**sample_row(kind), "display_name": "\\" * 120, "username": "[" * 120,
+                   "reason": "[" * 500, "roles": ["[" * 80] * 30}
+            row["details"] = {**(row["details"] or {}), "roles": ["[" * 60] * 30,
+                              "changes": [{"field": "nickname", "before": "[" * 100, "after": "]" * 100}] * 20}
+            names = {self.moderator: "\\" * 120}
+            for builder, budget in ((build_card, V2_TEXT_LIMIT), (build_forum_message, EMBED_DESCRIPTION_LIMIT)):
+                payload = builder(row, self.moderator, names)
+                text = self.text(payload)
+                if "embeds" not in payload:
+                    children = payload["components"][0]["components"]
+                    header_size = len(children[0]["components"][0]["content"]) if children[0]["type"] == 9 else 0
+                    self.assertLessEqual(sum(len(c["content"]) for c in children if c["type"] == 10)
+                                         + header_size, budget)
+                else:
+                    self.assertLessEqual(len(text), budget)
+                self.assertEqual(text.count(f"](https://discord.com/users/{self.moderator})"), 2)
+                if kind != "channel_permissions":
+                    self.assertIn(f"](https://discord.com/users/{self.uid})", text)
+        link = f"[{safe_text('name' + chr(92))}](https://discord.com/users/{self.uid})"
+        for index in (2, 3, 4):
+            lines = ["name", "title", "main", "field", "footer"]
+            lines[index] = link + " trailing" * 100
+            fitted = _fit(lines, 260)
+            self.assertIn(link, "\n".join(fitted))
+            self.assertLessEqual(sum(map(len, fitted)), 260)
+
+    def test_old_recovered_rows_and_object_rows_need_no_new_fields(self):
+        for builder in (build_card, build_forum_message):
+            row = sample_row("leave")
+            row.pop("username")
+            row["details"] = {"recovered": True}
+            text = self.text(builder(row))
+            self.assertEqual(text.count("Recovered after restart"), 1)
+            self.assertIn(f"[Sample member](https://discord.com/users/{self.uid}) left", text)
+            for kind in OBJECT_KINDS:
+                self.assertNotIn("https://discord.com/users/0", self.text(builder(sample_row(kind))))
 
 
 def card_text(payload):
@@ -43,7 +165,7 @@ class CardTests(unittest.TestCase):
                 self.assertEqual(children[0]["accessory"]["media"]["url"], DEFAULT_AVATAR)
                 text = card_text(payload)
                 self.assertIn(title, text)
-                self.assertIn(f"<@{row['user_id']}> {action}", text)
+                self.assertIn(f"[Sample member](https://discord.com/users/{row['user_id']}) (sample\\_member) {action}", text)
                 self.assertIn(field, text)
                 self.assertIn("Members: 1,284", text)
                 self.assertIn(f"ID {row['user_id']}", text)
@@ -214,7 +336,7 @@ class BatchTwoCardTests(unittest.TestCase):
 
     def test_member_cards_show_roles_messages_and_attachments_without_raw_markup(self):
         added = card_text(build_card(sample_row("roles_added")))
-        self.assertIn("<@123456789012345678> had roles added by <@987654321098765432>", added)
+        self.assertIn("[Sample member](https://discord.com/users/123456789012345678) (sample\\_member) had roles added by <@987654321098765432>", added)
         self.assertIn("**Roles**\nCWL player, Member", added)
         self.assertIn("was unbanned by", card_text(build_card(sample_row("unban"))))
         deleted = sample_row("message_delete")

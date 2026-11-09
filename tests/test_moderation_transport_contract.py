@@ -3,10 +3,65 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from unittest.mock import patch
+from unittest.mock import AsyncMock
+from types import SimpleNamespace as NS
 
 import pytest
 
 from extensions.events import member_events as transport
+
+
+@pytest.mark.parametrize('cache_kind', ['member', 'global_user', 'username', 'missing', 'raises'])
+@pytest.mark.parametrize('forum', [False, True])
+@pytest.mark.parametrize('failed', [False, True])
+def test_cached_names_keep_one_delivery_attempt_and_receipt(cache_kind, forum, failed):
+    from utils.member_event_cards import sample_row
+    from utils.member_event_settings import normalize_settings
+    from utils.member_events import MemberEventStore, GUILD_ID
+    def member(guild, uid):
+        assert guild == GUILD_ID and uid == 987654321098765432
+        if cache_kind == 'raises':
+            raise RuntimeError('fixture cache error')
+        return NS(display_name='Cached moderator') if cache_kind == 'member' else None
+    def user(uid):
+        assert uid == 987654321098765432
+        if cache_kind == 'raises':
+            raise RuntimeError('fixture user cache error')
+        return (NS(global_name='Global moderator', username='fallback') if cache_kind == 'global_user'
+                else NS(global_name=None, username='Username moderator') if cache_kind == 'username' else None)
+    bot = NS(cache=NS(get_member=member, get_user=user), rest=NS(fetch_user=AsyncMock(side_effect=AssertionError('No REST lookup'))))
+    row = {**sample_row('kick'), '_id': 'fixture', 'channel_id': '1004519991648997447',
+           'forum_tag_id': None, 'details': {'recovered': True}}
+    saved = normalize_settings(None, MemberEventStore.default_settings())
+    saved['events']['kick'] = {'enabled': True, 'channel_id': row['channel_id'], 'forum_tag_id': None}
+    store = NS(settings=AsyncMock(return_value=saved), claim=AsyncMock(return_value=row),
+               finish=AsyncMock(), skip_queued=AsyncMock())
+    calls = []
+    with patch.dict('os.environ', {'DISCORD_TOKEN': 'fixture-token'}), \
+         patch.object(transport, 'channel_ready', new=AsyncMock(return_value=NS(type=15 if forum else 0))), \
+         patch.object(transport.aiohttp, 'ClientSession', return_value=Session(calls, status=502 if failed else 200)):
+        if failed:
+            with pytest.raises(RuntimeError, match='HTTP 502'):
+                asyncio.run(transport.deliver(store, bot, row))
+            store.finish.assert_awaited_once_with('fixture', status='uncertain')
+        else:
+            assert asyncio.run(transport.deliver(store, bot, row))
+            store.finish.assert_awaited_once_with('fixture', status='sent', message_id='123456789012345678')
+    assert len(calls) == 1
+    store.claim.assert_awaited_once_with('fixture')
+    bot.rest.fetch_user.assert_not_awaited()
+    payload = calls[0][1]['json']
+    message = payload.get('message') or payload
+    text = json.dumps(message, ensure_ascii=False)
+    known = {'member': 'Cached moderator', 'global_user': 'Global moderator', 'username': 'Username moderator'}
+    if cache_kind in known:
+        assert f'[{known[cache_kind]}](https://discord.com/users/987654321098765432)' in text
+    else:
+        assert '<@987654321098765432>' in text
+    assert text.count('Recovered after restart') == 1
+    assert message['allowed_mentions'] == {'parse': []}
+    if forum:
+        assert payload['name'].startswith('Kicked · Sample member · 123456789012345678 · ')
 
 
 class Form:

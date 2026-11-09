@@ -148,7 +148,11 @@ checks. These are successive snapshots, not contradictory migration counts.
 The bot and dashboard preview share the same card builders. Text-channel messages
 and replies to existing forum posts use Components V2: an event accent, avatar
 thumbnail/name, event title and details, separator, member-count/ID/time footer,
-and one Discord profile link button. `allowed_mentions` suppresses pings. A new
+and one Discord profile link button. Member names are masked links to `https://discord.com/users/<id>` built from the stored display name, with the
+username in parentheses when it differs, because Discord shows `<@id>` as unknown-user when the client has not
+cached that user (common after a member leaves, and on mobile). Moderator, actor, inviter and test-staff names
+come from the bot's in-memory cache at send time; when the cache has no name, the card keeps the `<@id>`
+mention. Role and channel mentions are unchanged. `allowed_mentions` suppresses pings. A new
 forum post retains the compact embed starter and link button because Discord's
 forum thread-create payload does not accept the Components V2 flag; its preview
 uses that same forum starter payload. External identity, role, and reason text is
