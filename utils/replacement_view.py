@@ -68,19 +68,23 @@ MAX_SLOT_WEIGHTS = 5
 SLOTS_PER_WEIGHT = 3
 
 
-def slot_pool(rows: list[dict], *, fwa_tags, clan_tags=None, member_id=None) -> list[dict]:
-    """Candidate slots: FWA clans only; marked or 3+ strikes, or every account of one member."""
+def slot_pool(rows: list[dict], *, fwa_tags, clan_tags=None, member_tags=None) -> list[dict]:
+    """Candidate slots: FWA clans only; marked or 3+ strikes, or every linked account of one member.
+
+    member_tags is the member's linked player tags: None means no member filter,
+    an empty set means a member with no linked accounts (no slots).
+    """
     fwa = set(fwa_tags)
     clans = set(clan_tags) if clan_tags else None
-    member = str(member_id) if member_id else None
+    member = set(member_tags) if member_tags is not None else None
     pool = []
     for row in rows:
         if row.get('last_seen_clan_tag') not in fwa:
             continue
         if clans is not None and row['last_seen_clan_tag'] not in clans:
             continue
-        if member:
-            if str(row.get('member_id') or '') != member:
+        if member is not None:
+            if row.get('player_tag') not in member:
                 continue
         elif not (row.get('is_manual') or row['active_strikes'] >= 3):
             continue
@@ -89,14 +93,14 @@ def slot_pool(rows: list[dict], *, fwa_tags, clan_tags=None, member_id=None) -> 
 
 
 def find_slots(rows: list[dict], weights: list[int], *, fwa_tags, clan_tags=None,
-               member_id=None) -> list[dict]:
+               member_tags=None) -> list[dict]:
     """Best three slots per weight, in input order; unknown weights are never matched."""
     if not weights or len(weights) > MAX_SLOT_WEIGHTS:
         raise ValueError(f'Enter 1 to {MAX_SLOT_WEIGHTS} weights.')
     for weight in weights:
         if type(weight) is not int or not 0 < weight <= 500000:
             raise ValueError('Enter a positive recruit weight.')
-    known = [row for row in slot_pool(rows, fwa_tags=fwa_tags, clan_tags=clan_tags, member_id=member_id)
+    known = [row for row in slot_pool(rows, fwa_tags=fwa_tags, clan_tags=clan_tags, member_tags=member_tags)
              if type(row.get('weight')) is int and row['weight'] > 0]
     groups = []
     for weight in weights:

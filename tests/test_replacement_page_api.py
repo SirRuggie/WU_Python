@@ -76,7 +76,8 @@ def test_route_passes_revision_to_add_update_and_clear():
     asyncio.run(scenario())
 
 
-def _slot_scenario(tmp_path, query, *, extra=None, provider_weights=None, raw_profiles=(), saved=None):
+def _slot_scenario(tmp_path, query, *, extra=None, provider_weights=None, raw_profiles=(), saved=None,
+                   links=None, member_ids=True):
     """Run the endpoint over an isolated fixture: two FWA clans, one family clan."""
     from multidict import MultiDict
     async def scenario():
@@ -94,6 +95,8 @@ def _slot_scenario(tmp_path, query, *, extra=None, provider_weights=None, raw_pr
             ('#PC', '#Q2Y', 1, 173000, False, '111111111111111111', 'slayer'),
         ] + (extra or [])
         for player, clan_tag, count, weight, marked, member, name in fixtures:
+            if not member_ids:
+                member = None
             profile = {'_id': f'{api.GUILD_ID}:{player}', 'guild_id': api.GUILD_ID, 'player_tag': player,
                        'player_name': player, 'current_clan_tag': clan_tag, 'roster_seen_at': now,
                        'town_hall': 15, 'revision': 1, 'member_id': member, 'discord_name': name}
@@ -123,7 +126,10 @@ def _slot_scenario(tmp_path, query, *, extra=None, provider_weights=None, raw_pr
         @asynccontextmanager
         async def mongo(_):
             yield db
-        with patch.object(api.shared, 'require_manage', AsyncMock()), patch.object(api.shared, 'mongo', mongo):
+        from utils.recruit_links import LinksResult
+        member_links = links or LinksResult(sources={tag_: ('ClashKing',) for tag_ in ('#P0', '#P2', '#PC')})
+        with patch.object(api.shared, 'require_manage', AsyncMock()), patch.object(api.shared, 'mongo', mongo), \
+                patch.object(api.recruit_links, 'resolve', AsyncMock(return_value=member_links)):
             try:
                 return json.loads((await api.replacements(request)).text)
             except Exception as exc:
@@ -181,6 +187,34 @@ def test_endpoint_member_returns_all_their_fwa_accounts_with_discord_name(tmp_pa
     plain = _slot_scenario(tmp_path, [('weight', '143000')])
     unknown = next(row for row in plain['slots'][0]['candidates'] if row['player_tag'] == '#P1')
     assert unknown['discord_name'] is None and unknown['discord_id'] is None
+
+
+def test_endpoint_member_uses_links_when_cached_member_id_is_missing(tmp_path):
+    result = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')],
+                            member_ids=False)
+    assert set(_slot_tags(result['slots'][0])) == {'#P0', '#P2', '#PC'}
+
+
+def test_endpoint_member_ignores_stale_cached_member_id(tmp_path):
+    from utils.recruit_links import LinksResult
+    links = LinksResult(sources={'#P1': ('ClashKing',), '#P2': ('ClashKing',)})
+    result = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')], links=links)
+    # #P0 and #PC cache this member id but are not linked; #P1 caches none but is linked.
+    assert set(_slot_tags(result['slots'][0])) == {'#P1', '#P2'}
+
+
+def test_endpoint_member_links_unavailable_or_conflicting_return_503(tmp_path):
+    from utils.recruit_links import LinksResult
+    for links in (LinksResult(unavailable=('ClashPerk',)), LinksResult(conflicts=('#P0',))):
+        result = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')], links=links)
+        assert result.status == 503
+
+
+def test_endpoint_member_without_links_returns_empty_groups(tmp_path):
+    from utils.recruit_links import LinksResult
+    result = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')],
+                            links=LinksResult())
+    assert result['slots'][0]['candidates'] == []
 
 
 def test_endpoint_bad_member_is_rejected_and_browse_mode_is_unchanged(tmp_path):
