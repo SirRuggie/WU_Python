@@ -485,6 +485,11 @@
 .strikes-workspace .strike-activity-status .strikes-tracking > summary::before {
   content: none;
 }
+.strike-activity-status .strikes-tracking > summary {
+  min-height: 44px;
+  padding: 0 var(--wu-space-3);
+  border-radius: 999px;
+}
 
 /* The measured narrow status exceeds two rows; keep its timestamp above the body. */
 @media (max-width: 650px) {
@@ -792,10 +797,17 @@
   margin: 0;
   font-size: var(--wu-text-md);
 }
-.strike-find-slots > label {
+.strike-find-slots-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--wu-space-2);
+}
+.strike-find-slots-top > label {
   display: grid;
   gap: var(--wu-space-1);
   min-height: 0;
+  min-width: 0;
   align-items: stretch;
 }
 .strike-find-slots input[aria-invalid] {
@@ -803,7 +815,7 @@
 }
 .strike-find-slots-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--wu-space-2);
 }
 .strike-find-slots-row > button {
@@ -844,7 +856,13 @@
   width: 100%;
   min-width: 0;
   gap: 2px;
+  justify-content: stretch;
+  justify-items: start;
   text-align: left;
+}
+.strike-slot-group li > button:disabled {
+  opacity: 1;
+  cursor: default;
 }
 .strike-slot-group li > button > span {
   min-width: 0;

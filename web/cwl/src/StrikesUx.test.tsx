@@ -885,6 +885,9 @@ it("offers a fill for the open slot and all accounts of its member, without a ra
       (node) => node.textContent === label,
     )!;
   expect(host.textContent).not.toContain("Find replacements in this clan");
+  const actions = named("Find a fill for this slot").parentElement!;
+  expect(actions.className).toBe("strikes-detail-actions");
+  expect(named("All accounts of @slayer").parentElement).toBe(actions);
   await act(async () => named("Find a fill for this slot").click());
   expect(onFindReplacement).toHaveBeenCalledWith("#PQQ", "#P2Y", 143000);
   await act(async () => named("All accounts of @slayer").click());

@@ -257,3 +257,14 @@ it("shows the box only on the Replacements tab", async () => {
   expect(host.querySelector(".strike-find-slots")).toBeNull();
   expect(host.textContent).not.toContain("Match a recruit");
 });
+
+it("lays Find slots out as weights plus Find, then clan and member halves", async () => {
+  await mount("/strikes?view=replacements");
+  const top = host.querySelector(".strike-find-slots-top")!;
+  expect(top.querySelector("input")).not.toBeNull();
+  expect(top.textContent).toContain("Find slots");
+  const row = host.querySelector(".strike-find-slots-row")!;
+  expect(
+    [...row.children].map((node) => node.getAttribute("aria-label")),
+  ).toEqual(["Clans: All FWA clans", "Member: any"]);
+});

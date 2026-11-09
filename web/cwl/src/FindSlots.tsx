@@ -148,24 +148,35 @@ export default function FindSlots({
   return (
     <section className="strike-find-slots" aria-label="Find slots">
       <h2 className="sr-only">Find slots</h2>
-      <label>
-        Weights
-        <input
-          inputMode="decimal"
-          value={text}
-          maxLength={80}
-          disabled={disabled}
-          placeholder="143, 173, 150"
-          aria-invalid={!!error || undefined}
-          onChange={(event) => {
-            setText(event.target.value);
-            setError("");
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") find();
-          }}
-        />
-      </label>
+      <div className="strike-find-slots-top">
+        <label>
+          Weights
+          <input
+            inputMode="decimal"
+            value={text}
+            maxLength={80}
+            disabled={disabled}
+            placeholder="143, 173, 150"
+            aria-invalid={!!error || undefined}
+            onChange={(event) => {
+              setText(event.target.value);
+              setError("");
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") find();
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          className="primary"
+          aria-busy={busy || undefined}
+          disabled={disabled || busy}
+          onClick={find}
+        >
+          {busy ? "Finding…" : "Find slots"}
+        </button>
+      </div>
       <div className="strike-find-slots-row">
         <button
           type="button"
@@ -188,15 +199,6 @@ export default function FindSlots({
           <span>
             {member ? (name ? `@${name}` : "Selected member") : "Any member"}
           </span>
-        </button>
-        <button
-          type="button"
-          className="primary"
-          aria-busy={busy || undefined}
-          disabled={disabled || busy}
-          onClick={find}
-        >
-          {busy ? "Finding…" : "Find slots"}
         </button>
       </div>
       {error && <p role="alert">{error}</p>}

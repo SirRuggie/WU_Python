@@ -1243,34 +1243,42 @@ export default function StrikesWorkspace({
                   · {selectedAccount.active_strikes} active /{" "}
                   {strikeCountLabel(selectedAccount.total_strikes, "strike")} in
                   the last 90 days
-                  {onFindReplacement && selectedAccount.current_clan_tag && (
-                    <button
-                      onClick={() =>
-                        leaveDraft(() =>
-                          onFindReplacement(
-                            selectedAccount.current_clan_tag!,
-                            selectedAccount.player_tag,
-                            selectedAccount.weight ?? undefined,
-                          ),
-                        )
-                      }
-                    >
-                      Find a fill for this slot
-                    </button>
+                  {((onFindReplacement && selectedAccount.current_clan_tag) ||
+                    (onMemberAccounts &&
+                      selectedAccount.discord_id &&
+                      memberName(selectedAccount))) && (
+                    <div className="strikes-detail-actions">
+                      {onFindReplacement &&
+                        selectedAccount.current_clan_tag && (
+                          <button
+                            onClick={() =>
+                              leaveDraft(() =>
+                                onFindReplacement(
+                                  selectedAccount.current_clan_tag!,
+                                  selectedAccount.player_tag,
+                                  selectedAccount.weight ?? undefined,
+                                ),
+                              )
+                            }
+                          >
+                            Find a fill for this slot
+                          </button>
+                        )}
+                      {onMemberAccounts &&
+                        selectedAccount.discord_id &&
+                        memberName(selectedAccount) && (
+                          <button
+                            onClick={() =>
+                              leaveDraft(() =>
+                                onMemberAccounts(selectedAccount.discord_id!),
+                              )
+                            }
+                          >
+                            All accounts of @{memberName(selectedAccount)}
+                          </button>
+                        )}
+                    </div>
                   )}
-                  {onMemberAccounts &&
-                    selectedAccount.discord_id &&
-                    memberName(selectedAccount) && (
-                      <button
-                        onClick={() =>
-                          leaveDraft(() =>
-                            onMemberAccounts(selectedAccount.discord_id!),
-                          )
-                        }
-                      >
-                        All accounts of @{memberName(selectedAccount)}
-                      </button>
-                    )}
                   {selectedAccount.left_clan && (
                     <ReplacementDeparture
                       clan={selectedAccount.last_clan_name || "family"}
