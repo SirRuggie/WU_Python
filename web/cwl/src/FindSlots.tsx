@@ -24,6 +24,7 @@ type Candidate = {
   active_strikes: number;
   discord_id?: string | null;
   discord_name?: string | null;
+  link_disputed?: boolean;
 };
 type Slot = { weight: number; weight_label: string; candidates: Candidate[] };
 const key = (search: SlotSearch) =>
@@ -62,6 +63,7 @@ export default function FindSlots({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [slots, setSlots] = useState<Slot[] | null>(null),
+    [partial, setPartial] = useState(false),
     [panel, setPanel] = useState<{
       kind: "clans" | "member";
       trigger: HTMLElement;
@@ -90,15 +92,19 @@ export default function FindSlots({
       );
       next.slotClans.forEach((tag) => query.append("clan", tag));
       if (next.slotMember) query.set("member", next.slotMember);
-      const data = await api<{ slots: Slot[] }>(
+      const data = await api<{ slots: Slot[]; member_partial?: boolean }>(
         `/strikes/replacements?${query}`,
       );
       if (!Array.isArray(data.slots))
         throw new Error("Slot results are incomplete. Try again.");
-      if (id === turn.current) setSlots(data.slots);
+      if (id === turn.current) {
+        setSlots(data.slots);
+        setPartial(data.member_partial === true);
+      }
     } catch (cause) {
       if (id === turn.current) {
         setSlots(null);
+        setPartial(false);
         setError(
           cause instanceof Error ? cause.message : "Slots are unavailable.",
         );
@@ -231,6 +237,9 @@ export default function FindSlots({
                             ? `Gap ${compactWeight(item.weight_difference)}`
                             : null,
                           priority || null,
+                          item.link_disputed
+                            ? "Linked to two Discord users"
+                            : null,
                           `${item.active_strikes} ${item.active_strikes === 1 ? "strike" : "strikes"}`,
                         ]
                           .filter(Boolean)
@@ -246,6 +255,7 @@ export default function FindSlots({
           )}
         </section>
       ))}
+      {slots && partial && <p>Some linked accounts were left out.</p>}
       {panel?.kind === "clans" && (
         <ActionPanel
           title="Select clans"

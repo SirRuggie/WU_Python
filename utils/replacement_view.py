@@ -68,6 +68,21 @@ MAX_SLOT_WEIGHTS = 5
 SLOTS_PER_WEIGHT = 3
 
 
+def member_slot_tags(links) -> tuple[set[str] | None, set[str], bool]:
+    """Linked tags for a read-only member slot search: (tags, disputed, partial).
+
+    Every linked tag counts, verified or not. A tag also linked to another
+    Discord user is kept and reported in disputed. partial means a link provider
+    was unavailable while links were still found or the other provider answered.
+    tags is None only when both providers failed and nothing came back.
+    """
+    disputed = set(links.conflicts)
+    tags = set(links.sources) | disputed
+    if not tags and {'ClashKing', 'ClashPerk'} <= set(links.unavailable):
+        return None, set(), False
+    return tags, disputed, bool(links.unavailable)
+
+
 def slot_pool(rows: list[dict], *, fwa_tags, clan_tags=None, member_tags=None) -> list[dict]:
     """Candidate slots: FWA clans only; marked or 3+ strikes, or every linked account of one member.
 

@@ -203,11 +203,45 @@ def test_endpoint_member_ignores_stale_cached_member_id(tmp_path):
     assert set(_slot_tags(result['slots'][0])) == {'#P1', '#P2'}
 
 
-def test_endpoint_member_links_unavailable_or_conflicting_return_503(tmp_path):
+def test_endpoint_member_keeps_a_tag_linked_to_two_users_and_labels_it(tmp_path):
     from utils.recruit_links import LinksResult
-    for links in (LinksResult(unavailable=('ClashPerk',)), LinksResult(conflicts=('#P0',))):
-        result = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')], links=links)
-        assert result.status == 503
+    links = LinksResult(sources={'#P0': ('ClashKing',), '#PC': ('ClashKing',)}, conflicts=('#P2',))
+    result = _slot_scenario(tmp_path, [('weight', '143000'), ('member', '111111111111111111')], links=links)
+    assert result['member_partial'] is False
+    candidates = result['slots'][0]['candidates']
+    assert set(_slot_tags(result['slots'][0])) == {'#P0', '#P2', '#PC'}
+    assert {row['player_tag'] for row in candidates if row['link_disputed']} == {'#P2'}
+
+
+def test_endpoint_member_provider_unavailable_with_sources_is_partial_not_503(tmp_path):
+    from utils.recruit_links import LinksResult
+    links = LinksResult(sources={'#P0': ('ClashKing',), '#PC': ('ClashKing',)}, unavailable=('ClashPerk',))
+    result = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')], links=links)
+    assert result['member_partial'] is True and set(_slot_tags(result['slots'][0])) == {'#P0', '#PC'}
+
+
+def test_endpoint_member_search_does_not_require_verified_links(tmp_path):
+    from utils.recruit_links import LinksResult
+    links = LinksResult(sources={'#P0': ('ClashPerk',), '#PC': ('ClashPerk',)},
+                        verified={'#P0': False, '#PC': False})
+    result = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')], links=links)
+    assert result['member_partial'] is False and set(_slot_tags(result['slots'][0])) == {'#P0', '#PC'}
+
+
+def test_endpoint_member_with_nothing_usable_returns_503_and_clean_links_are_not_partial(tmp_path):
+    from utils.recruit_links import LinksResult
+    result = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')],
+                            links=LinksResult(unavailable=('ClashKing', 'ClashPerk')))
+    assert result.status == 503 and 'Account links are unavailable. Try again.' in result.text
+    one_down = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')],
+                              links=LinksResult(unavailable=('ClashPerk',)))
+    assert one_down['slots'][0]['candidates'] == [] and one_down['member_partial'] is True
+    clean = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')])
+    assert clean['member_partial'] is False
+    assert _slot_scenario(tmp_path, [('weight', '173000')])['member_partial'] is False
+    only_conflict = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')],
+                                   links=LinksResult(conflicts=('#P0',)))
+    assert _slot_tags(only_conflict['slots'][0]) == ['#P0'] and only_conflict['member_partial'] is False
 
 
 def test_endpoint_member_without_links_returns_empty_groups(tmp_path):
