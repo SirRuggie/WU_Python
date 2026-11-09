@@ -126,7 +126,7 @@ have been removed.
 | `/fwa new-th-upgrade` | Display FWA Town Hall upgrade notes. |
 | `/fwa points` | Show the latest stored FWA points verdicts. |
 | `/fwa war-plans` | Generate a war plan for win, loss, blacklist, or mismatch. |
-| `/fwa weight` | Calculate war weight from a storage value. |
+| `/fwa weight` | Calculate war weight from a storage value. Add `user` to save it to that member's account in Clan weights. |
 | `/cwl rosters` | Manage FWA saved rosters, players, and return reminders in one dashboard. |
 
 </details>

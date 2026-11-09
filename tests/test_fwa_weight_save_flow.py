@@ -1,0 +1,396 @@
+"""Discord flow for saving a /fwa weight result. Bridge, Mongo and Discord are isolated fakes."""
+
+import asyncio
+import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import hikari
+import pytest
+
+from extensions.commands.fwa import weight, weight_save as flow
+from utils import war_weight
+from cwl_web.providers import tag as normalize
+from utils.clan_weight_client import WeightClientError
+
+LOOT = 30000  # 150,000 = TH15 in the default ranges.
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+class Collection:
+    def __init__(self):
+        self.rows = {}
+
+    @staticmethod
+    def matches(row, query):
+        for key, expected in query.items():
+            if isinstance(expected, dict) and "$ne" in expected:
+                if row.get(key) == expected["$ne"]:
+                    return False
+            elif row.get(key) != expected:
+                return False
+        return True
+
+    async def find_one(self, query, projection=None):
+        row = self.rows.get(query.get("_id"))
+        return dict(row) if row and self.matches(row, query) else None
+
+    async def insert_one(self, document):
+        self.rows[document["_id"]] = dict(document)
+
+    async def update_one(self, query, update, upsert=False):
+        row = self.rows.get(query.get("_id"))
+        if row is None or not self.matches(row, query):
+            return SimpleNamespace(matched_count=0, modified_count=0, upserted_id=None)
+        row.update(update.get("$set", {}))
+        return SimpleNamespace(matched_count=1, modified_count=1, upserted_id=None)
+
+    async def delete_one(self, query):
+        self.rows.pop(query.get("_id"), None)
+
+
+class Bridge:
+    def __init__(self):
+        self.calls = []
+        self.allowed = True
+        self.accounts = [
+            {"tag": "#P2Y", "name": "Alpha", "town_hall": 15, "clan_name": "Family",
+             "available": True, "weight": None, "revision": 0},
+            {"tag": "#Q2Y", "name": "Beta", "town_hall": 14, "clan_name": None,
+             "available": True, "weight": 140000, "revision": 2},
+        ]
+        self.error = {}
+
+    async def __call__(self, action, *, actor_id, **payload):
+        self.calls.append((action, payload))
+        if action in self.error:
+            raise self.error[action]
+        if action == "access":
+            if not self.allowed:
+                raise WeightClientError("You need weight saving access.", code="forbidden")
+            return {"allowed": True}
+        if action == "accounts":
+            return {"accounts": [dict(a) for a in self.accounts], "hidden": 0}
+        if action == "lookup":
+            for account in self.accounts:
+                if account["tag"] == payload["tag"]:
+                    return {"account": dict(account)}
+            return {"account": {"tag": normalize(payload["tag"]), "name": "Typed", "town_hall": 15,
+                                "clan_name": None, "available": True, "weight": None, "revision": 0}}
+        if action == "save":
+            account = next((a for a in self.accounts if a["tag"] == payload["tag"]), {"tag": payload["tag"], "name": "Typed"})
+            changed = account.get("weight") != payload["weight"]
+            return {"account": {**account, "weight": payload["weight"], "revision": payload["revision"] + 1},
+                    "changed": changed}
+        raise AssertionError(action)
+
+
+def walk(node):
+    if isinstance(node, dict):
+        yield node
+        for value in node.values():
+            yield from walk(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from walk(value)
+
+
+def built(components):
+    return [component.build()[0] for component in components]
+
+
+def text_of(components):
+    return "\n".join(n.get("content", "") for n in walk(built(components)))
+
+
+def custom_ids(components):
+    return [n["custom_id"] for n in walk(built(components)) if "custom_id" in n]
+
+
+@pytest.fixture
+def env(monkeypatch):
+    bridge = Bridge()
+    monkeypatch.setattr(flow, "bridge", bridge)
+    monkeypatch.setattr(war_weight, "load", AsyncMock(return_value=war_weight.defaults()))
+    mongo = SimpleNamespace(component_state=Collection(), button_store=Collection())
+    bot = SimpleNamespace(cache=SimpleNamespace(get_emojis_view=lambda: {}),
+                          rest=SimpleNamespace(create_message=AsyncMock()))
+    return SimpleNamespace(bridge=bridge, mongo=mongo, bot=bot)
+
+
+def slash_ctx():
+    return SimpleNamespace(
+        user=SimpleNamespace(id=300, username="staff"), guild_id=2, channel_id=3,
+        defer=AsyncMock(),
+        interaction=SimpleNamespace(edit_initial_response=AsyncMock(), delete_initial_response=AsyncMock(),
+                                    member=SimpleNamespace(display_name="Staff"), guild_id=2),
+    )
+
+
+def component_ctx(values=(), user=300, fields=None):
+    interaction = SimpleNamespace(
+        guild_id=2, values=list(values), member=SimpleNamespace(display_name="Staff"),
+        create_initial_response=AsyncMock(), edit_initial_response=AsyncMock(),
+        components=[[SimpleNamespace(custom_id=k, value=v) for k, v in (fields or {}).items()]],
+    )
+    return SimpleNamespace(user=SimpleNamespace(id=user, username="staff"), interaction=interaction,
+                           respond_with_modal=AsyncMock(), respond=AsyncMock())
+
+
+def start(env, loot=LOOT):
+    ctx = slash_ctx()
+    target = SimpleNamespace(id=100)
+    run(weight.WeightCommand.invoke(SimpleNamespace(weight=loot, user=target), ctx, env.bot, env.mongo))
+    components = ctx.interaction.edit_initial_response.call_args.kwargs["components"]
+    sid = next(iter(env.mongo.component_state.rows), None)
+    return ctx, components, sid
+
+
+def call(handler, ctx, sid, env):
+    return run(handler.__wrapped__(ctx, sid, mongo=env.mongo, bot=env.bot)
+               if hasattr(handler, "__wrapped__") else handler(ctx, sid, mongo=env.mongo, bot=env.bot))
+
+
+def posted(env):
+    return [text_of(c.kwargs["components"]) for c in env.bot.rest.create_message.call_args_list]
+
+
+def test_without_user_posts_immediately_with_no_question(env):
+    ctx = slash_ctx()
+    run(weight.WeightCommand.invoke(SimpleNamespace(weight=LOOT, user=None), ctx, env.bot, env.mongo))
+    assert len(posted(env)) == 1 and "Saved for" not in posted(env)[0]
+    assert env.bridge.calls == []
+    ctx.interaction.delete_initial_response.assert_awaited_once()
+
+
+def test_without_permission_posts_at_once_with_private_line(env):
+    env.bridge.allowed = False
+    ctx, components, sid = start(env)
+    assert sid is None
+    assert len(posted(env)) == 1
+    assert "You need weight saving access." in text_of(components)
+    assert "Panel posted. Nothing was saved." in text_of(components)
+
+
+def test_question_offers_save_and_post_only_without_posting(env):
+    _, components, sid = start(env)
+    assert posted(env) == []
+    assert "150,000" in text_of(components) and "TH15" in text_of(components)
+    assert "Save this weight for <@100>?" in text_of(components)
+    assert custom_ids(components) == [f"fws_save:{sid}", f"fws_post:{sid}"]
+
+
+def test_invalid_multiple_offers_post_only(env):
+    _, components, sid = start(env, loot=34850)
+    assert "Cannot save 174,250. Saved weights must be a multiple of 1,000. Check the loot value." in text_of(components)
+    assert custom_ids(components) == [f"fws_post:{sid}"]
+
+
+def test_post_only_posts_once_even_on_double_click(env):
+    _, _, sid = start(env)
+    first = call(flow.on_post, component_ctx(), sid, env)
+    second = call(flow.on_post, component_ctx(), sid, env)
+    assert "Panel posted. Nothing was saved." in text_of(first)
+    assert "already handled" in text_of(second)
+    assert len(posted(env)) == 1
+    assert not [c for c in env.bridge.calls if c[0] == "save"]
+
+
+def test_other_user_cannot_use_the_session(env):
+    _, _, sid = start(env)
+    result = call(flow.on_post, component_ctx(user=999), sid, env)
+    assert "expired" in text_of(result)
+    assert posted(env) == []
+
+
+def test_accounts_dropdown_lists_links_and_other_account(env):
+    _, _, sid = start(env)
+    view = call(flow.on_save, component_ctx(), sid, env)
+    menu = next(n for n in walk(built(view)) if n.get("custom_id") == f"fws_pick:{sid}")
+    values = [o["value"] for o in menu["options"]]
+    assert values == ["#P2Y", "#Q2Y", "other"]
+    assert menu["options"][0]["label"] == "Alpha · TH15"
+    assert menu["options"][1]["description"] == "#Q2Y · Saved 140,000"
+    assert menu["options"][0].get("emoji")  # Town Hall emoji on each linked account.
+
+
+def test_no_links_and_link_outage_messages(env):
+    _, _, sid = start(env)
+    env.bridge.accounts = []
+    view = call(flow.on_save, component_ctx(), sid, env)
+    assert "This user has no linked accounts. Link the accounts first, or enter a player tag." in text_of(view)
+    assert custom_ids(view) == [f"fws_tag:{sid}", f"fws_post:{sid}"]
+    env.bridge.error["accounts"] = WeightClientError("Could not load linked accounts.", code="links_unavailable")
+    view = call(flow.on_save, component_ctx(), sid, env)
+    assert "Could not load linked accounts." in text_of(view)
+    assert custom_ids(view) == [f"fws_retry:{sid}", f"fws_tag:{sid}", f"fws_post:{sid}"]
+
+
+def test_unsaved_matching_account_saves_at_once_and_posts_with_saved_line(env):
+    _, _, sid = start(env)
+    pick = component_ctx(values=["#P2Y"])
+    call(flow.on_pick, pick, sid, env)
+    pick.interaction.create_initial_response.assert_awaited_once_with(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+    result = text_of(pick.interaction.edit_initial_response.call_args.kwargs["components"])
+    assert "Saved 150,000 for Alpha `#P2Y` (Family)." in result and "Panel posted." in result
+    assert ("save", {"actor_name": "Staff", "tag": "#P2Y", "weight": 150000, "revision": 0}) in env.bridge.calls
+    assert len(posted(env)) == 1 and "Saved for Alpha `#P2Y`" in posted(env)[0]
+    # A late second click cannot post or save again.
+    again = call(flow.on_post, component_ctx(), sid, env)
+    assert "already handled" in text_of(again) and len(posted(env)) == 1
+
+
+def test_different_saved_weight_and_th_mismatch_need_confirmation(env):
+    _, _, sid = start(env)
+    pick = component_ctx(values=["#Q2Y"])
+    call(flow.on_pick, pick, sid, env)
+    view = pick.interaction.edit_initial_response.call_args.kwargs["components"]
+    text = text_of(view)
+    assert "Saved: 140,000 → New: 150,000" in text
+    assert "This account is TH14. The weight is TH15." in text
+    assert custom_ids(view) == [f"fws_confirm:{sid}", f"fws_back:{sid}"]
+    assert [n["label"] for n in walk(built(view)) if n.get("custom_id") == f"fws_confirm:{sid}"] == ["Replace"]
+    assert not [c for c in env.bridge.calls if c[0] == "save"] and posted(env) == []
+    done = call(flow.on_confirm, component_ctx(), sid, env)
+    assert "Saved 150,000 for Beta `#Q2Y` (No clan)." in text_of(done)
+    assert ("save", {"actor_name": "Staff", "tag": "#Q2Y", "weight": 150000, "revision": 2}) in env.bridge.calls
+
+
+def test_unsaved_th_mismatch_still_asks(env):
+    env.bridge.accounts[1]["weight"] = None
+    _, _, sid = start(env)
+    pick = component_ctx(values=["#Q2Y"])
+    call(flow.on_pick, pick, sid, env)
+    view = pick.interaction.edit_initial_response.call_args.kwargs["components"]
+    assert "New: 150,000" in text_of(view) and "TH14" in text_of(view)
+    assert [n["label"] for n in walk(built(view)) if n.get("custom_id") == f"fws_confirm:{sid}"] == ["Save"]
+
+
+def test_same_weight_already_saved_writes_nothing(env):
+    env.bridge.accounts[0]["weight"] = 150000
+    _, _, sid = start(env)
+    pick = component_ctx(values=["#P2Y"])
+    call(flow.on_pick, pick, sid, env)
+    assert "Already saved for Alpha `#P2Y`." in text_of(pick.interaction.edit_initial_response.call_args.kwargs["components"])
+    assert not [c for c in env.bridge.calls if c[0] == "save"]
+    assert len(posted(env)) == 1
+
+
+@pytest.mark.parametrize("error", [
+    WeightClientError("Changed by someone else. Try again.", code="conflict"),
+    WeightClientError("The save could not be confirmed. Select Try again to check the saved weight.",
+                      code="uncertain", uncertain=True),
+])
+def test_conflict_or_uncertain_save_offers_retry_and_posts_nothing(env, error):
+    env.bridge.error["save"] = error
+    _, _, sid = start(env)
+    pick = component_ctx(values=["#P2Y"])
+    call(flow.on_pick, pick, sid, env)
+    view = pick.interaction.edit_initial_response.call_args.kwargs["components"]
+    assert str(error) in text_of(view)
+    assert custom_ids(view) == [f"fws_retry:{sid}", f"fws_post:{sid}"]
+    assert posted(env) == []
+    # The session stays open so Try again can re-read the saved weight.
+    assert env.mongo.component_state.rows[sid]["done"] is False
+
+
+def test_other_account_opens_tag_modal_and_typed_tag_is_looked_up(env):
+    _, _, sid = start(env)
+    pick = component_ctx(values=["other"])
+    call(flow.on_pick, pick, sid, env)
+    pick.respond_with_modal.assert_awaited_once()
+    assert pick.respond_with_modal.call_args.kwargs["custom_id"] == f"fws_tagged:{sid}"
+    pick.interaction.create_initial_response.assert_not_awaited()
+    submit = component_ctx(fields={"tag": " #u2y "})
+    call(flow.on_tagged, submit, sid, env)
+    assert ("lookup", {"tag": "#u2y"}) in env.bridge.calls
+    assert "Saved 150,000 for Typed `#U2Y` (No clan)." in text_of(
+        submit.interaction.edit_initial_response.call_args.kwargs["components"])
+
+
+def test_lookup_error_keeps_session_and_offers_back(env):
+    env.bridge.error["lookup"] = WeightClientError("No player was found with that tag.", code="not_found")
+    _, _, sid = start(env)
+    submit = component_ctx(fields={"tag": "#2PP"})
+    call(flow.on_tagged, submit, sid, env)
+    view = submit.interaction.edit_initial_response.call_args.kwargs["components"]
+    assert "No player was found with that tag." in text_of(view)
+    assert custom_ids(view) == [f"fws_back:{sid}", f"fws_post:{sid}"]
+
+
+def test_player_names_render_as_inert_text(env):
+    env.bridge.accounts[0]["name"] = "**@everyone** <@1>"
+    _, _, sid = start(env)
+    pick = component_ctx(values=["#P2Y"])
+    call(flow.on_pick, pick, sid, env)
+    text = posted(env)[0]
+    assert "@everyone" not in text.replace("@​everyone", "") and "<@1>" not in text
+    for call_args in env.bot.rest.create_message.call_args_list:
+        assert call_args.kwargs["user_mentions"] is False and call_args.kwargs["mentions_everyone"] is False
+
+
+def test_claim_is_atomic_under_concurrent_clicks(env):
+    _, _, sid = start(env)
+
+    async def both():
+        return await asyncio.gather(flow.claim(env.mongo, sid), flow.claim(env.mongo, sid))
+
+    assert sorted(run(both())) == [False, True]
+
+
+def test_weight_outside_ranges_always_confirms_with_warning(env):
+    # 181,000 is above the default TH18 range: no account TH can match it.
+    _, _, sid = start(env, loot=36200)
+    pick = component_ctx(values=["#P2Y"])
+    call(flow.on_pick, pick, sid, env)
+    view = pick.interaction.edit_initial_response.call_args.kwargs["components"]
+    assert "This account is TH15. The weight is outside the Town Hall ranges." in text_of(view)
+    assert not [c for c in env.bridge.calls if c[0] == "save"]
+
+
+def test_th_warning_rules():
+    ranges = war_weight.ranges(war_weight.defaults())
+    assert flow.th_warning(15, "exact", ranges, 15) is None
+    assert flow.th_warning(15, "exact", ranges, None) is None
+    assert flow.th_warning(15, "between", ranges, 16) is None
+    assert flow.th_warning(15, "between", ranges, 14) == "⚠️ This account is TH14. The weight is between TH15 and TH16."
+    assert "outside the Town Hall ranges" in flow.th_warning(None, "above", ranges, 18)
+
+
+def test_access_removed_during_flow_posts_panel_once_and_saves_nothing(env):
+    _, _, sid = start(env)
+    env.bridge.error["save"] = WeightClientError("You need weight saving access.", code="forbidden")
+    pick = component_ctx(values=["#P2Y"])
+    call(flow.on_pick, pick, sid, env)
+    text = text_of(pick.interaction.edit_initial_response.call_args.kwargs["components"])
+    assert "Panel posted. Nothing was saved." in text and "You need weight saving access." in text
+    assert len(posted(env)) == 1 and "Saved for" not in posted(env)[0]
+
+
+def test_save_that_loses_race_to_post_only_still_reports_the_write(env):
+    _, _, sid = start(env)
+    state = env.mongo.component_state.rows[sid]
+    run(flow.claim(env.mongo, sid))  # Post only won first.
+    result = run(flow.finish(component_ctx(), env.bot, env.mongo, dict(state),
+                             {"tag": "#P2Y", "name": "Alpha", "clan_name": "Family"}, already=False))
+    assert "Saved 150,000 for Alpha `#P2Y` (Family)." in text_of(result)
+    assert "already posted without the saved line" in text_of(result)
+    assert posted(env) == []
+
+
+def test_session_store_failure_posts_panel(env, monkeypatch):
+    monkeypatch.setattr(flow, "insert_state", AsyncMock(side_effect=RuntimeError("mongo down")))
+    ctx, components, _ = start(env)
+    assert len(posted(env)) == 1
+    assert "Weight saving is unavailable now." in text_of(components)
+
+
+def test_custom_ids_have_one_colon(env):
+    _, components, sid = start(env)
+    view = call(flow.on_save, component_ctx(), sid, env)
+    for value in custom_ids(components) + custom_ids(view):
+        assert value.count(":") == 1, value
+    assert json.dumps(sid)  # State id is a plain string.
