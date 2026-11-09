@@ -251,8 +251,14 @@ async def start_save_flow(ctx, bot, mongo, loot: int, target, config, available)
     await ctx.interaction.edit_initial_response(components=components, **NO_MENTIONS)
 
 
+async def clear_preview(mongo, sid: str) -> None:
+    """Leaving a confirm preview (Back, Try again, another account) voids its button."""
+    await update_state(mongo, {"_id": sid}, {"$set": {"pending_token": None}})
+
+
 async def accounts_view(ctx, bot, mongo, state: dict) -> list:
     sid = state["_id"]
+    await clear_preview(mongo, sid)
     try:
         data = await bridge("accounts", actor_id=ctx.user.id, target_id=str(state["target_id"]))
     except WeightClientError as exc:
@@ -292,6 +298,7 @@ async def accounts_view(ctx, bot, mongo, state: dict) -> list:
 
 async def choose(ctx, bot, mongo, state: dict, player_tag: str) -> list:
     sid = state["_id"]
+    await clear_preview(mongo, sid)
     try:
         account = (await bridge("lookup", actor_id=ctx.user.id, tag=player_tag))["account"]
     except WeightClientError as exc:
@@ -444,8 +451,17 @@ async def on_confirm(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
 
     async def work(state):
         pending = preview.get("pending")
-        if state.get("pending_token") != action_id or not isinstance(pending, dict) or not pending.get("tag"):
-            return card(STALE_CONFIRM, buttons(sid, "back", "post"), accent=RED_ACCENT)
+        stale = card(STALE_CONFIRM, buttons(sid, "back", "post"), accent=RED_ACCENT)
+        if not isinstance(pending, dict) or not pending.get("tag"):
+            return stale
+        # Consume the token atomically: a button works once, and only while its
+        # preview is the current screen.
+        result = await update_state(
+            mongo, {"_id": sid, "done": {"$ne": True}, "pending_token": action_id},
+            {"$set": {"pending_token": None}},
+        )
+        if not getattr(result, "modified_count", 0):
+            return stale
         return await save(ctx, bot, mongo, state, pending)
 
     return await guarded(ctx, mongo, sid, work)

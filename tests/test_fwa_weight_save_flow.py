@@ -304,6 +304,44 @@ def test_old_confirm_button_cannot_save_the_newer_preview(env):
     assert [c[1]["tag"] for c in env.bridge.calls if c[0] == "save"] == ["#Q2Y"]
 
 
+def test_back_voids_the_old_confirm_button(env):
+    # Stella's repro: preview Alpha, Back, then select Alpha's old Replace button.
+    env.bridge.accounts[0]["weight"] = 140000
+    _, _, sid = start(env)
+    token = confirm_token(preview(env, sid, "#P2Y"))
+    call(flow.on_back, component_ctx(), sid, env)
+    stale = call(flow.on_confirm, component_ctx(), token, env)
+    assert "This confirm button is out of date." in text_of(stale)
+    assert not [c for c in env.bridge.calls if c[0] == "save"] and posted(env) == []
+
+
+@pytest.mark.parametrize("leave", ["retry", "tag_lookup", "post", "failed_save", "used_once"])
+def test_every_way_out_of_a_preview_voids_its_button(env, leave):
+    env.bridge.accounts[0]["weight"] = 140000
+    _, _, sid = start(env)
+    token = confirm_token(preview(env, sid, "#P2Y"))
+    if leave == "retry":
+        call(flow.on_retry, component_ctx(), sid, env)
+    elif leave == "tag_lookup":
+        call(flow.on_tagged, component_ctx(fields={"tag": "#U2Y"}), sid, env)
+        env.bridge.calls.clear()
+    elif leave == "post":
+        call(flow.on_post, component_ctx(), sid, env)
+    elif leave == "failed_save":
+        env.bridge.error["save"] = WeightClientError("Changed by someone else. Try again.", code="conflict")
+        call(flow.on_confirm, component_ctx(), token, env)
+        env.bridge.error.clear()
+        env.bridge.calls.clear()
+    elif leave == "used_once":
+        call(flow.on_confirm, component_ctx(), token, env)
+        env.bridge.calls.clear()
+    before = len(posted(env))
+    result = call(flow.on_confirm, component_ctx(), token, env)
+    assert "out of date" in text_of(result) or "already handled" in text_of(result)
+    assert not [c for c in env.bridge.calls if c[0] == "save"]
+    assert len(posted(env)) == before
+
+
 def test_confirm_button_is_bound_to_its_owner(env):
     env.bridge.accounts[0]["weight"] = 120000
     _, _, sid = start(env)
