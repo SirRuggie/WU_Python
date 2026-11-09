@@ -60,7 +60,12 @@ Failure handling: a stale revision returns "Changed by someone else. Try again."
 An unconfirmed save is never retried automatically; Try again re-reads the saved
 weight, and an equal value then reports Already saved. The private session lives
 30 minutes in `component_state`, is bound to the staff member and guild, and is
-claimed atomically before posting, so a double click cannot post twice. If Post
+claimed atomically before posting, so a double click cannot post twice. Before
+any bridge save the bot takes the session's single save slot (90-second lock,
+longer than the 45-second bridge timeout); a second save or Post only in the same
+session waits ("still running") and a failed save releases the slot. Each confirm
+preview has its own button token, and only the newest preview's button can save;
+an older button shows "This confirm button is out of date." If Post
 only wins a race with a save, the private reply still reports the save. If the
 permission is removed mid-flow, or the session cannot be stored, the panel posts
 once and nothing is saved.

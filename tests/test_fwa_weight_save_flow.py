@@ -30,6 +30,10 @@ class Collection:
             if isinstance(expected, dict) and "$ne" in expected:
                 if row.get(key) == expected["$ne"]:
                     return False
+            elif isinstance(expected, dict) and "$not" in expected:
+                value = row.get(key)
+                if value is not None and value > expected["$not"]["$gt"]:
+                    return False
             elif row.get(key) != expected:
                 return False
         return True
@@ -96,6 +100,12 @@ def walk(node):
     elif isinstance(node, list):
         for value in node:
             yield from walk(value)
+
+
+def confirm_token(view):
+    ids = [value for value in custom_ids(view) if value.startswith("fws_confirm:")]
+    assert len(ids) == 1, ids
+    return ids[0].partition(":")[2]
 
 
 def built(components):
@@ -251,10 +261,11 @@ def test_different_saved_weight_and_th_mismatch_need_confirmation(env):
     text = text_of(view)
     assert "Saved: 140,000 → New: 150,000" in text
     assert "This account is TH14. The weight is TH15." in text
-    assert custom_ids(view) == [f"fws_confirm:{sid}", f"fws_back:{sid}"]
-    assert [n["label"] for n in walk(built(view)) if n.get("custom_id") == f"fws_confirm:{sid}"] == ["Replace"]
+    token = confirm_token(view)
+    assert custom_ids(view) == [f"fws_confirm:{token}", f"fws_back:{sid}"]
+    assert [n["label"] for n in walk(built(view)) if n.get("custom_id") == f"fws_confirm:{token}"] == ["Replace"]
     assert not [c for c in env.bridge.calls if c[0] == "save"] and posted(env) == []
-    done = call(flow.on_confirm, component_ctx(), sid, env)
+    done = call(flow.on_confirm, component_ctx(), token, env)
     assert "Saved 150,000 for Beta `#Q2Y` (No clan)." in text_of(done)
     assert ("save", {"actor_name": "Staff", "tag": "#Q2Y", "weight": 150000, "revision": 2}) in env.bridge.calls
 
@@ -266,7 +277,86 @@ def test_unsaved_th_mismatch_still_asks(env):
     call(flow.on_pick, pick, sid, env)
     view = pick.interaction.edit_initial_response.call_args.kwargs["components"]
     assert "New: 150,000" in text_of(view) and "TH14" in text_of(view)
-    assert [n["label"] for n in walk(built(view)) if n.get("custom_id") == f"fws_confirm:{sid}"] == ["Save"]
+    token = confirm_token(view)
+    assert [n["label"] for n in walk(built(view)) if n.get("custom_id") == f"fws_confirm:{token}"] == ["Save"]
+
+
+def preview(env, sid, tag):
+    pick = component_ctx(values=[tag])
+    call(flow.on_pick, pick, sid, env)
+    return pick.interaction.edit_initial_response.call_args.kwargs["components"]
+
+
+def test_old_confirm_button_cannot_save_the_newer_preview(env):
+    # Stella's repro: preview Alpha, Back, preview Beta, then select Alpha's old button.
+    env.bridge.accounts[0]["weight"] = 120000
+    _, _, sid = start(env)
+    alpha = confirm_token(preview(env, sid, "#P2Y"))
+    call(flow.on_back, component_ctx(), sid, env)
+    beta = confirm_token(preview(env, sid, "#Q2Y"))
+    assert alpha != beta
+    stale = call(flow.on_confirm, component_ctx(), alpha, env)
+    assert "This confirm button is out of date. Select the account again." in text_of(stale)
+    assert custom_ids(stale) == [f"fws_back:{sid}", f"fws_post:{sid}"]
+    assert not [c for c in env.bridge.calls if c[0] == "save"] and posted(env) == []
+    done = call(flow.on_confirm, component_ctx(), beta, env)
+    assert "Saved 150,000 for Beta `#Q2Y`" in text_of(done)
+    assert [c[1]["tag"] for c in env.bridge.calls if c[0] == "save"] == ["#Q2Y"]
+
+
+def test_confirm_button_is_bound_to_its_owner(env):
+    env.bridge.accounts[0]["weight"] = 120000
+    _, _, sid = start(env)
+    token = confirm_token(preview(env, sid, "#P2Y"))
+    other = call(flow.on_confirm, component_ctx(user=999), token, env)
+    assert "expired" in text_of(other)
+    assert not [c for c in env.bridge.calls if c[0] == "save"]
+
+
+def test_concurrent_saves_in_one_session_write_once(env):
+    # Stella's repro: two account selections at the same time, both unsaved TH15.
+    env.bridge.accounts[1].update(town_hall=15, weight=None)
+    gate = asyncio.Event()
+    original = env.bridge.__call__
+
+    async def slow(action, **kwargs):
+        if action == "save":
+            await gate.wait()
+        return await original(action, **kwargs)
+
+    flow.bridge = slow
+    _, _, sid = start(env)
+    state = env.mongo.component_state.rows[sid]
+
+    async def both():
+        first = asyncio.create_task(flow.choose(component_ctx(), env.bot, env.mongo, dict(state), "#P2Y"))
+        second = asyncio.create_task(flow.choose(component_ctx(), env.bot, env.mongo, dict(state), "#Q2Y"))
+        await asyncio.sleep(0.01)
+        gate.set()
+        return await asyncio.gather(first, second)
+
+    results = [text_of(r) for r in run(both())]
+    assert len([c for c in env.bridge.calls if c[0] == "save"]) == 1
+    assert len(posted(env)) == 1
+    assert any("still running" in text for text in results)
+    assert any("Saved 150,000 for Alpha `#P2Y`" in text for text in results)
+
+
+def test_post_only_waits_for_a_running_save(env):
+    _, _, sid = start(env)
+    lock = run(flow.lock_save(env.mongo, sid))
+    assert lock and run(flow.lock_save(env.mongo, sid)) is None
+    blocked = call(flow.on_post, component_ctx(), sid, env)
+    assert "still running" in text_of(blocked) and posted(env) == []
+    run(flow.unlock_save(env.mongo, sid, lock))
+    assert "Panel posted. Nothing was saved." in text_of(call(flow.on_post, component_ctx(), sid, env))
+
+
+def test_failed_save_releases_the_lock(env):
+    env.bridge.error["save"] = WeightClientError("Changed by someone else. Try again.", code="conflict")
+    _, _, sid = start(env)
+    preview(env, sid, "#P2Y")
+    assert run(flow.lock_save(env.mongo, sid)) is not None
 
 
 def test_same_weight_already_saved_writes_nothing(env):
@@ -373,9 +463,10 @@ def test_access_removed_during_flow_posts_panel_once_and_saves_nothing(env):
 def test_save_that_loses_race_to_post_only_still_reports_the_write(env):
     _, _, sid = start(env)
     state = env.mongo.component_state.rows[sid]
-    run(flow.claim(env.mongo, sid))  # Post only won first.
+    run(flow.claim(env.mongo, sid))  # The save lock expired and Post only won first.
     result = run(flow.finish(component_ctx(), env.bot, env.mongo, dict(state),
-                             {"tag": "#P2Y", "name": "Alpha", "clan_name": "Family"}, already=False))
+                             {"tag": "#P2Y", "name": "Alpha", "clan_name": "Family"},
+                             already=False, lock="expired-lock"))
     assert "Saved 150,000 for Alpha `#P2Y` (Family)." in text_of(result)
     assert "already posted without the saved line" in text_of(result)
     assert posted(env) == []
