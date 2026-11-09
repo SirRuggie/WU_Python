@@ -76,7 +76,7 @@ def test_route_passes_revision_to_add_update_and_clear():
     asyncio.run(scenario())
 
 
-def _slot_scenario(tmp_path, query, *, extra=None, provider_weights=None):
+def _slot_scenario(tmp_path, query, *, extra=None, provider_weights=None, raw_profiles=(), saved=None):
     """Run the endpoint over an isolated fixture: two FWA clans, one family clan."""
     from multidict import MultiDict
     async def scenario():
@@ -104,7 +104,18 @@ def _slot_scenario(tmp_path, query, *, extra=None, provider_weights=None):
             for j in range(count):
                 await db.strike_records.insert_one(record(f'{player}-{j}', player, guild_id=api.GUILD_ID,
                                                           expires_at=now + timedelta(days=30)))
+        for profile in raw_profiles:
+            await db.strike_profiles.insert_one({
+                '_id': f'{api.GUILD_ID}:{profile["player_tag"]}', 'guild_id': api.GUILD_ID,
+                'player_name': profile['player_tag'], 'roster_seen_at': now, 'town_hall': 15,
+                'revision': 1, **profile})
         store = Store(str(tmp_path / 'fixture.sqlite'))
+        if saved:
+            from utils.clan_weight_store import ClanWeightStore
+            for player, saved_weight in saved.items():
+                ClanWeightStore(store.path).save_discord(
+                    player, {'weight': saved_weight, 'revision': 0, 'storages': 5},
+                    {'name': player, 'town_hall': 15}, '1', 'Seed')
         weights = provider_weights or {p[0]: {'weight': p[3]} for p in fixtures}
         provider = SimpleNamespace(weights=AsyncMock(return_value=weights))
         request = SimpleNamespace(method='GET', query=MultiDict(query),
@@ -178,3 +189,52 @@ def test_endpoint_bad_member_is_rejected_and_browse_mode_is_unchanged(tmp_path):
     assert browse['slots'] == [] and browse['matching_weight'] is None
     assert {row['player_tag'] for row in browse['candidates']} == {'#P0', '#P2', '#P3', '#P9', '#P1'}
     assert all('discord_name' in row for row in browse['candidates'])
+
+
+def _departed(tag_, *, hours=2, weight=None):
+    now = datetime.now(timezone.utc)
+    profile = {'player_tag': tag_, 'current_clan_tag': None, 'departed_clan_tag': '#Q2Y',
+               'departed_last_seen_at': now - timedelta(hours=hours),
+               'replacement_listed': True, 'replacement_clan_tag': '#Q2Y',
+               'replacement_priority': 'high'}
+    if weight is not None:
+        profile['weight'] = weight
+    return profile
+
+
+def _departed_row(result, tag_):
+    return next((row for row in result['slots'][0]['candidates'] if row['player_tag'] == tag_), None)
+
+
+def test_departed_grace_slot_uses_official_saved_weight_over_cached_profile(tmp_path):
+    result = _slot_scenario(tmp_path, [('weight', '143000'), ('clan', '#Q2Y')],
+                            raw_profiles=[_departed('#PD', weight=120000)], saved={'#PD': 143000})
+    row = _departed_row(result, '#PD')
+    assert row is not None and row['departed'] is True
+    assert (row['weight'], row['weight_difference']) == (143000, 0)
+
+
+def test_departed_grace_slot_without_cached_weight_still_appears_from_saved_weight(tmp_path):
+    result = _slot_scenario(tmp_path, [('weight', '143000'), ('clan', '#Q2Y')],
+                            raw_profiles=[_departed('#PD')], saved={'#PD': 143000})
+    row = _departed_row(result, '#PD')
+    assert row is not None and (row['weight'], row['weight_difference']) == (143000, 0)
+
+
+def test_departed_outside_grace_is_not_a_slot(tmp_path):
+    result = _slot_scenario(tmp_path, [('weight', '143000'), ('clan', '#Q2Y')],
+                            raw_profiles=[_departed('#PD', hours=60, weight=143000)], saved={'#PD': 143000})
+    assert _departed_row(result, '#PD') is None
+
+
+def test_weight_mode_town_hall_filters_slots_and_candidates(tmp_path):
+    th16 = {'player_tag': '#PT', 'town_hall': 16, 'current_clan_tag': '#Q2Y', 'replacement_listed': True,
+            'replacement_clan_tag': '#Q2Y', 'replacement_priority': 'high'}
+    weights = {'#PT': {'weight': 143000}, '#P0': {'weight': 143000}, '#P1': {'weight': 144000},
+               '#P2': {'weight': 143000}, '#P3': {'weight': 145000}}
+    plain = _slot_scenario(tmp_path, [('weight', '143000')], raw_profiles=[th16], provider_weights=weights)
+    assert {row['town_hall'] for row in plain['candidates']} == {15, 16}
+    result = _slot_scenario(tmp_path, [('weight', '143000'), ('town_hall', '16')],
+                            raw_profiles=[th16], provider_weights=weights)
+    assert _slot_tags(result['slots'][0]) == ['#PT']
+    assert [row['player_tag'] for row in result['candidates']] == ['#PT']

@@ -19,7 +19,7 @@ from . import server_management as shared
 from .providers import ProviderUnavailable, tag
 from .strike_activity_cache import changing_observations
 from utils import recruit_links
-from utils.strike_store import StrikeConflict, StrikeService, utc
+from utils.strike_store import REPLACEMENT_GRACE, StrikeConflict, StrikeService, utc
 from utils.strike_tracking import StrikeTracking
 from utils.replacement_filters import parse_weight, compact_weight
 
@@ -690,8 +690,13 @@ async def replacements(request):
         if set(slot_clans) - fwa_tags:
             raise ValueError('Select FWA clans only.')
         allowed_tags = [row['tag'] for row in clans if row['is_fwa'] or weight is None]
-        profiles = await db.strike_profiles.find(
-            {'guild_id': GUILD_ID, 'current_clan_tag': {'$in': allowed_tags}}).to_list(length=None)
+        # Same set the ledger can return: current members plus accounts that left
+        # an allowed clan inside the replacement grace window.
+        profiles = await db.strike_profiles.find({'guild_id': GUILD_ID, '$or': [
+            {'current_clan_tag': {'$in': allowed_tags}},
+            {'departed_clan_tag': {'$in': allowed_tags},
+             'departed_last_seen_at': {'$gte': datetime.now(timezone.utc) - REPLACEMENT_GRACE}},
+        ]}).to_list(length=None)
         tags = [row['player_tag'] for row in profiles]
         try:
             from utils.clan_weights import source_weights
@@ -737,7 +742,8 @@ async def replacements(request):
     from utils.replacement_view import replacement_page, find_slots
     slots = []
     if slot_weights:
-        found = find_slots(rows, slot_weights, fwa_tags=fwa_tags, clan_tags=slot_clans or None,
+        slot_rows = [row for row in rows if row.get('town_hall') == town_hall] if town_hall else rows
+        found = find_slots(slot_rows, slot_weights, fwa_tags=fwa_tags, clan_tags=slot_clans or None,
                            member_id=slot_member)
         slots = [{'weight': group['weight'], 'weight_label': compact_weight(group['weight']),
                   'candidates': [candidate(row) for row in group['slots']]} for group in found]

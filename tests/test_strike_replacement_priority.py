@@ -220,7 +220,9 @@ def test_dashboard_replacement_query_normalizes_weight_and_passes_filters(tmp_pa
     class Db:
         class Profiles:
             def find(self, query):
-                assert query['current_clan_tag']['$in'] == ['#2UVGQU9']  # slots: FWA clans only
+                current, departed = query['$or']   # slots: FWA clans only, plus 48 h grace departures
+                assert current['current_clan_tag']['$in'] == ['#2UVGQU9']
+                assert departed['departed_clan_tag']['$in'] == ['#2UVGQU9']
                 return Cursor()
         strike_profiles = Profiles()
 
