@@ -1,5 +1,6 @@
 import pytest
-from utils.replacement_view import replacement_page, best_slots
+from utils.recruit_links import LinksResult
+from utils.replacement_view import replacement_page, best_slots, member_slot_tags
 
 
 def row(tag, count, *, priority='normal', marked=False, weight=100000, clan='#Q2Y', th=16):
@@ -148,3 +149,37 @@ def test_find_slots_includes_departed_account_in_grace_and_rejects_bad_weight_co
     for bad in ([], [1] * 6, [0], [True]):
         with pytest.raises(ValueError):
             find_slots([gone], bad, fwa_tags=FWA)
+
+
+def _links(sources=(), **kwargs):
+    return LinksResult(sources={tag: ('ClashKing',) for tag in sources}, **kwargs)
+
+
+def test_member_slot_tags_clean_links_are_not_partial():
+    assert member_slot_tags(_links(['#A2Y', '#B2Y'])) == ({'#A2Y', '#B2Y'}, set(), False)
+
+
+def test_member_slot_tags_keeps_a_tag_linked_to_two_users_and_reports_it_as_disputed():
+    assert member_slot_tags(_links(['#A2Y', '#B2Y', '#C2Y'], conflicts=('#D2Y',))) == (
+        {'#A2Y', '#B2Y', '#C2Y', '#D2Y'}, {'#D2Y'}, False)
+    assert member_slot_tags(_links(conflicts=('#A2Y',))) == ({'#A2Y'}, {'#A2Y'}, False)
+
+
+def test_member_slot_tags_a_failed_provider_with_links_is_partial():
+    assert member_slot_tags(_links(['#A2Y'], unavailable=('ClashPerk',))) == ({'#A2Y'}, set(), True)
+
+
+def test_member_slot_tags_errors_only_when_both_providers_failed_and_nothing_came_back():
+    assert member_slot_tags(_links(unavailable=('ClashKing', 'ClashPerk'))) == (None, set(), False)
+    assert member_slot_tags(_links(unavailable=('ClashPerk',))) == (set(), set(), True)
+    assert member_slot_tags(_links(conflicts=('#A2Y',), unavailable=('ClashKing', 'ClashPerk')))[0] == {'#A2Y'}
+
+
+def test_member_slot_tags_includes_a_tag_only_one_provider_returned():
+    links = LinksResult(sources={'#A2Y': ('ClashKing',), '#B2Y': ('ClashPerk',)},
+                        verified={'#A2Y': False, '#B2Y': False})
+    assert member_slot_tags(links) == ({'#A2Y', '#B2Y'}, set(), False)
+
+
+def test_member_slot_tags_no_links_is_empty():
+    assert member_slot_tags(_links()) == (set(), set(), False)

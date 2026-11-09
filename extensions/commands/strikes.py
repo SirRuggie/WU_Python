@@ -28,7 +28,7 @@ from utils.strike_tracking import StrikeTracking
 from utils.strike_retention_policy import RECORD_DAYS
 from utils.strike_official import normalize as normalize_official_war
 from utils.replacement_filters import parse_weight, compact_weight
-from utils.replacement_view import find_slots, priority_key, slot_pool
+from utils.replacement_view import find_slots, member_slot_tags, priority_key, slot_pool
 from utils.dashboard_urls import STRIKES_URL
 from utils.war_weight import emoji_for
 from cwl_web.providers import LiveProviders, ProviderUnavailable
@@ -297,7 +297,7 @@ CLAN_MENU_LIMIT = 25
 PRIORITY_LABELS = {'replace_first': 'Chopping Block', 'high': 'High', 'normal': 'Normal'}
 
 
-def replacement_slot_line(row, clan_names, *, index=None):
+def replacement_slot_line(row, clan_names, *, index=None, disputed=()):
     player = safe(row.get('player_name') or row['player_tag'], 24)
     clan = safe(clan_names.get(row.get('last_seen_clan_tag'), row.get('last_seen_clan_tag') or 'Unknown clan'), 24)
     th = row.get('town_hall')
@@ -307,7 +307,8 @@ def replacement_slot_line(row, clan_names, *, index=None):
     gap_text = f' · Gap {compact_weight(gap)}' if isinstance(gap, int) else ''
     strikes = int(row.get('active_strikes') or 0)
     flags = (' · Left clan' if row.get('departed') else '') + (
-        ' · Last known' if row.get('clan_is_current') is False else '')
+        ' · Last known' if row.get('clan_is_current') is False else '') + (
+        ' · Linked to two Discord users' if row['player_tag'] in disputed else '')
     note = safe(row.get('replacement_note'), 60)
     prefix = f'{index}. ' if index else ''
     return (f"{emoji_for(th, {'ranges': {}})} **{prefix}{player}** `{row['player_tag']}`{mention}\n"
@@ -372,13 +373,15 @@ async def replacement_panel(store, state, *, notice=''):
     rows = await store.replacement(guild, None, browse_all=True, family_scope='all',
                                    limit=5000, weights=cached)
     member_tags = None
+    disputed = set()
     links_notice = ''
     if member_id:
         links = await recruit_links.resolve(int(member_id))
-        if links.unavailable or links.conflicts:
-            member_tags, links_notice = set(), 'Account links could not be verified. Try again.'
-        else:
-            member_tags = set(links.sources)
+        member_tags, disputed, partial = member_slot_tags(links)
+        if member_tags is None:
+            member_tags, links_notice = set(), 'Account links are unavailable. Try again.'
+        elif partial:
+            links_notice = 'Some linked accounts were left out.'
     pool = slot_pool(rows, fwa_tags=fwa_tags, member_tags=member_tags)
     counts = {}
     for row in pool:
@@ -411,7 +414,7 @@ async def replacement_panel(store, state, *, notice=''):
     if weights_chosen:
         for group in find_slots(rows, weights_chosen, fwa_tags=fwa_tags,
                                 clan_tags=chosen_clans or None, member_tags=member_tags):
-            body = '\n\n'.join(replacement_slot_line(row, clan_names) for row in group['slots'])
+            body = '\n\n'.join(replacement_slot_line(row, clan_names, disputed=disputed) for row in group['slots'])
             children.append(Text(content=f"### {compact_weight(group['weight'])}\n"
                                          f"{body or 'No slot in these clans.'}"))
     else:
@@ -422,7 +425,7 @@ async def replacement_panel(store, state, *, notice=''):
         start = page * REPLACEMENT_PAGE_SIZE
         showing = listed[start:start + REPLACEMENT_PAGE_SIZE]
         children.append(Text(content='\n\n'.join(
-            replacement_slot_line(row, clan_names, index=start + number)
+            replacement_slot_line(row, clan_names, index=start + number, disputed=disputed)
             for number, row in enumerate(showing, 1)) or 'No accounts match these filters.'))
         children.append(Text(content=f'Page {page+1}/{pages} · {len(listed)} accounts'))
     token = state['_id']

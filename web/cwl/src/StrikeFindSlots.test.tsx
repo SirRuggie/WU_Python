@@ -53,12 +53,14 @@ const slotsFor = (url: string) =>
     weight_label: `${Number(value) / 1000}k`,
     candidates:
       Number(value) === 143000
-        ? [candidate(accounts[0], 0)]
+        ? [{ ...candidate(accounts[0], 0), link_disputed: disputedMember }]
         : Number(value) === 999000
           ? []
           : [candidate(accounts[1], 0)],
   }));
 let host: HTMLDivElement, root: Root;
+let partialMember = false;
+let disputedMember = false;
 const replacementCalls = () =>
   vi
     .mocked(fetch)
@@ -86,6 +88,8 @@ async function type(input: HTMLInputElement, value: string) {
   });
 }
 beforeEach(() => {
+  partialMember = false;
+  disputedMember = false;
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   HTMLDialogElement.prototype.showModal = function () {
     this.open = true;
@@ -108,7 +112,10 @@ beforeEach(() => {
       return new Response(
         JSON.stringify(
           url.includes("/strikes/replacements")
-            ? { slots: slotsFor(url) }
+            ? {
+                slots: slotsFor(url),
+                member_partial: url.includes("member=") && partialMember,
+              }
             : { accounts, clans },
         ),
       );
@@ -152,6 +159,29 @@ it("restores slot parameters from the link and runs the search once", async () =
     host.querySelector(".strike-activity-tabs [aria-pressed=true]")!
       .textContent,
   ).toContain("Replacements");
+});
+
+it("notes when some of the member's linked accounts were left out", async () => {
+  const link =
+    "/strikes?view=replacements&slot_weight=143000&slot_member=100000000000000001";
+  await mount(link);
+  expect(host.textContent).not.toContain("Some linked accounts were left out.");
+  await act(async () => root.render(<></>));
+  partialMember = true;
+  await mount(link);
+  expect(host.textContent).toContain("Some linked accounts were left out.");
+});
+
+it("labels a result whose tag is linked to two Discord users", async () => {
+  const link = "/strikes?view=replacements&slot_weight=143000";
+  await mount(link);
+  expect(host.textContent).not.toContain("Linked to two Discord users");
+  await act(async () => root.render(<></>));
+  disputedMember = true;
+  await mount(link);
+  expect(host.querySelector(".strike-slot-group")!.textContent).toContain(
+    "Linked to two Discord users",
+  );
 });
 
 it("makes no request while typing and keeps the weights when clans change", async () => {

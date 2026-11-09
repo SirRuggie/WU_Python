@@ -43,12 +43,12 @@ def make_store(rows, clans=None):
     return Store(), calls
 
 
-def render(rows, state, clans=None, linked=frozenset()):
+def render(rows, state, clans=None, linked=frozenset(), links=None):
     store, calls = make_store(rows, clans)
     state = {'_id': 'tok', 'guild_id': 1, 'clan_tags': [], 'weights': [], 'member_id': None,
              'page': 0, **state}
-    links = (LinksResult(sources={value: ('ClashKing',) for value in linked}) if linked is not None
-             else LinksResult(unavailable=('ClashPerk',)))
+    links = links or (LinksResult(sources={value: ('ClashKing',) for value in linked}) if linked is not None
+                      else LinksResult(unavailable=('ClashKing', 'ClashPerk')))
     with patch.object(strikes, 'cached_weights', lambda _tags: {}), \
             patch.object(strikes.recruit_links, 'resolve', AsyncMock(return_value=links)):
         panel = asyncio.run(strikes.replacement_panel(store, state))
@@ -152,11 +152,58 @@ def test_member_select_matches_linked_accounts_even_without_cached_member_id():
     assert '`#NOID`' in text and '`#STALE`' in text and '`#UNLINKED`' not in text
 
 
-def test_member_select_with_unavailable_links_shows_message_not_crash():
-    rows = [candidate('#NOID', weight=150000)]
+def test_member_select_with_nothing_usable_shows_message_and_an_empty_pool():
+    # #NOID would be in the pool if the member filter were skipped.
+    rows = [candidate('#NOID', weight=150000, count=3)]
     payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777}, linked=None)
     text = text_of(payload)
-    assert 'Account links could not be verified. Try again.' in text and '`#NOID`' not in text
+    assert 'Account links are unavailable. Try again.' in text
+    assert '`#NOID`' not in text and 'No slot in these clans.' in text
+    assert 'Some linked accounts were left out.' not in text
+
+
+PARTIAL = 'Some linked accounts were left out.'
+
+
+def test_member_select_keeps_a_tag_linked_to_two_users_and_labels_only_that_row():
+    rows = [candidate('#CLEAN', weight=150000), candidate('#DISPUTED', weight=150000)]
+    links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, conflicts=('#DISPUTED',))
+    payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777}, links=links)
+    text = text_of(payload)
+    assert '`#CLEAN`' in text and '`#DISPUTED`' in text and PARTIAL not in text
+    assert text.count('Linked to two Discord users') == 1
+    assert text.index('Linked to two Discord users') > text.index('`#DISPUTED`')
+    assert 'unavailable' not in text
+
+
+def test_member_select_with_a_failed_provider_but_sources_keeps_them_and_notes_it():
+    rows = [candidate('#CLEAN', weight=150000)]
+    links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, unavailable=('ClashPerk',))
+    payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777}, links=links)
+    assert '`#CLEAN`' in text_of(payload) and PARTIAL in text_of(payload)
+
+
+def test_member_select_in_list_mode_without_weights_lists_linked_accounts_and_notes_partial():
+    rows = [candidate('#CLEAN', count=0), candidate('#DISPUTED', count=3), candidate('#OTHER', count=3)]
+    links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, conflicts=('#DISPUTED',),
+                        unavailable=('ClashPerk',))
+    payload, _ = render(rows, {'member_id': 7777777777777777777}, links=links)
+    text = text_of(payload)
+    assert '`#CLEAN`' in text and '`#DISPUTED`' in text and '#OTHER' not in text
+    assert PARTIAL in text and '2 accounts' in text and text.count('Linked to two Discord users') == 1
+
+
+def test_member_select_does_not_require_verified_links():
+    links = LinksResult(sources={'#CLEAN': ('ClashPerk',)}, verified={'#CLEAN': False})
+    payload, _ = render([candidate('#CLEAN', weight=150000)],
+                        {'weights': [150000], 'member_id': 7777777777777777777}, links=links)
+    assert '`#CLEAN`' in text_of(payload) and PARTIAL not in text_of(payload)
+
+
+def test_member_select_clean_links_show_no_partial_note():
+    payload, _ = render([candidate('#CLEAN', weight=150000)],
+                        {'weights': [150000], 'member_id': 7777777777777777777}, linked={'#CLEAN'})
+    assert PARTIAL not in text_of(payload)
 
 
 def test_list_mode_pages_five_at_a_time_and_sorts_by_priority():

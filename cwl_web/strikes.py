@@ -22,6 +22,7 @@ from utils import recruit_links
 from utils.strike_store import REPLACEMENT_GRACE, StrikeConflict, StrikeService, utc
 from utils.strike_tracking import StrikeTracking
 from utils.replacement_filters import parse_weight, compact_weight
+from utils.replacement_view import member_slot_tags
 
 API = '/api/cwl/strikes'
 GUILD_ID = shared.GUILD_ID
@@ -666,11 +667,12 @@ async def replacements(request):
     slot_clans = [tag(value) for value in _query_values(request.query, 'clan')] if slot_weights else []
     slot_member = uid(request.query['member']) if slot_weights and request.query.get('member') else None
     member_tags = None
+    member_partial = False
+    member_disputed = set()
     if slot_member:
-        links = await recruit_links.resolve(int(slot_member))
-        if links.unavailable or links.conflicts:
-            raise web.HTTPServiceUnavailable(text='Account links could not be verified. Try again.')
-        member_tags = set(links.sources)
+        member_tags, member_disputed, member_partial = member_slot_tags(await recruit_links.resolve(int(slot_member)))
+        if member_tags is None:
+            raise web.HTTPServiceUnavailable(text='Account links are unavailable. Try again.')
     clan = (request.query.get('clan') or None) if not slot_weights else None
     scope = request.query.get('scope') or 'fwa'
     if scope not in ('fwa', 'all'):
@@ -733,6 +735,7 @@ async def replacements(request):
                    'current_clan_tag': row.get('current_clan_tag'),
                    'current_clan_name': names.get(row.get('current_clan_tag')),
                    'departed': bool(row.get('departed')),
+                   'link_disputed': row['player_tag'] in member_disputed,
                    'last_seen_clan_tag': row.get('last_seen_clan_tag'),
                    'last_seen_clan_name': names.get(row.get('last_seen_clan_tag')),
                    'last_seen_at': public(row.get('last_seen_at')),
@@ -766,7 +769,7 @@ async def replacements(request):
                               'clans': clans, 'town_halls': town_halls, 'total': page['total'], 'offset': offset,
                               'limit': limit, 'include_low': include_low, 'sort': sort,
                               'matching_weight': weight, 'matching_weight_label': compact_weight(weight),
-                              'slots': slots,
+                              'slots': slots, 'member_partial': member_partial,
                               'scope': scope, 'browse_all': browse_all, 'town_hall': town_hall})
 
 
