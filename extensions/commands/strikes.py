@@ -371,7 +371,15 @@ async def replacement_panel(store, state, *, notice=''):
     cached = cached_weights([row['player_tag'] for row in profiles])
     rows = await store.replacement(guild, None, browse_all=True, family_scope='all',
                                    limit=5000, weights=cached)
-    pool = slot_pool(rows, fwa_tags=fwa_tags, member_id=member_id)
+    member_tags = None
+    links_notice = ''
+    if member_id:
+        links = await recruit_links.resolve(int(member_id))
+        if links.unavailable or links.conflicts:
+            member_tags, links_notice = set(), 'Account links could not be verified. Try again.'
+        else:
+            member_tags = set(links.sources)
+    pool = slot_pool(rows, fwa_tags=fwa_tags, member_tags=member_tags)
     counts = {}
     for row in pool:
         counts[row['last_seen_clan_tag']] = counts.get(row['last_seen_clan_tag'], 0) + 1
@@ -392,6 +400,8 @@ async def replacement_panel(store, state, *, notice=''):
         messages.append('Some clans hidden; use the dashboard.')
     if clans_left_out:
         messages.append('Some clans not in link')
+    if links_notice:
+        messages.append(links_notice)
     if notice:
         messages.append(safe(notice, 180))
     if messages:
@@ -400,13 +410,13 @@ async def replacement_panel(store, state, *, notice=''):
     page = 0
     if weights_chosen:
         for group in find_slots(rows, weights_chosen, fwa_tags=fwa_tags,
-                                clan_tags=chosen_clans or None, member_id=member_id):
+                                clan_tags=chosen_clans or None, member_tags=member_tags):
             body = '\n\n'.join(replacement_slot_line(row, clan_names) for row in group['slots'])
             children.append(Text(content=f"### {compact_weight(group['weight'])}\n"
                                          f"{body or 'No slot in these clans.'}"))
     else:
         listed = sorted(slot_pool(rows, fwa_tags=fwa_tags, clan_tags=chosen_clans or None,
-                                  member_id=member_id), key=priority_key)
+                                  member_tags=member_tags), key=priority_key)
         pages = max(1, math.ceil(len(listed) / REPLACEMENT_PAGE_SIZE))
         page = min(max(0, int(state.get('page', 0))), pages - 1)
         start = page * REPLACEMENT_PAGE_SIZE

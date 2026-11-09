@@ -665,6 +665,12 @@ async def replacements(request):
     weight = slot_weights[0] if slot_weights else None
     slot_clans = [tag(value) for value in _query_values(request.query, 'clan')] if slot_weights else []
     slot_member = uid(request.query['member']) if slot_weights and request.query.get('member') else None
+    member_tags = None
+    if slot_member:
+        links = await recruit_links.resolve(int(slot_member))
+        if links.unavailable or links.conflicts:
+            raise web.HTTPServiceUnavailable(text='Account links could not be verified. Try again.')
+        member_tags = set(links.sources)
     clan = (request.query.get('clan') or None) if not slot_weights else None
     scope = request.query.get('scope') or 'fwa'
     if scope not in ('fwa', 'all'):
@@ -744,7 +750,7 @@ async def replacements(request):
     if slot_weights:
         slot_rows = [row for row in rows if row.get('town_hall') == town_hall] if town_hall else rows
         found = find_slots(slot_rows, slot_weights, fwa_tags=fwa_tags, clan_tags=slot_clans or None,
-                           member_id=slot_member)
+                           member_tags=member_tags)
         slots = [{'weight': group['weight'], 'weight_label': compact_weight(group['weight']),
                   'candidates': [candidate(row) for row in group['slots']]} for group in found]
         selected = found[0]['slots']

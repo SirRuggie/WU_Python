@@ -9,6 +9,7 @@ import pytest
 
 from extensions.commands import strikes
 from utils.dashboard_urls import STRIKES_URL
+from utils.recruit_links import LinksResult
 
 
 class Cursor:
@@ -42,11 +43,14 @@ def make_store(rows, clans=None):
     return Store(), calls
 
 
-def render(rows, state, clans=None):
+def render(rows, state, clans=None, linked=frozenset()):
     store, calls = make_store(rows, clans)
     state = {'_id': 'tok', 'guild_id': 1, 'clan_tags': [], 'weights': [], 'member_id': None,
              'page': 0, **state}
-    with patch.object(strikes, 'cached_weights', lambda _tags: {}):
+    links = (LinksResult(sources={value: ('ClashKing',) for value in linked}) if linked is not None
+             else LinksResult(unavailable=('ClashPerk',)))
+    with patch.object(strikes, 'cached_weights', lambda _tags: {}), \
+            patch.object(strikes.recruit_links, 'resolve', AsyncMock(return_value=links)):
         panel = asyncio.run(strikes.replacement_panel(store, state))
     payload, _ = panel[0].build()
     return payload, calls
@@ -134,8 +138,25 @@ def test_empty_weight_group_and_member_pool_includes_zero_strike_accounts():
     rows = [candidate('#ZERO', count=0, weight=150000, member=7777777777777777777)]
     payload, _ = render(rows, {'weights': [150000]})
     assert 'No slot in these clans.' in text_of(payload)
-    payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777})
+    payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777},
+                        linked={'#ZERO'})
     assert '`#ZERO`' in text_of(payload)
+
+
+def test_member_select_matches_linked_accounts_even_without_cached_member_id():
+    rows = [candidate('#NOID', weight=150000, member=None), candidate('#STALE', weight=150000, member=99),
+            candidate('#UNLINKED', weight=150000, member=7777777777777777777)]
+    payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777},
+                        linked={'#NOID', '#STALE'})
+    text = text_of(payload)
+    assert '`#NOID`' in text and '`#STALE`' in text and '`#UNLINKED`' not in text
+
+
+def test_member_select_with_unavailable_links_shows_message_not_crash():
+    rows = [candidate('#NOID', weight=150000)]
+    payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777}, linked=None)
+    text = text_of(payload)
+    assert 'Account links could not be verified. Try again.' in text and '`#NOID`' not in text
 
 
 def test_list_mode_pages_five_at_a_time_and_sorts_by_priority():
