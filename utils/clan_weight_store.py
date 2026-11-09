@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS clan_player_weight_history (
 """
 
 
+DISCORD_SOURCE = "Discord /fwa weight"
+
+
 class WeightConflict(ValueError):
     pass
 
@@ -368,6 +371,44 @@ class ClanWeightStore:
                     "SELECT * FROM clan_player_weights WHERE tag=?", (player_tag,)
                 ).fetchone()
             )
+
+    def save_discord(self, player_tag, change, player, actor, actor_name=None):
+        """Explicit staff save from ``/fwa weight``; any Clash account may get a first row.
+
+        ``player`` is the fresh Clash API record. The row records the player's
+        current clan, or no clan (blank) when the player is in none.
+        An equal saved weight is reported as unchanged and never rewritten.
+        Returns ``(row, changed)``.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as db:
+            if not db.in_transaction:
+                db.execute("BEGIN IMMEDIATE")
+            current = db.execute(
+                "SELECT * FROM clan_player_weights WHERE tag=?", (player_tag,)
+            ).fetchone()
+            effective = effective_weights(db, [player_tag]).get(player_tag)
+            if effective is not None and effective["weight"] == change["weight"]:
+                return dict(effective), False
+            clan_tag = player.get("current_clan_tag") or ""
+            clan = {
+                "tag": clan_tag,
+                "name": (player.get("current_clan_name") or clan_tag) if clan_tag else "",
+            }
+            changed = self._write(
+                db,
+                {**change, "tag": player_tag},
+                current,
+                {"name": player.get("name"), "town_hall": player.get("town_hall")},
+                clan,
+                actor,
+                actor_name,
+                now,
+                source=DISCORD_SOURCE,
+            )
+            self._invalidate(db, [player_tag] if changed else [])
+            row = effective_weights(db, [player_tag])[player_tag]
+            return dict(row), changed
 
     @classmethod
     def save_roster(cls, db, season_id, player_tag, change, actor, actor_name=None):

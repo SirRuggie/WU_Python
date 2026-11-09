@@ -100,6 +100,127 @@ def get_upgrade_info(weight: int, th_level: int | None, ranges=None) -> str:
     return ""
 
 
+async def load_th_emojis(bot) -> list:
+    """Cached guild emojis plus application emojis, for Town Hall emoji matching."""
+    available = list(bot.cache.get_emojis_view().values())
+    # Application emojis are not in the gateway guild emoji cache.
+    me = bot.get_me() if hasattr(bot, "get_me") else None
+    if me is not None:
+        try:
+            available.extend(await bot.rest.fetch_application_emojis(me.id))
+        except hikari.HTTPError:
+            logging.getLogger(__name__).warning("Application emoji lookup failed; using cached/fallback Town Hall emojis")
+    return available
+
+
+def assess_weight(loot: int, ranges) -> tuple[int, int | None, str, int]:
+    """Return (total weight, Town Hall, status, accent colour) for one storage value."""
+    total_weight = loot * 5
+    th_level, status, color = determine_town_hall(total_weight, ranges)
+    return total_weight, th_level, status, color
+
+
+def build_weight_panel(loot: int, config, available=(), saved_for: str | None = None) -> list:
+    """The public calculator panel. ``saved_for`` is pre-escaped "Name #TAG" text."""
+    ranges = war_weight.ranges(config)
+    lowest, highest = min(ranges), max(ranges)
+
+    # Calculate total weight (multiply by 5) and determine town hall and status
+    total_weight, th_level, status, color = assess_weight(loot, ranges)
+
+    # Build status message
+    if status == "below":
+        status_msg = f"⚠️ **Below TH{lowest} range**\nThis weight is lower than the configured minimum ({ranges[lowest]['min']:,})."
+    elif status == "above":
+        status_msg = f"⚠️ **Above TH{highest} range**\nThis weight exceeds the maximum configured range."
+    elif status == "between":
+        if th_level and th_level < highest:
+            next_th = min(th for th in ranges if th > th_level)
+            status_msg = f"📊 **Between TH{th_level} and TH{next_th}**"
+        else:
+            status_msg = "📊 **In transition range**"
+    else:  # exact
+        status_msg = f"✅ **Town Hall {th_level} Confirmed**"
+        if th_level in ranges:
+            range_data = ranges[th_level]
+            status_msg += f"\nWeight Range: {range_data['min']:,} - {range_data['max']:,}"
+    if saved_for:
+        status_msg += f"\n💾 Saved for {saved_for}"
+
+    # Build additional info_hub
+    additional_info = []
+
+    # Add upgrade info_hub if applicable
+    if th_level and status == "exact":
+        upgrade_info = get_upgrade_info(total_weight, th_level, ranges)
+        if upgrade_info:
+            additional_info.append(upgrade_info)
+
+        # Add position in range
+        position = calculate_position_in_range(total_weight, th_level, ranges)
+        additional_info.append(f"• {position}% through TH{th_level} weight range")
+
+    # Add FWA suitability with separator
+    if total_weight >= 56000:  # Only show FWA info for TH9+
+        additional_info.append("")  # Add empty line for separator
+        if total_weight < 115000:
+            additional_info.append("❌ **This war weight is too low for FWA wars.**")
+            additional_info.append("**The minimum weight is 115,000.**")
+            additional_info.append("**We recommend a Flexible Fun clan.**")
+        else:
+            additional_info.append("✅ **Suitable weight for FWA clan wars**")
+
+    # Build the response components
+    components = [
+        Container(
+            accent_color=color,
+            components=[
+                Text(content="## ⚖️ **FWA War Weight Calculator**"),
+                Separator(divider=True),
+                Text(content=(
+                    f"**Storage Weight:** {loot:,}\n"
+                    f"**Total War Weight:** {loot:,} × 5 = {get_th_emoji(th_level, config, available)} **{total_weight:,}**\n\n"
+                    f"{status_msg}"
+                )),
+            ]
+        ),
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content=f"### 📊 **War Weight Reference Guide (TH{config['minimum_th']}–TH{highest})**"),
+                Text(content=format_weight_reference_guide(total_weight, th_level, config, available)),
+            ]
+        )
+    ]
+
+    # Add additional info container if we have any
+    if additional_info:
+        # Build components for additional info
+        additional_components = [Text(content="### 📈 **Additional Information**")]
+
+        # Process additional info items
+        for info in additional_info:
+            if info == "":  # Empty string indicates separator
+                additional_components.append(Separator(divider=True))
+            else:
+                additional_components.append(Text(content=info))
+
+        additional_components.append(Media(items=[MediaItem(media="assets/Gold_Footer.png")]))
+
+        components.append(
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=additional_components
+            )
+        )
+    else:
+        # Add footer to last container
+        components[-1].components.append(
+            Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+        )
+    return components
+
+
 @fwa.register()
 class WeightCommand(
     lightbulb.SlashCommand,
@@ -112,127 +233,30 @@ class WeightCommand(
         min_value=1,
         max_value=100000
     )
+    user = lightbulb.user(
+        "user",
+        "Discord user to save this weight for (optional)",
+        default=None,
+    )
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context, bot: hikari.GatewayBot = lightbulb.di.INJECTED, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
 
         config = await war_weight.load(mongo, ctx.guild_id)
-        ranges = war_weight.ranges(config)
-        lowest, highest = min(ranges), max(ranges)
-        available = list(bot.cache.get_emojis_view().values())
-        # Application emojis are not in the gateway guild emoji cache.
-        me = bot.get_me() if hasattr(bot, "get_me") else None
-        if me is not None:
-            try:
-                available.extend(await bot.rest.fetch_application_emojis(me.id))
-            except hikari.HTTPError:
-                logging.getLogger(__name__).warning("Application emoji lookup failed; using cached/fallback Town Hall emojis")
+        available = await load_th_emojis(bot)
 
-        # Calculate total weight (multiply by 5)
-        total_weight = self.weight * 5
+        if self.user is not None:
+            from extensions.commands.fwa.weight_save import start_save_flow
 
-        # Determine town hall and status
-        th_level, status, color = determine_town_hall(total_weight, ranges)
-
-        # Build status message
-        if status == "below":
-            status_msg = f"⚠️ **Below TH{lowest} range**\nThis weight is lower than the configured minimum ({ranges[lowest]['min']:,})."
-            th_display = f"Below TH{lowest}"
-        elif status == "above":
-            status_msg = f"⚠️ **Above TH{highest} range**\nThis weight exceeds the maximum configured range."
-            th_display = f"Above TH{highest}"
-        elif status == "between":
-            if th_level and th_level < highest:
-                next_th = min(th for th in ranges if th > th_level)
-                status_msg = f"📊 **Between TH{th_level} and TH{next_th}**"
-                th_display = f"TH{th_level}-{next_th} Gap"
-            else:
-                status_msg = "📊 **In transition range**"
-                th_display = "Transition"
-        else:  # exact
-            status_msg = f"✅ **Town Hall {th_level} Confirmed**"
-            th_display = f"Town Hall {th_level}"
-            if th_level in ranges:
-                range_data = ranges[th_level]
-                status_msg += f"\nWeight Range: {range_data['min']:,} - {range_data['max']:,}"
-
-        # Build additional info_hub
-        additional_info = []
-
-        # Add upgrade info_hub if applicable
-        if th_level and status == "exact":
-            upgrade_info = get_upgrade_info(total_weight, th_level, ranges)
-            if upgrade_info:
-                additional_info.append(upgrade_info)
-
-            # Add position in range
-            position = calculate_position_in_range(total_weight, th_level, ranges)
-            additional_info.append(f"• {position}% through TH{th_level} weight range")
-
-        # Add FWA suitability with separator
-        if total_weight >= 56000:  # Only show FWA info for TH9+
-            additional_info.append("")  # Add empty line for separator
-            if total_weight < 115000:
-                additional_info.append("❌ **This war weight is too low for FWA wars.**")
-                additional_info.append("**The minimum weight is 115,000.**")
-                additional_info.append("**We recommend a Flexible Fun clan.**")
-            else:
-                additional_info.append("✅ **Suitable weight for FWA clan wars**")
-
-        # Build the response components
-        components = [
-            Container(
-                accent_color=color,
-                components=[
-                    Text(content="## ⚖️ **FWA War Weight Calculator**"),
-                    Separator(divider=True),
-                    Text(content=(
-                        f"**Storage Weight:** {self.weight:,}\n"
-                        f"**Total War Weight:** {self.weight:,} × 5 = {get_th_emoji(th_level, config, available)} **{total_weight:,}**\n\n"
-                        f"{status_msg}"
-                    )),
-                ]
-            ),
-            Container(
-                accent_color=BLUE_ACCENT,
-                components=[
-                    Text(content=f"### 📊 **War Weight Reference Guide (TH{config['minimum_th']}–TH{highest})**"),
-                    Text(content=format_weight_reference_guide(total_weight, th_level, config, available)),
-                ]
-            )
-        ]
-
-        # Add additional info container if we have any
-        if additional_info:
-            # Build components for additional info
-            additional_components = [Text(content="### 📈 **Additional Information**")]
-            
-            # Process additional info items
-            for info in additional_info:
-                if info == "":  # Empty string indicates separator
-                    additional_components.append(Separator(divider=True))
-                else:
-                    additional_components.append(Text(content=info))
-            
-            additional_components.append(Media(items=[MediaItem(media="assets/Gold_Footer.png")]))
-            
-            components.append(
-                Container(
-                    accent_color=GOLD_ACCENT,
-                    components=additional_components
-                )
-            )
-        else:
-            # Add footer to last container
-            components[-1].components.append(
-                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
-            )
+            # The save question replaces the immediate post; the panel posts once, after the choice.
+            await start_save_flow(ctx, bot, mongo, self.weight, self.user, config, available)
+            return
 
         # Send to channel without replying
         await bot.rest.create_message(
             channel=ctx.channel_id,
-            components=components
+            components=build_weight_panel(self.weight, config, available)
         )
 
         # Delete the ephemeral "thinking" message

@@ -23,6 +23,7 @@ PERMISSIONS = {
     **CWL_PERMISSIONS,
     'clans': ('Manage family clans', 'Edit family clan settings, roles, channels and artwork.'),
     'clan_weights': ('Edit clan weights', 'View, save and export weights for all FWA clans.'),
+    'discord_weights': ('Save weights from Discord', 'Save a /fwa weight result to a player. Does not open Clan weights.'),
     'strikes': ('Strike settings and replacements', 'Manage leave, exemptions and replacement priorities.'),
     'strikes_add': ('Add strikes', 'Add strikes and import wars.'),
     'strikes_remove': ('Remove strikes', 'Remove strikes.'),
@@ -35,7 +36,7 @@ PERMISSIONS = {
 }
 GROUPS = {
     'CWL management': list(CWL_PERMISSIONS),
-    'Clan management': ['clans', 'clan_weights'],
+    'Clan management': ['clans', 'clan_weights', 'discord_weights'],
     'Strikes & replacements': ['strikes', 'strikes_add', 'strikes_remove'],
     'Member administration & other tools': ['member_roles', 'recruitment', 'tickets', 'text_commands', 'fwa', 'server_tools'],
 }

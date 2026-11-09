@@ -52,7 +52,9 @@ def _authenticate(request):
     if len(secret) < 32:
         raise member.MemberError(503, "Discord CWL bridge is not configured")
     supplied = request.headers.get(SECRET_HEADER, "")
-    if not secrets.compare_digest(secret, supplied):
+    # Compare bytes: a non-ASCII header must be a 403, not a TypeError (500).
+    if not secrets.compare_digest(secret.encode("utf-8", "surrogateescape"),
+                                  supplied.encode("utf-8", "surrogateescape")):
         raise member.MemberError(403, "Discord CWL bridge authentication failed")
 
 
