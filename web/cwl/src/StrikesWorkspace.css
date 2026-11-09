@@ -538,6 +538,13 @@
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
 }
+.strikes-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--wu-space-2);
+  margin-top: var(--wu-space-2);
+}
 .strikes-toolbar:has(> .strikes-history-search) {
   grid-template-columns: minmax(200px, 2fr) minmax(140px, 1fr) auto;
 }
@@ -1240,4 +1247,11 @@
   .strikes-activity-overview .page-head h1 {
     font-size: var(--wu-text-xl);
   }
+}
+
+.strikes-title {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  min-width: 0;
 }

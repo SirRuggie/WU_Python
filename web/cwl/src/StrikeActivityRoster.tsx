@@ -1,6 +1,11 @@
 import FilterChips from "./FilterChips";
 import StrikeActivityRows from "./StrikeActivityRows";
-import RecruitWeightTool from "./RecruitWeightTool";
+import FindSlots from "./FindSlots";
+import SortTrigger from "./rosterUi/SortTrigger";
+import StrikeGroupHeading from "./StrikeGroupHeading";
+import StrikeSortPanel from "./StrikeSortPanel";
+import useDiscordIdentities from "./useDiscordIdentities";
+import { activityPages } from "./strikeActivityGroups";
 import useActivityIdentityRefresh, {
   mergeIdentityAccounts,
 } from "./useActivityIdentityRefresh";
@@ -21,8 +26,10 @@ import StrikeActivityFiltersPanel from "./StrikeActivityFiltersPanel";
 import {
   activityFilterQuery,
   activityFilterKeys,
-  activitySorts,
+  activityGroupLabels,
   activitySortLabels,
+  activityRuleText,
+  memberName,
   parseActivityFilters,
   clearActivityFilters,
   visibleActivityAccounts,
@@ -33,7 +40,6 @@ import {
   appliedActivityFilters,
   copyActivityList,
   type ActivityFilters,
-  type ActivitySort,
 } from "./strikeActivityFilters";
 import "./StrikeActivityRoster.css";
 
@@ -143,8 +149,8 @@ export default function StrikeActivityRoster({
         : "smooth",
     });
   }, [filters.view, loading]);
-  const [tools, setTools] = useState(false);
   const [filterTrigger, setFilterTrigger] = useState<HTMLElement | null>(null);
+  const [sortTrigger, setSortTrigger] = useState<HTMLElement | null>(null);
   const copyIdentity = useRef(filterIdentity);
   copyIdentity.current = filterIdentity;
   const [copied, setCopied] = useState("");
@@ -263,9 +269,30 @@ export default function StrikeActivityRoster({
     [data.accounts, filters],
   );
   const counts = activityViewCounts(data.accounts, filters.includeLow, filters),
-    lastPage = Math.max(0, Math.ceil(visible.length / 25) - 1),
+    pages = useMemo(
+      () => activityPages(visible, filters.group),
+      [visible, filters.group],
+    ),
+    lastPage = Math.max(0, pages.length - 1),
     page = Math.min(filters.page, lastPage);
-  const rows = visible.slice(page * 25, (page + 1) * 25);
+  const rows = pages[page] ?? [];
+  const pageStart = pages
+    .slice(0, page)
+    .reduce((total, items) => total + items.length, 0);
+  const memberLabel = filters.member
+    ? (data.accounts
+        .filter((row) => row.discord_id === filters.member)
+        .map(memberName)
+        .find(Boolean) ?? null)
+    : null;
+  const profiles = useDiscordIdentities(
+    rows.map((row) => row.discord_id),
+    filters.group === "discord" && !!rows.length,
+    "/strikes/members",
+  );
+  useEffect(() => {
+    if (profiles.denied) callbacks.current.onDenied?.();
+  }, [profiles.denied]);
   useEffect(() => {
     if (loading || restored.current) return;
     const frame = requestAnimationFrame(() => {
@@ -300,7 +327,7 @@ export default function StrikeActivityRoster({
       const url = new URL(window.location.href);
       for (const key of activityFilterKeys) url.searchParams.delete(key);
       new URLSearchParams(activityFilterQuery(next)).forEach((value, key) =>
-        url.searchParams.set(key, value),
+        url.searchParams.append(key, value),
       );
       const historyState =
         history.state && typeof history.state === "object"
@@ -322,7 +349,11 @@ export default function StrikeActivityRoster({
     selected.includes(row.player_tag),
   );
   const clearedFilters = clearActivityFilters(filters);
-  const hasExtraFilters = appliedActivityFilters(filters, data.clans).some(
+  const hasExtraFilters = appliedActivityFilters(
+    filters,
+    data.clans,
+    memberLabel,
+  ).some(
     (filter) =>
       JSON.stringify(normalizeActivityView({ ...filters, ...filter.clear })) !==
       JSON.stringify(filters),
@@ -375,6 +406,21 @@ export default function StrikeActivityRoster({
           onChange={(view) => change(activityViewPreset(filters, view))}
         />
       </div>
+      {filters.view === "replacements" &&
+        !(loading && !data.accounts.length) && (
+          <FindSlots
+            clans={data.clans}
+            accounts={data.accounts}
+            search={{
+              slotWeights: filters.slotWeights,
+              slotClans: filters.slotClans,
+              slotMember: filters.slotMember,
+            }}
+            disabled={bulkBusy}
+            onSearch={(next) => change(next)}
+            onChoose={choose}
+          />
+        )}
       <div className="strike-activity-toolbar">
         <input
           aria-label="Find account or member"
@@ -384,32 +430,20 @@ export default function StrikeActivityRoster({
           placeholder="Name, tag or member"
           onChange={(event) => change({ query: event.target.value }, false)}
         />
-        <select
-          aria-label="Sort accounts"
-          value={filters.sort}
-          onChange={(event) =>
-            change({ sort: event.target.value as ActivitySort })
-          }
-        >
-          {activitySorts.map((value) => (
-            <option key={value} value={value}>
-              {activitySortLabels[value]}
-            </option>
-          ))}
-        </select>
+        <div className="roster-ui strike-activity-sort">
+          <SortTrigger
+            disabled={bulkBusy}
+            label={activitySortLabels[filters.sort]}
+            grouped={
+              filters.group === "none"
+                ? false
+                : activityGroupLabels[filters.group]
+            }
+            onClick={(event) => setSortTrigger(event.currentTarget)}
+          />
+        </div>
         <button
-          aria-label={
-            filters.direction === "asc"
-              ? "Ascending order; switch to descending"
-              : "Descending order; switch to ascending"
-          }
-          onClick={() =>
-            change({ direction: filters.direction === "asc" ? "desc" : "asc" })
-          }
-        >
-          {filters.direction === "asc" ? "↑" : "↓"}
-        </button>
-        <button
+          className="strike-activity-filters-button"
           disabled={bulkBusy}
           onClick={(event) => setFilterTrigger(event.currentTarget)}
         >
@@ -437,47 +471,66 @@ export default function StrikeActivityRoster({
         >
           <summary aria-label="Activity actions">⋯</summary>
           <div className="strike-activity-action-menu">
-            {overviewActions}
-            <button disabled={loading || bulkBusy} onClick={() => void read()}>
-              Refresh activity
-            </button>
-            <button
-              disabled={!visible.length}
-              onClick={async (event) => {
-                event.currentTarget.closest("details")?.removeAttribute("open");
-                const current = filterIdentity;
-                try {
-                  await navigator.clipboard.writeText(
-                    copyActivityList(visible),
-                  );
-                  if (copyIdentity.current !== current) return;
-                  setCopied(`Copied ${visible.length} accounts`);
-                } catch {
-                  if (copyIdentity.current !== current) return;
-                  setCopied(
-                    "Copy failed. Your browser did not allow clipboard access.",
-                  );
-                }
-              }}
-            >
-              Copy list
-            </button>
-            {canManage && !selecting && (
+            <div role="group" aria-label="Account">
+              <p className="strike-activity-menu-label">Account</p>
+              {overviewActions}
+            </div>
+            <div role="group" aria-label="List">
+              <p className="strike-activity-menu-label">List</p>
               <button
-                disabled={bulkBusy}
-                onClick={(event) => {
+                disabled={!visible.length}
+                onClick={async (event) => {
                   event.currentTarget
                     .closest("details")
                     ?.removeAttribute("open");
-                  setSelecting(true);
+                  const current = filterIdentity;
+                  try {
+                    await navigator.clipboard.writeText(
+                      copyActivityList(visible),
+                    );
+                    if (copyIdentity.current !== current) return;
+                    setCopied(`Copied ${visible.length} accounts`);
+                  } catch {
+                    if (copyIdentity.current !== current) return;
+                    setCopied(
+                      "Copy failed. Your browser did not allow clipboard access.",
+                    );
+                  }
                 }}
               >
-                Select accounts
+                Copy list
               </button>
-            )}
+              {canManage && !selecting && (
+                <button
+                  disabled={bulkBusy}
+                  onClick={(event) => {
+                    event.currentTarget
+                      .closest("details")
+                      ?.removeAttribute("open");
+                    setSelecting(true);
+                  }}
+                >
+                  Select accounts
+                </button>
+              )}
+              <button
+                disabled={loading || bulkBusy}
+                onClick={() => void read()}
+              >
+                Refresh activity
+              </button>
+            </div>
           </div>
         </details>
       </div>
+      {sortTrigger && (
+        <StrikeSortPanel
+          filters={filters}
+          trigger={sortTrigger}
+          onClose={() => setSortTrigger(null)}
+          onChange={(patch) => change(patch)}
+        />
+      )}
       {filterTrigger && (
         <StrikeActivityFiltersPanel
           filters={filters}
@@ -494,38 +547,36 @@ export default function StrikeActivityRoster({
       <div className="strike-activity-status">
         <div className="strike-activity-status-line">
           <div className="strike-activity-rule-line">
+            <p className="strike-activity-rule">
+              {activityRuleText(filters, memberLabel)}
+            </p>
             <div className="strike-activity-applied">
-              {appliedActivityFilters(filters, data.clans).map((filter) => {
-                const next = normalizeActivityView({
-                  ...filters,
-                  ...filter.clear,
-                });
-                if (
-                  Object.keys(filter.clear).every(
-                    (key) =>
-                      next[key as keyof ActivityFilters] ===
-                      filters[key as keyof ActivityFilters],
+              {appliedActivityFilters(filters, data.clans, memberLabel).map(
+                (filter) => {
+                  const next = normalizeActivityView({
+                    ...filters,
+                    ...filter.clear,
+                  });
+                  // A rule the tab always applies is the rule line above, not a chip.
+                  if (
+                    Object.keys(filter.clear).every(
+                      (key) =>
+                        next[key as keyof ActivityFilters] ===
+                        filters[key as keyof ActivityFilters],
+                    )
                   )
-                )
+                    return null;
                   return (
-                    <span
+                    <button
                       key={filter.key}
-                      className="strike-tab-predicate"
-                      title="This rule decides which accounts the tab shows. Select All to show other accounts."
+                      aria-label={`Remove ${filter.label}`}
+                      onClick={() => change(filter.clear)}
                     >
-                      {filter.label}
-                    </span>
+                      {filter.label} ×
+                    </button>
                   );
-                return (
-                  <button
-                    key={filter.key}
-                    aria-label={`Remove ${filter.label}`}
-                    onClick={() => change(filter.clear)}
-                  >
-                    {filter.label} ×
-                  </button>
-                );
-              })}
+                },
+              )}
             </div>
             <p
               className="strike-activity-summary"
@@ -669,8 +720,20 @@ export default function StrikeActivityRoster({
         busy={bulkBusy}
         onSelected={setSelected}
         onChoose={choose}
+        renderGroup={
+          filters.group === "none"
+            ? undefined
+            : (head, members) => (
+                <StrikeGroupHeading
+                  head={head}
+                  rows={members}
+                  profiles={profiles.members}
+                  resolving={profiles.loading}
+                />
+              )
+        }
       />
-      {visible.length > 25 && (
+      {pages.length > 1 && (
         <nav
           className="strike-activity-pages"
           aria-label="Family account pages"
@@ -679,8 +742,7 @@ export default function StrikeActivityRoster({
             Previous accounts
           </button>
           <span>
-            {page * 25 + 1}–{Math.min((page + 1) * 25, visible.length)} of{" "}
-            {visible.length}
+            {pageStart + 1}–{pageStart + rows.length} of {visible.length}
           </span>
           <button
             disabled={page >= lastPage}
@@ -690,10 +752,6 @@ export default function StrikeActivityRoster({
           </button>
         </nav>
       )}
-      <details onToggle={(event) => setTools(event.currentTarget.open)}>
-        <summary>Match a recruit’s weight</summary>
-        {tools && <RecruitWeightTool rows={data.accounts} onChoose={choose} />}
-      </details>
     </section>
   );
 }

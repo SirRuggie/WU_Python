@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import ActionPanel from "./ActionPanel";
 import RosterFilterOptions from "./RosterFilterOptions";
+import StrikeMemberSelect, { strikeMemberOptions } from "./StrikeMemberSelect";
 import type { ActivityAccount } from "./strikeActivityView";
 import {
   visibleActivityAccounts,
@@ -27,6 +28,7 @@ export default function StrikeActivityFiltersPanel({
 }) {
   const [draft, setDraft] = useState(filters);
   const [clanSearch, setClanSearch] = useState("");
+  const members = useMemo(() => strikeMemberOptions(accounts), [accounts]);
   const patch = (next: Partial<ActivityFilters>) =>
     setDraft((current) =>
       normalizeActivityView({ ...current, ...next, page: 0 }),
@@ -49,24 +51,20 @@ export default function StrikeActivityFiltersPanel({
         .filter((hall): hall is number => !!hall),
     ),
   ].sort((a, b) => b - a);
-  const numberChoice = (
-    label: string,
-    key: "noAttackMin" | "quietMin" | "raidMin",
-    values: number[],
-  ) => (
+  const numberChoice = (label: string, key: "raidMin", values: number[]) => (
     <label>
       {label}
       <select
         value={draft[key]}
-        onChange={(event) => patch({ [key]: Number(event.target.value) })}
+        onChange={(event) =>
+          patch({
+            [key]: Number(event.target.value) as ActivityFilters["raidMin"],
+          })
+        }
       >
         {values.map((value) => (
           <option key={value} value={value}>
-            {key === "noAttackMin" && value === 14
-              ? "All 14"
-              : value
-                ? `${value}+`
-                : "Any"}
+            {value ? `${value}+` : "Any"}
           </option>
         ))}
       </select>
@@ -104,6 +102,11 @@ export default function StrikeActivityFiltersPanel({
             onChange={(event) => setClanSearch(event.target.value)}
           />
         </label>
+        <StrikeMemberSelect
+          options={members}
+          value={draft.member}
+          onChange={(member) => patch({ member })}
+        />
         <RosterFilterOptions
           title="Clans"
           selected={draft.clans}
@@ -124,12 +127,6 @@ export default function StrikeActivityFiltersPanel({
               ).length,
             }))}
         />
-        {numberChoice(
-          "Wars without attacking",
-          "noAttackMin",
-          [0, 3, 5, 10, 14],
-        )}
-        {numberChoice("Quiet days", "quietMin", [0, 7, 14, 30])}
         {numberChoice("Raid weekends without attacking", "raidMin", [0, 1, 2])}
         <label>
           Strikes
@@ -218,14 +215,6 @@ export default function StrikeActivityFiltersPanel({
             <option value="current">Current members</option>
             <option value="left">Left clan</option>
           </select>
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={draft.marked}
-            onChange={(event) => patch({ marked: event.target.checked })}
-          />
-          Marked for replacement
         </label>
         <label>
           <input

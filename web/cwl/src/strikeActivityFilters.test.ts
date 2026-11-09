@@ -10,6 +10,10 @@ import {
   appliedActivityFilters,
   clearActivityFilters,
   copyActivityList,
+  activityRuleText,
+  memberName,
+  memberAccountsState,
+  findReplacementState,
 } from "./strikeActivityFilters";
 import type { ActivityAccount } from "./strikeActivityView";
 const row = (patch: Partial<ActivityAccount> = {}): ActivityAccount => ({
@@ -312,5 +316,96 @@ it("extra chain filters narrow All and the Not attacking tab", () => {
         .map((r) => r.no_attack_wars)
         .sort((a, b) => a! - b!),
     ).toEqual([5, 10]);
+  }
+});
+it("reads member, grouping and Find slots parameters, bounded and repeated", () => {
+  const f = parseActivityFilters(
+    "?slot_weight=143000&slot_weight=173000&slot_weight=1&slot_weight=2&slot_weight=3&slot_weight=4&slot_clan=%23PYY&slot_clan=bad&slot_member=100000000000000001&member=100000000000000002&group=discord",
+  );
+  expect(f.view).toBe("replacements");
+  expect(f.slotWeights).toEqual([143000, 173000, 1, 2, 3]);
+  expect(f.slotClans).toEqual(["#PYY"]);
+  expect(f.slotMember).toBe("100000000000000001");
+  expect(f.member).toBe("100000000000000002");
+  expect(f.group).toBe("discord");
+  const query = new URLSearchParams(activityFilterQuery(f));
+  expect(query.getAll("slot_weight")).toEqual([
+    "143000",
+    "173000",
+    "1",
+    "2",
+    "3",
+  ]);
+  expect(query.getAll("slot_clan")).toEqual(["#PYY"]);
+  expect(parseActivityFilters(`?${query}`)).toEqual(f);
+  const bad = parseActivityFilters("?member=abc&group=evil&slot_member=1");
+  expect([bad.member, bad.group, bad.slotMember]).toEqual(["", "none", ""]);
+  // Clearing filters keeps the last Find slots search.
+  expect(clearActivityFilters(f).slotWeights).toEqual(f.slotWeights);
+  expect(clearActivityFilters(f).member).toBe("");
+});
+it.each([
+  "?view=replacements",
+  "?view=replacements&slot_clan=%23PQQ",
+  "?view=replacements&slot_member=100000000000000001",
+  "?slot_clan=%23PQQ",
+])("%s opens Replacements without any weights", (search) => {
+  const f = parseActivityFilters(search);
+  expect(f.view).toBe("replacements");
+  expect(f.slotWeights).toEqual([]);
+});
+it("a selected member shows every account of that member, ignoring the tab rule only", () => {
+  const rows = [
+    row({ discord_id: "100000000000000002", no_attack_wars: 0 }),
+    row({
+      player_tag: "#PZZ",
+      discord_id: "100000000000000003",
+      no_attack_wars: 0,
+    }),
+  ];
+  const f = parseActivityFilters(
+    "?activity_view=not_attacking&member=100000000000000002",
+  );
+  expect(visibleActivityAccounts(rows, f)).toHaveLength(1);
+  expect(visibleActivityAccounts(rows, { ...f, member: "" })).toHaveLength(0);
+  expect(
+    visibleActivityAccounts(rows, { ...f, strikeMode: "over_limit" }),
+  ).toHaveLength(0);
+  expect(
+    appliedActivityFilters(f, [], "slayer").map((chip) => chip.label),
+  ).toEqual(["Member: @slayer"]);
+  expect(activityRuleText(f, "slayer")).toBe("All accounts of @slayer");
+  expect(
+    memberName({
+      discord_id: "100000000000000002",
+      discord_name: "100000000000000002",
+    }),
+  ).toBeNull();
+});
+it("All accounts of a member opens the All tab filtered to that member", () => {
+  const state = memberAccountsState("100000000000000002");
+  const params = new URLSearchParams(state);
+  expect(params.get("activity_view")).toBe("all");
+  expect(params.get("member")).toBe("100000000000000002");
+  const f = parseActivityFilters(state);
+  expect([f.view, f.member]).toEqual(["all", "100000000000000002"]);
+});
+it("Find a fill for this slot opens Replacements with the slot weight and clan", () => {
+  const state = findReplacementState("#PQQ", 143400.4);
+  const params = new URLSearchParams(state);
+  expect(params.get("activity_view")).toBe("replacements");
+  expect(params.getAll("slot_weight")).toEqual(["143400"]);
+  expect(params.getAll("slot_clan")).toEqual(["#PQQ"]);
+  const f = parseActivityFilters(state);
+  expect([f.view, f.slotWeights, f.slotClans]).toEqual([
+    "replacements",
+    [143400],
+    ["#PQQ"],
+  ]);
+  // A slot without a weight still carries its clan.
+  for (const weight of [null, undefined, 0]) {
+    const bare = new URLSearchParams(findReplacementState("#PQQ", weight));
+    expect(bare.has("slot_weight")).toBe(false);
+    expect(bare.getAll("slot_clan")).toEqual(["#PQQ"]);
   }
 });

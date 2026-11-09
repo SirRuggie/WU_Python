@@ -7,7 +7,7 @@
 .strike-activity-toolbar {
   display: grid;
   align-items: end;
-  grid-template-columns: minmax(0, 1fr) minmax(65px, 150px) 44px 56px 44px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 280px) 96px 44px;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -22,8 +22,7 @@
   min-height: 44px;
   font-size: var(--wu-text-sm);
 }
-.strike-activity-more > label,
-.strike-activity-recruit > label {
+.strike-activity-more > label {
   align-items: stretch;
   flex-direction: column;
   gap: var(--wu-space-1);
@@ -134,22 +133,6 @@
   justify-content: space-between;
   flex-wrap: wrap;
   font-size: var(--wu-text-sm);
-}
-.strike-activity-recruit {
-  display: flex;
-  gap: var(--wu-space-3);
-  flex-wrap: wrap;
-  padding: var(--wu-space-2) 0 var(--wu-space-4);
-  align-items: end;
-}
-.strike-activity-recruit > p,
-.strike-activity-recruit > ul {
-  flex-basis: 100%;
-  margin: 0;
-  text-wrap: pretty;
-}
-.strike-activity-recruit ul {
-  padding-left: var(--wu-space-4);
 }
 @media (max-width: 650px) {
   .strike-activity-toolbar {
@@ -269,8 +252,7 @@
   overflow-wrap: anywhere;
 }
 
-.strike-activity-toolbar > input,
-.strike-activity-toolbar > select {
+.strike-activity-toolbar > input {
   width: 100%;
   min-width: 0;
   padding-inline: var(--wu-space-1);
@@ -294,11 +276,6 @@
 }
 .strike-activity-toolbar {
   gap: var(--wu-space-1);
-}
-@media (max-width: 650px) {
-  .strike-activity-toolbar {
-    grid-template-columns: minmax(0, 1fr) 70px 44px 52px 44px;
-  }
 }
 
 .strike-activity-table {
@@ -433,6 +410,7 @@
 
   .strike-activity-toolbar {
     top: 0;
+    grid-column: 1 / -1;
   }
 }
 .strike-activity-roster h2.sr-only {
@@ -508,6 +486,11 @@
 .strikes-workspace .strike-activity-status .strikes-tracking > summary::before {
   content: none;
 }
+.strike-activity-status .strikes-tracking > summary {
+  min-height: 44px;
+  padding: 0 var(--wu-space-3);
+  border-radius: 999px;
+}
 
 /* The measured narrow status exceeds two rows; keep its timestamp above the body. */
 @media (max-width: 650px) {
@@ -545,19 +528,16 @@
     background: linear-gradient(to right, transparent, var(--wu-bg));
   }
   .strike-activity-toolbar {
-    grid-template-columns: 56px minmax(0, 1fr) 44px;
-    grid-template-areas: "search search actions" "filters sort direction";
+    grid-template-columns: minmax(0, 1fr) 88px 44px;
+    grid-template-areas: "search search actions" "sort filters filters";
   }
   .strike-activity-toolbar > input {
     grid-area: search;
   }
-  .strike-activity-toolbar > select {
+  .strike-activity-toolbar > .strike-activity-sort {
     grid-area: sort;
   }
-  .strike-activity-toolbar > button:first-of-type {
-    grid-area: direction;
-  }
-  .strike-activity-toolbar > button:last-of-type {
+  .strike-activity-toolbar > .strike-activity-filters-button {
     grid-area: filters;
   }
   .strike-activity-toolbar > .strike-activity-actions {
@@ -711,4 +691,211 @@
   .strike-activity-freshness {
     display: contents;
   }
+}
+
+.strike-activity-sort {
+  min-width: 0;
+}
+.strike-activity-sort .roster-sort-trigger {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  border-radius: 8px;
+  font-weight: inherit;
+}
+.strike-activity-menu-label {
+  margin: 0;
+  padding: var(--wu-space-1) var(--wu-space-2) 0;
+  font-size: var(--wu-text-sm);
+  color: var(--wu-text-muted);
+}
+.strike-activity-action-menu > [role="group"] {
+  display: grid;
+  gap: var(--wu-space-1);
+}
+.strike-activity-rule {
+  margin: 0;
+  font-size: var(--wu-text-md);
+  color: var(--wu-text);
+}
+.strike-sort-panel fieldset {
+  display: grid;
+  gap: var(--wu-space-1);
+  border: 0;
+  padding: 0;
+  margin: 0 0 var(--wu-space-3);
+}
+.strike-sort-panel legend {
+  padding: 0;
+  margin-bottom: var(--wu-space-1);
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.strike-sort-panel button {
+  min-height: 44px;
+  text-align: left;
+}
+.strike-sort-panel :is(.strike-sort-direction, .strike-sort-group) {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+.strike-sort-panel :is(.strike-sort-direction, .strike-sort-group) legend {
+  grid-column: 1 / -1;
+}
+.strike-sort-panel button[aria-pressed="true"] {
+  border-color: var(--wu-gold, #a89564);
+}
+.strike-group-heading {
+  display: grid;
+  gap: 2px;
+  padding: var(--wu-space-2) var(--wu-space-2) var(--wu-space-1);
+  border-block: 1px solid var(--wu-border-subtle);
+  background: var(--wu-surface);
+  min-width: 0;
+}
+.strike-group-heading .roster-discord-identity {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.strike-group-heading small {
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.strike-activity-group-row > td {
+  padding: 0;
+  height: auto;
+}
+.strike-activity-table .strike-activity-member {
+  max-width: 140px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--wu-text-muted);
+}
+.strike-activity-table .strike-activity-heading-member {
+  width: 140px;
+}
+.strike-activity-table .strike-activity-heading-text {
+  display: block;
+  padding: 0 var(--wu-space-1);
+  font-size: var(--wu-text-md);
+}
+.strike-activity-cards .account-card-meta {
+  white-space: nowrap;
+}
+
+/* Find slots: weights, clans and member stay in one compact box. */
+.strike-find-slots {
+  display: grid;
+  gap: var(--wu-space-2);
+  min-width: 0;
+  padding: var(--wu-space-2) var(--wu-space-3);
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: 10px;
+  background: var(--wu-surface);
+}
+.strike-find-slots h2 {
+  margin: 0;
+  font-size: var(--wu-text-md);
+}
+.strike-find-slots-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--wu-space-2);
+}
+.strike-find-slots-top > label {
+  display: grid;
+  gap: var(--wu-space-1);
+  min-height: 0;
+  min-width: 0;
+  align-items: stretch;
+}
+.strike-find-slots input[aria-invalid] {
+  border-color: var(--roster-card-text-danger, #ff9f9f);
+}
+.strike-find-slots-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-2);
+}
+.strike-find-slots-row > button {
+  min-width: 0;
+}
+.strike-find-slots-row > button > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.strike-find-slots p[role="alert"] {
+  margin: 0;
+  color: var(--roster-card-text-danger, #ff9f9f);
+}
+.strike-slot-group {
+  display: grid;
+  gap: var(--wu-space-1);
+  min-width: 0;
+}
+.strike-slot-group h3 {
+  margin: 0;
+  font-size: var(--wu-text-md);
+}
+.strike-slot-group p {
+  margin: 0;
+  color: var(--wu-text-muted);
+}
+.strike-slot-group ol {
+  display: grid;
+  gap: var(--wu-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.strike-slot-group li > button {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 2px;
+  justify-content: stretch;
+  justify-items: start;
+  text-align: left;
+}
+.strike-slot-group li > button:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.strike-slot-group li > button > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--wu-text-sm);
+  color: var(--wu-text-muted);
+}
+.strike-member-select {
+  display: grid;
+  gap: var(--wu-space-2);
+  min-width: 0;
+}
+.strike-member-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-2);
+}
+.strike-member-options {
+  display: grid;
+  gap: var(--wu-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.strike-member-options button {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: var(--wu-space-2);
+  text-align: left;
+}
+.strike-member-options button[aria-pressed="true"] {
+  border-color: var(--wu-gold, #a89564);
 }

@@ -850,3 +850,46 @@ it("keeps a dirty leave draft until section navigation is confirmed, then clears
     transport.mock.calls.every(([, method]) => !method || method === "GET"),
   ).toBe(true);
 });
+it("offers a fill for the open slot and all accounts of its member, without a raw ID", async () => {
+  const account = {
+    player_tag: "#P2Y",
+    player_name: "Filler fixture",
+    current_clan_tag: "#PQQ",
+    current_clan_name: "Family",
+    weight: 143000,
+    discord_id: "100000000000000001",
+    discord_name: "slayer",
+    active_strikes: 1,
+    total_strikes: 1,
+  };
+  transport.mockImplementation(async (path: string) =>
+    path.startsWith("/strikes/accounts")
+      ? { accounts: [account], clans: [] }
+      : { entries: [], total: 0, clans: [] },
+  );
+  const onFindReplacement = vi.fn(),
+    onMemberAccounts = vi.fn();
+  await render(
+    <StrikesWorkspace
+      permissions={["strikes_remove"]}
+      isOwner={false}
+      userId="1"
+      targetTag="#P2Y"
+      onFindReplacement={onFindReplacement}
+      onMemberAccounts={onMemberAccounts}
+    />,
+  );
+  await settle();
+  const named = (label: string) =>
+    [...host.querySelectorAll("button")].find(
+      (node) => node.textContent === label,
+    )!;
+  expect(host.textContent).not.toContain("Find replacements in this clan");
+  const actions = named("Find a fill for this slot").parentElement!;
+  expect(actions.className).toBe("strikes-detail-actions");
+  expect(named("All accounts of @slayer").parentElement).toBe(actions);
+  await act(async () => named("Find a fill for this slot").click());
+  expect(onFindReplacement).toHaveBeenCalledWith("#PQQ", "#P2Y", 143000);
+  await act(async () => named("All accounts of @slayer").click());
+  expect(onMemberAccounts).toHaveBeenCalledWith("100000000000000001");
+});

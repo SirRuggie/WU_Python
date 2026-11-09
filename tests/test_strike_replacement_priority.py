@@ -220,7 +220,9 @@ def test_dashboard_replacement_query_normalizes_weight_and_passes_filters(tmp_pa
     class Db:
         class Profiles:
             def find(self, query):
-                assert '#8GG82' in query['current_clan_tag']['$in']
+                current, departed = query['$or']   # slots: FWA clans only, plus 48 h grace departures
+                assert current['current_clan_tag']['$in'] == ['#2UVGQU9']
+                assert departed['departed_clan_tag']['$in'] == ['#2UVGQU9']
                 return Cursor()
         strike_profiles = Profiles()
 
@@ -232,10 +234,10 @@ def test_dashboard_replacement_query_normalizes_weight_and_passes_filters(tmp_pa
     class Ledger:
         async def replacement(self, guild_id, weight, **options):
             assert options['weights']['#PC9YGL0JL'] == (151000 if official == 'absent' else official)
-            assert weight == 149000
+            assert weight is None  # slot mode reads the non-matching rows (keeps the 48 h grace)
             assert options['family_scope'] == 'all'
             assert options['browse_all'] is True
-            assert options['town_hall'] == 16
+            assert options['town_hall'] is None
             return []
 
     async def permit(request, section, *, write=False):

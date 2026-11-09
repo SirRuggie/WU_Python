@@ -34,6 +34,13 @@ export const activitySortLabels: Record<ActivitySort, string> = {
   name: "Name",
   clan: "Clan",
 };
+export const activityGroups = ["none", "clan", "discord"] as const;
+export type ActivityGroup = (typeof activityGroups)[number];
+export const activityGroupLabels: Record<ActivityGroup, string> = {
+  none: "None",
+  clan: "Clan",
+  discord: "Discord user",
+};
 export type ActivityFilters = {
   view: ActivityView;
   query: string;
@@ -50,6 +57,13 @@ export type ActivityFilters = {
   maxWeight: number | null;
   left: "all" | "left" | "current";
   noActivity: boolean;
+  /** Discord ID; empty means every member. */
+  member: string;
+  group: ActivityGroup;
+  /** Find slots: the last search, restored from the URL. */
+  slotWeights: number[];
+  slotClans: string[];
+  slotMember: string;
   sort: ActivitySort;
   direction: "asc" | "desc";
   page: number;
@@ -70,6 +84,11 @@ export const activityFilterKeys = [
   "max_weight",
   "left",
   "no_activity",
+  "member",
+  "group",
+  "slot_weight",
+  "slot_clan",
+  "slot_member",
   "sort",
   "direction",
   "page",
@@ -149,6 +168,11 @@ const threshold = <T extends number>(
   value !== null && value !== "" && choices.includes(Number(value) as T)
     ? (Number(value) as T)
     : fallback;
+const discordId = (value: string | null) =>
+  /^[1-9][0-9]{14,21}$/.test(value || "") ? value! : "";
+/** Repeated and comma-joined values both count; the list stays bounded. */
+const listed = (params: URLSearchParams, key: string) =>
+  params.getAll(key).flatMap((value) => value.split(","));
 const range = (value: string | null) =>
   value !== null &&
   value !== "" &&
@@ -174,7 +198,11 @@ export function parseActivityFilters(
   markedDefault = false,
 ): ActivityFilters {
   const p = new URLSearchParams(search);
-  const requested = p.get("activity_view") || p.get("view");
+  const requested =
+    p.get("activity_view") ||
+    (["slot_weight", "slot_clan", "slot_member"].some((key) => p.has(key))
+      ? "replacements"
+      : p.get("view"));
   const view: ActivityView = activityViews.includes(requested as ActivityView)
     ? (requested as ActivityView)
     : p.get("marked") === "0"
@@ -242,6 +270,22 @@ export function parseActivityFilters(
           ? "current"
           : "all",
     noActivity: p.get("no_activity") === "1",
+    member: discordId(p.get("member")),
+    group: activityGroups.includes(p.get("group") as ActivityGroup)
+      ? (p.get("group") as ActivityGroup)
+      : "none",
+    slotWeights: listed(p, "slot_weight")
+      .filter((value) => /^\d{1,8}$/.test(value) && Number(value) > 0)
+      .slice(0, 5)
+      .map(Number),
+    slotClans: [
+      ...new Set(
+        listed(p, "slot_clan").filter((tag) =>
+          /^#[0289PYLQGRJCUV]{3,15}$/.test(tag),
+        ),
+      ),
+    ].slice(0, 25),
+    slotMember: discordId(p.get("slot_member")),
     sort: selectedSort,
     direction:
       p.get("direction") === "asc" || p.get("direction") === "desc"
@@ -277,6 +321,11 @@ export function activityFilterQuery(f: ActivityFilters) {
   if (f.maxWeight !== null) p.set("max_weight", String(f.maxWeight));
   if (f.left !== "all") p.set("left", f.left);
   if (f.noActivity) p.set("no_activity", "1");
+  if (f.member) p.set("member", f.member);
+  if (f.group !== "none") p.set("group", f.group);
+  for (const weight of f.slotWeights) p.append("slot_weight", String(weight));
+  for (const tag of f.slotClans) p.append("slot_clan", tag);
+  if (f.slotMember) p.set("slot_member", f.slotMember);
   p.set("sort", f.sort);
   p.set("direction", f.direction);
   if (f.page) p.set("page", String(f.page));
@@ -309,6 +358,10 @@ export function clearActivityFilters(f: ActivityFilters): ActivityFilters {
     ...activityViewPreset(parseActivityFilters("?view=all"), f.view),
     sort: f.sort,
     direction: f.direction,
+    group: f.group,
+    slotWeights: f.slotWeights,
+    slotClans: f.slotClans,
+    slotMember: f.slotMember,
   };
 }
 export function replacementMatches(row: ActivityAccount, includeLow: boolean) {
@@ -380,12 +433,15 @@ export function visibleActivityAccounts(
           f.clans.includes(
             (row.left_clan ? row.last_clan_tag : row.current_clan_tag) || "",
           )) &&
-        (!f.marked || replacementMatches(row, f.includeLow)) &&
-        (!f.noAttackMin ||
-          (wars !== null &&
-            wars >= f.noAttackMin &&
-            (f.noAttackMin !== 14 || knownWars(row) === 14))) &&
-        (!f.quietMin || (quiet !== null && quiet >= f.quietMin)) &&
+        // A selected member shows every account; only the tab rule steps aside.
+        (f.member
+          ? row.discord_id === f.member
+          : (!f.marked || replacementMatches(row, f.includeLow)) &&
+            (!f.noAttackMin ||
+              (wars !== null &&
+                wars >= f.noAttackMin &&
+                (f.noAttackMin !== 14 || knownWars(row) === 14))) &&
+            (!f.quietMin || (quiet !== null && quiet >= f.quietMin))) &&
         (!f.raidMin || (raids !== null && raids >= f.raidMin)) &&
         (f.strikeMode === "any" ||
           (f.strikeMode === "over_limit" && row.over_limit) ||
@@ -441,6 +497,42 @@ export function activityViewCounts(
     }),
   ) as Record<ActivityView, number>;
 }
+/** Link state for "All accounts of @name": the All tab filtered to one member. */
+export function memberAccountsState(member: string) {
+  return new URLSearchParams({ activity_view: "all", member }).toString();
+}
+/** Link state for "Find a fill for this slot": Replacements with the slot's weight and clan. */
+export function findReplacementState(clan: string, weight?: number | null) {
+  const query = new URLSearchParams({ activity_view: "replacements" });
+  if (weight && weight > 0)
+    query.append("slot_weight", String(Math.round(weight)));
+  query.append("slot_clan", clan);
+  return query.toString();
+}
+/** The member name shown on rows; never an ID. */
+export function memberName(
+  row: Pick<ActivityAccount, "discord_id" | "discord_name">,
+) {
+  const name = row.discord_name?.trim();
+  return name && name !== row.discord_id && !/^\d{15,22}$/.test(name)
+    ? name
+    : null;
+}
+/** The tab rule in words, shown under the view chips. */
+export function activityRuleText(f: ActivityFilters, member?: string | null) {
+  if (f.member)
+    return `All accounts of ${member ? `@${member}` : "this member"}`;
+  switch (f.view) {
+    case "not_attacking":
+      return `${f.noAttackMin || 3}+ wars without attacking`;
+    case "inactive":
+      return `${f.quietMin || 14}+ days quiet`;
+    case "replacements":
+      return f.includeLow ? "Marked, or 1–2 strikes" : "Marked or 3+ strikes";
+    default:
+      return "All accounts";
+  }
+}
 export function copyActivityList(rows: ActivityAccount[]) {
   return rows
     .map(
@@ -457,12 +549,16 @@ export type AppliedActivityFilter = {
 export function appliedActivityFilters(
   f: ActivityFilters,
   clans: { tag: string; name: string }[] = [],
+  member?: string | null,
 ): AppliedActivityFilter[] {
   const result: AppliedActivityFilter[] = [];
   const add = (key: string, label: string, clear: Partial<ActivityFilters>) =>
     result.push({ key, label, clear });
   if (f.query) add("query", `Search: ${f.query}`, { query: "" });
-  if (f.noAttackMin)
+  if (f.member)
+    add("member", member ? `Member: @${member}` : "Member", { member: "" });
+  // With a member selected the tab rule is not applied, so it is not listed.
+  if (f.noAttackMin && !f.member)
     add(
       "wars",
       f.noAttackMin === 14
@@ -470,9 +566,10 @@ export function appliedActivityFilters(
         : `No attacks in last ${f.noAttackMin}+ known wars`,
       { noAttackMin: 0 },
     );
-  if (f.quietMin) add("quiet", `Quiet ${f.quietMin}+ days`, { quietMin: 0 });
+  if (f.quietMin && !f.member)
+    add("quiet", `Quiet ${f.quietMin}+ days`, { quietMin: 0 });
   if (f.raidMin) add("raids", `Skipped ${f.raidMin}+ raids`, { raidMin: 0 });
-  if (f.marked)
+  if (f.marked && !f.member)
     add(
       "marked",
       f.includeLow

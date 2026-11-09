@@ -66,6 +66,7 @@ export default function ActionPanel({
   const panelId = useId();
   const marker = `action-panel:${panelId}`;
   const [searchFocused, setSearchFocused] = useState(false);
+  const pressStartedOnBackdrop = useRef(false);
   busyRef.current = busy;
   onCloseRef.current = onClose;
 
@@ -148,8 +149,17 @@ export default function ActionPanel({
         event.preventDefault();
         close();
       }}
+      onPointerDownCapture={(event) => {
+        pressStartedOnBackdrop.current = event.target === dialog.current;
+      }}
       onClick={(event) => {
-        if (isTopActionPanel(marker) && event.target === dialog.current)
+        // A press that began on a control must never close the panel, even if
+        // the layout moved under the pointer before release.
+        if (
+          isTopActionPanel(marker) &&
+          event.target === dialog.current &&
+          pressStartedOnBackdrop.current
+        )
           close();
       }}
       onFocusCapture={(event) => {
@@ -161,17 +171,6 @@ export default function ActionPanel({
           )
         ) {
           setSearchFocused(true);
-        }
-      }}
-      onBlurCapture={(event) => {
-        if (!isTopActionPanel(marker)) return;
-        if (
-          expandOnSearchFocus &&
-          (event.target as HTMLElement).matches(
-            'input[type="search"], [data-action-panel-search]',
-          )
-        ) {
-          setSearchFocused(false);
         }
       }}
     >

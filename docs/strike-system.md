@@ -98,16 +98,33 @@ confirmation lists every selection, including accounts on another page.
 The Replacements view retains the existing marked/eligible rules and optional
 Include 1–2 strikes behavior. Marking or clearing a replacement never changes
 strikes. Priorities and notes retain revision checks, conflict drafts and current
-clan ownership. Unknown weights stay in the account list but are excluded from
-recruit matching. Match a recruit’s weight stays behind its labeled disclosure,
-accepts 149 or 149000, and fetches the three closest eligible known-weight FWA
-slots only on request. Existing lookup, tie-breaking and Discord behavior remain.
+clan ownership. Unknown weights stay in the account list but are never matched.
+
+**Find slots** (Replacements tab, replacing the old recruit-weight disclosure)
+takes up to five weights (`143, 173, 150`; 143k and 143000 also work), optional
+FWA clans and an optional Discord member, and runs only when Find is selected.
+It returns the best three slots per weight. Replacements are **FWA clans only**;
+the Strikes page itself still lists every family clan. The slot pool is an account
+that is manually marked (any priority, even with zero strikes) or has three or
+more active strikes, in an FWA clan (current, or within the 48-hour departure
+grace). With a member selected, the pool is all of that member's FWA accounts
+whatever their strikes. Order per weight: smallest weight gap, then priority
+(Chopping Block, High, Normal), then more active strikes, then tag.
+`GET /api/cwl/strikes/replacements` accepts repeated `weight` (at most 5, else
+400), repeated `clan` (FWA only, else 400 "Select FWA clans only.") and `member`
+(Discord ID), and returns `slots: [{weight, weight_label, candidates}]` plus the
+first group as `candidates`; candidates carry `discord_id`, `discord_name` and
+`weight_difference`. The shared helpers `slot_pool` and `find_slots` in
+`utils/replacement_view.py` serve both the endpoint and Discord. The dashboard
+deep link from Discord is
+`/strikes?view=replacements&slot_weight=143000&slot_clan=%23ABC123&slot_member=<id>`
+(each parameter optional and repeatable except member).
 
 Leave starts when approved and resumes tracking at **00:00 UTC on the selected date**. All currently linked accounts are selected initially; staff can uncheck individual accounts.
 
 Role `769130325460254740` is excluded by default. Staff can change the list in Exempt roles. Current role membership is used for imports; historical role membership cannot be reconstructed. Missed attacks for exempt accounts are recorded without adding a strike. Unknown roles or conflicting/unavailable links defer processing.
 
-Discord commands use Components V2 responses: `/strikes view`, `/strikes add`, `/strikes remove`, and `/strikes replacements`. The replacements command opens family accounts with active strikes or a manual replacement mark in a paginated channel-visible message. Its controls belong to the staff member who opened it; other strike commands remain ephemeral. Unmarked accounts with zero active strikes are excluded, including when filtering by weight. Clan, Town Hall, weight and sort controls refine that list; reset returns to all eligible replacement accounts. Weight 149 means 149k (149000 also works). Rows show clan names, TH, compact weights and active strikes. The panel opens from saved rosters maintained by the background monitor; opening or filtering never waits for external roster or weight requests. Weight feeds refresh in the background, with saved values used meanwhile. Unknown TH or weight stays labeled unknown, and old clan snapshots show Last known. Leave, exempt roles, filler preferences, and import review are managed in the dashboard.
+Discord commands use Components V2 responses: `/strikes view`, `/strikes add`, `/strikes remove`, and `/strikes replacements [member]`. The replacements reply is **ephemeral** and its controls belong to the staff member who opened it (other members get a private "run the command" notice); access is reread on every click. It uses the same slot pool as the dashboard (marked or 3+ strikes, FWA clans only; the optional `member` shows all of that member's FWA accounts). Controls: a multi-select **Clan** menu (FWA clans with candidates only, "All FWA clans" by default; the 25 busiest if there are more, with a "Some clans hidden; use the dashboard" note), a **Member** user select, and buttons **Set weights** (one text field, up to five values such as `143, 173, 150`), **Previous**, **Next**, **Clear** and **Open on dashboard** (a link to Find slots with the same weights, clans and member). With weights, the panel shows one section per weight with the best three slots (name, Town Hall emoji, clan, member mention without a ping, weight, gap, priority, active strikes); without weights it lists the pool five per page, sorted by priority, with member, a short note and "Left clan" for departed accounts in grace. Mentions never ping. The panel opens from saved rosters maintained by the background monitor; opening or filtering never waits for external roster or weight requests. Weight feeds refresh in the background, with saved values used meanwhile. Unknown TH or weight stays labeled unknown, and old clan snapshots show Last known. Leave, exempt roles, filler preferences, and import review are managed in the dashboard.
 
 ## Import and monitoring
 
@@ -396,7 +413,7 @@ Evidence is retained in `/tmp/wu-strike-streaks-release/` (`live.json`,
 
 ### Later — streak and departure display
 
-- Discord `/strikes replacements` still lacks the departed mover's “Left X” text.
+- Discord `/strikes replacements` shows “Left clan” for departed accounts in grace (prompt 223).
 - After 48 hours but before the next sync, a mover's mark disappears from lists;
   the next sync clears the stored mark. This display interval is accepted.
 - Put departure age inline with the label, such as “Left clan · 6 h ago”.

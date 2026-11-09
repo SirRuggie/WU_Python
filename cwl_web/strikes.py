@@ -19,7 +19,7 @@ from . import server_management as shared
 from .providers import ProviderUnavailable, tag
 from .strike_activity_cache import changing_observations
 from utils import recruit_links
-from utils.strike_store import StrikeConflict, StrikeService, utc
+from utils.strike_store import REPLACEMENT_GRACE, StrikeConflict, StrikeService, utc
 from utils.strike_tracking import StrikeTracking
 from utils.replacement_filters import parse_weight, compact_weight
 
@@ -433,7 +433,11 @@ async def activity_accounts(request):
                 "activity_as_of": activity_as_of,
                 "history_warning": history_warning,
                 "clans": [
-                    {"tag": row["tag"], "name": row.get("name") or row["tag"]}
+                    {
+                        "tag": row["tag"],
+                        "name": row.get("name") or row["tag"],
+                        "is_fwa": row.get("type") == "FWA",
+                    }
                     for row in context["clans"]
                 ],
             }
@@ -641,11 +645,27 @@ async def remove_leave(request):
     return web.json_response({'ok': True, 'revision': saved['revision']})
 
 
+def _query_values(query, key):
+    values = query.getall(key, []) if hasattr(query, 'getall') else (
+        [query[key]] if query.get(key) else [])
+    return [value for value in values if value]
+
+
 @endpoint
 async def replacements(request):
-    raw_weight = request.query.get('weight')
-    weight = parse_weight(raw_weight) if raw_weight else None
-    clan = request.query.get('clan') or None
+    raw_weights = _query_values(request.query, 'weight')
+    if len(raw_weights) > 5:
+        raise ValueError('Enter up to 5 weights.')
+    slot_weights = []
+    for raw in raw_weights:
+        try:
+            slot_weights.append(parse_weight(raw))
+        except ValueError as exc:
+            raise ValueError(f'Invalid weight "{raw[:20]}". {exc}') from exc
+    weight = slot_weights[0] if slot_weights else None
+    slot_clans = [tag(value) for value in _query_values(request.query, 'clan')] if slot_weights else []
+    slot_member = uid(request.query['member']) if slot_weights and request.query.get('member') else None
+    clan = (request.query.get('clan') or None) if not slot_weights else None
     scope = request.query.get('scope') or 'fwa'
     if scope not in ('fwa', 'all'):
         raise ValueError("Select FWA or all clans.")
@@ -666,9 +686,17 @@ async def replacements(request):
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
         clans = await clan_rows(db)
-        allowed_tags = [row['tag'] for row in clans if row['is_fwa'] or weight is None or scope == 'all']
-        profiles = await db.strike_profiles.find(
-            {'guild_id': GUILD_ID, 'current_clan_tag': {'$in': allowed_tags}}).to_list(length=None)
+        fwa_tags = {row['tag'] for row in clans if row['is_fwa']}
+        if set(slot_clans) - fwa_tags:
+            raise ValueError('Select FWA clans only.')
+        allowed_tags = [row['tag'] for row in clans if row['is_fwa'] or weight is None]
+        # Same set the ledger can return: current members plus accounts that left
+        # an allowed clan inside the replacement grace window.
+        profiles = await db.strike_profiles.find({'guild_id': GUILD_ID, '$or': [
+            {'current_clan_tag': {'$in': allowed_tags}},
+            {'departed_clan_tag': {'$in': allowed_tags},
+             'departed_last_seen_at': {'$gte': datetime.now(timezone.utc) - REPLACEMENT_GRACE}},
+        ]}).to_list(length=None)
         tags = [row['player_tag'] for row in profiles]
         try:
             from utils.clan_weights import source_weights
@@ -684,10 +712,10 @@ async def replacements(request):
             for value in tags
         ]})
         effective_weights = {row['tag']: row['war_weight'] for row in resolved['accounts']}
-        rows = await ledger.replacement(GUILD_ID, weight, clan_tag=clan if weight is not None else None,
+        rows = await ledger.replacement(GUILD_ID, None, clan_tag=None,
                                         limit=None, weights=effective_weights,
-                                        browse_all=browse_all, family_scope=scope,
-                                        town_hall=town_hall if weight is not None else None)
+                                        browse_all=browse_all or bool(slot_weights), family_scope=scope,
+                                        town_hall=None)
     town_halls = sorted({row['town_hall'] for row in rows if row.get('town_hall')})
     if exact_tag:
         rows = [row for row in rows if row['player_tag'] == exact_tag]
@@ -708,11 +736,18 @@ async def replacements(request):
                    'priority': row['replacement_priority'], 'note': row.get('replacement_note') or '',
                    'clan_seen_at': public(row.get('clan_seen_at')),
                    'clan_is_current': bool(row.get('clan_is_current')),
-                   'weight_difference': row['weight_difference'],
-                   'discord_id': str(row['member_id']) if row.get('member_id') else None, 'revision': row.get('revision', 0)}
-    from utils.replacement_view import replacement_page, best_slots
-    if weight is not None:
-        selected = best_slots(rows, weight)
+                   'weight_difference': row.get('weight_difference'),
+                   'discord_id': str(row['member_id']) if row.get('member_id') else None,
+                   'discord_name': row.get('discord_name') or None, 'revision': row.get('revision', 0)}
+    from utils.replacement_view import replacement_page, find_slots
+    slots = []
+    if slot_weights:
+        slot_rows = [row for row in rows if row.get('town_hall') == town_hall] if town_hall else rows
+        found = find_slots(slot_rows, slot_weights, fwa_tags=fwa_tags, clan_tags=slot_clans or None,
+                           member_id=slot_member)
+        slots = [{'weight': group['weight'], 'weight_label': compact_weight(group['weight']),
+                  'candidates': [candidate(row) for row in group['slots']]} for group in found]
+        selected = found[0]['slots']
         page = {'items': selected, 'total': len(selected), 'top': [], 'groups': []}
     else:
         page = replacement_page(rows, include_low=include_low, clan=clan,
@@ -725,6 +760,7 @@ async def replacements(request):
                               'clans': clans, 'town_halls': town_halls, 'total': page['total'], 'offset': offset,
                               'limit': limit, 'include_low': include_low, 'sort': sort,
                               'matching_weight': weight, 'matching_weight_label': compact_weight(weight),
+                              'slots': slots,
                               'scope': scope, 'browse_all': browse_all, 'town_hall': town_hall})
 
 

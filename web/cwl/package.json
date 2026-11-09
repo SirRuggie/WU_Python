@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
-    "test:layout": "npm run build && node tests/run-layout.cjs && node tests/run-clan-weights-layout.cjs && node tests/run-strikes-layout.cjs && node tests/run-replacements-layout.cjs && node tests/run-family-clans-layout.cjs && node tests/run-announcement-polish-layout.cjs && node tests/run-compare-timezones-layout.cjs && node tests/run-member-profile-layout.cjs && node tests/run-member-timezones-layout.cjs && node tests/run-strikes-usability-layout.cjs && node tests/run-strikes-tracking-cadence.cjs && node tests/strikes-shell-back.browser.cjs",
+    "test:layout": "npm run build && node tests/run-layout.cjs && node tests/run-clan-weights-layout.cjs && node tests/run-strikes-layout.cjs && node tests/run-replacements-layout.cjs && node tests/run-family-clans-layout.cjs && node tests/run-announcement-polish-layout.cjs && node tests/run-compare-timezones-layout.cjs && node tests/run-member-profile-layout.cjs && node tests/run-member-timezones-layout.cjs && node tests/run-strikes-usability-layout.cjs && node tests/run-strikes-tracking-cadence.cjs && node tests/strikes-shell-back.browser.cjs && node tests/search-panel-tap.browser.cjs",
     "test:less-on-top-layout": "npm run build && node tests/run-less-on-top-layout.cjs",
     "test:same-look-layout": "npm run build && WU_LAYOUT_SUITE=same-look node tests/run-less-on-top-layout.cjs"
   },

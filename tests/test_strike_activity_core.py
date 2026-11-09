@@ -69,6 +69,15 @@ def test_clan_failure_keeps_known_counts_and_tag_label_without_hiding_profile():
     asyncio.run(run())
 
 
+def test_core_clan_projection_includes_type_so_fwa_can_be_told_apart():
+    async def run():
+        ledger = fixture()
+        await ledger.activity_core(123)
+        projection = ledger.mongo.clans.find.call_args.args[1]
+        assert projection['type'] == 1
+    asyncio.run(run())
+
+
 def test_independent_core_reads_start_together_and_cancel_without_orphans():
     async def run():
         started = set()

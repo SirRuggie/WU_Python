@@ -5,6 +5,7 @@ import {
   dashboardPath,
 } from "./dashboardHistory";
 import { loginPath } from "./memberLinks";
+import { parseActivityFilters } from "./strikeActivityFilters";
 function fixture() {
   const entries = [{ state: null as unknown, url: "/" }];
   let cursor = 0;
@@ -446,5 +447,54 @@ describe("moderation member timeline route", () => {
     expect(dashboardPath({ view: "moderation", season: "" })).toBe(
       "/server/moderation",
     );
+  });
+});
+
+describe("Find slots links", () => {
+  const link =
+    "?slot_weight=143000&slot_weight=173000&slot_clan=%23PQQ&slot_clan=%23PRR&slot_member=100000000000000001";
+  it("keeps every repeated slot value through the route and back to the path", () => {
+    const route = dashboardTarget(
+      `?view=replacements&${link.slice(1)}`,
+      "/strikes",
+    );
+    expect(route.view).toBe("strikes");
+    expect(
+      new URLSearchParams(route.strikeState).getAll("slot_weight"),
+    ).toEqual(["143000", "173000"]);
+    const path = dashboardPath(route);
+    const params = new URLSearchParams(path.split("?")[1]);
+    expect(params.getAll("slot_weight")).toEqual(["143000", "173000"]);
+    expect(params.getAll("slot_clan")).toEqual(["#PQQ", "#PRR"]);
+    expect(params.get("slot_member")).toBe("100000000000000001");
+  });
+  it.each([
+    ["?view=replacements", []],
+    ["?view=replacements&slot_clan=%23PQQ", [["slot_clan", "#PQQ"]]],
+    [
+      "?view=replacements&slot_member=100000000000000001",
+      [["slot_member", "100000000000000001"]],
+    ],
+  ])("a Discord link %s opens the Replacements tab", (search, extra) => {
+    const route = dashboardTarget(search, "/strikes");
+    expect(route.view).toBe("strikes");
+    const params = new URLSearchParams(route.strikeState);
+    expect(params.get("activity_view")).toBe("replacements");
+    for (const [key, value] of extra) expect(params.get(key)).toBe(value);
+    const filters = parseActivityFilters(`?${route.strikeState}`);
+    expect(filters.view).toBe("replacements");
+    expect(filters.slotWeights).toEqual([]);
+    const back = new URLSearchParams(dashboardPath(route).split("?")[1]);
+    expect(back.get("activity_view")).toBe("replacements");
+  });
+  it("keeps repeated slot values through sign-in", () => {
+    const path = loginPath(
+      `?view=replacements&${link.slice(1)}`,
+      false,
+      "/strikes",
+    );
+    const params = new URLSearchParams(path.split("?")[1]);
+    expect(params.getAll("slot_weight")).toEqual(["143000", "173000"]);
+    expect(params.getAll("slot_clan")).toEqual(["#PQQ", "#PRR"]);
   });
 });

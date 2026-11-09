@@ -1,8 +1,10 @@
 import type { ActivityAccount } from "./strikeActivityView";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import AccountCard from "./AccountCard";
 import { compactWeight } from "./replacementView";
+import { groupKey, type ActivityGroupKey } from "./strikeActivityGroups";
 import {
+  memberName,
   hasNoActivity,
   quietDays,
   knownWars,
@@ -51,10 +53,11 @@ export function compactActivitySummary(row: ActivityAccount) {
     .filter(Boolean)
     .join(" · ");
 }
-const columns: { label: string; sort: ActivitySort }[] = [
+const columns: { label: string; sort?: ActivitySort }[] = [
   { label: "Player", sort: "name" },
   { label: "TH", sort: "th" },
   { label: "Clan", sort: "clan" },
+  { label: "Member" },
   { label: "Weight", sort: "weight" },
   { label: "Strikes", sort: "strikes" },
   { label: "Quiet", sort: "quiet" },
@@ -71,6 +74,7 @@ export default function StrikeActivityRows({
   onSort,
   onSelected,
   onChoose,
+  renderGroup,
 }: {
   rows: ActivityAccount[];
   selecting: boolean;
@@ -80,7 +84,17 @@ export default function StrikeActivityRows({
   onSort: (sort: ActivitySort) => void;
   onSelected: (tags: string[]) => void;
   onChoose: (row: ActivityAccount) => void;
+  /** Heading for each run of rows in the same group; rows arrive grouped. */
+  renderGroup?: (head: ActivityGroupKey, rows: ActivityAccount[]) => ReactNode;
 }) {
+  const segments: { head: ActivityGroupKey | null; rows: ActivityAccount[] }[] =
+    [];
+  for (const row of rows) {
+    const head = renderGroup ? groupKey(row, filters.group) : null;
+    const last = segments[segments.length - 1];
+    if (last && last.head?.key === head?.key) last.rows.push(row);
+    else segments.push({ head, rows: [row] });
+  }
   const [media] = useState(() =>
     typeof window.matchMedia === "function"
       ? window.matchMedia("(max-width: 899px)")
@@ -119,53 +133,59 @@ export default function StrikeActivityRows({
   if (cards)
     return (
       <div className="strike-activity-cards">
-        {rows.map((row) => (
-          <AccountCard
-            key={row.player_tag}
-            className="strike-activity-card"
-            select={selecting ? checkbox(row) : undefined}
-            thLevel={row.town_hall}
-            name={
-              <>
-                <button
-                  className="strike-activity-row"
-                  disabled={busy}
-                  data-strike-player={row.player_tag}
-                  title={`${row.player_name} ${row.player_tag}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onChoose(row);
-                  }}
-                >
-                  <strong>{row.player_name}</strong>
-                </button>
-                {priority(row)}
-              </>
-            }
-            action={
-              <span className="strike-activity-count">
-                {row.active_strikes}{" "}
-                {row.active_strikes === 1 ? "strike" : "strikes"}
-              </span>
-            }
-            detail={
-              <span
-                className="strike-activity-card-reason"
-                title={
-                  seeded(row)
-                    ? "~ Last seen: first value taken from ClashKing"
-                    : undefined
+        {segments.map(({ head, rows: members }) => (
+          <Fragment key={head?.key ?? "all"}>
+            {head && renderGroup?.(head, members)}
+            {members.map((row) => (
+              <AccountCard
+                key={row.player_tag}
+                className="strike-activity-card"
+                select={selecting ? checkbox(row) : undefined}
+                thLevel={row.town_hall}
+                name={
+                  <>
+                    <button
+                      className="strike-activity-row"
+                      disabled={busy}
+                      data-strike-player={row.player_tag}
+                      title={`${row.player_name} ${row.player_tag}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onChoose(row);
+                      }}
+                    >
+                      <strong>{row.player_name}</strong>
+                    </button>
+                    {priority(row)}
+                  </>
                 }
-              >
-                {compactActivitySummary(row)}
-              </span>
-            }
-            meta={[
-              `TH${row.town_hall || "—"}`,
-              `${row.current_clan_name || row.last_clan_name || "No clan"}${row.left_clan ? " · Left" : ""}`,
-              row.weight ? compactWeight(row.weight) : "—",
-            ]}
-          />
+                action={
+                  <span className="strike-activity-count">
+                    {row.active_strikes}{" "}
+                    {row.active_strikes === 1 ? "strike" : "strikes"}
+                  </span>
+                }
+                detail={
+                  <span
+                    className="strike-activity-card-reason"
+                    title={
+                      seeded(row)
+                        ? "~ Last seen: first value taken from ClashKing"
+                        : undefined
+                    }
+                  >
+                    {compactActivitySummary(row)}
+                  </span>
+                }
+                meta={[
+                  `TH${row.town_hall || "—"}`,
+                  `${row.current_clan_name || row.last_clan_name || "No clan"}${row.left_clan ? " · Left" : ""}`,
+                  row.weight ? compactWeight(row.weight) : "—",
+                  memberName(row) ? `@${memberName(row)}` : null,
+                ]}
+              />
+            ))}
+          </Fragment>
         ))}
       </div>
     );
@@ -178,113 +198,144 @@ export default function StrikeActivityRows({
             {selecting && <th scope="col">Select</th>}
             {columns.map((column) => (
               <th
-                key={column.sort}
-                className={`strike-activity-heading-${column.sort}`}
+                key={column.label}
+                className={`strike-activity-heading-${column.sort ?? "member"}`}
                 scope="col"
                 aria-sort={
-                  filters.sort === column.sort
+                  column.sort && filters.sort === column.sort
                     ? filters.direction === "asc"
                       ? "ascending"
                       : "descending"
                     : "none"
                 }
               >
-                <button
-                  disabled={busy}
-                  onClick={() => onSort(column.sort)}
-                  aria-label={`Sort by ${column.label}`}
-                >
-                  {column.label}
-                  {filters.sort === column.sort
-                    ? filters.direction === "asc"
-                      ? " ↑"
-                      : " ↓"
-                    : ""}
-                </button>
+                {column.sort ? (
+                  <button
+                    disabled={busy}
+                    onClick={() => onSort(column.sort!)}
+                    aria-label={`Sort by ${column.label}`}
+                  >
+                    {column.label}
+                    {filters.sort === column.sort
+                      ? filters.direction === "asc"
+                        ? " ↑"
+                        : " ↓"
+                      : ""}
+                  </button>
+                ) : (
+                  <span className="strike-activity-heading-text">
+                    {column.label}
+                  </span>
+                )}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.player_tag}
-              className="strike-activity-entry"
-              onClick={() => {
-                if (!busy) onChoose(row);
-              }}
-            >
-              {selecting && (
-                <td
-                  className="strike-activity-selection"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  {checkbox(row)}
-                </td>
+          {segments.map(({ head, rows: members }) => (
+            <Fragment key={head?.key ?? "all"}>
+              {head && (
+                <tr className="strike-activity-group-row">
+                  <td colSpan={columns.length + (selecting ? 1 : 0)}>
+                    {renderGroup?.(head, members)}
+                  </td>
+                </tr>
               )}
-              <td className="strike-activity-account">
-                <button
-                  className="strike-activity-row"
-                  disabled={busy}
-                  data-strike-player={row.player_tag}
-                  title={`${row.player_name} ${row.player_tag}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onChoose(row);
+              {members.map((row) => (
+                <tr
+                  key={row.player_tag}
+                  className="strike-activity-entry"
+                  onClick={() => {
+                    if (!busy) onChoose(row);
                   }}
                 >
-                  <strong>{row.player_name}</strong>
-                  <span className="strike-mobile-priority">
-                    {priority(row)}
-                  </span>
-                </button>
-              </td>
-              <td className="strike-activity-th">TH{row.town_hall || "—"}</td>
-              <td
-                className="strike-activity-clan"
-                title={row.current_clan_name || row.last_clan_name || "No clan"}
-              >
-                {row.current_clan_name || row.last_clan_name || "No clan"}
-                {row.left_clan ? " · Left" : ""}
-              </td>
-              <td className="strike-activity-weight">
-                {row.weight ? compactWeight(row.weight) : "—"}
-              </td>
-              <td className="strike-activity-count">
-                {row.active_strikes}{" "}
-                <span className="strike-activity-mobile-label">
-                  {row.active_strikes === 1 ? "strike" : "strikes"}
-                </span>
-              </td>
-              <td
-                className="strike-activity-quiet"
-                title={
-                  seeded(row)
-                    ? "Last seen: first value taken from ClashKing"
-                    : "Last observed activity"
-                }
-              >
-                {quietDays(row) !== null
-                  ? `${seeded(row) ? "~" : ""}${quietDays(row)}d`
-                  : hasNoActivity(row)
-                    ? "No activity yet"
-                    : "—"}
-              </td>
-              <td className="strike-activity-wars">{warRatio(row) || "—"}</td>
-              <td className="strike-activity-raids">{raidRatio(row) || "—"}</td>
-              <td className="strike-activity-priority">{priority(row)}</td>
-              <td
-                aria-label="Activity summary"
-                className="strike-activity-one-summary"
-                title={
-                  seeded(row)
-                    ? "~ Last seen: first value taken from ClashKing"
-                    : undefined
-                }
-              >
-                {compactActivitySummary(row)}
-              </td>
-            </tr>
+                  {selecting && (
+                    <td
+                      className="strike-activity-selection"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {checkbox(row)}
+                    </td>
+                  )}
+                  <td className="strike-activity-account">
+                    <button
+                      className="strike-activity-row"
+                      disabled={busy}
+                      data-strike-player={row.player_tag}
+                      title={`${row.player_name} ${row.player_tag}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onChoose(row);
+                      }}
+                    >
+                      <strong>{row.player_name}</strong>
+                      <span className="strike-mobile-priority">
+                        {priority(row)}
+                      </span>
+                    </button>
+                  </td>
+                  <td className="strike-activity-th">
+                    TH{row.town_hall || "—"}
+                  </td>
+                  <td
+                    className="strike-activity-clan"
+                    title={
+                      row.current_clan_name || row.last_clan_name || "No clan"
+                    }
+                  >
+                    {row.current_clan_name || row.last_clan_name || "No clan"}
+                    {row.left_clan ? " · Left" : ""}
+                  </td>
+                  <td
+                    className="strike-activity-member"
+                    title={memberName(row) ? `@${memberName(row)}` : undefined}
+                  >
+                    {memberName(row) ? `@${memberName(row)}` : ""}
+                  </td>
+                  <td className="strike-activity-weight">
+                    {row.weight ? compactWeight(row.weight) : "—"}
+                  </td>
+                  <td className="strike-activity-count">
+                    {row.active_strikes}{" "}
+                    <span className="strike-activity-mobile-label">
+                      {row.active_strikes === 1 ? "strike" : "strikes"}
+                    </span>
+                  </td>
+                  <td
+                    className="strike-activity-quiet"
+                    title={
+                      seeded(row)
+                        ? "Last seen: first value taken from ClashKing"
+                        : "Last observed activity"
+                    }
+                  >
+                    {quietDays(row) !== null
+                      ? `${seeded(row) ? "~" : ""}${quietDays(row)}d`
+                      : hasNoActivity(row)
+                        ? "No activity yet"
+                        : "—"}
+                  </td>
+                  <td className="strike-activity-wars">
+                    {warRatio(row) || "—"}
+                  </td>
+                  <td className="strike-activity-raids">
+                    {raidRatio(row) || "—"}
+                  </td>
+                  <td className="strike-activity-priority">{priority(row)}</td>
+                  <td
+                    aria-label="Activity summary"
+                    className="strike-activity-one-summary"
+                    title={
+                      seeded(row)
+                        ? "~ Last seen: first value taken from ClashKing"
+                        : undefined
+                    }
+                  >
+                    {compactActivitySummary(row)}
+                  </td>
+                </tr>
+              ))}
+            </Fragment>
           ))}
         </tbody>
       </table>

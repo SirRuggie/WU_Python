@@ -8,6 +8,7 @@ TASKS_URL = DASHBOARD_ORIGIN + "/tasks"
 WARS_URL = DASHBOARD_ORIGIN + "/wars"
 LEGACY_DASHBOARD_ORIGIN = "https://" + LEGACY_DASHBOARD_HOST
 CLANS_URL = DASHBOARD_ORIGIN + "/clans"
+STRIKES_URL = DASHBOARD_ORIGIN + "/strikes"
 
 
 def member_history_url(user_id) -> str | None:

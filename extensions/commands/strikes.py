@@ -5,6 +5,8 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import math
 import logging
+import re
+from urllib.parse import urlencode
 import traceback
 import uuid
 import os
@@ -26,6 +28,9 @@ from utils.strike_tracking import StrikeTracking
 from utils.strike_retention_policy import RECORD_DAYS
 from utils.strike_official import normalize as normalize_official_war
 from utils.replacement_filters import parse_weight, compact_weight
+from utils.replacement_view import find_slots, priority_key, slot_pool
+from utils.dashboard_urls import STRIKES_URL
+from utils.war_weight import emoji_for
 from cwl_web.providers import LiveProviders, ProviderUnavailable
 
 loader = lightbulb.Loader()
@@ -288,126 +293,152 @@ class Remove(lightbulb.SlashCommand, name='remove', description='Remove one stri
 
 
 REPLACEMENT_PAGE_SIZE = 5
-CLAN_OPTIONS_PAGE_SIZE = 24
-REPLACEMENT_SORTS = {'priority': 'Priority', 'weight': 'Closest weight', 'strikes': 'Most strikes', 'th': 'Town Hall'}
+CLAN_MENU_LIMIT = 25
+PRIORITY_LABELS = {'replace_first': 'Chopping Block', 'high': 'High', 'normal': 'Normal'}
 
 
-def replacement_browser_line(index, row, clan_names):
-    player = safe(row.get('player_name') or row['player_tag'], 32)
-    clan = safe(clan_names.get(row.get('current_clan_tag'), row.get('current_clan_tag') or 'Unknown clan'), 40)
+def replacement_slot_line(row, clan_names, *, index=None):
+    player = safe(row.get('player_name') or row['player_tag'], 24)
+    clan = safe(clan_names.get(row.get('last_seen_clan_tag'), row.get('last_seen_clan_tag') or 'Unknown clan'), 24)
     th = row.get('town_hall')
-    th_text = f'TH{th}' if isinstance(th, int) and th > 0 else 'TH?'
-    priority = {'replace_first': 'Chopping Block', 'high': 'High', 'normal': 'Normal'}.get(
-        row.get('replacement_priority'), 'Normal')
+    mention = f" · <@{row['member_id']}>" if row.get('member_id') else ''
     weight = compact_weight(row.get('weight')) if row.get('weight') else 'Weight unknown'
     gap = row.get('weight_difference')
-    gap_text = f' · Gap {compact_weight(gap) if gap else "0k"}' if isinstance(gap, int) else ''
+    gap_text = f' · Gap {compact_weight(gap)}' if isinstance(gap, int) else ''
     strikes = int(row.get('active_strikes') or 0)
-    stale = ' · Last known' if row.get('clan_is_current') is False else ''
-    return (f"**{index}. {player}** `{row['player_tag']}`\n"
-            f"{clan}{stale} · {th_text} · {weight}{gap_text}\n"
-            f"{priority} · {strikes} active {'strike' if strikes == 1 else 'strikes'}")
+    flags = (' · Left clan' if row.get('departed') else '') + (
+        ' · Last known' if row.get('clan_is_current') is False else '')
+    note = safe(row.get('replacement_note'), 60)
+    prefix = f'{index}. ' if index else ''
+    return (f"{emoji_for(th, {'ranges': {}})} **{prefix}{player}** `{row['player_tag']}`{mention}\n"
+            f"{clan}{flags} · {weight}{gap_text} · "
+            f"{PRIORITY_LABELS.get(row.get('replacement_priority'), 'Normal')} · "
+            f"{strikes} active {'strike' if strikes == 1 else 'strikes'}"
+            + (f"\n{note}" if note else ''))
 
 
-def replacement_sort_rows(rows, mode, weight):
-    priority = {'replace_first': 0, 'high': 1, 'normal': 2}
-    def key(row):
-        marked = priority.get(row.get('replacement_priority'), 2)
-        strikes = -int(row.get('active_strikes') or 0)
-        th = -(row.get('town_hall') or 0)
-        gap = row.get('weight_difference')
-        missing_weight = row.get('weight') is None
-        tie = row['player_tag']
-        if mode == 'weight' and weight is not None:
-            return (gap is None, gap if gap is not None else 0, marked, strikes, tie)
-        if mode == 'strikes':
-            return (strikes, marked, missing_weight, gap or 0, tie)
-        if mode == 'th':
-            return (th, marked, strikes, missing_weight, tie)
-        return (marked, strikes, missing_weight, gap or 0, tie)
-    return sorted(rows, key=key)
+LINK_BUTTON_URL_LIMIT = 512
 
 
-def _replacement_button_row(*buttons):
-    row = hikari.impl.MessageActionRowBuilder()
-    for custom_id, label, enabled in buttons:
-        row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id,
-                                   label=label, is_disabled=not enabled)
-    return row
+def replacement_dashboard_link(state):
+    """Return (url, clans_left_out). Discord rejects link buttons over 512 characters."""
+    query = [('view', 'replacements')]
+    query += [('slot_weight', str(value)) for value in state.get('weights') or []]
+    if state.get('member_id'):
+        query.append(('slot_member', str(state['member_id'])))
+    clans = state.get('clan_tags') or []
+    kept = []
+    for value in clans:
+        trial = query + [('slot_clan', item) for item in kept + [value]]
+        if len(f'{STRIKES_URL}?{urlencode(trial)}') > LINK_BUTTON_URL_LIMIT:
+            break
+        kept.append(value)
+    # Keep the documented parameter order: weights, clans, member.
+    ordered = [pair for pair in query if pair[0] != 'slot_member'] + [
+        ('slot_clan', item) for item in kept] + [pair for pair in query if pair[0] == 'slot_member']
+    return f'{STRIKES_URL}?{urlencode(ordered)}', len(kept) < len(clans)
 
 
-def _replacement_menu(action, token, placeholder, options, selected):
-    row = hikari.impl.MessageActionRowBuilder()
-    menu = row.add_text_menu(f'{action}:{token}', placeholder=placeholder,
-                             min_values=1, max_values=1)
-    for label, value in options:
-        menu.add_option(label[:100], value, is_default=value == selected)
-    return row
+def replacement_dashboard_url(state):
+    return replacement_dashboard_link(state)[0]
+
+
+def parse_weights(text):
+    values = [part for part in re.split(r'[,;\s]+', str(text or '').strip()) if part]
+    if not values:
+        raise ValueError('Enter 1 to 5 weights, such as 143, 173, 150.')
+    if len(values) > 5:
+        raise ValueError('Enter up to 5 weights.')
+    result = []
+    for value in values:
+        try:
+            result.append(parse_weight(value))
+        except ValueError as error:
+            raise ValueError(f'"{safe(value, 12)}": {error}') from error
+    return result
 
 
 async def replacement_panel(store, state, *, notice=''):
     guild = state['guild_id']
     clans = await store.mongo.clans.find({'tag': {'$type': 'string'}},
-                                         {'tag': 1, 'name': 1}).to_list(length=None)
-    clans = sorted(clans, key=lambda row: (str(row.get('name') or '').casefold(), row['tag']))
+                                         {'tag': 1, 'name': 1, 'type': 1}).to_list(length=None)
     clan_names = {tag(row['tag']): row.get('name') or row['tag'] for row in clans}
-    selected_clan = state.get('clan_tag')
-    weight = state.get('weight')
-    th = state.get('town_hall')
-    sort_mode = state.get('sort', 'priority')
+    fwa_tags = {tag(row['tag']) for row in clans if row.get('type') == 'FWA'}
+    weights_chosen = list(state.get('weights') or [])
+    member_id = state.get('member_id')
+    chosen_clans = [value for value in state.get('clan_tags') or [] if value in fwa_tags]
     profiles = await store.mongo.strike_profiles.find({'guild_id': guild}, {'player_tag': 1}).to_list(length=None)
-    weights = cached_weights([row['player_tag'] for row in profiles])
-    rows = await store.replacement(guild, weight, clan_tag=selected_clan,
-                                   town_hall=th, browse_all=True, family_scope='all',
-                                   limit=5000, weights=weights)
-    rows = [row for row in rows if row.get('active_strikes', 0) > 0 or row.get('is_manual')]
-    rows = replacement_sort_rows(rows, sort_mode, weight)
-    pages = max(1, math.ceil(len(rows) / REPLACEMENT_PAGE_SIZE))
-    page = min(max(0, int(state.get('page', 0))), pages - 1)
-    start = page * REPLACEMENT_PAGE_SIZE
-    showing = rows[start:start + REPLACEMENT_PAGE_SIZE]
-    clan_pages = max(1, math.ceil(len(clans) / CLAN_OPTIONS_PAGE_SIZE))
-    clan_page = min(max(0, int(state.get('clan_page', 0))), clan_pages - 1)
-    clan_slice = clans[clan_page*CLAN_OPTIONS_PAGE_SIZE:(clan_page+1)*CLAN_OPTIONS_PAGE_SIZE]
-    filters = [clan_names.get(selected_clan, 'All clans'), f'TH{th}' if th else 'All TH',
-               f'Weight {compact_weight(weight)}' if weight else 'No weight',
-               REPLACEMENT_SORTS.get(sort_mode, 'Priority')]
-    children = [Text(content='## Replacements'),
-                Text(content=' · '.join(safe(item, 60) for item in filters))]
+    cached = cached_weights([row['player_tag'] for row in profiles])
+    rows = await store.replacement(guild, None, browse_all=True, family_scope='all',
+                                   limit=5000, weights=cached)
+    pool = slot_pool(rows, fwa_tags=fwa_tags, member_id=member_id)
+    counts = {}
+    for row in pool:
+        counts[row['last_seen_clan_tag']] = counts.get(row['last_seen_clan_tag'], 0) + 1
+    ranked = sorted(counts, key=lambda value: (value not in chosen_clans, -counts[value],
+                                               str(clan_names.get(value, value)).casefold(), value))
+    menu_tags = ranked[:CLAN_MENU_LIMIT]
+    summary = [('Weights ' + ', '.join(compact_weight(value) for value in weights_chosen)) if weights_chosen
+               else 'No weights',
+               ', '.join(safe(clan_names.get(value, value), 30) for value in chosen_clans) or 'All FWA clans']
+    if member_id:
+        summary.append(f'<@{member_id}>')
+    children = [Text(content='## Replacements'), Text(content=' · '.join(summary))]
     messages = []
     if state.get('refresh_warning'):
         messages.append('Could not update some clans. The data shown is old.')
+    link, clans_left_out = replacement_dashboard_link({**state, 'clan_tags': chosen_clans})
+    if len(ranked) > CLAN_MENU_LIMIT:
+        messages.append('Some clans hidden; use the dashboard.')
+    if clans_left_out:
+        messages.append('Some clans not in link')
     if notice:
         messages.append(safe(notice, 180))
     if messages:
         children.append(Text(content='\n'.join(messages)))
-    if showing:
-        children.append(Text(content='\n\n'.join(
-            replacement_browser_line(start + index, row, clan_names)
-            for index, row in enumerate(showing, 1))))
+    pages = 1
+    page = 0
+    if weights_chosen:
+        for group in find_slots(rows, weights_chosen, fwa_tags=fwa_tags,
+                                clan_tags=chosen_clans or None, member_id=member_id):
+            body = '\n\n'.join(replacement_slot_line(row, clan_names) for row in group['slots'])
+            children.append(Text(content=f"### {compact_weight(group['weight'])}\n"
+                                         f"{body or 'No slot in these clans.'}"))
     else:
-        children.append(Text(content='No accounts match these filters.'))
-    children.append(Text(content=f'Page {page+1}/{pages} · {len(rows)} accounts'))
+        listed = sorted(slot_pool(rows, fwa_tags=fwa_tags, clan_tags=chosen_clans or None,
+                                  member_id=member_id), key=priority_key)
+        pages = max(1, math.ceil(len(listed) / REPLACEMENT_PAGE_SIZE))
+        page = min(max(0, int(state.get('page', 0))), pages - 1)
+        start = page * REPLACEMENT_PAGE_SIZE
+        showing = listed[start:start + REPLACEMENT_PAGE_SIZE]
+        children.append(Text(content='\n\n'.join(
+            replacement_slot_line(row, clan_names, index=start + number)
+            for number, row in enumerate(showing, 1)) or 'No accounts match these filters.'))
+        children.append(Text(content=f'Page {page+1}/{pages} · {len(listed)} accounts'))
     token = state['_id']
-    children.append(_replacement_menu('strike_replace_clan', token, 'Clan',
-        [('All clans', 'all')] + [(safe(row.get('name') or row['tag'], 75), tag(row['tag'])) for row in clan_slice],
-        selected_clan or 'all'))
-    children.append(_replacement_menu('strike_replace_th', token, 'Town Hall',
-        [('All Town Halls', 'all')] + [(f'TH{number}', str(number)) for number in range(1, 21)],
-        str(th) if th else 'all'))
-    children.append(_replacement_menu('strike_replace_sort', token, 'Sort by',
-        [(label, mode) for mode, label in REPLACEMENT_SORTS.items()], sort_mode))
-    page_buttons = [
-        (f'strike_replace_page:{token}|{page-1}', 'Previous', page > 0),
-        (f'strike_replace_page:{token}|{page+1}', 'Next', page+1 < pages)]
-    if clan_pages > 1:
-        page_buttons.extend([
-            (f'strike_replace_clan_page:{token}|{clan_page-1}', 'Clans ◀', clan_page > 0),
-            (f'strike_replace_clan_page:{token}|{clan_page+1}', 'Clans ▶', clan_page+1 < clan_pages)])
-    children.append(_replacement_button_row(*page_buttons))
-    children.append(_replacement_button_row(
-        (f'strike_replace_weight:{token}', 'Set weight', True),
-        (f'strike_replace_clear:{token}', 'Clear filters', bool(selected_clan or th or weight or sort_mode != 'priority'))))
+    if menu_tags:
+        row = hikari.impl.MessageActionRowBuilder()
+        menu = row.add_text_menu(f'strike_replace_clan:{token}', placeholder='All FWA clans',
+                                 min_values=0, max_values=len(menu_tags))
+        for value in menu_tags:
+            menu.add_option(f'{safe(clan_names.get(value, value), 75)} ({counts[value]})', value,
+                            is_default=value in chosen_clans)
+        children.append(row)
+    member_row = hikari.impl.MessageActionRowBuilder()
+    member_row.add_select_menu(hikari.ComponentType.USER_SELECT_MENU, f'strike_replace_member:{token}',
+                               placeholder='Member', min_values=0, max_values=1)
+    children.append(member_row)
+    buttons = hikari.impl.MessageActionRowBuilder()
+    for custom_id, label, enabled in (
+            (f'strike_replace_weight:{token}', 'Set weights', True),
+            (f'strike_replace_page:{token}|{page-1}', 'Previous', page > 0),
+            (f'strike_replace_page:{token}|{page+1}', 'Next', page + 1 < pages),
+            (f'strike_replace_clear:{token}', 'Clear',
+             bool(weights_chosen or chosen_clans or member_id))):
+        buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id,
+                                       label=label, is_disabled=not enabled)
+    buttons.add_link_button(link, label='Open on dashboard')
+    children.append(buttons)
     return [Container(accent_color=0xD9A441, components=children)]
 
 
@@ -419,7 +450,7 @@ async def _replacement_action_state(ctx, mongo, token):
 
 
 async def _replacement_denied(ctx):
-    # Public panels must not be overwritten by another member's button click.
+    # Another member's click must not change the opener's private view.
     await ctx.respond('Run /strikes replacements to open your own view.', ephemeral=True)
     return None
 
@@ -438,47 +469,27 @@ async def _replacement_update(ctx, mongo, token, changes, *, notice=''):
 async def replacement_clan(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
     if await _replacement_action_state(ctx, mongo, action_id) is None:
         return await _replacement_denied(ctx)
-    selected = ctx.interaction.values[0]
-    if selected != 'all':
+    selected = []
+    for value in ctx.interaction.values:
         try:
-            selected = tag(selected)
+            selected.append(tag(value))
         except ValueError:
             return panel('Replacements', 'Select a clan from the menu.')
-        if not await mongo.clans.find_one({'tag': selected}):
-            return panel('Replacements', 'That clan is no longer registered.')
+    if selected and await mongo.clans.count_documents({'tag': {'$in': selected}, 'type': 'FWA'}) != len(set(selected)):
+        return panel('Replacements', 'Select FWA clans only.')
+    return await _replacement_update(ctx, mongo, action_id, {'clan_tags': selected[:CLAN_MENU_LIMIT], 'page': 0})
+
+
+@register_action('strike_replace_member', preload_state=False)
+@lightbulb.di.with_di
+async def replacement_member(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
+    if await _replacement_action_state(ctx, mongo, action_id) is None:
+        return await _replacement_denied(ctx)
+    values = list(ctx.interaction.values)
+    if values and not str(values[0]).isdigit():
+        return panel('Replacements', 'Select a member from the menu.')
     return await _replacement_update(ctx, mongo, action_id,
-                                     {'clan_tag': None if selected == 'all' else selected, 'page': 0})
-
-
-@register_action('strike_replace_th', preload_state=False)
-@lightbulb.di.with_di
-async def replacement_th(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
-    if await _replacement_action_state(ctx, mongo, action_id) is None:
-        return await _replacement_denied(ctx)
-    selected = ctx.interaction.values[0]
-    try:
-        th = None if selected == 'all' else int(selected)
-        if th is not None and not 1 <= th <= 20:
-            raise ValueError
-    except ValueError:
-        return panel('Replacements', 'Select a Town Hall from the menu.')
-    return await _replacement_update(ctx, mongo, action_id, {'town_hall': th, 'page': 0})
-
-
-@register_action('strike_replace_sort', preload_state=False)
-@lightbulb.di.with_di
-async def replacement_sort(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
-    if await _replacement_action_state(ctx, mongo, action_id) is None:
-        return await _replacement_denied(ctx)
-    selected = ctx.interaction.values[0]
-    if selected not in REPLACEMENT_SORTS:
-        return panel('Replacements', 'Select a sort from the menu.')
-    state = await _replacement_action_state(ctx, mongo, action_id)
-    if state is None:
-        return await _replacement_denied(ctx)
-    if selected == 'weight' and state.get('weight') is None:
-        return await replacement_panel(StrikeService(mongo), state, notice='Set a weight first.')
-    return await _replacement_update(ctx, mongo, action_id, {'sort': selected, 'page': 0})
+                                     {'member_id': int(values[0]) if values else None, 'page': 0})
 
 
 @register_action('strike_replace_page', preload_state=False)
@@ -492,22 +503,11 @@ async def replacement_page(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
     return await _replacement_update(ctx, mongo, token, {'page': page})
 
 
-@register_action('strike_replace_clan_page', preload_state=False)
-@lightbulb.di.with_di
-async def replacement_clan_page(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
-    token, raw = action_id.split('|', 1)
-    try:
-        page = max(0, int(raw))
-    except ValueError:
-        page = 0
-    return await _replacement_update(ctx, mongo, token, {'clan_page': page})
-
-
 @register_action('strike_replace_clear', preload_state=False)
 @lightbulb.di.with_di
 async def replacement_clear(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
     return await _replacement_update(ctx, mongo, action_id,
-        {'clan_tag': None, 'town_hall': None, 'weight': None, 'sort': 'priority', 'page': 0, 'clan_page': 0})
+        {'clan_tags': [], 'member_id': None, 'weights': [], 'page': 0})
 
 
 @register_action('strike_replace_weight', opens_modal=True, no_return=True, preload_state=False)
@@ -516,11 +516,11 @@ async def replacement_weight(ctx, action_id, mongo: MongoClient = lightbulb.di.I
     if await _replacement_action_state(ctx, mongo, action_id) is None:
         await ctx.respond('This view expired or access changed. Run /strikes replacements again.', ephemeral=True)
         return
-    await ctx.respond_with_modal(title='Recruit war weight',
+    await ctx.respond_with_modal(title='Recruit war weights',
         custom_id=f'strike_replace_weight_submit:{action_id}',
         components=[hikari.impl.ModalActionRowBuilder().add_text_input(
-            'weight', 'War weight', placeholder='149, 149k, or 149000',
-            required=True, min_length=1, max_length=10)])
+            'weight', 'War weights (up to 5)', placeholder='143, 173, 150',
+            required=True, min_length=1, max_length=60)])
 
 
 def _replacement_modal_value(ctx):
@@ -540,8 +540,7 @@ async def replacement_weight_submit(ctx, action_id, mongo: MongoClient = lightbu
         return await _replacement_denied(ctx)
     else:
         try:
-            weight = parse_weight(_replacement_modal_value(ctx))
-            changes = {'weight': weight, 'sort': 'weight', 'page': 0}
+            changes = {'weights': parse_weights(_replacement_modal_value(ctx)), 'page': 0}
             await update_state(mongo, action_id, {'$set': changes})
             state.update(changes)
             components = await replacement_panel(StrikeService(mongo), state)
@@ -554,24 +553,26 @@ async def replacement_weight_submit(ctx, action_id, mongo: MongoClient = lightbu
 
 @strikes.register()
 class Replacements(lightbulb.SlashCommand, name='replacements',
-                   description='Browse family replacement candidates'):
+                   description='Find the closest replacement slots for recruit weights'):
+    member = lightbulb.user('member', 'Only this member’s accounts', default=None)
+
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED,
                      coc_client: coc.Client = lightbulb.di.INJECTED):
-        await ctx.defer(ephemeral=False)
+        await ctx.defer(ephemeral=True)
         if not await authorized(ctx, mongo):
             await ctx.respond('Staff access required.', ephemeral=True)
             return
         state = {'_id': uuid.uuid4().hex, 'user_id': int(ctx.user.id),
-                 'guild_id': int(ctx.guild_id), 'clan_tag': None, 'town_hall': None,
-                 'weight': None, 'sort': 'priority', 'page': 0, 'clan_page': 0}
+                 'guild_id': int(ctx.guild_id), 'clan_tags': [], 'weights': [],
+                 'member_id': int(self.member.id) if self.member else None, 'page': 0}
         await insert_state(mongo, state)
         try:
             components = await replacement_panel(StrikeService(mongo), state)
         except (RuntimeError, ValueError) as error:
             components = panel('Replacements', safe(error, 250))
-        await ctx.respond(components=components, ephemeral=False, **NO_MENTIONS)
+        await ctx.respond(components=components, ephemeral=True, **NO_MENTIONS)
 
 
 

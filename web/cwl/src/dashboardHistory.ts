@@ -75,13 +75,20 @@ export function dashboardTarget(
         }
       : {}),
     ...(["strikes", "replacements"].includes(value || "") &&
-    activityFilterKeys.some((key) => params.has(key))
+    (activityFilterKeys.some((key) => params.has(key)) ||
+      (value === "strikes" && params.get("view") === "replacements"))
       ? {
-          strikeState: new URLSearchParams(
-            activityFilterKeys.flatMap((key) =>
-              params.has(key) ? [[key, params.get(key)!]] : [],
+          strikeState: new URLSearchParams([
+            // Discord links say view=replacements; the roster reads activity_view.
+            ...(value === "strikes" &&
+            params.get("view") === "replacements" &&
+            !params.has("activity_view")
+              ? [["activity_view", "replacements"]]
+              : []),
+            ...activityFilterKeys.flatMap((key) =>
+              params.getAll(key).map((value) => [key, value]),
             ),
-          ).toString(),
+          ]).toString(),
         }
       : {}),
     ...(value === "moderation" && moderationMember ? { moderationMember } : {}),
@@ -166,7 +173,7 @@ export function dashboardPath(route: DashboardRoute) {
   if (["strikes", "replacements"].includes(route.view) && route.strikeState) {
     const filters = new URLSearchParams(route.strikeState);
     for (const key of activityFilterKeys)
-      if (filters.has(key)) params.set(key, filters.get(key)!);
+      for (const value of filters.getAll(key)) params.append(key, value);
   }
   if (route.season && seasonViews.has(route.view))
     params.set("season", route.season);
