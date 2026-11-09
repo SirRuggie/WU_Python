@@ -1057,8 +1057,17 @@ function App() {
                 setActivityVisit(window.history.state?.wuDashboardIndex || 0);
                 setStrikeFilterState(state); setStrikeTag(tag); setReplacementTag(''); acceptRoute('strikes');
               }}
-              onFindReplacement={(clan) => {
-                const state = new URLSearchParams({clans:clan, marked:'1'}).toString();
+              onMemberAccounts={(member) => {
+                const state = new URLSearchParams({activity_view:'all', member}).toString();
+                navigation.current?.write({view:'strikes',season:'',strikeState:state},true);
+                setActivityVisit(window.history.state?.wuDashboardIndex || 0);
+                setStrikeFilterState(state);setStrikeTag('');acceptRoute('strikes');
+              }}
+              onFindReplacement={(clan, _tag, weight) => {
+                const query = new URLSearchParams({activity_view:'replacements'});
+                if (weight && weight > 0) query.append('slot_weight', String(Math.round(weight)));
+                query.append('slot_clan', clan);
+                const state = query.toString();
                 navigation.current?.write({view:'strikes',season:'',strikeState:state},true);
                 setActivityVisit(window.history.state?.wuDashboardIndex || 0);
                 setStrikeFilterState(state);setStrikeTag('');acceptRoute('strikes');

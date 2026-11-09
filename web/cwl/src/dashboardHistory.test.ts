@@ -448,3 +448,33 @@ describe("moderation member timeline route", () => {
     );
   });
 });
+
+describe("Find slots links", () => {
+  const link =
+    "?slot_weight=143000&slot_weight=173000&slot_clan=%23PQQ&slot_clan=%23PRR&slot_member=100000000000000001";
+  it("keeps every repeated slot value through the route and back to the path", () => {
+    const route = dashboardTarget(
+      `?view=replacements&${link.slice(1)}`,
+      "/strikes",
+    );
+    expect(route.view).toBe("strikes");
+    expect(
+      new URLSearchParams(route.strikeState).getAll("slot_weight"),
+    ).toEqual(["143000", "173000"]);
+    const path = dashboardPath(route);
+    const params = new URLSearchParams(path.split("?")[1]);
+    expect(params.getAll("slot_weight")).toEqual(["143000", "173000"]);
+    expect(params.getAll("slot_clan")).toEqual(["#PQQ", "#PRR"]);
+    expect(params.get("slot_member")).toBe("100000000000000001");
+  });
+  it("keeps repeated slot values through sign-in", () => {
+    const path = loginPath(
+      `?view=replacements&${link.slice(1)}`,
+      false,
+      "/strikes",
+    );
+    const params = new URLSearchParams(path.split("?")[1]);
+    expect(params.getAll("slot_weight")).toEqual(["143000", "173000"]);
+    expect(params.getAll("slot_clan")).toEqual(["#PQQ", "#PRR"]);
+  });
+});

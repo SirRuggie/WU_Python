@@ -79,7 +79,7 @@ export function dashboardTarget(
       ? {
           strikeState: new URLSearchParams(
             activityFilterKeys.flatMap((key) =>
-              params.has(key) ? [[key, params.get(key)!]] : [],
+              params.getAll(key).map((value) => [key, value]),
             ),
           ).toString(),
         }
@@ -166,7 +166,7 @@ export function dashboardPath(route: DashboardRoute) {
   if (["strikes", "replacements"].includes(route.view) && route.strikeState) {
     const filters = new URLSearchParams(route.strikeState);
     for (const key of activityFilterKeys)
-      if (filters.has(key)) params.set(key, filters.get(key)!);
+      for (const value of filters.getAll(key)) params.append(key, value);
   }
   if (route.season && seasonViews.has(route.view))
     params.set("season", route.season);

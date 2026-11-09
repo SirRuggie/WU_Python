@@ -74,3 +74,69 @@ def test_replacement_revision_rejects_stale_set_and_clear_without_changing_strik
                                                      clan_tag='#Q2Y', expected_revision=1)
         assert db.strike_records.rows == original
     asyncio.run(scenario())
+
+
+FWA = {'#Q2Y', '#J2Y'}
+
+
+def slot_row(tag, count=3, *, weight=143000, clan='#Q2Y', marked=False, member=None,
+             priority='normal', **extra):
+    return {**row(tag, count, weight=weight, clan=clan, marked=marked, priority=priority),
+            'member_id': member, **extra}
+
+
+def tags(rows):
+    return [r['player_tag'] for r in rows]
+
+
+def test_slot_pool_includes_marked_zero_strike_and_excludes_one_or_two_strikes():
+    from utils.replacement_view import slot_pool
+    rows = [slot_row('#M', 0, marked=True), slot_row('#A', 1), slot_row('#B', 2), slot_row('#C', 3)]
+    assert tags(slot_pool(rows, fwa_tags=FWA)) == ['#M', '#C']
+
+
+def test_slot_pool_member_returns_all_their_fwa_accounts_whatever_the_strikes():
+    from utils.replacement_view import slot_pool
+    rows = [slot_row('#A', 0, member='7'), slot_row('#B', 1, member='7'),
+            slot_row('#C', 5, member='8'), slot_row('#D', 0, member='7', clan='#NOTFWA')]
+    assert tags(slot_pool(rows, fwa_tags=FWA, member_id=7)) == ['#A', '#B']
+
+
+def test_slot_pool_excludes_non_fwa_and_respects_clan_filter():
+    from utils.replacement_view import slot_pool
+    rows = [slot_row('#A', 5, clan='#NOTFWA'), slot_row('#B', 5, clan='#Q2Y'), slot_row('#C', 5, clan='#J2Y')]
+    assert tags(slot_pool(rows, fwa_tags=FWA)) == ['#B', '#C']
+    assert tags(slot_pool(rows, fwa_tags=FWA, clan_tags=['#J2Y'])) == ['#C']
+    assert tags(slot_pool(rows, fwa_tags=FWA, clan_tags=['#NOTFWA'])) == []
+
+
+def test_find_slots_orders_gap_then_priority_then_strikes_then_tag_and_caps_at_three():
+    from utils.replacement_view import find_slots
+    rows = [slot_row('#E', 3, weight=143000), slot_row('#D', 4, weight=143000),
+            slot_row('#C', 3, weight=143000, priority='high'),
+            slot_row('#B', 3, weight=143000, priority='replace_first'),
+            slot_row('#F', 3, weight=142000), slot_row('#A', 3, weight=143000)]
+    group = find_slots(rows, [143000], fwa_tags=FWA)[0]
+    assert group['weight'] == 143000
+    assert tags(group['slots']) == ['#B', '#C', '#D']
+    assert [r['weight_difference'] for r in group['slots']] == [0, 0, 0]
+    tie = find_slots([slot_row('#Z'), slot_row('#Y')], [143000], fwa_tags=FWA)[0]
+    assert tags(tie['slots']) == ['#Y', '#Z']
+    assert find_slots([slot_row('#F', weight=142000)], [143000], fwa_tags=FWA)[0]['slots'][0]['weight_difference'] == 1000
+
+
+def test_find_slots_skips_unknown_weight_and_keeps_input_order_with_repeats():
+    from utils.replacement_view import find_slots
+    rows = [slot_row('#N', weight=None), slot_row('#Z', weight=0), slot_row('#K', weight=150000)]
+    groups = find_slots(rows, [173000, 143000, 173000], fwa_tags=FWA)
+    assert [g['weight'] for g in groups] == [173000, 143000, 173000]
+    assert all(tags(g['slots']) == ['#K'] for g in groups)
+
+
+def test_find_slots_includes_departed_account_in_grace_and_rejects_bad_weight_counts():
+    from utils.replacement_view import find_slots
+    gone = slot_row('#G', 0, marked=True, departed=True)
+    assert tags(find_slots([gone], [143000], fwa_tags=FWA)[0]['slots']) == ['#G']
+    for bad in ([], [1] * 6, [0], [True]):
+        with pytest.raises(ValueError):
+            find_slots([gone], bad, fwa_tags=FWA)

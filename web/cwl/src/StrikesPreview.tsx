@@ -100,17 +100,14 @@ const entries: Entry[] = [
 ];
 // A long player history and full-population account list exercise real paging.
 entries.push(
-  ...Array.from(
-    { length: 26 },
-    (_, index): Entry => ({
-      ...entries.find((entry) => entry.kind === "strike")!,
-      id: `history-${index}`,
-      war_key: `fixture-war-${index}`,
-      opponent_name: `Opponent ${index + 1}`,
-      status: index < 5 ? "active" : "expired",
-      war_end: new Date(Date.now() - (index + 1) * 86400000).toISOString(),
-    }),
-  ),
+  ...Array.from({ length: 26 }, (_, index): Entry => ({
+    ...entries.find((entry) => entry.kind === "strike")!,
+    id: `history-${index}`,
+    war_key: `fixture-war-${index}`,
+    opponent_name: `Opponent ${index + 1}`,
+    status: index < 5 ? "active" : "expired",
+    war_end: new Date(Date.now() - (index + 1) * 86400000).toISOString(),
+  })),
 );
 for (const entry of entries) {
   entry.expires_at = new Date(
@@ -492,8 +489,8 @@ window.fetch = async (input, init) => {
       ? Number(options.get("count"))
       : 125;
     const clans = [
-      { tag: "#PQQ", name: "Warriors United FWA" },
-      { tag: "#PYY", name: "WU North" },
+      { tag: "#PQQ", name: "Warriors United FWA", is_fwa: true },
+      { tag: "#PYY", name: "WU North", is_fwa: false },
       { tag: "#PJJ", name: "Lazy CWL 5" },
     ];
     data = {
@@ -761,6 +758,22 @@ window.fetch = async (input, init) => {
         { tag: "#FWA2", name: "WU FWA Two", is_fwa: true },
         { tag: "#NORTH", name: "WU North", is_fwa: false },
       ],
+      slots: url.searchParams.getAll("weight").map((value) => ({
+        weight: Number(value),
+        weight_label: `${Number(value) / 1000}k`,
+        candidates: [...candidates]
+          .sort(
+            (a, b) =>
+              Math.abs((a.weight ?? 0) - Number(value)) -
+              Math.abs((b.weight ?? 0) - Number(value)),
+          )
+          .slice(0, 3)
+          .map((item) => ({
+            ...item,
+            town_hall: 16,
+            weight_difference: Math.abs((item.weight ?? 0) - Number(value)),
+          })),
+      })),
     };
   else if (path.endsWith("/import/preview") || path.endsWith("/import/apply")) {
     const job_id = crypto.randomUUID();

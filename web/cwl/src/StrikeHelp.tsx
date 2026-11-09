@@ -28,20 +28,23 @@ export function StrikeHelpText({
 export default function StrikeHelp({
   limit = DEFAULT_STRIKE_LIMIT,
   compact = false,
+  icon = false,
 }: {
   limit?: number;
   compact?: boolean;
+  /** A small "?" for next to a page title. */
+  icon?: boolean;
 }) {
   const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null);
   return (
     <>
       <button
         type="button"
-        className="strike-help-trigger"
+        className={`strike-help-trigger${icon ? " strike-help-icon" : ""}`}
         aria-label="How strikes work"
         onClick={(event) => setTrigger(event.currentTarget)}
       >
-        {compact ? "Help" : "How strikes work"}
+        {icon ? "?" : compact ? "Help" : "How strikes work"}
       </button>
       {trigger && (
         <ActionPanel

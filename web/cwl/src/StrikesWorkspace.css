@@ -1241,3 +1241,10 @@
     font-size: var(--wu-text-xl);
   }
 }
+
+.strikes-title {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  min-width: 0;
+}

@@ -1,8 +1,11 @@
 import type { ComponentProps } from "react";
 import { ArrowDownWideNarrow } from "lucide-react";
 import "./SortTrigger.css";
-export function sortTriggerLabel(label: string, grouped = false) {
-  return `Sort: ${label}${grouped ? ", grouped by Discord user" : ""}`;
+export function sortTriggerLabel(
+  label: string,
+  grouped: boolean | string = false,
+) {
+  return `Sort: ${label}${grouped ? `, grouped by ${grouped === true ? "Discord user" : grouped}` : ""}`;
 }
 export default function SortTrigger({
   label,
@@ -10,7 +13,8 @@ export default function SortTrigger({
   ...props
 }: Omit<ComponentProps<"button">, "children"> & {
   label: string;
-  grouped?: boolean;
+  /** True groups by Discord user; a string names another grouping. */
+  grouped?: boolean | string;
 }) {
   return (
     <button

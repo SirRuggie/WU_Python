@@ -2,7 +2,7 @@ import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import useDiscordIdentities from "./useDiscordIdentities";
 import StrikeReviewResolution from "./StrikeReviewResolution";
 import ReplacementDeparture from "./ReplacementDeparture";
-import { parseActivityFilters } from "./strikeActivityFilters";
+import { memberName, parseActivityFilters } from "./strikeActivityFilters";
 import type { ActivityAccount } from "./strikeActivityView";
 import StrikeActivityDetail from "./StrikeActivityDetail";
 import StrikeActivityRoster from "./StrikeActivityRoster";
@@ -260,6 +260,7 @@ export default function StrikesWorkspace({
   userId,
   onDirty,
   onFindReplacement,
+  onMemberAccounts,
   targetTag = "",
   memory,
   onWorking,
@@ -277,7 +278,8 @@ export default function StrikesWorkspace({
   userId: string;
   onDirty?: (dirty: boolean) => void;
   onWorking?: (busy: boolean) => void;
-  onFindReplacement?: (clan: string, tag: string) => void;
+  onFindReplacement?: (clan: string, tag: string, weight?: number) => void;
+  onMemberAccounts?: (memberId: string) => void;
   targetTag?: string;
   memory?: ViewMemory;
 }) {
@@ -890,8 +892,9 @@ export default function StrikesWorkspace({
       className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : !selectedWar ? " strikes-activity-overview" : ""}`}
     >
       <div className="page-head">
-        <div>
+        <div className="strikes-title">
           <h1>Strikes &amp; replacements</h1>
+          <StrikeHelp icon limit={settings?.strike_limit} />
         </div>
       </div>
       <div className="strikes-navigation">
@@ -1034,9 +1037,6 @@ export default function StrikesWorkspace({
                 </label>
               )}
 
-              {!selectedAccount && !selectedWar && (
-                <StrikeHelp compact limit={settings?.strike_limit} />
-              )}
               {access.add && (
                 <button
                   className="primary"
@@ -1250,13 +1250,27 @@ export default function StrikesWorkspace({
                           onFindReplacement(
                             selectedAccount.current_clan_tag!,
                             selectedAccount.player_tag,
+                            selectedAccount.weight ?? undefined,
                           ),
                         )
                       }
                     >
-                      Find replacements in this clan
+                      Find a fill for this slot
                     </button>
                   )}
+                  {onMemberAccounts &&
+                    selectedAccount.discord_id &&
+                    memberName(selectedAccount) && (
+                      <button
+                        onClick={() =>
+                          leaveDraft(() =>
+                            onMemberAccounts(selectedAccount.discord_id!),
+                          )
+                        }
+                      >
+                        All accounts of @{memberName(selectedAccount)}
+                      </button>
+                    )}
                   {selectedAccount.left_clan && (
                     <ReplacementDeparture
                       clan={selectedAccount.last_clan_name || "family"}
@@ -1434,7 +1448,6 @@ export default function StrikesWorkspace({
                   >
                     {showWarSearch ? "Close war search" : "Find war"}
                   </button>
-                  <StrikeHelp compact limit={settings?.strike_limit} />
                 </>
               }
               selectionReset={selectionReset}

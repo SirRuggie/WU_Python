@@ -114,8 +114,8 @@ export function loginPath(
       ),
     );
     for (const key of activityFilterKeys)
-      if (incoming.has(key) && normalized.has(key))
-        params.set(key, normalized.get(key)!);
+      if (incoming.has(key))
+        for (const value of normalized.getAll(key)) params.append(key, value);
     for (const key of ["tag", "clan"]) {
       const value = incoming.get(key);
       if (value && /^#[0289PYLQGRJCUV]{3,15}$/.test(value))

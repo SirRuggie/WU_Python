@@ -38,8 +38,8 @@ fs.mkdirSync(output, { recursive: true });
         );
         assert(
           await page
-            .locator(".strike-tab-predicate")
-            .filter({ hasText: "No attacks in last 3+ known wars" })
+            .locator(".strike-activity-rule")
+            .filter({ hasText: "3+ wars without attacking" })
             .count(),
         );
         if (count === 560 && [360, 1440].includes(width))

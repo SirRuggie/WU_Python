@@ -10,6 +10,8 @@ import {
   appliedActivityFilters,
   clearActivityFilters,
   copyActivityList,
+  activityRuleText,
+  memberName,
 } from "./strikeActivityFilters";
 import type { ActivityAccount } from "./strikeActivityView";
 const row = (patch: Partial<ActivityAccount> = {}): ActivityAccount => ({
@@ -313,4 +315,58 @@ it("extra chain filters narrow All and the Not attacking tab", () => {
         .sort((a, b) => a! - b!),
     ).toEqual([5, 10]);
   }
+});
+it("reads member, grouping and Find slots parameters, bounded and repeated", () => {
+  const f = parseActivityFilters(
+    "?slot_weight=143000&slot_weight=173000&slot_weight=1&slot_weight=2&slot_weight=3&slot_weight=4&slot_clan=%23PYY&slot_clan=bad&slot_member=100000000000000001&member=100000000000000002&group=discord",
+  );
+  expect(f.view).toBe("replacements");
+  expect(f.slotWeights).toEqual([143000, 173000, 1, 2, 3]);
+  expect(f.slotClans).toEqual(["#PYY"]);
+  expect(f.slotMember).toBe("100000000000000001");
+  expect(f.member).toBe("100000000000000002");
+  expect(f.group).toBe("discord");
+  const query = new URLSearchParams(activityFilterQuery(f));
+  expect(query.getAll("slot_weight")).toEqual([
+    "143000",
+    "173000",
+    "1",
+    "2",
+    "3",
+  ]);
+  expect(query.getAll("slot_clan")).toEqual(["#PYY"]);
+  expect(parseActivityFilters(`?${query}`)).toEqual(f);
+  const bad = parseActivityFilters("?member=abc&group=evil&slot_member=1");
+  expect([bad.member, bad.group, bad.slotMember]).toEqual(["", "none", ""]);
+  // Clearing filters keeps the last Find slots search.
+  expect(clearActivityFilters(f).slotWeights).toEqual(f.slotWeights);
+  expect(clearActivityFilters(f).member).toBe("");
+});
+it("a selected member shows every account of that member, ignoring the tab rule only", () => {
+  const rows = [
+    row({ discord_id: "100000000000000002", no_attack_wars: 0 }),
+    row({
+      player_tag: "#PZZ",
+      discord_id: "100000000000000003",
+      no_attack_wars: 0,
+    }),
+  ];
+  const f = parseActivityFilters(
+    "?activity_view=not_attacking&member=100000000000000002",
+  );
+  expect(visibleActivityAccounts(rows, f)).toHaveLength(1);
+  expect(visibleActivityAccounts(rows, { ...f, member: "" })).toHaveLength(0);
+  expect(
+    visibleActivityAccounts(rows, { ...f, strikeMode: "over_limit" }),
+  ).toHaveLength(0);
+  expect(
+    appliedActivityFilters(f, [], "slayer").map((chip) => chip.label),
+  ).toEqual(["Member: @slayer"]);
+  expect(activityRuleText(f, "slayer")).toBe("All accounts of @slayer");
+  expect(
+    memberName({
+      discord_id: "100000000000000002",
+      discord_name: "100000000000000002",
+    }),
+  ).toBeNull();
 });

@@ -4,6 +4,12 @@
   text-underline-offset: 3px;
 }
 
+.strike-help-icon {
+  min-width: 44px;
+  text-decoration: none;
+  font-weight: var(--wu-weight-bold);
+}
+
 .strike-help-copy {
   margin: 0;
   padding-left: var(--wu-space-4);
