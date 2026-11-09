@@ -29,10 +29,11 @@ Set `CLASHPERK_PASSKEY` in the bot's private `.env`. The existing
 in MongoDB, documentation, source control, or logs.
 
 `utils/clashperk_links.py` uses https://api.clashperk.com/v1:
-`POST /auth/login` and read-only `POST /links/query`. JWTs are held only in memory,
+`POST /auth/login` and read-only `QUERY /links/query`. JWTs are held only in memory,
 renewed before the documented two-hour expiry, and refreshed once on a 401.
 Redirects are disabled. Queries are batched at 100 identifiers; failed batches
 invalidate the source result rather than masquerading as a shorter account list.
+ClashPerk removed the POST form on 2026-11-25.
 
 ## MongoDB
 

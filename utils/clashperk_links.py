@@ -52,7 +52,7 @@ async def lookup(*, discord_ids=None, player_tags=None):
             records = []
             for start in range(0, len(values), 100):
                 for attempt in range(2):
-                    async with session.post(BASE_URL + "/links/query", json={field: values[start:start + 100]}, headers={"Authorization": "Bearer " + token}, allow_redirects=False) as response:
+                    async with session.request("QUERY", BASE_URL + "/links/query", json={field: values[start:start + 100]}, headers={"Authorization": "Bearer " + token}, allow_redirects=False) as response:
                         if response.status == 401 and attempt == 0:
                             token = await get_access_token(session, rejected=token)
                             if not token:
