@@ -119,6 +119,8 @@ first group as `candidates`; candidates carry `discord_id`, `discord_name` and
 deep link from Discord is
 `/strikes?view=replacements&slot_weight=143000&slot_clan=%23ABC123&slot_member=<id>`
 (each parameter optional and repeatable except member).
+On phones (760 px and narrower) the box sits behind one **Find slots** button. It opens itself when
+the link already has weights; collapsing keeps the weights and results.
 
 Leave starts when approved and resumes tracking at **00:00 UTC on the selected date**. All currently linked accounts are selected initially; staff can uncheck individual accounts.
 
@@ -298,9 +300,8 @@ production evidence.
 - Repair the installed frontend staging helper for nested assets such as
   `assets/tour`; this release used a reviewed scratch helper after the standard
   helper failed during staging. The installed helper was not changed.
-Full integrated tests and deployment evidence will be recorded by the release
-review; none are claimed by this development section.
-
+  Full integrated tests and deployment evidence will be recorded by the release
+  review; none are claimed by this development section.
 
 ## Strikes UX backend contracts — prompt 23
 
@@ -389,7 +390,6 @@ text is at least 12px and measured text contrast is at least 4.5:1. Representati
 phone history rows measure 53px versus 242px in the prior fixture (4.57× row
 density); this comparison excludes the page's shared header and controls.
 
-
 ## Strike streaks release closure — 2026-10-30
 
 `strike-streaks-1`, PR #71, shipped frontend, isolated dashboard backend and bot at
@@ -441,7 +441,6 @@ recorded official GET responses with fake roster/strike processing. It demonstra
 scan recovery, not live Discord delivery or the outcome of live strike processing.
 Any ended war without a captured complete final still follows the existing review
 path; this fix does not automatically import missing historical wars.
-
 
 ## Strikes UX polish — prompt 37
 
@@ -595,7 +594,6 @@ present-only Town Hall choices, no missing row weights, and recruit matches
 below Match. No 4xx/5xx or horizontal overflow appeared. Nothing was marked,
 edited or saved; this is not proof of live Discord delivery.
 
-
 ## Bounded activity and strike-history retention (prompt54 PR A)
 
 See [member activity](member-activity.md) for the official API signal list,
@@ -617,7 +615,6 @@ The maintenance command aborts if pending streak receipts remain. Resume the
 writers only after verification, then inspect the first-hour activity logs.
 These are release requirements; fixture tests are not production backup proof.
 
-
 ### Quarantined war resolution
 
 `POST /api/cwl/strikes/tracking/resolve` requires the existing `strikes` manage
@@ -627,6 +624,7 @@ resolution and returns 409 for a stale/already-resolved request. The snapshot
 records actor, reason, time and the new revision, clears the hold, and retains the
 audit receipt for 30 days from resolution. It does not invent or import a missing
 strike. PR A supplies the backend action; PR B adds the button to Find war.
+
 ## Unified family activity page (prompt 54 PR B)
 
 `/strikes` and `/replacements` now use one Strikes & replacements page; the latter

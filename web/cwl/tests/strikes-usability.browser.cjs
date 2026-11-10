@@ -7,12 +7,162 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
 const output =
   process.env.WU_STRIKES_LAYOUT_OUTPUT || "/tmp/wu-strikes-usability";
 fs.mkdirSync(output, { recursive: true });
+async function findSlotsDisclosure(page, width, count) {
+  await page.getByRole("button", { name: /^Replacements / }).click();
+  await page.locator("[data-strike-player]").first().waitFor();
+  // The incumbent fixture resolves API reads in window.fetch. Count those fake
+  // reads, rather than treating the absence of real HTTP traffic as proof.
+  await page.evaluate(() => {
+    const original = window.fetch;
+    window.findSlotsFixtureRequests = [];
+    window.fetch = (...args) => {
+      window.findSlotsFixtureRequests.push({
+        url: String(args[0]),
+        method: args[1]?.method || "GET",
+      });
+      return original(...args);
+    };
+  });
+  const measure = () =>
+    page.evaluate(() => {
+      const first = document.querySelector("[data-strike-player]");
+      const firstAccountTop = first.getBoundingClientRect().top;
+      const controls = [
+        ...document.querySelectorAll("button,input,summary,a[href]"),
+      ].filter((node) => {
+        if (node.closest("[hidden]")) return false;
+        const closed = node.closest("details:not([open])");
+        if (closed && !closed.querySelector(":scope > summary")?.contains(node))
+          return false;
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          rect.top < firstAccountTop
+        );
+      });
+      const box = document
+        .querySelector(".strike-find-slots")
+        .getBoundingClientRect();
+      return {
+        visibleControlsAboveFirstAccount: controls.length,
+        firstAccountTop,
+        box: { left: box.left, width: box.width, height: box.height },
+        controls: controls.map(
+          (node) =>
+            node.getAttribute("aria-label") || node.textContent || node.tagName,
+        ),
+        requests: window.findSlotsFixtureRequests.slice(),
+      };
+    });
+  const collapsed = await measure();
+  const toggle = page.locator(".strike-find-slots-toggle");
+  if (width <= 760) {
+    assert.equal(await toggle.getAttribute("aria-expanded"), "false");
+    assert(
+      collapsed.visibleControlsAboveFirstAccount <= 14,
+      JSON.stringify(collapsed),
+    );
+    assert.equal(
+      await page.getByLabel("Weights", { exact: true }).isVisible(),
+      false,
+    );
+    await page.screenshot({
+      path: path.join(output, `${width}-${count}-slots-collapsed.png`),
+    });
+    const url = page.url();
+    await toggle.click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector(".strike-find-slots-top input") ===
+        document.activeElement,
+    );
+    assert.equal(page.url(), url);
+    assert.equal((await measure()).requests.length, 0);
+  } else {
+    assert.equal(await toggle.count(), 0);
+    assert(await page.getByLabel("Weights", { exact: true }).isVisible());
+    await page.screenshot({
+      path: path.join(output, `${width}-${count}-slots-desktop.png`),
+    });
+    const file = process.env.WU_FIND_SLOTS_DESKTOP_BASELINE;
+    if (file) {
+      const baseline = JSON.parse(fs.readFileSync(file, "utf8")).find(
+        (row) => row.width === width && row.count === count,
+      );
+      assert(baseline, "Paired current-main desktop baseline missing");
+      assert.equal(
+        collapsed.visibleControlsAboveFirstAccount,
+        baseline.visibleControlsAboveFirstAccount,
+      );
+      for (const key of ["left", "width", "height"])
+        assert(
+          Math.abs(collapsed.box[key] - baseline.box[key]) <= 1,
+          JSON.stringify({ collapsed, baseline }),
+        );
+    }
+  }
+  await page.getByLabel("Weights", { exact: true }).fill("143, 173, 150");
+  assert.equal((await measure()).requests.length, 0, "Typing never searches");
+  await page.locator(".strike-find-slots-top button.primary").click();
+  await page.locator(".strike-slot-group").first().waitFor();
+  const results = await page.locator(".strike-slot-group").allTextContents();
+  const searched = await measure();
+  assert.equal(
+    searched.requests.filter((request) =>
+      request.url.includes("/strikes/replacements"),
+    ).length,
+    1,
+  );
+  assert(searched.requests.every((request) => request.method === "GET"));
+  if (width <= 760) {
+    await page.screenshot({
+      path: path.join(output, `${width}-${count}-slots-open-results.png`),
+    });
+    const url = page.url();
+    await toggle.click();
+    assert.equal(
+      await toggle.getAttribute("aria-label"),
+      "Find slots, 3 weights",
+    );
+    assert.equal(await toggle.textContent(), "Find slots · 143k, 173k, 150k");
+    await page.screenshot({
+      path: path.join(output, `${width}-${count}-slots-collapsed-active.png`),
+    });
+    await toggle.click();
+    assert.equal(
+      await page.getByLabel("Weights", { exact: true }).inputValue(),
+      "143, 173, 150",
+    );
+    assert.deepEqual(
+      await page.locator(".strike-slot-group").allTextContents(),
+      results,
+    );
+    assert.deepEqual((await measure()).requests, searched.requests);
+    assert.equal(page.url(), url);
+  }
+  return {
+    width,
+    count,
+    ...collapsed,
+    desktopParity:
+      width <= 760
+        ? "not applicable"
+        : process.env.WU_FIND_SLOTS_DESKTOP_BASELINE
+          ? "paired baseline checked"
+          : "paired native baseline required",
+  };
+}
 (async () => {
   const browser = await chromium.launch({
     executablePath: "/usr/bin/google-chrome",
     args: ["--no-sandbox"],
   });
   const evidence = [];
+  const disclosureEvidence = [];
   try {
     for (const width of [320, 360, 390, 1440])
       for (const count of [26, 65, 125, 560]) {
@@ -174,6 +324,14 @@ fs.mkdirSync(output, { recursive: true });
           });
         Object.assign(metrics, { scrolledRowsInViewport: scrolled.rows });
         await page.evaluate(() => window.scrollTo(0, 0));
+        if ([125, 560].includes(count) && [360, 1440].includes(width)) {
+          disclosureEvidence.push(
+            await findSlotsDisclosure(page, width, count),
+          );
+          await page
+            .getByRole("button", { name: new RegExp(`^All ${count}$`) })
+            .click();
+        }
         if (count === 560 && [360, 1440].includes(width)) {
           for (const [label, name] of [
             ["Inactive", "inactive"],
@@ -221,6 +379,10 @@ fs.mkdirSync(output, { recursive: true });
     fs.writeFileSync(
       path.join(output, "measurements.json"),
       JSON.stringify(evidence, null, 2),
+    );
+    fs.writeFileSync(
+      path.join(output, "find-slots-disclosure.json"),
+      JSON.stringify(disclosureEvidence, null, 2),
     );
     console.log(JSON.stringify(evidence));
   } finally {
