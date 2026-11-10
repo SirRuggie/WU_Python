@@ -326,3 +326,44 @@ it("marks Queuing but not the completed Retry queued label", async () => {
   expect(queued.disabled).toBe(true);
   expect(queued.hasAttribute("aria-busy")).toBe(false);
 });
+
+async function renderCompact(rows: unknown[]) {
+  transport.mockResolvedValue({ clans: rows });
+  await act(async () =>
+    root.render(<StrikeTrackingStatus canRetry={false} compact />),
+  );
+  await act(async () => {
+    await Promise.resolve();
+  });
+  return host.querySelector("summary")!;
+}
+
+it("compact status is a link counting clans that need review, and only when there are some", async () => {
+  const summary = await renderCompact(statusRows);
+  expect(summary.textContent).toBe("3 clans need review ›");
+  expect(summary.classList.contains("review")).toBe(true);
+  expect(host.querySelector("summary span")).toBeNull();
+});
+
+it("compact status uses the singular and does not count healthy or idle clans", async () => {
+  // "idle" is not in the TrackingStatus type yet; the count compares strings.
+  const idle = { ...statusRows[0], clan_tag: "#I", status: "idle" };
+  const summary = await renderCompact([statusRows[0], idle, statusRows[3]]);
+  expect(summary.textContent).toBe("1 clan needs review ›");
+});
+
+it("compact status reads All clans on track as muted text when none need review", async () => {
+  const idle = { ...statusRows[0], clan_tag: "#I", status: "idle" };
+  const summary = await renderCompact([statusRows[0], idle]);
+  expect(summary.textContent).toBe("All clans on track");
+  expect(summary.classList.contains("review")).toBe(false);
+  expect(host.textContent).not.toContain("need review");
+});
+
+it("compact status opens the same tracking details", async () => {
+  const summary = await renderCompact(statusRows);
+  expect(host.querySelector("details")!.open).toBe(false);
+  await act(async () => summary.click());
+  expect(host.querySelector("details")!.open).toBe(true);
+  expect(host.textContent).toContain("Late Clan");
+});

@@ -127,12 +127,13 @@ export default function StrikeTrackingStatus({
   };
 
   const summary = trackingSummary(clans);
-  const behind = clans.filter(
-    (item) => displayTrackingStatus(item) !== "healthy",
+  // Idle and healthy clans need no review; compared as strings so this compiles before idle is typed.
+  const review = clans.filter(
+    (item) => !["healthy", "idle"].includes(displayTrackingStatus(item)),
   ).length;
-  const compactLabel = behind
-    ? `${behind} need review`
-    : `${clans.length} on track`;
+  const compactLabel = review
+    ? `${review} ${review === 1 ? "clan needs" : "clans need"} review ›`
+    : "All clans on track";
   const tone = error ? "warning" : summary.tone;
   // A native toggle may still be queued when the portal target changes.
   const disclosureOpen = disclosureRef.current?.open ?? open;
@@ -146,8 +147,14 @@ export default function StrikeTrackingStatus({
           setOpen(event.currentTarget.open);
       }}
     >
-      <summary>
-        <span>Tracking</span>
+      <summary
+        className={
+          compact
+            ? `strikes-tracking-link${!loading && !error && review ? " review" : ""}`
+            : undefined
+        }
+      >
+        {!compact && <span>Tracking</span>}
         <strong>
           {loading
             ? "Checking…"
