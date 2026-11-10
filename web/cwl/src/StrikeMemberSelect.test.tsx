@@ -114,3 +114,22 @@ it("lists a member that has only a username", () => {
     },
   ]);
 });
+it("folds accents and fullwidth letters, and ranks an exact ID above a name match", async () => {
+  const list: StrikeMemberOption[] = [
+    { id: "100000000000000011", name: "Ünïcode", accounts: 1 },
+    { id: "100000000000000012", name: "Ｗｉｄｅ", accounts: 1 },
+    { id: "100000000000000013", name: "100000000000000014 fan", accounts: 1 },
+    { id: "100000000000000014", name: "Zed", accounts: 1 },
+  ];
+  await act(async () =>
+    root.render(
+      <StrikeMemberSelect options={list} value="" onChange={onChange} />,
+    ),
+  );
+  await type("unicode");
+  expect(rows()).toEqual(["@Ünïcode1 account"]);
+  await type("ｗide");
+  expect(rows()).toEqual(["@Ｗｉｄｅ1 account"]);
+  await type("100000000000000014");
+  expect(rows()).toEqual(["@Zed1 account", "@100000000000000014 fan1 account"]);
+});

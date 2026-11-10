@@ -59,7 +59,6 @@ export type Entry = {
   player_name: string;
   discord_id?: string | null;
   discord_name?: string | null;
-  discord_username?: string | null;
   link_status?: string | null;
   current_clan_name?: string | null;
   current_clan_tag?: string | null;

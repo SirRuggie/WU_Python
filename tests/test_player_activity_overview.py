@@ -456,7 +456,7 @@ def test_partial_provider_preserves_cache_warns_and_recovers(monkeypatch, caplog
         rows,warning=await identity.account_identities(request,["#PYY","#PQQ"])
         assert warning and request.app["activity_identity_cache"]["partial"]
         assert rows["#PYY"]["discord_name"]=="Refreshed" and rows["#PYY"]["discord_username"]=="fresh_u"
-        if warm:assert rows["#PQQ"]["discord_name"]=="Recovered" and rows["#PQQ"]["discord_username"] is None
+        if warm:assert rows["#PQQ"]["discord_name"]=="Recovered" and rows["#PQQ"]["discord_username"]=="healthy_u"
         else:assert "#PQQ" not in rows
         assert "ClashKing" in caplog.text and "returned=1" in caplog.text
         clock[0]=121

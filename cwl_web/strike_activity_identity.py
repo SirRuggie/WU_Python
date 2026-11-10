@@ -94,7 +94,10 @@ async def account_identities(request, tags):
                         fresh_name = names.get(row["discord_id"])
                         if fresh_name is not None or not partial:
                             row["discord_name"] = fresh_name
-                            row["discord_username"] = usernames.get(row["discord_id"])
+                            row["discord_username"] = usernames.get(
+                                row["discord_id"],
+                                row.get("discord_username") if partial else None,
+                            )
                     failed = bool(identities) and not any(
                         row["discord_name"] for row in identities.values()
                     )
