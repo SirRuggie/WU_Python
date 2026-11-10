@@ -119,8 +119,7 @@ first group as `candidates`; candidates carry `discord_id`, `discord_name` and
 deep link from Discord is
 `/strikes?view=replacements&slot_weight=143000&slot_clan=%23ABC123&slot_member=<id>`
 (each parameter optional and repeatable except member).
-On phones (760 px and narrower) the box sits behind one **Find slots** button. It opens itself when
-the link already has weights; collapsing keeps the weights and results.
+Find slots is a gold button on the Replacements view. It opens a panel with weights, clans, member and results. Select a result to open the account.
 
 Leave starts when approved and resumes tracking at **00:00 UTC on the selected date**. All currently linked accounts are selected initially; staff can uncheck individual accounts.
 
@@ -177,6 +176,8 @@ current-war state must not produce a green On track summary. A confirmed
 `notInWar` response can be on track without a new record; an unfinished final
 check, stale active-war record, or missing observation is not silently healthy.
 Saved error details use plain, safe messages instead of raw provider responses.
+
+**Tracking status.** Idle: not in war and no problem. Need review counts behind, error, private and unverified clans only. Scanned late is shown separately.
 
 Retry queues a durable clan check for the bot and requires Add strikes access, because checking a war can create strikes. Automatic checks continue normally. Tracking status is shared through MongoDB, so dashboard and bot restarts do not erase the previous result.
 

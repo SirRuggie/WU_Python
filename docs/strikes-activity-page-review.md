@@ -166,3 +166,23 @@ checks include repeated unchanged writes with the default naive-UTC client.
 History implementation: 242 → 204 lines; activity route: 164 → 92 lines.
 Evidence is in `.local/p60-final-evidence`; production resolution counts and actual
 Discord delivery remain outside these fixture checks.
+
+## Prompt 226
+
+Phone order, Replacements view: heading, Accounts / Leave / Settings, View select,
+Clan and Town Hall selects, toolbar (search icon, sort, Filters, menu), Find slots
+button, rule line, activity line with the review link, first account.
+
+Measured before (live, 360x800, read only): first account at 542 px, 16 controls
+above it, Filters content 3010 px. The after numbers come from the browser stage
+(fixture preview) and are not measured by the Vitest suite.
+
+Decisions (Part A, frontend):
+1. Phones (760 px and narrower) get one View select with counts; wider screens keep the pills.
+2. Search is an icon; the field replaces the toolbar row, closes with x, and stays open while a query is set.
+3. Clan is a single native select (A-Z, with counts); old links with 2+ clans show "N clans".
+4. Town Hall is a single native select (highest first, with counts); old links show "N Town Halls".
+5. Filters order: Priority chips, Strikes, Raid weekends, Member, Weight, Membership, two checkboxes.
+6. Find slots is a gold button that opens a panel; the panel keeps the last weights and results.
+7. The tracking pill is a text link `N clans need review ›`, or muted `All clans on track`; counts show "…" while loading.
+Decision 8 (idle status, scanned late) is Part B and is recorded with the backend change.
