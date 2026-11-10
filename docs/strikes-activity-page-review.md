@@ -169,13 +169,20 @@ Discord delivery remain outside these fixture checks.
 
 ## Prompt 226
 
-Phone order, Replacements view: heading, Accounts / Leave / Settings, View select,
-Clan and Town Hall selects, toolbar (search icon, sort, Filters, menu), Find slots
-button, rule line, activity line with the review link, first account.
+Phone order, Replacements view: heading, Accounts / Leave / Settings, one row with
+the View select and the gold Find slots button, Clan and Town Hall selects, toolbar
+(search icon, sort, Filters, menu), rule line, activity line with the review link,
+first account. Search opens as its own row under the toolbar; the toolbar stays.
+Find slots stays mounted in one place at every width, so crossing 760 px keeps
+typed weights and results. A search run inside the open panel replaces the history
+entry; Back closes the panel and reopening shows the last weights and results.
+Clear filters in the Filters panel resets only what the panel shows; clan and
+Town Hall stay as the toolbar selects set them.
 
-Measured before (live, 360x800, read only): first account at 542 px, 16 controls
-above it, Filters content 3010 px. The after numbers come from the browser stage
-(fixture preview) and are not measured by the Vitest suite.
+Measured before (read only, 360x800): first account at 469 px (fixture) and 542 px
+(live), 16 controls above it, Filters content 3010 px (live).
+Measured after (`node tests/run-strikes-usability-layout.cjs`, fixture, 360x800):
+first account row at 420.8 px, Filters content 532 px.
 
 Decisions (Part A, frontend):
 1. Phones (760 px and narrower) get one View select with counts; wider screens keep the pills.
@@ -185,4 +192,4 @@ Decisions (Part A, frontend):
 5. Filters order: Priority chips, Strikes, Raid weekends, Member, Weight, Membership, two checkboxes.
 6. Find slots is a gold button that opens a panel; the panel keeps the last weights and results.
 7. The tracking pill is a text link `N clans need review ›`, or muted `All clans on track`; counts show "…" while loading.
-Decision 8 (idle status, scanned late) is Part B and is recorded with the backend change.
+8. Tracking status: Idle (clan not warring) is its own state; need review = behind + error + private + unverified; scanned late (last check older than 2 x the 10 min scan) is shown separately.

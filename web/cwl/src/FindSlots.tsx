@@ -117,17 +117,11 @@ export default function FindSlots({
   }
   // The link or Back/Forward is an earlier explicit search: restore it and run it once.
   useEffect(() => {
+    // A link without weights (Back out of the panel) keeps the last search for reopening.
+    if (!restored.slotWeights.length) return;
     setText(weightsText(restored.slotWeights));
     setPicked(restored.slotClans);
     setMember(restored.slotMember);
-    if (!restored.slotWeights.length) {
-      turn.current++;
-      ran.current = "";
-      setSlots(null);
-      setBusy(false);
-      setError("");
-      return;
-    }
     if (ran.current !== restoredKey) {
       // A link or Back/Forward opens the panel once; closing it keeps the results.
       setOpen(true);

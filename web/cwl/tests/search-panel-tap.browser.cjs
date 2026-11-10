@@ -102,6 +102,10 @@ const server = createServer((req, res) => {
     });
     const page = await context.newPage();
     const errors = [];
+    let slotFetches = 0;
+    page.on("request", (request) => {
+      if (request.url().includes("/strikes/replacements")) slotFetches++;
+    });
     page.on("pageerror", (e) => errors.push(e.message));
     await page.route("**/*", async (route) => {
       const req = route.request(),
@@ -224,6 +228,46 @@ const server = createServer((req, res) => {
       "Back from a nested panel keeps Find slots open",
     );
     await page.locator(".strike-slot-group").first().waitFor();
+
+    // The search replaced the panel's history entry, so the link keeps the
+    // slot keys and one Back closes the panel without emptying it.
+    assert.match(page.url(), /slot_weight=143000/, "the link keeps the search");
+    await page.goBack();
+    await page.waitForFunction(
+      () => document.querySelectorAll("dialog[open]").length === 0,
+    );
+    await page.getByRole("button", { name: "Find slots", exact: true }).tap();
+    await page.getByLabel("Weights").waitFor();
+    assert.equal(
+      await page.getByLabel("Weights").inputValue(),
+      "143, 173",
+      "Back from the open panel keeps the last weights",
+    );
+    await page.locator(".strike-slot-group").first().waitFor();
+
+    // Crossing 760 px must not reopen the panel, refetch, or drop typed weights.
+    await page.getByLabel("Weights").fill("150, 160");
+    await page.getByRole("button", { name: "Close panel" }).tap();
+    await page.waitForFunction(
+      () => document.querySelectorAll("dialog[open]").length === 0,
+    );
+    const fetchesBefore = slotFetches;
+    for (const width of [1100, 360, 1100, 360]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.waitForTimeout(150);
+      assert.equal(
+        await page.locator("dialog[open]").count(),
+        0,
+        "resizing does not open the panel",
+      );
+    }
+    assert.equal(slotFetches, fetchesBefore, "resizing does not fetch");
+    await page.getByRole("button", { name: "Find slots", exact: true }).tap();
+    assert.equal(
+      await page.getByLabel("Weights").inputValue(),
+      "150, 160",
+      "resizing keeps typed weights",
+    );
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ clanLabel, memberLabel }));
   } finally {

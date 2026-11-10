@@ -317,13 +317,8 @@
   min-width: 0;
 }
 .strike-activity-roster > .strike-find-slots-open {
-  width: 100%;
-}
-@media (min-width: 761px) {
-  .strike-activity-roster > .strike-find-slots-open {
-    width: auto;
-    justify-self: start;
-  }
+  width: auto;
+  justify-self: start;
 }
 .strike-activity-applied {
   display: flex;
@@ -596,10 +591,23 @@
   position: relative;
   min-width: 0;
 }
-.strike-activity-chips.has-find-slots {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--wu-space-2);
+/* Phones: the View select and Find slots share the first row. Find slots stays mounted in one place at every width. */
+@media (max-width: 760px) {
+  .strike-activity-roster.has-find-slots {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .strike-activity-roster.has-find-slots > * {
+    grid-column: 1 / -1;
+  }
+  .strike-activity-roster.has-find-slots > .strike-activity-chips {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .strike-activity-roster.has-find-slots > .strike-find-slots-open {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: stretch;
+  }
 }
 @media (max-width: 650px) {
   .strike-activity-chips.has-more::after {

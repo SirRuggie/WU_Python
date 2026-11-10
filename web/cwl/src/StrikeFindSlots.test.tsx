@@ -528,3 +528,58 @@ it("reopens Back/Forward URL weights once each time they change, without focusin
   }
   expect(replacementCalls()).toHaveLength(3);
 });
+
+it("keeps Find slots mounted when the viewport crosses the phone width", async () => {
+  viewport.compact = false;
+  await mount("/strikes?activity_view=replacements");
+  await act(async () => opener().click());
+  await type(field("input"), "143, 173");
+  await closeTopPanel();
+  const before = opener();
+  const calls = vi.mocked(fetch).mock.calls.length;
+  for (const compact of [true, false]) {
+    viewport.compact = compact;
+    await act(async () =>
+      root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+    );
+    expect(opener()).toBe(before);
+    expect(panelOpen()).toBe(false);
+  }
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
+  await act(async () => opener().click());
+  expect(field("input").value).toBe("143, 173");
+  expect(replacementCalls()).toHaveLength(0);
+});
+
+it("replaces the history entry for a search run in the panel and keeps the results after Back", async () => {
+  history.replaceState({}, "", "/strikes");
+  const pushes: boolean[] = [];
+  const states: string[] = [];
+  const view = (state: string) => (
+    <StrikeActivityRoster
+      state={state}
+      onState={(next, push) => {
+        states.push(next);
+        pushes.push(push);
+      }}
+      onChoose={vi.fn()}
+    />
+  );
+  await act(async () => root.render(view("activity_view=replacements")));
+  await act(async () => opener().click());
+  await type(field("input"), "143, 173k");
+  await act(async () => button("Find").click());
+  expect(replacementCalls()).toHaveLength(1);
+  expect(pushes).toEqual([false]);
+  expect(states[0]).toContain("slot_weight=143000");
+  const result = document.querySelector(".strike-slot-group")!.textContent;
+  await act(async () => root.render(view(states[0])));
+  // Back from the open panel lands on the entry without slot keys.
+  await act(async () => root.render(view("activity_view=replacements")));
+  expect(panelOpen()).toBe(true);
+  expect(field("input").value).toBe("143, 173");
+  expect(document.querySelector(".strike-slot-group")!.textContent).toBe(
+    result,
+  );
+  expect(replacementCalls()).toHaveLength(1);
+});

@@ -510,6 +510,35 @@ it("keeps Not attacking when applying another filter", async () => {
   expect(active.textContent).toContain("1");
   expect(host.textContent).toContain("Showing 1 of 2");
 });
+it("clears only the panel's own filters and keeps the toolbar's clan and Town Hall", async () => {
+  history.replaceState(
+    {},
+    "",
+    "/strikes?activity_view=all&clans=%23PQQ&th=18&raids=2",
+  );
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+  );
+  const press = async (label: string, scope: ParentNode) =>
+    act(async () =>
+      [...scope.querySelectorAll<HTMLButtonElement>("button")]
+        .find((b) => b.textContent === label)!
+        .click(),
+    );
+  await press("Filters", host);
+  await press("Clear filters", document.querySelector("dialog")!);
+  await press("Apply filters", document.querySelector("dialog")!);
+  const params = new URLSearchParams(location.search);
+  expect(params.get("clans")).toBe("#PQQ");
+  expect(params.get("th")).toBe("18");
+  expect(params.has("raids")).toBe(false);
+});
 it("clears extra filters without changing the selected All tab", async () => {
   history.replaceState({}, "", "/strikes?activity_view=all&q=Missing");
   await act(async () =>

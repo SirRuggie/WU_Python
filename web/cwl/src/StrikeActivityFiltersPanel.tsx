@@ -77,7 +77,16 @@ export default function StrikeActivityFiltersPanel({
           <button disabled={invalidWeight} onClick={() => onApply(draft)}>
             Apply filters
           </button>
-          <button onClick={() => setDraft(clearActivityFilters(draft))}>
+          <button
+            onClick={() =>
+              // Clans and Town Halls belong to the toolbar selects, not this panel.
+              setDraft({
+                ...clearActivityFilters(draft),
+                clans: draft.clans,
+                townHalls: draft.townHalls,
+              })
+            }
+          >
             Clear filters
           </button>
         </>

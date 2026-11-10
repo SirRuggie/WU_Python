@@ -448,19 +448,19 @@ export default function StrikeActivityRoster({
           slotMember: filters.slotMember,
         }}
         disabled={bulkBusy}
-        onSearch={(next) => change(next)}
+        onSearch={(next) => change(next, false)}
         onChoose={choose}
       />
     );
   return (
     <section
       ref={rosterRef}
-      className="strike-activity-roster"
+      className={`strike-activity-roster${findSlots ? " has-find-slots" : ""}`}
       aria-label="Family activity overview"
     >
       <div
         ref={chipsRef}
-        className={`strike-activity-chips${moreChips ? " has-more" : ""}${phone && findSlots ? " has-find-slots" : ""}`}
+        className={`strike-activity-chips${moreChips ? " has-more" : ""}`}
       >
         {phone ? (
           <select
@@ -498,7 +498,6 @@ export default function StrikeActivityRoster({
             onChange={(view) => change(activityViewPreset(filters, view))}
           />
         )}
-        {phone && findSlots}
       </div>
       <div className="strike-activity-selectors">
         <select
@@ -681,7 +680,7 @@ export default function StrikeActivityRoster({
           </button>
         </div>
       )}
-      {!phone && findSlots}
+      {findSlots}
       {sortTrigger && (
         <StrikeSortPanel
           filters={filters}

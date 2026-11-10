@@ -171,7 +171,7 @@ The Accounts page has a compact Tracking status section. Each family clan shows
 its last completed check, last successful check, last recorded war, current
 official war state, and any current problem. A failed or partial check preserves
 the previous successful timestamp. The visible health states are On track,
-Behind, War log private, and Error. An absent war record and unconfirmed
+Idle, Behind, War log private, and Error. An absent war record and unconfirmed
 current-war state must not produce a green On track summary. A confirmed
 `notInWar` response can be on track without a new record; an unfinished final
 check, stale active-war record, or missing observation is not silently healthy.
@@ -268,8 +268,9 @@ abandoned once, without strikes or repeated due checks.
 The API and tracking card show each clan's last recorded war date, current war
 state (`notInWar`, preparation, in war, ended, private, or unknown), and health.
 On track requires a confirmed not-in-war state or a completed latest-war path;
-Behind includes a missed final check or a last recorded war over three days old
-for a clan that has warred. An unknown state is never On track. Private war logs
+Behind includes a missed final check, for active clans only. Idle is a clan that
+is not warring. A clan scanned late (last check older than 2 x the 10 min scan)
+is flagged separately from Behind. An unknown state is never On track. Private war logs
 and source errors remain distinct from success. Invalid Clash API key/IP reasons,
 or 403 responses from every tracked clan in a full check, show an error rather
 than War log private. The summary counts
