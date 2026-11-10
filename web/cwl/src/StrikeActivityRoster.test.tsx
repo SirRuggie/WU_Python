@@ -622,7 +622,14 @@ it.each([false, true])(
   async (reduced) => {
     vi.spyOn(window, "matchMedia").mockReturnValue({
       matches: reduced,
-    } as MediaQueryList);
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => true,
+    } satisfies MediaQueryList);
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
       function (this: HTMLElement) {
         return this.classList.contains("strike-activity-tabs") ? 200 : 0;
@@ -722,7 +729,14 @@ it.each([false, true])(
 it("cancels an unfinished row reveal when a rapid reverse selection is already visible", async () => {
   vi.spyOn(window, "matchMedia").mockReturnValue({
     matches: false,
-  } as MediaQueryList);
+    media: "(prefers-reduced-motion: reduce)",
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => true,
+  } satisfies MediaQueryList);
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
     function (this: HTMLElement) {
       return this.classList.contains("strike-activity-tabs") ? 200 : 0;

@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import StrikeActivityRoster from "./StrikeActivityRoster";
 import type { ActivityAccount } from "./strikeActivityView";
+import FindSlots from "./FindSlots";
+import { parseActivityFilters } from "./strikeActivityFilters";
+const viewport = vi.hoisted(() => ({ compact: false }));
+vi.mock("./useCompactPreview", () => ({ default: () => viewport.compact }));
 const base: ActivityAccount = {
   player_tag: "#PYY",
   player_name: "Filler one",
@@ -88,6 +92,7 @@ async function type(input: HTMLInputElement, value: string) {
   });
 }
 beforeEach(() => {
+  viewport.compact = false;
   partialMember = false;
   disputedMember = false;
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -336,4 +341,213 @@ it("names a result from the account row when the endpoint has no name, never an 
   expect(items[0]).toContain("@slayer");
   expect(items[1]).not.toContain("@");
   expect(items[1]).not.toMatch(/\d{15}/);
+});
+
+const disclosure = () =>
+  host.querySelector<HTMLButtonElement>(".strike-find-slots-toggle")!;
+const slotBody = () =>
+  host.querySelector<HTMLDivElement>(".strike-find-slots-body")!;
+const weights = () =>
+  host.querySelector<HTMLInputElement>(".strike-find-slots-top input")!;
+const find = () =>
+  host.querySelector<HTMLButtonElement>(".strike-find-slots-top button")!;
+
+it("starts on phones with one secondary disclosure and mounted hidden fields, without searching", async () => {
+  viewport.compact = true;
+  await mount("/strikes?activity_view=replacements");
+  expect(disclosure().textContent).toBe("Find slots");
+  expect(disclosure().classList.contains("primary")).toBe(false);
+  expect(disclosure().getAttribute("aria-expanded")).toBe("false");
+  expect(disclosure().getAttribute("aria-controls")).toBe(slotBody().id);
+  expect(slotBody().hidden).toBe(true);
+  expect(weights().closest("[hidden]")).toBe(slotBody());
+  expect(disclosure().querySelector("svg")!.getAttribute("aria-hidden")).toBe(
+    "true",
+  );
+  expect(replacementCalls()).toHaveLength(0);
+});
+
+it("opens on a user action, focuses Weights and never requests or changes the URL", async () => {
+  viewport.compact = true;
+  await mount("/strikes?activity_view=replacements");
+  const before = location.href;
+  const calls = vi.mocked(fetch).mock.calls.length;
+  await act(async () => disclosure().click());
+  expect(disclosure().getAttribute("aria-expanded")).toBe("true");
+  expect(slotBody().hidden).toBe(false);
+  expect(document.activeElement).toBe(weights());
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
+  expect(location.href).toBe(before);
+});
+
+it("opens a phone URL search once without moving focus and keeps results mounted across collapse", async () => {
+  viewport.compact = true;
+  const outside = document.createElement("button");
+  document.body.append(outside);
+  outside.focus();
+  await mount(
+    "/strikes?view=replacements&slot_weight=143000&slot_weight=173000&slot_weight=150000",
+  );
+  expect(document.activeElement).toBe(outside);
+  expect(disclosure().getAttribute("aria-expanded")).toBe("true");
+  expect(replacementCalls()).toHaveLength(1);
+  const field = weights();
+  const result = host.querySelector(".strike-slot-group");
+  const calls = vi.mocked(fetch).mock.calls.length;
+  const url = location.href;
+  await act(async () => disclosure().click());
+  expect(slotBody().hidden).toBe(true);
+  expect(disclosure().textContent).toBe("Find slots · 143k, 173k, 150k");
+  expect(disclosure().getAttribute("aria-label")).toBe("Find slots, 3 weights");
+  await act(async () => disclosure().click());
+  expect(weights()).toBe(field);
+  expect(field.value).toBe("143, 173, 150");
+  expect(host.querySelector(".strike-slot-group")).toBe(result);
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
+  expect(location.href).toBe(url);
+  outside.remove();
+});
+
+it("keeps unsaved weights, clan and member choices while collapsed and across the phone breakpoint", async () => {
+  viewport.compact = true;
+  const choose = await mount("/strikes?view=replacements");
+  await act(async () => disclosure().click());
+  await type(weights(), "143, 173k");
+  await act(async () => button("Clans: All FWA clans").click());
+  await act(async () =>
+    [
+      ...document.querySelectorAll<HTMLInputElement>(
+        "dialog input[type=checkbox]",
+      ),
+    ]
+      .find((box) => box.parentElement!.textContent!.startsWith("Second FWA"))!
+      .click(),
+  );
+  await act(async () => button("Close").click());
+  await act(async () => button("Member: any").click());
+  await type(
+    document.querySelector<HTMLInputElement>(".strike-member-select input")!,
+    "slay",
+  );
+  await act(async () =>
+    [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        ".strike-member-options button",
+      ),
+    ]
+      .find((node) => node.textContent!.includes("@slayer"))!
+      .click(),
+  );
+  const field = weights();
+  await act(async () => disclosure().click());
+  viewport.compact = false;
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={choose} />),
+  );
+  expect(disclosure()).toBeNull();
+  expect(slotBody().hidden).toBe(false);
+  expect(weights()).toBe(field);
+  expect(field.value).toBe("143, 173k");
+  viewport.compact = true;
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={choose} />),
+  );
+  expect(slotBody().hidden).toBe(true);
+  await act(async () => disclosure().click());
+  expect(weights().value).toBe("143, 173k");
+  expect(button("Clans: Second FWA")).toBeDefined();
+  expect(button("Member: @slayer")).toBeDefined();
+  expect(replacementCalls()).toHaveLength(0);
+});
+
+it("retains a pending search error received while collapsed and exposes it on expand without retry", async () => {
+  viewport.compact = true;
+  const normal = vi.mocked(fetch).getMockImplementation()!;
+  let release!: (response: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes("/strikes/replacements")
+        ? new Promise<Response>((resolve) => {
+            release = resolve;
+          })
+        : normal(input, init),
+    ),
+  );
+  await mount("/strikes?view=replacements&slot_weight=143000");
+  expect(find().getAttribute("aria-busy")).toBe("true");
+  await act(async () => disclosure().click());
+  await act(async () =>
+    release(
+      new Response(JSON.stringify({ error: "Fixture slots unavailable" }), {
+        status: 503,
+        headers: { "X-Read-Retries-Exhausted": "1" },
+      }),
+    ),
+  );
+  expect(slotBody().hidden).toBe(true);
+  expect(slotBody().querySelector("[role=alert]")!.textContent).toContain(
+    "Fixture slots unavailable",
+  );
+  const calls = vi.mocked(fetch).mock.calls.length;
+  await act(async () => disclosure().click());
+  expect(slotBody().hidden).toBe(false);
+  expect(slotBody().querySelector("[role=alert]")!.textContent).toContain(
+    "Fixture slots unavailable",
+  );
+  expect(weights().value).toBe("143");
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
+});
+
+function HistorySlots() {
+  const [query, setQuery] = useState(location.search);
+  useEffect(() => {
+    const restore = () => setQuery(location.search);
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
+  return (
+    <FindSlots
+      clans={clans}
+      accounts={accounts}
+      search={parseActivityFilters(query)}
+      onSearch={vi.fn()}
+      onChoose={vi.fn()}
+    />
+  );
+}
+
+it("reopens Back/Forward URL weights once without focus movement and does not search on disclosure", async () => {
+  viewport.compact = true;
+  history.replaceState({}, "", "/strikes?view=replacements&slot_weight=143000");
+  await act(async () => root.render(<HistorySlots />));
+  expect(replacementCalls()).toHaveLength(1);
+  await act(async () => disclosure().click());
+  expect(disclosure().getAttribute("aria-label")).toBe("Find slots, 1 weight");
+  const outside = document.createElement("button");
+  document.body.append(outside);
+  outside.focus();
+  for (const weight of [173000, 143000]) {
+    await act(async () => {
+      history.replaceState(
+        {},
+        "",
+        `/strikes?view=replacements&slot_weight=${weight}`,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(slotBody().hidden).toBe(false);
+    expect(document.activeElement).toBe(outside);
+    expect(weights().value).toBe(String(weight / 1000));
+    await act(async () => disclosure().click());
+  }
+  expect(replacementCalls()).toHaveLength(3);
+  outside.remove();
+});
+
+it("keeps the desktop box visible with no new disclosure", async () => {
+  await mount("/strikes?view=replacements");
+  expect(disclosure()).toBeNull();
+  expect(slotBody().hidden).toBe(false);
+  expect(find().classList.contains("primary")).toBe(true);
 });
