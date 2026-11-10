@@ -140,3 +140,36 @@ def test_strikes_and_weight_failures_are_red():
         assert "accent=WU_RED" in line, text
     weight = (ROOT / "extensions/commands/fwa/weight_save.py").read_text(encoding="utf-8")
     assert "card(str(exc), accent=WU_RED)" in weight and "card(str(error), accent=WU_RED)" in weight
+
+
+def test_templates_saved_with_old_default_footers_still_load_as_gold():
+    import copy
+
+    checked = 0
+    for variant in content.VARIANTS:
+        default = content.default_template(variant)
+        for legacy in ("assets/Red_Footer.png", "assets/Blue_Footer.png"):
+            saved = copy.deepcopy(default)
+            if saved.get("footer_url") == "assets/Gold_Footer.png":
+                saved["footer_url"] = legacy
+            for slot, value in (saved.get("media") or {}).items():
+                if value == "assets/Gold_Footer.png":
+                    saved["media"][slot] = legacy
+            if saved == default:
+                continue
+            checked += 1
+            loaded = content.validate_template(variant, saved)
+            assert loaded.get("footer_url") in (None, default.get("footer_url"))
+            assert loaded.get("media", {}) == default.get("media", {})
+    assert checked >= 12  # leaders_checking_you_out plus the native layouts
+
+
+def test_other_local_artwork_is_still_rejected():
+    import copy
+
+    import pytest
+
+    saved = copy.deepcopy(content.default_template("leaders_checking_you_out"))
+    saved["footer_url"] = "assets/Green_Footer.png"
+    with pytest.raises(ValueError):
+        content.validate_template("leaders_checking_you_out", saved)

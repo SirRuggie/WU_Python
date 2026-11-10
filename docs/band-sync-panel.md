@@ -54,7 +54,7 @@ a reschedule) is reposted once, the next time anything tries to edit it and gets
 `current_panel`, and `panel_version` is set there too.
 
 Content (band-sync-panel-restyle, DECISIONS.md D001): a Components V2 Container styled
-like band_monitor's old post-monitor panel (red accent, `## ⚔️ War Sync Event has been
+like band_monitor's old post-monitor panel (now WU_GOLD accent, `## ⚔️ War Sync Event has been
 posted.`), with a role ping (`create_message(role_mentions=[ALLOWED_ROLE_ID],
 user_mentions=True)`, on both the initial post and the NotFound-repost path - same as
 the old post-monitor panel), a **Sync Time** line (`<t:...:F>`/`<t:...:R>`), a "Check
