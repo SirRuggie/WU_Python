@@ -9,8 +9,9 @@ so this script updates those saved values in `bot_config`:
     cwl campaign defaults, cycles and drafts      any "accent_color" under
                                                   "campaign" or "recurring_campaign"
 
-Only exact old values change (see `new_color`). A color staff picked by hand
-is reported and left alone. Revision history entries are never changed.
+Every saved accent moves to the message's default brand color, including
+colors staff picked by hand (see `new_color`). A value that already matches is
+reported as KEEP. Revision history entries are never changed.
 
 Each write matches the document's current revision (templates) or the exact
 old value at that path (CWL campaigns), so an edit saved while the script runs
@@ -41,27 +42,25 @@ WU_GOLD = 0xF2B62A
 WU_GREEN = 0x43E58C
 WU_RED = 0xE00010
 
-OLD_RED = 0xAA0000
-OLD_GOLD = 0xFFD700
-OLD_BLUE = 0x0066FF
-OLD_GREEN = 0x00B237
-OLD_GOLDENROD = 0xEEEEAA
-
 TEMPLATE_PREFIXES = ("recruit_question_template:", "fwa_war_template:")
 CAMPAIGN_PREFIXES = ("cwl:defaults:", "cwl:cycle:", "cwl:draft:")
 CAMPAIGN_FIELDS = ("campaign", "recurring_campaign")
 
 
-def new_color(value: int, *, war_variant: str | None = None) -> int | None:
-    """Return the brand color for an old saved color, or None to keep it."""
-    if value == OLD_GREEN:
-        return WU_GREEN
-    if value == OLD_RED:
-        # The FWA "lose" war plan is red by design; other red cards become gold.
-        return WU_RED if war_variant == "lose" else WU_GOLD
-    if value in (OLD_GOLD, OLD_BLUE, OLD_GOLDENROD):
-        return WU_GOLD
-    return None
+WAR_DEFAULTS = {"win": WU_GREEN, "lose": WU_RED, "mismatch": WU_GOLD, "blacklisted": 0x000000}
+
+
+def new_color(value: int, *, war_variant: str | None = None) -> int:
+    """Return the brand color this saved message should use.
+
+    Ruggie approved (2026-11-10) moving every saved accent, including colors
+    staff picked by hand, to the message's default: FWA war results keep their
+    meaning (win green, lose red, mismatch gold, blacklisted black); every
+    other saved message is WU_GOLD.
+    """
+    if war_variant is not None:
+        return WAR_DEFAULTS.get(war_variant, WU_GOLD)
+    return WU_GOLD
 
 
 def _walk(node, path: str):
@@ -82,7 +81,7 @@ def plan(document: dict) -> tuple[list[tuple[str, int, int]], list[tuple[str, in
     """Return (changes, kept) for one bot_config document.
 
     changes: (path, old, new) for each exact old color.
-    kept: (path, value) for each saved accent this script leaves alone.
+    kept: (path, value) for each saved accent that already has its brand color.
     """
     doc_id = str(document.get("_id", ""))
     found: list[tuple[str, int, str | None]] = []
@@ -98,7 +97,7 @@ def plan(document: dict) -> tuple[list[tuple[str, int, int]], list[tuple[str, in
     changes, kept = [], []
     for path, value, variant in found:
         target = new_color(value, war_variant=variant)
-        if target is None or target == value:
+        if target == value:
             kept.append((path, value))
         else:
             changes.append((path, value, target))

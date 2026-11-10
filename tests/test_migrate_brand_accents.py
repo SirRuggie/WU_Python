@@ -11,7 +11,10 @@ from utils.constants import WU_GOLD, WU_GREEN, WU_RED
 
 
 def test_script_colors_match_brand_constants():
+    from extensions.commands.fwa.message_templates import WAR_COLORS
+
     assert (migration.WU_GOLD, migration.WU_GREEN, migration.WU_RED) == (int(WU_GOLD), int(WU_GREEN), int(WU_RED))
+    assert migration.WAR_DEFAULTS == {key: int(value) for key, value in WAR_COLORS.items()}
 
 
 class FakeCollection:
@@ -84,12 +87,13 @@ def test_dry_run_lists_changes_and_writes_nothing():
     assert "CHANGE fwa_war_template:1:lose accent: #AA0000 -> #E00010" in changes
     assert "CHANGE recruit_question_template:1:circles accent: #AA0000 -> #F2B62A" in changes
     assert "CHANGE cwl:cycle:1:2026-12 campaign.messages.signup.accent_color: #0066FF -> #F2B62A" in changes
-    assert len(changes) == 6
-    assert "KEEP   recruit_question_template:1:today accent: #123456" in lines
+    assert "CHANGE recruit_question_template:1:today accent: #123456 -> #F2B62A" in changes
+    assert len(changes) == 7
+    assert "KEEP   fwa_war_template:1:blacklisted accent: #000000" in lines
     assert lines[-1] == "DRY RUN: nothing written"
 
 
-def test_apply_maps_each_old_color_and_keeps_custom_and_history(tmp_path):
+def test_apply_moves_every_color_to_its_default_and_keeps_history(tmp_path):
     collection = FakeCollection(_rows())
     backup = tmp_path / "backup.json"
     code, _lines = _run(collection, apply=True, backup=backup)
@@ -101,7 +105,7 @@ def test_apply_maps_each_old_color_and_keeps_custom_and_history(tmp_path):
     assert docs["fwa_war_template:1:blacklisted"] == _rows()[3]
     assert docs["recruit_question_template:1:family_codes"]["accent"] == 0xF2B62A
     assert docs["recruit_question_template:1:circles"]["accent"] == 0xF2B62A
-    assert docs["recruit_question_template:1:today"] == _rows()[6]
+    assert docs["recruit_question_template:1:today"]["accent"] == 0xF2B62A
     cycle = docs["cwl:cycle:1:2026-12"]
     assert cycle["campaign"]["messages"]["signup"]["accent_color"] == 0xF2B62A
     assert cycle["revision"] == 7
