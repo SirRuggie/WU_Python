@@ -14,7 +14,7 @@ _refresh_locks = {}
 
 
 def account_line(account):
-    from extensions.commands.accounts import _escape_markdown
+    from extensions.commands.linked_accounts import _escape_markdown
     name = _escape_markdown(account.name or 'Profile unavailable', max_raw_length=50)
     clan = _escape_markdown(account.clan_name or 'No clan', max_raw_length=40)
     source = ' + '.join(account.link_sources) or 'Previously recorded'
@@ -35,7 +35,7 @@ def warnings(snapshot):
 
 
 def review_note(ticket):
-    from extensions.commands.accounts import _escape_markdown
+    from extensions.commands.linked_accounts import _escape_markdown
     linked = ticket.get('linked_accounts') or {}
     review = linked.get('conflict_review') or {}
     if not review or review.get('conflict_key') != linked.get('conflict_key') or linked.get('conflicting_tags'):

@@ -8,7 +8,7 @@ from aiohttp.test_utils import TestServer
 
 from utils import recruit_links, clashperk_links
 from extensions.commands.tickets import account_sync, player_info
-from extensions.commands.accounts import AccountEntry, AccountsData
+from extensions.commands.linked_accounts import AccountEntry, AccountsData
 from tests.test_ticket_storage_foundation import _mongo, _ticket as _base_ticket, NOW
 
 

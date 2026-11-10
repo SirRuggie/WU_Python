@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import hikari
 import pytest
 
-from extensions.commands.accounts import AccountsData
+from extensions.commands.linked_accounts import AccountsData
 from extensions.commands.tickets import account_sync, console, flag_store, handlers, resolve, store
 from tests.test_ticket_storage_foundation import Collection, NOW, _linked_account, _mongo, _ticket
 

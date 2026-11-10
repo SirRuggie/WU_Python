@@ -165,6 +165,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.commands.tickets",
         "extensions.events.channel.ticket_channel_monitor",
         "extensions.events.member_events",
+        "extensions.events.new_warrior_alert",
         "extensions.events.message.message_events",  # Add message events handler
     ]
     all_extensions = unique_extensions(

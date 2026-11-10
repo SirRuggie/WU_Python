@@ -61,7 +61,7 @@ def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
         sum(len(category["commands"]) for category in HELP_CATEGORIES.values())
         == expected_catalog_total
     )
-    assert "/accounts" in paths
+    assert "/profile" in paths and "/accounts" not in paths
     assert "/manage" in paths
     assert "/clan info" not in paths and "/clan list" not in paths
     assert {"/content dashboard", "/cwl dashboard", "/cwl rosters", "/clan dashboard"}.isdisjoint(paths)

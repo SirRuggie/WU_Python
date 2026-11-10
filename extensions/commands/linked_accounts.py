@@ -1,33 +1,20 @@
-"""/accounts - every Clash account linked to the invoking Discord user."""
+"""Linked Clash accounts for one Discord user: loading and row rendering.
+
+Shared by ``/profile``, the new-warrior staff alert, tickets and Clash of Cards.
+This module has no command of its own.
+"""
 
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass
 
 import coc
-import hikari
-import lightbulb
 
-from extensions.components import register_action
 from utils import coc_maintenance, todo_data
 from utils.clash_links import resolve_tags
-from utils.constants import RED_ACCENT
 from utils.emoji import emojis
 
-from hikari.impl import (
-    ContainerComponentBuilder as Container,
-    InteractiveButtonBuilder as Button,
-    MediaGalleryComponentBuilder as Media,
-    MediaGalleryItemBuilder as MediaItem,
-    MessageActionRowBuilder as ActionRow,
-    SeparatorComponentBuilder as Separator,
-    TextDisplayComponentBuilder as Text,
-)
-
-
-loader = lightbulb.Loader()
 
 PAGE_SIZE = 20
 TEXT_BLOCK_LIMIT = 3_800
@@ -296,86 +283,60 @@ def _text_blocks(lines: list[str]) -> list[str]:
     return blocks
 
 
-def _notice(title: str, description: str) -> list[Container]:
-    return [Container(
-        accent_color=RED_ACCENT,
-        components=[
-            Text(content=f"# {title}"),
-            Separator(divider=True),
-            Text(content=description),
-            Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-        ],
-    )]
+def text_units(value: str) -> int:
+    """Discord counts message text in UTF-16 code units, not code points."""
+    return len(value.encode("utf-16-le")) // 2
 
 
-def render_accounts(
-    data: AccountsData, page: int = 0, *, discord_id: int | None = None,
-) -> list[Container]:
-    """Build a bounded Components V2 inventory page."""
-    if discord_id is not None and not data.entries:
-        if data.unavailable_sources:
-            return _notice(
-                "Account lookup incomplete",
-                f"Discord ID: `{discord_id}`\n"
-                f"Unavailable: {', '.join(data.unavailable_sources)}. "
-                "No accounts were returned by the available sources. "
-                "Try `/user-accounts` again in a few minutes.",
-            )
-        return _notice(
-            "No linked accounts",
-            f"No accounts linked to Discord ID `{discord_id}` were found "
-            "in ClashKing or ClashPerk.",
-        )
-    if data.problem == LINK_FAILURE:
-        return _notice(
-            "Link service not available",
-            "The Clash↔Discord link service did not answer. Your accounts cannot be found. "
-            "The problem is not on your side. Try again in a few minutes.",
-        )
+def _budget_pages(data: AccountsData, budget: int) -> list[list[str]]:
+    """Greedy pages of at most PAGE_SIZE rows whose text fits ``budget``."""
+    budget = max(200, int(budget))
+    pages: list[list[str]] = []
+    current: list[str] = []
+    size = 0
+    for index, entry in enumerate(data.entries):
+        line = _entry_line(entry, index + 1)
+        while text_units(line) > budget:
+            line = f"{line[:-2]}…"
+        added = text_units(line) + (1 if current else 0)
+        if current and (len(current) >= PAGE_SIZE or size + added > budget):
+            pages.append(current)
+            current, size, added = [], 0, text_units(line)
+        current.append(line)
+        size += added
+    if current:
+        pages.append(current)
+    return pages or [[]]
 
-    if not data.entries:
-        return _notice(
-            "No linked accounts",
-            "No Clash of Clans accounts are linked to your Discord.\n\n"
-            "Link an account with the ClashKing `/link` command. You need your in-game API token. "
-            "Find it in **Settings → More Settings → API Token**. Then use `/accounts` again.",
-        )
 
-    pages = max(1, math.ceil(data.linked_count / PAGE_SIZE))
-    page = max(0, min(int(page), pages - 1))
-    start = page * PAGE_SIZE
-    window = data.entries[start:start + PAGE_SIZE]
+def page_window(
+    data: AccountsData, page: int = 0, *, budget: int = TEXT_BLOCK_LIMIT,
+) -> tuple[int, int, list[str]]:
+    """Clamp ``page``; return (page, pages, row blocks within ``budget`` chars).
 
+    Discord counts every Text Display in one message against one 4000-unit
+    (UTF-16) limit, so the caller passes what is left after its own text.
+    """
+    pages = _budget_pages(data, budget)
+    try:
+        page = int(page)
+    except (TypeError, ValueError):
+        page = 0
+    page = max(0, min(page, len(pages) - 1))
+    return page, len(pages), _text_blocks(pages[page])
+
+
+def summary_line(data: AccountsData) -> str:
     if data.loaded_count == data.linked_count:
-        summary = (
-            f"**{data.loaded_count} {_plural(data.loaded_count, 'player account')}** "
-            + ("linked to your Discord." if discord_id is None
-               else f"linked to Discord ID `{discord_id}`.")
-        )
-    else:
-        summary = (
-            f"**{data.loaded_count} {_plural(data.loaded_count, 'player profile')} loaded** "
-            f"· **{data.linked_count} linked {_plural(data.linked_count, 'tag')} total**"
-        )
+        return f"**{data.loaded_count} {_plural(data.loaded_count, 'linked account')}**"
+    return (
+        f"**{data.loaded_count} {_plural(data.loaded_count, 'player profile')} loaded** "
+        f"· **{data.linked_count} linked {_plural(data.linked_count, 'tag')} total**"
+    )
 
-    row_blocks = _text_blocks([
-        _entry_line(entry, start + index + 1)
-        for index, entry in enumerate(window)
-    ])
-    body: list = [
-        Text(content=("# 🪪 Your Player Accounts" if discord_id is None
-                      else f"# 🪪 Player Accounts\nDiscord ID: `{discord_id}`")),
-        Text(content=(
-            f"{summary}\n"
-            + ("-# Every tag ClashKing currently links to you is included. "
-               if discord_id is None else
-               "-# Combined ClashKing + ClashPerk links, with duplicates removed. ")
-            + "Loaded profiles are sorted by Town Hall."
-        )),
-        Separator(divider=True),
-    ]
-    body.extend(Text(content=block) for block in row_blocks)
 
+def account_notes(data: AccountsData) -> list[str]:
+    """Outage and partial-load notes. An outage is never shown as "no links"."""
     notes: list[str] = []
     if data.unavailable_sources:
         notes.append(
@@ -401,78 +362,34 @@ def render_accounts(
             f"{_plural(data.not_found_count, 'tag')} returned no player profile.** "
             "These may be old or mistyped links."
         )
-    if notes:
-        body.extend([
-            Separator(divider=True),
-            Text(content="\n".join(notes)),
-        ])
-
-    if pages > 1:
-        page_action = ("accounts_page:" if discord_id is None
-                       else f"user_accounts_page:{discord_id}:")
-        # Unclamped ids stay unique on the first and last page; the renderer
-        # clamps hostile/out-of-range values when they arrive.
-        body.append(ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"{page_action}{page - 1}",
-                label="◀",
-                is_disabled=page == 0,
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"{page_action}{page}",
-                label=f"Page {page + 1}/{pages}",
-                is_disabled=True,
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"{page_action}{page + 1}",
-                label="▶",
-                is_disabled=page >= pages - 1,
-            ),
-        ]))
-
-    body.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
-    return [Container(accent_color=RED_ACCENT, components=body)]
+    return notes
 
 
-def _page_number(value: str) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
+# Merged ClashKing + ClashPerk results for /profile and the staff alert. Kept
+# apart from ``_result_cache`` (ClashKing-only, Clash of Cards) so neither path
+# can serve the other's answer.
+_merged_cache: dict[int, tuple[float, AccountsData]] = {}
 
 
-@register_action("accounts_page")
-@lightbulb.di.with_di
-async def accounts_page_handler(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    **_kwargs,
-) -> list[Container]:
-    data = await load_accounts(coc_client, int(ctx.user.id))
-    return render_accounts(data, _page_number(action_id))
+def cached_merged(discord_id: int) -> AccountsData | None:
+    hit = _merged_cache.get(int(discord_id))
+    if hit is None or time.monotonic() >= hit[0]:
+        _merged_cache.pop(int(discord_id), None)
+        return None
+    return hit[1]
 
 
-@loader.command
-class Accounts(
-    lightbulb.SlashCommand,
-    name="accounts",
-    description="Show every Clash account linked to your Discord",
-):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(
-        self,
-        ctx: lightbulb.Context,
-        coc_client: coc.Client = lightbulb.di.INJECTED,
-    ) -> None:
-        # Account ownership is private in a guild. DMs have no audience to hide
-        # it from, and Discord does not support ephemeral DM messages.
-        await ctx.defer(ephemeral=ctx.guild_id is not None)
-        data = await load_accounts(coc_client, int(ctx.user.id), force=True)
-        await ctx.interaction.edit_initial_response(
-            components=render_accounts(data),
-        )
+def remember_merged(discord_id: int, data: AccountsData) -> None:
+    now = time.monotonic()
+    for user_id, (expires_at, _data) in list(_merged_cache.items()):
+        if expires_at <= now:
+            _merged_cache.pop(user_id, None)
+    _merged_cache[int(discord_id)] = (now + RESULT_TTL, data)
+
+
+def forget(*discord_ids: int | None) -> None:
+    """Drop cached link inventories after a link change."""
+    for discord_id in discord_ids:
+        if discord_id is not None:
+            _result_cache.pop(int(discord_id), None)
+            _merged_cache.pop(int(discord_id), None)

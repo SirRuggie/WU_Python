@@ -30,7 +30,7 @@ from extensions.commands.tickets import (
     store,
     thread_service,
 )
-from extensions.commands.accounts import (
+from extensions.commands.linked_accounts import (
     AccountEntry,
     AccountsData,
     STATUS_LOADED,

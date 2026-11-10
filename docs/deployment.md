@@ -120,7 +120,7 @@ Cloudflare R2 nothing reads them, and image uploads need the `R2_*` names in
 [Cloudflare R2 (image uploads)](#cloudflare-r2-image-uploads) instead.
 
 `CLASHKING_API_TOKEN` is the ClashKing developer bearer token used by `/todo`,
-`/accounts`, Clash of Cards, LazyCWL, and clan-history expansion through
+Clash of Cards, LazyCWL, and clan-history expansion through
 `POST /v2/links/shared`. The endpoint accepts up to 100 Discord IDs and player
 tags per request, omits hidden links, and applies per-application usage tracking
 and rate limits. Add the dashboard-issued token to `.env`, then restart the

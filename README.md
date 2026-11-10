@@ -49,8 +49,8 @@ below are drawn from that catalog.
 
 ### 🧭 Player self-service
 
-Members help themselves without pinging leadership: `/accounts` shows every
-Clash account linked to their Discord, `/todo` shows what those accounts still
+Members help themselves without pinging leadership: `/profile` shows every
+Clash account linked to a Discord user, `/todo` shows what those accounts still
 owe — war attacks, CWL, raid weekend, and more — and `/family-links` manages
 family roles and open clan links.
 
@@ -61,7 +61,7 @@ family roles and open clan links.
 | Command | Description |
 | --- | --- |
 | `/help` | Open this command guide. |
-| `/accounts` | Show every Clash account linked to your Discord. |
+| `/profile` | Show a Discord user and their linked Clash accounts. |
 | `/todo` | Show what your linked Clash accounts still need to do. |
 | `/family-links` | Manage your own family roles and open clan links. |
 | `/slap` | Send a playful slap GIF to another member. |

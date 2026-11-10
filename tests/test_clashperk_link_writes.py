@@ -205,7 +205,7 @@ def test_command_denies_bot_user(monkeypatch):
 
 
 def test_command_reply_is_private_and_mention_free(monkeypatch):
-    from extensions.commands import accounts
+    from extensions.commands import linked_accounts as accounts
     accounts._result_cache[123] = (0.0, None)
     create = AsyncMock(return_value=writes.LinkResult(writes.LINKED, "#P0Y", "Linked in ClashPerk.", False, True))
     monkeypatch.setattr(writes, "create_link", create)

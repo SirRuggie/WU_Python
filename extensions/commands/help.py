@@ -93,7 +93,7 @@ async def create_help_view(guild_id: int | None = None) -> list:
                 Text(content=(
                     "-# Fast starts: `/manage section:Roles` for member roles • `/recruit` for onboarding "
                     "• `/tickets` for tickets • `/fwa` for FWA tools "
-                    "• `/accounts` for your players • `/todo` for outstanding work"
+                    "• `/profile` for linked players • `/todo` for outstanding work"
                 )),
                 Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
             ],
