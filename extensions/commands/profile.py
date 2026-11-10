@@ -31,7 +31,7 @@ from hikari.impl import (
 from extensions.commands import linked_accounts
 from extensions.components import register_action
 from utils import recruit_links
-from utils.constants import RED_ACCENT, WARRIORS_UNITED_GUILD_ID
+from utils.constants import WARRIORS_UNITED_GUILD_ID, WU_GOLD
 from utils.member_events import safe_text
 
 loader = lightbulb.Loader()
@@ -200,8 +200,8 @@ def render_profile(
             body.append(Separator(divider=True))
         body.append(Text(content=notes))
     body.append(_buttons(identity.user_id, page, pages, mode))
-    body.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
-    return [Container(accent_color=RED_ACCENT, components=body)]
+    body.append(Media(items=[MediaItem(media="assets/Gold_Footer.png")]))
+    return [Container(accent_color=WU_GOLD, components=body)]
 
 
 def parse_action(action_id: str) -> tuple[int, int, str] | None:
