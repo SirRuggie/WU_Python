@@ -98,8 +98,9 @@ def test_extension_discovery_only_returns_loader_entry_points():
         disallowed={"example"}, disallowed_folders={"tickets"}
     )
 
-    assert "extensions.commands.accounts" in discovered
+    assert "extensions.commands.profile" in discovered
     assert "extensions.commands.cards" not in discovered
+    assert "extensions.commands.linked_accounts" not in discovered
     assert "extensions.commands.ping" in discovered
     assert "extensions.commands.poll" in discovered
     assert "extensions.commands.todo" in discovered
@@ -158,7 +159,7 @@ def test_shared_loader_command_families_use_one_package_entry_point():
     assert "extensions.commands.clan.list" not in extensions
     assert "extensions.commands.recruit.questions" not in extensions
     assert "extensions.commands.setup.recruit_aboutus" not in extensions
-    assert "extensions.commands.accounts" in extensions
+    assert "extensions.commands.profile" in extensions
     assert "extensions.commands.cards" not in extensions
     assert "extensions.commands.todo" in extensions
 

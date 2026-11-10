@@ -11442,7 +11442,7 @@ def _switcher_account(name, town_hall, clan, tag):
 
 
 def _switcher_data(count=37):
-    from extensions.commands.accounts import AccountEntry, AccountsData
+    from extensions.commands.linked_accounts import AccountEntry, AccountsData
 
     return AccountsData(entries=tuple(
         AccountEntry(
@@ -11471,7 +11471,7 @@ def test_an_account_with_no_town_hall_does_not_read_th_none():
     The town hall is missing whenever the profile lookup came back thin. No
     level at all is better than a wrong one.
     """
-    from extensions.commands.accounts import AccountEntry, AccountsData
+    from extensions.commands.linked_accounts import AccountEntry, AccountsData
 
     for missing in (None, 0):
         data = AccountsData(entries=(AccountEntry(
@@ -11489,7 +11489,7 @@ def test_an_account_with_no_town_hall_does_not_read_th_none():
 
 
 def test_a_missing_clan_reads_as_no_clan_not_as_nothing():
-    from extensions.commands.accounts import AccountEntry, AccountsData
+    from extensions.commands.linked_accounts import AccountEntry, AccountsData
 
     data = AccountsData(entries=(AccountEntry(
         tag="#LONE",
@@ -11502,7 +11502,7 @@ def test_a_missing_clan_reads_as_no_clan_not_as_nothing():
 
 def test_long_names_and_clans_stay_inside_discord_limits():
     """Discord rejects a select option label over 100 or description over 100."""
-    from extensions.commands.accounts import AccountEntry, AccountsData
+    from extensions.commands.linked_accounts import AccountEntry, AccountsData
 
     data = AccountsData(entries=(AccountEntry(
         tag="#LONG",

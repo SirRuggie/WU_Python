@@ -79,7 +79,7 @@ and confirmation time travel with the card map.
 `/cards` is the only slash command. Account selection, setup, later edits,
 review, confirmation, and matching are buttons and menus inside its private
 panel; there are no separate `/cards scan` or `/cards review` commands. It
-reuses the same ClashKing account links as `/accounts`, and every component
+reuses the ClashKing account links (`extensions/commands/linked_accounts.py`), and every component
 mutation rechecks that the clicking Discord user still owns the selected tag.
 This is necessary because the shared component dispatcher does not enforce its
 `user_only` flag.

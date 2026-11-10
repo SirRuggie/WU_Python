@@ -16,7 +16,7 @@ HELP_CATEGORIES = {
         "commands": [
             ("/help", "Open this command guide."),
             ("/ping", "Check whether the bot is online and responding."),
-            ("/accounts", "Show every Clash account linked to your Discord."),
+            ("/profile", "Show a Discord user and their linked Clash accounts."),
             ("/cards", "Update your card collection and find family trade matches."),
             ("/todo", "Show what your linked Clash accounts still need to do."),
             ("/clear-my-dms", "Delete this bot's past messages from your private DM."),

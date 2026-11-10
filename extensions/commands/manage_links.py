@@ -57,11 +57,9 @@ async def execute(ctx: lightbulb.Context, source: hikari.User, selection: str,
     _log.info("Link management actor=%s guild=%s source=%s destination=%s completed=%s problem=%s",
               ctx.user.id, ctx.guild_id, source.id, destination.id if destination else None,
               result.completed, result.problem)
-    # /accounts caches link inventories briefly; invalidate affected users now.
-    from extensions.commands.accounts import _result_cache
-    _result_cache.pop(int(source.id), None)
-    if destination:
-        _result_cache.pop(int(destination.id), None)
+    # Link inventories are cached briefly; invalidate affected users now.
+    from extensions.commands.linked_accounts import forget
+    forget(int(source.id), int(destination.id) if destination else None)
     await ctx.respond(
         summary, attachment=hikari.Bytes(report.encode(), "link-results.txt"),
         ephemeral=True, user_mentions=False, role_mentions=False, mentions_everyone=False,
@@ -103,8 +101,8 @@ async def link_clashperk(ctx: lightbulb.Context, user: hikari.User, player: str)
     _log.info("ClashPerk link actor=%s guild=%s user=%s tag=%s status=%s",
               ctx.user.id, ctx.guild_id, user.id, result.tag, result.status)
     if result.wrote:
-        from extensions.commands.accounts import _result_cache
-        _result_cache.pop(int(user.id), None)
+        from extensions.commands.linked_accounts import forget
+        forget(int(user.id))
     text = f"`{result.tag}` → <@{user.id}>\n{result.message}"
     if result.verified is not None:
         text += "\nVerified in ClashPerk." if result.verified else "\nNot verified in ClashPerk."

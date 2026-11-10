@@ -794,7 +794,7 @@ def _escape_markdown(value: object, *, limit: int = 100) -> str:
     """Escape scraped/user-supplied text before it goes into a header line.
 
     Same characters and @-mention guard as the repo's other markdown escapers
-    (extensions/commands/cards.py, extensions/commands/accounts.py).
+    (extensions/commands/cards.py, extensions/commands/linked_accounts.py).
     """
     raw = str(value or "").strip()
     if len(raw) > limit:

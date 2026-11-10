@@ -50,8 +50,8 @@ before changing durable documentation.
   management home for Recruit Gauntlet, Recruitment Questions, FWA data,
   FWA War Messages, CWL campaigns, and CWL rosters.
 
-- [accounts.md](accounts.md) — `/accounts`, the private linked-player inventory:
-  row fields, ordering, pagination, stale-link policy, and failure accounting.
+- [profile.md](profile.md) — `/profile` and the staff New Warrior join alert:
+  card layout, merged ClashKing + ClashPerk links, paging, Refresh, failure accounting.
 
 - [clash-of-cards.md](clash-of-cards.md) — `/cards`, the 60-card catalog,
   exception-only update flow, durable inventory shape, freshness rules,
@@ -158,7 +158,7 @@ before changing durable documentation.
   real payload shape, and how ClashKingBot's own to-do command works.
 - [clashking-discord-links.md](clashking-discord-links.md) — the Discord↔Clash
   link API. Bidirectional, unauthenticated, how to read its response, and the
-  `/accounts` completeness policy.
+  linked-account completeness policy.
 
 - [coc-maintenance-detection.md](coc-maintenance-detection.md) — how coc.py
   signals Clash maintenance. **There is no flag and no end time — only a 503

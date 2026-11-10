@@ -25,7 +25,7 @@ import hikari
 import lightbulb
 from pymongo.errors import DuplicateKeyError
 
-from extensions.commands.accounts import (
+from extensions.commands.linked_accounts import (
     LINK_FAILURE,
     STATUS_ERROR,
     STATUS_LOADED,

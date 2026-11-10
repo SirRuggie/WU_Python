@@ -194,6 +194,14 @@ def _subject(row: dict, uid: str) -> str:
     return reference
 
 
+def user_link(user_id: object, display_name: object, username: object) -> str:
+    """The join/leave log's name link (never a mention), for other cards."""
+    uid = _snowflake(user_id)
+    if uid is None:
+        raise ValueError("A trusted member ID is required for a name link")
+    return _subject({"display_name": display_name, "username": username}, uid)
+
+
 def _ordinal(number: int) -> str:
     suffix = "th" if 10 <= number % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(number % 10, "th")
     return f"{number}{suffix}"

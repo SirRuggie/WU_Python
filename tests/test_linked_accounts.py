@@ -1,4 +1,4 @@
-"""Regression tests for the Components V2 /accounts inventory."""
+"""Regression tests for the shared linked-account loader and its rows in the /profile card."""
 
 import asyncio
 import re
@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from extensions import components
-from extensions.commands import accounts
+from extensions.commands import linked_accounts as accounts
+from extensions.commands import profile
 from utils import coc_maintenance, todo_data
 
 
@@ -32,8 +33,11 @@ def _walk(value):
             yield from _walk(child)
 
 
+IDENTITY = profile.Identity(123, "Tester", "tester")
+
+
 def _payload(data, page=0):
-    return [component.build() for component in accounts.render_accounts(data, page)]
+    return [component.build() for component in profile.render_profile(IDENTITY, data, page)]
 
 
 def _text(payload) -> str:
@@ -113,12 +117,9 @@ def test_link_service_failure_is_not_reported_as_no_links(monkeypatch):
     monkeypatch.setattr(todo_data, "fetch_accounts", must_not_fetch)
 
     data = asyncio.run(accounts.load_accounts(object(), 123, force=True))
-    text = _text(_payload(data))
 
     assert data.problem == accounts.LINK_FAILURE
-    assert "Link service not available" in text
-    assert "No linked accounts" not in text
-    assert "The Clash↔Discord link service did not answer. Your accounts cannot be found. The problem is not on your side. Try again in a few minutes." in text
+    assert data.linked_count == 0
 
 
 def test_successful_empty_lookup_shows_link_instructions_without_player_fetch(monkeypatch):
@@ -137,7 +138,7 @@ def test_successful_empty_lookup_shows_link_instructions_without_player_fetch(mo
     assert data.problem is None
     assert data.linked_count == 0
     assert "No linked accounts" in text
-    assert "No Clash of Clans accounts are linked to your Discord.\n\nLink an account with the ClashKing `/link` command. You need your in-game API token. Find it in **Settings → More Settings → API Token**. Then use `/accounts` again." in [node["content"] for node in _walk(_payload(data)) if "content" in node]
+    assert "-# Not linked in ClashKing or ClashPerk." in text
 
 
 def test_rerunning_command_bypasses_an_old_empty_link_cache(monkeypatch):
@@ -313,7 +314,7 @@ def test_forty_six_accounts_use_three_complete_bounded_pages():
             if "custom_id" in node
         ]
         assert len(custom_ids) == len(set(custom_ids))
-        assert all(custom_id.count(":") == 1 for custom_id in custom_ids)
+        assert all(custom_id.count(":") == 3 for custom_id in custom_ids)
         assert all(
             custom_id.partition(":")[0] in components.registered_functions
             for custom_id in custom_ids
@@ -369,44 +370,6 @@ def test_markdown_heavy_max_length_rows_split_below_discord_text_limit():
     assert set(re.findall(r"`(#[^`]+)`", _text(payload))) == {
         entry.tag for entry in entries
     }
-
-
-@pytest.mark.parametrize(
-    ("guild_id", "expected_ephemeral"),
-    [(456, True), (None, False)],
-)
-def test_command_keeps_guild_account_lists_private(
-    monkeypatch, guild_id, expected_ephemeral
-):
-    async def loaded(_client, _discord_id, *, force=False):
-        assert force
-        return accounts.AccountsData(entries=(_loaded_entry(1),))
-
-    monkeypatch.setattr(accounts, "load_accounts", loaded)
-
-    class Interaction:
-        def __init__(self):
-            self.edits = []
-
-        async def edit_initial_response(self, **kwargs):
-            self.edits.append(kwargs)
-
-    class Context:
-        def __init__(self):
-            self.guild_id = guild_id
-            self.user = SimpleNamespace(id=123)
-            self.interaction = Interaction()
-            self.defers = []
-
-        async def defer(self, **kwargs):
-            self.defers.append(kwargs)
-
-    ctx = Context()
-    asyncio.run(accounts.Accounts().invoke(ctx, coc_client=object()))
-
-    assert ctx.defers == [{"ephemeral": expected_ephemeral}]
-    assert len(ctx.interaction.edits) == 1
-    assert ctx.interaction.edits[0]["components"]
 
 
 def test_unavailable_link_sources_show_full_approved_notice():

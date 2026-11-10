@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Callable, Mapping
 
 import coc
 
-from extensions.commands.accounts import (
+from extensions.commands.linked_accounts import (
     LINK_FAILURE,
     AccountEntry,
     load_accounts as _load_accounts,

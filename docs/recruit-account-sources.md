@@ -2,7 +2,8 @@
 
 Ticket creation, staff refresh, automatic retries, and final decisions use the
 same combined lookup. Other consumers of the shared ClashKing resolver are
-unchanged (including `/accounts` and Warrior Setup).
+unchanged (including Clash of Cards and Warrior Setup). `/profile` and the New
+Warrior alert use the merged forward links without the reverse ownership check.
 
 - Both providers are queried concurrently using the applicant's Discord ID.
 - The union is deduplicated by normalized player tag. Reverse lookups check for

@@ -11,8 +11,7 @@ def constants(path):
 
 @pytest.mark.parametrize(('path','text','count'), [
  ('extensions/commands/cwl_member.py','CWL is temporarily unavailable. Your saved signups did not change. Try /cwl signup again in a few minutes.',3),
- ('extensions/commands/accounts.py','Try `/user-accounts` again in a few minutes.',1),
- ('extensions/commands/accounts.py','Their linked tags are shown above. Try again in a few minutes.',1),
+ ('extensions/commands/linked_accounts.py','Their linked tags are shown above. Try again in a few minutes.',1),
  ('extensions/commands/content.py','Select a supported post.',1),
  ('extensions/commands/warrior.py',"Select an unmanaged role below the Warriors United app's highest role.",1),
  ('extensions/commands/tickets/rite.py','Select this path if you are ready to prove your worth and rise among your fellow warriors.',1),
@@ -37,7 +36,7 @@ def test_conditional_title_keeps_other_verb_label():
     assert isinstance(conditions[0].orelse,ast.Constant) and conditions[0].orelse.value=='Not completed'
 
 def test_console_forbidden_and_multi_account_interpolation_exact():
-    checks=[('extensions/commands/tickets/console.py',"f'Saved console channel {existing_channel_id} cannot be opened. Restore channel access, then try again.'"),('extensions/commands/accounts.py',"f'⚠️ **Could not load {data.error_count} accounts.** Their linked tags are shown above. Try again in a few minutes.'")]
+    checks=[('extensions/commands/tickets/console.py',"f'Saved console channel {existing_channel_id} cannot be opened. Restore channel access, then try again.'"),('extensions/commands/linked_accounts.py',"f'⚠️ **Could not load {data.error_count} accounts.** Their linked tags are shown above. Try again in a few minutes.'")]
     for path, wanted in checks:
         tree=ast.parse((ROOT/path).read_text())
         assert wanted in [ast.unparse(n) for n in ast.walk(tree) if isinstance(n,ast.JoinedStr)]
