@@ -596,6 +596,11 @@
   position: relative;
   min-width: 0;
 }
+.strike-activity-chips.has-find-slots {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--wu-space-2);
+}
 @media (max-width: 650px) {
   .strike-activity-chips.has-more::after {
     content: "";

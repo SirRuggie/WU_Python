@@ -21,6 +21,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, ApiError } from "./api";
+import { spendPanelEntry } from "./actionPanelHistory";
 import StrikeBulkMark from "./StrikeBulkMark";
 import type { ViewMemory } from "./strikeViewMemory";
 import type { ActivityAccount } from "./strikeActivityView";
@@ -341,19 +342,22 @@ export default function StrikeActivityRoster({
       page: "page" in patch ? patch.page! : 0,
     });
     setLocal(next);
-    if (onState) onState(activityFilterQuery(next), push);
-    else {
+    // A route change under an open panel moves it to a new entry; keep the
+    // marker there so a nested panel's Back still lands on this panel.
+    const panel = history.state?.wuActionPanel;
+    if (onState) {
+      onState(activityFilterQuery(next), push);
+      if (panel)
+        history.replaceState(spendPanelEntry(history.state, panel), "");
+    } else {
       const url = new URL(window.location.href);
       for (const key of activityFilterKeys) url.searchParams.delete(key);
       new URLSearchParams(activityFilterQuery(next)).forEach((value, key) =>
         url.searchParams.append(key, value),
       );
-      const historyState =
-        history.state && typeof history.state === "object"
-          ? { ...history.state }
-          : {};
-      // Applying a route consumes the panel entry; its cleanup must not pop away the filters.
-      delete historyState.wuActionPanel;
+      const historyState = panel
+        ? spendPanelEntry(history.state, panel)
+        : { ...history.state };
       history.replaceState(historyState, "", url.pathname + url.search);
     }
   }
@@ -433,6 +437,21 @@ export default function StrikeActivityRoster({
       hall,
       count: data.accounts.filter((row) => row.town_hall === hall).length,
     }));
+  const findSlots = filters.view === "replacements" &&
+    !(loading && !data.accounts.length) && (
+      <FindSlots
+        clans={data.clans}
+        accounts={data.accounts}
+        search={{
+          slotWeights: filters.slotWeights,
+          slotClans: filters.slotClans,
+          slotMember: filters.slotMember,
+        }}
+        disabled={bulkBusy}
+        onSearch={(next) => change(next)}
+        onChoose={choose}
+      />
+    );
   return (
     <section
       ref={rosterRef}
@@ -441,7 +460,7 @@ export default function StrikeActivityRoster({
     >
       <div
         ref={chipsRef}
-        className={`strike-activity-chips${moreChips ? " has-more" : ""}`}
+        className={`strike-activity-chips${moreChips ? " has-more" : ""}${phone && findSlots ? " has-find-slots" : ""}`}
       >
         {phone ? (
           <select
@@ -479,6 +498,7 @@ export default function StrikeActivityRoster({
             onChange={(view) => change(activityViewPreset(filters, view))}
           />
         )}
+        {phone && findSlots}
       </div>
       <div className="strike-activity-selectors">
         <select
@@ -661,21 +681,7 @@ export default function StrikeActivityRoster({
           </button>
         </div>
       )}
-      {filters.view === "replacements" &&
-        !(loading && !data.accounts.length) && (
-          <FindSlots
-            clans={data.clans}
-            accounts={data.accounts}
-            search={{
-              slotWeights: filters.slotWeights,
-              slotClans: filters.slotClans,
-              slotMember: filters.slotMember,
-            }}
-            disabled={bulkBusy}
-            onSearch={(next) => change(next)}
-            onChoose={choose}
-          />
-        )}
+      {!phone && findSlots}
       {sortTrigger && (
         <StrikeSortPanel
           filters={filters}

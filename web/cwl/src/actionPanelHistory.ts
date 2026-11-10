@@ -22,7 +22,17 @@ export function panelHistoryState(state: unknown, marker: string) {
     state && typeof state === "object"
       ? (state as Record<string, unknown>)
       : {};
-  return { ...current, wuActionPanel: marker };
+  const { wuActionPanelSpent: _spent, ...rest } = current;
+  return { ...rest, wuActionPanel: marker };
+}
+
+/** Re-stamps the open panel's marker on an entry a route change replaced or pushed, flagged so closing the panel does not pop it. */
+export function spendPanelEntry(state: unknown, marker: unknown) {
+  const current =
+    state && typeof state === "object"
+      ? (state as Record<string, unknown>)
+      : {};
+  return { ...current, wuActionPanel: marker, wuActionPanelSpent: true };
 }
 
 export function installPanelBackHandler({
@@ -79,7 +89,7 @@ export function backOutOfPanelEntry({
     historyPort.state && typeof historyPort.state === "object"
       ? (historyPort.state as Record<string, unknown>)
       : {};
-  if (current.wuActionPanel !== marker) return;
+  if (current.wuActionPanel !== marker || current.wuActionPanelSpent) return;
 
   let timeout = 0;
   const suppressAppPop = (event: PopStateEvent) => {

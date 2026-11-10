@@ -158,6 +158,11 @@ const server = createServer((req, res) => {
     await page.getByLabel("Weights").waitFor();
     await page.getByLabel("Weights").fill("143, 173");
 
+    // Search first: it replaces the URL under the open panel, and nested
+    // panels opened afterwards must still return to it.
+    await page.locator(".strike-find-slots-top button.primary").tap();
+    await page.locator(".strike-slot-group").first().waitFor();
+
     // Clans: type, then tap the checkbox.
     await page.getByRole("button", { name: /^Clans:/ }).click();
     await page
@@ -173,10 +178,11 @@ const server = createServer((req, res) => {
       .getByRole("dialog", { name: "Select clans" })
       .getByRole("button", { name: "Close panel" })
       .tap();
-    // The Find slots panel stays open underneath.
+    // The Find slots panel stays open underneath, results included.
     await page.waitForFunction(
       () => document.querySelectorAll("dialog[open]").length === 1,
     );
+    await page.locator(".strike-slot-group").first().waitFor();
     const clanLabel = await page
       .getByRole("button", { name: /^Clans:/ })
       .getAttribute("aria-label");
@@ -205,9 +211,18 @@ const server = createServer((req, res) => {
       /@slayer/,
       "member button shows the tapped member",
     );
-    // Run the search last: a route change consumes the open panel's history
-    // entry, which a nested panel's Back handling would then close with it.
-    await page.locator(".strike-find-slots-top button.primary").tap();
+    // Nested Back must return to the Find slots panel with its results.
+    await page.getByRole("button", { name: /^Clans:/ }).click();
+    await page.getByRole("dialog", { name: "Select clans" }).waitFor();
+    await page.goBack();
+    await page.waitForFunction(
+      () => document.querySelectorAll("dialog[open]").length === 1,
+    );
+    assert.equal(
+      await page.getByRole("dialog", { name: "Find slots" }).isVisible(),
+      true,
+      "Back from a nested panel keeps Find slots open",
+    );
     await page.locator(".strike-slot-group").first().waitFor();
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ clanLabel, memberLabel }));
