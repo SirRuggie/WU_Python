@@ -74,7 +74,7 @@ only checks access and formats the reply. Reads stay in
 
 - Access: `CLASHPERK_PASSKEY` (the same passkey as the read lookup). The
   ClashPerk owner confirmed on 2026-11-09 that this access may link players
-  outside our clans. Not yet tested live.
+  outside our clans.
 - Request: `POST https://api.clashperk.com/v1/links` with
   `{"playerTag": "#TAG", "userId": "<discord id>", "apiToken": null}`
   (`CreateLinkInputDto`, read from the public OpenAPI spec on 2026-11-09).
@@ -90,5 +90,7 @@ only checks access and formats the reply. Reads stay in
 - ClashPerk error codes map to fixed text. Raw ClashPerk error text is never
   shown.
 
-Development validation uses mocked HTTP only (`tests/test_clashperk_link_writes.py`).
-No live link was created.
+Tests use mocked HTTP only (`tests/test_clashperk_link_writes.py`). One
+Ruggie-approved live helper call on 2026-11-10 linked `#YGV8Q0J9L` to Ruggie's
+own Discord ID: before read `[]`, POST accepted, read-back showed the link as
+unverified. The Discord command itself was not run live.
