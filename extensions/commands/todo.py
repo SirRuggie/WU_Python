@@ -565,9 +565,13 @@ def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = N
         # a second Media here.
         *_nav_block(
             view, counts or {}, checked_at=checked_at, auto_refresh=auto_refresh,
-            refresh_until=refresh_until,
+            refresh_until=refresh_until, accent=accent,
         ),
     ], accent=accent)
+
+
+def _footer_for(accent) -> str:
+    return "assets/Red_Footer.png" if accent == WU_RED else "assets/Gold_Footer.png"
 
 
 def _nav_block(view: str, counts: dict, pager=None, *,
@@ -575,8 +579,11 @@ def _nav_block(view: str, counts: dict, pager=None, *,
                unavailable: dict[str, str] | None = None,
                checked_at: int | None = None,
                auto_refresh: bool = False,
-               refresh_until: datetime | None = None) -> list:
+               refresh_until: datetime | None = None,
+               accent=WU_GOLD) -> list:
     """Separator, the view select, optional pagination, then the freshness line.
+
+    The footer matches the card: red on a WU_RED card, gold otherwise.
 
     THE ONLY PLACE NAVIGATION IS BUILT. Every panel state calls this, so a new
     state cannot ship without a way out.
@@ -635,14 +642,14 @@ def _nav_block(view: str, counts: dict, pager=None, *,
         # the view select - it belongs to the content, not to the caption row.
         *([pager] if pager is not None else []),
         # The Media footer sits ABOVE the freshness row, not at the very bottom
-        # as it does on every other panel in the repo. Deliberate: the red line
+        # as it does on every other panel in the repo. Deliberate: the footer line
         # then reads as the rule that closes the dashboard, with the freshness
         # stamp and its refresh button sitting under it as a caption.
         #
         # Done by reordering INSIDE the container rather than moving anything
         # out to top level. A top-level component renders outside the accent bar
         # and would lose the coloured stripe, detaching the row from the panel.
-        Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
+        Media(items=[MediaItem(media=_footer_for(accent))]),
         Text(content=stamp),
         ActionRow(components=[
             Button(
@@ -1216,15 +1223,17 @@ def render_dashboard(view: str, page: int, data: dict, *,
             ),
         ])
 
+    accent = _urgency_accent(current)
     body.extend(_nav_block(
         view, counts, pager, unchecked=unchecked, unavailable=unavailable,
         checked_at=checked_at,
         auto_refresh=auto_refresh,
         refresh_until=refresh_until,
+        accent=accent,
     ))
 
     # The footer is emitted by _nav_block, above the freshness row.
-    return _panel(body, _urgency_accent(current))
+    return _panel(body, accent)
 
 
 # ---------------------------------------------------------------------------

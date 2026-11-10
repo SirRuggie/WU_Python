@@ -542,7 +542,7 @@ async def _handler_ok(ctx, action_id):
 async def handle_section(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, section = await _handler_ok(ctx, action_id)
     if not token or section not in SECTION_LABELS:
-        return _notice("Select a section", "Run /manage. Then select CWL Return Pings.", "preview", "")
+        return _notice("Select a section", "Run /manage. Then select CWL Return Pings.", "preview", "", accent=WU_RED)
     previous = _sessions.pop(token)
     new_token = _session(previous["owner"], previous["guild"])
     _sessions[new_token]["section"] = section
@@ -653,7 +653,7 @@ async def handle_frequency(ctx=None, action_id="", mongo: MongoClient = lightbul
     token, tag = await _handler_ok(ctx, action_id); values = getattr(ctx.interaction, "values", []) or []
     try: minutes = int(values[0])
     except (IndexError, ValueError): minutes = 0
-    return await _review(mongo, token, tag, "enable", minutes=minutes) if token and minutes in REMINDER_FREQUENCIES else _notice("Select a frequency", "Select one of the offered reminder frequencies.", token or "preview", tag or "")
+    return await _review(mongo, token, tag, "enable", minutes=minutes) if token and minutes in REMINDER_FREQUENCIES else _notice("Select a frequency", "Select one of the offered reminder frequencies.", token or "preview", tag or "", accent=WU_RED)
 
 
 async def _direct_ping_action(ctx, action_id, mongo, operation):
@@ -695,7 +695,7 @@ async def handle_frequency_save(ctx=None, action_id="", mongo: MongoClient = lig
     token, tag = await _handler_ok(ctx, action_id)
     values = getattr(ctx.interaction, "values", []) or []
     if not token or len(values) != 1 or values[0] not in {str(v) for v in REMINDER_FREQUENCIES}:
-        return _notice("Select a frequency", "Use 30 minutes, 1 hour, or 2 hours.", token or "preview", tag or "")
+        return _notice("Select a frequency", "Use 30 minutes, 1 hour, or 2 hours.", token or "preview", tag or "", accent=WU_RED)
     if _section(token) != "FWA":
         return await build_home(mongo, tag, "Main return pings are manual only.", token=token)
     docs = _selected_docs(await _active(mongo, token), tag)

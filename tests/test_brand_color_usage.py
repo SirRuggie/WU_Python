@@ -117,3 +117,26 @@ def test_error_panels_are_red():
     assert head.rsplit("Container(", 1)[1].startswith("accent_color=WU_RED")
     member = (ROOT / "extensions/commands/cwl_member.py").read_text(encoding="utf-8")
     assert member.count("accent=WU_RED)") == 3
+
+
+def test_todo_footer_matches_card_accent():
+    assert todo._footer_for(WU_RED) == "assets/Red_Footer.png"
+    assert todo._footer_for(WU_GOLD) == "assets/Gold_Footer.png"
+    assert todo._footer_for(hikari.UNDEFINED) == "assets/Gold_Footer.png"
+    source = (ROOT / "extensions/commands/todo.py").read_text(encoding="utf-8")
+    assert source.count('MediaItem(media=_footer_for(accent))') == 1
+    assert "Gold_Footer.png\")]" not in source
+
+
+def test_strikes_and_weight_failures_are_red():
+    from extensions.commands import strikes
+
+    assert strikes.panel("Strike", "x")[0].accent_color == WU_GOLD
+    assert strikes.panel("Strike", "x", accent=WU_RED)[0].accent_color == WU_RED
+    source = (ROOT / "extensions/commands/strikes.py").read_text(encoding="utf-8")
+    for text in ("This view expired", "This selection expired", "Player lookup is unavailable",
+                 "Account links changed", "Select FWA clans only"):
+        line = next(line for line in source.splitlines() if text in line and "panel(" in line)
+        assert "accent=WU_RED" in line, text
+    weight = (ROOT / "extensions/commands/fwa/weight_save.py").read_text(encoding="utf-8")
+    assert "card(str(exc), accent=WU_RED)" in weight and "card(str(error), accent=WU_RED)" in weight

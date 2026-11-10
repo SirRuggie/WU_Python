@@ -520,7 +520,7 @@ async def guarded(ctx, mongo, sid, work):
     try:
         state = await session(ctx, mongo, sid)
     except SessionError as exc:
-        return card(str(exc))
+        return card(str(exc), accent=WU_RED)
     return await work(state)
 
 
@@ -673,7 +673,7 @@ async def on_pick(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
         return
     await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
     if state is None:
-        components = card(str(error))
+        components = card(str(error), accent=WU_RED)
     elif values:
         components = await choose(ctx, bot, mongo, state, values[0], state["loot"])
     else:
