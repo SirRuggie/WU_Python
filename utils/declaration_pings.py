@@ -141,7 +141,7 @@ def messages(groups, *, test=False):
                     "roles": [],
                 },
                 "components": [
-                    {"type": 17, "accent_color": 0xD4A017, "components": children}
+                    {"type": 17, "accent_color": 0xF2B62A, "components": children}  # WU_GOLD
                 ],
             }
         )

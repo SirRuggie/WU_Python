@@ -166,7 +166,7 @@ they do not establish a successful upload from a live Discord client.
 ## Join the Family
 
 The first Gauntlet section is **Join the Family**, followed by About Us, WU Strike
-System, and Family Particulars. Its goldenrod welcome card uses the shared Warriors
+System, and Family Particulars. Its WU_GOLD welcome card uses the shared Warriors
 United banner and editable welcome/next-step copy. Choose its posting channel,
 preview, save the template, and send it through the same editor as the other sections.
 

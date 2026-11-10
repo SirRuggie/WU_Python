@@ -30,7 +30,7 @@ uses separate action IDs, sessions, settings, walkthrough records, and worker.
 The remaining destinations are unchanged: the clan's `announcement_id` and
 `chat_channel_id`, Help Me Attack (`1005916813378465832`), and Family Lounge
 (`671836698371424256`). Existing walkthrough copy, clan join link/banner and
-red downstream footer images are carried over. The new dashboard is goldenrod.
+downstream footer images are carried over as gold footers. The dashboard uses WU_GOLD.
 
 No ticket is created or approved by this tool. Missing/ambiguous tickets fail
 clearly before saving or posting a new walkthrough. Clan membership and channel
