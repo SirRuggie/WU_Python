@@ -305,9 +305,9 @@ NOTE_LIMIT = 60
 PANEL_TEXT_LIMIT = 3900
 
 
-def replacement_slot_line(row, clan_names, *, index=None, disputed=(), note_limit=NOTE_LIMIT):
-    player = safe(row.get('player_name') or row['player_tag'], 24)
-    clan = safe(clan_names.get(row.get('last_seen_clan_tag'), row.get('last_seen_clan_tag') or 'Unknown clan'), 24)
+def replacement_slot_line(row, clan_names, *, index=None, disputed=(), note_limit=NOTE_LIMIT, name_limit=24):
+    player = safe(row.get('player_name') or row['player_tag'], name_limit)
+    clan = safe(clan_names.get(row.get('last_seen_clan_tag'), row.get('last_seen_clan_tag') or 'Unknown clan'), name_limit)
     th = row.get('town_hall')
     mention = f" · <@{row['member_id']}>" if row.get('member_id') else ''
     weight = compact_weight(row.get('weight')) if row.get('weight') else 'Weight unknown'
@@ -403,20 +403,15 @@ async def replacement_panel(store, state, *, notice=''):
                     if weights_chosen else 'No weights')
     clan_labels = [safe(clan_names.get(value, value), 30) for value in chosen_clans]
 
-    def summary_text(shown=None, limit=None):
-        names = clan_labels if shown is None else clan_labels[:shown]
-        clan_text = ', '.join(names) or 'All FWA clans'
-        if len(names) < len(clan_labels):
-            clan_text += f' +{len(clan_labels) - len(names)} clans'
-        text = ' · '.join([weights_text, clan_text] + ([f'<@{member_id}>'] if member_id else []))
-        if limit is None or text_units(text) <= limit:
-            return text
-        cut = max(limit - 1, 0)
-        while cut and text_units(text[:cut]) + 1 > limit:
-            cut -= 1
-        return text[:cut] + '…'
+    def summary_text(count_only=False):
+        if not clan_labels:
+            clan_text = 'All FWA clans'
+        elif count_only:
+            clan_text = f"{len(clan_labels)} FWA {'clan' if len(clan_labels) == 1 else 'clans'}"
+        else:
+            clan_text = ', '.join(clan_labels)
+        return ' · '.join([weights_text, clan_text] + ([f'<@{member_id}>'] if member_id else []))
 
-    children = [Text(content='## Replacements'), Text(content=summary_text())]
     messages = []
     if state.get('refresh_warning'):
         messages.append('Could not update some clans. The data shown is old.')
@@ -429,8 +424,6 @@ async def replacement_panel(store, state, *, notice=''):
         messages.append(links_notice)
     if notice:
         messages.append(safe(notice, 180))
-    if messages:
-        children.append(Text(content='\n'.join(messages)))
     pages = 1
     page = 0
     footer = []
@@ -438,10 +431,13 @@ async def replacement_panel(store, state, *, notice=''):
         groups = find_slots(rows, weights_chosen, fwa_tags=fwa_tags,
                             clan_tags=chosen_clans or None, member_tags=member_tags)
 
-        def slot_texts(note_limit):
+        def slot_texts(note_limit, keep, name_limit):
             return [f"### {compact_weight(group['weight'])}\n" + ('\n\n'.join(
-                replacement_slot_line(row, clan_names, disputed=disputed, note_limit=note_limit)
-                for row in group['slots']) or 'No slot in these clans.') for group in groups]
+                replacement_slot_line(row, clan_names, disputed=disputed, note_limit=note_limit,
+                                      name_limit=name_limit)
+                for row in group['slots'][:keep]) or 'No slot in these clans.') for group in groups]
+
+        rows_dropped = lambda keep: any(len(group['slots']) > keep for group in groups)
     else:
         listed = sorted(slot_pool(rows, fwa_tags=fwa_tags, clan_tags=chosen_clans or None,
                                   member_tags=member_tags), key=priority_key)
@@ -451,30 +447,40 @@ async def replacement_panel(store, state, *, notice=''):
         showing = listed[start:start + REPLACEMENT_PAGE_SIZE]
         footer.append(f'Page {page+1}/{pages} · {len(listed)} accounts')
 
-        def slot_texts(note_limit):
+        def slot_texts(note_limit, keep, name_limit):
             return ['\n\n'.join(
                 replacement_slot_line(row, clan_names, index=start + number, disputed=disputed,
-                                      note_limit=note_limit)
+                                      note_limit=note_limit, name_limit=name_limit)
                 for number, row in enumerate(showing, 1)) or 'No accounts match these filters.']
-    # Shorten notes uniformly, then drop them; never drop a row, mention or weight.
-    def total(texts):
-        return sum(text_units(item.content) for item in children if isinstance(item, Text)) + sum(
-            map(text_units, texts + footer))
+        rows_dropped = lambda keep: False
 
-    for note_limit in range(NOTE_LIMIT, -1, -1):
-        texts = slot_texts(note_limit)
-        if total(texts) <= PANEL_TEXT_LIMIT:
+    # Fit the Discord text limit in a fixed order; mentions and weights are never cut:
+    # notes, then the summary's clan list as a count, then notice lines, then the lower
+    # ranked rows of each weight (the best row per weight stays), then names. The last
+    # stage fits any real input: five weights, 15-character names.
+    def compose(note_limit=NOTE_LIMIT, count_only=False, line_cap=None, keep=3, name_limit=24):
+        lines = messages if line_cap is None else [
+            line if len(line) <= line_cap else line[:line_cap - 1] + '…' for line in messages]
+        texts = [Text(content='## Replacements'), Text(content=summary_text(count_only))]
+        if lines:
+            texts.append(Text(content='\n'.join(lines)))
+        texts += [Text(content=value) for value in slot_texts(note_limit, keep, name_limit)]
+        if rows_dropped(keep):
+            texts.append(Text(content='More slots on the dashboard.'))
+        texts += [Text(content=value) for value in footer]
+        return texts
+
+    stages = [{'note_limit': value} for value in range(NOTE_LIMIT, -1, -1)]
+    stages += [{'note_limit': 0, 'count_only': True}]
+    stages += [{'note_limit': 0, 'count_only': True, 'line_cap': 120}]
+    stages += [{'note_limit': 0, 'count_only': True, 'line_cap': 120, 'keep': 2}]
+    stages += [{'note_limit': 0, 'count_only': True, 'line_cap': 120, 'keep': 1, 'name_limit': value}
+               for value in range(24, -1, -1)]
+    for stage in stages:
+        texts = compose(**stage)
+        if sum(text_units(item.content) for item in texts) <= PANEL_TEXT_LIMIT:
             break
-    else:
-        # Still too long: shorten the summary's clan list, then cut the summary itself.
-        for shown in range(len(clan_labels) - 1, -1, -1):
-            children[1] = Text(content=summary_text(shown))
-            if total(texts) <= PANEL_TEXT_LIMIT:
-                break
-        else:
-            excess = total(texts) - PANEL_TEXT_LIMIT
-            children[1] = Text(content=summary_text(0, max(text_units(children[1].content) - excess, 1)))
-    children.extend(Text(content=content) for content in texts + footer)
+    children = texts
     token = state['_id']
     if menu_tags:
         row = hikari.impl.MessageActionRowBuilder()
