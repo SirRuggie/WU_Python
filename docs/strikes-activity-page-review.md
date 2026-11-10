@@ -166,3 +166,30 @@ checks include repeated unchanged writes with the default naive-UTC client.
 History implementation: 242 → 204 lines; activity route: 164 → 92 lines.
 Evidence is in `.local/p60-final-evidence`; production resolution counts and actual
 Discord delivery remain outside these fixture checks.
+
+## Prompt 226
+
+Phone order, Replacements view: heading, Accounts / Leave / Settings, one row with
+the View select and the gold Find slots button, Clan and Town Hall selects, toolbar
+(search icon, sort, Filters, menu), rule line, activity line with the review link,
+first account. Search opens as its own row under the toolbar; the toolbar stays.
+Find slots stays mounted in one place at every width, so crossing 760 px keeps
+typed weights and results. A search run inside the open panel replaces the history
+entry; Back closes the panel and reopening shows the last weights and results.
+Clear filters in the Filters panel resets only what the panel shows; clan and
+Town Hall stay as the toolbar selects set them.
+
+Measured before (read only, 360x800): first account at 469 px (fixture) and 542 px
+(live), 16 controls above it, Filters content 3010 px (live).
+Measured after (`node tests/run-strikes-usability-layout.cjs`, fixture, 360x800):
+first account row at 420.8 px, Filters content 532 px.
+
+Decisions (Part A, frontend):
+1. Phones (760 px and narrower) get one View select with counts; wider screens keep the pills.
+2. Search is an icon; the field replaces the toolbar row, closes with x, and stays open while a query is set.
+3. Clan is a single native select (A-Z, with counts); old links with 2+ clans show "N clans".
+4. Town Hall is a single native select (highest first, with counts); old links show "N Town Halls".
+5. Filters order: Priority chips, Strikes, Raid weekends, Member, Weight, Membership, two checkboxes.
+6. Find slots is a gold button that opens a panel; the panel keeps the last weights and results.
+7. The tracking pill is a text link `N clans need review ›`, or muted `All clans on track`; counts show "…" while loading.
+8. Tracking status: Idle (clan not warring) is its own state; need review = behind + error + private + unverified; scanned late (last check older than 2 x the 10 min scan) is shown separately.

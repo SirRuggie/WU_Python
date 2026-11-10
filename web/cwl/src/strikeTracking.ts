@@ -1,4 +1,4 @@
-export type TrackingStatus = 'healthy' | 'behind' | 'private' | 'error'
+export type TrackingStatus = 'healthy' | 'behind' | 'private' | 'error' | 'idle'
 export type CurrentWarState =
   'notInWar' | 'preparation' | 'inWar' | 'warEnded' | 'private' | 'unknown'
 export type DisplayTrackingStatus = TrackingStatus | 'unverified'
@@ -7,6 +7,7 @@ export type ClanTracking = {
   clan_tag: string
   clan_name: string
   status: TrackingStatus
+  slow?: boolean
   current_war_state?: CurrentWarState | null
   last_checked_at?: string | null
   last_success_at?: string | null
@@ -27,6 +28,8 @@ export type TrackingResponse = {
     behind: number
     private: number
     error: number
+    idle?: number
+    slow?: number
     total: number
   }
 }
@@ -50,7 +53,14 @@ export function trackingSummary(clans: ClanTracking[]): {
   tone: 'healthy' | 'warning' | 'unknown'
 } {
   if (!clans.length) return { label: 'No clans tracked', tone: 'unknown' }
-  const counts = { healthy: 0, behind: 0, private: 0, error: 0, unverified: 0 }
+  const counts = {
+    healthy: 0,
+    idle: 0,
+    behind: 0,
+    private: 0,
+    error: 0,
+    unverified: 0,
+  }
   for (const clan of clans) counts[displayTrackingStatus(clan)] += 1
   if (counts.healthy === clans.length) {
     return {
@@ -58,20 +68,31 @@ export function trackingSummary(clans: ClanTracking[]): {
       tone: 'healthy',
     }
   }
+  const fine = counts.healthy + counts.idle === clans.length
   const parts = [
     counts.healthy && `${counts.healthy} on track`,
+    counts.idle && `${counts.idle} idle`,
     counts.behind && `${counts.behind} behind`,
     counts.private && `${counts.private} private`,
     counts.error && `${counts.error} error`,
     counts.unverified && `${counts.unverified} unverified`,
   ].filter(Boolean)
-  return { label: parts.join(' · '), tone: 'warning' }
+  return { label: parts.join(' · '), tone: fine ? 'healthy' : 'warning' }
+}
+
+export function needsReviewCount(clans: ClanTracking[]): number {
+  return clans.filter((clan) => {
+    const status = displayTrackingStatus(clan)
+    return status !== 'healthy' && status !== 'idle'
+  }).length
 }
 
 export function trackingStatusLabel(status: DisplayTrackingStatus): string {
   switch (status) {
     case 'healthy':
       return 'On track'
+    case 'idle':
+      return 'Idle'
     case 'behind':
       return 'Behind'
     case 'private':

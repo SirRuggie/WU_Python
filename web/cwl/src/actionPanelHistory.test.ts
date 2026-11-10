@@ -5,6 +5,7 @@ import {
   isTopActionPanel,
   panelHistoryState,
   registerActionPanel,
+  spendPanelEntry,
 } from "./actionPanelHistory";
 
 describe("action panel history", () => {
@@ -182,5 +183,30 @@ describe("action panel history", () => {
     );
     expect(close).not.toHaveBeenCalled();
     remove();
+  });
+});
+
+describe("spent panel entries", () => {
+  it("keeps the marker and skips the back-out", () => {
+    const state = spendPanelEntry({ wuDashboardIndex: 9 }, "outer");
+    expect(state).toEqual({
+      wuDashboardIndex: 9,
+      wuActionPanel: "outer",
+      wuActionPanelSpent: true,
+    });
+    const back = vi.fn();
+    backOutOfPanelEntry({
+      windowPort: new EventTarget() as Window,
+      historyPort: { state, pushState: vi.fn(), back },
+      marker: "outer",
+    });
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it("does not pass the spent flag to a nested panel entry", () => {
+    const state = spendPanelEntry({}, "outer");
+    expect(panelHistoryState(state, "inner")).toEqual({
+      wuActionPanel: "inner",
+    });
   });
 });

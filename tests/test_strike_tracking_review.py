@@ -145,11 +145,13 @@ def test_unfinished_new_scan_cannot_look_healthy_after_restart_or_cancel():
         first = await tracking.begin(GUILD, CLAN)
         await tracking.finish(GUILD, CLAN, started_at=first, current_war_state='notInWar')
         healthy = (await tracking.rows(GUILD, [{'tag': CLAN}]))[0]
-        assert healthy['status'] == 'healthy'
+        assert healthy['status'] == 'idle'
         good = healthy['last_success_at']
         await tracking.begin(GUILD, CLAN)
         # Simulate process exit or task cancellation before finish().
         unfinished = (await tracking.rows(GUILD, [{'tag': CLAN}]))[0]
-        assert unfinished['status'] == 'behind'
+        assert unfinished['status'] == 'idle'
         assert unfinished['last_success_at'] == good
+        mongo.strike_tracking.rows[tracking.key(GUILD, CLAN)]['current_war_state'] = 'inWar'
+        assert (await tracking.rows(GUILD, [{'tag': CLAN}]))[0]['status'] == 'behind'
     asyncio.run(run())

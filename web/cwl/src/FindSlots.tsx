@@ -1,5 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ChevronUp, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ActionPanel from "./ActionPanel";
 import RosterFilterOptions from "./RosterFilterOptions";
 import StrikeMemberSelect, { strikeMemberOptions } from "./StrikeMemberSelect";
@@ -8,7 +7,6 @@ import { compactWeight, parseWeights, weightsText } from "./replacementView";
 import { memberName } from "./strikeActivityFilters";
 import type { ActivityAccount } from "./strikeActivityView";
 import type { Priority } from "./replacementTypes";
-import useCompactPreview from "./useCompactPreview";
 
 export type SlotSearch = {
   slotWeights: number[];
@@ -34,7 +32,7 @@ const key = (search: SlotSearch) =>
 const priorityLabel = (value?: Priority | null) =>
   value === "replace_first" ? "Chopping Block" : value === "high" ? "High" : "";
 
-/** Closest slots for each recruit weight. A search runs only from Find or a restored link. */
+/** Closest slots for each recruit weight, in a panel. A search runs only from Find or a restored link. */
 export default function FindSlots({
   clans,
   accounts,
@@ -50,11 +48,8 @@ export default function FindSlots({
   onSearch: (next: SlotSearch) => void;
   onChoose: (row: ActivityAccount) => void;
 }) {
-  const compact = useCompactPreview(760);
-  const bodyId = useId();
-  const weightsInput = useRef<HTMLInputElement>(null);
-  const focusOnOpen = useRef(false);
-  const [expanded, setExpanded] = useState(search.slotWeights.length > 0);
+  const opener = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
   const fwa = useMemo(() => clans.filter((clan) => clan.is_fwa), [clans]);
   const restored: SlotSearch = {
     slotWeights: search.slotWeights,
@@ -80,12 +75,6 @@ export default function FindSlots({
     ran = useRef(""),
     callbacks = useRef({ onSearch });
   callbacks.current = { onSearch };
-  useEffect(() => {
-    if (compact && expanded && focusOnOpen.current) {
-      focusOnOpen.current = false;
-      weightsInput.current?.focus();
-    }
-  }, [compact, expanded]);
   const members = useMemo(() => strikeMemberOptions(accounts), [accounts]);
   useEffect(
     () => () => {
@@ -128,19 +117,16 @@ export default function FindSlots({
   }
   // The link or Back/Forward is an earlier explicit search: restore it and run it once.
   useEffect(() => {
+    // A link without weights (Back out of the panel) keeps the last search for reopening.
+    if (!restored.slotWeights.length) return;
     setText(weightsText(restored.slotWeights));
     setPicked(restored.slotClans);
     setMember(restored.slotMember);
-    if (!restored.slotWeights.length) {
-      turn.current++;
-      ran.current = "";
-      setSlots(null);
-      setBusy(false);
-      setError("");
-      return;
+    if (ran.current !== restoredKey) {
+      // A link or Back/Forward opens the panel once; closing it keeps the results.
+      setOpen(true);
+      void run(restored);
     }
-    setExpanded(true);
-    if (ran.current !== restoredKey) void run(restored);
     // restoredKey stands for the whole restored search.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restoredKey]);
@@ -165,197 +151,193 @@ export default function FindSlots({
         ? fwa.find((clan) => clan.tag === picked[0])?.name || "1 clan"
         : `${picked.length} clans`;
   const name = members.find((option) => option.id === member)?.name;
-  const collapsed = compact && !expanded;
-  const weightLabel = search.slotWeights.map(compactWeight).join(", ");
   return (
-    <section
-      className={`strike-find-slots${collapsed ? " strike-find-slots-collapsed" : ""}`}
-      aria-label="Find slots"
-    >
-      <h2 className="sr-only">Find slots</h2>
-      {compact && (
-        <button
-          type="button"
-          className="strike-find-slots-toggle"
-          aria-expanded={expanded}
-          aria-controls={bodyId}
-          aria-label={
-            collapsed && search.slotWeights.length
-              ? `Find slots, ${search.slotWeights.length} ${search.slotWeights.length === 1 ? "weight" : "weights"}`
-              : "Find slots"
-          }
-          onClick={() => {
-            focusOnOpen.current = !expanded;
-            setExpanded(!expanded);
-          }}
+    <>
+      <button
+        ref={opener}
+        type="button"
+        className="primary strike-find-slots-open"
+        aria-haspopup="dialog"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+      >
+        Find slots
+      </button>
+      {open && (
+        <ActionPanel
+          title="Find slots"
+          trigger={opener.current}
+          onClose={() => setOpen(false)}
         >
-          <Search size={18} aria-hidden="true" />
-          <span>
-            Find slots{collapsed && weightLabel ? ` · ${weightLabel}` : ""}
-          </span>
-          {expanded && <ChevronUp size={18} aria-hidden="true" />}
-        </button>
-      )}
-      <div id={bodyId} className="strike-find-slots-body" hidden={collapsed}>
-        <div className="strike-find-slots-top">
-          <label>
-            Weights
-            <input
-              ref={weightsInput}
-              inputMode="decimal"
-              value={text}
-              maxLength={80}
-              disabled={disabled}
-              placeholder="143, 173, 150"
-              aria-invalid={!!error || undefined}
-              onChange={(event) => {
-                setText(event.target.value);
-                setError("");
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") find();
-              }}
-            />
-          </label>
-          <button
-            type="button"
-            className="primary"
-            aria-busy={busy || undefined}
-            disabled={disabled || busy}
-            onClick={find}
-          >
-            {busy ? "Finding…" : "Find slots"}
-          </button>
-        </div>
-        <div className="strike-find-slots-row">
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label={`Clans: ${clanLabel}`}
-            onClick={(event) =>
-              setPanel({ kind: "clans", trigger: event.currentTarget })
-            }
-          >
-            <span>{clanLabel}</span>
-          </button>
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label={`Member: ${name ? `@${name}` : member ? "selected" : "any"}`}
-            onClick={(event) =>
-              setPanel({ kind: "member", trigger: event.currentTarget })
-            }
-          >
-            <span>
-              {member ? (name ? `@${name}` : "Selected member") : "Any member"}
-            </span>
-          </button>
-        </div>
-        {error && <p role="alert">{error}</p>}
-        {slots?.map((slot) => (
-          <section key={slot.weight} className="strike-slot-group">
-            <h3>{slot.weight_label || compactWeight(slot.weight)}</h3>
-            {slot.candidates.length ? (
-              <ol>
-                {slot.candidates.map((item) => {
-                  const row = accounts.find(
-                    (account) => account.player_tag === item.player_tag,
-                  );
-                  const who = (row && memberName(row)) || memberName(item);
-                  const priority = priorityLabel(item.priority);
-                  return (
-                    <li key={item.player_tag}>
-                      <button
-                        type="button"
-                        disabled={!row || disabled}
-                        onClick={() => row && onChoose(row)}
-                      >
-                        <strong>{item.player_name}</strong>
-                        <span>
-                          {[
-                            item.town_hall ? `TH${item.town_hall}` : null,
-                            item.clan_name,
-                            who ? `@${who}` : null,
-                            item.weight ? compactWeight(item.weight) : null,
-                            item.weight_difference != null
-                              ? `Gap ${compactWeight(item.weight_difference)}`
-                              : null,
-                            priority || null,
-                            item.link_disputed
-                              ? "Linked to two Discord users"
-                              : null,
-                            `${item.active_strikes} ${item.active_strikes === 1 ? "strike" : "strikes"}`,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ol>
-            ) : (
-              <p>No slot in these clans.</p>
+          <div className="strike-find-slots">
+            <div className="strike-find-slots-top">
+              <label>
+                Weights
+                <input
+                  inputMode="decimal"
+                  value={text}
+                  maxLength={80}
+                  disabled={disabled}
+                  placeholder="143, 173, 150"
+                  aria-invalid={!!error || undefined}
+                  onChange={(event) => {
+                    setText(event.target.value);
+                    setError("");
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") find();
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                className="primary"
+                aria-busy={busy || undefined}
+                disabled={disabled || busy}
+                onClick={find}
+              >
+                {busy ? "Finding…" : "Find"}
+              </button>
+            </div>
+            <div className="strike-find-slots-row">
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label={`Clans: ${clanLabel}`}
+                onClick={(event) =>
+                  setPanel({ kind: "clans", trigger: event.currentTarget })
+                }
+              >
+                <span>{clanLabel}</span>
+              </button>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label={`Member: ${name ? `@${name}` : member ? "selected" : "any"}`}
+                onClick={(event) =>
+                  setPanel({ kind: "member", trigger: event.currentTarget })
+                }
+              >
+                <span>
+                  {member
+                    ? name
+                      ? `@${name}`
+                      : "Selected member"
+                    : "Any member"}
+                </span>
+              </button>
+            </div>
+            {error && <p role="alert">{error}</p>}
+            {slots?.map((slot) => (
+              <section key={slot.weight} className="strike-slot-group">
+                <h3>{slot.weight_label || compactWeight(slot.weight)}</h3>
+                {slot.candidates.length ? (
+                  <ol>
+                    {slot.candidates.map((item) => {
+                      const row = accounts.find(
+                        (account) => account.player_tag === item.player_tag,
+                      );
+                      const who = (row && memberName(row)) || memberName(item);
+                      const priority = priorityLabel(item.priority);
+                      return (
+                        <li key={item.player_tag}>
+                          <button
+                            type="button"
+                            disabled={!row || disabled}
+                            onClick={() => {
+                              if (!row) return;
+                              setOpen(false);
+                              onChoose(row);
+                            }}
+                          >
+                            <strong>{item.player_name}</strong>
+                            <span>
+                              {[
+                                item.town_hall ? `TH${item.town_hall}` : null,
+                                item.clan_name,
+                                who ? `@${who}` : null,
+                                item.weight ? compactWeight(item.weight) : null,
+                                item.weight_difference != null
+                                  ? `Gap ${compactWeight(item.weight_difference)}`
+                                  : null,
+                                priority || null,
+                                item.link_disputed
+                                  ? "Linked to two Discord users"
+                                  : null,
+                                `${item.active_strikes} ${item.active_strikes === 1 ? "strike" : "strikes"}`,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                ) : (
+                  <p>No slot in these clans.</p>
+                )}
+              </section>
+            ))}
+            {slots && partial && <p>Some linked accounts were left out.</p>}
+            {panel?.kind === "clans" && (
+              <ActionPanel
+                title="Select clans"
+                trigger={panel.trigger}
+                onClose={() => setPanel(null)}
+                expandOnSearchFocus
+              >
+                <label>
+                  Find clan
+                  <input
+                    type="search"
+                    value={clanSearch}
+                    onChange={(event) => setClanSearch(event.target.value)}
+                  />
+                </label>
+                <RosterFilterOptions
+                  title="FWA clans"
+                  selected={picked}
+                  onChange={setPicked}
+                  options={fwa
+                    .filter((clan) =>
+                      `${clan.name} ${clan.tag}`
+                        .toLocaleLowerCase()
+                        .includes(clanSearch.toLocaleLowerCase()),
+                    )
+                    .map((clan) => ({
+                      value: clan.tag,
+                      label: clan.name,
+                      count: accounts.filter(
+                        (row) =>
+                          (row.left_clan
+                            ? row.last_clan_tag
+                            : row.current_clan_tag) === clan.tag,
+                      ).length,
+                    }))}
+                />
+              </ActionPanel>
             )}
-          </section>
-        ))}
-        {slots && partial && <p>Some linked accounts were left out.</p>}
-        {panel?.kind === "clans" && (
-          <ActionPanel
-            title="Select clans"
-            trigger={panel.trigger}
-            onClose={() => setPanel(null)}
-            expandOnSearchFocus
-          >
-            <label>
-              Find clan
-              <input
-                type="search"
-                value={clanSearch}
-                onChange={(event) => setClanSearch(event.target.value)}
-              />
-            </label>
-            <RosterFilterOptions
-              title="FWA clans"
-              selected={picked}
-              onChange={setPicked}
-              options={fwa
-                .filter((clan) =>
-                  `${clan.name} ${clan.tag}`
-                    .toLocaleLowerCase()
-                    .includes(clanSearch.toLocaleLowerCase()),
-                )
-                .map((clan) => ({
-                  value: clan.tag,
-                  label: clan.name,
-                  count: accounts.filter(
-                    (row) =>
-                      (row.left_clan
-                        ? row.last_clan_tag
-                        : row.current_clan_tag) === clan.tag,
-                  ).length,
-                }))}
-            />
-          </ActionPanel>
-        )}
-        {panel?.kind === "member" && (
-          <ActionPanel
-            title="Select member"
-            trigger={panel.trigger}
-            onClose={() => setPanel(null)}
-            expandOnSearchFocus
-          >
-            <StrikeMemberSelect
-              options={members}
-              value={member}
-              onChange={(id) => {
-                setMember(id);
-                if (id) setPanel(null);
-              }}
-            />
-          </ActionPanel>
-        )}
-      </div>
-    </section>
+            {panel?.kind === "member" && (
+              <ActionPanel
+                title="Select member"
+                trigger={panel.trigger}
+                onClose={() => setPanel(null)}
+                expandOnSearchFocus
+              >
+                <StrikeMemberSelect
+                  options={members}
+                  value={member}
+                  onChange={(id) => {
+                    setMember(id);
+                    if (id) setPanel(null);
+                  }}
+                />
+              </ActionPanel>
+            )}
+          </div>
+        </ActionPanel>
+      )}
+    </>
   );
 }

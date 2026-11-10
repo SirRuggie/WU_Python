@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import {
   currentWarStateLabel,
   displayTrackingStatus,
+  needsReviewCount,
   trackingIssues,
   trackingStatusLabel,
   trackingSummary,
@@ -75,4 +76,33 @@ it('retains deferred and skipped issue descriptions', () => {
   expect(
     trackingIssues(clan('behind', { deferred_accounts: 2, skipped_wars: 1 })),
   ).toBe('2 accounts need review · 1 skipped war')
+})
+
+it('treats idle as fine and counts only real problems as need review', () => {
+  expect(
+    trackingSummary([clan('healthy'), clan('idle'), clan('idle')]),
+  ).toEqual({
+    label: '1 on track · 2 idle',
+    tone: 'healthy',
+  })
+  expect(trackingSummary([clan('idle')])).toEqual({
+    label: '1 idle',
+    tone: 'healthy',
+  })
+  expect(trackingSummary([clan('idle'), clan('behind')])).toEqual({
+    label: '1 idle · 1 behind',
+    tone: 'warning',
+  })
+  expect(trackingStatusLabel('idle')).toBe('Idle')
+  expect(displayTrackingStatus(clan('idle'))).toBe('idle')
+  expect(
+    needsReviewCount([
+      clan('healthy'),
+      clan('idle'),
+      clan('behind'),
+      clan('error'),
+      clan('private'),
+      clan('healthy', { current_war_state: 'unknown' }),
+    ]),
+  ).toBe(4)
 })

@@ -1163,9 +1163,10 @@ async def tracking_status(request):
         clans = await clan_rows(db)
         rows = await StrikeTracking(db).rows(GUILD_ID, clans)
     summary = {key: sum(row['status'] == key for row in rows)
-               for key in ('healthy', 'behind', 'private', 'error')}
+               for key in ('healthy', 'behind', 'private', 'error', 'idle')}
+    slow = sum(bool(row['slow']) for row in rows)
     return web.json_response({'clans': public(rows),
-                              'summary': {**summary, 'total': len(rows)}})
+                              'summary': {**summary, 'slow': slow, 'total': len(rows)}})
 
 
 @endpoint(scope='strikes_add')

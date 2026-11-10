@@ -242,7 +242,7 @@ def test_tracking_health_uses_latest_war_and_unknown_private_stale_fail_closed()
         assert owner.mongo.strike_tracking.rows[owner.key(GUILD, CLAN)]['last_scan_status'] == 'needs_review'
         assert (await finish('private', private=True))['status'] == 'private'
         await owner.begin(GUILD, CLAN)
-        assert (await owner.rows(GUILD, clans))[0]['status'] == 'behind'
+        assert (await owner.rows(GUILD, clans))[0]['status'] == 'private'
         assert (await finish('private', private=True,
                              error='War source unavailable'))['status'] == 'error'
 
@@ -250,7 +250,7 @@ def test_tracking_health_uses_latest_war_and_unknown_private_stale_fail_closed()
         old = normalize(real_war('inWar', end=old_end), CLAN)
         await owner.observe(GUILD, old, now=old_end - timedelta(minutes=5))
         await owner.abandon_older(GUILD, CLAN, set(), now=old_end + timedelta(minutes=2))
-        assert (await finish())['status'] == 'behind'
+        assert (await finish())['status'] == 'behind'  # latest snapshot incomplete
 
         recent_end = datetime.now(timezone.utc) - timedelta(days=1)
         recent = normalize(real_war('inWar', end=recent_end), CLAN)
@@ -259,12 +259,12 @@ def test_tracking_health_uses_latest_war_and_unknown_private_stale_fail_closed()
         await owner.mongo.strike_records.insert_one({
             '_id': 'recent', 'guild_id': GUILD, 'clan_tag': CLAN,
             'source': 'war', 'occurred_at': recent_end})
-        assert (await finish())['status'] == 'healthy'
+        assert (await finish())['status'] == 'idle'
 
         stale_end = datetime.now(timezone.utc) - timedelta(days=4)
         owner.mongo.strike_records.rows['recent']['occurred_at'] = stale_end
         owner.mongo.strike_war_snapshots.rows[owner.snapshot_key(GUILD, recent)]['end_time'] = stale_end
-        assert (await finish())['status'] == 'behind'
+        assert (await finish())['status'] == 'idle'
     asyncio.run(run())
 
 

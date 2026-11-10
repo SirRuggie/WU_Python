@@ -185,6 +185,13 @@ it("loads the family once, filters locally and clears protected data on authoriz
   await settle();
   expect(host.textContent).toContain("Showing 1 of 1");
   expect(host.textContent).toContain("Aspen");
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="Find account or member"]',
+      )!
+      .click(),
+  );
   await input('input[type="search"]', "No match");
   await settle();
   expect(host.textContent).not.toContain("Aspen");

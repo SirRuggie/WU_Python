@@ -7,7 +7,8 @@
 .strike-activity-toolbar {
   display: grid;
   align-items: end;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 280px) 96px 44px;
+  grid-template-columns: 44px minmax(0, 240px) 96px 44px;
+  justify-content: start;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -77,8 +78,42 @@
   display: grid;
   gap: var(--wu-space-2);
   padding: var(--wu-space-2) 0 var(--wu-space-3);
-  max-height: 320px;
-  overflow: auto;
+}
+.strike-filter-priority {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.strike-filter-priority legend {
+  padding: 0;
+  margin-bottom: var(--wu-space-1);
+  font-size: var(--wu-text-sm);
+  color: var(--wu-text-muted);
+}
+.strike-filter-priority > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--wu-space-1);
+}
+.strike-filter-priority button {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  padding: var(--wu-space-1) 2px;
+  font-size: var(--wu-text-sm);
+  line-height: 1.2;
+  text-align: center;
+}
+.strike-filter-priority button[aria-pressed="true"] {
+  border-color: var(--wu-accent);
+  color: var(--wu-accent);
+}
+.strike-filter-weights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-2);
 }
 .strike-activity-summary {
   margin: 0;
@@ -252,10 +287,38 @@
   overflow-wrap: anywhere;
 }
 
-.strike-activity-toolbar > input {
+.strike-activity-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: var(--wu-space-2);
+}
+.strike-activity-search > input {
   width: 100%;
   min-width: 0;
   padding-inline: var(--wu-space-1);
+}
+.strike-activity-toolbar > button.strike-activity-search-button,
+.strike-activity-search > button.strike-activity-search-close {
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+}
+.strike-activity-view-select,
+.strike-activity-selectors select {
+  width: 100%;
+  min-width: 0;
+  background-color: var(--wu-surface);
+  color: var(--wu-text);
+}
+.strike-activity-selectors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-2);
+  min-width: 0;
+}
+.strike-activity-roster > .strike-find-slots-open {
+  width: auto;
+  justify-self: start;
 }
 .strike-activity-applied {
   display: flex;
@@ -402,10 +465,14 @@
     gap: var(--wu-space-1) var(--wu-space-3);
   }
   .strike-activity-roster
-    > :not(.strike-activity-chips):not(.strike-activity-toolbar):not(
-      .strike-activity-applied
-    ):not(.strike-activity-summary) {
+    > :not(.strike-activity-chips):not(.strike-activity-selectors):not(
+      .strike-activity-toolbar
+    ):not(.strike-activity-applied):not(.strike-activity-summary) {
     grid-column: 1 / -1;
+  }
+  .strike-activity-selectors {
+    grid-template-columns: repeat(2, minmax(0, 200px));
+    justify-content: start;
   }
 
   .strike-activity-toolbar {
@@ -488,8 +555,14 @@
 }
 .strike-activity-status .strikes-tracking > summary {
   min-height: 44px;
-  padding: 0 var(--wu-space-3);
-  border-radius: 999px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--wu-text-muted);
+}
+.strike-activity-status .strikes-tracking > summary.review {
+  color: var(--wu-accent);
 }
 
 /* The measured narrow status exceeds two rows; keep its timestamp above the body. */
@@ -518,6 +591,24 @@
   position: relative;
   min-width: 0;
 }
+/* Phones: the View select and Find slots share the first row. Find slots stays mounted in one place at every width. */
+@media (max-width: 760px) {
+  .strike-activity-roster.has-find-slots {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .strike-activity-roster.has-find-slots > * {
+    grid-column: 1 / -1;
+  }
+  .strike-activity-roster.has-find-slots > .strike-activity-chips {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .strike-activity-roster.has-find-slots > .strike-find-slots-open {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: stretch;
+  }
+}
 @media (max-width: 650px) {
   .strike-activity-chips.has-more::after {
     content: "";
@@ -528,20 +619,7 @@
     background: linear-gradient(to right, transparent, var(--wu-bg));
   }
   .strike-activity-toolbar {
-    grid-template-columns: minmax(0, 1fr) 88px 44px;
-    grid-template-areas: "search search actions" "sort filters filters";
-  }
-  .strike-activity-toolbar > input {
-    grid-area: search;
-  }
-  .strike-activity-toolbar > .strike-activity-sort {
-    grid-area: sort;
-  }
-  .strike-activity-toolbar > .strike-activity-filters-button {
-    grid-area: filters;
-  }
-  .strike-activity-toolbar > .strike-activity-actions {
-    grid-area: actions;
+    grid-template-columns: 44px minmax(0, 1fr) 88px 44px;
   }
 }
 .strike-activity-table .strike-activity-heading-name {
@@ -784,52 +862,11 @@
   white-space: nowrap;
 }
 
-/* Find slots: weights, clans and member stay in one compact box. */
+/* Find slots: weights, clans, member and results live in one panel. */
 .strike-find-slots {
   display: grid;
   gap: var(--wu-space-2);
   min-width: 0;
-  padding: var(--wu-space-2) var(--wu-space-3);
-  border: 1px solid var(--wu-border-subtle);
-  border-radius: 10px;
-  background: var(--wu-surface);
-}
-.strike-find-slots h2 {
-  margin: 0;
-  font-size: var(--wu-text-md);
-}
-.strike-find-slots-body {
-  display: contents;
-}
-.strike-find-slots-body[hidden] {
-  display: none;
-}
-@media (max-width: 760px) {
-  .strike-find-slots-collapsed {
-    padding: 0;
-    border: 0;
-    background: transparent;
-    gap: 0;
-  }
-  .strike-find-slots-toggle {
-    display: flex;
-    align-items: center;
-    gap: var(--wu-space-2);
-    width: 100%;
-    height: 44px;
-    min-width: 0;
-    text-align: left;
-  }
-  .strike-find-slots-toggle > span {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .strike-find-slots-toggle > svg {
-    flex: 0 0 auto;
-  }
 }
 .strike-find-slots-top {
   display: grid;

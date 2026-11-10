@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from aiohttp import web
 import pytest
@@ -178,3 +178,31 @@ def test_quarantine_resolution_keeps_manage_permission_and_revision_boundary():
             assert result.status==200
             resolver.assert_awaited_once_with(strikes.GUILD_ID,'war',1,'Reviewed',123)
     asyncio.run(run())
+
+
+def test_tracking_status_summary_counts_idle_and_slow():
+    rows = [
+        {'status': 'healthy', 'slow': False}, {'status': 'healthy', 'slow': True},
+        {'status': 'behind', 'slow': True}, {'status': 'idle', 'slow': False},
+        {'status': 'idle', 'slow': False}, {'status': 'private', 'slow': False},
+        {'status': 'error', 'slow': False},
+    ]
+
+    @asynccontextmanager
+    async def fake_mongo(request):
+        yield object()
+
+    async def fake_clans(db):
+        return [{'tag': '#2UVGQU9', 'name': 'Family'}]
+
+    async def run():
+        with patch.object(strikes.shared, 'require_manage', AsyncMock()), \
+             patch.object(strikes.shared, 'mongo', fake_mongo), \
+             patch.object(strikes, 'clan_rows', fake_clans), \
+             patch.object(strikes, 'StrikeTracking',
+                          return_value=SimpleNamespace(rows=AsyncMock(return_value=rows))):
+            return await strikes.tracking_status(SimpleNamespace(method='GET'))
+
+    body = json.loads(asyncio.run(run()).text)
+    assert body['summary'] == {'healthy': 2, 'behind': 1, 'private': 1,
+                               'error': 1, 'idle': 2, 'slow': 2, 'total': 7}

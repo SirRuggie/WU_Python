@@ -4,6 +4,7 @@ import { api, ApiError } from "./api";
 import {
   currentWarStateLabel,
   displayTrackingStatus,
+  needsReviewCount,
   trackingIssues,
   trackingStatusLabel,
   trackingSummary,
@@ -127,12 +128,11 @@ export default function StrikeTrackingStatus({
   };
 
   const summary = trackingSummary(clans);
-  const behind = clans.filter(
-    (item) => displayTrackingStatus(item) !== "healthy",
-  ).length;
-  const compactLabel = behind
-    ? `${behind} need review`
-    : `${clans.length} on track`;
+  const review = needsReviewCount(clans);
+  const slow = clans.filter((item) => item.slow).length;
+  const compactLabel = review
+    ? `${review} ${review === 1 ? "clan needs" : "clans need"} review ›`
+    : "All clans on track";
   const tone = error ? "warning" : summary.tone;
   // A native toggle may still be queued when the portal target changes.
   const disclosureOpen = disclosureRef.current?.open ?? open;
@@ -146,8 +146,14 @@ export default function StrikeTrackingStatus({
           setOpen(event.currentTarget.open);
       }}
     >
-      <summary>
-        <span>Tracking</span>
+      <summary
+        className={
+          compact
+            ? `strikes-tracking-link${!loading && !error && review ? " review" : ""}`
+            : undefined
+        }
+      >
+        {!compact && <span>Tracking</span>}
         <strong>
           {loading
             ? "Checking…"
@@ -206,7 +212,7 @@ export default function StrikeTrackingStatus({
                 {item.error && (
                   <small className="strikes-tracking-error">{item.error}</small>
                 )}
-                {canRetry && status !== "healthy" && (
+                {canRetry && status !== "healthy" && status !== "idle" && (
                   <button
                     aria-busy={
                       (!item.retry_pending && busyClan === item.clan_tag) ||
@@ -226,6 +232,11 @@ export default function StrikeTrackingStatus({
               </div>
             );
           })}
+        {!error && slow > 0 && (
+          <small className="strikes-tracking-slow">
+            {slow} {slow === 1 ? "clan" : "clans"} scanned late
+          </small>
+        )}
       </div>
     </details>
   );

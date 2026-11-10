@@ -1,9 +1,11 @@
+import { Search, X } from "lucide-react";
 import FilterChips from "./FilterChips";
 import StrikeActivityRows from "./StrikeActivityRows";
 import FindSlots from "./FindSlots";
 import SortTrigger from "./rosterUi/SortTrigger";
 import StrikeGroupHeading from "./StrikeGroupHeading";
 import StrikeSortPanel from "./StrikeSortPanel";
+import useCompactPreview from "./useCompactPreview";
 import useDiscordIdentities from "./useDiscordIdentities";
 import { activityPages } from "./strikeActivityGroups";
 import useActivityIdentityRefresh, {
@@ -19,6 +21,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, ApiError } from "./api";
+import { spendPanelEntry } from "./actionPanelHistory";
 import StrikeBulkMark from "./StrikeBulkMark";
 import type { ViewMemory } from "./strikeViewMemory";
 import type { ActivityAccount } from "./strikeActivityView";
@@ -93,6 +96,11 @@ export default function StrikeActivityRoster({
   const rosterRef = useRef<HTMLElement>(null);
   const chipsRef = useRef<HTMLDivElement>(null);
   const [moreChips, setMoreChips] = useState(false);
+  const phone = useCompactPreview(760);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
+  const searchFocus = useRef<"field" | "button" | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const scrolledView = useRef<string | null>(null);
   const [local, setLocal] = useState(() =>
     parseActivityFilters(state ?? window.location.search, markedDefault),
@@ -149,6 +157,18 @@ export default function StrikeActivityRoster({
         : "smooth",
     });
   }, [filters.view, loading]);
+  const searching = searchOpen || filters.query !== "";
+  useEffect(() => {
+    const target =
+      searchFocus.current === "field"
+        ? searchInput.current
+        : searchFocus.current === "button"
+          ? searchButton.current
+          : null;
+    if (!target) return;
+    searchFocus.current = null;
+    target.focus();
+  }, [searching]);
   const [filterTrigger, setFilterTrigger] = useState<HTMLElement | null>(null);
   const [sortTrigger, setSortTrigger] = useState<HTMLElement | null>(null);
   const copyIdentity = useRef(filterIdentity);
@@ -322,19 +342,22 @@ export default function StrikeActivityRoster({
       page: "page" in patch ? patch.page! : 0,
     });
     setLocal(next);
-    if (onState) onState(activityFilterQuery(next), push);
-    else {
+    // A route change under an open panel moves it to a new entry; keep the
+    // marker there so a nested panel's Back still lands on this panel.
+    const panel = history.state?.wuActionPanel;
+    if (onState) {
+      onState(activityFilterQuery(next), push);
+      if (panel)
+        history.replaceState(spendPanelEntry(history.state, panel), "");
+    } else {
       const url = new URL(window.location.href);
       for (const key of activityFilterKeys) url.searchParams.delete(key);
       new URLSearchParams(activityFilterQuery(next)).forEach((value, key) =>
         url.searchParams.append(key, value),
       );
-      const historyState =
-        history.state && typeof history.state === "object"
-          ? { ...history.state }
-          : {};
-      // Applying a route consumes the panel entry; its cleanup must not pop away the filters.
-      delete historyState.wuActionPanel;
+      const historyState = panel
+        ? spendPanelEntry(history.state, panel)
+        : { ...history.state };
       history.replaceState(historyState, "", url.pathname + url.search);
     }
   }
@@ -376,60 +399,169 @@ export default function StrikeActivityRoster({
       window.removeEventListener("resize", measure);
       observer?.disconnect();
     };
-  }, [loading, data.accounts, filterIdentity]);
+  }, [loading, data.accounts, filterIdentity, phone]);
+  const countsPending = loading || !!data.activity_updating;
+  const countText = (view: (typeof activityViews)[number]) =>
+    countsPending ? "…" : error && !data.accounts.length ? "–" : counts[view];
+  const viewLabels = {
+    not_attacking: "Not attacking",
+    inactive: "Inactive",
+    replacements: "Replacements",
+    all: "All",
+  } as const;
+  const clanOf = (row: ActivityAccount) =>
+    (row.left_clan ? row.last_clan_tag : row.current_clan_tag) || "";
+  const clanOptions = [
+    ...data.clans,
+    ...(filters.clans.length === 1 &&
+    !data.clans.some((clan) => clan.tag === filters.clans[0])
+      ? [{ tag: filters.clans[0], name: filters.clans[0] }]
+      : []),
+  ]
+    .map((clan) => ({
+      tag: clan.tag,
+      name: clan.name,
+      count: data.accounts.filter((row) => clanOf(row) === clan.tag).length,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const hallOptions = [
+    ...new Set([
+      ...data.accounts
+        .map((row) => row.town_hall)
+        .filter((hall): hall is number => !!hall),
+      ...(filters.townHalls.length === 1 ? filters.townHalls : []),
+    ]),
+  ]
+    .sort((a, b) => b - a)
+    .map((hall) => ({
+      hall,
+      count: data.accounts.filter((row) => row.town_hall === hall).length,
+    }));
+  const findSlots = filters.view === "replacements" &&
+    !(loading && !data.accounts.length) && (
+      <FindSlots
+        clans={data.clans}
+        accounts={data.accounts}
+        search={{
+          slotWeights: filters.slotWeights,
+          slotClans: filters.slotClans,
+          slotMember: filters.slotMember,
+        }}
+        disabled={bulkBusy}
+        onSearch={(next) => change(next, false)}
+        onChoose={choose}
+      />
+    );
   return (
     <section
       ref={rosterRef}
-      className="strike-activity-roster"
+      className={`strike-activity-roster${findSlots ? " has-find-slots" : ""}`}
       aria-label="Family activity overview"
     >
       <div
         ref={chipsRef}
         className={`strike-activity-chips${moreChips ? " has-more" : ""}`}
       >
-        <FilterChips
-          variant="pill"
-          className="strike-activity-tabs"
-          label="Account views"
-          value={filters.view}
-          disabled={bulkBusy}
-          options={activityViews.map((view) => ({
-            value: view,
-            label: {
-              not_attacking: "Not attacking",
-              inactive: "Inactive",
-              replacements: "Replacements",
-              all: "All",
-            }[view],
-            count: counts[view],
-          }))}
-          onChange={(view) => change(activityViewPreset(filters, view))}
-        />
-      </div>
-      {filters.view === "replacements" &&
-        !(loading && !data.accounts.length) && (
-          <FindSlots
-            clans={data.clans}
-            accounts={data.accounts}
-            search={{
-              slotWeights: filters.slotWeights,
-              slotClans: filters.slotClans,
-              slotMember: filters.slotMember,
-            }}
+        {phone ? (
+          <select
+            className="strike-activity-view-select"
+            aria-label="View"
+            value={filters.view}
             disabled={bulkBusy}
-            onSearch={(next) => change(next)}
-            onChoose={choose}
+            onChange={(event) =>
+              change(
+                activityViewPreset(
+                  filters,
+                  event.target.value as (typeof activityViews)[number],
+                ),
+              )
+            }
+          >
+            {activityViews.map((view) => (
+              <option key={view} value={view}>
+                {viewLabels[view]} ({countText(view)})
+              </option>
+            ))}
+          </select>
+        ) : (
+          <FilterChips
+            variant="pill"
+            className="strike-activity-tabs"
+            label="Account views"
+            value={filters.view}
+            disabled={bulkBusy}
+            options={activityViews.map((view) => ({
+              value: view,
+              label: viewLabels[view],
+              count: countText(view),
+            }))}
+            onChange={(view) => change(activityViewPreset(filters, view))}
           />
         )}
+      </div>
+      <div className="strike-activity-selectors">
+        <select
+          aria-label="Clan"
+          value={filters.clans.length > 1 ? "many" : (filters.clans[0] ?? "")}
+          disabled={bulkBusy}
+          onChange={(event) =>
+            change({ clans: event.target.value ? [event.target.value] : [] })
+          }
+        >
+          <option value="">All clans</option>
+          {filters.clans.length > 1 && (
+            <option value="many" disabled>
+              {filters.clans.length} clans
+            </option>
+          )}
+          {clanOptions.map((clan) => (
+            <option key={clan.tag} value={clan.tag}>
+              {clan.name} · {clan.count}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Town Hall"
+          value={
+            filters.townHalls.length > 1
+              ? "many"
+              : String(filters.townHalls[0] ?? "")
+          }
+          disabled={bulkBusy}
+          onChange={(event) =>
+            change({
+              townHalls: event.target.value ? [Number(event.target.value)] : [],
+            })
+          }
+        >
+          <option value="">Any TH</option>
+          {filters.townHalls.length > 1 && (
+            <option value="many" disabled>
+              {filters.townHalls.length} Town Halls
+            </option>
+          )}
+          {hallOptions.map((option) => (
+            <option key={option.hall} value={option.hall}>
+              TH{option.hall} · {option.count}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="strike-activity-toolbar">
-        <input
+        <button
+          ref={searchButton}
+          type="button"
+          className="strike-activity-search-button"
           aria-label="Find account or member"
-          type="search"
-          value={filters.query}
-          maxLength={80}
-          placeholder="Name, tag or member"
-          onChange={(event) => change({ query: event.target.value }, false)}
-        />
+          aria-expanded={searching}
+          onClick={() => {
+            searchFocus.current = "field";
+            setSearchOpen(true);
+            searchInput.current?.focus();
+          }}
+        >
+          <Search size={18} aria-hidden="true" />
+        </button>
         <div className="roster-ui strike-activity-sort">
           <SortTrigger
             disabled={bulkBusy}
@@ -523,6 +655,32 @@ export default function StrikeActivityRoster({
           </div>
         </details>
       </div>
+      {searching && (
+        <div className="strike-activity-search">
+          <input
+            ref={searchInput}
+            aria-label="Find account or member"
+            type="search"
+            value={filters.query}
+            maxLength={80}
+            placeholder="Name, tag or member"
+            onChange={(event) => change({ query: event.target.value }, false)}
+          />
+          <button
+            type="button"
+            className="strike-activity-search-close"
+            aria-label="Clear search"
+            onClick={() => {
+              searchFocus.current = "button";
+              setSearchOpen(false);
+              change({ query: "" }, false);
+            }}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+      {findSlots}
       {sortTrigger && (
         <StrikeSortPanel
           filters={filters}
@@ -535,7 +693,6 @@ export default function StrikeActivityRoster({
         <StrikeActivityFiltersPanel
           filters={filters}
           accounts={data.accounts}
-          clans={data.clans}
           trigger={filterTrigger}
           onClose={() => setFilterTrigger(null)}
           onApply={(next) => {

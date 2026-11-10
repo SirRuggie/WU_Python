@@ -102,6 +102,10 @@ const server = createServer((req, res) => {
     });
     const page = await context.newPage();
     const errors = [];
+    let slotFetches = 0;
+    page.on("request", (request) => {
+      if (request.url().includes("/strikes/replacements")) slotFetches++;
+    });
     page.on("pageerror", (e) => errors.push(e.message));
     await page.route("**/*", async (route) => {
       const req = route.request(),
@@ -154,24 +158,35 @@ const server = createServer((req, res) => {
       });
     });
     await page.goto(origin + "/strikes?activity_view=replacements");
+    await page.getByRole("button", { name: "Find slots", exact: true }).tap();
     await page.getByLabel("Weights").waitFor();
     await page.getByLabel("Weights").fill("143, 173");
-    await page.getByRole("button", { name: "Find slots", exact: true }).click();
+
+    // Search first: it replaces the URL under the open panel, and nested
+    // panels opened afterwards must still return to it.
+    await page.locator(".strike-find-slots-top button.primary").tap();
     await page.locator(".strike-slot-group").first().waitFor();
 
     // Clans: type, then tap the checkbox.
     await page.getByRole("button", { name: /^Clans:/ }).click();
-    await page.locator("dialog").getByLabel("Find clan").fill("Alpha");
     await page
-      .locator("dialog")
+      .getByRole("dialog", { name: "Select clans" })
+      .getByLabel("Find clan")
+      .fill("Alpha");
+    await page
+      .getByRole("dialog", { name: "Select clans" })
       .getByRole("checkbox", { name: /Fixture FWA Alpha/ })
       .tap();
     await page.waitForTimeout(500);
     await page
-      .locator("dialog[open]")
+      .getByRole("dialog", { name: "Select clans" })
       .getByRole("button", { name: "Close panel" })
       .tap();
-    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    // The Find slots panel stays open underneath, results included.
+    await page.waitForFunction(
+      () => document.querySelectorAll("dialog[open]").length === 1,
+    );
+    await page.locator(".strike-slot-group").first().waitFor();
     const clanLabel = await page
       .getByRole("button", { name: /^Clans:/ })
       .getAttribute("aria-label");
@@ -185,11 +200,13 @@ const server = createServer((req, res) => {
     await page.getByRole("button", { name: /^Member:/ }).click();
     await page.getByLabel("Find member").fill("slayer");
     await page
-      .locator("dialog")
+      .getByRole("dialog", { name: "Select member" })
       .getByRole("button", { name: /@slayer/ })
       .first()
       .tap();
-    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    await page.waitForFunction(
+      () => document.querySelectorAll("dialog[open]").length === 1,
+    );
     const memberLabel = await page
       .getByRole("button", { name: /^Member:/ })
       .getAttribute("aria-label");
@@ -197,6 +214,59 @@ const server = createServer((req, res) => {
       memberLabel,
       /@slayer/,
       "member button shows the tapped member",
+    );
+    // Nested Back must return to the Find slots panel with its results.
+    await page.getByRole("button", { name: /^Clans:/ }).click();
+    await page.getByRole("dialog", { name: "Select clans" }).waitFor();
+    await page.goBack();
+    await page.waitForFunction(
+      () => document.querySelectorAll("dialog[open]").length === 1,
+    );
+    assert.equal(
+      await page.getByRole("dialog", { name: "Find slots" }).isVisible(),
+      true,
+      "Back from a nested panel keeps Find slots open",
+    );
+    await page.locator(".strike-slot-group").first().waitFor();
+
+    // The search replaced the panel's history entry, so the link keeps the
+    // slot keys and one Back closes the panel without emptying it.
+    assert.match(page.url(), /slot_weight=143000/, "the link keeps the search");
+    await page.goBack();
+    await page.waitForFunction(
+      () => document.querySelectorAll("dialog[open]").length === 0,
+    );
+    await page.getByRole("button", { name: "Find slots", exact: true }).tap();
+    await page.getByLabel("Weights").waitFor();
+    assert.equal(
+      await page.getByLabel("Weights").inputValue(),
+      "143, 173",
+      "Back from the open panel keeps the last weights",
+    );
+    await page.locator(".strike-slot-group").first().waitFor();
+
+    // Crossing 760 px must not reopen the panel, refetch, or drop typed weights.
+    await page.getByLabel("Weights").fill("150, 160");
+    await page.getByRole("button", { name: "Close panel" }).tap();
+    await page.waitForFunction(
+      () => document.querySelectorAll("dialog[open]").length === 0,
+    );
+    const fetchesBefore = slotFetches;
+    for (const width of [1100, 360, 1100, 360]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.waitForTimeout(150);
+      assert.equal(
+        await page.locator("dialog[open]").count(),
+        0,
+        "resizing does not open the panel",
+      );
+    }
+    assert.equal(slotFetches, fetchesBefore, "resizing does not fetch");
+    await page.getByRole("button", { name: "Find slots", exact: true }).tap();
+    assert.equal(
+      await page.getByLabel("Weights").inputValue(),
+      "150, 160",
+      "resizing keeps typed weights",
     );
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ clanLabel, memberLabel }));
