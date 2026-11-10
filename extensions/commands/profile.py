@@ -40,6 +40,8 @@ MODE_PROFILE = "p"
 MODE_ALERT = "a"
 NEW_WARRIOR_PING_ROLE_ID = 1151305219079155802
 NEW_WARRIOR_TITLE = "# 👋 New Warrior"
+MESSAGE_TEXT_LIMIT = 4000
+TEXT_SAFETY_MARGIN = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,13 +122,17 @@ def _stamp(value: datetime | None) -> str | None:
     return f"<t:{int(value.timestamp())}:D>"
 
 
-def _header(identity: Identity) -> Section | Text:
+def _header_text(identity: Identity) -> str:
     lines = [f"### {user_link(identity.user_id, identity.display_name, identity.username)}"]
     if created := _stamp(identity.created_at):
         lines.append(f"**Account created:** {created}")
     if joined := _stamp(identity.joined_at):
         lines.append(f"**Joined server:** {joined}")
-    text = Text(content="\n".join(lines))
+    return "\n".join(lines)
+
+
+def _header(identity: Identity, content: str) -> Section | Text:
+    text = Text(content=content)
     if not identity.avatar_url:
         return text
     return Section(
@@ -159,32 +165,30 @@ def render_profile(
     *, mode: str = MODE_PROFILE,
 ) -> list[Container]:
     """One Components V2 card: identity, separator, linked accounts."""
-    body: list = []
-    if mode == MODE_ALERT:
-        body.append(Text(content=f"{NEW_WARRIOR_TITLE}\n<@&{NEW_WARRIOR_PING_ROLE_ID}>"))
-    body.extend([_header(identity), Separator(divider=True)])
-
-    page, pages, blocks = linked_accounts.page_window(data, page)
-    notes = linked_accounts.account_notes(data)
+    title = f"{NEW_WARRIOR_TITLE}\n<@&{NEW_WARRIOR_PING_ROLE_ID}>" if mode == MODE_ALERT else ""
+    header = _header_text(identity)
+    notes = "\n".join(linked_accounts.account_notes(data))
     if data.entries:
-        body.append(Text(content=(
+        heading = (
             f"## Linked Accounts\n{linked_accounts.summary_line(data)}\n"
             "-# ClashKing + ClashPerk links. Sorted by Town Hall."
-        )))
-        body.extend(Text(content=block) for block in blocks)
+        )
     elif data.unavailable_sources:
-        # An outage is never presented as "no links".
-        body.append(Text(content="## Linked Accounts"))
+        heading = "## Linked Accounts"  # An outage is never presented as "no links".
     else:
-        body.append(Text(content=(
-            "## Linked Accounts\nNo linked accounts\n"
-            "-# Not linked in ClashKing or ClashPerk."
-        )))
+        heading = "## Linked Accounts\nNo linked accounts\n-# Not linked in ClashKing or ClashPerk."
+    # Discord limits the text of all Text Displays in one message together.
+    budget = MESSAGE_TEXT_LIMIT - TEXT_SAFETY_MARGIN - sum(
+        len(part) for part in (title, header, notes, heading))
+    page, pages, blocks = linked_accounts.page_window(data, page, budget=budget)
+
+    body: list = [Text(content=title)] if title else []
+    body.extend([_header(identity, header), Separator(divider=True), Text(content=heading)])
+    body.extend(Text(content=block) for block in blocks)
     if notes:
         if data.entries:
             body.append(Separator(divider=True))
-        body.append(Text(content="\n".join(notes)))
-
+        body.append(Text(content=notes))
     body.append(_buttons(identity.user_id, page, pages, mode))
     body.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
     return [Container(accent_color=RED_ACCENT, components=body)]
@@ -220,10 +224,27 @@ async def _render_action(ctx, action_id: str, coc_client, *, force: bool):
     guild_id = getattr(ctx.interaction, "guild_id", None)
     identity = await resolve_identity(app, user_id, guild_id)
     data = await load_profile_accounts(coc_client, user_id, force=force)
-    return render_profile(identity, data, page, mode=mode)
+    cards = render_profile(identity, data, page, mode=mode)
+    # This handler edits the message itself so every edit states that nobody
+    # is pinged; the alert's role mention must notify only once, at posting.
+    quiet = {"user_mentions": False, "role_mentions": False, "mentions_everyone": False}
+    try:
+        await ctx.respond(components=cards, edit=True, **quiet)
+    except hikari.NotFoundError:
+        # The interaction token expired before the acknowledgement; the button
+        # still sits on a real message, so edit that message directly.
+        message = getattr(ctx.interaction, "message", None)
+        if message is None:
+            raise
+        await ctx.interaction.app.rest.edit_message(
+            message.channel_id, message.id, components=cards, **quiet,
+        )
+    return None
 
 
-@register_action("profile_page", preload_state=False, aliases=("user_accounts_page",))
+@register_action(
+    "profile_page", preload_state=False, no_return=True, aliases=("user_accounts_page",),
+)
 @lightbulb.di.with_di
 async def profile_page_handler(
     ctx: lightbulb.components.MenuContext,
@@ -234,7 +255,7 @@ async def profile_page_handler(
     return await _render_action(ctx, action_id, coc_client, force=False)
 
 
-@register_action("profile_refresh", preload_state=False)
+@register_action("profile_refresh", preload_state=False, no_return=True)
 @lightbulb.di.with_di
 async def profile_refresh_handler(
     ctx: lightbulb.components.MenuContext,

@@ -6,7 +6,6 @@ This module has no command of its own.
 
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass
 
@@ -284,20 +283,42 @@ def _text_blocks(lines: list[str]) -> list[str]:
     return blocks
 
 
-def page_window(data: AccountsData, page: int = 0) -> tuple[int, int, list[str]]:
-    """Clamp ``page`` and return (page, pages, Discord-safe row blocks)."""
-    pages = max(1, math.ceil(data.linked_count / PAGE_SIZE))
+def _budget_pages(data: AccountsData, budget: int) -> list[list[str]]:
+    """Greedy pages of at most PAGE_SIZE rows whose text fits ``budget``."""
+    budget = max(200, int(budget))
+    pages: list[list[str]] = []
+    current: list[str] = []
+    size = 0
+    for index, entry in enumerate(data.entries):
+        line = _entry_line(entry, index + 1)
+        if len(line) > budget:
+            line = f"{line[:budget - 1]}…"
+        added = len(line) + (1 if current else 0)
+        if current and (len(current) >= PAGE_SIZE or size + added > budget):
+            pages.append(current)
+            current, size, added = [], 0, len(line)
+        current.append(line)
+        size += added
+    if current:
+        pages.append(current)
+    return pages or [[]]
+
+
+def page_window(
+    data: AccountsData, page: int = 0, *, budget: int = TEXT_BLOCK_LIMIT,
+) -> tuple[int, int, list[str]]:
+    """Clamp ``page``; return (page, pages, row blocks within ``budget`` chars).
+
+    Discord counts every Text Display in one message against one 4000-character
+    limit, so the caller passes what is left after its own text.
+    """
+    pages = _budget_pages(data, budget)
     try:
         page = int(page)
     except (TypeError, ValueError):
         page = 0
-    page = max(0, min(page, pages - 1))
-    start = page * PAGE_SIZE
-    window = data.entries[start:start + PAGE_SIZE]
-    return page, pages, _text_blocks([
-        _entry_line(entry, start + index + 1)
-        for index, entry in enumerate(window)
-    ])
+    page = max(0, min(page, len(pages) - 1))
+    return page, len(pages), _text_blocks(pages[page])
 
 
 def summary_line(data: AccountsData) -> str:

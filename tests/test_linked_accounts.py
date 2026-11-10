@@ -341,7 +341,7 @@ def test_forty_six_accounts_use_three_complete_bounded_pages():
     ]
 
 
-def test_markdown_heavy_max_length_rows_split_below_discord_text_limit():
+def test_markdown_heavy_max_length_rows_page_within_the_message_text_limit():
     entries = []
     for index in range(accounts.PAGE_SIZE):
         tag = f"#MAX{index:02d}"
@@ -356,20 +356,17 @@ def test_markdown_heavy_max_length_rows_split_below_discord_text_limit():
             tag, accounts.STATUS_LOADED, account
         ))
 
-    payload = _payload(accounts.AccountsData(entries=tuple(entries)))
-    contents = [
-        str(node["content"])
-        for node in _walk(payload)
-        if "content" in node
-    ]
-
-    assert all(len(content) <= accounts.TEXT_BLOCK_LIMIT for content in contents)
-    assert len([
-        content for content in contents if "`#MAX" in content
-    ]) >= 2
-    assert set(re.findall(r"`(#[^`]+)`", _text(payload))) == {
-        entry.tag for entry in entries
-    }
+    data = accounts.AccountsData(entries=tuple(entries))
+    seen = []
+    for page in range(3):
+        payload = _payload(data, page)
+        contents = [str(node["content"]) for node in _walk(payload) if "content" in node]
+        assert sum(len(content) for content in contents) <= 4000
+        seen.extend(re.findall(r"`(#MAX[^`]+)`", _text(payload)))
+        if "Page" not in str(payload) or f"Page {page + 1}/{page + 1}" in str(payload):
+            break
+    assert sorted(seen) == sorted(entry.tag for entry in entries)
+    assert len(seen) == len(set(seen))
 
 
 def test_unavailable_link_sources_show_full_approved_notice():

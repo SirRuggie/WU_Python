@@ -153,7 +153,7 @@ def _button_ctx(custom_id, clicker=999):
     return SimpleNamespace(interaction=interaction, user=SimpleNamespace(id=clicker), respond=respond)
 
 
-def test_buttons_show_target_not_clicker_and_refresh_bypasses_cache(monkeypatch):
+def test_buttons_show_target_not_clicker_edit_quietly_and_refresh_bypasses_cache(monkeypatch):
     calls = []
 
     async def resolve(discord_id, *, verify_owners=True):
@@ -161,14 +161,66 @@ def test_buttons_show_target_not_clicker_and_refresh_bypasses_cache(monkeypatch)
         return recruit_links.LinksResult()
 
     monkeypatch.setattr(recruit_links, "resolve", resolve)
-    ctx = _button_ctx("profile_page:123:0:p")
-    cards = asyncio.run(profile.profile_page_handler(ctx=ctx, action_id="123:0:p", coc_client=object()))
-    asyncio.run(profile.profile_page_handler(ctx=ctx, action_id="123:0:p", coc_client=object()))
+    ctx = _button_ctx("profile_page:123:0:a")
+    assert asyncio.run(profile.profile_page_handler(ctx=ctx, action_id="123:0:a", coc_client=object())) is None
+    asyncio.run(profile.profile_page_handler(ctx=ctx, action_id="123:0:a", coc_client=object()))
     assert calls == [(123, False)]  # second page view served from the short cache
-    asyncio.run(profile.profile_refresh_handler(ctx=ctx, action_id="123:0:p", coc_client=object()))
+    asyncio.run(profile.profile_refresh_handler(ctx=ctx, action_id="123:0:a", coc_client=object()))
     assert calls == [(123, False), (123, False)]
-    text = _text(_built(cards))
+    kwargs = ctx.respond.call_args.kwargs
+    assert kwargs["edit"] is True
+    assert kwargs["user_mentions"] is False and kwargs["role_mentions"] is False
+    assert kwargs["mentions_everyone"] is False
+    text = _text(_built(kwargs["components"]))
     assert "discord.com/users/123" in text and "999" not in text
+    assert f"<@&{ROLE}>" in text  # the alert keeps its title, but the edit pings nobody
+
+
+def test_expired_token_edits_the_message_directly_and_quietly(monkeypatch):
+    monkeypatch.setattr(recruit_links, "resolve", AsyncMock(return_value=recruit_links.LinksResult()))
+    ctx = _button_ctx("profile_refresh:123:0:a")
+    ctx.respond = AsyncMock(side_effect=hikari.NotFoundError("u", hikari.impl.rest.__dict__.get("Headers", dict)(), b""))
+    edit = AsyncMock()
+    ctx.interaction.app.rest.edit_message = edit
+    ctx.interaction.message = SimpleNamespace(channel_id=5, id=6)
+    asyncio.run(profile.profile_refresh_handler(ctx=ctx, action_id="123:0:a", coc_client=object()))
+    args, kwargs = edit.call_args
+    assert args == (5, 6)
+    assert kwargs["role_mentions"] is False and kwargs["user_mentions"] is False
+
+
+def _long_entry(index, status=accounts.STATUS_LOADED):
+    if status != accounts.STATUS_LOADED:
+        return accounts.AccountEntry(f"#L{index:02d}QQQQQ", status)
+    account = todo_data.Account(tag=f"#L{index:02d}QQQQQ", name=("[]_*~`()@" * 2)[:15],
+                                clan_tag=None, clan_name=("[]_*~`()|>" * 2)[:15], town_hall=17)
+    return accounts.AccountEntry(account.tag, accounts.STATUS_LOADED, account)
+
+
+@pytest.mark.parametrize("mode", [profile.MODE_PROFILE, profile.MODE_ALERT])
+def test_whole_message_text_stays_under_discord_limit_and_keeps_every_tag(mode):
+    entries = (*(_long_entry(i) for i in range(23)),
+               _long_entry(90, accounts.STATUS_ERROR), _long_entry(91, accounts.STATUS_NOT_FOUND))
+    data = accounts.AccountsData(entries=entries, unavailable_sources=("ClashPerk",))
+    identity = _identity(display_name="N" * 32, username="u" * 32)
+    seen = []
+    page, pages = 0, None
+    while True:
+        payload = _built(profile.render_profile(identity, data, page, mode=mode))
+        total = sum(len(str(n["content"])) for n in _walk(payload) if "content" in n)
+        assert total <= 4000
+        seen.extend(re.findall(r"`(#L\d+QQQQQ)`", _text(payload)))
+        pages = int(re.search(r"Page \d+/(\d+)", json.dumps(payload)).group(1))
+        page += 1
+        if page >= pages:
+            break
+    assert sorted(seen) == sorted(entry.tag for entry in entries)
+
+
+def test_listener_never_raises(monkeypatch):
+    monkeypatch.setattr(new_warrior_alert, "post_alert", AsyncMock(side_effect=RuntimeError("boom")))
+    event = SimpleNamespace(member=_member())
+    asyncio.run(new_warrior_alert.new_warrior_joined(event, bot=object(), coc_client=object()))
 
 
 def test_malformed_button_answers_privately_without_loading(monkeypatch):
