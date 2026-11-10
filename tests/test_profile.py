@@ -82,11 +82,11 @@ def test_card_has_identity_section_with_avatar_separator_then_accounts():
     assert "**Player 01** · [#TAG01](https://link.clashofclans.com/" in text
 
 
-@pytest.mark.parametrize("name", ["❤️MC QUEEN❤️", "[x](https://evil.test)", "a]b(c"])
+@pytest.mark.parametrize("name", ["❤️MC QUEEN❤️", "[x](https://evil.test)", "a]b(c", "https://evil.test"])
 def test_name_with_link_breaking_characters_is_plain_text(name):
     text = _text(_built(profile.render_profile(_identity(display_name=name), accounts.AccountsData())))
     first = text.split("\n")[0]
-    assert first.startswith("### ") and "](" not in first
+    assert first.startswith("### ") and "](" not in first and "https://" not in first
     assert "[warrior\\_one](https://discord.com/users/123)" in text
 
 

@@ -128,7 +128,9 @@ def _header_text(identity: Identity) -> str:
     # Display names can hold characters that stop Discord rendering a masked
     # link, so the name is plain text and the link sits on the username
     # (Discord usernames are only a-z, 0-9, "_" and ".").
-    name = safe_text(identity.display_name) or "Unknown member"
+    # Disarm bare URLs too, as the join log does, so a name is never a link.
+    name = re.sub(r"(?i)\b(https?)://", "\\1\u200b://", safe_text(identity.display_name))
+    name = name if name.replace("\u200d", "").strip() else "Unknown member"
     username = identity.username if USERNAME.fullmatch(identity.username or "") else ""
     profile_url = f"https://discord.com/users/{int(identity.user_id)}"
     lines = [f"### {name}", f"[{safe_text(username) if username else 'Discord profile'}]({profile_url})"]
