@@ -5,7 +5,7 @@ import logging
 import hikari
 import lightbulb
 
-from utils import link_management
+from utils import clashperk_link_writes, link_management
 
 loader = lightbulb.Loader()
 group = lightbulb.Group(
@@ -87,6 +87,38 @@ class Transfer(lightbulb.SlashCommand, name="transfer", description="Unlink and 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         await execute(ctx, self.user, self.player, self.new_user)
+
+
+async def link_clashperk(ctx: lightbulb.Context, user: hikari.User, player: str) -> None:
+    member = ctx.interaction.member
+    if (ctx.guild_id is None or member is None
+            or not member.permissions & hikari.Permissions.ADMINISTRATOR):
+        await ctx.respond("Only server administrators can manage account links.", ephemeral=True)
+        return
+    if user.is_bot:
+        await ctx.respond("Select a human Discord user.", ephemeral=True)
+        return
+    await ctx.defer(ephemeral=True)
+    result = await clashperk_link_writes.create_link(int(user.id), player)
+    _log.info("ClashPerk link actor=%s guild=%s user=%s tag=%s status=%s",
+              ctx.user.id, ctx.guild_id, user.id, result.tag, result.status)
+    if result.wrote:
+        from extensions.commands.accounts import _result_cache
+        _result_cache.pop(int(user.id), None)
+    text = f"`{result.tag}` → <@{user.id}>\n{result.message}"
+    if result.verified is not None:
+        text += "\nVerified in ClashPerk." if result.verified else "\nNot verified in ClashPerk."
+    await ctx.respond(text, ephemeral=True, user_mentions=False, role_mentions=False, mentions_everyone=False)
+
+
+@group.register()
+class Link(lightbulb.SlashCommand, name="link", description="Link a Clash account to a Discord user in ClashPerk"):
+    user = lightbulb.user("user", "Discord user who owns the account")
+    player = lightbulb.string("player", "Player tag", max_length=20)
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        await link_clashperk(ctx, self.user, self.player)
 
 
 loader.command(group)
