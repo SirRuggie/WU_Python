@@ -215,7 +215,8 @@ def test_endpoint_member_keeps_a_tag_linked_to_two_users_and_labels_it(tmp_path)
 
 def test_endpoint_member_provider_unavailable_with_sources_is_partial_not_503(tmp_path):
     from utils.recruit_links import LinksResult
-    links = LinksResult(sources={'#P0': ('ClashKing',), '#PC': ('ClashKing',)}, unavailable=('ClashPerk',))
+    links = LinksResult(sources={'#P0': ('ClashKing',), '#PC': ('ClashKing',)},
+                         unavailable=('ClashPerk',), forward_unavailable=('ClashPerk',))
     result = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')], links=links)
     assert result['member_partial'] is True and set(_slot_tags(result['slots'][0])) == {'#P0', '#PC'}
 
@@ -231,10 +232,11 @@ def test_endpoint_member_search_does_not_require_verified_links(tmp_path):
 def test_endpoint_member_with_nothing_usable_returns_503_and_clean_links_are_not_partial(tmp_path):
     from utils.recruit_links import LinksResult
     result = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')],
-                            links=LinksResult(unavailable=('ClashKing', 'ClashPerk')))
+                            links=LinksResult(unavailable=('ClashKing', 'ClashPerk'),
+                                           forward_unavailable=('ClashKing', 'ClashPerk')))
     assert result.status == 503 and 'Account links are unavailable. Try again.' in result.text
     one_down = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')],
-                              links=LinksResult(unavailable=('ClashPerk',)))
+                              links=LinksResult(unavailable=('ClashPerk',), forward_unavailable=('ClashPerk',)))
     assert one_down['slots'][0]['candidates'] == [] and one_down['member_partial'] is True
     clean = _slot_scenario(tmp_path, [('weight', '173000'), ('member', '111111111111111111')])
     assert clean['member_partial'] is False

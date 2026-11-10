@@ -1,5 +1,8 @@
 """Discord /strikes replacements panel: private, FWA-only, shared slot rules."""
 import asyncio
+import json
+import re
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
@@ -48,7 +51,8 @@ def render(rows, state, clans=None, linked=frozenset(), links=None):
     state = {'_id': 'tok', 'guild_id': 1, 'clan_tags': [], 'weights': [], 'member_id': None,
              'page': 0, **state}
     links = links or (LinksResult(sources={value: ('ClashKing',) for value in linked}) if linked is not None
-                      else LinksResult(unavailable=('ClashKing', 'ClashPerk')))
+                      else LinksResult(unavailable=('ClashKing', 'ClashPerk'),
+                                                  forward_unavailable=('ClashKing', 'ClashPerk')))
     with patch.object(strikes, 'cached_weights', lambda _tags: {}), \
             patch.object(strikes.recruit_links, 'resolve', AsyncMock(return_value=links)):
         panel = asyncio.run(strikes.replacement_panel(store, state))
@@ -178,7 +182,8 @@ def test_member_select_keeps_a_tag_linked_to_two_users_and_labels_only_that_row(
 
 def test_member_select_with_a_failed_provider_but_sources_keeps_them_and_notes_it():
     rows = [candidate('#CLEAN', weight=150000)]
-    links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, unavailable=('ClashPerk',))
+    links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, unavailable=('ClashPerk',),
+                         forward_unavailable=('ClashPerk',))
     payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777}, links=links)
     assert '`#CLEAN`' in text_of(payload) and PARTIAL in text_of(payload)
 
@@ -186,7 +191,8 @@ def test_member_select_with_a_failed_provider_but_sources_keeps_them_and_notes_i
 def test_member_select_in_list_mode_without_weights_lists_linked_accounts_and_notes_partial():
     rows = [candidate('#CLEAN', count=0), candidate('#DISPUTED', count=3), candidate('#OTHER', count=3)]
     links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, conflicts=('#DISPUTED',),
-                        unavailable=('ClashPerk',))
+                        unavailable=('ClashPerk',),
+                         forward_unavailable=('ClashPerk',))
     payload, _ = render(rows, {'member_id': 7777777777777777777}, links=links)
     text = text_of(payload)
     assert '`#CLEAN`' in text and '`#DISPUTED`' in text and '#OTHER' not in text
@@ -287,3 +293,227 @@ def test_parse_weights_rejects_bad_input_naming_the_value(text, message):
 def test_stale_clan_is_marked_last_known():
     payload, _ = render([candidate('#S2L', count=3, clan_is_current=False)], {})
     assert 'Last known' in text_of(payload)
+
+
+def _worst_case(note_length):
+    weights = [100000, 120000, 140000, 160000, 180000]
+    rows = [candidate(f'#W{group}{number}', weight=weight + number, member=111222333444555666,
+                      manual=True, departed=True, clan_is_current=False, count=3,
+                      player_name='N' * 24, replacement_note='n' * note_length)
+            for group, weight in enumerate(weights) for number in range(3)]
+    clans = [{'tag': '#P2Y', 'name': 'C' * 24, 'type': 'FWA'}]
+    links = LinksResult(conflicts=tuple(row['player_tag'] for row in rows))
+    state = {'weights': weights, 'member_id': 111222333444555666}
+    return render(rows, state, clans, links=links)[0]
+
+
+def test_worst_case_slot_panel_stays_under_the_text_limit_and_keeps_every_row():
+    payload = _worst_case(60)
+    text = text_of(payload)
+    assert sum(len(item['content']) for item in payload['components']
+               if item['type'].name == 'TEXT_DISPLAY') <= strikes.PANEL_TEXT_LIMIT
+    assert text.count('`#W') == 15
+    assert text.count('<@111222333444555666>') == 15 + 1
+    assert text.count('Linked to two Discord users') == 15
+    assert text.count('Left clan') == 15
+    assert 'n' * 60 not in text and 'n' * 5 in text   # notes were shortened, not rows
+
+
+def test_normal_slot_panel_keeps_full_notes():
+    payload = _worst_case(5)
+    assert text_of(payload).count('n' * 5) >= 15
+    note = 'x' * 60
+    rows = [candidate('#ONE', count=3, replacement_note=note, manual=True)]
+    assert note in text_of(render(rows, {})[0])
+
+
+def _units(payload):
+    return sum(len(item['content'].encode('utf-16-le')) // 2 for item in payload['components']
+               if item['type'].name == 'TEXT_DISPLAY')
+
+
+def ctag(number):
+    return f'#P{"0289PYLQGRJCUV"[number // 14]}{"0289PYLQGRJCUV"[number % 14]}Y'
+
+
+def test_realistic_worst_case_stays_under_the_limit_in_utf16_units_with_every_row():
+    weights = [143345, 153877, 163012, 173499, 183901]
+    clans = [{'tag': ctag(number), 'name': f'🔥Clan{number:02d}-longname'[:15], 'type': 'FWA'}
+             for number in range(25)]
+    rows = [candidate(f'#W{group}{number}', weight=weight + 4345 * (number + 1),
+                      clan=ctag(group * 3 + number), member=111222333444555666,
+                      manual=True, departed=True, clan_is_current=False, count=3,
+                      player_name='😀' * 12, replacement_note='🔥' * 60)
+            for group, weight in enumerate(weights) for number in range(3)]
+    links = LinksResult(conflicts=tuple(row['player_tag'] for row in rows),
+                        forward_unavailable=('ClashKing',))
+    state = {'weights': weights, 'member_id': 111222333444555666, 'refresh_warning': True,
+             'clan_tags': [clan['tag'] for clan in clans]}
+    payload = render(rows, state, clans, links=links)[0]
+    text = text_of(payload)
+    assert _units(payload) <= strikes.PANEL_TEXT_LIMIT
+    assert text.count('`#W') == 15
+    assert text.count('<@111222333444555666>') >= 15
+    assert text.count('Linked to two Discord users') == 15
+
+
+def _scenarios():
+    two = [{'tag': '#P2Y', 'name': 'Edrag Rush', 'type': 'FWA'}, {'tag': '#Q0Q', 'name': 'Second', 'type': 'FWA'}]
+    spread = [candidate(f'#S{i}', count=3, weight=140000 + i * 1000, member=111222333444555666)
+              for i in range(5)]
+    return {
+        'list': (render([candidate(f'#P{i}', count=3, member=111222333444555666 if i % 2 else None,
+                                   manual=True, replacement_note='fill me', departed=i == 2)
+                         for i in range(7)], {'page': 1})[0]),
+        'weights': render(spread, {'weights': [143000, 173000]})[0],
+        'clans': render([candidate('#A', count=3, weight=150000),
+                         candidate('#B', count=3, weight=151000, clan='#Q0Q')],
+                        {'clan_tags': ['#P2Y', '#Q0Q'], 'weights': [150000]}, two)[0],
+        'member': render([candidate('#C', weight=150000)],
+                         {'weights': [150000], 'member_id': 7777777777777777777, 'refresh_warning': True},
+                         linked={'#C'})[0],
+        'notes': render([candidate('#N', count=3, manual=True, replacement_note='x' * 60,
+                                   clan_is_current=False, weight=150000)], {'weights': [150000]})[0],
+        'empty': render([], {})[0],
+    }
+
+
+def test_normal_panels_are_byte_identical_to_the_pre_bounding_output():
+    expected = json.loads((Path(__file__).parent / 'fixtures' / 'strike_panel_snapshots.json').read_text(encoding='utf-8'))
+    actual = {name: text_of(payload) for name, payload in _scenarios().items()}
+    assert actual == expected
+
+
+def _adversarial(*, clans=25, notice='n' * 180, names=15, member=1395728880991234567, flags=True):
+    weights = [143345, 153877, 163012, 173499, 183901]
+    emoji = '😀'
+    fwa = [{'tag': ctag(number), 'name': emoji * names, 'type': 'FWA'} for number in range(clans)]
+    rows = [candidate(f'#W{group}{number}', weight=weight + 4345 * (number + 1),
+                      clan=ctag((group * 3 + number) % clans), member=member, manual=True,
+                      departed=flags, clan_is_current=not flags, count=3,
+                      player_name=emoji * names, replacement_note='🔥' * 60)
+            for group, weight in enumerate(weights) for number in range(3)]
+    links = LinksResult(conflicts=tuple(row['player_tag'] for row in rows) if flags else (),
+                        forward_unavailable=('ClashKing',) if flags else ())
+    state = {'weights': weights, 'member_id': member, 'refresh_warning': True,
+             'clan_tags': [clan['tag'] for clan in fwa]}
+    store, _ = make_store(rows, fwa)
+    state = {'_id': 'tok', 'guild_id': 1, 'page': 0, **state}
+    with patch.object(strikes, 'cached_weights', lambda _tags: {}), \
+            patch.object(strikes.recruit_links, 'resolve', AsyncMock(return_value=links)):
+        panel = asyncio.run(strikes.replacement_panel(store, state, notice=notice))
+    return panel[0].build()[0], weights, member
+
+
+def _no_broken_mention(text):
+    return len(re.findall(r'<@', text)) == len(re.findall(r'<@\d+>', text))
+
+
+def test_adversarial_panel_is_bounded_and_keeps_summary_weights_and_member():
+    payload, weights, member = _adversarial()
+    text = text_of(payload)
+    summary = text.split('\n')[1]
+    assert _units(payload) <= 3900
+    assert summary.startswith('Weights 143.345k, 153.877k, 163.012k, 173.499k, 183.901k')
+    assert '25 FWA clans' in summary and summary.endswith(f'<@{member}>')
+    assert _no_broken_mention(text)
+    capped = [line for line in text.split('\n') if line.startswith('nnn')]
+    assert capped and all(len(line) == 120 and line.endswith('…') for line in capped)
+    assert text.count('### ') == 5
+
+
+def test_summary_cut_never_happens_even_when_everything_else_is_long():
+    payload, _, member = _adversarial(notice='n' * 500, flags=True)
+    text = text_of(payload)
+    assert _units(payload) <= strikes.PANEL_TEXT_LIMIT
+    assert f'<@{member}>' in text.split('\n')[1] and not text.split('\n')[1].endswith('…')
+
+
+def _fixed_panel(clans, notice='', disputed=0, limit=None):
+    fwa = [{'tag': ctag(number), 'name': f'C{number:02d}' * 5 + '😀' * 10, 'type': 'FWA'} for number in range(clans)]
+    weights = [143345, 153877, 163012, 173499, 183901]
+    rows = [candidate(f'#W{group}{number}', weight=weight + 4345 * (number + 1), clan=ctag(0), manual=True,
+                      count=3, player_name='😀' * 15, replacement_note='note ' * 12,
+                      member=111222333444555666, departed=True, clan_is_current=False)
+            for group, weight in enumerate(weights) for number in range(3)]
+    state = {'weights': weights, 'clan_tags': [clan['tag'] for clan in fwa], 'member_id': 111222333444555666}
+    links = LinksResult(sources={row['player_tag']: ('ClashKing',) for row in rows},
+                        conflicts=tuple(row['player_tag'] for row in rows[:disputed]))
+    store, _ = make_store(rows, fwa)
+    state = {'_id': 'tok', 'guild_id': 1, 'page': 0, **state}
+    with patch.object(strikes, 'cached_weights', lambda _tags: {}), \
+            patch.object(strikes.recruit_links, 'resolve', AsyncMock(return_value=links)), \
+            patch.object(strikes, 'PANEL_TEXT_LIMIT', limit or strikes.PANEL_TEXT_LIMIT):
+        return asyncio.run(strikes.replacement_panel(store, state, notice=notice))[0].build()[0]
+
+
+def test_only_the_clan_list_becomes_a_count_when_that_is_enough():
+    full = text_of(_fixed_panel(2))
+    assert 'C00' * 5 + '😀' * 10 + ', ' + 'C01' * 5 + '😀' * 10 in full.split('\n')[1] and 'FWA clans' not in full
+    payload = _fixed_panel(25, '', 13)
+    text = text_of(payload)
+    assert _units(payload) <= strikes.PANEL_TEXT_LIMIT
+    assert '25 FWA clans' in text.split('\n')[1] and 'C00' * 5 not in text.split('\n')[1]
+    assert text.count('`#W') == 15 and 'More slots' not in text
+
+
+def test_a_long_notice_is_left_alone_while_the_count_is_enough():
+    text = text_of(_fixed_panel(25, 'n' * 180, 12))
+    assert '25 FWA clans' in text.split('\n')[1]
+    assert [len(line) for line in text.split('\n') if line.startswith('nnn')] == [180]
+
+
+def test_one_selected_clan_reads_singular_and_all_rows_stay():
+    text = text_of(_fixed_panel(1, 'n' * 180, 13, limit=3860))
+    assert '1 FWA clan ·' in text and text.count('`#W') == 15
+
+
+def test_best_row_only_keeps_full_names_when_that_is_enough():
+    payload = _fixed_panel(25, 'n' * 180, 13, limit=2000)
+    text = text_of(payload)
+    assert text.count('`#W') == 5 and '😀' * 15 in text and _units(payload) <= 2000
+
+
+def test_only_the_notice_line_is_capped_when_that_is_enough():
+    text = text_of(_fixed_panel(25, 'n' * 180, 13))
+    capped = [line for line in text.split('\n') if line.startswith('nnn')]
+    assert capped == ['n' * 119 + '…']
+    assert text.count('`#W') == 15 and 'More slots' not in text
+
+
+def test_rows_beyond_the_second_go_first_and_the_best_two_per_weight_stay():
+    payload = _fixed_panel(25, 'n' * 180, 13, limit=3800)
+    text = text_of(payload)
+    assert _units(payload) <= 3800 and text.count('`#W') == 10
+    assert 'More slots on the dashboard.' in text
+    sections = text.split('### ')[1:]
+    assert len(sections) == 5 and all(section.count('`#W') == 2 for section in sections)
+    assert _no_broken_mention(text)
+
+
+def test_names_shrink_as_the_last_step_and_never_cut_mentions():
+    payload = _fixed_panel(25, 'n' * 180, 13, limit=1400)
+    text = text_of(payload)
+    assert _units(payload) <= 1400 and text.count('`#W') == 5
+    assert text.count('<@111222333444555666>') == 6 and _no_broken_mention(text)
+    assert text.split('\n')[1].startswith('Weights 143.345k') and '25 FWA clans' in text.split('\n')[1]
+
+
+def test_all_fwa_clans_only_when_none_selected_and_single_clan_wording():
+    payload, _ = render([candidate('#A', count=3, weight=150000)], {'weights': [150000]})
+    assert text_of(payload).split('\n')[1] == 'Weights 150k · All FWA clans'
+    assert 'All FWA clans +' not in text_of(_adversarial()[0])
+
+
+def test_selected_clans_over_the_limit_read_as_a_count():
+    payload, _, _ = _adversarial(clans=15)
+    assert '15 FWA clans' in text_of(payload).split('\n')[1]
+
+
+def test_dropping_rows_keeps_the_best_row_per_weight_and_says_so():
+    payload, weights, _ = _adversarial(notice='n' * 500)
+    text = text_of(payload)
+    assert 'More slots on the dashboard.' in text
+    assert text.count('`#W') < 15 and _units(payload) <= strikes.PANEL_TEXT_LIMIT
+    sections = text.split('### ')[1:]
+    assert len(sections) == 5 and all('`#W' in section for section in sections)
