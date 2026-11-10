@@ -18,6 +18,8 @@ Private editor sessions use the existing TTL-backed `component_state` collection
 ## Save from /fwa weight
 
 Decisions confirmed by Ruggie on 2026-11-09 (thread "Save weight from /fwa weight").
+Multi-account loop and ClashPerk linking confirmed by Ruggie on 2026-11-10:
+linking uses the same permission as saving.
 
 - `/fwa weight storage-weight:<loot> user:<member>` shows a private question:
   weight, Town Hall and "Save this weight for @user?" with **Save** and
@@ -27,9 +29,27 @@ Decisions confirmed by Ruggie on 2026-11-09 (thread "Save weight from /fwa weigh
 - **Save** lists the user's linked accounts from ClashKing and ClashPerk
   (`lookup_links`, fail-closed) with Town Hall emoji, name, tag and the current
   saved weight. **Other account** asks for a player tag. No links: "This user has no linked
-  accounts. Link the accounts first, or enter a player tag." A link outage offers
+  accounts. Enter a player tag to link it in ClashPerk and save." A link outage offers
   Try again, Enter player tag and Post only; it is never shown as "no links".
-  The bot never creates links.
+- A typed player tag is linked to the member in ClashPerk just before its save,
+  through `utils/clashperk_link_writes.create_link` (new links are unverified;
+  verification is never required). Accounts selected from the list are never
+  linked again. A typed tag always shows the confirm step (name, Town Hall and
+  "🔗 Links to @user in ClashPerk first."), even with no saved weight and a
+  fitting Town Hall, so a mistyped tag is seen before any link; there is no
+  unlink helper. With the same saved weight the button is **Link** and no weight
+  is written. Back writes no link. The permission is rechecked right before the link. A link
+  to another Discord user, a ClashPerk outage, a rejected link or an unknown
+  result saves nothing and offers Back; the save slot is released. Already
+  linked to the same user continues to the save.
+- After each save the reply asks **Another account?** with **Another account**
+  and **All weights done**. Another account lists the linked accounts again
+  (accounts saved in this flow show "Done now"); selecting one asks for its
+  storage weight, and Other account asks for the tag and storage weight in one
+  form. Each saved account posts its own public panel with its saved line.
+  Later rounds have no Post only. All weights done ends the flow and lists the
+  accounts saved. Each round is its own 30-minute session (at most 25 rounds),
+  with the same claim, save slot and confirm-token rules as the first.
 - Same saved weight: "Already saved", no write. Different saved weight:
   "Saved: X → New: Y" with Replace or Back. When the account Town Hall does not
   fit the weight (another TH, outside both ends of a "between" gap, or a weight

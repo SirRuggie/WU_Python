@@ -67,7 +67,9 @@ API references: [OpenAPI](https://api.clashk.ing/openapi.json),
 
 ## ClashPerk link (`/manage-links link`)
 
-Test command for ClashPerk link writes. Ticket linking will reuse the helper
+Test command for ClashPerk link writes. `/fwa weight` links typed player tags
+with this helper (see [War Weight management](war-weight-management.md#save-from-fwa-weight)).
+Ticket linking will reuse the helper
 `utils/clashperk_link_writes.create_link(user_id, player_tag)`; the command
 only checks access and formats the reply. Reads stay in
 `utils/clashperk_links.py`.
