@@ -189,17 +189,20 @@ def test_expired_token_edits_the_message_directly_and_quietly(monkeypatch):
     assert kwargs["role_mentions"] is False and kwargs["user_mentions"] is False
 
 
-def _long_entry(index, status=accounts.STATUS_LOADED):
+def _long_entry(index, status=accounts.STATUS_LOADED, name=("[]_*~`()@" * 2)[:15],
+                clan=("[]_*~`()|>" * 2)[:15]):
     if status != accounts.STATUS_LOADED:
         return accounts.AccountEntry(f"#L{index:02d}QQQQQ", status)
-    account = todo_data.Account(tag=f"#L{index:02d}QQQQQ", name=("[]_*~`()@" * 2)[:15],
-                                clan_tag=None, clan_name=("[]_*~`()|>" * 2)[:15], town_hall=17)
+    account = todo_data.Account(tag=f"#L{index:02d}QQQQQ", name=name,
+                                clan_tag=None, clan_name=clan, town_hall=17)
     return accounts.AccountEntry(account.tag, accounts.STATUS_LOADED, account)
 
 
+@pytest.mark.parametrize("names", [None, "🔥" * 15, "🔥_" * 7 + "🔥"])
 @pytest.mark.parametrize("mode", [profile.MODE_PROFILE, profile.MODE_ALERT])
-def test_whole_message_text_stays_under_discord_limit_and_keeps_every_tag(mode):
-    entries = (*(_long_entry(i) for i in range(23)),
+def test_whole_message_text_stays_under_discord_limit_and_keeps_every_tag(mode, names):
+    extra = {} if names is None else {"name": names, "clan": names}
+    entries = (*(_long_entry(i, **extra) for i in range(60)),
                _long_entry(90, accounts.STATUS_ERROR), _long_entry(91, accounts.STATUS_NOT_FOUND))
     data = accounts.AccountsData(entries=entries, unavailable_sources=("ClashPerk",))
     identity = _identity(display_name="N" * 32, username="u" * 32)
@@ -207,7 +210,7 @@ def test_whole_message_text_stays_under_discord_limit_and_keeps_every_tag(mode):
     page, pages = 0, None
     while True:
         payload = _built(profile.render_profile(identity, data, page, mode=mode))
-        total = sum(len(str(n["content"])) for n in _walk(payload) if "content" in n)
+        total = sum(accounts.text_units(str(n["content"])) for n in _walk(payload) if "content" in n)
         assert total <= 4000
         seen.extend(re.findall(r"`(#L\d+QQQQQ)`", _text(payload)))
         pages = int(re.search(r"Page \d+/(\d+)", json.dumps(payload)).group(1))

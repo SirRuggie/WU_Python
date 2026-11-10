@@ -179,7 +179,7 @@ def render_profile(
         heading = "## Linked Accounts\nNo linked accounts\n-# Not linked in ClashKing or ClashPerk."
     # Discord limits the text of all Text Displays in one message together.
     budget = MESSAGE_TEXT_LIMIT - TEXT_SAFETY_MARGIN - sum(
-        len(part) for part in (title, header, notes, heading))
+        linked_accounts.text_units(part) for part in (title, header, notes, heading))
     page, pages, blocks = linked_accounts.page_window(data, page, budget=budget)
 
     body: list = [Text(content=title)] if title else []

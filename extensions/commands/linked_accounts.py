@@ -283,6 +283,11 @@ def _text_blocks(lines: list[str]) -> list[str]:
     return blocks
 
 
+def text_units(value: str) -> int:
+    """Discord counts message text in UTF-16 code units, not code points."""
+    return len(value.encode("utf-16-le")) // 2
+
+
 def _budget_pages(data: AccountsData, budget: int) -> list[list[str]]:
     """Greedy pages of at most PAGE_SIZE rows whose text fits ``budget``."""
     budget = max(200, int(budget))
@@ -291,12 +296,12 @@ def _budget_pages(data: AccountsData, budget: int) -> list[list[str]]:
     size = 0
     for index, entry in enumerate(data.entries):
         line = _entry_line(entry, index + 1)
-        if len(line) > budget:
-            line = f"{line[:budget - 1]}…"
-        added = len(line) + (1 if current else 0)
+        while text_units(line) > budget:
+            line = f"{line[:-2]}…"
+        added = text_units(line) + (1 if current else 0)
         if current and (len(current) >= PAGE_SIZE or size + added > budget):
             pages.append(current)
-            current, size, added = [], 0, len(line)
+            current, size, added = [], 0, text_units(line)
         current.append(line)
         size += added
     if current:
@@ -309,8 +314,8 @@ def page_window(
 ) -> tuple[int, int, list[str]]:
     """Clamp ``page``; return (page, pages, row blocks within ``budget`` chars).
 
-    Discord counts every Text Display in one message against one 4000-character
-    limit, so the caller passes what is left after its own text.
+    Discord counts every Text Display in one message against one 4000-unit
+    (UTF-16) limit, so the caller passes what is left after its own text.
     """
     pages = _budget_pages(data, budget)
     try:
