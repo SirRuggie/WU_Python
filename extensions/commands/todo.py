@@ -548,8 +548,8 @@ def _urgency_accent(view_data):
 
 def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = None,
             *, checked_at: int | None = None, auto_refresh: bool = False,
-            refresh_until: datetime | None = None) -> list:
-    """A panel for every state that is not a dashboard.
+            refresh_until: datetime | None = None, accent=WU_GOLD) -> list:
+    """A panel for every state that is not a dashboard. Failures pass accent=WU_RED.
 
     IT STILL CARRIES THE NAV. A state that renders correctly and leaves the user
     with no way out is a dead end - they have to re-run /todo to escape. Every
@@ -567,7 +567,7 @@ def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = N
             view, counts or {}, checked_at=checked_at, auto_refresh=auto_refresh,
             refresh_until=refresh_until,
         ),
-    ])
+    ], accent=accent)
 
 
 def _nav_block(view: str, counts: dict, pager=None, *,
@@ -1477,7 +1477,7 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
                 "The Clash↔Discord link service did not answer. Your accounts cannot be found. "
                 "The problem is not on your side. Try again in a few minutes.",
                 checked_at=int(time.time()), auto_refresh=auto_refresh,
-                refresh_until=refresh_until,
+                refresh_until=refresh_until, accent=WU_RED,
             ), None
         todo_data.cache_put(cache_key, tags, todo_data.TTL_LINKS)
 
@@ -1540,14 +1540,14 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
                 "Your accounts are correct. No data was lost. Supercell does not give an end time. "
                 "In a few minutes, select Check now again.",
                 checked_at=int(time.time()), auto_refresh=auto_refresh,
-                refresh_until=refresh_until,
+                refresh_until=refresh_until, accent=WU_RED,
             ), None
         return None, _notice(
             "Couldn't load your accounts",
             "Your accounts are linked, but the Clash API didn't answer for any "
             "of them. Try again in a few minutes.",
             checked_at=int(time.time()), auto_refresh=auto_refresh,
-            refresh_until=refresh_until,
+            refresh_until=refresh_until, accent=WU_RED,
         ), None
 
     # Persist the current player responses while war/CWL network work runs.

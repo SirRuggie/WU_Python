@@ -18,7 +18,7 @@ from hikari.impl import (
 
 from extensions.components import register_action
 from utils import goldrush as store, recruit_links, bot_data
-from utils.constants import WU_GOLD, WARRIORS_UNITED_GUILD_ID
+from utils.constants import WU_GOLD, WU_RED, WARRIORS_UNITED_GUILD_ID
 from utils.gold_loot import refresh_board, load_town_halls
 from utils.emoji import emojis
 
@@ -384,7 +384,7 @@ async def schedule(ctx,action_id,**kwargs):
             change=await database(store.propose_schedule,event['id'],str(ctx.user.id),start,hours)
             from extensions.commands.loot_leaderboard import stamp
             future=start>store.utcnow() if start.tzinfo else False
-            await ctx.interaction.edit_initial_response(components=[Container(accent_color=WU_GOLD,components=[
+            await ctx.interaction.edit_initial_response(components=[Container(accent_color=WU_RED,components=[
                 Text(content='## ⚙️ Confirm Gold Rush schedule'),
                 Text(content=f"**Start:** {discord_time(change['starts_at'])}\n**End:** {discord_time(change['ends_at'])}\n\n"
                      + ('**All current event scores will reset to 0 until the new start.**\n' if future else '**Scores will be recalculated for this time window.**\n')

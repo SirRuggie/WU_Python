@@ -63,3 +63,57 @@ def test_saved_goldenrod_and_new_gold_templates_both_get_gold_arrows():
     for accent in (int(WU_GOLD), int(GOLDENROD_ACCENT)):
         assert str(emojis.gold_arrow_right) in content._accent_arrows(text, accent)
     assert content._accent_arrows(text, int(WU_RED)) == text
+
+
+def test_todo_urgency_red_within_two_hours_gold_within_twelve():
+    import time
+    from types import SimpleNamespace
+
+    def view(seconds):
+        row = SimpleNamespace(state="inWar", ends_at=int(time.time()) + seconds)
+        return SimpleNamespace(ok=True, rows=[row])
+
+    assert todo._urgency_accent(view(60 * 60)) == WU_RED
+    assert todo._urgency_accent(view(6 * 60 * 60)) == WU_GOLD
+    assert todo._urgency_accent(view(24 * 60 * 60)) is hikari.UNDEFINED
+
+
+def test_todo_failure_notices_are_red_and_plain_notices_gold():
+    source = (ROOT / "extensions/commands/todo.py").read_text(encoding="utf-8")
+    for title in ("Link service not available", "Clash is in maintenance", "Couldn't load your accounts"):
+        call = source[source.index(title):].split("), None", 1)[0]
+        assert "accent=WU_RED" in call, title
+    no_links = source[source.index('"No linked accounts"'):].split("), None", 1)[0]
+    assert "accent=" not in no_links
+    assert todo._notice("T", "B")[0].accent_color == WU_GOLD
+
+
+def test_lazycwl_refusals_and_expired_reviews_are_red():
+    source = (ROOT / "extensions/commands/lazycwl_dashboard.py").read_text(encoding="utf-8")
+    calls = re.findall(r'_notice\("(?:Access denied|Retry expired|Review expired)"[^\n]*', source)
+    assert len(calls) > 10
+    assert all("accent=WU_RED" in call for call in calls)
+
+
+def test_destructive_confirms_are_red():
+    from extensions.commands import warrior
+
+    panel = warrior.confirm({"_id": "s"}, "clear_clans:t", "Remove every clan role?")
+    assert panel[0].accent_color == WU_RED
+    for path, marker in (
+        ("extensions/commands/goldrush.py", "Confirm Gold Rush schedule"),
+        ("extensions/commands/cwl_member.py", 'WU_RED if session.screen == "withdraw_confirm"'),
+    ):
+        source = (ROOT / path).read_text(encoding="utf-8")
+        assert marker in source
+    goldrush = (ROOT / "extensions/commands/goldrush.py").read_text(encoding="utf-8")
+    head = goldrush[: goldrush.index("Confirm Gold Rush schedule")]
+    assert head.rstrip().rsplit("Container(", 1)[1].startswith("accent_color=WU_RED")
+
+
+def test_error_panels_are_red():
+    loot = (ROOT / "extensions/commands/loot_leaderboard.py").read_text(encoding="utf-8")
+    head = loot[: loot.index("saved gold loot test data is not available")]
+    assert head.rsplit("Container(", 1)[1].startswith("accent_color=WU_RED")
+    member = (ROOT / "extensions/commands/cwl_member.py").read_text(encoding="utf-8")
+    assert member.count("accent=WU_RED)") == 3

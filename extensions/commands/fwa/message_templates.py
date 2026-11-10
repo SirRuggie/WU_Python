@@ -24,10 +24,10 @@ from extensions.components import register_action
 
 # War result colors
 WAR_COLORS = {
-    "win": WU_GREEN,  # 0x00ff00
-    "lose": WU_RED,  # 0xff0000
+    "win": WU_GREEN,
+    "lose": WU_RED,
     "blacklisted": 0x000000,  # Black
-    "mismatch": WU_GOLD  # 0xffd700
+    "mismatch": WU_GOLD,
 }
 
 # Media footer images

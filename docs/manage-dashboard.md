@@ -139,8 +139,8 @@ recipient fields are ignored; no historical data is deleted. Queued deliveries
 without a current opt-in, or whose reminder was withdrawn, are abandoned without
 sending. Existing signup responses and explicit **DM me the time** remain intact.
 
-Management dashboards use the shared `GOLDENROD_ACCENT` (`#EEEEAA`), matching
-the About Us onboarding message.
+Management dashboards use `WU_GOLD` (`#F2B62A`). Error and destructive-confirm
+panels use `WU_RED` (`#E00010`).
 
 ### Navigation and visual conventions
 

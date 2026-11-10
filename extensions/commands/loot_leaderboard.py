@@ -19,7 +19,7 @@ from hikari.impl import (
 
 from extensions.components import register_action
 from utils.recruit_links import resolve_players
-from utils.constants import WU_GOLD, WARRIORS_UNITED_GUILD_ID
+from utils.constants import WU_GOLD, WU_RED, WARRIORS_UNITED_GUILD_ID
 from utils.gold_loot import refresh_board, load_town_halls
 from utils.emoji import emojis
 from utils import bot_data
@@ -155,7 +155,7 @@ async def execute(ctx):
         components = render_board(board)
     except (ValueError, sqlite3.Error, OSError):
         _log.exception('Gold leaderboard could not load its saved test')
-        components = [Container(accent_color=WU_GOLD, components=[Text(content=(
+        components = [Container(accent_color=WU_RED, components=[Text(content=(
             '## 🏆 Gold Loot Leaderboard\n'
             'The saved gold loot test data is not available on this host. '
             'Ask the owner to restore it. Then run this command again.'

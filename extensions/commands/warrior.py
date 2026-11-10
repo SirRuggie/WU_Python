@@ -381,6 +381,7 @@ def confirm(data, action, text):
             "Cancel",
             "no",
         ),
+        color=WU_RED,
     )
 
 
