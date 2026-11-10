@@ -77,6 +77,11 @@ def panel(title: str, *lines: str, buttons=None):
     return [Container(accent_color=0xD9A441, components=children)]
 
 
+def text_units(text):
+    # Discord counts UTF-16 code units.
+    return len(text.encode('utf-16-le')) // 2
+
+
 def safe(value, length=90):
     return str(value or '').replace('@', '＠').replace('<', '‹').replace('>', '›').replace('`', 'ˋ')[:length]
 
@@ -394,12 +399,24 @@ async def replacement_panel(store, state, *, notice=''):
     ranked = sorted(counts, key=lambda value: (value not in chosen_clans, -counts[value],
                                                str(clan_names.get(value, value)).casefold(), value))
     menu_tags = ranked[:CLAN_MENU_LIMIT]
-    summary = [('Weights ' + ', '.join(compact_weight(value) for value in weights_chosen)) if weights_chosen
-               else 'No weights',
-               ', '.join(safe(clan_names.get(value, value), 30) for value in chosen_clans) or 'All FWA clans']
-    if member_id:
-        summary.append(f'<@{member_id}>')
-    children = [Text(content='## Replacements'), Text(content=' · '.join(summary))]
+    weights_text = ('Weights ' + ', '.join(compact_weight(value) for value in weights_chosen)
+                    if weights_chosen else 'No weights')
+    clan_labels = [safe(clan_names.get(value, value), 30) for value in chosen_clans]
+
+    def summary_text(shown=None, limit=None):
+        names = clan_labels if shown is None else clan_labels[:shown]
+        clan_text = ', '.join(names) or 'All FWA clans'
+        if len(names) < len(clan_labels):
+            clan_text += f' +{len(clan_labels) - len(names)} clans'
+        text = ' · '.join([weights_text, clan_text] + ([f'<@{member_id}>'] if member_id else []))
+        if limit is None or text_units(text) <= limit:
+            return text
+        cut = max(limit - 1, 0)
+        while cut and text_units(text[:cut]) + 1 > limit:
+            cut -= 1
+        return text[:cut] + '…'
+
+    children = [Text(content='## Replacements'), Text(content=summary_text())]
     messages = []
     if state.get('refresh_warning'):
         messages.append('Could not update some clans. The data shown is old.')
@@ -440,11 +457,23 @@ async def replacement_panel(store, state, *, notice=''):
                                       note_limit=note_limit)
                 for number, row in enumerate(showing, 1)) or 'No accounts match these filters.']
     # Shorten notes uniformly, then drop them; never drop a row, mention or weight.
-    fixed = sum(len(item.content) for item in children if isinstance(item, Text)) + sum(map(len, footer))
+    def total(texts):
+        return sum(text_units(item.content) for item in children if isinstance(item, Text)) + sum(
+            map(text_units, texts + footer))
+
     for note_limit in range(NOTE_LIMIT, -1, -1):
         texts = slot_texts(note_limit)
-        if fixed + sum(map(len, texts)) <= PANEL_TEXT_LIMIT:
+        if total(texts) <= PANEL_TEXT_LIMIT:
             break
+    else:
+        # Still too long: shorten the summary's clan list, then cut the summary itself.
+        for shown in range(len(clan_labels) - 1, -1, -1):
+            children[1] = Text(content=summary_text(shown))
+            if total(texts) <= PANEL_TEXT_LIMIT:
+                break
+        else:
+            excess = total(texts) - PANEL_TEXT_LIMIT
+            children[1] = Text(content=summary_text(0, max(text_units(children[1].content) - excess, 1)))
     children.extend(Text(content=content) for content in texts + footer)
     token = state['_id']
     if menu_tags:

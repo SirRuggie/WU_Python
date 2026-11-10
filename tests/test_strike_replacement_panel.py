@@ -322,3 +322,33 @@ def test_normal_slot_panel_keeps_full_notes():
     note = 'x' * 60
     rows = [candidate('#ONE', count=3, replacement_note=note, manual=True)]
     assert note in text_of(render(rows, {})[0])
+
+
+def _units(payload):
+    return sum(len(item['content'].encode('utf-16-le')) // 2 for item in payload['components']
+               if item['type'].name == 'TEXT_DISPLAY')
+
+
+def ctag(number):
+    return f'#P{"0289PYLQGRJCUV"[number // 14]}{"0289PYLQGRJCUV"[number % 14]}Y'
+
+
+def test_realistic_worst_case_stays_under_the_limit_in_utf16_units_with_every_row():
+    weights = [143345, 153877, 163012, 173499, 183901]
+    clans = [{'tag': ctag(number), 'name': f'🔥Clan{number:02d}-longname'[:15], 'type': 'FWA'}
+             for number in range(25)]
+    rows = [candidate(f'#W{group}{number}', weight=weight + 4345 * (number + 1),
+                      clan=ctag(group * 3 + number), member=111222333444555666,
+                      manual=True, departed=True, clan_is_current=False, count=3,
+                      player_name='😀' * 12, replacement_note='🔥' * 60)
+            for group, weight in enumerate(weights) for number in range(3)]
+    links = LinksResult(conflicts=tuple(row['player_tag'] for row in rows),
+                        forward_unavailable=('ClashKing',))
+    state = {'weights': weights, 'member_id': 111222333444555666, 'refresh_warning': True,
+             'clan_tags': [clan['tag'] for clan in clans]}
+    payload = render(rows, state, clans, links=links)[0]
+    text = text_of(payload)
+    assert _units(payload) <= strikes.PANEL_TEXT_LIMIT
+    assert text.count('`#W') == 15
+    assert text.count('<@111222333444555666>') >= 15
+    assert text.count('Linked to two Discord users') == 15
