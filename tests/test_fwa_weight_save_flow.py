@@ -9,7 +9,7 @@ import hikari
 import pytest
 
 from extensions.commands.fwa import weight, weight_save as flow
-from utils import war_weight
+from utils import clashperk_link_writes, war_weight
 from cwl_web.providers import tag as normalize
 from utils.clan_weight_client import WeightClientError
 
@@ -125,10 +125,25 @@ def env(monkeypatch):
     bridge = Bridge()
     monkeypatch.setattr(flow, "bridge", bridge)
     monkeypatch.setattr(war_weight, "load", AsyncMock(return_value=war_weight.defaults()))
+    links = Links()
+    monkeypatch.setattr(flow.clashperk_link_writes, "create_link", links)
     mongo = SimpleNamespace(component_state=Collection(), button_store=Collection())
     bot = SimpleNamespace(cache=SimpleNamespace(get_emojis_view=lambda: {}),
                           rest=SimpleNamespace(create_message=AsyncMock()))
-    return SimpleNamespace(bridge=bridge, mongo=mongo, bot=bot)
+    return SimpleNamespace(bridge=bridge, mongo=mongo, bot=bot, links=links)
+
+
+class Links:
+    """Fake ClashPerk link helper. Never reaches ClashPerk."""
+
+    def __init__(self):
+        self.calls = []
+        self.status = clashperk_link_writes.LINKED
+        self.message = "Linked in ClashPerk."
+
+    async def __call__(self, user_id, player_tag):
+        self.calls.append((user_id, player_tag))
+        return clashperk_link_writes.LinkResult(self.status, player_tag, self.message)
 
 
 def slash_ctx():
@@ -231,7 +246,7 @@ def test_no_links_and_link_outage_messages(env):
     _, _, sid = start(env)
     env.bridge.accounts = []
     view = call(flow.on_save, component_ctx(), sid, env)
-    assert "This user has no linked accounts. Link the accounts first, or enter a player tag." in text_of(view)
+    assert "This user has no linked accounts. Enter a player tag to link it in ClashPerk and save." in text_of(view)
     assert custom_ids(view) == [f"fws_tag:{sid}", f"fws_post:{sid}"]
     env.bridge.error["accounts"] = WeightClientError("Could not load linked accounts.", code="links_unavailable")
     view = call(flow.on_save, component_ctx(), sid, env)
@@ -367,8 +382,8 @@ def test_concurrent_saves_in_one_session_write_once(env):
     state = env.mongo.component_state.rows[sid]
 
     async def both():
-        first = asyncio.create_task(flow.choose(component_ctx(), env.bot, env.mongo, dict(state), "#P2Y"))
-        second = asyncio.create_task(flow.choose(component_ctx(), env.bot, env.mongo, dict(state), "#Q2Y"))
+        first = asyncio.create_task(flow.choose(component_ctx(), env.bot, env.mongo, dict(state), "#P2Y", LOOT))
+        second = asyncio.create_task(flow.choose(component_ctx(), env.bot, env.mongo, dict(state), "#Q2Y", LOOT))
         await asyncio.sleep(0.01)
         gate.set()
         return await asyncio.gather(first, second)
@@ -503,7 +518,7 @@ def test_save_that_loses_race_to_post_only_still_reports_the_write(env):
     state = env.mongo.component_state.rows[sid]
     run(flow.claim(env.mongo, sid))  # The save lock expired and Post only won first.
     result = run(flow.finish(component_ctx(), env.bot, env.mongo, dict(state),
-                             {"tag": "#P2Y", "name": "Alpha", "clan_name": "Family"},
+                             {"tag": "#P2Y", "name": "Alpha", "clan_name": "Family"}, LOOT,
                              already=False, lock="expired-lock"))
     assert "Saved 150,000 for Alpha `#P2Y` (Family)." in text_of(result)
     assert "already posted without the saved line" in text_of(result)
@@ -523,3 +538,220 @@ def test_custom_ids_have_one_colon(env):
     for value in custom_ids(components) + custom_ids(view):
         assert value.count(":") == 1, value
     assert json.dumps(sid)  # State id is a plain string.
+
+
+# ---------------------------------------------------------------- multi-account loop
+
+
+def saved_first(env):
+    """Round 1: save Alpha at once. Return (result view, next round id)."""
+    _, _, sid = start(env)
+    pick = component_ctx(values=["#P2Y"])
+    call(flow.on_pick, pick, sid, env)
+    view = pick.interaction.edit_initial_response.call_args.kwargs["components"]
+    ids = custom_ids(view)
+    assert len(ids) == 2 and ids[0].startswith("fws_another:"), ids
+    following = ids[0].partition(":")[2]
+    assert ids[1] == f"fws_done:{following}" and following != sid
+    return view, following
+
+
+def entry_token(ctx):
+    custom_id = ctx.respond_with_modal.call_args.kwargs["custom_id"]
+    assert custom_id.startswith("fws_entry:") and custom_id.count(":") == 1
+    return custom_id.partition(":")[2]
+
+
+def modal_fields(ctx):
+    return [n["custom_id"] for n in walk([row.build()[0] for row in ctx.respond_with_modal.call_args.kwargs["components"]])
+            if "custom_id" in n]
+
+
+def test_save_asks_another_account(env):
+    view, following = saved_first(env)
+    assert "Another account?" in text_of(view)
+    state = env.mongo.component_state.rows[following]
+    assert state["loot"] is None and state["round"] == 2 and state["target_id"] == 100
+    assert state["saved_tags"] == ["#P2Y"]
+
+
+def test_another_account_lists_marks_and_has_no_post_only(env):
+    _, following = saved_first(env)
+    env.bridge.accounts[0]["weight"] = 150000
+    view = call(flow.on_another, component_ctx(), following, env)
+    menu = next(n for n in walk(built(view)) if n.get("custom_id") == f"fws_pick:{following}")
+    descriptions = [o.get("description") for o in menu["options"]]
+    assert descriptions[0] == "#P2Y · Saved 150,000 · Done now"
+    assert descriptions[1] == "#Q2Y · Saved 140,000"
+    assert f"fws_post:{following}" not in custom_ids(view)
+    assert custom_ids(view)[-1] == f"fws_done:{following}"
+    assert "Select the next account" in text_of(view)
+
+
+def test_next_account_asks_weight_then_saves_and_posts_its_panel(env):
+    _, following = saved_first(env)
+    env.bridge.accounts[1].update(town_hall=15, weight=None)
+    pick = component_ctx(values=["#Q2Y"])
+    call(flow.on_pick, pick, following, env)
+    pick.interaction.create_initial_response.assert_not_awaited()
+    assert modal_fields(pick) == ["loot"]
+    token = entry_token(pick)
+    submit = component_ctx(fields={"loot": "29,000"})
+    call(flow.on_entry, submit, token, env)
+    view = submit.interaction.edit_initial_response.call_args.kwargs["components"]
+    assert "Saved 145,000 for Beta `#Q2Y` (No clan)." in text_of(view)
+    assert ("save", {"actor_name": "Staff", "tag": "#Q2Y", "weight": 145000, "revision": 2}) in env.bridge.calls
+    assert len(posted(env)) == 2 and "Saved for Beta `#Q2Y`" in posted(env)[1]
+    assert env.links.calls == []  # A listed linked account is never linked again.
+    assert "Another account?" in text_of(view)
+
+
+def test_all_weights_done_ends_the_loop_once(env):
+    _, following = saved_first(env)
+    done = call(flow.on_done, component_ctx(), following, env)
+    assert "All weights done" in text_of(done) and "Alpha `#P2Y`" in text_of(done)
+    again = call(flow.on_done, component_ctx(), following, env)
+    assert "already handled" in text_of(again)
+    late = call(flow.on_another, component_ctx(), following, env)
+    assert "already handled" in text_of(late)
+    assert len(posted(env)) == 1
+
+
+@pytest.mark.parametrize("value,message", [
+    ("abc", "Enter a storage weight from 1 to 100,000."),
+    ("0", "Enter a storage weight from 1 to 100,000."),
+    ("100001", "Enter a storage weight from 1 to 100,000."),
+    ("34850", "Cannot save 174,250. Saved weights must be a multiple of 1,000."),
+])
+def test_bad_storage_weight_saves_nothing(env, value, message):
+    _, following = saved_first(env)
+    pick = component_ctx(values=["#Q2Y"])
+    call(flow.on_pick, pick, following, env)
+    submit = component_ctx(fields={"loot": value})
+    call(flow.on_entry, submit, entry_token(pick), env)
+    view = submit.interaction.edit_initial_response.call_args.kwargs["components"]
+    assert message in text_of(view)
+    assert custom_ids(view) == [f"fws_back:{following}", f"fws_done:{following}"]
+    assert len([c for c in env.bridge.calls if c[0] == "save"]) == 1  # Only round 1.
+
+
+def test_entry_token_is_bound_to_its_owner(env):
+    _, following = saved_first(env)
+    pick = component_ctx(values=["#Q2Y"])
+    call(flow.on_pick, pick, following, env)
+    submit = component_ctx(fields={"loot": "30000"}, user=999)
+    call(flow.on_entry, submit, entry_token(pick), env)
+    assert "expired" in text_of(submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    assert len([c for c in env.bridge.calls if c[0] == "save"]) == 1
+
+
+def test_other_account_in_later_round_asks_tag_and_weight_then_links_and_saves(env):
+    _, following = saved_first(env)
+    pick = component_ctx(values=["other"])
+    call(flow.on_pick, pick, following, env)
+    assert modal_fields(pick) == ["tag", "loot"]
+    submit = component_ctx(fields={"tag": "#u2y", "loot": "30000"})
+    call(flow.on_entry, submit, entry_token(pick), env)
+    text = text_of(submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    assert env.links.calls == [(100, "#U2Y")]
+    assert "🔗 Linked in ClashPerk." in text and "Saved 150,000 for Typed `#U2Y`" in text
+    access = [i for i, c in enumerate(env.bridge.calls) if c[0] == "access"]
+    saves = [i for i, c in enumerate(env.bridge.calls) if c[0] == "save"]
+    assert access[-1] < saves[-1]  # Permission rechecked right before the link and save.
+
+
+def test_typed_tag_links_before_save_in_first_round(env):
+    _, _, sid = start(env)
+    call(flow.on_tagged, component_ctx(fields={"tag": "#U2Y"}), sid, env)
+    assert env.links.calls == [(100, "#U2Y")]
+    assert [c[1]["tag"] for c in env.bridge.calls if c[0] == "save"] == ["#U2Y"]
+
+
+@pytest.mark.parametrize("status", [
+    clashperk_link_writes.OTHER_OWNER, clashperk_link_writes.UNAVAILABLE,
+    clashperk_link_writes.REJECTED, clashperk_link_writes.UNKNOWN,
+])
+def test_link_failure_saves_nothing_and_posts_nothing(env, status):
+    env.links.status = status
+    env.links.message = "This account is linked to a different Discord user in ClashPerk. Nothing was changed."
+    _, _, sid = start(env)
+    submit = component_ctx(fields={"tag": "#U2Y"})
+    call(flow.on_tagged, submit, sid, env)
+    view = submit.interaction.edit_initial_response.call_args.kwargs["components"]
+    assert "The weight was not saved." in text_of(view)
+    assert custom_ids(view) == [f"fws_back:{sid}", f"fws_post:{sid}"]
+    assert not [c for c in env.bridge.calls if c[0] == "save"] and posted(env) == []
+    assert run(flow.lock_save(env.mongo, sid)) is not None  # The save slot is released.
+
+
+def test_already_linked_typed_tag_still_saves(env):
+    env.links.status = clashperk_link_writes.ALREADY_LINKED
+    _, _, sid = start(env)
+    submit = component_ctx(fields={"tag": "#U2Y"})
+    call(flow.on_tagged, submit, sid, env)
+    text = text_of(submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    assert "🔗 Already linked in ClashPerk." in text and "Saved 150,000" in text
+
+
+def test_typed_tag_with_same_weight_links_and_writes_no_weight(env):
+    env.bridge.accounts[0]["weight"] = 150000
+    _, _, sid = start(env)
+    submit = component_ctx(fields={"tag": "#P2Y"})
+    call(flow.on_tagged, submit, sid, env)
+    text = text_of(submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    assert env.links.calls == [(100, "#P2Y")]
+    assert "Already saved for Alpha `#P2Y`." in text
+    assert not [c for c in env.bridge.calls if c[0] == "save"]
+
+
+def test_typed_tag_confirm_shows_link_and_links_only_on_confirm(env):
+    _, _, sid = start(env)
+    env.bridge.accounts.append({"tag": "#U2Y", "name": "Gamma", "town_hall": 13, "clan_name": None,
+                                "available": True, "weight": None, "revision": 0})
+    submit = component_ctx(fields={"tag": "#U2Y"})
+    call(flow.on_tagged, submit, sid, env)
+    view = submit.interaction.edit_initial_response.call_args.kwargs["components"]
+    assert "🔗 Links to <@100> in ClashPerk first." in text_of(view)
+    assert env.links.calls == []
+    call(flow.on_back, component_ctx(), sid, env)
+    assert env.links.calls == []  # Back writes no link.
+    call(flow.on_tagged, submit, sid, env)
+    token = confirm_token(submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    done = call(flow.on_confirm, component_ctx(), token, env)
+    assert env.links.calls == [(100, "#U2Y")] and "Saved 150,000 for Gamma" in text_of(done)
+
+
+def test_access_removed_before_link_writes_no_link(env):
+    _, _, sid = start(env)
+    original = env.bridge.__call__
+    seen = {"lookup": False}
+
+    async def revoke(action, **kwargs):
+        if action == "lookup":
+            seen["lookup"] = True
+        elif action == "access" and seen["lookup"]:
+            raise WeightClientError("You need weight saving access.", code="forbidden")
+        return await original(action, **kwargs)
+
+    flow.bridge = revoke
+    submit = component_ctx(fields={"tag": "#U2Y"})
+    call(flow.on_tagged, submit, sid, env)
+    text = text_of(submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    assert env.links.calls == []
+    assert "Panel posted. Nothing was saved." in text
+    assert len(posted(env)) == 1
+
+
+def test_later_round_access_removed_posts_nothing_without_a_weight(env):
+    _, following = saved_first(env)
+    env.bridge.error["accounts"] = WeightClientError("You need weight saving access.", code="forbidden")
+    view = call(flow.on_another, component_ctx(), following, env)
+    assert "Nothing was saved." in text_of(view) and "Panel posted" not in text_of(view)
+    assert len(posted(env)) == 1
+
+
+def test_loop_custom_ids_have_one_colon(env):
+    view, following = saved_first(env)
+    listing = call(flow.on_another, component_ctx(), following, env)
+    for value in custom_ids(view) + custom_ids(listing):
+        assert value.count(":") == 1, value
