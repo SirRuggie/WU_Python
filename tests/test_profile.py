@@ -79,13 +79,26 @@ def test_card_has_identity_section_with_avatar_separator_then_accounts():
     text = _text(payload)
     assert "## Linked Accounts" in text and "**1 linked account**" in text
     assert "Account created:** <t:" in text and "Joined server:** <t:" in text
-    assert "`#TAG01`" in text
+    assert "**Player 01** · [#TAG01](https://link.clashofclans.com/" in text
+
+
+@pytest.mark.parametrize("name", ["❤️MC QUEEN❤️", "[x](https://evil.test)", "a]b(c", "https://evil.test"])
+def test_name_with_link_breaking_characters_is_plain_text(name):
+    text = _text(_built(profile.render_profile(_identity(display_name=name), accounts.AccountsData())))
+    first = text.split("\n")[0]
+    assert first.startswith("### ") and "](" not in first and "https://" not in first
+    assert "[warrior\\_one](https://discord.com/users/123)" in text
+
+
+def test_odd_username_falls_back_to_a_safe_label():
+    text = _text(_built(profile.render_profile(_identity(username="Bad Name!"), accounts.AccountsData())))
+    assert "[Discord profile](https://discord.com/users/123)" in text
 
 
 def test_name_is_a_profile_link_never_a_mention_and_no_raw_id_text():
     payload = _built(profile.render_profile(_identity(), accounts.AccountsData()))
     text = _text(payload)
-    assert "[Warrior \\[One\\]](https://discord.com/users/123) (warrior\\_one)" in text
+    assert "### Warrior \\[One\\]\n[warrior\\_one](https://discord.com/users/123)" in text
     assert "<@123>" not in text and "<@" not in text
     without_links = re.sub(r"\(https://discord\.com/users/\d+\)", "", text)
     assert "123" not in without_links
@@ -120,7 +133,7 @@ def test_paging_and_refresh_keep_target_and_are_registered():
     data = accounts.AccountsData(entries=tuple(_entry(i) for i in range(46)))
     for page, rows in enumerate((20, 20, 6)):
         payload = _built(profile.render_profile(_identity(), data, page))
-        assert len(re.findall(r"`(#TAG\d+)`", _text(payload))) == rows
+        assert len(re.findall(r"\[(#TAG\d+)\]", _text(payload))) == rows
         ids = _custom_ids(payload)
         assert len(ids) == len(set(ids))
         assert all(i.split(":")[1] == "123" for i in ids)
@@ -212,7 +225,7 @@ def test_whole_message_text_stays_under_discord_limit_and_keeps_every_tag(mode, 
         payload = _built(profile.render_profile(identity, data, page, mode=mode))
         total = sum(accounts.text_units(str(n["content"])) for n in _walk(payload) if "content" in n)
         assert total <= 4000
-        seen.extend(re.findall(r"`(#L\d+QQQQQ)`", _text(payload)))
+        seen.extend(re.findall(r"[\[`](#L\d+QQQQQ)[\]`]", _text(payload)))
         pages = int(re.search(r"Page \d+/(\d+)", json.dumps(payload)).group(1))
         page += 1
         if page >= pages:
@@ -237,7 +250,7 @@ def test_alert_page_keeps_alert_header():
     data = accounts.AccountsData(entries=(_entry(1),))
     payload = _built(profile.render_profile(_identity(), data, mode=profile.MODE_ALERT))
     text = _text(payload)
-    assert text.startswith("# 👋 New Warrior")
+    assert text.startswith("# ⛩️ New Warrior at the Gate")
     assert f"<@&{ROLE}>" in text
     assert all(i.endswith(":a") for i in _custom_ids(payload))
     assert f"<@&{ROLE}>" not in _text(_built(profile.render_profile(_identity(), data)))
@@ -309,7 +322,7 @@ def test_alert_posts_once_with_only_the_staff_role_ping(monkeypatch):
     assert kwargs["role_mentions"] == [ROLE]
     assert kwargs["user_mentions"] is False and kwargs["mentions_everyone"] is False
     text = _text(_built(kwargs["components"]))
-    assert "# 👋 New Warrior" in text and "No linked accounts" in text and "<@123>" not in text
+    assert "# ⛩️ New Warrior at the Gate" in text and "No linked accounts" in text and "<@123>" not in text
 
 
 @pytest.mark.parametrize("member", [_member(guild=1), _member(bot=True)])

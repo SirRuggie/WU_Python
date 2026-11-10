@@ -205,7 +205,7 @@ def test_every_linked_tag_is_reconciled_as_loaded_not_found_or_error(monkeypatch
 
     text = _text(_payload(data))
     for tag in by_tag:
-        assert text.count(f"`{tag}`") == 1
+        assert text.count(f"`{tag}`") + text.count(f"[{tag}]") == 1
     assert "⚠️ **Could not load 1 account.** Its linked tag is shown above. Try again in a few minutes." in text
     assert "1 linked tag returned no player profile" in text
 
@@ -267,11 +267,11 @@ def test_each_account_is_one_compact_mobile_row():
     assert rows[0].startswith("**1.**")
     assert "TH17" in rows[0]
     assert "Player 01" in rows[0]
-    assert "`#TAG01`" in rows[0]
+    assert "[#TAG01](https://link.clashofclans.com/" in rows[0]
     assert "Clan 01" in rows[0]
     assert rows[0].index("TH17") < rows[0].index("Player 01")
-    assert rows[0].index("Player 01") < rows[0].index("`#TAG01`")
-    assert rows[0].index("`#TAG01`") < rows[0].index("Clan 01")
+    assert rows[0].index("Player 01") < rows[0].index("[#TAG01]")
+    assert rows[0].index("[#TAG01]") < rows[0].index("Clan 01")
     assert "https://link.clashofclans.com/" in rows[0]
     assert rows[1].startswith("**2.** ⚠️ `#MISSING`")
     assert rows[2] == "**3.** ⏳ `#FAILED` · **Account not loaded** · The link is saved. Try again in a few minutes."
@@ -302,7 +302,7 @@ def test_forty_six_accounts_use_three_complete_bounded_pages():
     for page, expected_rows in enumerate((20, 20, 6)):
         payload = _payload(data, page)
         text = _text(payload)
-        page_tags = re.findall(r"`(#[^`]+)`", text)
+        page_tags = re.findall(r"[\[`](#[^`\]]+)[\]`]", text)
         seen_tags.extend(page_tags)
 
         assert len(page_tags) == expected_rows
@@ -333,10 +333,10 @@ def test_forty_six_accounts_use_three_complete_bounded_pages():
     assert len(seen_tags) == 46
     assert set(seen_tags) == {entry.tag for entry in entries}
 
-    assert re.findall(r"`(#[^`]+)`", _text(_payload(data, -999))) == [
+    assert re.findall(r"[\[`](#[^`\]]+)[\]`]", _text(_payload(data, -999))) == [
         entry.tag for entry in entries[:20]
     ]
-    assert re.findall(r"`(#[^`]+)`", _text(_payload(data, 999))) == [
+    assert re.findall(r"[\[`](#[^`\]]+)[\]`]", _text(_payload(data, 999))) == [
         entry.tag for entry in entries[40:]
     ]
 
@@ -362,7 +362,7 @@ def test_markdown_heavy_max_length_rows_page_within_the_message_text_limit():
         payload = _payload(data, page)
         contents = [str(node["content"]) for node in _walk(payload) if "content" in node]
         assert sum(len(content) for content in contents) <= 4000
-        seen.extend(re.findall(r"`(#MAX[^`]+)`", _text(payload)))
+        seen.extend(re.findall(r"[\[`](#MAX[^`\]]+)[\]`]", _text(payload)))
         if "Page" not in str(payload) or f"Page {page + 1}/{page + 1}" in str(payload):
             break
     assert sorted(seen) == sorted(entry.tag for entry in entries)

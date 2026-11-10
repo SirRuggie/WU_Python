@@ -247,7 +247,9 @@ def _entry_line(entry: AccountEntry, ordinal: int) -> str:
         clan = _escape_markdown(account.clan_name or "No clan")
         return (
             f"**{ordinal}.** {_th_display(account.town_hall)} · "
-            f"**[{name}]({_player_link(entry)})** · `{entry.tag}` · {clan}"
+            # The link sits on the tag: Discord drops masked links whose label
+            # holds some name characters (seen live with "❤️MC QUEEN❤️").
+            f"**{name}** · [{entry.tag}]({_player_link(entry)}) · {clan}"
         )
     if entry.status == STATUS_ERROR:
         return (
