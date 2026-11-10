@@ -162,7 +162,9 @@ it("searches the Member filter by name and applies the exact ID", async () => {
   await act(async () => button("Filters").click());
   const input = [
     ...document.querySelectorAll<HTMLInputElement>("dialog input"),
-  ].find((node) => node.parentElement!.textContent!.startsWith("Find member"))!;
+  ].find((node) =>
+    node.parentElement!.textContent!.startsWith("Discord member"),
+  )!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,

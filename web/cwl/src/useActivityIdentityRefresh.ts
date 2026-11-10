@@ -21,7 +21,12 @@ export function mergeIdentityAccounts(
   return current.map((row) => {
     const live = indexed.get(row.player_tag);
     return live
-      ? { ...row, discord_id: live.discord_id, discord_name: live.discord_name }
+      ? {
+          ...row,
+          discord_id: live.discord_id,
+          discord_name: live.discord_name,
+          discord_username: live.discord_username,
+        }
       : row;
   });
 }

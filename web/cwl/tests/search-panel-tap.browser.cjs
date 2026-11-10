@@ -198,7 +198,9 @@ const server = createServer((req, res) => {
 
     // Member: type, then tap the option.
     await page.getByRole("button", { name: /^Member:/ }).click();
-    await page.getByLabel("Find member").fill("slayer");
+    await page
+      .getByRole("searchbox", { name: "Discord member" })
+      .fill("slayer");
     await page
       .getByRole("dialog", { name: "Select member" })
       .getByRole("button", { name: /@slayer/ })

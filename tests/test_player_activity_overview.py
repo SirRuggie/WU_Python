@@ -288,12 +288,12 @@ def test_production_profile_without_member_id_gets_cached_bulk_link_identity(mon
         request=SimpleNamespace(app={})
         recruit_links.resolve_players.return_value=recruit_links.PlayerOwners(owners={'#PYY':'123456789012345678'})
         monkeypatch.setattr(manage_roles, 'searchable_members', AsyncMock(return_value=[
-            {'nick':'Display','user':{'id':'123456789012345678'}}]))
+            {'nick':'Display','user':{'id':'123456789012345678','username':' display_user '}}]))
         first, empty=await account_identities(request,['#PYY'])
         assert first == {} and not empty
         await request.app['activity_identity_cache']['task']
         cached, empty=await account_identities(request,['#PYY'])
-        assert cached['#PYY']=={'discord_id':'123456789012345678','discord_name':'Display'} and not empty
+        assert cached['#PYY']=={'discord_id':'123456789012345678','discord_name':'Display','discord_username':'display_user'} and not empty
         recruit_links.resolve_players.assert_awaited_once_with(['#PYY'])
     asyncio.run(run())
 
@@ -403,7 +403,7 @@ def test_identity_failure_cooldown_can_recover_and_pending_is_not_failure(monkey
         monkeypatch.setattr(identity.time, "monotonic", lambda: clock[0])
         request = SimpleNamespace(app={})
         recruit_links.resolve_players.side_effect = [TimeoutError(), recruit_links.PlayerOwners(owners={"#PYY": "123456789012345678"})]
-        monkeypatch.setattr(manage_roles, "searchable_members", AsyncMock(return_value=[{"nick":"Recovered", "user":{"id":"123456789012345678"}}]))
+        monkeypatch.setattr(manage_roles, "searchable_members", AsyncMock(return_value=[{"nick":"Recovered", "user":{"id":"123456789012345678","username":"recovered_u"}}]))
         assert (await identity.account_identities(request,["#PYY"])) == ({},False)
         await request.app["activity_identity_cache"]["task"]
         assert (await identity.account_identities(request,["#PYY"])) == ({},True)
@@ -413,6 +413,7 @@ def test_identity_failure_cooldown_can_recover_and_pending_is_not_failure(monkey
         await request.app["activity_identity_cache"]["task"]
         rows, warning = await identity.account_identities(request,["#PYY"])
         assert rows["#PYY"]["discord_name"] == "Recovered" and not warning
+        assert rows["#PYY"]["discord_username"] == "recovered_u"
     asyncio.run(run())
 
 
@@ -446,16 +447,16 @@ def test_partial_provider_preserves_cache_warns_and_recovers(monkeypatch, caplog
     async def run():
         clock=[0]
         monkeypatch.setattr(identity.time,"monotonic",lambda:clock[0])
-        old={"#PYY":{"discord_id":"123456789012345678","discord_name":"Prior"}, "#PQQ":{"discord_id":"234567890123456789","discord_name":"Still healthy"}}
+        old={"#PYY":{"discord_id":"123456789012345678","discord_name":"Prior","discord_username":"prior_u"}, "#PQQ":{"discord_id":"234567890123456789","discord_name":"Still healthy","discord_username":"healthy_u"}}
         request=SimpleNamespace(app={"activity_identity_cache":{"identities":old}} if warm else {})
         recruit_links.resolve_players.side_effect=[recruit_links.PlayerOwners(owners={"#PYY":"123456789012345678"},unavailable=("ClashKing",)),recruit_links.PlayerOwners(owners={"#PYY":"123456789012345678","#PQQ":"234567890123456789"})]
-        monkeypatch.setattr(manage_roles,"searchable_members",AsyncMock(return_value=[{"nick":"Refreshed","user":{"id":"123456789012345678"}},{"nick":"Recovered","user":{"id":"234567890123456789"}}]))
+        monkeypatch.setattr(manage_roles,"searchable_members",AsyncMock(return_value=[{"nick":"Refreshed","user":{"id":"123456789012345678","username":"fresh_u"}},{"nick":"Recovered","user":{"id":"234567890123456789"}}]))
         await identity.account_identities(request,["#PYY","#PQQ"])
         await request.app["activity_identity_cache"]["task"]
         rows,warning=await identity.account_identities(request,["#PYY","#PQQ"])
         assert warning and request.app["activity_identity_cache"]["partial"]
-        assert rows["#PYY"]["discord_name"]=="Refreshed"
-        if warm:assert rows["#PQQ"]["discord_name"]=="Recovered"
+        assert rows["#PYY"]["discord_name"]=="Refreshed" and rows["#PYY"]["discord_username"]=="fresh_u"
+        if warm:assert rows["#PQQ"]["discord_name"]=="Recovered" and rows["#PQQ"]["discord_username"] is None
         else:assert "#PQQ" not in rows
         assert "ClashKing" in caplog.text and "returned=1" in caplog.text
         clock[0]=121
@@ -542,4 +543,25 @@ def test_as_of_metadata_does_not_hide_the_existing_tracking_behind_warning(monke
         assert data['activity_as_of'].startswith('Activity as of ')
         assert data['activity_warning'] == 'Activity tracking is behind. Quiet indicators are paused.'
         assert data['accounts'][0]['quiet_days'] is None
+    asyncio.run(run())
+
+
+def test_identity_failure_retains_prior_discord_username(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from cwl_web import strike_activity_identity as identity, manage_roles
+    from utils import recruit_links
+    async def run():
+        clock=[0]
+        monkeypatch.setattr(identity.time,"monotonic",lambda:clock[0])
+        old={"#PYY":{"discord_id":"123456789012345678","discord_name":"Prior","discord_username":"prior_u"}}
+        request=SimpleNamespace(app={"activity_identity_cache":{"identities":old}})
+        recruit_links.resolve_players.side_effect=None
+        recruit_links.resolve_players.return_value=recruit_links.PlayerOwners(owners={"#PYY":"123456789012345678"})
+        monkeypatch.setattr(manage_roles,"searchable_members",AsyncMock(side_effect=RuntimeError("down")))
+        await identity.account_identities(request,["#PYY"])
+        await request.app["activity_identity_cache"]["task"]
+        rows,_=await identity.account_identities(request,["#PYY"])
+        assert rows["#PYY"]["discord_name"]=="Prior" and rows["#PYY"]["discord_username"]=="prior_u"
     asyncio.run(run())

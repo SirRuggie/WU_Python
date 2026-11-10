@@ -411,7 +411,7 @@ export function visibleActivityAccounts(
   rows: ActivityAccount[],
   f: ActivityFilters,
 ) {
-  const search = f.query.trim().normalize("NFKC").toLocaleLowerCase();
+  const search = foldSearch(f.query);
   return rows
     .filter((row) => {
       const wars = warsWithoutAttacking(row),
@@ -426,9 +426,8 @@ export function visibleActivityAccounts(
             row.player_tag,
             row.discord_id,
             row.discord_name,
-          ].some((value) =>
-            value?.normalize("NFKC").toLocaleLowerCase().includes(search),
-          )) &&
+            row.discord_username,
+          ].some((value) => value && foldSearch(value).includes(search))) &&
         (!f.clans.length ||
           f.clans.includes(
             (row.left_clan ? row.last_clan_tag : row.current_clan_tag) || "",
@@ -508,6 +507,14 @@ export function findReplacementState(clan: string, weight?: number | null) {
     query.append("slot_weight", String(Math.round(weight)));
   query.append("slot_clan", clan);
   return query.toString();
+}
+/** Fancy Unicode letters, accents and case fold away so "𝔇𝔯𝔞𝔤𝔬𝔫" matches "dragon". */
+export function foldSearch(text: string) {
+  return text
+    .trim()
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase();
 }
 /** The member name shown on rows; never an ID. */
 export function memberName(

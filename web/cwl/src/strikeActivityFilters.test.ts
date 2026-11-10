@@ -409,3 +409,21 @@ it("Find a fill for this slot opens Replacements with the slot weight and clan",
     expect(bare.getAll("slot_clan")).toEqual(["#PQQ"]);
   }
 });
+it("toolbar search matches the Discord username and folds fancy letters", () => {
+  const rows = [
+    row({
+      player_tag: "#PAA",
+      player_name: "One",
+      discord_id: "100000000000000001",
+      discord_name: "Ace",
+      discord_username: "dragonslayer_77",
+    }),
+    row({ player_tag: "#PBB", player_name: "Two", discord_name: "Other" }),
+  ];
+  const f = parseActivityFilters("?activity_view=all");
+  const tags = (query: string) =>
+    visibleActivityAccounts(rows, { ...f, query }).map((r) => r.player_tag);
+  expect(tags("slayer_77")).toEqual(["#PAA"]);
+  expect(tags("𝔇𝔯𝔞𝔤𝔬𝔫")).toEqual(["#PAA"]);
+  expect(tags("nobody")).toEqual([]);
+});
