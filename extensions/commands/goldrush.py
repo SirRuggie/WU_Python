@@ -18,7 +18,7 @@ from hikari.impl import (
 
 from extensions.components import register_action
 from utils import goldrush as store, recruit_links, bot_data
-from utils.constants import WU_GOLD, WU_RED, WARRIORS_UNITED_GUILD_ID
+from utils.constants import WU_GOLD, WU_GREEN, WU_RED, WARRIORS_UNITED_GUILD_ID
 from utils.gold_loot import refresh_board, load_town_halls
 from utils.emoji import emojis
 
@@ -275,7 +275,7 @@ async def confirm(ctx,action_id,**kwargs):
         return
     try:
         event=await database(store.confirm_schedule,action_id,str(ctx.user.id),str(ctx.interaction.guild_id))
-        await ctx.interaction.edit_initial_response(components=[Container(accent_color=WU_GOLD,
+        await ctx.interaction.edit_initial_response(components=[Container(accent_color=WU_GREEN,
             components=[Text(content='## ✅ Gold Rush schedule saved\nScores now use the new event window. Signups and battle history are preserved.')])])
         await sync_messages(event['id'])
     except ValueError as error:

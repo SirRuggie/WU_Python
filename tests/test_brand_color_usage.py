@@ -173,3 +173,19 @@ def test_other_local_artwork_is_still_rejected():
     saved["footer_url"] = "assets/Green_Footer.png"
     with pytest.raises(ValueError):
         content.validate_template("leaders_checking_you_out", saved)
+
+
+def test_blocking_prompts_destructive_replace_and_saved_schedule_colors():
+    strikes = (ROOT / "extensions/commands/strikes.py").read_text(encoding="utf-8")
+    for text in ("Select an account from this menu.", "Select a clan from the menu.", "Select a member from the menu."):
+        line = next(line for line in strikes.splitlines() if text in line and "panel(" in line)
+        assert "accent=WU_RED" in line, text
+    lazy = (ROOT / "extensions/commands/lazycwl_dashboard.py").read_text(encoding="utf-8")
+    blocking = re.findall(r'_notice\("(?:Select a roster|FWA only)"[^\n]*', lazy)
+    assert len(blocking) == 4 and all("accent=WU_RED" in call for call in blocking)
+    info = re.findall(r'_notice\("Nothing to (?:capture|review)"[^\n]*', lazy)
+    assert len(info) == 2 and not any("accent=" in call for call in info)
+    assert 'operation="replace"), WU_RED)' in lazy
+    goldrush = (ROOT / "extensions/commands/goldrush.py").read_text(encoding="utf-8")
+    head = goldrush[: goldrush.index("Gold Rush schedule saved")]
+    assert head.rsplit("Container(", 1)[1].startswith("accent_color=WU_GREEN")

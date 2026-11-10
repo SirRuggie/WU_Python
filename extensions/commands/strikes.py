@@ -258,7 +258,7 @@ async def pick(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
         return panel('Strike', 'This selection expired or staff access changed.', accent=WU_RED)
     selected = ctx.interaction.values[0]
     if selected not in state['tags']:
-        return panel('Strike', 'Select an account from this menu.')
+        return panel('Strike', 'Select an account from this menu.', accent=WU_RED)
     links = await recruit_links.resolve(state['member_id'])
     if links.unavailable or selected not in links.sources or selected in links.conflicts:
         return panel('Strike', 'Account links changed. Run /strikes add again.', accent=WU_RED)
@@ -540,7 +540,7 @@ async def replacement_clan(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
         try:
             selected.append(tag(value))
         except ValueError:
-            return panel('Replacements', 'Select a clan from the menu.')
+            return panel('Replacements', 'Select a clan from the menu.', accent=WU_RED)
     if selected and await mongo.clans.count_documents({'tag': {'$in': selected}, 'type': 'FWA'}) != len(set(selected)):
         return panel('Replacements', 'Select FWA clans only.', accent=WU_RED)
     return await _replacement_update(ctx, mongo, action_id, {'clan_tags': selected[:CLAN_MENU_LIMIT], 'page': 0})
@@ -553,7 +553,7 @@ async def replacement_member(ctx, action_id, mongo: MongoClient = lightbulb.di.I
         return await _replacement_denied(ctx)
     values = list(ctx.interaction.values)
     if values and not str(values[0]).isdigit():
-        return panel('Replacements', 'Select a member from the menu.')
+        return panel('Replacements', 'Select a member from the menu.', accent=WU_RED)
     return await _replacement_update(ctx, mongo, action_id,
                                      {'member_id': int(values[0]) if values else None, 'page': 0})
 

@@ -369,17 +369,17 @@ async def open_dashboard(ctx: lightbulb.Context, mongo: MongoClient, note: str |
 
 async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None = None) -> list:
     if _section(token) == "MAIN" and kind in {"enable", "disable"}:
-        return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
+        return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag, accent=WU_RED)
     docs = _selected_docs(await _active(mongo, token), tag)
     if kind == "replace":
         if tag == "ALL" or len(docs) != 1:
-            return _notice("Select a roster", "Select one saved roster to replace.", token, tag)
+            return _notice("Select a roster", "Select one saved roster to replace.", token, tag, accent=WU_RED)
         return _confirm("Replace Saved Members?", [f"Section: {SECTION_LABELS[_section(token)]}",
             f"Clan: {_name(docs[0].get('clan_name'))}",
             f"Current capture: {_fmt_time(docs[0].get('saved_at'))}",
             "This closes the current roster and stops its reminders. The new roster has the current members of the clan. Manual edits are not copied.",
             "If the new roster does not save, the current roster stays."],
-            "lazycwl_replace_yes", token, _bind(token, tag, docs, operation="replace"), WU_GOLD)
+            "lazycwl_replace_yes", token, _bind(token, tag, docs, operation="replace"), WU_RED)
     names = [_name(d.get('clan_name') or d.get('clan_tag')) for d in docs]
     if kind == "capture":
         clans = await _clans(mongo, token)
@@ -446,7 +446,7 @@ async def _apply_bound(mongo, token, value, operation: str, ctx) -> list:
         return _notice("Review expired", "This confirmation does not match that action.", token, "", accent=WU_RED)
     tag, ids, minutes = bound["tag"], bound["ids"], bound["minutes"]
     if _section(token) == "MAIN" and operation in {"enable", "disable"}:
-        return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
+        return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag, accent=WU_RED)
     docs = _selected_docs(await _active(mongo, token), tag)
     current = {_list_id(d): d for d in docs}
     if bound.get("retry"):
@@ -644,7 +644,7 @@ async def handle_enable(ctx=None, action_id="", mongo: MongoClient = lightbulb.d
     token, tag = await _handler_ok(ctx, action_id)
     if not token: return _notice("Access denied", "Run /manage. Then select CWL Return Pings.", "preview", "", accent=WU_RED)
     if _section(token) != "FWA":
-        return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
+        return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag, accent=WU_RED)
     return [Container(accent_color=WU_GOLD, components=[Text(content="## Enable reminders"), Text(content=f"Destination: <#{await service.effective_reminder_channel(_section(token), mongo=mongo)}>. Select an explicit frequency."), ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_frequency", token, tag), placeholder="Select frequency", max_values=1, options=[SelectOption(label=f"Every {m} minutes", value=str(m)) for m in REMINDER_FREQUENCIES])]), Separator(), _back(token, tag, "reminders")])]
 
 @register_action("lazycwl_frequency", preload_state=False)
