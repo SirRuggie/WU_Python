@@ -367,3 +367,45 @@ it("compact status opens the same tracking details", async () => {
   expect(host.querySelector("details")!.open).toBe(true);
   expect(host.textContent).toContain("Late Clan");
 });
+
+it("does not offer Retry for idle clans but keeps it for problem clans", async () => {
+  const idle = {
+    ...statusRows[0],
+    clan_tag: "#I",
+    clan_name: "Idle Clan",
+    status: "idle",
+  };
+  transport.mockResolvedValue({ clans: [idle, ...statusRows.slice(1)] });
+  await render(true);
+  const clans = [...host.querySelectorAll(".strikes-tracking-clan")];
+  const idleClan = clans.find((c) => c.textContent?.includes("Idle Clan"))!;
+  expect(idleClan.querySelector("button")).toBeNull();
+  expect(
+    clans.filter((c) => c !== idleClan).every((c) => c.querySelector("button")),
+  ).toBe(true);
+});
+
+it("shows slow clans as muted text inside the details, only when there are some", async () => {
+  await render(false);
+  expect(host.textContent).not.toContain("scanned late");
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  transport.mockResolvedValue({
+    clans: [
+      { ...statusRows[0], slow: true },
+      { ...statusRows[0], clan_tag: "#S2", slow: true },
+    ],
+  });
+  await render(false);
+  expect(host.querySelector(".strikes-tracking-body")!.textContent).toContain(
+    "2 clans scanned late",
+  );
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  transport.mockResolvedValue({
+    clans: [{ ...statusRows[0], slow: true }, statusRows[0]],
+  });
+  await render(false);
+  expect(host.textContent).toContain("1 clan scanned late");
+  expect(host.textContent).not.toContain("1 clans scanned late");
+});

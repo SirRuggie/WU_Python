@@ -735,6 +735,7 @@
 }
 .strikes-tracking-state.behind,
 .strikes-tracking-state.unverified,
+.strikes-tracking-slow,
 .strikes-tracking-error {
   color: var(--wu-text-muted) !important;
 }

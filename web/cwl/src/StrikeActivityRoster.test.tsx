@@ -273,7 +273,7 @@ it("state-driven filters and explicit Discard clear selection", async () => {
   await act(async () =>
     root.render(
       <StrikeActivityRoster
-        state="?view=all&strikes=3"
+        state="?view=all&q=Risk"
         onChoose={choose}
         canManage
       />,
@@ -555,7 +555,7 @@ it("closes the Copy menu and clears a brief toast when filters change", async ()
     await act(async () =>
       root.render(
         <StrikeActivityRoster
-          state="?activity_view=all&strikes=3"
+          state="?activity_view=all&q=Risk"
           onChoose={vi.fn()}
         />,
       ),
@@ -809,4 +809,29 @@ it("cancels an unfinished row reveal when a rapid reverse selection is already v
     true,
   );
   expect(window.scrollTo).not.toHaveBeenCalled();
+});
+
+it("keeps Sort, Filters and the actions menu reachable while a query is set", async () => {
+  vi.mocked(fetch).mockImplementation(
+    async () => new Response(JSON.stringify({ accounts: [row], clans: [] })),
+  );
+  await act(async () =>
+    root.render(
+      <StrikeActivityRoster state="?view=all&q=Risk" onChoose={vi.fn()} />,
+    ),
+  );
+  const toolbar = host.querySelector(".strike-activity-toolbar")!;
+  expect(toolbar.querySelector(".strike-activity-sort")).not.toBeNull();
+  expect(
+    toolbar.querySelector(".strike-activity-filters-button"),
+  ).not.toBeNull();
+  expect(
+    toolbar.querySelector('[aria-label="Activity actions"]'),
+  ).not.toBeNull();
+  expect(
+    toolbar.querySelector(".strike-activity-search-button"),
+  ).not.toBeNull();
+  const search = host.querySelector(".strike-activity-search")!;
+  expect(toolbar.contains(search)).toBe(false);
+  expect(search.querySelector("input")!.value).toBe("Risk");
 });

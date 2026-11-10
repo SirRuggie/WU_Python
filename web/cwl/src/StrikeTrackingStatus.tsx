@@ -4,6 +4,7 @@ import { api, ApiError } from "./api";
 import {
   currentWarStateLabel,
   displayTrackingStatus,
+  needsReviewCount,
   trackingIssues,
   trackingStatusLabel,
   trackingSummary,
@@ -127,10 +128,8 @@ export default function StrikeTrackingStatus({
   };
 
   const summary = trackingSummary(clans);
-  // Idle and healthy clans need no review; compared as strings so this compiles before idle is typed.
-  const review = clans.filter(
-    (item) => !["healthy", "idle"].includes(displayTrackingStatus(item)),
-  ).length;
+  const review = needsReviewCount(clans);
+  const slow = clans.filter((item) => item.slow).length;
   const compactLabel = review
     ? `${review} ${review === 1 ? "clan needs" : "clans need"} review ›`
     : "All clans on track";
@@ -213,7 +212,7 @@ export default function StrikeTrackingStatus({
                 {item.error && (
                   <small className="strikes-tracking-error">{item.error}</small>
                 )}
-                {canRetry && status !== "healthy" && (
+                {canRetry && status !== "healthy" && status !== "idle" && (
                   <button
                     aria-busy={
                       (!item.retry_pending && busyClan === item.clan_tag) ||
@@ -233,6 +232,11 @@ export default function StrikeTrackingStatus({
               </div>
             );
           })}
+        {!error && slow > 0 && (
+          <small className="strikes-tracking-slow">
+            {slow} {slow === 1 ? "clan" : "clans"} scanned late
+          </small>
+        )}
       </div>
     </details>
   );

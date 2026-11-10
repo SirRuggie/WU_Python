@@ -528,143 +528,139 @@ export default function StrikeActivityRoster({
           ))}
         </select>
       </div>
-      <div
-        className={`strike-activity-toolbar${searching ? " is-searching" : ""}`}
-      >
-        {searching ? (
-          <>
-            <input
-              ref={searchInput}
-              aria-label="Find account or member"
-              type="search"
-              value={filters.query}
-              maxLength={80}
-              placeholder="Name, tag or member"
-              onChange={(event) => change({ query: event.target.value }, false)}
-            />
-            <button
-              type="button"
-              className="strike-activity-search-close"
-              aria-label="Clear search"
-              onClick={() => {
-                searchFocus.current = "button";
-                setSearchOpen(false);
-                change({ query: "" }, false);
-              }}
-            >
-              <X size={18} aria-hidden="true" />
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              ref={searchButton}
-              type="button"
-              className="strike-activity-search-button"
-              aria-label="Find account or member"
-              aria-expanded="false"
-              onClick={() => {
-                searchFocus.current = "field";
-                setSearchOpen(true);
-              }}
-            >
-              <Search size={18} aria-hidden="true" />
-            </button>
-            <div className="roster-ui strike-activity-sort">
-              <SortTrigger
-                disabled={bulkBusy}
-                label={activitySortLabels[filters.sort]}
-                grouped={
-                  filters.group === "none"
-                    ? false
-                    : activityGroupLabels[filters.group]
-                }
-                onClick={(event) => setSortTrigger(event.currentTarget)}
-              />
+      <div className="strike-activity-toolbar">
+        <button
+          ref={searchButton}
+          type="button"
+          className="strike-activity-search-button"
+          aria-label="Find account or member"
+          aria-expanded={searching}
+          onClick={() => {
+            searchFocus.current = "field";
+            setSearchOpen(true);
+            searchInput.current?.focus();
+          }}
+        >
+          <Search size={18} aria-hidden="true" />
+        </button>
+        <div className="roster-ui strike-activity-sort">
+          <SortTrigger
+            disabled={bulkBusy}
+            label={activitySortLabels[filters.sort]}
+            grouped={
+              filters.group === "none"
+                ? false
+                : activityGroupLabels[filters.group]
+            }
+            onClick={(event) => setSortTrigger(event.currentTarget)}
+          />
+        </div>
+        <button
+          className="strike-activity-filters-button"
+          disabled={bulkBusy}
+          onClick={(event) => setFilterTrigger(event.currentTarget)}
+        >
+          Filters
+        </button>
+        <details
+          className="strike-activity-actions"
+          onToggle={(event) => {
+            const menu = event.currentTarget.querySelector<HTMLElement>(
+              ".strike-activity-action-menu",
+            );
+            if (!event.currentTarget.open || !menu) return;
+            const anchor = event.currentTarget.getBoundingClientRect();
+            const below = window.innerHeight - anchor.bottom - 8;
+            const above = anchor.top - 8;
+            const flip = below < menu.scrollHeight && above > below;
+            Object.assign(menu.style, {
+              top: flip ? "auto" : "48px",
+              bottom: flip ? "48px" : "auto",
+              maxHeight: `${Math.max(44, flip ? above : below)}px`,
+              overflowY: "auto",
+              boxSizing: "border-box",
+            });
+          }}
+        >
+          <summary aria-label="Activity actions">⋯</summary>
+          <div className="strike-activity-action-menu">
+            <div role="group" aria-label="Account">
+              <p className="strike-activity-menu-label">Account</p>
+              {overviewActions}
             </div>
-            <button
-              className="strike-activity-filters-button"
-              disabled={bulkBusy}
-              onClick={(event) => setFilterTrigger(event.currentTarget)}
-            >
-              Filters
-            </button>
-            <details
-              className="strike-activity-actions"
-              onToggle={(event) => {
-                const menu = event.currentTarget.querySelector<HTMLElement>(
-                  ".strike-activity-action-menu",
-                );
-                if (!event.currentTarget.open || !menu) return;
-                const anchor = event.currentTarget.getBoundingClientRect();
-                const below = window.innerHeight - anchor.bottom - 8;
-                const above = anchor.top - 8;
-                const flip = below < menu.scrollHeight && above > below;
-                Object.assign(menu.style, {
-                  top: flip ? "auto" : "48px",
-                  bottom: flip ? "48px" : "auto",
-                  maxHeight: `${Math.max(44, flip ? above : below)}px`,
-                  overflowY: "auto",
-                  boxSizing: "border-box",
-                });
-              }}
-            >
-              <summary aria-label="Activity actions">⋯</summary>
-              <div className="strike-activity-action-menu">
-                <div role="group" aria-label="Account">
-                  <p className="strike-activity-menu-label">Account</p>
-                  {overviewActions}
-                </div>
-                <div role="group" aria-label="List">
-                  <p className="strike-activity-menu-label">List</p>
-                  <button
-                    disabled={!visible.length}
-                    onClick={async (event) => {
-                      event.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                      const current = filterIdentity;
-                      try {
-                        await navigator.clipboard.writeText(
-                          copyActivityList(visible),
-                        );
-                        if (copyIdentity.current !== current) return;
-                        setCopied(`Copied ${visible.length} accounts`);
-                      } catch {
-                        if (copyIdentity.current !== current) return;
-                        setCopied(
-                          "Copy failed. Your browser did not allow clipboard access.",
-                        );
-                      }
-                    }}
-                  >
-                    Copy list
-                  </button>
-                  {canManage && !selecting && (
-                    <button
-                      disabled={bulkBusy}
-                      onClick={(event) => {
-                        event.currentTarget
-                          .closest("details")
-                          ?.removeAttribute("open");
-                        setSelecting(true);
-                      }}
-                    >
-                      Select accounts
-                    </button>
-                  )}
-                  <button
-                    disabled={loading || bulkBusy}
-                    onClick={() => void read()}
-                  >
-                    Refresh activity
-                  </button>
-                </div>
-              </div>
-            </details>
-          </>
-        )}
+            <div role="group" aria-label="List">
+              <p className="strike-activity-menu-label">List</p>
+              <button
+                disabled={!visible.length}
+                onClick={async (event) => {
+                  event.currentTarget
+                    .closest("details")
+                    ?.removeAttribute("open");
+                  const current = filterIdentity;
+                  try {
+                    await navigator.clipboard.writeText(
+                      copyActivityList(visible),
+                    );
+                    if (copyIdentity.current !== current) return;
+                    setCopied(`Copied ${visible.length} accounts`);
+                  } catch {
+                    if (copyIdentity.current !== current) return;
+                    setCopied(
+                      "Copy failed. Your browser did not allow clipboard access.",
+                    );
+                  }
+                }}
+              >
+                Copy list
+              </button>
+              {canManage && !selecting && (
+                <button
+                  disabled={bulkBusy}
+                  onClick={(event) => {
+                    event.currentTarget
+                      .closest("details")
+                      ?.removeAttribute("open");
+                    setSelecting(true);
+                  }}
+                >
+                  Select accounts
+                </button>
+              )}
+              <button
+                disabled={loading || bulkBusy}
+                onClick={() => void read()}
+              >
+                Refresh activity
+              </button>
+            </div>
+          </div>
+        </details>
       </div>
+      {searching && (
+        <div className="strike-activity-search">
+          <input
+            ref={searchInput}
+            aria-label="Find account or member"
+            type="search"
+            value={filters.query}
+            maxLength={80}
+            placeholder="Name, tag or member"
+            onChange={(event) => change({ query: event.target.value }, false)}
+          />
+          <button
+            type="button"
+            className="strike-activity-search-close"
+            aria-label="Clear search"
+            onClick={() => {
+              searchFocus.current = "button";
+              setSearchOpen(false);
+              change({ query: "" }, false);
+            }}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       {filters.view === "replacements" &&
         !(loading && !data.accounts.length) && (
           <FindSlots

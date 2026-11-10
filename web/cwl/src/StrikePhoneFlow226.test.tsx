@@ -185,8 +185,9 @@ it("search sits behind an icon: it opens and focuses the field, × clears and cl
   await act(async () => searchButton()!.click());
   expect(searchField()).not.toBeNull();
   expect(document.activeElement).toBe(searchField());
-  // The field replaces the toolbar row.
-  expect(host.querySelector(".strike-activity-sort")).toBeNull();
+  // The field is its own row; the toolbar stays.
+  expect(searchButton()!.getAttribute("aria-expanded")).toBe("true");
+  expect(host.querySelector(".strike-activity-sort")).not.toBeNull();
   const calls = vi.mocked(fetch).mock.calls.length;
   await act(async () => {
     Object.getOwnPropertyDescriptor(
@@ -212,7 +213,7 @@ it("search sits behind an icon: it opens and focuses the field, × clears and cl
 it("a query in the URL keeps the search field open", async () => {
   await mount("/strikes?activity_view=all&q=alp");
   expect(searchField()!.value).toBe("alp");
-  expect(searchButton()).toBeNull();
+  expect(searchButton()!.getAttribute("aria-expanded")).toBe("true");
 });
 
 it("Clan and Town Hall selects list A–Z clans and used halls with counts and write one value", async () => {

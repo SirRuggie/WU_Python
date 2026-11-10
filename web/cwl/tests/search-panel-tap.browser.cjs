@@ -154,24 +154,29 @@ const server = createServer((req, res) => {
       });
     });
     await page.goto(origin + "/strikes?activity_view=replacements");
+    await page.getByRole("button", { name: "Find slots", exact: true }).tap();
     await page.getByLabel("Weights").waitFor();
     await page.getByLabel("Weights").fill("143, 173");
-    await page.getByRole("button", { name: "Find slots", exact: true }).click();
-    await page.locator(".strike-slot-group").first().waitFor();
 
     // Clans: type, then tap the checkbox.
     await page.getByRole("button", { name: /^Clans:/ }).click();
-    await page.locator("dialog").getByLabel("Find clan").fill("Alpha");
     await page
-      .locator("dialog")
+      .getByRole("dialog", { name: "Select clans" })
+      .getByLabel("Find clan")
+      .fill("Alpha");
+    await page
+      .getByRole("dialog", { name: "Select clans" })
       .getByRole("checkbox", { name: /Fixture FWA Alpha/ })
       .tap();
     await page.waitForTimeout(500);
     await page
-      .locator("dialog[open]")
+      .getByRole("dialog", { name: "Select clans" })
       .getByRole("button", { name: "Close panel" })
       .tap();
-    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    // The Find slots panel stays open underneath.
+    await page.waitForFunction(
+      () => document.querySelectorAll("dialog[open]").length === 1,
+    );
     const clanLabel = await page
       .getByRole("button", { name: /^Clans:/ })
       .getAttribute("aria-label");
@@ -185,11 +190,13 @@ const server = createServer((req, res) => {
     await page.getByRole("button", { name: /^Member:/ }).click();
     await page.getByLabel("Find member").fill("slayer");
     await page
-      .locator("dialog")
+      .getByRole("dialog", { name: "Select member" })
       .getByRole("button", { name: /@slayer/ })
       .first()
       .tap();
-    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    await page.waitForFunction(
+      () => document.querySelectorAll("dialog[open]").length === 1,
+    );
     const memberLabel = await page
       .getByRole("button", { name: /^Member:/ })
       .getAttribute("aria-label");
@@ -198,6 +205,10 @@ const server = createServer((req, res) => {
       /@slayer/,
       "member button shows the tapped member",
     );
+    // Run the search last: a route change consumes the open panel's history
+    // entry, which a nested panel's Back handling would then close with it.
+    await page.locator(".strike-find-slots-top button.primary").tap();
+    await page.locator(".strike-slot-group").first().waitFor();
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ clanLabel, memberLabel }));
   } finally {
