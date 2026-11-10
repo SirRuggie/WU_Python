@@ -166,13 +166,21 @@ def test_member_slot_tags_keeps_a_tag_linked_to_two_users_and_reports_it_as_disp
 
 
 def test_member_slot_tags_a_failed_provider_with_links_is_partial():
-    assert member_slot_tags(_links(['#A2Y'], unavailable=('ClashPerk',))) == ({'#A2Y'}, set(), True)
+    assert member_slot_tags(_links(['#A2Y'], unavailable=('ClashPerk',), forward_unavailable=('ClashPerk',))) == (
+        {'#A2Y'}, set(), True)
+
+
+def test_member_slot_tags_a_reverse_check_failure_alone_is_not_partial():
+    assert member_slot_tags(_links(['#A2Y'], unavailable=('ClashPerk',))) == ({'#A2Y'}, set(), False)
 
 
 def test_member_slot_tags_errors_only_when_both_providers_failed_and_nothing_came_back():
-    assert member_slot_tags(_links(unavailable=('ClashKing', 'ClashPerk'))) == (None, set(), False)
-    assert member_slot_tags(_links(unavailable=('ClashPerk',))) == (set(), set(), True)
-    assert member_slot_tags(_links(conflicts=('#A2Y',), unavailable=('ClashKing', 'ClashPerk')))[0] == {'#A2Y'}
+    assert member_slot_tags(_links(unavailable=('ClashKing', 'ClashPerk'),
+                                   forward_unavailable=('ClashKing', 'ClashPerk'))) == (None, set(), False)
+    assert member_slot_tags(_links(unavailable=('ClashPerk',), forward_unavailable=('ClashPerk',))) == (
+        set(), set(), True)
+    assert member_slot_tags(_links(conflicts=('#A2Y',), unavailable=('ClashKing', 'ClashPerk'),
+                                   forward_unavailable=('ClashKing', 'ClashPerk')))[0] == {'#A2Y'}
 
 
 def test_member_slot_tags_includes_a_tag_only_one_provider_returned():

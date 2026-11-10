@@ -48,7 +48,8 @@ def render(rows, state, clans=None, linked=frozenset(), links=None):
     state = {'_id': 'tok', 'guild_id': 1, 'clan_tags': [], 'weights': [], 'member_id': None,
              'page': 0, **state}
     links = links or (LinksResult(sources={value: ('ClashKing',) for value in linked}) if linked is not None
-                      else LinksResult(unavailable=('ClashKing', 'ClashPerk')))
+                      else LinksResult(unavailable=('ClashKing', 'ClashPerk'),
+                                                  forward_unavailable=('ClashKing', 'ClashPerk')))
     with patch.object(strikes, 'cached_weights', lambda _tags: {}), \
             patch.object(strikes.recruit_links, 'resolve', AsyncMock(return_value=links)):
         panel = asyncio.run(strikes.replacement_panel(store, state))
@@ -178,7 +179,8 @@ def test_member_select_keeps_a_tag_linked_to_two_users_and_labels_only_that_row(
 
 def test_member_select_with_a_failed_provider_but_sources_keeps_them_and_notes_it():
     rows = [candidate('#CLEAN', weight=150000)]
-    links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, unavailable=('ClashPerk',))
+    links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, unavailable=('ClashPerk',),
+                         forward_unavailable=('ClashPerk',))
     payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777}, links=links)
     assert '`#CLEAN`' in text_of(payload) and PARTIAL in text_of(payload)
 
@@ -186,7 +188,8 @@ def test_member_select_with_a_failed_provider_but_sources_keeps_them_and_notes_i
 def test_member_select_in_list_mode_without_weights_lists_linked_accounts_and_notes_partial():
     rows = [candidate('#CLEAN', count=0), candidate('#DISPUTED', count=3), candidate('#OTHER', count=3)]
     links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, conflicts=('#DISPUTED',),
-                        unavailable=('ClashPerk',))
+                        unavailable=('ClashPerk',),
+                         forward_unavailable=('ClashPerk',))
     payload, _ = render(rows, {'member_id': 7777777777777777777}, links=links)
     text = text_of(payload)
     assert '`#CLEAN`' in text and '`#DISPUTED`' in text and '#OTHER' not in text
@@ -287,3 +290,35 @@ def test_parse_weights_rejects_bad_input_naming_the_value(text, message):
 def test_stale_clan_is_marked_last_known():
     payload, _ = render([candidate('#S2L', count=3, clan_is_current=False)], {})
     assert 'Last known' in text_of(payload)
+
+
+def _worst_case(note_length):
+    weights = [100000, 120000, 140000, 160000, 180000]
+    rows = [candidate(f'#W{group}{number}', weight=weight + number, member=111222333444555666,
+                      manual=True, departed=True, clan_is_current=False, count=3,
+                      player_name='N' * 24, replacement_note='n' * note_length)
+            for group, weight in enumerate(weights) for number in range(3)]
+    clans = [{'tag': '#P2Y', 'name': 'C' * 24, 'type': 'FWA'}]
+    links = LinksResult(conflicts=tuple(row['player_tag'] for row in rows))
+    state = {'weights': weights, 'member_id': 111222333444555666}
+    return render(rows, state, clans, links=links)[0]
+
+
+def test_worst_case_slot_panel_stays_under_the_text_limit_and_keeps_every_row():
+    payload = _worst_case(60)
+    text = text_of(payload)
+    assert sum(len(item['content']) for item in payload['components']
+               if item['type'].name == 'TEXT_DISPLAY') <= strikes.PANEL_TEXT_LIMIT
+    assert text.count('`#W') == 15
+    assert text.count('<@111222333444555666>') == 15 + 1
+    assert text.count('Linked to two Discord users') == 15
+    assert text.count('Left clan') == 15
+    assert 'n' * 60 not in text and 'n' * 5 in text   # notes were shortened, not rows
+
+
+def test_normal_slot_panel_keeps_full_notes():
+    payload = _worst_case(5)
+    assert text_of(payload).count('n' * 5) >= 15
+    note = 'x' * 60
+    rows = [candidate('#ONE', count=3, replacement_note=note, manual=True)]
+    assert note in text_of(render(rows, {})[0])

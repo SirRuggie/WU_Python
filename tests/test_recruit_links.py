@@ -290,3 +290,19 @@ def test_goldrush_union_accepts_either_provider_without_reverse_owner_checks(mon
     result=asyncio.run(recruit_links.resolve(123,verify_owners=False))
     assert set(result.sources)=={'#QCC'}
     assert result.unavailable==('ClashKing',)
+
+
+def test_reverse_check_failure_is_not_a_forward_gap(monkeypatch):
+    providers(monkeypatch, lambda kw: [{'user_id': '123', 'player_tag': '#PYY'}] if 'discord_ids' in kw else None,
+              lambda kw: [{'userId': '123', 'tag': '#PYY'}] if 'discord_ids' in kw else [{'userId': '123', 'tag': '#PYY'}])
+    result = asyncio.run(recruit_links.resolve(123))
+    assert result.sources == {'#PYY': ('ClashKing', 'ClashPerk')}
+    assert result.unavailable == ('ClashKing',)
+    assert result.forward_unavailable == ()
+
+
+def test_forward_failure_and_malformed_forward_rows_are_forward_gaps(monkeypatch):
+    providers(monkeypatch, None, [{'userId': '123', 'tag': '#PYY'}, {'userId': 'x', 'tag': '#QCC'}])
+    result = asyncio.run(recruit_links.resolve(123))
+    assert result.forward_unavailable == ('ClashKing', 'ClashPerk')
+    assert result.unavailable == ('ClashKing', 'ClashPerk')

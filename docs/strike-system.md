@@ -108,7 +108,7 @@ the Strikes page itself still lists every family clan. The slot pool is an accou
 that is manually marked (any priority, even with zero strikes) or has three or
 more active strikes, in an FWA clan (current, or within the 48-hour departure
 grace). With a member selected, the pool is all of that member's FWA accounts
-whatever their strikes. Every linked account counts, verified or not. A tag also linked to another Discord user is kept and its candidate carries `link_disputed: true` (shown as "Linked to two Discord users"). `member_partial: true` ("Some linked accounts were left out.") means a link provider was unavailable. The search fails with 503 ("Account links are unavailable. Try again.") only when both providers are unavailable and no link came back. Order per weight: smallest weight gap, then priority
+whatever their strikes. Every linked account counts, verified or not. A tag also linked to another Discord user is kept and its candidate carries `link_disputed: true` (shown as "Linked to two Discord users"). `member_partial: true` ("Some linked accounts were left out.") means a link provider's forward lookup failed or returned malformed rows; a failed reverse owner check alone does not set it. The search fails with 503 ("Account links are unavailable. Try again.") only when both providers are unavailable and no link came back. Order per weight: smallest weight gap, then priority
 (Chopping Block, High, Normal), then more active strikes, then tag.
 `GET /api/cwl/strikes/replacements` accepts repeated `weight` (at most 5, else
 400), repeated `clan` (FWA only, else 400 "Select FWA clans only.") and `member`

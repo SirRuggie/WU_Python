@@ -19,6 +19,9 @@ class LinksResult:
     conflicts: tuple[str, ...] = ()
     conflict_key: str = ""
     disputed_sources: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Providers whose forward lookup failed or returned malformed rows; unavailable
+    # also lists providers that failed only the reverse owner check.
+    forward_unavailable: tuple[str, ...] = ()
 
 
 async def resolve(discord_id: int, *, verify_owners: bool = True) -> LinksResult:
@@ -27,6 +30,7 @@ async def resolve(discord_id: int, *, verify_owners: bool = True) -> LinksResult
     providers = {"ClashKing": clash_links._lookup_shared_links, "ClashPerk": clashperk_links.lookup}
     results = await asyncio.gather(*(call(discord_ids=[wanted]) for call in providers.values()))
     sources, verified, unavailable, conflicts = {}, {}, [], set()
+    forward_unavailable = []
     owners = {}
     def identity(row, provider):
         tag = clash_links._normalize_tag(row.get("player_tag" if provider == "ClashKing" else "tag"))
@@ -38,12 +42,15 @@ async def resolve(discord_id: int, *, verify_owners: bool = True) -> LinksResult
     for provider, rows in zip(providers, results):
         if rows is None:
             unavailable.append(provider)
+            forward_unavailable.append(provider)
             continue
         for row in rows:
             tag, owner = identity(row, provider)
             if tag is None or not owner.isdigit():
                 if provider not in unavailable:
                     unavailable.append(provider)
+                if provider not in forward_unavailable:
+                    forward_unavailable.append(provider)
                 continue
             owners.setdefault(tag, {}).setdefault(provider, set()).add(owner)
             if owner == wanted:
@@ -75,6 +82,7 @@ async def resolve(discord_id: int, *, verify_owners: bool = True) -> LinksResult
         tuple(unavailable), tuple(sorted(conflicts)),
         hashlib.sha256(json.dumps([wanted, {tag: {provider: sorted(ids) for provider, ids in owners[tag].items()} for tag in sorted(conflicts)}], sort_keys=True).encode()).hexdigest() if conflicts else "",
         {tag: tuple(dict.fromkeys(sources[tag])) for tag in sorted(conflicts)},
+        tuple(forward_unavailable),
     )
 
 

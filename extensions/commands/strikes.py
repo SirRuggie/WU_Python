@@ -295,9 +295,12 @@ class Remove(lightbulb.SlashCommand, name='remove', description='Remove one stri
 REPLACEMENT_PAGE_SIZE = 5
 CLAN_MENU_LIMIT = 25
 PRIORITY_LABELS = {'replace_first': 'Chopping Block', 'high': 'High', 'normal': 'Normal'}
+NOTE_LIMIT = 60
+# Discord allows 4,000 characters of text in one Components V2 message; keep a margin.
+PANEL_TEXT_LIMIT = 3900
 
 
-def replacement_slot_line(row, clan_names, *, index=None, disputed=()):
+def replacement_slot_line(row, clan_names, *, index=None, disputed=(), note_limit=NOTE_LIMIT):
     player = safe(row.get('player_name') or row['player_tag'], 24)
     clan = safe(clan_names.get(row.get('last_seen_clan_tag'), row.get('last_seen_clan_tag') or 'Unknown clan'), 24)
     th = row.get('town_hall')
@@ -309,7 +312,9 @@ def replacement_slot_line(row, clan_names, *, index=None, disputed=()):
     flags = (' · Left clan' if row.get('departed') else '') + (
         ' · Last known' if row.get('clan_is_current') is False else '') + (
         ' · Linked to two Discord users' if row['player_tag'] in disputed else '')
-    note = safe(row.get('replacement_note'), 60)
+    note = safe(row.get('replacement_note'), NOTE_LIMIT)
+    if len(note) > note_limit:
+        note = note[:note_limit - 1] + '…' if note_limit > 0 else ''
     prefix = f'{index}. ' if index else ''
     return (f"{emoji_for(th, {'ranges': {}})} **{prefix}{player}** `{row['player_tag']}`{mention}\n"
             f"{clan}{flags} · {weight}{gap_text} · "
@@ -411,12 +416,15 @@ async def replacement_panel(store, state, *, notice=''):
         children.append(Text(content='\n'.join(messages)))
     pages = 1
     page = 0
+    footer = []
     if weights_chosen:
-        for group in find_slots(rows, weights_chosen, fwa_tags=fwa_tags,
-                                clan_tags=chosen_clans or None, member_tags=member_tags):
-            body = '\n\n'.join(replacement_slot_line(row, clan_names, disputed=disputed) for row in group['slots'])
-            children.append(Text(content=f"### {compact_weight(group['weight'])}\n"
-                                         f"{body or 'No slot in these clans.'}"))
+        groups = find_slots(rows, weights_chosen, fwa_tags=fwa_tags,
+                            clan_tags=chosen_clans or None, member_tags=member_tags)
+
+        def slot_texts(note_limit):
+            return [f"### {compact_weight(group['weight'])}\n" + ('\n\n'.join(
+                replacement_slot_line(row, clan_names, disputed=disputed, note_limit=note_limit)
+                for row in group['slots']) or 'No slot in these clans.') for group in groups]
     else:
         listed = sorted(slot_pool(rows, fwa_tags=fwa_tags, clan_tags=chosen_clans or None,
                                   member_tags=member_tags), key=priority_key)
@@ -424,10 +432,20 @@ async def replacement_panel(store, state, *, notice=''):
         page = min(max(0, int(state.get('page', 0))), pages - 1)
         start = page * REPLACEMENT_PAGE_SIZE
         showing = listed[start:start + REPLACEMENT_PAGE_SIZE]
-        children.append(Text(content='\n\n'.join(
-            replacement_slot_line(row, clan_names, index=start + number, disputed=disputed)
-            for number, row in enumerate(showing, 1)) or 'No accounts match these filters.'))
-        children.append(Text(content=f'Page {page+1}/{pages} · {len(listed)} accounts'))
+        footer.append(f'Page {page+1}/{pages} · {len(listed)} accounts')
+
+        def slot_texts(note_limit):
+            return ['\n\n'.join(
+                replacement_slot_line(row, clan_names, index=start + number, disputed=disputed,
+                                      note_limit=note_limit)
+                for number, row in enumerate(showing, 1)) or 'No accounts match these filters.']
+    # Shorten notes uniformly, then drop them; never drop a row, mention or weight.
+    fixed = sum(len(item.content) for item in children if isinstance(item, Text)) + sum(map(len, footer))
+    for note_limit in range(NOTE_LIMIT, -1, -1):
+        texts = slot_texts(note_limit)
+        if fixed + sum(map(len, texts)) <= PANEL_TEXT_LIMIT:
+            break
+    children.extend(Text(content=content) for content in texts + footer)
     token = state['_id']
     if menu_tags:
         row = hikari.impl.MessageActionRowBuilder()
