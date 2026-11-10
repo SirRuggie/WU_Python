@@ -17,7 +17,7 @@ from extensions.components import register_action
 from extensions.commands import ticket_runtime
 from extensions.commands.tickets import perms, thread_service, console, setup
 from utils.component_state import insert_state, get_state
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 
 NO_MENTIONS = dict(user_mentions=False, role_mentions=False, mentions_everyone=False)
@@ -161,7 +161,7 @@ def page(data, notice=''):
         body.append(button(token, 'home', 'Back to all settings'))
     if data.get('manage_token'):
         body.append(Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,f'manage_home:{data["manage_token"]}',label='Back to server management'))
-    return [Container(accent_color=GOLDENROD_ACCENT,components=body)]
+    return [Container(accent_color=WU_GOLD,components=body)]
 
 
 async def fresh(ctx,mongo,data=None,**changes):

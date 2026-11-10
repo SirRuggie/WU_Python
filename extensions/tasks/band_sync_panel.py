@@ -32,7 +32,7 @@ from extensions.components import register_action
 from extensions.tasks import band_monitor
 from extensions.tasks import band_sync_schema as schema
 from utils.band_ical_parser import discord_timestamp, normalize_start
-from utils.constants import RED_ACCENT
+from utils.constants import WU_GOLD
 from utils.emoji import EmojiType, emojis
 from utils.mongo import MongoClient
 
@@ -314,7 +314,7 @@ def panel_container(event, url, responses):
     # Note at the very bottom under its own separator (user rule 2026-09-15).
     components.append(Separator(divider=True))
     components.append(Text(content=CHANGED_NOTE))
-    return [Container(accent_color=RED_ACCENT, components=components)]
+    return [Container(accent_color=WU_GOLD, components=components)]
 
 
 def dm_container(event, url, response, delete_at=None, delivery_type=None):
@@ -341,7 +341,7 @@ def dm_container(event, url, response, delete_at=None, delivery_type=None):
                 Separator(divider=True),
                 Text(content=f"-# This message will be deleted <t:{int(delete_at.timestamp())}:R>"),
             ])
-        return [Container(accent_color=RED_ACCENT, components=components)]
+        return [Container(accent_color=WU_GOLD, components=components)]
     components = [
         Text(content=POSTED_TITLE),
         Text(content=f"**Sync Time:** {discord_timestamp(start, 'F')} · {discord_timestamp(start, 'R')}"),
@@ -361,7 +361,7 @@ def dm_container(event, url, response, delete_at=None, delivery_type=None):
         components.append(Text(
             content=f"-# This message will be deleted <t:{int(delete_at.timestamp())}:R>"
         ))
-    return [Container(accent_color=RED_ACCENT, components=components)]
+    return [Container(accent_color=WU_GOLD, components=components)]
 
 
 async def _delete_dm_after(mongo, bot, response_id, channel_id, message_id, delete_at):

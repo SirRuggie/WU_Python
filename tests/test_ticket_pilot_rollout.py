@@ -1828,7 +1828,7 @@ def test_my_ticket_button_shows_open_ticket_link_and_reaccesses(monkeypatch):
     button = panel.components[-1].components[0]
     assert button.url == "https://discord.com/channels/11/777"
     assert button.label == "Open My Ticket"
-    assert panel.accent_color == handlers.GOLDENROD_ACCENT
+    assert panel.accent_color == handlers.WU_GOLD
     assert all("flag" not in getattr(item, "content", "").lower() for item in panel.components)
 
 

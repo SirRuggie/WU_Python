@@ -17,7 +17,7 @@ from hikari.impl import (
     MediaGalleryItemBuilder as MediaItem,
     LinkButtonBuilder as LinkButton,
 )
-from utils.constants import GOLDENROD_ACCENT, GOLD_ACCENT, BLUE_ACCENT
+from utils.constants import WU_GOLD
 from utils.emoji import emojis
 
 LAZY_CWL_RULES_URL = "https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit"
@@ -28,7 +28,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
     if variant == 'fwa_clan_chat':
         return [
                     Container(
-                        accent_color=GOLDENROD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=f"## 💬 **FWA Clan Chat** · {recruit_mention}"),
                             Separator(divider=True),
@@ -54,16 +54,16 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
     if variant == 'get_war_weight':
         return [
                     Container(
-                        accent_color=GOLD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=f"## ⚖️ **War Weight Check** · {recruit_mention}"),
                             Separator(divider=True),
                             Text(content=(
                                 "We need your **current war weight** to make fair matchups. Follow these steps:\n\n"
-                                f"{emojis.red_arrow_right} **Post** a Friendly Challenge in-game.\n"
-                                f"{emojis.red_arrow_right} **Scout** the challenge you posted.\n"
-                                f"{emojis.red_arrow_right} **Select** your Town Hall. Then select **Info**.\n"
-                                f"{emojis.red_arrow_right} **Upload** a screenshot of the Town Hall information popup here.\n\n"
+                                f"{emojis.gold_arrow_right} **Post** a Friendly Challenge in-game.\n"
+                                f"{emojis.gold_arrow_right} **Scout** the challenge you posted.\n"
+                                f"{emojis.gold_arrow_right} **Select** your Town Hall. Then select **Info**.\n"
+                                f"{emojis.gold_arrow_right} **Upload** a screenshot of the Town Hall information popup here.\n\n"
                                 "*See the example below for reference.*"
                             )),
                             Media(
@@ -79,7 +79,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
     if variant == 'heard_of_lazy_cwl':
         return [
                     Container(
-                        accent_color=GOLDENROD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=f"## 🛋️ **Lazy CWL Overview** · {recruit_mention}"),
                             Separator(divider=True),
@@ -100,7 +100,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
     if variant == 'lazy_cwl_explanation':
         return [
                     Container(
-                        accent_color=BLUE_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=f"## 🛋️ **Lazy CWL Deep Dive** · {recruit_mention}"),
                             Separator(divider=True),
@@ -112,21 +112,21 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             )),
                             Media(
                                 items=[
-                                    MediaItem(media="assets/Blue_Footer.png")
+                                    MediaItem(media="assets/Gold_Footer.png")
                                 ]),
                         ]
                     ),
                     Container(
-                        accent_color=BLUE_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=(
                                 "**How It Works**\n"
-                                f"{emojis.red_arrow_right} **Brand-New Clans**\n"
+                                f"{emojis.gold_arrow_right} **Brand-New Clans**\n"
                                 f"{emojis.blank}{emojis.white_arrow_right} Created each CWL season. Older clans are reused in lower leagues.\n\n"
-                                f"{emojis.red_arrow_right} **FWA Season Transition**\n"
+                                f"{emojis.gold_arrow_right} **FWA Season Transition**\n"
                                 f"{emojis.blank}{emojis.white_arrow_right} During the last **FWA War**, complete both attacks and **join your assigned CWL Clan** before the war ends.\n"
                                 f"{emojis.blank}{emojis.white_arrow_right} Announcements will be posted to guide you.\n\n"
-                                f"{emojis.red_arrow_right} **League Search**\n"
+                                f"{emojis.gold_arrow_right} **League Search**\n"
                                 f"{emojis.blank}{emojis.white_arrow_right} Once everyone is in their assigned CWL Clan, we will start the search.\n"
                                 f"{emojis.blank}{emojis.white_arrow_right} After the search begins, **return to your Home FWA Clan** immediately.\n"
                             )),
@@ -136,34 +136,34 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             )]),
                             Media(
                                 items=[
-                                    MediaItem(media="assets/Blue_Footer.png")
+                                    MediaItem(media="assets/Gold_Footer.png")
                                 ]),
                         ]
                     ),
                     Container(
-                        accent_color=BLUE_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=(
                                 "**Participation & Rewards**\n"
-                                f"{emojis.red_arrow_right} **Bonus Medals**\n"
+                                f"{emojis.gold_arrow_right} **Bonus Medals**\n"
                                 f"{emojis.blank}{emojis.white_arrow_right} Medals are awarded through a lottery system.\n\n"
-                                f"{emojis.red_arrow_right} **Participation Requirement**\n"
+                                f"{emojis.gold_arrow_right} **Participation Requirement**\n"
                                 f"{emojis.blank}{emojis.white_arrow_right} Follow the Lazy CWL rules and complete **at least 4+ attacks (60%)**.\n"
                             )),
                             Media(
                                 items=[
-                                    MediaItem(media="assets/Blue_Footer.png")
+                                    MediaItem(media="assets/Gold_Footer.png")
                                 ]),
                         ]
                     ),
                     Container(
-                        accent_color=BLUE_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=(
                                 "**How to Sign Up**\n"
                                 "If you **WANT to participate** in CWL, signing up is **mandatory!**\n\n"
-                                f"{emojis.red_arrow_right} Sign up for **each CWL season** in <#1072728485233180692> (#fwa-lazycwl-signups), which is visible after joining the clan.\n\n"
-                                f"{emojis.red_arrow_right} **Last-minute signups are strongly discouraged** and may not be accepted. We run several Lazy CWL clans, and proper planning is crucial.\n\n"
+                                f"{emojis.gold_arrow_right} Sign up for **each CWL season** in <#1072728485233180692> (#fwa-lazycwl-signups), which is visible after joining the clan.\n\n"
+                                f"{emojis.gold_arrow_right} **Last-minute signups are strongly discouraged** and may not be accepted. We run several Lazy CWL clans, and proper planning is crucial.\n\n"
                             )),
                             Separator(divider=True),
                             Text(content=(
@@ -184,7 +184,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
     if variant == 'fwa_leaders_reviewing':
         return [
                     Container(
-                        accent_color=GOLDENROD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=f"## 🔎 **FWA Leadership Review** · {recruit_mention}"),
                             Separator(divider=True),
@@ -207,7 +207,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
     if variant == 'fwa_bases_upon_approval':
         return [
                     Container(
-                        accent_color=BLUE_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content="## Select FWA Base Town Hall Level"),
                             Text(
@@ -290,7 +290,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             ),
                             Media(
                                 items=[
-                                    MediaItem(media="assets/Blue_Footer.png")
+                                    MediaItem(media="assets/Gold_Footer.png")
                                 ]),
                             Text(content=f"-# Requested by {recruiter_mention}"),
                         ]
@@ -299,7 +299,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
     if variant == 'what_is_fwa':
         return [
                     Container(
-                        accent_color=BLUE_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=f"## <a:FWA:1398229188363948055> **FWA Clans Quick Overview** · {recruit_mention}"),
                             Separator(divider=True),
@@ -319,12 +319,12 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             )),
                             Media(
                                 items=[
-                                    MediaItem(media="assets/Blue_Footer.png")
+                                    MediaItem(media="assets/Gold_Footer.png")
                                 ]),
                         ]
                     ),
                     Container(
-                        accent_color=BLUE_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=(
                                 "## ⚔️ FWA War Plans ⚔️\n"
@@ -341,12 +341,12 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             )),
                             Media(
                                 items=[
-                                    MediaItem(media="assets/Blue_Footer.png")
+                                    MediaItem(media="assets/Gold_Footer.png")
                                 ]),
                         ]
                     ),
                     Container(
-                        accent_color=BLUE_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=(
                                 "## 🏰 Default FWA Base 🏰\n"
@@ -364,7 +364,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
     if variant == 'what_is_flexible_fun':
         return [
                     Container(
-                        accent_color=BLUE_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=f"## 📌 **Flexible Fun War Clan: A Quick Overview** · {recruit_mention}"),
                             Separator(divider=True),
@@ -384,7 +384,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             )),
                             Media(
                                 items=[
-                                    MediaItem(media="assets/Blue_Footer.png")
+                                    MediaItem(media="assets/Gold_Footer.png")
                                 ]),
                             Text(content=f"-# Requested by {recruiter_mention}"),
                         ]
@@ -393,7 +393,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
     if variant == 'what_is_tactical':
         return [
                     Container(
-                        accent_color=GOLDENROD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=f"## ⚔️ **Tactical/Competitive Clans** ⚔️ · {recruit_mention}"),
                             Separator(divider=True),
@@ -416,7 +416,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
     if variant == 'fwa_war_plans':
         return [
                     Container(
-                        accent_color=GOLDENROD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content=f"## ⚔️ **FWA War Plans** ⚔️ · {recruit_mention}"),
                             Separator(divider=True),
@@ -437,12 +437,12 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             )),
                             Media(
                                 items=[
-                                    MediaItem(media="assets/Blue_Footer.png")
+                                    MediaItem(media="assets/Gold_Footer.png")
                                 ]),
                         ]
                     ),
                     Container(
-                        accent_color=GOLDENROD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(content="## ⚔️ **DAILY FWA EXPECTATIONS** ⚔️"),
                             Separator(divider=True),
@@ -467,7 +467,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
         return [
                     Text(content=f"{recruit_mention}"),
                     Container(
-                        accent_color=GOLDENROD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(
                                 content=(
@@ -485,7 +485,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
         return [
                     Text(content=f"{recruit_mention}"),
                     Container(
-                        accent_color=GOLDENROD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(
                                 content=(
@@ -503,7 +503,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
         return [
                     Text(content=f"{recruit_mention}"),
                     Container(
-                        accent_color=GOLDENROD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(
                                 content=(
@@ -521,7 +521,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
         return [
                     Text(content=f"{recruit_mention}"),
                     Container(
-                        accent_color=GOLDENROD_ACCENT,
+                        accent_color=WU_GOLD,
                         components=[
                             Text(
                                 content=(
@@ -544,7 +544,7 @@ def native_base_result(*, recruit_mention: str, recruiter_mention: str,
     return [
                 Text(content=f"{recruit_mention}"),
                 Container(
-                    accent_color=BLUE_ACCENT,
+                    accent_color=WU_GOLD,
                     components=[
                         Text(content=f"## {friendly_name}"),
                         Media(
@@ -563,7 +563,7 @@ def native_base_result(*, recruit_mention: str, recruiter_mention: str,
                     ]
                 ),
                 Container(
-                    accent_color=BLUE_ACCENT,
+                    accent_color=WU_GOLD,
                     components=[
                         Text(content=f"### TH{th_number} FWA War Status and Base Layout"),
                         Text(content=base_info),

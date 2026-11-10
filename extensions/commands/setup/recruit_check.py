@@ -13,6 +13,7 @@ from hikari.impl import (
 )
 
 from extensions.commands.setup import setup
+from utils.constants import WU_GOLD
 from extensions.commands.setup import (
     recruit_aboutus,
     recruit_join_family,
@@ -49,7 +50,7 @@ def check_panel(checks, *, media_configured: bool) -> list:
     rows.append(Text(content=(
         "This check shows only what is needed. It does not check the channel permissions of members."
     )))
-    return [Container(accent_color=0xEEEEAA, components=rows)]
+    return [Container(accent_color=WU_GOLD, components=rows)]
 
 
 @setup.register()

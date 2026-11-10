@@ -23,7 +23,7 @@ from hikari.impl import (
     InteractiveButtonBuilder as Button,
 )
 
-from utils.constants import GOLDENROD_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD, RED_ACCENT
 from extensions.commands import ticket_runtime
 from extensions.commands.tickets import ticket
 from extensions.commands.tickets import surface
@@ -101,7 +101,7 @@ def public_binding_change_allowed(
 def create_public_ticket_embed(sections=None, *, media=None, action_id="preview", preview=False) -> List[Container]:
     """Create the target-guild public v2 intake panel."""
     panel = [Container(
-        accent_color=GOLDENROD_ACCENT,
+        accent_color=WU_GOLD,
         components=[
             Text(content="## Warriors United Clan Entry"),
             Separator(divider=True),
@@ -138,7 +138,7 @@ def create_public_ticket_embed(sections=None, *, media=None, action_id="preview"
     if preview:
         for button in components[-1].components:
             button.set_is_disabled(True)
-    panel = [Container(accent_color=GOLDENROD_ACCENT, components=components)]
+    panel = [Container(accent_color=WU_GOLD, components=components)]
     return panel
 
 

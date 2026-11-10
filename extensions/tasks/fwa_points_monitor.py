@@ -33,6 +33,7 @@ from hikari.impl import SeparatorComponentBuilder as Separator
 from hikari.impl import TextDisplayComponentBuilder as Text
 
 from utils import coc_maintenance
+from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 from utils.fwa_points_parser import (
     parse_clan_points, parse_active_fwa, sanitize_tag, is_newer_war, FwaPointsParseError,
@@ -87,7 +88,7 @@ board_publish_lock = asyncio.Lock()
 board_publish_task = None
 board_publish_dirty = False
 
-BOARD_ACCENT = 0x3498DB
+BOARD_ACCENT = WU_GOLD
 BOARD_TITLE = "## ⚔️ War board"
 
 

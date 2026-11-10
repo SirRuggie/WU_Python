@@ -272,7 +272,7 @@ def test_public_poll_renderer_matches_the_approved_mobile_hierarchy():
     ]
     empty_bar = "░" * poll_command.POLL_BAR_WIDTH
 
-    assert container["accent_color"] == int(poll_command.GOLD_ACCENT)
+    assert container["accent_color"] == int(poll_command.WU_GOLD)
     assert len(children) == 8
     assert len([
         node for node in _payload_nodes(view) if "type" in node

@@ -21,7 +21,7 @@ from hikari.impl import ContainerComponentBuilder as Container, TextDisplayCompo
 from extensions.components import register_action
 from utils import recruit_links
 from utils.component_state import get_state, insert_state, update_state
-from utils.constants import WARRIORS_UNITED_GUILD_ID
+from utils.constants import WARRIORS_UNITED_GUILD_ID, WU_GOLD
 from utils.mongo import MongoClient
 from utils.strike_store import STRIKE_DAYS, StrikeService, tag, utc
 from utils.strike_tracking import StrikeTracking
@@ -74,7 +74,7 @@ def panel(title: str, *lines: str, buttons=None):
             row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id,
                                        label=label, is_disabled=not enabled)
         children.append(row)
-    return [Container(accent_color=0xD9A441, components=children)]
+    return [Container(accent_color=WU_GOLD, components=children)]
 
 
 def text_units(text):
@@ -243,7 +243,7 @@ class Add(lightbulb.SlashCommand, name='add', description='Give one player accou
             placeholder='Select the account to strike', min_values=1, max_values=1)
         for player in state['tags']:
             menu.add_option(player, player)
-        await ctx.respond(components=[Container(accent_color=0xD9A441, components=[
+        await ctx.respond(components=[Container(accent_color=WU_GOLD, components=[
             Text(content='## Select an account'),
             Text(content=f'{len(tags)} linked account(s). Select the account that gets this strike.'),
             menu_row])], ephemeral=True, **NO_MENTIONS)
@@ -505,7 +505,7 @@ async def replacement_panel(store, state, *, notice=''):
                                        label=label, is_disabled=not enabled)
     buttons.add_link_button(link, label='Open on dashboard')
     children.append(buttons)
-    return [Container(accent_color=0xD9A441, components=children)]
+    return [Container(accent_color=WU_GOLD, components=children)]
 
 
 async def _replacement_action_state(ctx, mongo, token):

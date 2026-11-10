@@ -40,7 +40,7 @@ from utils import lazy_cwl_store as store
 from utils import return_reminder_settings
 from utils.mongo import MongoClient
 from utils.startup_reconciler import StartupReconciler
-from utils.constants import GOLD_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD
 from utils.clash_links import resolve_discord_ids
 
 _log = logging.getLogger(__name__)
@@ -419,7 +419,7 @@ async def _send_reminder_message(doc: dict, away: list[dict], *, expected_channe
         lines.append(ActionRow().add_link_button(ASSIGNMENTS_URL, label="My clan assignments").add_link_button(TASKS_URL, label="My tasks").add_link_button(WARS_URL, label="Wars"))
         await bot_instance.rest.create_message(
             channel=channel,
-            components=[Container(accent_color=GOLD_ACCENT, components=lines)],
+            components=[Container(accent_color=WU_GOLD, components=lines)],
             user_mentions=chunk_recipient_ids,
             role_mentions=[parsed_role_id] if section == "FWA" and parsed_role_id and index == 0 else [],
         )

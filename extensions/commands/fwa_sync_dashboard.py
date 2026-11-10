@@ -15,7 +15,7 @@ from extensions.tasks import band_sync_ical as sync
 from extensions.tasks import band_monitor as monitor
 from utils.band_ical_parser import DISCOVERY_OFFSET, discord_timestamp
 from utils.component_state import get_state, insert_state
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.mongo import MongoClient
 from utils.manage_ui import breadcrumb, button_emoji
 
@@ -59,7 +59,7 @@ def _error(message: str, state: dict | None = None) -> list:
             (f"fwa_sync_refresh:{state['_id']}", "Refresh", hikari.ButtonStyle.SECONDARY, False),
             (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
         ))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_RED, components=rows)]
 
 
 async def _state(ctx: Any, mongo: MongoClient, token: str) -> tuple[dict | None, str | None]:
@@ -193,7 +193,7 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None, *, 
         (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
         (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
     ))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 
@@ -259,7 +259,7 @@ async def _band_monitor_panel(state: dict, notice: str | None = None) -> list:
             (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
         ),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 async def open_dashboard(ctx: Any, mongo: MongoClient, *, manage_token: str,
@@ -331,7 +331,7 @@ def _check_panel(state: dict, events: list[dict], errors: list[str]) -> list:
         (f"fwa_sync_refresh:{state['_id']}", "Back to Sync & Reminders", hikari.ButtonStyle.SECONDARY, False),
         (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
     ))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 @register_action("fwa_sync_check", preload_state=False)

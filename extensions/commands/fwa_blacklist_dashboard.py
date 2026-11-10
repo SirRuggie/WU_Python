@@ -15,7 +15,7 @@ import lightbulb
 from extensions.components import register_action
 from extensions.commands.fwa.war_plans import FWA_WAR_PLANS_CONFIG
 from utils.component_state import get_state, insert_state
-from utils.constants import GOLDENROD_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.fwa_blacklist import add_blacklisted, list_blacklisted, remove_blacklisted
 from utils.fwa_points_parser import sanitize_tag
 from utils.manage_ui import breadcrumb, button_emoji
@@ -94,7 +94,7 @@ def _error(message: str, state: dict | None = None) -> list:
         ])
     else:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="Run `/manage` to open a fresh private panel."))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_RED, components=rows)]
 
 
 async def _state(ctx: Any, mongo: MongoClient, token: str, *, view: str | None = None) -> tuple[dict | None, str | None]:
@@ -211,7 +211,7 @@ async def _panel(mongo: MongoClient, state: dict, *, editor: bool, notice: str |
         (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
         (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
     ))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 async def open_dashboard(ctx: Any, mongo: MongoClient, *, manage_token: str, deferred: bool = False) -> None:
@@ -467,7 +467,7 @@ async def remove(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
 def _confirm(state: dict) -> list:
     tag = _safe(state.get("selected_tag") or "?", 20)
     name = _safe(state.get("selected_name") or tag, 80)
-    return [hikari.impl.ContainerComponentBuilder(accent_color=RED_ACCENT, components=[
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_RED, components=[
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "Blacklist", "Remove") + "\n## Remove clan?"),
         hikari.impl.TextDisplayComponentBuilder(content=f"Remove **{name}** (`#{tag}`) from the FWA blacklist?"),
         hikari.impl.TextDisplayComponentBuilder(content="This changes the shared list used by FWA war plans."),

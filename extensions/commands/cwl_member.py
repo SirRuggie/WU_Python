@@ -14,7 +14,7 @@ import hikari
 import lightbulb
 
 from extensions.components import register_action
-from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
+from utils.constants import WU_GOLD, WARRIORS_UNITED_GUILD_ID
 from utils.cwl_signup_policy import main_signup_error
 from utils.cwl_member_summary import timing_lines
 from utils.dashboard_urls import SIGNUP_URL, ASSIGNMENTS_URL, TASKS_URL, WARS_URL
@@ -206,7 +206,7 @@ def _instruction_pages(session: MemberSession) -> list[str]:
 
 def _panel(text: str, rows: list) -> list:
     return [hikari.impl.ContainerComponentBuilder(
-        accent_color=GOLDENROD_ACCENT,
+        accent_color=WU_GOLD,
         components=[hikari.impl.TextDisplayComponentBuilder(content=text), *rows],
     )]
 

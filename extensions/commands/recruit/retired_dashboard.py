@@ -5,7 +5,7 @@ No old session data is loaded and no Discord or MongoDB mutation is performed.
 
 import hikari
 from extensions.components import register_action
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 
 RETIRED_ACTIONS = (
     "add_all_clans",
@@ -37,7 +37,7 @@ RETIRED_ACTIONS = (
 async def retired(ctx, action_id, **kwargs):
     return [
         hikari.impl.ContainerComponentBuilder(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 hikari.impl.TextDisplayComponentBuilder(
                     content="## Recruit Dashboard Retired\nUse `/warrior setup discord-user:@Member` to set up this recruit. This old control no longer makes changes."

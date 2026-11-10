@@ -6,7 +6,7 @@ import hikari
 import lightbulb
 
 from extensions.components import register_action
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.manage_ui import ICONS
 from utils.mongo import MongoClient
 from utils.recruit_error_reporting import notify as notify_recruit_error
@@ -46,7 +46,7 @@ def build_join_family(sections=None, *, media=None, action_id="preview", preview
     components = [
         Media(items=[MediaItem(media=media.get("welcome", "assets/branding/banners/Warriors_United.gif"))]),
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 text("## :shield: **Join Warriors United Family** :shield:"),
                 Separator(divider=True),
@@ -84,7 +84,7 @@ def _continue_components(guild_id: int, message: str, *, url: str | None = None)
     """A private, clickable next step. Discord cannot open a channel for a user."""
     return [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content="## :shield: Gauntlet access unlocked"),
                 Text(content=message),

@@ -13,7 +13,7 @@ from extensions.components import register_action
 from extensions.commands import ticket_runtime
 from extensions.commands.tickets import handlers
 from utils.component_state import insert_state, get_state
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 from utils.recruit_error_reporting import edit_error, notify as notify_recruit_error
 
@@ -24,7 +24,7 @@ def path_panel(session_id="preview", sections=None, *, media=None, preview=False
             hikari.ButtonStyle.SECONDARY, f"ticket_v2_rite_choose:{session_id}:{kind}",
             label=label, is_disabled=preview,
         )
-    panel = [Container(accent_color=GOLDENROD_ACCENT, components=[
+    panel = [Container(accent_color=WU_GOLD, components=[
         Text(content="## <:warriors_united:1553249482836025425> **Warriors United – Your Rite of Passage Begins**"),
         Text(content=(
             '**“Warrior, your first steps within Warriors United are more than a simple entry… '
@@ -64,7 +64,7 @@ def path_panel(session_id="preview", sections=None, *, media=None, preview=False
                 components[index] = Text(content=next(values))
     if media and media.get("guide"):
         components[-1] = Media(items=[MediaItem(media=media["guide"])])
-    panel = [Container(accent_color=GOLDENROD_ACCENT, components=components)]
+    panel = [Container(accent_color=WU_GOLD, components=components)]
     return panel
 
 

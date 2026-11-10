@@ -22,7 +22,7 @@ from hikari.impl import (
 from extensions.components import register_action
 from utils.component_state import delete_state, get_state, insert_state
 from utils.mongo import MongoClient
-from utils.constants import RED_ACCENT, GREEN_ACCENT
+from utils.constants import WU_GOLD, WU_GREEN, WU_RED
 
 # Explicit allowlist: Discord Administrator alone must never grant process
 # restart access.
@@ -59,7 +59,7 @@ class Reboot(
             await ctx.respond(
                 components=[
                     Container(
-                        accent_color=RED_ACCENT,
+                        accent_color=WU_RED,
                         components=[
                             Text(content=(
                                 "## ❌ Permission Denied\n\n"
@@ -84,7 +84,7 @@ class Reboot(
         # Create warning message
         components = [
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=WU_RED,
                 components=[
                     Text(content=(
                         "## ⚠️ Confirm Bot Reboot\n\n"
@@ -147,7 +147,7 @@ async def handle_reboot_confirm(
     # Show rebooting message
     reboot_components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content=(
                     "## 🔄 Restarting WUBOT...\n\n"
@@ -202,7 +202,7 @@ async def handle_reboot_cancel(
     # Send cancellation message
     cancel_components = [
         Container(
-            accent_color=GREEN_ACCENT,
+            accent_color=WU_GREEN,
             components=[
                 Text(content=(
                     "## ✅ Reboot Cancelled\n\n"

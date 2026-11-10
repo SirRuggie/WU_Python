@@ -14,7 +14,7 @@ from hikari.impl import (
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
 )
-from utils.constants import BLUE_ACCENT
+from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 from utils import recruit_goblin_challenges as storage
 
@@ -84,7 +84,7 @@ async def send_ping_explanation(channel_id: int, user_id: int):
     try:
         components = [
             Container(
-                accent_color=BLUE_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content="## 📌 **How to ping in Discord**"),
                     Separator(divider=True),
@@ -106,7 +106,7 @@ async def send_ping_explanation(channel_id: int, user_id: int):
                     ),
                     Media(
                         items=[
-                            MediaItem(media="assets/Blue_Footer.png")
+                            MediaItem(media="assets/Gold_Footer.png")
                         ]
                     ),
                 ]

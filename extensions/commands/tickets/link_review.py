@@ -11,13 +11,14 @@ from hikari.impl import ModalActionRowBuilder
 from extensions.components import register_action
 from extensions.commands.tickets import account_sync, perms, store
 from utils.component_state import insert_state, get_state
+from utils.constants import WU_GOLD, WU_RED
 from utils.mongo import MongoClient
 
 REASON = 'linked_account_conflict_review'
 
 
 def notice(text):
-    return [Container(accent_color=0xF1C40F, components=[Text(content=text)])]
+    return [Container(accent_color=WU_GOLD, components=[Text(content=text)])]
 
 
 async def defer_modal_update(ctx):
@@ -38,7 +39,7 @@ async def prompt(mongo, ticket, owner_id, guild_id, *, overturn=False):
         'conflicting_tags':list(linked.get('conflicting_tags') or []),
         'ticket_rev':int(ticket.get('rev') or 0), 'status':ticket.get('status'), 'overturn':overturn}, ttl=timedelta(minutes=15))
     tags=', '.join(linked.get('conflicting_tags') or [])
-    return [Container(accent_color=0xF1C40F,components=[
+    return [Container(accent_color=WU_GOLD,components=[
         Text(content='## Review linked-account conflicts\nHave you reviewed these linked-account conflicts?'),
         Text(content=f'**Accounts:** {tags}\nYes opens a reason form for all these accounts. We will not change external links or existing flags.'),
         Row(components=[Button(style=hikari.ButtonStyle.SECONDARY,label='Yes — Reviewed',custom_id=f'ticket_link_review_yes:{token}'),
@@ -73,7 +74,7 @@ async def no(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
     if not data:
         await ctx.interaction.edit_initial_response(components=notice('This review expired or is not yours. Select Approve again.'))
         return
-    await ctx.interaction.edit_initial_response(components=[Container(accent_color=0xF1C40F,components=[
+    await ctx.interaction.edit_initial_response(components=[Container(accent_color=WU_RED,components=[
         Text(content='## Review first\nReview and fix the linked-account conflicts. Then select Approve again and write your reason. Nothing was changed.'),
         Row(components=[Button(style=hikari.ButtonStyle.SECONDARY,label='Review Player Info',custom_id=f"ticket_player_info:{data['ticket_id']}|1")]),
     ])])

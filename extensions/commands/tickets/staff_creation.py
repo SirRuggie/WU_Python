@@ -30,7 +30,7 @@ from extensions.commands.tickets import (
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state, update_state
 from utils.mongo import MongoClient
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 
 
 def panel(state):
@@ -87,7 +87,7 @@ def panel(state):
     )
     return [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content=heading),
                 users,
@@ -121,7 +121,7 @@ async def notice(ctx, text):
         role_mentions=False,
         mentions_everyone=False,
         components=[
-            Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=text)])
+            Container(accent_color=WU_GOLD, components=[Text(content=text)])
         ],
     )
 
@@ -234,7 +234,7 @@ async def show_ticket(ctx, ticket):
         mentions_everyone=False,
         components=[
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=(
                     [Text(content="✅ Ticket available."), Row(components=links)]
                     if links

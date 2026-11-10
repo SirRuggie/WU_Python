@@ -7,7 +7,7 @@ from extensions.components import register_action
 from utils import war_weight as store
 from utils.component_state import insert_state, get_state
 from utils.mongo import MongoClient
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 
 loader = lightbulb.Loader()
 NO_MENTIONS = dict(user_mentions=False, role_mentions=False, mentions_everyone=False)
@@ -60,7 +60,7 @@ async def panel(mongo, state, notice=""):
     children += [row, hikari.impl.SeparatorComponentBuilder(divider=True),
         button(hikari.impl.MessageActionRowBuilder(), f"manage_fwa:{state['manage_token']}", "Back to FWA"),
         hikari.impl.TextDisplayComponentBuilder(content="-# Emoji: leave blank to find the emoji by name, or enter a custom emoji name, or paste a custom emoji. Changes apply to new calculator results.")]
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=children)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=children)]
 
 
 async def open_dashboard(ctx, mongo, *, manage_token, deferred=False):

@@ -222,7 +222,7 @@ def test_remove_requires_page_selection_confirmation_and_fresh_role(harness):
     labels = {item["label"]: item for item in controls(review) if "label" in item}
     assert labels["Yes, remove clan"]["emoji"]
     assert labels["No, keep clan"]["emoji"]
-    assert review[0].build()[0]["accent_color"] == ui.RED_ACCENT
+    assert review[0].build()[0]["accent_color"] == ui.WU_RED
     denied = call(ui.confirm, Context(admin=True), confirmation["_id"], db)
     assert "FWA Clan Rep role" in text(denied) and "TAG000" in docs
     cancelled = call(ui.cancel, Context(editor=True), confirmation["_id"], db)

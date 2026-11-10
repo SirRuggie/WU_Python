@@ -16,7 +16,7 @@ from extensions.autocomplete import fwa_clans, war_plan_opponents
 
 from utils.mongo import MongoClient
 from utils.classes import Clan
-from utils.constants import GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, MAX_OPPONENT_NAME_LENGTH
+from utils.constants import WU_RED, MAX_OPPONENT_NAME_LENGTH
 from utils.fwa_blacklist import add_blacklisted
 from utils.fwa_points_parser import sanitize_tag
 from .message_templates import sanitize_opponent_name
@@ -261,7 +261,7 @@ class WarPlans(
         except Exception as e:
             error_components = [
                 Container(
-                    accent_color=RED_ACCENT,
+                    accent_color=WU_RED,
                     components=[
                         Text(content="## ❌ **Error Posting Message**"),
                         Text(content=f"Could not post the war message: {str(e)}"),

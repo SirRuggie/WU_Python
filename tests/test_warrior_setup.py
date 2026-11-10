@@ -228,7 +228,7 @@ def test_home_shows_missing_fields_and_fits_component_limits(monkeypatch):
     m = mongo()
     monkeypatch.setattr(core, "clans", AsyncMock(return_value=[]))
     built = run(ui.home({"_id": "1"}, c, m))[0].build()[0]
-    assert built["accent_color"] == ui.GOLDENROD_ACCENT
+    assert built["accent_color"] == ui.WU_GOLD
     assert (
         "Not set" in repr(built)
         and "Not assigned" in repr(built)

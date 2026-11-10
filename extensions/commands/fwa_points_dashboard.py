@@ -14,7 +14,7 @@ import lightbulb
 from extensions.components import register_action
 from extensions.tasks import fwa_points_monitor as monitor
 from utils.component_state import get_state, insert_state
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.fwa_points_parser import sanitize_tag
 from utils.mongo import MongoClient
 from utils.manage_ui import breadcrumb, button_emoji
@@ -60,7 +60,7 @@ def _error(message: str, state: dict | None = None) -> list:
             (f"fwa_points_refresh:{state['_id']}", "Refresh", hikari.ButtonStyle.SECONDARY, False),
             (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
         ))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_RED, components=rows)]
 
 
 async def _state(ctx: Any, mongo: MongoClient, token: str) -> tuple[dict | None, str | None]:
@@ -185,7 +185,7 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None, *, 
         (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
         (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
     ))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 @register_action("fwa_points_details", preload_state=False)

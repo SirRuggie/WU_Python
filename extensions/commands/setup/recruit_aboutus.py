@@ -9,7 +9,7 @@ import uuid
 
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.manage_ui import ICONS
 from utils.mongo import MongoClient
 from utils.recruit_error_reporting import notify as notify_recruit_error
@@ -65,7 +65,7 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
 
         # Embed 1: Welcome and Overview
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 text("## :shield: **Welcome to Warriors United!** :shield:"),
                 Separator(divider=True),
@@ -97,7 +97,7 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
 
         # Embed 2: Flexible Fun War Clans
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 text("## 🪖 **Flexible Fun War Clans** 🪖"),
                 text((
@@ -118,7 +118,7 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
 
         # Embed 3: FWA Clans
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 text("## 💰 **FWA Clans** 💰"),
                 text((
@@ -143,7 +143,7 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
 
         # Embed 4: Next Steps
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 text("## ⏩ **NEXT STEP**"),
                 text((
@@ -232,7 +232,7 @@ def _continue_components(guild_id: int, message: str, *, url: str | None = None)
     """Build the private V2 prompt that sends members to the next step."""
     return [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content="## :shield: Next step unlocked"),
                 Text(content=message),

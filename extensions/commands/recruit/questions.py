@@ -33,11 +33,7 @@ from utils import recruit_goblin_challenges as goblin_storage
 from utils import recruit_panel_refresh as panel_refresh
 from utils import recruit_message_delivery as delivery
 from utils.constants import (
-    GOLDENROD_ACCENT,
-    RED_ACCENT,
-    GOLD_ACCENT,
-    BLUE_ACCENT,
-    GREEN_ACCENT,
+    WU_GOLD,
     FWA_WAR_BASE,
     FWA_ACTIVE_WAR_BASE,
 )
@@ -239,7 +235,7 @@ async def primary_questions(
     if choice == "age_bracket":
         components = [
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content=f"## ⏳ **What's Your Age Bracket?** · {user.mention}"),
                     Separator(divider=True),
@@ -370,7 +366,7 @@ async def on_age_button(
             Text(content=f"🎉 **16 & Under Registered!** · {user.mention}"),
 
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(
                         content=(
@@ -398,7 +394,7 @@ async def on_age_button(
             Text(content=f"🎮 **17–25 Confirmed** · {user.mention}"),
 
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(
                         content=(
@@ -425,7 +421,7 @@ async def on_age_button(
             Text(content=f"🏅 **Age Locked In** · {user.mention}"),
 
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(
                         content=(
@@ -480,7 +476,7 @@ async def on_shield_basics_button(
     # Send the message with goblin gif
     components = [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content=f"Excellent!! {user.mention} You in essence reacted to a reaction."),
                 Separator(divider=True),
@@ -762,7 +758,7 @@ async def recruit_questions_page(
 ):
     components = [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content=(
                     "Tools to recruit people into Warriors United\n\n"
@@ -1114,7 +1110,7 @@ def _schedule_warning_deletion(
 def _family_code_warning_components(user_mention: str) -> list:
     return [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content=f"{user_mention}"),
                 Text(content="## 🤠 Hold up there, partner…"),
@@ -1139,7 +1135,7 @@ def _family_code_success_components(
 ) -> list:
     return [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content="## ✅ Code Confirmed!"),
                 Separator(divider=True),

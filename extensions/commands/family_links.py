@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
-from utils.constants import BLUE_ACCENT, GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT, GOLDENROD_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.media_urls import GALLERY, optimized
 from utils.emoji import emojis
 
@@ -169,7 +169,7 @@ async def build_family_links_panel(
     # Build the container
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 # Header with server icon
                 Section(
@@ -258,7 +258,7 @@ async def build_family_links_panel(
 def error_response(message: str, action_id: str) -> Container:
     """Create an error response container"""
     return Container(
-        accent_color=RED_ACCENT,
+        accent_color=WU_RED,
         components=[
             Text(content=f"## ❌ **Error: {message}**"),
             Media(items=[MediaItem(media="assets/Red_Footer.png")])
@@ -498,7 +498,7 @@ async def family_links_war_clans_handler(
     # Build component
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content="## ⚔️ **War Clans**"),
                 Text(content="**Tactical** clans focus on competitive war strategies\n**Flexible Fun** clans balance competition with enjoyment"),
@@ -514,11 +514,11 @@ async def family_links_war_clans_handler(
                         )
                     ]
                 ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                Media(items=[MediaItem(media="assets/Gold_Footer.png")])
             ]
         )
     ]
-    
+
     await ctx.respond(components=components, ephemeral=True)
 
 
@@ -568,7 +568,7 @@ async def family_links_fwa_clans_handler(
     # Build component
     components = [
         Container(
-            accent_color=GREEN_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content="## 🏳️ **FWA Clans**"),
                 Text(content="Farm War Alliance clans focus on loot farming through organized wars"),
@@ -584,7 +584,7 @@ async def family_links_fwa_clans_handler(
                         )
                     ]
                 ),
-                Media(items=[MediaItem(media="assets/Green_Footer.png")])
+                Media(items=[MediaItem(media="assets/Gold_Footer.png")])
             ]
         )
     ]
@@ -638,7 +638,7 @@ async def family_links_cwl_clans_handler(
     # Build component
     components = [
         Container(
-            accent_color=GOLD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content="## 🏆 **CWL Clans**"),
                 Text(content="Clans that focus on Clan War League. They compete for league medals and rewards."),
@@ -697,7 +697,7 @@ async def view_clan_info_handler(
         # If clan has a logo, show it with the info
         components = [
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content=f"# {clan_name}"),
                     Media(items=[MediaItem(media=optimized(clan_logo, width=GALLERY))]),
@@ -718,7 +718,7 @@ async def view_clan_info_handler(
         # No logo, just show the clan name
         components = [
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content=f"# {clan_name}"),
                     ActionRow(

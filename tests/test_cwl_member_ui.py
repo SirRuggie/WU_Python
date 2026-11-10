@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import hikari
 
 from extensions.commands import cwl_member as member
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 
 
 GUILD_ID = 644963518025826315
@@ -30,7 +30,7 @@ def test_panel_serializes_one_goldenrod_container_and_short_rows():
     built, files = member._panel(member._main_text(home), member._components("panel", home))[0].build()
     assert not files
     assert built["type"] == hikari.ComponentType.CONTAINER
-    assert int(built["accent_color"]) == int(GOLDENROD_ACCENT)
+    assert int(built["accent_color"]) == int(WU_GOLD)
     assert built["components"][0]["content"].startswith("## CWL · October CWL")
     assert [len(row["components"]) for row in built["components"][1:]] == [2, 1, 3]
 

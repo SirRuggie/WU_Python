@@ -22,7 +22,7 @@ from utils.discord_file_upload import (
 )
 from utils.media_store import MediaStore, MediaStoreError, recruit_content_folder
 from utils.mongo import MongoClient
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.url_safety import MAX_IMAGE_BYTES
 from utils.recruit_setup_checks import fetch_bot_member, require_ready
 from utils.manage_ui import breadcrumb, button_emoji
@@ -559,7 +559,7 @@ def panel(state, notice=None):
             home = hikari.impl.MessageActionRowBuilder()
             home.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{state['manage_token']}", label="Management Home", emoji=button_emoji("Management Home"))
             rows.append(home)
-        return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+        return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
     document = DOCUMENTS[state["document"]]
     overrides = normal_media(document, state.get("media"))
@@ -667,12 +667,12 @@ def panel(state, notice=None):
     if selected_buttons is not None:
         controls.append(selected_buttons)
     controls.extend([hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL), footer])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows + controls)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows + controls)]
 
 
 def error_panel(message):
     return [hikari.impl.ContainerComponentBuilder(
-        accent_color=0xAA4444,
+        accent_color=WU_RED,
         components=[hikari.impl.TextDisplayComponentBuilder(content=f"## Content Dashboard\n{message}")],
     )]
 
@@ -805,7 +805,7 @@ async def manage_review(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECT
     buttons = hikari.impl.MessageActionRowBuilder()
     buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_back_document:{state['_id']}", label="Keep editing", emoji=button_emoji("Keep editing"))
     buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{token}", label="Leave without saving", emoji=button_emoji("Leave without saving"))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=[
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruit Gauntlet", DOCUMENTS[state["document"]].label)),
         hikari.impl.TextDisplayComponentBuilder(content="## Leave content editor?"),
         hikari.impl.TextDisplayComponentBuilder(content="If you open Recruit Gauntlet again, it starts a new draft. Unsaved edits are not restored. To keep your edits, save the template before you leave."),
@@ -1028,7 +1028,7 @@ async def back_to_root(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
         buttons = hikari.impl.MessageActionRowBuilder()
         buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_back_document:{state['_id']}", label="Keep editing", emoji=button_emoji("Keep editing"))
         buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root_confirm:{state['_id']}", label="Leave without saving", emoji=button_emoji("Leave without saving"))
-        return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+        return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=[
             hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruit Gauntlet", DOCUMENTS[state["document"]].label)),
             hikari.impl.TextDisplayComponentBuilder(content="## Return to Recruit Gauntlet?"),
             hikari.impl.TextDisplayComponentBuilder(content="If you reopen this document, you start a new draft. Unsaved edits are not kept. To keep them, save the template first."),
@@ -1290,7 +1290,7 @@ def update_prompt(state):
     buttons = hikari.impl.MessageActionRowBuilder()
     buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_save_publish:{state['_id']}", label="Save and update post", emoji=button_emoji("Confirm"))
     buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_document:{state['_id']}", label="Keep editing", emoji=button_emoji("Keep editing"))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=[
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruit Gauntlet", DOCUMENTS[state["document"]].label)),
         hikari.impl.TextDisplayComponentBuilder(content="## Section updated"),
         hikari.impl.TextDisplayComponentBuilder(content=f"Save this draft as the template and apply it to the [published post]({link})?"),

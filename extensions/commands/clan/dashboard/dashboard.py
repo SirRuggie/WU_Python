@@ -18,7 +18,7 @@ from hikari.impl import (
     ModalActionRowBuilder as ModalActionRow
 )
 
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.emoji import emojis
 from utils.mongo import MongoClient
 
@@ -40,7 +40,7 @@ async def dashboard_page(
     ))
     components = [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Section(accessory=Thumbnail(media=icon_url), components=[heading])
                 if icon_url else heading,

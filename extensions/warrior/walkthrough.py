@@ -16,7 +16,7 @@ from hikari.impl import (
     MediaGalleryItemBuilder as MediaItem,
 )
 from extensions.commands.tickets import thread_service
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.media_urls import GALLERY, optimized
 from . import core, content, schema
 
@@ -90,10 +90,10 @@ def components(run, index):
         )
         items.append(row)
     if index >= 2:
-        items.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
+        items.append(Media(items=[MediaItem(media="assets/Gold_Footer.png")]))
     return [
         Container(
-            id=marker(run, index), accent_color=GOLDENROD_ACCENT, components=items
+            id=marker(run, index), accent_color=WU_GOLD, components=items
         )
     ]
 

@@ -12,7 +12,7 @@ from extensions.commands.fwa import loader, fwa
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.classes import Clan
-from utils.constants import GOLD_ACCENT
+from utils.constants import WU_GOLD
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -47,7 +47,7 @@ class Links(
         
         components = [
             Container(
-                accent_color=GOLD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content="## 🔗 **FWA Needed Links**"),
                     Separator(divider=True),
@@ -145,7 +145,7 @@ async def on_verify_win(
     
     components = [
         Container(
-            accent_color=GOLD_ACCENT,
+            accent_color=WU_GOLD,
             components=container_components
         )
     ]
@@ -199,7 +199,7 @@ async def on_war_weights(
     
     components = [
         Container(
-            accent_color=GOLD_ACCENT,
+            accent_color=WU_GOLD,
             components=container_components
         )
     ]

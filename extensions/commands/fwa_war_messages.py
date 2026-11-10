@@ -16,7 +16,7 @@ import lightbulb
 from extensions.components import register_action
 from extensions.commands.fwa.war_plans import FWA_WAR_PLANS_CONFIG
 from utils.component_state import get_state, insert_state
-from utils.constants import GOLDENROD_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.manage_ui import breadcrumb, button_emoji
 from utils.manage_text_sections import apply_modal, by_key, groups, legacy_single, modal_fields
 from utils.discord_file_upload import (
@@ -101,7 +101,7 @@ async def _home_state(mongo: MongoClient, state: dict) -> dict:
 
 def _error(message: str) -> list:
     return [hikari.impl.ContainerComponentBuilder(
-        accent_color=RED_ACCENT,
+        accent_color=WU_RED,
         components=[
             hikari.impl.TextDisplayComponentBuilder(content=f"## FWA War Message Templates\n{message}"),
             hikari.impl.TextDisplayComponentBuilder(content="Run `/manage` to open a fresh private editor."),
@@ -138,7 +138,7 @@ def _home(state: dict, notice: str | None = None) -> list:
             (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
         ),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 def _dirty(state: dict) -> bool:
@@ -190,7 +190,7 @@ def _editor(state: dict, notice: str | None = None) -> list:
             (f"{'fwa_war_leave_home' if _dirty(state) else 'manage_home'}:{sid if _dirty(state) else state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
         ),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 def _leave_review(state: dict, *, management: bool, home: bool = False) -> list:
@@ -198,7 +198,7 @@ def _leave_review(state: dict, *, management: bool, home: bool = False) -> list:
     destination = "Management Home" if home else ("FWA" if management else "War Message Templates")
     leave_id = (f"manage_home:{state['manage_token']}" if home else
                 f"manage_fwa:{state['manage_token']}" if management else f"fwa_war_back:{sid}")
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=[
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Message Templates", VARIANT_LABELS[state["variant"]])),
         hikari.impl.TextDisplayComponentBuilder(content=f"## Leave and go to {destination}?"),
         hikari.impl.TextDisplayComponentBuilder(content="Unsaved changes in this draft will not be restored. Save them first if you want future war posts to use them."),
@@ -360,7 +360,7 @@ async def preview(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.IN
     except ValueError as exc:
         await _modal_edit(ctx, _editor(state, str(exc)))
         return
-    nav = hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+    nav = hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=[
         _buttons(
             (f"fwa_war_back_editor:{action_id}", "Back to editor", hikari.ButtonStyle.SECONDARY, False),
             (f"{'fwa_war_leave_home' if _dirty(state) else 'manage_home'}:{action_id if _dirty(state) else state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
@@ -381,7 +381,7 @@ async def copy_preview(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
     except ValueError as exc:
         await _modal_edit(ctx, _editor(state, str(exc)))
         return
-    await _modal_edit(ctx, [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+    await _modal_edit(ctx, [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=[
         hikari.impl.TextDisplayComponentBuilder(content="## Copy text preview"),
         hikari.impl.TextDisplayComponentBuilder(content=copy_text),
         hikari.impl.TextDisplayComponentBuilder(content="-# This private preview does not send a war message."),
@@ -467,7 +467,7 @@ async def reset(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
     state, problem = await _state(ctx, mongo, action_id, view="editor")
     if problem:
         return _error(problem)
-    return [hikari.impl.ContainerComponentBuilder(accent_color=RED_ACCENT, components=[
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_RED, components=[
         hikari.impl.TextDisplayComponentBuilder(content="## Reset this war message?"),
         hikari.impl.TextDisplayComponentBuilder(content="This restores the original text, accent color and artwork for future posts. It removes all unsaved edits in this draft."),
         _buttons(

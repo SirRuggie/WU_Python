@@ -94,7 +94,7 @@ from utils.dashboard_urls import TASKS_URL, WARS_URL
 from utils.clash_links import resolve_tags
 from utils.media_urls import THUMBNAIL, optimized
 from utils.constants import (
-    BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT, WARRIORS_UNITED_GUILD_ID,
+    WARRIORS_UNITED_GUILD_ID, WU_GOLD, WU_RED,
 )
 from utils.emoji import emojis
 from utils.fwa_blacklist import blacklisted_tags
@@ -422,7 +422,7 @@ U_MAINTENANCE = "🔧"  # the game is down, as distinct from we couldn't read it
 # Rendering
 # ---------------------------------------------------------------------------
 
-def _panel(body_components: list, accent=RED_ACCENT) -> list:
+def _panel(body_components: list, accent=WU_GOLD) -> list:
     return [Container(accent_color=accent, components=body_components)]
 
 
@@ -516,7 +516,7 @@ def _retired_panel() -> list:
             hikari.impl.LinkButtonBuilder(url=TASKS_URL, label="My tasks"),
             hikari.impl.LinkButtonBuilder(url=WARS_URL, label="Wars"),
         ]),
-    ], BLUE_ACCENT)
+    ], WU_GOLD)
 
 
 def _urgency_accent(view_data):
@@ -529,19 +529,21 @@ def _urgency_accent(view_data):
 
         RED    something closes within 2 hours
         GOLD   something closes within 12 hours
-        BLUE   everything else, including prep-only and empty views
+        NONE   everything else, including prep-only and empty views
+
+    "None" is hikari.UNDEFINED: the container is sent without an accent.
     """
     if view_data is None or not getattr(view_data, "ok", False) or not view_data.rows:
-        return BLUE_ACCENT
+        return hikari.UNDEFINED
     soonest = [r.ends_at for r in view_data.rows if r.state != "preparation" and r.ends_at]
     if not soonest:
-        return BLUE_ACCENT
+        return hikari.UNDEFINED
     remaining = min(soonest) - int(time.time())
     if remaining <= 2 * 60 * 60:
-        return RED_ACCENT
+        return WU_RED
     if remaining <= 12 * 60 * 60:
-        return GOLD_ACCENT
-    return BLUE_ACCENT
+        return WU_GOLD
+    return hikari.UNDEFINED
 
 
 def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = None,
@@ -640,7 +642,7 @@ def _nav_block(view: str, counts: dict, pager=None, *,
         # Done by reordering INSIDE the container rather than moving anything
         # out to top level. A top-level component renders outside the accent bar
         # and would lose the coloured stripe, detaching the row from the panel.
-        Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+        Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
         Text(content=stamp),
         ActionRow(components=[
             Button(
@@ -1097,7 +1099,7 @@ def render_dashboard(view: str, page: int, data: dict, *,
         # "to do" is wrong for Private War Logs - those accounts are not work,
         # they are clans to go and ask about.
         title += f" · {outstanding}" if view == VIEW_PRIVATE else f" · {outstanding} to do"
-        if view != VIEW_PRIVATE and _urgency_accent(current) == RED_ACCENT:
+        if view != VIEW_PRIVATE and _urgency_accent(current) == WU_RED:
             title += f" {U_URGENT}"
     body: list = [Text(content=title)]
 

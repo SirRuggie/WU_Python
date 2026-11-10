@@ -10,7 +10,7 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
 )
 
-from utils.constants import GREEN_ACCENT
+from utils.constants import WU_GREEN
 
 
 loader = lightbulb.Loader()
@@ -38,7 +38,7 @@ def build_ping_view(
     """Build the compact public health card."""
     latency = f"{latency_ms} ms" if latency_ms is not None else "Measuring…"
     return [Container(
-        accent_color=GREEN_ACCENT,
+        accent_color=WU_GREEN,
         components=[Text(content=(
             "## ✅ WU Wizard is online\n"
             "The bot is connected to Discord and responding to commands.\n\n"

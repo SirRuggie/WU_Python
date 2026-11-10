@@ -3,7 +3,7 @@ import hikari
 import logging
 
 from extensions.commands.fwa import loader, fwa
-from utils.constants import BLUE_ACCENT, GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD, WU_GREEN, WU_RED
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -29,23 +29,23 @@ def determine_town_hall(total_weight: int, ranges=None) -> tuple[int | None, str
     levels = sorted(ranges)
     # Check configured bounds
     if total_weight < ranges[levels[0]]["min"]:
-        return None, "below", RED_ACCENT
+        return None, "below", WU_RED
 
     # Check configured maximum
     if total_weight > ranges[levels[-1]]["max"]:
-        return None, "above", RED_ACCENT
+        return None, "above", WU_RED
 
     # Find exact match
     for th_level, range_data in ranges.items():
         if range_data["min"] <= total_weight <= range_data["max"]:
-            return th_level, "exact", GREEN_ACCENT
+            return th_level, "exact", WU_GREEN
 
     # Find between ranges
     for th_level in levels:
         if total_weight < ranges[th_level]["min"]:
-            return levels[levels.index(th_level) - 1], "between", GOLD_ACCENT
+            return levels[levels.index(th_level) - 1], "between", WU_GOLD
 
-    return None, "unknown", RED_ACCENT
+    return None, "unknown", WU_RED
 
 
 def get_th_emoji(th_level, config=None, available=()):
@@ -185,7 +185,7 @@ def build_weight_panel(loot: int, config, available=(), saved_for: str | None = 
             ]
         ),
         Container(
-            accent_color=BLUE_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content=f"### 📊 **War Weight Reference Guide (TH{config['minimum_th']}–TH{highest})**"),
                 Text(content=format_weight_reference_guide(total_weight, th_level, config, available)),
@@ -209,14 +209,14 @@ def build_weight_panel(loot: int, config, available=(), saved_for: str | None = 
 
         components.append(
             Container(
-                accent_color=GOLD_ACCENT,
+                accent_color=WU_GOLD,
                 components=additional_components
             )
         )
     else:
         # Add footer to last container
         components[-1].components.append(
-            Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+            Media(items=[MediaItem(media="assets/Gold_Footer.png")])
         )
     return components
 

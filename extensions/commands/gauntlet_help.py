@@ -8,7 +8,7 @@ import hikari
 import lightbulb
 
 from extensions.components import register_action
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.manage_ui import breadcrumb, button_emoji
 from utils.mongo import MongoClient
 
@@ -86,11 +86,11 @@ def panel(state: dict, settings: dict, notice: str | None = None) -> list:
             label="Management Home", emoji=button_emoji("Management Home"),
         )
     rows.extend((controls, footer))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 def error_panel(message: str) -> list:
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_RED, components=[
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruit Gauntlet", "Help & reminders")),
         hikari.impl.TextDisplayComponentBuilder(content="## Help & reminders"),
         hikari.impl.TextDisplayComponentBuilder(content=message),

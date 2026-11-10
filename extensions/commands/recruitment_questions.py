@@ -15,7 +15,7 @@ import lightbulb
 
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state
-from utils.constants import GOLDENROD_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.manage_ui import breadcrumb, button_emoji
 from utils.manage_text_sections import apply_modal, by_key, groups, legacy_single, modal_fields
 from utils.discord_file_upload import (
@@ -89,7 +89,7 @@ async def _home_state(mongo: MongoClient, state: dict) -> dict:
 
 def _error(message: str) -> list:
     return [hikari.impl.ContainerComponentBuilder(
-        accent_color=RED_ACCENT,
+        accent_color=WU_RED,
         components=[
             hikari.impl.TextDisplayComponentBuilder(content=f"## Recruitment Questions\n{message}"),
             hikari.impl.TextDisplayComponentBuilder(content="Run `/manage` to open a fresh private editor."),
@@ -124,7 +124,7 @@ def _home(state: dict, notice: str | None = None) -> list:
         hikari.impl.TextDisplayComponentBuilder(content="-# Changes affect future recruitment questions only after you save."),
         _buttons((f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False)),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 def _dirty(state: dict) -> bool:
@@ -215,14 +215,14 @@ def _editor(state: dict, notice: str | None = None) -> list:
              "Management Home", hikari.ButtonStyle.SECONDARY, False),
         ),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 def _leave_review(state: dict, *, management: bool) -> list:
     sid = state["_id"]
     destination = "Management Home" if management else "message list"
     leave_id = f"manage_home:{state['manage_token']}" if management else f"recruit_question_back:{sid}"
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=[
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruitment Questions", content.VARIANT_LABELS[state["variant"]])),
         hikari.impl.TextDisplayComponentBuilder(content=f"## Leave and go to {destination}?"),
         hikari.impl.TextDisplayComponentBuilder(content="Unsaved changes in this draft will not be restored. Save them first if you want future recruitment messages to use them."),
@@ -381,7 +381,7 @@ async def preview(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.IN
     options = [(f"recruit_question_back_editor:{action_id}", "Back to editor", hikari.ButtonStyle.SECONDARY, False)]
     if state["variant"] == "fwa_bases_upon_approval":
         options.insert(0, (f"recruit_question_base_preview:{action_id}", "Public TH example", hikari.ButtonStyle.SECONDARY, False))
-    nav = hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[_buttons(*options)])
+    nav = hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=[_buttons(*options)])
     await _modal_edit(ctx, [*components, nav])
 
 
@@ -400,7 +400,7 @@ async def base_preview(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
     except ValueError as exc:
         await _modal_edit(ctx, _editor(state, str(exc)))
         return
-    nav = hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+    nav = hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=[
         _buttons(
             (f"recruit_question_preview:{action_id}", "Back to selector", hikari.ButtonStyle.SECONDARY, False),
             (f"recruit_question_back_editor:{action_id}", "Back to editor", hikari.ButtonStyle.SECONDARY, False),
@@ -472,7 +472,7 @@ async def reset(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
     state, problem = await _state(ctx, mongo, action_id, view="editor")
     if problem:
         return _error(problem)
-    return [hikari.impl.ContainerComponentBuilder(accent_color=RED_ACCENT, components=[
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_RED, components=[
         hikari.impl.TextDisplayComponentBuilder(content="## Reset this recruitment message?"),
         hikari.impl.TextDisplayComponentBuilder(content="This restores the original text, accent color and artwork for future posts. It removes all unsaved edits in this draft."),
         _buttons(

@@ -11,7 +11,7 @@ from extensions.tasks import band_monitor
 from extensions.tasks import band_sync_panel as panel
 from extensions.tasks import band_sync_schema as schema
 from tests.test_band_sync_ical_delivery import FakeMongo, FakeRest
-from utils.constants import RED_ACCENT
+from utils.constants import WU_GOLD
 from utils.emoji import emojis
 
 
@@ -62,7 +62,7 @@ def test_panel_container_exact_layout_zero_responses():
 
     assert len(components) == 1
     container = components[0]
-    assert container.accent_color == RED_ACCENT
+    assert container.accent_color == WU_GOLD
 
     start = panel._start_of(event)
     assert _texts(container) == [
