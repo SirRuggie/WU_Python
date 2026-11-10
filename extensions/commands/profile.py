@@ -9,6 +9,7 @@ never a mention, so Discord cannot render "Unknown user".
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -31,7 +32,7 @@ from extensions.commands import linked_accounts
 from extensions.components import register_action
 from utils import recruit_links
 from utils.constants import RED_ACCENT, WARRIORS_UNITED_GUILD_ID
-from utils.member_event_cards import user_link
+from utils.member_events import safe_text
 
 loader = lightbulb.Loader()
 _log = logging.getLogger(__name__)
@@ -39,7 +40,8 @@ _log = logging.getLogger(__name__)
 MODE_PROFILE = "p"
 MODE_ALERT = "a"
 NEW_WARRIOR_PING_ROLE_ID = 1151305219079155802
-NEW_WARRIOR_TITLE = "# 👋 New Warrior"
+NEW_WARRIOR_TITLE = "# ⛩️ New Warrior at the Gate"
+USERNAME = re.compile(r"[a-z0-9_.]{2,32}")
 MESSAGE_TEXT_LIMIT = 4000
 TEXT_SAFETY_MARGIN = 100
 
@@ -123,7 +125,13 @@ def _stamp(value: datetime | None) -> str | None:
 
 
 def _header_text(identity: Identity) -> str:
-    lines = [f"### {user_link(identity.user_id, identity.display_name, identity.username)}"]
+    # Display names can hold characters that stop Discord rendering a masked
+    # link, so the name is plain text and the link sits on the username
+    # (Discord usernames are only a-z, 0-9, "_" and ".").
+    name = safe_text(identity.display_name) or "Unknown member"
+    username = identity.username if USERNAME.fullmatch(identity.username or "") else ""
+    profile_url = f"https://discord.com/users/{int(identity.user_id)}"
+    lines = [f"### {name}", f"[{safe_text(username) if username else 'Discord profile'}]({profile_url})"]
     if created := _stamp(identity.created_at):
         lines.append(f"**Account created:** {created}")
     if joined := _stamp(identity.joined_at):

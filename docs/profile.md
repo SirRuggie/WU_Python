@@ -17,15 +17,16 @@ pings anyone (`user_mentions`, `role_mentions`, `mentions_everyone` all off).
 
 ## Card (Components V2)
 
-1. Identity: the name as the join/leave log shows it
-   (`utils.member_event_cards.user_link`: a `discord.com/users/<id>` profile
-   link plus `(username)` when it differs), "Account created", and "Joined
-   server" for members. The avatar is the thumbnail (guild avatar first). No
-   mention: Discord renders unknown mentions as "Unknown user". No raw Discord
-   ID is shown as text.
+1. Identity: the display name as plain text, then the username as a link to
+   `discord.com/users/<id>` ("Discord profile" when the username is not a
+   plain a-z/0-9/_/. name). Names stay out of link labels because Discord
+   drops a masked link when its label holds some characters (seen live with
+   "❤️MC QUEEN❤️"). "Account created", and "Joined server" for members. The
+   avatar is the thumbnail (guild avatar first). No mention: Discord renders
+   unknown mentions as "Unknown user". No raw Discord ID is shown as text.
 2. Separator.
 3. `## Linked Accounts`, a summary, and one row per linked tag: Town Hall,
-   player name linked to the in-game profile, tag, clan. Sorted by Town Hall.
+   player name (bold, plain), the tag linked to the in-game profile, clan. Sorted by Town Hall.
    20 rows per page.
 4. Notes: incomplete list (a provider did not answer), profiles not loaded,
    tags with no player profile, Clash maintenance.
@@ -72,7 +73,7 @@ bypass it. `/manage-links` clears it for the affected users
 - Trigger: `MemberCreateEvent` in guild 644963518025826315. Bots are skipped.
   Every join, including a rejoin, posts once.
 - Channel: 967257753804505108 (staff only; `NEW_WARRIOR_ALERT_CHANNEL_ID`).
-- Card: `# 👋 New Warrior`, a ping of role 1151305219079155802, then the
+- Card: `# ⛩️ New Warrior at the Gate` (the ⛩️ of the Knocking on the Gate role), a ping of role 1151305219079155802, then the
   profile card. Only that role can be pinged (`role_mentions=[role]`); the new
   member and @everyone are never pinged. Page and Refresh edits do not ping
   again.
