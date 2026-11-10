@@ -14,7 +14,7 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
 )
 from pymongo.errors import DuplicateKeyError
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import GOLDENROD_ACCENT, WU_GOLD
 from utils.dashboard_urls import SIGNUP_URL
 from utils.emoji import emojis
 
@@ -35,7 +35,7 @@ VALID_EMOJI_CODES = ("⚔️⚔️⚔️", "⚔️🍻⚔️", "⚔️☠️⚔�
 FAMILY_CODES_DISPLAY = "\n".join(f"**{code}**" for code in VALID_EMOJI_CODES)
 _DEFAULT_FOOTERS = {
     "attack_strategies": "assets/Gold_Footer.png", "discord_basic_skills": None,
-    "family_codes": "assets/Gold_Footer.png", "leaders_checking_you_out": "assets/Red_Footer.png",
+    "family_codes": "assets/Gold_Footer.png", "leaders_checking_you_out": "assets/Gold_Footer.png",
     "welcome_to_family": "assets/Gold_Footer.png", "warriors_united_cwl": "assets/recruit/static/CW_Leagues.png",
 }
 _DEFAULT_SECTIONS = {
@@ -120,7 +120,7 @@ def _primary_default_template(variant: str) -> dict:
     if variant not in VARIANTS:
         raise ValueError("Select an active recruitment question.")
     return {"variant": variant, "sections": list(_DEFAULT_SECTIONS[variant]),
-            "footer_url": _DEFAULT_FOOTERS[variant], "accent": int(GOLDENROD_ACCENT), "revision": 0}
+            "footer_url": _DEFAULT_FOOTERS[variant], "accent": int(WU_GOLD), "revision": 0}
 
 def _replace(value: str, values: dict[str, str]) -> str:
     tokens = _TOKEN.findall(value)
@@ -130,6 +130,17 @@ def _replace(value: str, values: dict[str, str]) -> str:
     if "{" in remainder or "}" in remainder:
         raise ValueError("Use only supported placeholders inside braces.")
     return _TOKEN.sub(lambda match: values[match.group(1)], value)
+
+# Templates saved before the brand color change keep the earlier default
+# footer paths. They mean "the original artwork", so they load as the current
+# gold footer instead of failing validation.
+_GOLD_FOOTER = "assets/Gold_Footer.png"
+_LEGACY_FOOTERS = frozenset({"assets/Red_Footer.png", "assets/Blue_Footer.png"})
+
+
+def _current_artwork(value, original):
+    return original if original == _GOLD_FOOTER and value in _LEGACY_FOOTERS else value
+
 
 def _footer_ok(value: str | None, variant: str) -> bool:
     if value == _DEFAULT_FOOTERS[variant]:
@@ -168,7 +179,7 @@ def _primary_validate_template(variant: str, template: dict) -> dict:
     for index, part in enumerate(sections):
         if "{family_codes}" in part and (variant != "family_codes" or index != 1):
             raise ValueError("The family-code list belongs in its question message.")
-    footer_url = template.get("footer_url")
+    footer_url = _current_artwork(template.get("footer_url"), _DEFAULT_FOOTERS[variant])
     if not _footer_ok(footer_url, variant):
         raise ValueError("Select a public HTTPS image URL or the original artwork.")
     accent = template.get("accent")
@@ -228,7 +239,8 @@ async def reset_template(mongo, guild_id: int, variant: str,
 
 def _accent_arrows(text: str, accent: int) -> str:
     # Saved templates can still contain the old arrow after the default changes.
-    if accent == int(GOLDENROD_ACCENT):
+    # Templates saved before the brand colors still store the old goldenrod.
+    if accent in (int(WU_GOLD), int(GOLDENROD_ACCENT)):
         return text.replace(str(emojis.red_arrow_right), str(emojis.gold_arrow_right))
     return text
 
@@ -437,6 +449,7 @@ def validate_template(variant: str, template: dict) -> dict:
     media = template.get("media")
     if not isinstance(media, dict) or set(media) != set(original_media):
         raise ValueError("This question has the wrong number of image slots.")
+    media = {slot: _current_artwork(media[slot], original) for slot, original in original_media.items()}
     if any(not _public_media_ok(media[slot], original) for slot, original in original_media.items()):
         raise ValueError("Select a public HTTPS image URL or the original artwork.")
     accent = template.get("accent")

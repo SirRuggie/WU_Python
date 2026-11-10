@@ -9,7 +9,7 @@ NEW_WARRIOR_ALERT_CHANNEL_ID = 967257753804505108
 # Primary brand colors. Keep these equal to the dashboard tokens in
 # web/cwl/src/tokens.css; tests/test_brand_colors.py checks that they match.
 WU_GOLD = hikari.Color.from_hex_code("#F2B62A")  # --wu-accent
-WU_GREEN = hikari.Color.from_hex_code("#79C89B")  # --wu-success
+WU_GREEN = hikari.Color.from_hex_code("#43E58C")  # --wu-success-border
 WU_RED = hikari.Color.from_hex_code("#E00010")  # --wu-brand-red
 
 RED_ACCENT = hikari.Color.from_hex_code("#AA0000")

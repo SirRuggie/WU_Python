@@ -25,7 +25,7 @@ from hikari.impl import (
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.startup_reconciler import StartupReconciler
-from utils.constants import RED_ACCENT, GREEN_ACCENT
+from utils.constants import WU_GOLD
 from utils.emoji import emojis
 
 loader = lightbulb.Loader()
@@ -372,7 +372,7 @@ async def on_war_response(
     # Update the message with new responses
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content="## ⚔️ War Sync Event has been posted."),
                 Text(content=f"<@&{ALLOWED_ROLE_ID}> - A new FWA War Sync has been scheduled!"),

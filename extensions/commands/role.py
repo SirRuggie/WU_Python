@@ -7,7 +7,7 @@ import lightbulb
 
 from extensions.commands.recruit import perms
 from utils.role_permissions import role_is_manageable
-from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD, WU_GREEN, WU_RED
 from utils.mongo import MongoClient
 
 from hikari.impl import (
@@ -45,7 +45,7 @@ def _message_components(
 
 
 def _error_components(title: str, body: str) -> list:
-    return _message_components(title, body, RED_ACCENT, "assets/Red_Footer.png")
+    return _message_components(title, body, WU_RED, "assets/Red_Footer.png")
 
 
 async def _command_context(
@@ -140,14 +140,14 @@ async def _change_one_role(
         return _message_components(
             "⏭️ No Change Needed",
             f"{member.mention} already has {selected_role.mention}.",
-            GOLD_ACCENT,
+            WU_GOLD,
             "assets/Gold_Footer.png",
         )
     if not adding and not already_has_role:
         return _message_components(
             "⏭️ No Change Needed",
             f"{member.mention} does not have {selected_role.mention}.",
-            GOLD_ACCENT,
+            WU_GOLD,
             "assets/Gold_Footer.png",
         )
 
@@ -180,7 +180,7 @@ async def _change_one_role(
             f"**{preposition.title()}:** {member.mention}\n"
             f"**By:** {ctx.member.mention}"
         ),
-        GREEN_ACCENT,
+        WU_GREEN,
         "assets/Green_Footer.png",
     )
 

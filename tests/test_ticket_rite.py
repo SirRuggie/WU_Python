@@ -6,7 +6,7 @@ import hikari
 import pytest
 
 from extensions.commands.tickets import rite, setup, surface
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 
 
 def context(user=1):
@@ -17,7 +17,7 @@ def context(user=1):
 
 def test_public_panel_has_one_path_gateway_and_my_ticket():
     panel=setup.create_public_ticket_embed()[0]
-    assert panel.accent_color==GOLDENROD_ACCENT
+    assert panel.accent_color==WU_GOLD
     assert [x.custom_id for x in panel.components[-1].components]==['ticket_v2_rite_open','ticket_v2_my_ticket']
     assert surface.THREAD_PUBLIC_PANEL_ACTIONS=={'ticket_v2_rite_open'}
     private=rite.path_panel('session')[0]

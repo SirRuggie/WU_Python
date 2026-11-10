@@ -25,7 +25,7 @@ from extensions.commands import ticket_runtime
 from extensions.components import register_action
 from utils.recruit_error_reporting import edit_error
 from utils.mongo import MongoClient
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.manage_ui import ICONS
 
 
@@ -620,7 +620,7 @@ def _my_ticket_history_components(history: list[dict]):
                 f"https://discord.com/channels/{guild_id}/{location_id}",
                 label="View Ticket", emoji=hikari.Snowflake(ICONS["open"]),
             ))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=items)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=items)]
 
 
 
@@ -687,7 +687,7 @@ async def handle_my_ticket(
         )
         await ctx.interaction.edit_initial_response(
             components=[hikari.impl.ContainerComponentBuilder(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     hikari.impl.TextDisplayComponentBuilder(content="## 🎟️ Your open ticket"),
                     hikari.impl.TextDisplayComponentBuilder(

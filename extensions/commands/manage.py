@@ -11,7 +11,7 @@ import lightbulb
 
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.mongo import MongoClient
 from utils.manage_ui import breadcrumb, button_emoji
 
@@ -140,7 +140,7 @@ async def _state(ctx: Any, mongo: MongoClient, token: str) -> tuple[dict | None,
 
 def error(message: str) -> list:
     return [hikari.impl.ContainerComponentBuilder(
-        accent_color=0xAA4444,
+        accent_color=WU_RED,
         components=[hikari.impl.TextDisplayComponentBuilder(content=f"## Server Management\n{message}")],
     )]
 
@@ -209,7 +209,7 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         hikari.impl.TextDisplayComponentBuilder(content="-# Private to you · expires after 30 minutes"),
     ]
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=children)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=children)]
 
 
 FWA_SECTIONS = (
@@ -236,7 +236,7 @@ def fwa_home_components(ctx: Any, token: str) -> list:
             hikari.ButtonStyle.SECONDARY, f"manage_home:{token}", label="Management Home", emoji=button_emoji("Management Home"),
         ),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=children)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=children)]
 
 
 async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,

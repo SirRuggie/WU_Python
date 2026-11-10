@@ -22,7 +22,7 @@ from hikari.impl import (
 from extensions.components import register_action
 from extensions.commands import todo
 from utils.component_state import insert_state, update_state
-from utils.constants import RED_ACCENT
+from utils.constants import WU_RED
 from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
@@ -110,7 +110,7 @@ async def _cancel(
 def _confirmation(action_id: str) -> list:
     return [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=WU_RED,
             components=[
                 Text(content="## Delete WUBOT messages from this DM?"),
                 Text(content=(

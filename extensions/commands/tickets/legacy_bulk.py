@@ -25,6 +25,7 @@ from typing import Any, Mapping
 import hikari
 import lightbulb
 from pymongo import ReturnDocument
+from utils.constants import WU_GOLD
 from hikari.impl import (
     ContainerComponentBuilder as Container,
     SeparatorComponentBuilder as Separator,
@@ -159,7 +160,7 @@ def build_migration_overview_components(
         if index != len(OVERVIEW_SOURCES) - 1:
             components.append(Separator(divider=True))
     components.extend([Separator(divider=True), Text(content=f"-# Updated <t:{int(now.timestamp())}:R>")])
-    return [Container(accent_color=0x2F80ED, components=components)]
+    return [Container(accent_color=WU_GOLD, components=components)]
 
 
 def _overview_signature(components: list[Container]) -> str:

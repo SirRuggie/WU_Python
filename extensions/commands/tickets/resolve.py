@@ -50,7 +50,7 @@ from extensions.commands.tickets import (
     testing_service,
 )
 from extensions.components import register_action
-from utils.constants import GREEN_ACCENT, RED_ACCENT
+from utils.constants import WU_GREEN, WU_RED
 from utils.mongo import MongoClient
 
 DENIED_THUMB = "assets/tickets/static/Denied.png"
@@ -156,7 +156,7 @@ async def apply_denial(
         body = reason or "This is a simulated decision."
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=WU_RED,
             components=[
                 Section(
                     components=[
@@ -204,7 +204,7 @@ async def apply_approval(
     channel_id, user_id = _thread_identity(ticket)
     components = [
         Container(
-            accent_color=GREEN_ACCENT,
+            accent_color=WU_GREEN,
             components=[
                 Section(
                     components=[
@@ -646,7 +646,7 @@ def _staff_decision_components(ticket: dict, kind: str) -> list:
     if testing_service.is_test_ticket(ticket):
         body = "TEST MODE — simulated decision.\n" + (ticket.get("denial_reason") or decision)
     return [Container(
-        accent_color=GREEN_ACCENT if approved else RED_ACCENT,
+        accent_color=WU_GREEN if approved else WU_RED,
         components=[
             Section(components=[Text(content=title), Text(content=(
                 f"**Recruit:** <@{ticket['user_id']}>\n"

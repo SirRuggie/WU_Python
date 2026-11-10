@@ -8,6 +8,7 @@ from hikari.impl import MessageActionRowBuilder as Row, InteractiveButtonBuilder
 
 from extensions.components import register_action
 from extensions.commands.tickets import account_sync, perms, store
+from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 
 _refresh_locks = {}
@@ -54,7 +55,7 @@ def panel(ticket, page=1):
     controls = [Button(style=hikari.ButtonStyle.SECONDARY, label='Refresh Player Info', custom_id=f'ticket_player_refresh:{ticket_id}')]
     for label, target, disabled in [('Previous', page-1, page==1), ('Next',page+1,page==pages)]:
         controls.append(Button(style=hikari.ButtonStyle.SECONDARY,label=label,custom_id=f'ticket_player_info:{ticket_id}|{target}',is_disabled=disabled))
-    return [Container(accent_color=0x3498DB,components=[
+    return [Container(accent_color=WU_GOLD,components=[
         Text(content=f'## Linked Player Information · {len(accounts)} accounts'),
         Text(content=('\n\n'.join(p for p in (warnings(snapshot),review_note(ticket),content) if p)).strip()),
         Text(content=f'Page {page}/{pages} · Sources: ClashKing and ClashPerk'),

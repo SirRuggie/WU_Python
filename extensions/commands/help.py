@@ -17,7 +17,7 @@ from hikari.impl import (
 
 from extensions.commands.help_catalog import HELP_CATEGORIES
 from extensions.components import register_action
-from utils.constants import BLUE_ACCENT
+from utils.constants import WU_GOLD
 from utils.startup import tickets_guild_id
 
 
@@ -79,7 +79,7 @@ async def create_help_view(guild_id: int | None = None) -> list:
 
     return [
         Container(
-            accent_color=BLUE_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content="# 🧭 Warriors United Command Guide"),
                 Text(content=(
@@ -95,7 +95,7 @@ async def create_help_view(guild_id: int | None = None) -> list:
                     "• `/tickets` for tickets • `/fwa` for FWA tools "
                     "• `/profile` for linked players • `/todo` for outstanding work"
                 )),
-                Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
+                Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
             ],
         )
     ]
@@ -138,9 +138,9 @@ async def create_category_view(category_id: str, guild_id: int | None = None) ->
                 )
             ]
         ),
-        Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
+        Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
     ])
-    return [Container(accent_color=BLUE_ACCENT, components=components)]
+    return [Container(accent_color=WU_GOLD, components=components)]
 
 
 @loader.command

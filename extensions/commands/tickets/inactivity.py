@@ -13,7 +13,7 @@ from hikari.impl import ContainerComponentBuilder as Container, TextDisplayCompo
 
 from extensions.commands.tickets import store, perms, flag_store, resolve, testing_service
 from extensions.components import register_action
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 
 _log = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ def card(ticket, token, role, period=PERIOD):
     for choice, label, emoji in (("yes", "Close as Ghosted", "👻"), ("no", "Wait", "🫶")):
         row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id(ticket, token, choice), label=label, emoji=emoji)
     wording = f"There has been no activity within the last {period_label(period)}. Apply Ghosted and close this ticket?"
-    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nYou will be asked for a reason to close."), row])]
+    return [Container(accent_color=WU_GOLD, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nYou will be asked for a reason to close."), row])]
 
 
 async def record_human_activity(mongo, ticket, message):
@@ -98,7 +98,7 @@ async def retire_prompt(bot, ticket, wording):
         return
     try:
         await bot.rest.edit_message(staff_id(ticket), int(prompt["message_id"]),
-            components=[Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=wording)])],
+            components=[Container(accent_color=WU_GOLD, components=[Text(content=wording)])],
             mentions_everyone=False, role_mentions=False, user_mentions=False)
     except Exception:
         _log.warning("could not retire inactivity prompt ticket=%s", ticket.get("_id"), exc_info=True)

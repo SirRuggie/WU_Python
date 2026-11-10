@@ -20,7 +20,7 @@ from hikari.impl import (
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
 )
-from utils.constants import GREEN_ACCENT
+from utils.constants import WU_GREEN
 
 _log = logging.getLogger(__name__)
 
@@ -144,7 +144,7 @@ async def send_success_message(channel_id: int, user_id: int, recruiter_id: int,
 
     components = [
         Container(
-            accent_color=GREEN_ACCENT,
+            accent_color=WU_GREEN,
             components=[
                 Text(content=f"## 🎉 **Excellent Work!** · <@{user_id}>"),
                 Separator(divider=True),

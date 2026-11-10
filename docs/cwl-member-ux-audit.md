@@ -6,7 +6,7 @@
 Open CWL dashboard first; choosing Discord supports signup, changing pools,
 withdrawal, and published assignments without opening the website.
 
-Use the shared `GOLDENROD_ACCENT` in native Discord Components V2 containers.
+Use `WU_GOLD` in native Discord Components V2 containers, and `WU_RED` for errors and the withdrawal confirmation.
 Use concise action labels, explicit confirmations, and a small number of controls
 per row. Discord owns button colors, typography, native select behavior and final
 responsive rendering; do not promise a pixel-identical dashboard theme.

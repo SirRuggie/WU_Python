@@ -16,7 +16,7 @@ from apscheduler.triggers.date import DateTrigger
 from extensions.components import register_action
 from utils import poll_store
 from utils.component_state import delete_state, insert_state
-from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.mongo import MongoClient
 from utils.startup_reconciler import StartupReconciler
 
@@ -145,7 +145,7 @@ def _is_admin(ctx) -> bool:
     return bool(permissions & hikari.Permissions.ADMINISTRATOR)
 
 
-def _notice(title: str, body: str, *, color=RED_ACCENT) -> list[Container]:
+def _notice(title: str, body: str, *, color=WU_RED) -> list[Container]:
     return [Container(
         accent_color=color,
         components=[
@@ -313,7 +313,7 @@ def build_poll_components(document: dict) -> list[Container]:
         ])
 
     return [Container(
-        accent_color=GOLD_ACCENT if active else BLUE_ACCENT,
+        accent_color=WU_GOLD if active else hikari.UNDEFINED,
         components=body,
     )]
 
@@ -376,7 +376,7 @@ def build_named_voter_components(document: dict, *, labels=None, page=0) -> list
             Button(style=hikari.ButtonStyle.SECONDARY, label='Next',
                    custom_id=f"poll_voters_page:{document['_id']}|{page + 1}", is_disabled=page == pages - 1),
         ]))
-    return [Container(accent_color=BLUE_ACCENT, components=sections)]
+    return [Container(accent_color=WU_GOLD, components=sections)]
 
 
 def build_poll_list_components(documents: list[dict], *, active_only: bool) -> list[Container]:
@@ -387,7 +387,7 @@ def build_poll_list_components(documents: list[dict], *, active_only: bool) -> l
             if active_only
             else "There is no retained poll history in this server."
         )
-        return _notice(title, body, color=BLUE_ACCENT)
+        return _notice(title, body, color=WU_GOLD)
 
     lines = []
     for document in documents:
@@ -403,7 +403,7 @@ def build_poll_list_components(documents: list[dict], *, active_only: bool) -> l
             f"({total} vote{'s' if total != 1 else ''}, {status})"
         )
     return [Container(
-        accent_color=BLUE_ACCENT,
+        accent_color=WU_GOLD,
         components=[
             Text(content=f"## {title}"),
             Text(content="\n".join(lines)),
@@ -983,7 +983,7 @@ async def poll_create_submit(
         components=_notice(
             "Poll created",
             f"Posted poll `{poll_id}` in <#{int(channel_id)}>; it closes {_discord_timestamp(document['ends_at'])}.",
-            color=GOLD_ACCENT,
+            color=WU_GOLD,
         ),
         ephemeral=True,
     )

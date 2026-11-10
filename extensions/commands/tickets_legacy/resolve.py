@@ -36,7 +36,7 @@ from hikari.impl import (
 
 from extensions.commands.tickets_legacy import perms, store
 from extensions.components import register_action
-from utils.constants import RED_ACCENT
+from utils.constants import WU_RED
 from utils.mongo import MongoClient
 
 DENIED_THUMB = "assets/tickets/static/Denied.png"
@@ -138,7 +138,7 @@ async def apply_denial(
     body = reason if kind == KIND_DENY_CUSTOM else _DENIAL_BODY[kind]
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=WU_RED,
             components=[
                 Section(
                     components=[

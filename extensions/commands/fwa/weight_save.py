@@ -33,7 +33,7 @@ from utils import clashperk_link_writes, war_weight
 from utils.clan_weight_client import WeightClientError, request as bridge
 from utils.clan_weight_store import validate_weight
 from utils.component_state import get_state, insert_state, update_state
-from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD, WU_GREEN, WU_RED
 from utils.member_events import safe_text
 from utils.mongo import MongoClient
 
@@ -62,7 +62,7 @@ class SessionError(ValueError):
 # ---------------------------------------------------------------- rendering
 
 
-def card(content: str, *rows: Row, accent: int = GOLD_ACCENT) -> list:
+def card(content: str, *rows: Row, accent: int = WU_GOLD) -> list:
     return [Container(accent_color=accent, components=[Text(content=content), *rows])]
 
 
@@ -300,10 +300,10 @@ async def accounts_view(ctx, bot, mongo, state: dict) -> list:
         data = await bridge("accounts", actor_id=ctx.user.id, target_id=str(state["target_id"]))
     except WeightClientError as exc:
         if exc.code == "links_unavailable":
-            return card(f"{exc}", buttons(sid, "retry", "tag", out), accent=RED_ACCENT)
+            return card(f"{exc}", buttons(sid, "retry", "tag", out), accent=WU_RED)
         if exc.code == "forbidden":
             return await post_without_access(bot, mongo, state, exc, state.get("loot"))
-        return card(f"{exc}", buttons(sid, "retry", out), accent=RED_ACCENT)
+        return card(f"{exc}", buttons(sid, "retry", out), accent=WU_RED)
     accounts = data.get("accounts") or []
     if not accounts:
         return card(
@@ -352,9 +352,9 @@ async def choose(ctx, bot, mongo, state: dict, player_tag: str, loot: int, *, li
     except WeightClientError as exc:
         if exc.code == "forbidden":
             return await post_without_access(bot, mongo, state, exc, loot)
-        return card(f"{exc}", buttons(sid, "back", out), accent=RED_ACCENT)
+        return card(f"{exc}", buttons(sid, "back", out), accent=WU_RED)
     except (KeyError, TypeError):
-        return card("Weight saving is unavailable now. Try again later.", buttons(sid, "back", out), accent=RED_ACCENT)
+        return card("Weight saving is unavailable now. Try again later.", buttons(sid, "back", out), accent=WU_RED)
     account = dict(account, link=bool(link))
     config = await war_weight.load(mongo, state["guild_id"])
     total, th, status, ranges = assess(loot, config)
@@ -407,7 +407,7 @@ async def link_account(ctx, state: dict, account: dict) -> tuple[str | None, lis
     except WeightClientError as exc:
         if exc.code == "forbidden":
             return None, None, exc
-        return None, card(f"{exc}", buttons(sid, "back", out), accent=RED_ACCENT), None
+        return None, card(f"{exc}", buttons(sid, "back", out), accent=WU_RED), None
     result = await clashperk_link_writes.create_link(int(state["target_id"]), account["tag"])
     if result.status == clashperk_link_writes.LINKED:
         return "🔗 Linked in ClashPerk.", None, None
@@ -415,7 +415,7 @@ async def link_account(ctx, state: dict, account: dict) -> tuple[str | None, lis
         return "🔗 Already linked in ClashPerk.", None, None
     # Fixed helper text only; raw ClashPerk text is never shown. Nothing was saved.
     return None, card(f"{result.message}\nThe weight was not saved.", buttons(sid, "back", out),
-                      accent=RED_ACCENT), None
+                      accent=WU_RED), None
 
 
 async def save(ctx, bot, mongo, state: dict, account: dict, loot: int) -> list:
@@ -446,10 +446,10 @@ async def save(ctx, bot, mongo, state: dict, account: dict, loot: int) -> list:
         await unlock_save(mongo, sid, lock)
         prefix = f"{note}\n" if note else ""
         if exc.code == "conflict" or exc.uncertain:
-            return card(f"{prefix}{exc}", buttons(sid, "retry", out), accent=RED_ACCENT)
+            return card(f"{prefix}{exc}", buttons(sid, "retry", out), accent=WU_RED)
         if exc.code == "forbidden":
             return await post_without_access(bot, mongo, state, exc, loot)
-        return card(f"{prefix}{exc}", buttons(sid, "back", out), accent=RED_ACCENT)
+        return card(f"{prefix}{exc}", buttons(sid, "back", out), accent=WU_RED)
     except BaseException:
         await unlock_save(mongo, sid, lock)
         raise
@@ -463,10 +463,10 @@ async def post_without_access(bot, mongo, state: dict, exc, loot: int | None) ->
     if not await claim(mongo, state["_id"]):
         return await not_claimed(mongo, state["_id"])
     if not isinstance(loot, int):
-        return card(f"Nothing was saved.\n{exc}", accent=RED_ACCENT)
+        return card(f"Nothing was saved.\n{exc}", accent=WU_RED)
     if await post_panel(bot, mongo, state, loot):
-        return card(f"Panel posted. Nothing was saved.\n{exc}", accent=RED_ACCENT)
-    return card(f"The panel could not be posted. Run `/fwa weight` again.\n{exc}", accent=RED_ACCENT)
+        return card(f"Panel posted. Nothing was saved.\n{exc}", accent=WU_RED)
+    return card(f"The panel could not be posted. Run `/fwa weight` again.\n{exc}", accent=WU_RED)
 
 
 async def next_round(mongo, state: dict, label: str, tag: str) -> str | None:
@@ -509,8 +509,8 @@ async def finish(ctx, bot, mongo, state: dict, account: dict, loot: int, *, alre
         head += "\nThe panel could not be posted. Run `/fwa weight` without a user to post it."
     following = await next_round(mongo, state, label, account["tag"])
     if following is None:
-        return card(head, accent=GREEN_ACCENT)
-    return card(f"{head}\n\n**Another account?**", buttons(following, "another", "done"), accent=GREEN_ACCENT)
+        return card(head, accent=WU_GREEN)
+    return card(f"{head}\n\n**Another account?**", buttons(following, "another", "done"), accent=WU_GREEN)
 
 
 # ---------------------------------------------------------------- actions
@@ -520,7 +520,7 @@ async def guarded(ctx, mongo, sid, work):
     try:
         state = await session(ctx, mongo, sid)
     except SessionError as exc:
-        return card(str(exc))
+        return card(str(exc), accent=WU_RED)
     return await work(state)
 
 
@@ -559,7 +559,7 @@ async def on_done(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **
         if not await claim(mongo, state["_id"]):
             return await not_claimed(mongo, state["_id"])
         lines = saved_lines(state.get("saved") or [])
-        return card(f"## All weights done\n{lines}" if lines else "## All weights done", accent=GREEN_ACCENT)
+        return card(f"## All weights done\n{lines}" if lines else "## All weights done", accent=WU_GREEN)
 
     return await guarded(ctx, mongo, action_id, work)
 
@@ -575,7 +575,7 @@ async def on_post(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
             return await not_claimed(mongo, state["_id"])
         if await post_panel(bot, mongo, state, state["loot"]):
             return card("Panel posted. Nothing was saved.")
-        return card("The panel could not be posted. Run `/fwa weight` again.", accent=RED_ACCENT)
+        return card("The panel could not be posted. Run `/fwa weight` again.", accent=WU_RED)
 
     return await guarded(ctx, mongo, action_id, work)
 
@@ -596,7 +596,7 @@ async def on_confirm(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
 
     async def work(state):
         pending = preview.get("pending")
-        stale = card(STALE_CONFIRM, buttons(sid, "back", leave(state)), accent=RED_ACCENT)
+        stale = card(STALE_CONFIRM, buttons(sid, "back", leave(state)), accent=WU_RED)
         if not isinstance(pending, dict) or not pending.get("tag") or not isinstance(pending.get("loot"), int):
             return stale
         # Consume the token atomically: a button works once, and only while its
@@ -673,7 +673,7 @@ async def on_pick(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
         return
     await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
     if state is None:
-        components = card(str(error))
+        components = card(str(error), accent=WU_RED)
     elif values:
         components = await choose(ctx, bot, mongo, state, values[0], state["loot"])
     else:
@@ -724,13 +724,13 @@ async def on_entry(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
     async def work(state):
         if loot is None:
             return card(f"Enter a storage weight from 1 to {MAX_LOOT:,}.",
-                        buttons(sid, "back", leave(state)), accent=RED_ACCENT)
+                        buttons(sid, "back", leave(state)), accent=WU_RED)
         total = loot * STORAGES
         try:
             validate_weight(total, STORAGES)
         except ValueError:
             return card(f"Cannot save {total:,}. Saved weights must be a multiple of 1,000. Check the loot value.",
-                        buttons(sid, "back", leave(state)), accent=RED_ACCENT)
+                        buttons(sid, "back", leave(state)), accent=WU_RED)
         return await choose(ctx, bot, mongo, state, player_tag, loot, link=typed)
 
     components = await guarded(ctx, mongo, sid, work)

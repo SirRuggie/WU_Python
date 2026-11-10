@@ -229,14 +229,14 @@ async def on_bot_start(event: hikari.StartedEvent):
                         MediaGalleryComponentBuilder as Media,
                         MediaGalleryItemBuilder as MediaItem,
                     )
-                    from utils.constants import GREEN_ACCENT
+                    from utils.constants import WU_GREEN
 
                     dm_channel = await bot.rest.create_dm_channel(user_id)
                     await bot.rest.create_message(
                         channel=dm_channel,
                         components=[
                             Container(
-                                accent_color=GREEN_ACCENT,
+                                accent_color=WU_GREEN,
                                 components=[
                                     Text(content=(
                                         "## ✅ Bot is Back Online!\n\n"

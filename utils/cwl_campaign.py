@@ -33,7 +33,7 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
 )
 
-from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
+from utils.constants import WU_GOLD, WARRIORS_UNITED_GUILD_ID
 
 
 SCHEMA_VERSION = 1
@@ -692,7 +692,7 @@ async def render_message(config: dict, message_id: str, variant: str, preview: b
     if message_id == "signup" or message_id.startswith("reminder:"):
         children.append(Separator(divider=True))
         children.append(Text(content=_signup_help_line(campaign)))
-    return [Container(accent_color=int(message.get("accent_color", GOLDENROD_ACCENT)), components=children)]
+    return [Container(accent_color=int(message.get("accent_color", WU_GOLD)), components=children)]
 
 
 async def validate_destinations(bot, campaign: dict, guild_id: int) -> None:

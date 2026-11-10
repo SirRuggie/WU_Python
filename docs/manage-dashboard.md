@@ -32,7 +32,7 @@ rosters, the FWA Representative role for FWA data, and the FWA Clan Rep role
 used by `/fwa war-plans` for War Messages, and Administrator for Points Monitor and Sync & Reminders. Opening the management
 home does not grant new privileges.
 
-Normal management screens use the bot's pale goldenrod accent. Labels and explanatory
+Normal management screens use the bot's WU_GOLD accent. Labels and explanatory
 text communicate state without relying on color. Destructive actions retain
 their explicit warning and confirmation flows. Management responses are private;
 publishing content or sending announcements still requires the destination
@@ -93,7 +93,7 @@ navigation, and expire after 30 minutes.
 
 ## FWA
 
-FWA opens a goldenrod submenu with six sections. **Bases & Guidance** is the existing
+FWA opens a gold submenu with six sections. **Bases & Guidance** is the existing
 base-link, image, description, and Town Hall editor. **War Message Templates** edits the
 four reusable war-announcement templates. **Blacklist** browses the shared
 blacklist and lets FWA Clan Reps add or remove clans. **Points Monitor** controls automatic
@@ -139,14 +139,14 @@ recipient fields are ignored; no historical data is deleted. Queued deliveries
 without a current opt-in, or whose reminder was withdrawn, are abandoned without
 sending. Existing signup responses and explicit **DM me the time** remain intact.
 
-Management dashboards use the shared `GOLDENROD_ACCENT` (`#EEEEAA`), matching
-the About Us onboarding message.
+Management dashboards use `WU_GOLD` (`#F2B62A`). Error and destructive-confirm
+panels use `WU_RED` (`#E00010`).
 
 ### Navigation and visual conventions
 
 The home screen groups its workspaces under Recruitment, War Operations,
-and Server without adding an intermediate screen. All management screens use
-pale goldenrod (`#EEEEAA`). Breadcrumbs identify the workspace and editor.
+and Server without adding an intermediate screen. Normal management screens use
+WU_GOLD (`#F2B62A`). Breadcrumbs identify the workspace and editor.
 
 Navigation buttons retain readable labels alongside the shared custom emojis:
 Back returns to the parent screen; Management Home returns to `/manage`;
@@ -160,9 +160,9 @@ Save retains the template; Send posts the current draft to the selected channel.
 Posting targets remain visible beside the channel picker. Navigation stays below
 editing actions, and leaving an unsaved template still requires confirmation.
 
-Clan management uses the same goldenrod accent for home, lists, and editors.
-Completed save/upload notices are green, processing notices are blue, and errors
-or destructive removal confirmations are red. These visual changes do not
+Clan management uses the same WU_GOLD accent for home, lists, and editors.
+Completed save/upload notices are WU_GREEN, processing notices are WU_GOLD, and errors
+or destructive removal confirmations are WU_RED. These visual changes do not
 register the retired clan slash commands.
 
 ### FWA Blacklist

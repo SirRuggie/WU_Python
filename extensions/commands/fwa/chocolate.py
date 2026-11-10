@@ -7,7 +7,7 @@ from extensions.commands.fwa.chocolate_links import (
     is_valid_tag,
     normalize_tag,
 )
-from utils.constants import BLUE_ACCENT, GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.emoji import emojis
 
 from hikari.impl import (
@@ -52,7 +52,7 @@ class ChocolateCommand(
         if (self.player_tag and self.clan_tag) or (not self.player_tag and not self.clan_tag):
             components = [
                 Container(
-                    accent_color=RED_ACCENT,
+                    accent_color=WU_RED,
                     components=[
                         Text(content="## ❌ **Invalid Usage**"),
                         Text(content=(
@@ -91,7 +91,7 @@ class ChocolateCommand(
         if not is_valid_tag(tag):
             components = [
                 Container(
-                    accent_color=RED_ACCENT,
+                    accent_color=WU_RED,
                     components=[
                         Text(content="## ❌ **Invalid Tag Format**"),
                         Text(content=(
@@ -131,7 +131,7 @@ class ChocolateCommand(
         # Build response components
         components = [
             Container(
-                accent_color=GOLD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content="## 🍫 **FWA Chocolate Lookup**"),
                     Separator(divider=True),

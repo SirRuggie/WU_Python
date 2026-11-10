@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from extensions.commands import loot_leaderboard as command
 from utils import gold_loot
 from utils.recruit_links import PlayerOwners
-from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
+from utils.constants import WU_GOLD, WARRIORS_UNITED_GUILD_ID
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +34,7 @@ def test_api_failure_keeps_original_baseline_and_warns(tmp_path, monkeypatch):
     assert board['session']['started'] == timestamp
     assert 'last saved totals' in board['warning']
     panel = command.render_board(board)[0]
-    assert panel.accent_color == GOLDENROD_ACCENT
+    assert panel.accent_color == WU_GOLD
     payload = str(panel.build())
     assert '600' in payload and 'Gold Loot Leaderboard' in payload
     assert '@everyone' not in payload

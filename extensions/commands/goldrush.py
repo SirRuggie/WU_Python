@@ -18,7 +18,7 @@ from hikari.impl import (
 
 from extensions.components import register_action
 from utils import goldrush as store, recruit_links, bot_data
-from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
+from utils.constants import WU_GOLD, WU_RED, WARRIORS_UNITED_GUILD_ID
 from utils.gold_loot import refresh_board, load_town_halls
 from utils.emoji import emojis
 
@@ -165,7 +165,7 @@ def render(data):
         Button(style=hikari.ButtonStyle.SECONDARY,label='Update',emoji='🔄',
                custom_id=f"goldrush_update:{event['id']}"),
     ])]
-    panels = [Container(accent_color=GOLDENROD_ACCENT,components=parts)]
+    panels = [Container(accent_color=WU_GOLD,components=parts)]
     if final:
         # Generate this on every render: Update must not erase the winner card.
         rows = data['rows']
@@ -180,7 +180,7 @@ def render(data):
             result = lines[0].replace(owner,f"<@{winner['user_id']}>")
             result += ('\n\nHe has proven to have no life and got all the gold... '
                        'Go touch some grasss ffs 😂🌱')
-        panels.append(Container(accent_color=GOLDENROD_ACCENT,components=[
+        panels.append(Container(accent_color=WU_GOLD,components=[
             Text(content='## 🏆 GOLD RUSH WINNER'),Separator(divider=True),Text(content=result)]))
     return panels
 
@@ -275,7 +275,7 @@ async def confirm(ctx,action_id,**kwargs):
         return
     try:
         event=await database(store.confirm_schedule,action_id,str(ctx.user.id),str(ctx.interaction.guild_id))
-        await ctx.interaction.edit_initial_response(components=[Container(accent_color=GOLDENROD_ACCENT,
+        await ctx.interaction.edit_initial_response(components=[Container(accent_color=WU_GOLD,
             components=[Text(content='## ✅ Gold Rush schedule saved\nScores now use the new event window. Signups and battle history are preserved.')])])
         await sync_messages(event['id'])
     except ValueError as error:
@@ -303,7 +303,7 @@ def render_personal(data, user_id, page=0):
         parts.append(ActionRow(components=[Button(style=hikari.ButtonStyle.SECONDARY,label=label,
             custom_id=f"goldrush_check_page:{event['id']}|{user_id}|{target}",is_disabled=disabled)
             for label,target,disabled in [('Previous',page-1,page==0),('Next',page+1,page==pages-1)]]))
-    return [Container(accent_color=GOLDENROD_ACCENT,components=parts)]
+    return [Container(accent_color=WU_GOLD,components=parts)]
 
 
 async def personal_data(event_id,user_id):
@@ -384,7 +384,7 @@ async def schedule(ctx,action_id,**kwargs):
             change=await database(store.propose_schedule,event['id'],str(ctx.user.id),start,hours)
             from extensions.commands.loot_leaderboard import stamp
             future=start>store.utcnow() if start.tzinfo else False
-            await ctx.interaction.edit_initial_response(components=[Container(accent_color=GOLDENROD_ACCENT,components=[
+            await ctx.interaction.edit_initial_response(components=[Container(accent_color=WU_RED,components=[
                 Text(content='## ⚙️ Confirm Gold Rush schedule'),
                 Text(content=f"**Start:** {discord_time(change['starts_at'])}\n**End:** {discord_time(change['ends_at'])}\n\n"
                      + ('**All current event scores will reset to 0 until the new start.**\n' if future else '**Scores will be recalculated for this time window.**\n')

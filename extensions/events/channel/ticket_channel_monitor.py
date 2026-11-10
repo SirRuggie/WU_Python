@@ -10,7 +10,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from utils.mongo import MongoClient
 from extensions.commands.tickets_legacy import store
-from utils.constants import RED_ACCENT, GOLD_ACCENT, GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.emoji import emojis
 
 # Import Components V2
@@ -384,7 +384,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         # Send FWA entry questionnaire embed
         components = [
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Section(
                         components=[
@@ -469,7 +469,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         # Send MAIN entry questionnaire embed (identical structure for now, you can customize later)
         components = [
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Section(
                         components=[

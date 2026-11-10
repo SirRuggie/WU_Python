@@ -21,7 +21,7 @@ from extensions.warrior import core, walkthrough, nickname_setup
 from utils.mongo import MongoClient
 from utils.emoji import emojis
 from utils.component_state import insert_state, update_state
-from utils.constants import GOLDENROD_ACCENT, RED_ACCENT, GREEN_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 
 loader = lightbulb.Loader()
 warrior = lightbulb.Group("warrior", "Warrior setup and onboarding commands")
@@ -52,7 +52,7 @@ def button(
     )
 
 
-def panel(title, *items, color=GOLDENROD_ACCENT):
+def panel(title, *items, color=WU_GOLD):
     return [
         Container(accent_color=color, components=[Text(content=f"## {title}"), *items])
     ]
@@ -86,7 +86,7 @@ def partial_role_panel(sid, result, message):
         Text(content=str(message)[:500]),
         Text(content="\n".join(lines)),
         *back(sid),
-        color=RED_ACCENT,
+        color=WU_RED,
     )
 
 
@@ -381,6 +381,7 @@ def confirm(data, action, text):
             "Cancel",
             "no",
         ),
+        color=WU_RED,
     )
 
 
@@ -782,7 +783,7 @@ async def action(
                     )
                 ),
                 *back(sid),
-                color=RED_ACCENT,
+                color=WU_RED,
             ),
         )
 
@@ -870,7 +871,7 @@ async def form(
                     )
                 ),
                 *back(sid),
-                color=RED_ACCENT,
+                color=WU_RED,
             ),
         )
 
@@ -917,7 +918,7 @@ async def begin(
             panel(
                 "Cannot start walkthrough",
                 Text(content=str(error)[:1500]),
-                color=RED_ACCENT,
+                color=WU_RED,
             ),
         )
 

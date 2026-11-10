@@ -13,7 +13,7 @@ import lightbulb
 import pendulum as pend
 
 from hikari.events.interaction_events import ComponentInteractionCreateEvent
-from utils.constants import RED_ACCENT
+from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 from utils.recruit_error_reporting import is_recruit_action, notify as notify_recruit_error
 from utils.gauntlet_diagnostics import click_trace, observed, event as gauntlet_event
@@ -377,7 +377,7 @@ async def _dispatch_impl(
         # message, while others create a private response. Opted-in handlers
         # acknowledge first, then load and validate their own state.
         kw = {}
-    kw = kw | {"color" : RED_ACCENT, "action_id" : action_id, "ctx": ctx}
+    kw = kw | {"color" : WU_GOLD, "action_id" : action_id, "ctx": ctx}
     components = await action.fn(**kw)
 
     if not action.no_return:

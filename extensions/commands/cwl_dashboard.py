@@ -18,7 +18,7 @@ import hikari
 import lightbulb
 
 from extensions.components import register_action
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.component_state import get_state, insert_state, utcnow
 from utils.media_store import MediaStore, MediaStoreError
 from utils.mongo import MongoClient
@@ -37,8 +37,8 @@ cwl = lightbulb.Group(
 )
 
 NO_MENTIONS = {"user_mentions": False, "role_mentions": False, "mentions_everyone": False}
-ACCENT = GOLDENROD_ACCENT
-ERROR = 0xB94444
+ACCENT = WU_GOLD
+ERROR = WU_RED
 AUDIENCES = ("main", "lazy")
 MESSAGE_CHOICES = (
     ("signup", "Signups open"),

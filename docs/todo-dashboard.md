@@ -391,7 +391,8 @@ and at `###` the title was the same size as the clan names so nothing read as
 the title.
 
 **The Media footer sits above the freshness row, not at the bottom** — the only
-panel in the repo where it is not the last child. The red line reads as the rule
+panel in the repo where it is not the last child. The footer line (red on an urgent
+WU_RED card, gold otherwise) reads as the rule
 that closes the dashboard, with the timestamp and its refresh button beneath it
 as a caption. Done by reordering *inside* the Container: a top-level component
 renders outside the accent bar and would lose the coloured stripe.

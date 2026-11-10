@@ -19,15 +19,15 @@ from hikari.impl import (
 )
 
 from utils.dashboard_urls import TASKS_URL, WARS_URL
-from utils.constants import GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT
+from utils.constants import WU_GOLD, WU_GREEN, WU_RED
 from extensions.components import register_action
 
 # War result colors
 WAR_COLORS = {
-    "win": GREEN_ACCENT,  # 0x00ff00
-    "lose": RED_ACCENT,  # 0xff0000
+    "win": WU_GREEN,
+    "lose": WU_RED,
     "blacklisted": 0x000000,  # Black
-    "mismatch": GOLD_ACCENT  # 0xffd700
+    "mismatch": WU_GOLD,
 }
 
 # Media footer images
@@ -336,7 +336,7 @@ async def copy_war_message_action(
         copy_text = copy_funcs[war_type](opponent)
         components = [
             Container(
-                accent_color=BLUE_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content="### 📋 **Copy Text**"),
                     Text(content=f"```{copy_text}```"),

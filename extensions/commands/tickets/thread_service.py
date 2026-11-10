@@ -37,7 +37,7 @@ from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import ticket_runtime
 from extensions.commands.tickets import account_sync, schema, store, testing_service
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 from utils import ticket_staff_content
 
@@ -1429,7 +1429,7 @@ def _candidate_welcome_components(ticket: Mapping[str, Any]) -> list:
     ticket_type = str(ticket.get("ticket_type") or "main").upper()
     user_id = _as_int(ticket.get("user_id"))
     return [Container(
-        accent_color=GOLDENROD_ACCENT,
+        accent_color=WU_GOLD,
         components=[
             Text(content=f"## 👋 Welcome to your {ticket_type} interest ticket"),
             *([Text(content="🧪 TEST MODE — this is a simulated ticket; no live application is created.")]
@@ -1466,7 +1466,7 @@ def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
         "A new applicant is ready for recruiter review."
     )
     return [Container(
-        accent_color=hikari.Color.from_hex_code("0066FF"),
+        accent_color=WU_GOLD,
         components=[
             Text(content=f"## 🔒 {ticket_type} recruiter workspace · #{testing_service.number_label(ticket_number) if testing_service.is_test_ticket(ticket) else ticket_number}"),
             Text(content=notification),
@@ -1525,7 +1525,7 @@ def _questionnaire_components(
     hero = "assets/tickets/static/WU_FWA_Ticket.jpg" if is_fwa else logo
     return [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Section(
                     components=[
@@ -1746,7 +1746,7 @@ async def _send_ticket_creation_dm(
     icon_url = getattr(guild, "make_icon_url", lambda: None)() if guild is not None else None
     logo = str(icon_url) if icon_url else "assets/branding/logo/WU_Logo.png"
     components = [Container(
-        accent_color=GOLDENROD_ACCENT,
+        accent_color=WU_GOLD,
         components=[
             Section(
                 components=[

@@ -12,7 +12,7 @@ from hikari.impl import (
     MediaGalleryItemBuilder as MediaItem,
 )
 
-from utils.constants import RED_ACCENT
+from utils.constants import WU_GOLD
 
 loader = lightbulb.Loader()
 
@@ -89,7 +89,7 @@ class Slap(
         
         components = [
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content=f"## 👋 **{ctx.member.display_name} slaps {self.target.mention}!**"),
                     Separator(divider=True),

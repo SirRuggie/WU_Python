@@ -13,7 +13,7 @@ from hikari.impl import ContainerComponentBuilder as Container, TextDisplayCompo
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.gauntlet_help import get_settings, record_progress, settings_id, utcnow
 from utils.mongo import MongoClient
 
@@ -47,7 +47,7 @@ def _aware(value: datetime | None) -> datetime | None:
 
 
 def _sticky_components():
-    return [Container(accent_color=GOLDENROD_ACCENT, components=[
+    return [Container(accent_color=WU_GOLD, components=[
         Text(content="**Recruit Gauntlet help**"),
         Text(content=(
             "If you need help with a Gauntlet step, ask your question here. "
@@ -57,7 +57,7 @@ def _sticky_components():
 
 
 def _reminder_components(user_id: int, stage: int):
-    return [Container(accent_color=GOLDENROD_ACCENT, components=[
+    return [Container(accent_color=WU_GOLD, components=[
         Text(content=f"**Recruit Gauntlet step {stage}**"),
         Text(content=(
             f"<@{user_id}> — do you need help with the next step? "

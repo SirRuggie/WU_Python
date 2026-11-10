@@ -25,12 +25,7 @@ from utils.mongo import MongoClient
 from utils import cwl_campaign, cwl_web_bridge
 from utils import cwl_campaign_catchup as catchup_policy
 from utils.startup_reconciler import StartupReconciler
-from utils.constants import (
-    GOLDENROD_ACCENT,
-    GREEN_ACCENT,
-    RED_ACCENT,
-    BLUE_ACCENT,
-)
+from utils.constants import WU_GOLD
 
 loader = lightbulb.Loader()
 _campaign_catchup_active: set[str] = set()
@@ -155,7 +150,7 @@ def create_cwl_reminder_message(
             # Lazy channel version
             components = [
                 Container(
-                    accent_color=GOLDENROD_ACCENT,
+                    accent_color=WU_GOLD,
                     components=[
                         Text(content=f"<@&{ROLE_TO_PING}>"),
                         Separator(divider=True),
@@ -186,7 +181,7 @@ def create_cwl_reminder_message(
             # Main channel version
             components = [
                 Container(
-                    accent_color=GOLDENROD_ACCENT,
+                    accent_color=WU_GOLD,
                     components=[
                         Text(content=f"<@&{ROLE_TO_PING}>"),
                         Separator(divider=True),
@@ -248,7 +243,7 @@ def create_cwl_reminder_message(
             # Lazy channel version of follow-ups
             components = [
                 Container(
-                    accent_color=GOLDENROD_ACCENT,
+                    accent_color=WU_GOLD,
                     components=[
                         Text(content=f"<@&{ROLE_TO_PING}>"),
                         Separator(divider=True),
@@ -281,7 +276,7 @@ def create_cwl_reminder_message(
             # Main channel version of follow-ups
             components = [
                 Container(
-                    accent_color=GOLDENROD_ACCENT,
+                    accent_color=WU_GOLD,
                     components=[
                         Text(content=f"<@&{ROLE_TO_PING}>"),
                         Separator(divider=True),

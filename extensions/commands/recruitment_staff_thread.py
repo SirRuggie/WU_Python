@@ -15,7 +15,7 @@ from hikari.impl import (
 )
 from extensions.components import register_action
 from utils.component_state import insert_state, get_state
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.mongo import MongoClient
 from utils import ticket_staff_content as content
 
@@ -160,7 +160,7 @@ def page(data, notice=""):
             label="Management Home",
         ),
     ]
-    return [Container(accent_color=GOLDENROD_ACCENT, components=items)]
+    return [Container(accent_color=WU_GOLD, components=items)]
 
 
 async def open_dashboard(ctx, mongo, *, manage_token, deferred=False):
@@ -183,7 +183,7 @@ async def error(ctx, message):
     await ctx.interaction.edit_initial_response(
         components=[
             Container(
-                accent_color=GOLDENROD_ACCENT, components=[Text(content=str(message))]
+                accent_color=WU_RED, components=[Text(content=str(message))]
             )
         ],
         **NO_MENTIONS,

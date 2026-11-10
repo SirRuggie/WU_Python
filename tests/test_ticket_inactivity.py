@@ -75,7 +75,7 @@ async def test_unproven_bounded_baseline_never_prompts():
 
 def test_prompt_card_has_exact_copy_and_requested_emojis():
     card = inactivity.card(ticket(), "abc", 987)[0]
-    assert card.accent_color == inactivity.GOLDENROD_ACCENT
+    assert card.accent_color == inactivity.WU_GOLD
     assert inactivity.PROMPT in card.components[0].content
     buttons = card.components[1].components
     assert [button.label for button in buttons] == ["Close as Ghosted", "Wait"]

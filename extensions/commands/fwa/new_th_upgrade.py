@@ -9,7 +9,7 @@ from extensions.commands.fwa import loader, fwa
 from .helpers import get_fwa_base_object
 from utils.emoji import emojis
 
-from utils.constants import RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
+from utils.constants import WU_GOLD, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -58,7 +58,7 @@ class NewThUpgrade(
 
         components = [
             Container(
-                accent_color=BLUE_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content="## Select FWA Base Town Hall Level"),
                     Text(
@@ -142,7 +142,7 @@ class NewThUpgrade(
                             ),
                         ]
                     ),
-                    Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
+                    Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
                 ],
             )
         ]
@@ -224,7 +224,7 @@ async def fwa_new_th_upgrade_th_select(
     components = [
         Text(content=f"{user.mention}"),
         Container(
-            accent_color=BLUE_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content=f"## {friendly_name}"),
                 Media(
@@ -243,7 +243,7 @@ async def fwa_new_th_upgrade_th_select(
             ]
         ),
         Container(
-            accent_color=BLUE_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content=f"### TH{th_number} Upgrade Notes"),
                 Text(content=upgrade_notes),

@@ -12,7 +12,7 @@ from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
 )
 
-from utils.constants import BLUE_ACCENT
+from utils.constants import WU_GOLD
 
 loader = lightbulb.Loader()
 
@@ -69,7 +69,7 @@ class Say(
         # Create log entry with components
         log_components = [
             Container(
-                accent_color=BLUE_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content="## 📝 **Say Command Used**"),
                     Separator(divider=True),
@@ -91,7 +91,7 @@ class Say(
                             )
                         ]
                     ),
-                    Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+                    Media(items=[MediaItem(media="assets/Gold_Footer.png")])
                 ]
             )
         ]

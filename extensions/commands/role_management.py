@@ -14,7 +14,7 @@ from extensions.commands.recruit import perms
 from utils.role_permissions import role_is_manageable
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.mongo import MongoClient
 from utils.manage_ui import breadcrumb, button_emoji
 
@@ -45,7 +45,7 @@ def _guild(ctx: Any, guild_id: int) -> Any:
 
 def _error(message: str) -> list:
     return [hikari.impl.ContainerComponentBuilder(
-        accent_color=GOLDENROD_ACCENT,
+        accent_color=WU_RED,
         components=[hikari.impl.TextDisplayComponentBuilder(content=f"## Roles\n{message}")],
     )]
 
@@ -121,7 +121,7 @@ def _panel(state: dict, notice: str | None = None) -> list:
         _buttons((f"manage_home:{state['manage_token']}", "Management Home",
                   hikari.ButtonStyle.SECONDARY, False)),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 async def open_dashboard(ctx: Any, mongo: MongoClient, *, manage_token: str,
@@ -319,7 +319,7 @@ def _browse_panel(state: dict, page: int, notice: str | None = None) -> list:
             (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
         ),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
 
 
 @register_action("roles_page", preload_state=False)

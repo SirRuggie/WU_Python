@@ -57,7 +57,7 @@ def test_ping_view_is_one_compact_green_status_container():
     text = _view_text(view)
 
     assert len(view) == 1
-    assert payload["accent_color"] == int(ping.GREEN_ACCENT)
+    assert payload["accent_color"] == int(ping.WU_GREEN)
     assert len(payload["components"]) == 1
     assert "WU Wizard is online" in text
     assert "connected to Discord and responding to commands" in text

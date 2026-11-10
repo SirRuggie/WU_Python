@@ -14,7 +14,7 @@ import hikari
 import lightbulb
 
 from extensions.components import register_action
-from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
+from utils.constants import WU_GOLD, WU_RED, WARRIORS_UNITED_GUILD_ID
 from utils.cwl_signup_policy import main_signup_error
 from utils.cwl_member_summary import timing_lines
 from utils.dashboard_urls import SIGNUP_URL, ASSIGNMENTS_URL, TASKS_URL, WARS_URL
@@ -204,9 +204,9 @@ def _instruction_pages(session: MemberSession) -> list[str]:
     return pages
 
 
-def _panel(text: str, rows: list) -> list:
+def _panel(text: str, rows: list, *, accent=WU_GOLD) -> list:
     return [hikari.impl.ContainerComponentBuilder(
-        accent_color=GOLDENROD_ACCENT,
+        accent_color=accent,
         components=[hikari.impl.TextDisplayComponentBuilder(content=text), *rows],
     )]
 
@@ -518,7 +518,10 @@ async def _edit(ctx, token: str, session: MemberSession, note: str | None = None
         flags = getattr(message, "flags", hikari.MessageFlag.IS_COMPONENTS_V2)
         legacy_clear = {"content": None, "embeds": []} if not flags & hikari.MessageFlag.IS_COMPONENTS_V2 else {}
         await ctx.interaction.edit_initial_response(
-            components=_panel(content, _components(token, session)),
+            components=_panel(
+                content, _components(token, session),
+                accent=WU_RED if session.screen == "withdraw_confirm" else WU_GOLD,
+            ),
             user_mentions=False, role_mentions=False, mentions_everyone=False,
             **legacy_clear,
         )
@@ -595,7 +598,7 @@ async def start(ctx, action_id: str, **_):
         flags = getattr(message, "flags", hikari.MessageFlag.IS_COMPONENTS_V2)
         legacy_clear = {"content": None, "embeds": []} if not flags & hikari.MessageFlag.IS_COMPONENTS_V2 else {}
         await ctx.interaction.edit_initial_response(
-            components=_panel("The CWL service is temporarily unavailable. Your signups have not been changed. Run `/cwl signup` again shortly.", []),
+            components=_panel("The CWL service is temporarily unavailable. Your signups have not been changed. Run `/cwl signup` again shortly.", [], accent=WU_RED),
             user_mentions=False, role_mentions=False, mentions_everyone=False,
             **legacy_clear,
         )
@@ -614,9 +617,9 @@ async def check_signups(ctx, action_id: str, **_):
             session.version += 1
             components = _panel(_main_text(session), _components(token, session))
     except ValueError as exc:
-        components = _panel(str(exc), [])
+        components = _panel(str(exc), [], accent=WU_RED)
     except Exception:
-        components = _panel("The CWL service is not available now. Your signups did not change. Try again in a few minutes.", [])
+        components = _panel("The CWL service is not available now. Your signups did not change. Try again in a few minutes.", [], accent=WU_RED)
     await ctx.respond(components=components,
                       flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
                       user_mentions=False, role_mentions=False, mentions_everyone=False)

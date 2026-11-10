@@ -9,7 +9,7 @@ import uuid
 
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.dashboard_urls import SIGNUP_URL
 from utils.mongo import MongoClient
 from utils.recruit_error_reporting import notify as notify_recruit_error
@@ -59,7 +59,7 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
 
             # Embed 1: Family Particulars
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content="## <:warriorcat:947992348971905035> **Warriors United Family Particulars**"),
                     Separator(divider=True),
@@ -87,7 +87,7 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
 
             # Embed 2: Family War Rules
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content="## <:warriorcat:947992348971905035> **Family War Rules**"),
                     Separator(divider=True),
@@ -121,7 +121,7 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
 
             # Embed 3: Clan War League
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content="## <:warriorcat:947992348971905035> **Warriors United Clan War League**"),
                     Separator(divider=True),
@@ -162,7 +162,7 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
 
             # Embed 4: Acknowledgment
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     Text(content="## 📜 **ACKNOWLEDGMENT**"),
                     Separator(divider=True),
@@ -243,7 +243,7 @@ def _continue_components(guild_id: int, *, url: str | None = None):
     """Build the private V2 prompt that sends members to the application tickets."""
     return [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content="## :shield: Continue to Apply"),
                 Text(content="Open an application ticket to continue the Recruit Gauntlet."),

@@ -21,7 +21,7 @@ from hikari.impl import ContainerComponentBuilder as Container, TextDisplayCompo
 from extensions.components import register_action
 from utils import recruit_links
 from utils.component_state import get_state, insert_state, update_state
-from utils.constants import WARRIORS_UNITED_GUILD_ID
+from utils.constants import WARRIORS_UNITED_GUILD_ID, WU_GOLD, WU_RED
 from utils.mongo import MongoClient
 from utils.strike_store import STRIKE_DAYS, StrikeService, tag, utc
 from utils.strike_tracking import StrikeTracking
@@ -65,7 +65,7 @@ async def authorized(ctx, mongo, scope='strikes_read') -> bool:
     return await dashboard_allowed({'user_id': str(ctx.user.id), 'role_ids': getattr(member, 'role_ids', ())}, scope, mongo)
 
 
-def panel(title: str, *lines: str, buttons=None):
+def panel(title: str, *lines: str, buttons=None, accent=WU_GOLD):
     children = [Text(content=f'## {title}')]
     children.extend(Text(content=line) for line in lines if line)
     if buttons:
@@ -74,7 +74,7 @@ def panel(title: str, *lines: str, buttons=None):
             row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id,
                                        label=label, is_disabled=not enabled)
         children.append(row)
-    return [Container(accent_color=0xD9A441, components=children)]
+    return [Container(accent_color=accent, components=children)]
 
 
 def text_units(text):
@@ -148,7 +148,7 @@ async def page(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwa
     token, page_text = action_id.split('|', 1)
     state = await _state(ctx, mongo, token)
     if state is None or not await authorized(ctx, mongo):
-        return panel('Strike history', 'This view expired. Run /strikes view again.')
+        return panel('Strike history', 'This view expired. Run /strikes view again.', accent=WU_RED)
     try:
         number = int(page_text)
     except ValueError:
@@ -183,7 +183,7 @@ class View(lightbulb.SlashCommand, name='view', description='View strike history
         try:
             components = await history_panel(StrikeService(mongo), state)
         except (RuntimeError, ValueError) as error:
-            components = panel('Strike history', safe(error, 250))
+            components = panel('Strike history', safe(error, 250), accent=WU_RED)
         await ctx.respond(components=components, ephemeral=True, **NO_MENTIONS)
 
 
@@ -243,7 +243,7 @@ class Add(lightbulb.SlashCommand, name='add', description='Give one player accou
             placeholder='Select the account to strike', min_values=1, max_values=1)
         for player in state['tags']:
             menu.add_option(player, player)
-        await ctx.respond(components=[Container(accent_color=0xD9A441, components=[
+        await ctx.respond(components=[Container(accent_color=WU_GOLD, components=[
             Text(content='## Select an account'),
             Text(content=f'{len(tags)} linked account(s). Select the account that gets this strike.'),
             menu_row])], ephemeral=True, **NO_MENTIONS)
@@ -255,13 +255,13 @@ async def pick(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
                coc_client: coc.Client = lightbulb.di.INJECTED, **kwargs):
     state = await _state(ctx, mongo, action_id)
     if state is None or not await authorized(ctx, mongo, 'strikes_add'):
-        return panel('Strike', 'This selection expired or staff access changed.')
+        return panel('Strike', 'This selection expired or staff access changed.', accent=WU_RED)
     selected = ctx.interaction.values[0]
     if selected not in state['tags']:
         return panel('Strike', 'Select an account from this menu.')
     links = await recruit_links.resolve(state['member_id'])
     if links.unavailable or selected not in links.sources or selected in links.conflicts:
-        return panel('Strike', 'Account links changed. Run /strikes add again.')
+        return panel('Strike', 'Account links changed. Run /strikes add again.', accent=WU_RED)
     try:
         account = await coc_client.get_player(selected)
         clan_tag = getattr(getattr(account, 'clan', None), 'tag', None)
@@ -270,9 +270,9 @@ async def pick(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
             clan_tag=clan_tag, player_name=account.name,
             request_id=state['request_id'])
     except ValueError as error:
-        return panel('Strike', safe(error, 250))
+        return panel('Strike', safe(error, 250), accent=WU_RED)
     except Exception:
-        return panel('Strike', 'Player lookup is unavailable. Try again later.')
+        return panel('Strike', 'Player lookup is unavailable. Try again later.', accent=WU_RED)
     return panel('Strike added', f"`{row['player_tag']}` · Expires in {STRIKE_DAYS} days\n{safe(row['reason'], 500)}")
 
 
@@ -505,7 +505,7 @@ async def replacement_panel(store, state, *, notice=''):
                                        label=label, is_disabled=not enabled)
     buttons.add_link_button(link, label='Open on dashboard')
     children.append(buttons)
-    return [Container(accent_color=0xD9A441, components=children)]
+    return [Container(accent_color=WU_GOLD, components=children)]
 
 
 async def _replacement_action_state(ctx, mongo, token):
@@ -542,7 +542,7 @@ async def replacement_clan(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
         except ValueError:
             return panel('Replacements', 'Select a clan from the menu.')
     if selected and await mongo.clans.count_documents({'tag': {'$in': selected}, 'type': 'FWA'}) != len(set(selected)):
-        return panel('Replacements', 'Select FWA clans only.')
+        return panel('Replacements', 'Select FWA clans only.', accent=WU_RED)
     return await _replacement_update(ctx, mongo, action_id, {'clan_tags': selected[:CLAN_MENU_LIMIT], 'page': 0})
 
 
@@ -637,7 +637,7 @@ class Replacements(lightbulb.SlashCommand, name='replacements',
         try:
             components = await replacement_panel(StrikeService(mongo), state)
         except (RuntimeError, ValueError) as error:
-            components = panel('Replacements', safe(error, 250))
+            components = panel('Replacements', safe(error, 250), accent=WU_RED)
         await ctx.respond(components=components, ephemeral=True, **NO_MENTIONS)
 
 

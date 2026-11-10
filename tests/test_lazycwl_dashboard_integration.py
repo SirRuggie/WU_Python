@@ -225,9 +225,9 @@ def test_badge_status_and_bulk_capture_are_visible_without_implicit_selection():
     payload = [item.build() for item in panel]
     assert 'Everyone is home' in '\n'.join(_walk_text(payload))
     assert any(node.get('url') == 'https://example.com/badge.png' for node in _nodes(payload))
-    assert panel[0].accent_color == dashboard.GOLDENROD_ACCENT
+    assert panel[0].accent_color == dashboard.WU_GOLD
     no_list = dashboard.render_home([document], clans, '#DEF', token=token)
-    assert no_list[0].accent_color == dashboard.GOLDENROD_ACCENT
+    assert no_list[0].accent_color == dashboard.WU_GOLD
     bulk = dashboard.render_home([document], clans, 'ALL', token=token)
     capture = next(node for node in _nodes([item.build() for item in bulk])
                    if str(node.get('custom_id', '')).startswith('lazycwl_capture:'))
@@ -238,7 +238,7 @@ def test_cancel_invalidates_confirmation_and_returns_to_reminders(monkeypatch):
     token = _session()
     doc = _active(ObjectId(), '#ABC')
     nonce = dashboard._bind(token, '#ABC', [doc], operation='disable')
-    dashboard._confirm('Disable?', ['Home'], 'lazycwl_disable_yes', token, nonce, dashboard.RED_ACCENT)
+    dashboard._confirm('Disable?', ['Home'], 'lazycwl_disable_yes', token, nonce, dashboard.WU_RED)
     screens = []
     async def home(mongo, tag, **kwargs):
         screens.append((tag, kwargs['tab']))

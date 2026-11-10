@@ -27,7 +27,7 @@ from extensions.components import register_action
 from extensions.commands.tickets import perms, ticket
 from extensions.commands.tickets import testing_service, thread_service
 from utils.component_state import get_state, insert_state
-from utils.constants import GOLDENROD_ACCENT, RED_ACCENT
+from utils.constants import WU_GOLD, WU_RED
 from utils.manage_ui import button_emoji
 from utils.mongo import MongoClient
 from utils import ticket_testing_control as control
@@ -141,7 +141,7 @@ def _panel(state_id: str, window: dict | None, *, admin: bool, notice: str | Non
     if return_action:
         body.extend([Separator(divider=True), ActionRow().add_interactive_button(
             hikari.ButtonStyle.SECONDARY, return_action, label="Return to Management")])
-    return [Container(accent_color=GOLDENROD_ACCENT, components=body)]
+    return [Container(accent_color=WU_GOLD, components=body)]
 
 
 async def _new_state(mongo: MongoClient, ctx: Any, *, admin: bool, return_action: str | None = None) -> str:
@@ -180,7 +180,7 @@ async def _access(ctx: Any, mongo: MongoClient, state_id: str) -> tuple[dict | N
 async def _refresh(ctx: Any, mongo: MongoClient, state_id: str, notice: str | None = None):
     state, window, admin, problem = await _access(ctx, mongo, state_id)
     if problem:
-        return [Container(accent_color=RED_ACCENT, components=[Text(content=problem)])]
+        return [Container(accent_color=WU_RED, components=[Text(content=problem)])]
     return _panel(state_id, window, admin=admin, notice=notice, return_action=state.get("return_action"))
 
 
@@ -235,7 +235,7 @@ async def open_window_submit(ctx: Any, action_id: str, mongo: MongoClient = ligh
     await ctx.defer(ephemeral=True)
     _state, _window, admin, problem = await _access(ctx, mongo, action_id)
     if problem or not admin:
-        await _modal_panel(ctx, [Container(accent_color=RED_ACCENT, components=[Text(content=problem or "Administrator permission is required.")])])
+        await _modal_panel(ctx, [Container(accent_color=WU_RED, components=[Text(content=problem or "Administrator permission is required.")])])
         return
     duration, cleanup = _int(_modal_value(ctx, "duration")), _int(_modal_value(ctx, "cleanup"))
     if not MIN_WINDOW_MINUTES <= duration <= MAX_WINDOW_MINUTES or not 0 <= cleanup <= 10080:
@@ -252,7 +252,7 @@ async def open_window_submit(ctx: Any, action_id: str, mongo: MongoClient = ligh
 async def _admin_update(ctx: Any, action_id: str, mongo: MongoClient, bot: hikari.GatewayBot, **kwargs: Any):
     _state, window, admin, problem = await _access(ctx, mongo, action_id)
     if problem or not admin:
-        return [Container(accent_color=RED_ACCENT, components=[Text(content=problem or "Administrator permission is required.")])]
+        return [Container(accent_color=WU_RED, components=[Text(content=problem or "Administrator permission is required.")])]
     if not window:
         return await _refresh(ctx, mongo, action_id, "Open a test window first.")
     try:
@@ -285,7 +285,7 @@ async def roles(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
 async def toggle_admins(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_: Any):
     _state, window, admin, problem = await _access(ctx, mongo, action_id)
     if problem or not admin:
-        return [Container(accent_color=RED_ACCENT, components=[Text(content=problem or "Administrator permission is required.")])]
+        return [Container(accent_color=WU_RED, components=[Text(content=problem or "Administrator permission is required.")])]
     if not window:
         return await _refresh(ctx, mongo, action_id, "Open a test window first.")
     return await _admin_update(ctx, action_id, mongo, bot, allow_admins=not bool(window.get("allow_admins")))
@@ -296,7 +296,7 @@ async def toggle_admins(ctx: Any, action_id: str, mongo: MongoClient = lightbulb
 async def close_window(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_: Any):
     _state, _window, admin, problem = await _access(ctx, mongo, action_id)
     if problem or not admin:
-        return [Container(accent_color=RED_ACCENT, components=[Text(content=problem or "Administrator permission is required.")])]
+        return [Container(accent_color=WU_RED, components=[Text(content=problem or "Administrator permission is required.")])]
     try:
         await control.end_window(bot, mongo, ctx)
     except ValueError as exc:
@@ -309,8 +309,8 @@ async def close_window(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
 async def clear(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any):
     _state, window, admin, problem = await _access(ctx, mongo, action_id)
     if problem or not admin:
-        return [Container(accent_color=RED_ACCENT, components=[Text(content=problem or "Administrator permission is required.")])]
-    return [Container(accent_color=RED_ACCENT, components=[
+        return [Container(accent_color=WU_RED, components=[Text(content=problem or "Administrator permission is required.")])]
+    return [Container(accent_color=WU_RED, components=[
         Text(content="## Clear isolated test tickets?"),
         Text(content="This ends the test window and deletes its test threads and ticket records. Production tickets are never touched."),
         ActionRow(components=[
@@ -325,7 +325,7 @@ async def clear(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
 async def clear_confirm(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any):
     _state, _window, admin, problem = await _access(ctx, mongo, action_id)
     if problem or not admin:
-        return [Container(accent_color=RED_ACCENT, components=[Text(content=problem or "Administrator permission is required.")])]
+        return [Container(accent_color=WU_RED, components=[Text(content=problem or "Administrator permission is required.")])]
     await testing_service.request_clear(testing_service.test_mongo(mongo))
     return await _refresh(ctx, mongo, action_id, "Test-ticket cleanup requested.")
 

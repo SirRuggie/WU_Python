@@ -9,7 +9,7 @@ import uuid
 
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
-from utils.constants import GOLDENROD_ACCENT
+from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 from utils.recruit_error_reporting import notify as notify_recruit_error
 from utils.gauntlet_diagnostics import observed, event as gauntlet_event
@@ -61,7 +61,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
 
             # Embed 1: Basic Rules
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     text("## 📜 **Warriors United Basic Rules** 📜"),
                     Separator(divider=True),
@@ -88,7 +88,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
 
             # Embed 2: Strike System Overview
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     text("## ❌ **Warriors United Strike System** ❌"),
                     Separator(divider=True),
@@ -113,7 +113,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
 
             # Embed 3: Main Clan Strike System
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     text("## ❌ **MAIN CLAN STRIKE SYSTEM** ❌"),
                     Separator(divider=True),
@@ -130,7 +130,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
 
             # Embed 4: FWA Strike System
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     text("## ❌ **FWA STRIKE SYSTEM** ❌"),
                     Separator(divider=True),
@@ -147,7 +147,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
 
             # Embed 5: Terms and Conditions
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     text("## ❌ **Terms and Conditions** ❌"),
                     Separator(divider=True),
@@ -163,7 +163,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
 
             # Embed 6: Acknowledgment
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=WU_GOLD,
                 components=[
                     text("## 📜 **ACKNOWLEDGMENT**"),
                     Separator(divider=True),
@@ -234,7 +234,7 @@ def _continue_components(guild_id: int, message: str, *, url: str | None = None)
     """Build the private V2 prompt that sends members to the next step."""
     return [
         Container(
-            accent_color=GOLDENROD_ACCENT,
+            accent_color=WU_GOLD,
             components=[
                 Text(content="## :shield: Next step unlocked"),
                 Text(content=message),

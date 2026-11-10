@@ -25,7 +25,7 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
-from utils.constants import BLUE_ACCENT, GREEN_ACCENT, RED_ACCENT, FWA_ACTIVE_WAR_BASE, FWA_WAR_BASE
+from utils.constants import WU_GREEN, WU_RED, FWA_ACTIVE_WAR_BASE, FWA_WAR_BASE
 from utils.discord_file_upload import FileUploadModalComponentBuilder, pop_file_upload
 from utils.image_fetch import download_image_blocking
 from utils.media_store import (
@@ -129,7 +129,7 @@ def _problem_panel(message: str, target: UploadTarget | None = None) -> list[Con
     components: list[Any] = [Text(content=f"## ❌ Upload needs attention\n{message}")]
     if target is not None:
         components.extend([Separator(divider=True), _navigation(target)])
-    return [Container(accent_color=RED_ACCENT, components=components)]
+    return [Container(accent_color=WU_RED, components=components)]
 
 
 def _success_panel(target: UploadTarget, url: str) -> list[Container]:
@@ -140,7 +140,7 @@ def _success_panel(target: UploadTarget, url: str) -> list[Container]:
     )
     width = DETAIL if target.kind == "fwa" else (THUMBNAIL if target.slot == "logo" else GALLERY)
     return [Container(
-        accent_color=GREEN_ACCENT,
+        accent_color=WU_GREEN,
         components=[
             Text(content=f"## ✅ {subject} saved"),
             Text(content="The replacement was saved immediately."),

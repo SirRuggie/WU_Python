@@ -94,7 +94,7 @@ from utils.dashboard_urls import TASKS_URL, WARS_URL
 from utils.clash_links import resolve_tags
 from utils.media_urls import THUMBNAIL, optimized
 from utils.constants import (
-    BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT, WARRIORS_UNITED_GUILD_ID,
+    WARRIORS_UNITED_GUILD_ID, WU_GOLD, WU_RED,
 )
 from utils.emoji import emojis
 from utils.fwa_blacklist import blacklisted_tags
@@ -422,7 +422,7 @@ U_MAINTENANCE = "🔧"  # the game is down, as distinct from we couldn't read it
 # Rendering
 # ---------------------------------------------------------------------------
 
-def _panel(body_components: list, accent=RED_ACCENT) -> list:
+def _panel(body_components: list, accent=WU_GOLD) -> list:
     return [Container(accent_color=accent, components=body_components)]
 
 
@@ -516,7 +516,7 @@ def _retired_panel() -> list:
             hikari.impl.LinkButtonBuilder(url=TASKS_URL, label="My tasks"),
             hikari.impl.LinkButtonBuilder(url=WARS_URL, label="Wars"),
         ]),
-    ], BLUE_ACCENT)
+    ], WU_GOLD)
 
 
 def _urgency_accent(view_data):
@@ -529,25 +529,27 @@ def _urgency_accent(view_data):
 
         RED    something closes within 2 hours
         GOLD   something closes within 12 hours
-        BLUE   everything else, including prep-only and empty views
+        NONE   everything else, including prep-only and empty views
+
+    "None" is hikari.UNDEFINED: the container is sent without an accent.
     """
     if view_data is None or not getattr(view_data, "ok", False) or not view_data.rows:
-        return BLUE_ACCENT
+        return hikari.UNDEFINED
     soonest = [r.ends_at for r in view_data.rows if r.state != "preparation" and r.ends_at]
     if not soonest:
-        return BLUE_ACCENT
+        return hikari.UNDEFINED
     remaining = min(soonest) - int(time.time())
     if remaining <= 2 * 60 * 60:
-        return RED_ACCENT
+        return WU_RED
     if remaining <= 12 * 60 * 60:
-        return GOLD_ACCENT
-    return BLUE_ACCENT
+        return WU_GOLD
+    return hikari.UNDEFINED
 
 
 def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = None,
             *, checked_at: int | None = None, auto_refresh: bool = False,
-            refresh_until: datetime | None = None) -> list:
-    """A panel for every state that is not a dashboard.
+            refresh_until: datetime | None = None, accent=WU_GOLD) -> list:
+    """A panel for every state that is not a dashboard. Failures pass accent=WU_RED.
 
     IT STILL CARRIES THE NAV. A state that renders correctly and leaves the user
     with no way out is a dead end - they have to re-run /todo to escape. Every
@@ -563,9 +565,13 @@ def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = N
         # a second Media here.
         *_nav_block(
             view, counts or {}, checked_at=checked_at, auto_refresh=auto_refresh,
-            refresh_until=refresh_until,
+            refresh_until=refresh_until, accent=accent,
         ),
-    ])
+    ], accent=accent)
+
+
+def _footer_for(accent) -> str:
+    return "assets/Red_Footer.png" if accent == WU_RED else "assets/Gold_Footer.png"
 
 
 def _nav_block(view: str, counts: dict, pager=None, *,
@@ -573,8 +579,11 @@ def _nav_block(view: str, counts: dict, pager=None, *,
                unavailable: dict[str, str] | None = None,
                checked_at: int | None = None,
                auto_refresh: bool = False,
-               refresh_until: datetime | None = None) -> list:
+               refresh_until: datetime | None = None,
+               accent=WU_GOLD) -> list:
     """Separator, the view select, optional pagination, then the freshness line.
+
+    The footer matches the card: red on a WU_RED card, gold otherwise.
 
     THE ONLY PLACE NAVIGATION IS BUILT. Every panel state calls this, so a new
     state cannot ship without a way out.
@@ -633,14 +642,14 @@ def _nav_block(view: str, counts: dict, pager=None, *,
         # the view select - it belongs to the content, not to the caption row.
         *([pager] if pager is not None else []),
         # The Media footer sits ABOVE the freshness row, not at the very bottom
-        # as it does on every other panel in the repo. Deliberate: the red line
+        # as it does on every other panel in the repo. Deliberate: the footer line
         # then reads as the rule that closes the dashboard, with the freshness
         # stamp and its refresh button sitting under it as a caption.
         #
         # Done by reordering INSIDE the container rather than moving anything
         # out to top level. A top-level component renders outside the accent bar
         # and would lose the coloured stripe, detaching the row from the panel.
-        Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+        Media(items=[MediaItem(media=_footer_for(accent))]),
         Text(content=stamp),
         ActionRow(components=[
             Button(
@@ -1097,7 +1106,7 @@ def render_dashboard(view: str, page: int, data: dict, *,
         # "to do" is wrong for Private War Logs - those accounts are not work,
         # they are clans to go and ask about.
         title += f" · {outstanding}" if view == VIEW_PRIVATE else f" · {outstanding} to do"
-        if view != VIEW_PRIVATE and _urgency_accent(current) == RED_ACCENT:
+        if view != VIEW_PRIVATE and _urgency_accent(current) == WU_RED:
             title += f" {U_URGENT}"
     body: list = [Text(content=title)]
 
@@ -1214,15 +1223,17 @@ def render_dashboard(view: str, page: int, data: dict, *,
             ),
         ])
 
+    accent = _urgency_accent(current)
     body.extend(_nav_block(
         view, counts, pager, unchecked=unchecked, unavailable=unavailable,
         checked_at=checked_at,
         auto_refresh=auto_refresh,
         refresh_until=refresh_until,
+        accent=accent,
     ))
 
     # The footer is emitted by _nav_block, above the freshness row.
-    return _panel(body, _urgency_accent(current))
+    return _panel(body, accent)
 
 
 # ---------------------------------------------------------------------------
@@ -1475,7 +1486,7 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
                 "The Clash↔Discord link service did not answer. Your accounts cannot be found. "
                 "The problem is not on your side. Try again in a few minutes.",
                 checked_at=int(time.time()), auto_refresh=auto_refresh,
-                refresh_until=refresh_until,
+                refresh_until=refresh_until, accent=WU_RED,
             ), None
         todo_data.cache_put(cache_key, tags, todo_data.TTL_LINKS)
 
@@ -1538,14 +1549,14 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
                 "Your accounts are correct. No data was lost. Supercell does not give an end time. "
                 "In a few minutes, select Check now again.",
                 checked_at=int(time.time()), auto_refresh=auto_refresh,
-                refresh_until=refresh_until,
+                refresh_until=refresh_until, accent=WU_RED,
             ), None
         return None, _notice(
             "Couldn't load your accounts",
             "Your accounts are linked, but the Clash API didn't answer for any "
             "of them. Try again in a few minutes.",
             checked_at=int(time.time()), auto_refresh=auto_refresh,
-            refresh_until=refresh_until,
+            refresh_until=refresh_until, accent=WU_RED,
         ), None
 
     # Persist the current player responses while war/CWL network work runs.
