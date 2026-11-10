@@ -17,6 +17,9 @@ pings anyone (`user_mentions`, `role_mentions`, `mentions_everyone` all off).
 
 ## Card (Components V2)
 
+Brand gold accent (`WU_GOLD`) and `assets/Gold_Footer.png`, on both `/profile` and
+the alert (Ruggie, 2026-11-10).
+
 1. Identity: the display name as plain text, then the username as a link to
    `discord.com/users/<id>` ("Discord profile" when the username is not a
    plain a-z/0-9/_/. name). Names stay out of link labels because Discord

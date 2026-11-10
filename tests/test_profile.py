@@ -104,6 +104,14 @@ def test_name_is_a_profile_link_never_a_mention_and_no_raw_id_text():
     assert "123" not in without_links
 
 
+@pytest.mark.parametrize("mode", [profile.MODE_PROFILE, profile.MODE_ALERT])
+def test_card_uses_the_brand_gold_accent_and_footer(mode):
+    from utils.constants import WU_GOLD
+    payload = _built(profile.render_profile(_identity(), accounts.AccountsData(), mode=mode))
+    assert payload[0]["accent_color"] == int(WU_GOLD)
+    assert "attachment://Gold_Footer.png" in json.dumps(payload)
+
+
 def test_no_links_still_shows_identity_and_plain_empty_state():
     payload = _built(profile.render_profile(_identity(), accounts.AccountsData()))
     text = _text(payload)
