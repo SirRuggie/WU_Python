@@ -6,6 +6,21 @@ import StrikesWorkspace, { type Entry } from "./StrikesWorkspace";
 import "./style.css";
 
 const now = new Date().toISOString();
+const previewMembers = [
+  { name: "Fixture member", username: undefined },
+  { name: "𝔇𝔯𝔞𝔤𝔬𝔫", username: "dragonslayer012" },
+  { name: "Ünïcode Ace", username: "ace_of_spades" },
+  { name: "Ｆｕｌｌｗｉｄｔｈ", username: "wide.letters" },
+  { name: "Maple", username: "maple_leaf99" },
+];
+const previewMember = (index: number) => {
+  const member = previewMembers[index % previewMembers.length];
+  return {
+    discord_name: member.name,
+    discord_username: member.username,
+    discord_id: `12345678901234567${index % previewMembers.length}`,
+  };
+};
 const entries: Entry[] = [
   {
     id: "mismatch",
@@ -571,8 +586,7 @@ window.fetch = async (input, init) => {
           attacked_raid_weekends: unknown ? null : index === 0 ? 0 : 2,
           no_attack_wars: index === 0 ? 14 : index % 5 === 0 ? 5 : 0,
           skipped_raid_weekends: index === 0 ? 2 : 0,
-          discord_name: "Fixture member",
-          discord_id: "123456789012345678",
+          ...previewMember(index),
         };
       }),
     };

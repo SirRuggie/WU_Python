@@ -50,6 +50,11 @@ async def account_identities(request, tags):
                                 if old.get("discord_id") == str(owner)
                                 else None
                             ),
+                            "discord_username": (
+                                old.get("discord_username")
+                                if old.get("discord_id") == str(owner)
+                                else None
+                            ),
                         }
                     if partial:
                         log.warning(
@@ -63,6 +68,7 @@ async def account_identities(request, tags):
                     if not isinstance(directory, list):
                         raise ValueError("Invalid member directory")
                     names = {}
+                    usernames = {}
                     for item in directory:
                         user = item.get("user") if isinstance(item, dict) else None
                         if not isinstance(user, dict) or not user.get("id"):
@@ -81,10 +87,17 @@ async def account_identities(request, tags):
                         )
                         if name:
                             names[str(user["id"])] = name
+                        username = user.get("username")
+                        if isinstance(username, str) and username.strip():
+                            usernames[str(user["id"])] = username.strip()[:100]
                     for tag, row in identities.items():
                         fresh_name = names.get(row["discord_id"])
                         if fresh_name is not None or not partial:
                             row["discord_name"] = fresh_name
+                            row["discord_username"] = usernames.get(
+                                row["discord_id"],
+                                row.get("discord_username") if partial else None,
+                            )
                     failed = bool(identities) and not any(
                         row["discord_name"] for row in identities.values()
                     )
@@ -96,6 +109,7 @@ async def account_identities(request, tags):
                     old = state.get("identities", {}).get(tag, {})
                     if old.get("discord_id") == row["discord_id"]:
                         row["discord_name"] = old.get("discord_name")
+                        row["discord_username"] = old.get("discord_username")
                 log.warning(
                     "Activity identity refresh failed tags=%s elapsed=%.2fs error=%s",
                     len(wanted),

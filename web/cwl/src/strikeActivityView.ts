@@ -17,6 +17,7 @@ export type ActivityAccount = {
   total_strikes: number;
   discord_id?: string | null;
   discord_name?: string | null;
+  discord_username?: string | null;
   priority?: ActivityPriority | null;
   marked_for_replacement: boolean;
   replacement_eligible_low?: boolean;

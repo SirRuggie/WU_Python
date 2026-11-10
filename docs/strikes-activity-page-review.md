@@ -184,6 +184,8 @@ Measured before (read only, 360x800): first account at 469 px (fixture) and 542 
 Measured after (`node tests/run-strikes-usability-layout.cjs`, fixture, 360x800):
 first account row at 420.8 px, Filters content 532 px.
 
+Follow-up: Discord member search matches name, username or ID; fancy letters fold to plain.
+
 Decisions (Part A, frontend):
 1. Phones (760 px and narrower) get one View select with counts; wider screens keep the pills.
 2. Search is an icon; the field replaces the toolbar row, closes with x, and stays open while a query is set.
