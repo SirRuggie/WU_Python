@@ -9,6 +9,8 @@ import AccountCard from "./AccountCard";
 import { parseActivityFilters } from "./strikeActivityFilters";
 import type { ActivityAccount } from "./strikeActivityView";
 
+vi.mock("./useCompactPreview", () => ({ default: () => false }));
+
 const account = (patch: Partial<ActivityAccount> = {}): ActivityAccount => ({
   player_tag: "#PYY",
   player_name: "Echo",
@@ -273,9 +275,8 @@ it("omits absent optional detail/status while preserving the existing supplied s
 
 it("shows the chip fade only while local row content remains to the right", async () => {
   let contentWidth = 500;
-  const { default: StrikeActivityRoster } = await import(
-    "./StrikeActivityRoster"
-  );
+  const { default: StrikeActivityRoster } =
+    await import("./StrikeActivityRoster");
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
     function (this: HTMLElement) {
       return this.classList.contains("strike-activity-tabs") ? 200 : 0;

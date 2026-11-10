@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import ActionPanel from "./ActionPanel";
-import RosterFilterOptions from "./RosterFilterOptions";
 import StrikeMemberSelect, { strikeMemberOptions } from "./StrikeMemberSelect";
 import type { ActivityAccount } from "./strikeActivityView";
 import {
@@ -14,20 +13,17 @@ import {
 export default function StrikeActivityFiltersPanel({
   filters,
   accounts,
-  clans,
   trigger,
   onClose,
   onApply,
 }: {
   filters: ActivityFilters;
   accounts: ActivityAccount[];
-  clans: { tag: string; name: string }[];
   trigger: HTMLElement;
   onClose: () => void;
   onApply: (next: ActivityFilters) => void;
 }) {
   const [draft, setDraft] = useState(filters);
-  const [clanSearch, setClanSearch] = useState("");
   const members = useMemo(() => strikeMemberOptions(accounts), [accounts]);
   const patch = (next: Partial<ActivityFilters>) =>
     setDraft((current) =>
@@ -44,13 +40,12 @@ export default function StrikeActivityFiltersPanel({
     (draft.minWeight !== null &&
       draft.maxWeight !== null &&
       draft.minWeight > draft.maxWeight);
-  const halls = [
-    ...new Set(
-      accounts
-        .map((row) => row.town_hall)
-        .filter((hall): hall is number => !!hall),
-    ),
-  ].sort((a, b) => b - a);
+  const priorities = [
+    ["replace_first", "Chopping block"],
+    ["high", "High"],
+    ["normal", "Normal"],
+    ["none", "None"],
+  ] as const;
   const numberChoice = (label: string, key: "raidMin", values: number[]) => (
     <label>
       {label}
@@ -94,40 +89,33 @@ export default function StrikeActivityFiltersPanel({
         </p>
       )}
       <div className="strike-activity-more">
-        <label>
-          Find clan
-          <input
-            type="search"
-            value={clanSearch}
-            onChange={(event) => setClanSearch(event.target.value)}
-          />
-        </label>
-        <StrikeMemberSelect
-          options={members}
-          value={draft.member}
-          onChange={(member) => patch({ member })}
-        />
-        <RosterFilterOptions
-          title="Clans"
-          selected={draft.clans}
-          onChange={(clans) => patch({ clans })}
-          options={clans
-            .filter((clan) =>
-              `${clan.name} ${clan.tag}`
-                .toLocaleLowerCase()
-                .includes(clanSearch.toLocaleLowerCase()),
-            )
-            .map((clan) => ({
-              value: clan.tag,
-              label: clan.name,
-              count: accounts.filter(
-                (row) =>
-                  (row.left_clan ? row.last_clan_tag : row.current_clan_tag) ===
-                  clan.tag,
-              ).length,
-            }))}
-        />
-        {numberChoice("Raid weekends without attacking", "raidMin", [0, 1, 2])}
+        <fieldset className="strike-filter-priority">
+          <legend>Priority</legend>
+          <div>
+            {priorities.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={draft.priorities.includes(value)}
+                onClick={() =>
+                  patch({
+                    priorities: draft.priorities.includes(value)
+                      ? draft.priorities.filter((item) => item !== value)
+                      : [...draft.priorities, value],
+                  })
+                }
+              >
+                {label}{" "}
+                <small>
+                  {
+                    accounts.filter((row) => (row.priority || "none") === value)
+                      .length
+                  }
+                </small>
+              </button>
+            ))}
+          </div>
+        </fieldset>
         <label>
           Strikes
           <select
@@ -145,64 +133,46 @@ export default function StrikeActivityFiltersPanel({
             <option value="new_this_week">New this week</option>
           </select>
         </label>
-        <RosterFilterOptions
-          title="Priority"
-          selected={draft.priorities}
-          onChange={(priorities) =>
-            patch({ priorities: priorities as ActivityFilters["priorities"] })
-          }
-          options={["replace_first", "high", "normal", "none"].map((value) => ({
-            value,
-            label:
-              value === "replace_first"
-                ? "Chopping block"
-                : value === "none"
-                  ? "No priority"
-                  : value === "high"
-                    ? "High"
-                    : "Normal",
-            count: accounts.filter((row) => (row.priority || "none") === value)
-              .length,
-          }))}
+        {numberChoice("Raid weekends without attacking", "raidMin", [0, 1, 2])}
+        <StrikeMemberSelect
+          options={members}
+          value={draft.member}
+          onChange={(member) => patch({ member })}
         />
-        <RosterFilterOptions
-          title="Town halls"
-          selected={draft.townHalls.map(String)}
-          onChange={(values) => patch({ townHalls: values.map(Number) })}
-          options={halls.map((hall) => ({
-            value: String(hall),
-            label: `TH${hall}`,
-            count: accounts.filter((row) => row.town_hall === hall).length,
-          }))}
-        />
-        <label>
-          Minimum weight
-          <input
-            type="number"
-            min="0"
-            value={draft.minWeight ?? ""}
-            onChange={(event) =>
-              patch({
-                minWeight:
-                  event.target.value === "" ? null : Number(event.target.value),
-              })
-            }
-          />
-        </label>
-        <label>
-          Maximum weight
-          <input
-            type="number"
-            min="0"
-            value={draft.maxWeight ?? ""}
-            onChange={(event) =>
-              patch({
-                maxWeight:
-                  event.target.value === "" ? null : Number(event.target.value),
-              })
-            }
-          />
-        </label>
+        <div className="strike-filter-weights">
+          <label>
+            Minimum weight
+            <input
+              type="number"
+              min="0"
+              value={draft.minWeight ?? ""}
+              onChange={(event) =>
+                patch({
+                  minWeight:
+                    event.target.value === ""
+                      ? null
+                      : Number(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label>
+            Maximum weight
+            <input
+              type="number"
+              min="0"
+              value={draft.maxWeight ?? ""}
+              onChange={(event) =>
+                patch({
+                  maxWeight:
+                    event.target.value === ""
+                      ? null
+                      : Number(event.target.value),
+                })
+              }
+            />
+          </label>
+        </div>
         <label>
           Membership
           <select

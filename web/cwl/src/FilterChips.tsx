@@ -15,7 +15,12 @@ export default function FilterChips<T extends string | number>({
 }: {
   label: string;
   value: T | null;
-  options: { value: T; label: ReactNode; count?: number; ariaLabel?: string }[];
+  options: {
+    value: T;
+    label: ReactNode;
+    count?: number | string;
+    ariaLabel?: string;
+  }[];
   onChange: (value: T) => void;
   disabled?: boolean;
   className?: string;

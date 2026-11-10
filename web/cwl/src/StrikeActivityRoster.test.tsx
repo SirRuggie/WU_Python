@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import StrikeActivityRoster from "./StrikeActivityRoster";
+vi.mock("./useCompactPreview", () => ({ default: () => false }));
 import type { ActivityAccount } from "./strikeActivityView";
 const row: ActivityAccount = {
   player_tag: "#PYY",
@@ -272,7 +273,7 @@ it("state-driven filters and explicit Discard clear selection", async () => {
   await act(async () =>
     root.render(
       <StrikeActivityRoster
-        state="?view=all&q=Risk"
+        state="?view=all&strikes=3"
         onChoose={choose}
         canManage
       />,
@@ -554,7 +555,7 @@ it("closes the Copy menu and clears a brief toast when filters change", async ()
     await act(async () =>
       root.render(
         <StrikeActivityRoster
-          state="?activity_view=all&q=Risk"
+          state="?activity_view=all&strikes=3"
           onChoose={vi.fn()}
         />,
       ),

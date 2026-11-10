@@ -30,8 +30,24 @@ it("gives the Find slots controls two rows without truncating labels", () => {
   );
 });
 
-it("styles the Tracking status as a rounded chip", () => {
-  expect(roster).toMatch(
-    /\.strike-activity-status \.strikes-tracking > summary\s*\{[^}]*border-radius:\s*999px/,
+it("styles the Tracking status as a gold text link, not a bordered chip", () => {
+  const summary = block(
+    roster,
+    ".strike-activity-status .strikes-tracking > summary",
   );
+  expect(summary).toMatch(/border:\s*0/);
+  expect(summary).not.toMatch(/border-radius:\s*999px/);
+  expect(summary).toMatch(/color:\s*var\(--wu-text-muted\)/);
+  expect(
+    block(roster, ".strike-activity-status .strikes-tracking > summary.review"),
+  ).toMatch(/color:\s*var\(--wu-accent\)/);
+});
+
+it("gives the native selects an explicit background and text colour from tokens", () => {
+  const css = block(
+    roster,
+    ".strike-activity-view-select,\n.strike-activity-selectors select",
+  );
+  expect(css).toMatch(/background-color:\s*var\(--wu-surface\)/);
+  expect(css).toMatch(/color:\s*var\(--wu-text\)/);
 });

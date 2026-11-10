@@ -1,9 +1,11 @@
+import { Search, X } from "lucide-react";
 import FilterChips from "./FilterChips";
 import StrikeActivityRows from "./StrikeActivityRows";
 import FindSlots from "./FindSlots";
 import SortTrigger from "./rosterUi/SortTrigger";
 import StrikeGroupHeading from "./StrikeGroupHeading";
 import StrikeSortPanel from "./StrikeSortPanel";
+import useCompactPreview from "./useCompactPreview";
 import useDiscordIdentities from "./useDiscordIdentities";
 import { activityPages } from "./strikeActivityGroups";
 import useActivityIdentityRefresh, {
@@ -93,6 +95,11 @@ export default function StrikeActivityRoster({
   const rosterRef = useRef<HTMLElement>(null);
   const chipsRef = useRef<HTMLDivElement>(null);
   const [moreChips, setMoreChips] = useState(false);
+  const phone = useCompactPreview(760);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
+  const searchFocus = useRef<"field" | "button" | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const scrolledView = useRef<string | null>(null);
   const [local, setLocal] = useState(() =>
     parseActivityFilters(state ?? window.location.search, markedDefault),
@@ -149,6 +156,18 @@ export default function StrikeActivityRoster({
         : "smooth",
     });
   }, [filters.view, loading]);
+  const searching = searchOpen || filters.query !== "";
+  useEffect(() => {
+    const target =
+      searchFocus.current === "field"
+        ? searchInput.current
+        : searchFocus.current === "button"
+          ? searchButton.current
+          : null;
+    if (!target) return;
+    searchFocus.current = null;
+    target.focus();
+  }, [searching]);
   const [filterTrigger, setFilterTrigger] = useState<HTMLElement | null>(null);
   const [sortTrigger, setSortTrigger] = useState<HTMLElement | null>(null);
   const copyIdentity = useRef(filterIdentity);
@@ -376,7 +395,44 @@ export default function StrikeActivityRoster({
       window.removeEventListener("resize", measure);
       observer?.disconnect();
     };
-  }, [loading, data.accounts, filterIdentity]);
+  }, [loading, data.accounts, filterIdentity, phone]);
+  const countsPending = loading || !!data.activity_updating;
+  const countText = (view: (typeof activityViews)[number]) =>
+    countsPending ? "…" : error && !data.accounts.length ? "–" : counts[view];
+  const viewLabels = {
+    not_attacking: "Not attacking",
+    inactive: "Inactive",
+    replacements: "Replacements",
+    all: "All",
+  } as const;
+  const clanOf = (row: ActivityAccount) =>
+    (row.left_clan ? row.last_clan_tag : row.current_clan_tag) || "";
+  const clanOptions = [
+    ...data.clans,
+    ...(filters.clans.length === 1 &&
+    !data.clans.some((clan) => clan.tag === filters.clans[0])
+      ? [{ tag: filters.clans[0], name: filters.clans[0] }]
+      : []),
+  ]
+    .map((clan) => ({
+      tag: clan.tag,
+      name: clan.name,
+      count: data.accounts.filter((row) => clanOf(row) === clan.tag).length,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const hallOptions = [
+    ...new Set([
+      ...data.accounts
+        .map((row) => row.town_hall)
+        .filter((hall): hall is number => !!hall),
+      ...(filters.townHalls.length === 1 ? filters.townHalls : []),
+    ]),
+  ]
+    .sort((a, b) => b - a)
+    .map((hall) => ({
+      hall,
+      count: data.accounts.filter((row) => row.town_hall === hall).length,
+    }));
   return (
     <section
       ref={rosterRef}
@@ -387,24 +443,227 @@ export default function StrikeActivityRoster({
         ref={chipsRef}
         className={`strike-activity-chips${moreChips ? " has-more" : ""}`}
       >
-        <FilterChips
-          variant="pill"
-          className="strike-activity-tabs"
-          label="Account views"
-          value={filters.view}
+        {phone ? (
+          <select
+            className="strike-activity-view-select"
+            aria-label="View"
+            value={filters.view}
+            disabled={bulkBusy}
+            onChange={(event) =>
+              change(
+                activityViewPreset(
+                  filters,
+                  event.target.value as (typeof activityViews)[number],
+                ),
+              )
+            }
+          >
+            {activityViews.map((view) => (
+              <option key={view} value={view}>
+                {viewLabels[view]} ({countText(view)})
+              </option>
+            ))}
+          </select>
+        ) : (
+          <FilterChips
+            variant="pill"
+            className="strike-activity-tabs"
+            label="Account views"
+            value={filters.view}
+            disabled={bulkBusy}
+            options={activityViews.map((view) => ({
+              value: view,
+              label: viewLabels[view],
+              count: countText(view),
+            }))}
+            onChange={(view) => change(activityViewPreset(filters, view))}
+          />
+        )}
+      </div>
+      <div className="strike-activity-selectors">
+        <select
+          aria-label="Clan"
+          value={filters.clans.length > 1 ? "many" : (filters.clans[0] ?? "")}
           disabled={bulkBusy}
-          options={activityViews.map((view) => ({
-            value: view,
-            label: {
-              not_attacking: "Not attacking",
-              inactive: "Inactive",
-              replacements: "Replacements",
-              all: "All",
-            }[view],
-            count: counts[view],
-          }))}
-          onChange={(view) => change(activityViewPreset(filters, view))}
-        />
+          onChange={(event) =>
+            change({ clans: event.target.value ? [event.target.value] : [] })
+          }
+        >
+          <option value="">All clans</option>
+          {filters.clans.length > 1 && (
+            <option value="many" disabled>
+              {filters.clans.length} clans
+            </option>
+          )}
+          {clanOptions.map((clan) => (
+            <option key={clan.tag} value={clan.tag}>
+              {clan.name} · {clan.count}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Town Hall"
+          value={
+            filters.townHalls.length > 1
+              ? "many"
+              : String(filters.townHalls[0] ?? "")
+          }
+          disabled={bulkBusy}
+          onChange={(event) =>
+            change({
+              townHalls: event.target.value ? [Number(event.target.value)] : [],
+            })
+          }
+        >
+          <option value="">Any TH</option>
+          {filters.townHalls.length > 1 && (
+            <option value="many" disabled>
+              {filters.townHalls.length} Town Halls
+            </option>
+          )}
+          {hallOptions.map((option) => (
+            <option key={option.hall} value={option.hall}>
+              TH{option.hall} · {option.count}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div
+        className={`strike-activity-toolbar${searching ? " is-searching" : ""}`}
+      >
+        {searching ? (
+          <>
+            <input
+              ref={searchInput}
+              aria-label="Find account or member"
+              type="search"
+              value={filters.query}
+              maxLength={80}
+              placeholder="Name, tag or member"
+              onChange={(event) => change({ query: event.target.value }, false)}
+            />
+            <button
+              type="button"
+              className="strike-activity-search-close"
+              aria-label="Clear search"
+              onClick={() => {
+                searchFocus.current = "button";
+                setSearchOpen(false);
+                change({ query: "" }, false);
+              }}
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              ref={searchButton}
+              type="button"
+              className="strike-activity-search-button"
+              aria-label="Find account or member"
+              aria-expanded="false"
+              onClick={() => {
+                searchFocus.current = "field";
+                setSearchOpen(true);
+              }}
+            >
+              <Search size={18} aria-hidden="true" />
+            </button>
+            <div className="roster-ui strike-activity-sort">
+              <SortTrigger
+                disabled={bulkBusy}
+                label={activitySortLabels[filters.sort]}
+                grouped={
+                  filters.group === "none"
+                    ? false
+                    : activityGroupLabels[filters.group]
+                }
+                onClick={(event) => setSortTrigger(event.currentTarget)}
+              />
+            </div>
+            <button
+              className="strike-activity-filters-button"
+              disabled={bulkBusy}
+              onClick={(event) => setFilterTrigger(event.currentTarget)}
+            >
+              Filters
+            </button>
+            <details
+              className="strike-activity-actions"
+              onToggle={(event) => {
+                const menu = event.currentTarget.querySelector<HTMLElement>(
+                  ".strike-activity-action-menu",
+                );
+                if (!event.currentTarget.open || !menu) return;
+                const anchor = event.currentTarget.getBoundingClientRect();
+                const below = window.innerHeight - anchor.bottom - 8;
+                const above = anchor.top - 8;
+                const flip = below < menu.scrollHeight && above > below;
+                Object.assign(menu.style, {
+                  top: flip ? "auto" : "48px",
+                  bottom: flip ? "48px" : "auto",
+                  maxHeight: `${Math.max(44, flip ? above : below)}px`,
+                  overflowY: "auto",
+                  boxSizing: "border-box",
+                });
+              }}
+            >
+              <summary aria-label="Activity actions">⋯</summary>
+              <div className="strike-activity-action-menu">
+                <div role="group" aria-label="Account">
+                  <p className="strike-activity-menu-label">Account</p>
+                  {overviewActions}
+                </div>
+                <div role="group" aria-label="List">
+                  <p className="strike-activity-menu-label">List</p>
+                  <button
+                    disabled={!visible.length}
+                    onClick={async (event) => {
+                      event.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                      const current = filterIdentity;
+                      try {
+                        await navigator.clipboard.writeText(
+                          copyActivityList(visible),
+                        );
+                        if (copyIdentity.current !== current) return;
+                        setCopied(`Copied ${visible.length} accounts`);
+                      } catch {
+                        if (copyIdentity.current !== current) return;
+                        setCopied(
+                          "Copy failed. Your browser did not allow clipboard access.",
+                        );
+                      }
+                    }}
+                  >
+                    Copy list
+                  </button>
+                  {canManage && !selecting && (
+                    <button
+                      disabled={bulkBusy}
+                      onClick={(event) => {
+                        event.currentTarget
+                          .closest("details")
+                          ?.removeAttribute("open");
+                        setSelecting(true);
+                      }}
+                    >
+                      Select accounts
+                    </button>
+                  )}
+                  <button
+                    disabled={loading || bulkBusy}
+                    onClick={() => void read()}
+                  >
+                    Refresh activity
+                  </button>
+                </div>
+              </div>
+            </details>
+          </>
+        )}
       </div>
       {filters.view === "replacements" &&
         !(loading && !data.accounts.length) && (
@@ -421,108 +680,6 @@ export default function StrikeActivityRoster({
             onChoose={choose}
           />
         )}
-      <div className="strike-activity-toolbar">
-        <input
-          aria-label="Find account or member"
-          type="search"
-          value={filters.query}
-          maxLength={80}
-          placeholder="Name, tag or member"
-          onChange={(event) => change({ query: event.target.value }, false)}
-        />
-        <div className="roster-ui strike-activity-sort">
-          <SortTrigger
-            disabled={bulkBusy}
-            label={activitySortLabels[filters.sort]}
-            grouped={
-              filters.group === "none"
-                ? false
-                : activityGroupLabels[filters.group]
-            }
-            onClick={(event) => setSortTrigger(event.currentTarget)}
-          />
-        </div>
-        <button
-          className="strike-activity-filters-button"
-          disabled={bulkBusy}
-          onClick={(event) => setFilterTrigger(event.currentTarget)}
-        >
-          Filters
-        </button>
-        <details
-          className="strike-activity-actions"
-          onToggle={(event) => {
-            const menu = event.currentTarget.querySelector<HTMLElement>(
-              ".strike-activity-action-menu",
-            );
-            if (!event.currentTarget.open || !menu) return;
-            const anchor = event.currentTarget.getBoundingClientRect();
-            const below = window.innerHeight - anchor.bottom - 8;
-            const above = anchor.top - 8;
-            const flip = below < menu.scrollHeight && above > below;
-            Object.assign(menu.style, {
-              top: flip ? "auto" : "48px",
-              bottom: flip ? "48px" : "auto",
-              maxHeight: `${Math.max(44, flip ? above : below)}px`,
-              overflowY: "auto",
-              boxSizing: "border-box",
-            });
-          }}
-        >
-          <summary aria-label="Activity actions">⋯</summary>
-          <div className="strike-activity-action-menu">
-            <div role="group" aria-label="Account">
-              <p className="strike-activity-menu-label">Account</p>
-              {overviewActions}
-            </div>
-            <div role="group" aria-label="List">
-              <p className="strike-activity-menu-label">List</p>
-              <button
-                disabled={!visible.length}
-                onClick={async (event) => {
-                  event.currentTarget
-                    .closest("details")
-                    ?.removeAttribute("open");
-                  const current = filterIdentity;
-                  try {
-                    await navigator.clipboard.writeText(
-                      copyActivityList(visible),
-                    );
-                    if (copyIdentity.current !== current) return;
-                    setCopied(`Copied ${visible.length} accounts`);
-                  } catch {
-                    if (copyIdentity.current !== current) return;
-                    setCopied(
-                      "Copy failed. Your browser did not allow clipboard access.",
-                    );
-                  }
-                }}
-              >
-                Copy list
-              </button>
-              {canManage && !selecting && (
-                <button
-                  disabled={bulkBusy}
-                  onClick={(event) => {
-                    event.currentTarget
-                      .closest("details")
-                      ?.removeAttribute("open");
-                    setSelecting(true);
-                  }}
-                >
-                  Select accounts
-                </button>
-              )}
-              <button
-                disabled={loading || bulkBusy}
-                onClick={() => void read()}
-              >
-                Refresh activity
-              </button>
-            </div>
-          </div>
-        </details>
-      </div>
       {sortTrigger && (
         <StrikeSortPanel
           filters={filters}
@@ -535,7 +692,6 @@ export default function StrikeActivityRoster({
         <StrikeActivityFiltersPanel
           filters={filters}
           accounts={data.accounts}
-          clans={data.clans}
           trigger={filterTrigger}
           onClose={() => setFilterTrigger(null)}
           onApply={(next) => {
