@@ -10,8 +10,9 @@ from utils.strike_store import tag, utc, war_key, StrikeConflict
 from utils.strike_retention import snapshot_purge_after
 
 RECENT = timedelta(minutes=25)
+# Mirrors POLL_SECONDS in extensions/commands/strikes.py (utils/ cannot import it).
+SCAN_INTERVAL = timedelta(minutes=10)
 ERROR_LIMIT = 5
-WAR_STALE = timedelta(days=3)
 FINAL_GRACE = timedelta(seconds=60)
 
 
@@ -342,26 +343,26 @@ class StrikeTracking:
                 {'occurred_at': 1}, sort=[('occurred_at', -1)])
             recorded = latest.get('occurred_at') if latest else None
             latest_snapshot = latest_ended.get(clan_tag)
-            latest_time = max((utc(value) for value in
-                               (recorded, latest_snapshot.get('end_time') if latest_snapshot else None)
-                               if value is not None), default=None)
             latest_incomplete = bool(latest_snapshot and latest_snapshot['status'] == 'incomplete'
                                      and (recorded is None or
                                           utc(latest_snapshot['end_time']) >= utc(recorded)))
-            stale = bool(latest_time and now - latest_time > WAR_STALE)
             check_stale = not checked or now - utc(checked) > RECENT
+            slow = not checked or now - utc(checked) > 2 * SCAN_INTERVAL
             failure = item.get('error')
             hard_error = failure and failure not in ('War log private', 'Incomplete war data',
                                                       'Unresolved accounts')
+            # Only clans in or near a war can be behind; others are idle.
+            active = (state in ('preparation', 'inWar', 'warEnded') or latest_incomplete
+                      or clan_tag in review_clans)
             status = ('error' if hard_error else
-                      'behind' if unfinished or check_stale else
                       'private' if state == 'private' else
-                      'behind' if state == 'unknown' or
-                        latest_incomplete or clan_tag in review_clans or stale or item.get('skipped_wars') or
+                      ('behind' if unfinished or check_stale or latest_incomplete or
+                        clan_tag in review_clans or item.get('skipped_wars') or
                         item.get('deferred_accounts') or
-                        (state != 'notInWar' and not recorded) else 'healthy')
+                        (state != 'notInWar' and not recorded) else 'healthy') if active else
+                      'behind' if state == 'unknown' else 'idle')
             result.append({'clan_tag': clan_tag, 'clan_name': clan.get('name') or clan_tag,
-                           'status': status, 'last_started_at': started,
+                           'status': status, 'slow': slow, 'last_started_at': started,
                            'current_war_state': state,
                            'last_checked_at': checked,
                            'last_success_at': success,

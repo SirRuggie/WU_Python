@@ -80,11 +80,110 @@ def test_unfinished_or_stale_check_cannot_be_healthy():
         await tracking.finish(1, '#P2Y', started_at=first, current_war_state='notInWar')
         second = await tracking.begin(1, '#P2Y')
         rows = await tracking.rows(1, [{'tag': '#P2Y'}])
-        assert rows[0]['status'] == 'behind'
+        assert rows[0]['status'] == 'idle'
+        collection.rows[tracking.key(1, '#P2Y')]['current_war_state'] = 'inWar'
+        assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'behind'
+        collection.rows[tracking.key(1, '#P2Y')]['current_war_state'] = 'notInWar'
         await tracking.finish(1, '#P2Y', started_at=first, error='Tracking check failed')
         assert collection.rows[tracking.key(1, '#P2Y')]['completed_scan_token'] == first
         await tracking.finish(1, '#P2Y', started_at=second, current_war_state='notInWar')
-        assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'healthy'
+        assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'idle'
+    asyncio.run(run())
+
+
+async def checked_row(state, *, minutes_ago=1, **fields):
+    tracking, collection = service()
+    token = await tracking.begin(1, '#P2Y')
+    await tracking.finish(1, '#P2Y', started_at=token, current_war_state=state, **fields)
+    collection.rows[tracking.key(1, '#P2Y')]['last_checked_at'] = (
+        datetime.now(timezone.utc) - timedelta(minutes=minutes_ago))
+    return tracking, collection
+
+
+def test_idle_clan_with_an_old_check_is_idle_not_behind():
+    async def run():
+        tracking, _ = await checked_row('notInWar', minutes_ago=600)
+        row = (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]
+        assert row['status'] == 'idle'
+        assert row['slow'] is True
+    asyncio.run(run())
+
+
+def test_idle_clan_with_war_sixty_days_ago_is_idle():
+    async def run():
+        tracking, _ = await checked_row('notInWar')
+        end = datetime.now(timezone.utc) - timedelta(days=60)
+        tracking.mongo.strike_records.find_one = lambda *a, **kw: async_result({'occurred_at': end})
+        assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'idle'
+    asyncio.run(run())
+
+
+def test_in_war_clan_with_a_stale_check_is_behind():
+    async def run():
+        tracking, _ = await checked_row('inWar', minutes_ago=30)
+        tracking.mongo.strike_records.find_one = lambda *a, **kw: async_result({'occurred_at': datetime.now(timezone.utc)})
+        assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'behind'
+        fresh, _ = await checked_row('inWar', minutes_ago=1)
+        fresh.mongo.strike_records.find_one = lambda *a, **kw: async_result({'occurred_at': datetime.now(timezone.utc)})
+        assert (await fresh.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'healthy'
+    asyncio.run(run())
+
+
+def test_in_war_clan_with_deferred_accounts_is_behind():
+    async def run():
+        tracking, _ = await checked_row('inWar', deferred_accounts=2)
+        tracking.mongo.strike_records.find_one = lambda *a, **kw: async_result({'occurred_at': datetime.now(timezone.utc)})
+        assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'behind'
+    asyncio.run(run())
+
+
+def test_war_ended_clan_with_an_incomplete_snapshot_is_behind():
+    async def run():
+        tracking, _ = await checked_row('warEnded')
+        end = datetime.now(timezone.utc) - timedelta(hours=1)
+        tracking.mongo.strike_war_snapshots = SimpleNamespace(find=lambda query, projection=None: Cursor(
+            [{'clan_tag': '#P2Y', 'end_time': end, 'status': 'incomplete'}]
+            if 'status' in query else []))
+        tracking.mongo.strike_records.find_one = lambda *a, **kw: async_result(None)
+        assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'behind'
+    asyncio.run(run())
+
+
+def test_idle_clan_with_an_incomplete_snapshot_is_behind():
+    async def run():
+        tracking, _ = await checked_row('notInWar')
+        end = datetime.now(timezone.utc) - timedelta(hours=1)
+        tracking.mongo.strike_war_snapshots = SimpleNamespace(find=lambda query, projection=None: Cursor(
+            [{'clan_tag': '#P2Y', 'end_time': end, 'status': 'incomplete'}]
+            if 'status' in query else []))
+        assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'behind'
+    asyncio.run(run())
+
+
+def test_unknown_state_is_behind_and_never_idle():
+    async def run():
+        tracking, _ = await checked_row('unknown')
+        assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'behind'
+    asyncio.run(run())
+
+
+def test_hard_error_beats_idle_and_private_beats_a_fresh_scan():
+    async def run():
+        tracking, collection = await checked_row('notInWar')
+        collection.rows[tracking.key(1, '#P2Y')]['error'] = 'War processing failed'
+        assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'error'
+        private, _ = await checked_row('private', private=True)
+        assert (await private.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'private'
+    asyncio.run(run())
+
+
+def test_slow_is_true_only_past_twice_the_scan_interval():
+    async def run():
+        for minutes, expected in ((19, False), (21, True)):
+            tracking, _ = await checked_row('notInWar', minutes_ago=minutes)
+            assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['slow'] is expected
+        never, _ = service()
+        assert (await never.rows(1, [{'tag': '#P2Y'}]))[0]['slow'] is True
     asyncio.run(run())
 
 
