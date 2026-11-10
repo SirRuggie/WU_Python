@@ -361,8 +361,8 @@ async def choose(ctx, bot, mongo, state: dict, player_tag: str, loot: int, *, li
     if account.get("weight") == total and not link:
         return await finish(ctx, bot, mongo, state, account, loot, already=True)
     warning = th_warning(th, status, ranges, account.get("town_hall"))
-    # A typed tag with the same saved weight still needs its link; nothing to confirm.
-    if account.get("weight") == total or (account.get("weight") is None and not warning):
+    # A typed tag always confirms: staff see the account before it is linked.
+    if not link and account.get("weight") is None and not warning:
         return await save(ctx, bot, mongo, state, account, loot)
     # Each preview gets its own confirm token; only the newest one can save.
     token = uuid.uuid4().hex
@@ -373,8 +373,12 @@ async def choose(ctx, bot, mongo, state: dict, player_tag: str, loot: int, *, li
         "user_id": state["user_id"], "guild_id": state["guild_id"], "pending": pending,
     }, ttl=SESSION_TTL)
     await update_state(mongo, {"_id": sid, "done": {"$ne": True}}, {"$set": {"pending_token": token}})
-    lines = [f"## Confirm\n{account_label(account)}"]
-    if isinstance(account.get("weight"), int):
+    account_th = account.get("town_hall")
+    th_line = f"TH{account_th}" if isinstance(account_th, int) else "TH unknown"
+    lines = [f"## Confirm\n{account_label(account)} · {th_line}"]
+    if account.get("weight") == total:
+        lines.append(f"Already saved: {total:,}")
+    elif isinstance(account.get("weight"), int):
         lines.append(f"Saved: {account['weight']:,} → New: {total:,}")
     else:
         lines.append(f"New: {total:,}")
@@ -382,11 +386,14 @@ async def choose(ctx, bot, mongo, state: dict, player_tag: str, loot: int, *, li
         lines.append(warning)
     if link:
         lines.append(f"🔗 Links to <@{state['target_id']}> in ClashPerk first.")
+    if account.get("weight") == total:
+        label = "Link"
+    elif isinstance(account.get("weight"), int):
+        label = "Replace"
+    else:
+        label = "Save"
     row = Row()
-    row.add_interactive_button(
-        hikari.ButtonStyle.PRIMARY, f"fws_confirm:{token}",
-        label="Replace" if isinstance(account.get("weight"), int) else "Save",
-    )
+    row.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"fws_confirm:{token}", label=label)
     row.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"fws_back:{sid}", label="Back")
     return card("\n".join(lines), row)
 

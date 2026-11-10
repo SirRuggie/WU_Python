@@ -450,8 +450,10 @@ def test_other_account_opens_tag_modal_and_typed_tag_is_looked_up(env):
     submit = component_ctx(fields={"tag": " #u2y "})
     call(flow.on_tagged, submit, sid, env)
     assert ("lookup", {"tag": "#u2y"}) in env.bridge.calls
-    assert "Saved 150,000 for Typed `#U2Y` (No clan)." in text_of(
-        submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    view = submit.interaction.edit_initial_response.call_args.kwargs["components"]
+    assert "Typed `#U2Y` · TH15" in text_of(view)  # Staff see the account before any link.
+    done = call(flow.on_confirm, component_ctx(), confirm_token(view), env)
+    assert "Saved 150,000 for Typed `#U2Y` (No clan)." in text_of(done)
 
 
 def test_lookup_error_keeps_session_and_offers_back(env):
@@ -652,7 +654,9 @@ def test_other_account_in_later_round_asks_tag_and_weight_then_links_and_saves(e
     assert modal_fields(pick) == ["tag", "loot"]
     submit = component_ctx(fields={"tag": "#u2y", "loot": "30000"})
     call(flow.on_entry, submit, entry_token(pick), env)
-    text = text_of(submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    view = submit.interaction.edit_initial_response.call_args.kwargs["components"]
+    assert "🔗 Links to <@100> in ClashPerk first." in text_of(view) and env.links.calls == []
+    text = text_of(call(flow.on_confirm, component_ctx(), confirm_token(view), env))
     assert env.links.calls == [(100, "#U2Y")]
     assert "🔗 Linked in ClashPerk." in text and "Saved 150,000 for Typed `#U2Y`" in text
     access = [i for i, c in enumerate(env.bridge.calls) if c[0] == "access"]
@@ -660,9 +664,27 @@ def test_other_account_in_later_round_asks_tag_and_weight_then_links_and_saves(e
     assert access[-1] < saves[-1]  # Permission rechecked right before the link and save.
 
 
-def test_typed_tag_links_before_save_in_first_round(env):
+def typed(env, sid, tag):
+    """First round: type a tag, return (confirm preview, result after Save)."""
+    submit = component_ctx(fields={"tag": tag})
+    call(flow.on_tagged, submit, sid, env)
+    view = submit.interaction.edit_initial_response.call_args.kwargs["components"]
+    return view, call(flow.on_confirm, component_ctx(), confirm_token(view), env)
+
+
+def test_typed_tag_always_confirms_before_link_even_when_it_fits(env):
+    # No saved weight and a fitting Town Hall: a listed account saves at once, a typed tag never does.
     _, _, sid = start(env)
-    call(flow.on_tagged, component_ctx(fields={"tag": "#U2Y"}), sid, env)
+    submit = component_ctx(fields={"tag": "#U2Y"})
+    call(flow.on_tagged, submit, sid, env)
+    view = submit.interaction.edit_initial_response.call_args.kwargs["components"]
+    text = text_of(view)
+    assert "## Confirm" in text and "Typed `#U2Y` · TH15" in text
+    assert "🔗 Links to <@100> in ClashPerk first." in text
+    assert env.links.calls == [] and not [c for c in env.bridge.calls if c[0] == "save"] and posted(env) == []
+    token = confirm_token(view)
+    assert custom_ids(view) == [f"fws_confirm:{token}", f"fws_back:{sid}"]
+    call(flow.on_confirm, component_ctx(), token, env)
     assert env.links.calls == [(100, "#U2Y")]
     assert [c[1]["tag"] for c in env.bridge.calls if c[0] == "save"] == ["#U2Y"]
 
@@ -675,9 +697,7 @@ def test_link_failure_saves_nothing_and_posts_nothing(env, status):
     env.links.status = status
     env.links.message = "This account is linked to a different Discord user in ClashPerk. Nothing was changed."
     _, _, sid = start(env)
-    submit = component_ctx(fields={"tag": "#U2Y"})
-    call(flow.on_tagged, submit, sid, env)
-    view = submit.interaction.edit_initial_response.call_args.kwargs["components"]
+    _, view = typed(env, sid, "#U2Y")
     assert "The weight was not saved." in text_of(view)
     assert custom_ids(view) == [f"fws_back:{sid}", f"fws_post:{sid}"]
     assert not [c for c in env.bridge.calls if c[0] == "save"] and posted(env) == []
@@ -687,18 +707,18 @@ def test_link_failure_saves_nothing_and_posts_nothing(env, status):
 def test_already_linked_typed_tag_still_saves(env):
     env.links.status = clashperk_link_writes.ALREADY_LINKED
     _, _, sid = start(env)
-    submit = component_ctx(fields={"tag": "#U2Y"})
-    call(flow.on_tagged, submit, sid, env)
-    text = text_of(submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    _, done = typed(env, sid, "#U2Y")
+    text = text_of(done)
     assert "🔗 Already linked in ClashPerk." in text and "Saved 150,000" in text
 
 
 def test_typed_tag_with_same_weight_links_and_writes_no_weight(env):
     env.bridge.accounts[0]["weight"] = 150000
     _, _, sid = start(env)
-    submit = component_ctx(fields={"tag": "#P2Y"})
-    call(flow.on_tagged, submit, sid, env)
-    text = text_of(submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    view, done = typed(env, sid, "#P2Y")
+    assert "Already saved: 150,000" in text_of(view)
+    assert [n["label"] for n in walk(built(view)) if str(n.get("custom_id", "")).startswith("fws_confirm:")] == ["Link"]
+    text = text_of(done)
     assert env.links.calls == [(100, "#P2Y")]
     assert "Already saved for Alpha `#P2Y`." in text
     assert not [c for c in env.bridge.calls if c[0] == "save"]
@@ -734,9 +754,8 @@ def test_access_removed_before_link_writes_no_link(env):
         return await original(action, **kwargs)
 
     flow.bridge = revoke
-    submit = component_ctx(fields={"tag": "#U2Y"})
-    call(flow.on_tagged, submit, sid, env)
-    text = text_of(submit.interaction.edit_initial_response.call_args.kwargs["components"])
+    _, done = typed(env, sid, "#U2Y")
+    text = text_of(done)
     assert env.links.calls == []
     assert "Panel posted. Nothing was saved." in text
     assert len(posted(env)) == 1
@@ -748,6 +767,14 @@ def test_later_round_access_removed_posts_nothing_without_a_weight(env):
     view = call(flow.on_another, component_ctx(), following, env)
     assert "Nothing was saved." in text_of(view) and "Panel posted" not in text_of(view)
     assert len(posted(env)) == 1
+
+
+def test_post_only_on_a_later_round_is_handled_and_posts_nothing(env):
+    _, following = saved_first(env)
+    result = call(flow.on_post, component_ctx(), following, env)
+    assert flow.HANDLED in text_of(result)
+    assert len(posted(env)) == 1  # Only round 1's panel.
+    assert env.mongo.component_state.rows[following]["done"] is False  # The round stays open.
 
 
 def test_loop_custom_ids_have_one_colon(env):

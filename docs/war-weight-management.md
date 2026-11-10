@@ -34,8 +34,11 @@ linking uses the same permission as saving.
 - A typed player tag is linked to the member in ClashPerk just before its save,
   through `utils/clashperk_link_writes.create_link` (new links are unverified;
   verification is never required). Accounts selected from the list are never
-  linked again. The confirm step shows "🔗 Links to @user in ClashPerk first.";
-  Back writes no link. The permission is rechecked right before the link. A link
+  linked again. A typed tag always shows the confirm step (name, Town Hall and
+  "🔗 Links to @user in ClashPerk first."), even with no saved weight and a
+  fitting Town Hall, so a mistyped tag is seen before any link; there is no
+  unlink helper. With the same saved weight the button is **Link** and no weight
+  is written. Back writes no link. The permission is rechecked right before the link. A link
   to another Discord user, a ClashPerk outage, a rejected link or an unknown
   result saves nothing and offers Back; the save slot is released. Already
   linked to the same user continues to the save.
