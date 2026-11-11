@@ -113,7 +113,6 @@ export default function ModerationIgnoreLists({
             selected={ignores.role_ids}
             disabled={disabled || ignores.role_ids.length >= maxIgnoreIds}
             label="Ignored roles"
-            optionsLabel="Available ignored roles"
             onChoose={(role) =>
               onChange({ ...ignores, role_ids: [...ignores.role_ids, role.id] })
             }

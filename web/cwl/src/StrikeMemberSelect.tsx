@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import DiscordIdentity from "./DiscordIdentity";
+import { useMemo } from "react";
+import SearchPicker, { type PickerOption } from "./SearchPicker";
 import { foldSearch, memberName } from "./strikeActivityFilters";
 import type { ActivityAccount } from "./strikeActivityView";
 
@@ -32,6 +32,20 @@ export function strikeMemberOptions(
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
 }
+/** Row: the name, then the username (when it differs) and account count. */
+function memberOption(option: StrikeMemberOption): PickerOption {
+  const username =
+    option.username && foldSearch(option.username) !== foldSearch(option.name)
+      ? option.username
+      : "";
+  const accounts = `${option.accounts} ${option.accounts === 1 ? "account" : "accounts"}`;
+  return {
+    value: option.id,
+    label: option.name,
+    detail: [username, accounts].filter(Boolean).join(" · "),
+  };
+}
+const MEMBER_LIMIT = 30;
 const DISCORD_ID = /^\d{17,20}$/;
 /** Exact ID first, then names that start with the query, then other matches. */
 function findMembers(options: StrikeMemberOption[], query: string) {
@@ -54,7 +68,6 @@ function findMembers(options: StrikeMemberOption[], query: string) {
     .map((option) => ({ option, rank: rank(option) }))
     .filter((item) => item.rank < 3)
     .sort((a, b) => a.rank - b.rank)
-    .slice(0, 8)
     .map((item) => item.option);
 }
 /** Searchable Discord member choice from the loaded accounts; no request is made. */
@@ -69,79 +82,33 @@ export default function StrikeMemberSelect({
   onChange: (id: string) => void;
   disabled?: boolean;
 }) {
-  const [search, setSearch] = useState("");
-  const matches = useMemo(
-    () => findMembers(options, search),
-    [options, search],
+  const pickerOptions = useMemo(() => options.map(memberOption), [options]);
+  const byId = useMemo(
+    () => new Map(pickerOptions.map((option) => [option.value, option])),
+    [pickerOptions],
   );
-  const selected = options.find((option) => option.id === value);
   return (
     <div className="strike-member-select">
-      {value && (
-        <div className="strike-member-selected">
-          <DiscordIdentity
-            userId={value}
-            displayName={selected?.name}
-            resolvedMember={null}
-            variant="compact"
-            contact={false}
-            username={false}
-          />
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label="Remove member"
-            onClick={() => onChange("")}
-          >
-            ×
-          </button>
-        </div>
-      )}
-      <label>
-        Discord member
-        <input
-          type="search"
-          value={search}
-          maxLength={80}
-          disabled={disabled}
-          placeholder="Name, username or ID…"
-          onChange={(event) => setSearch(event.target.value)}
-        />
-      </label>
-      {search.trim() && !matches.length && (
-        <p role="status">No Discord member found.</p>
-      )}
-      {matches.length > 0 && (
-        <ul className="strike-member-options" aria-label="Members">
-          {matches.map((option) => (
-            <li key={option.id}>
-              <button
-                type="button"
-                disabled={disabled}
-                aria-pressed={option.id === value}
-                onClick={() => {
-                  onChange(option.id);
-                  setSearch("");
-                }}
-              >
-                <span>
-                  @{option.name}
-                  {option.username &&
-                    foldSearch(option.username) !== foldSearch(option.name) && (
-                      <small className="strike-member-username">
-                        {option.username}
-                      </small>
-                    )}
-                </span>
-                <small>
-                  {option.accounts}{" "}
-                  {option.accounts === 1 ? "account" : "accounts"}
-                </small>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <SearchPicker
+        label="Discord member"
+        value={value}
+        options={pickerOptions}
+        onChange={onChange}
+        placeholder="Select a member"
+        searchPlaceholder="Name or username"
+        emptyText="No Discord member found."
+        disabled={disabled}
+        clearable
+        fallback={{ value, label: "Selected member unavailable" }}
+        search={(query) =>
+          query.trim()
+            ? findMembers(options, query).flatMap(
+                (option) => byId.get(option.id) ?? [],
+              )
+            : pickerOptions
+        }
+        limit={MEMBER_LIMIT}
+      />
     </div>
   );
 }

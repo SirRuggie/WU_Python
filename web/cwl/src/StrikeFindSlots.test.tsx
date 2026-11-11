@@ -5,6 +5,7 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import StrikeActivityRoster from "./StrikeActivityRoster";
 import type { ActivityAccount } from "./strikeActivityView";
 import FindSlots from "./FindSlots";
+import { pickOption, pickerByLabel } from "./searchPickerTestUtils";
 import { parseActivityFilters } from "./strikeActivityFilters";
 const viewport = vi.hoisted(() => ({ compact: false }));
 vi.mock("./useCompactPreview", () => ({ default: () => viewport.compact }));
@@ -433,19 +434,7 @@ it("keeps unsaved weights, clan and member selections while the panel is closed"
   );
   await closeTopPanel();
   await act(async () => button("Member: any").click());
-  await type(
-    document.querySelector<HTMLInputElement>(".strike-member-select input")!,
-    "slay",
-  );
-  await act(async () =>
-    [
-      ...document.querySelectorAll<HTMLButtonElement>(
-        ".strike-member-options button",
-      ),
-    ]
-      .find((node) => node.textContent!.includes("@slayer"))!
-      .click(),
-  );
+  await pickOption(pickerByLabel(document, "Discord member"), "slayer", "slay");
   await closeTopPanel();
   expect(panelOpen()).toBe(false);
   await act(async () => opener().click());

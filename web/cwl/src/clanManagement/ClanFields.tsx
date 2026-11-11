@@ -147,7 +147,6 @@ export default function ClanFields({
                 selected={[draft[key]]}
                 disabled={disabled}
                 label={`Find ${label.toLowerCase()}`}
-                optionsLabel={`Available ${label.toLowerCase()}s`}
                 onChoose={(role) => change(key, role.id)}
               />
               <button

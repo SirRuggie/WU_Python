@@ -9,6 +9,13 @@ vi.mock("./api", async (original) => ({
 import { api, ApiError } from "./api";
 import CwlPoolRoles from "./CwlPoolRoles";
 import { DashboardPermissions } from "./DashboardPermissions";
+import {
+  allPickers,
+  clearPicker,
+  openPicker,
+  pickOption,
+  pickerValue,
+} from "./searchPickerTestUtils";
 const ROLE = "333333333333333333";
 const data = () => ({
   roles: [{ id: ROLE, name: "CWL & <safe text>" }],
@@ -58,17 +65,15 @@ function button(text: string) {
   )!;
 }
 async function choose(role = ROLE) {
-  await act(async () => {
-    const select = host.querySelector<HTMLSelectElement>("select")!;
-    select.value = role;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  const picker = allPickers(host)[0];
+  if (role) await pickOption(picker, "CWL & <safe text>");
+  else await clearPicker(picker);
 }
 it("starts both roles off and requires a count confirmation before an exact single write", async () => {
   const dirty = await render();
-  expect(host.querySelectorAll("select")).toHaveLength(2);
+  expect(allPickers(host)).toHaveLength(2);
   expect(
-    [...host.querySelectorAll("select")].every((s) => s.value === ""),
+    allPickers(host).every((p) => pickerValue(p) === "Select a role"),
   ).toBe(true);
   expect(button("Save Main role").disabled).toBe(true);
   await choose();
@@ -119,11 +124,11 @@ it("cancel sends no write, failed save preserves edits, and permission loss clea
   await act(async () => button("Save Main role").click());
   vi.mocked(api).mockRejectedValueOnce(new ApiError("Signups changed", 409));
   await act(async () => button("Save role").click());
-  expect(host.querySelector("select")?.value).toBe(ROLE);
+  expect(pickerValue(allPickers(host)[0])).toBe("CWL & <safe text>");
   expect(host.textContent).toContain("Signups changed");
   vi.mocked(api).mockRejectedValueOnce(new ApiError("Access changed", 403));
   await act(async () => button("Refresh roles").click());
-  expect(host.querySelector("select")).toBeNull();
+  expect(host.querySelector(".search-picker")).toBeNull();
   expect(host.textContent).toContain("Access changed");
 });
 it("unprivileged viewers perform no settings read", async () => {
@@ -170,7 +175,7 @@ it("an old progress response cannot replace a later confirmed role save", async 
   vi.mocked(api).mockResolvedValue(saved);
   await act(async () => button("Save role").click());
   await act(async () => old(initial));
-  expect(host.querySelector("select")?.value).toBe(ROLE);
+  expect(pickerValue(allPickers(host)[0])).toBe("CWL & <safe text>");
   expect(host.textContent).toContain("Role saved.");
 });
 it("turns a saved role off using status-only review during a role-choice outage", async () => {
@@ -205,7 +210,7 @@ it("malformed save receipts never report success or discard the role edit", asyn
   await act(async () => button("Save role").click());
   expect(host.textContent).toContain("Save could not be confirmed.");
   expect(host.textContent).not.toContain("Role saved.");
-  expect(host.querySelector("select")?.value).toBe(ROLE);
+  expect(pickerValue(allPickers(host)[0])).toBe("CWL & <safe text>");
 });
 it("Seasons scope alone enables this setting, while roster-only access does not", async () => {
   await act(async () =>
@@ -217,7 +222,7 @@ it("Seasons scope alone enables this setting, while roster-only access does not"
       </DashboardPermissions.Provider>,
     ),
   );
-  expect(host.querySelectorAll("select")).toHaveLength(2);
+  expect(allPickers(host)).toHaveLength(2);
   await act(async () =>
     root.render(
       <DashboardPermissions.Provider
@@ -227,7 +232,7 @@ it("Seasons scope alone enables this setting, while roster-only access does not"
       </DashboardPermissions.Provider>,
     ),
   );
-  expect(host.querySelector("select")).toBeNull();
+  expect(host.querySelector(".search-picker")).toBeNull();
 });
 
 it("loads choices only on picker focus and retries a choice outage on Refresh", async () => {
@@ -243,9 +248,7 @@ it("loads choices only on picker focus and retries a choice outage on Refresh", 
     roles: [],
     roles_error: "Role choices unavailable.",
   });
-  await act(async () =>
-    host.querySelector<HTMLSelectElement>("select")!.focus(),
-  );
+  await openPicker(allPickers(host)[0]);
   expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toBe("/pool-roles?choices=1");
   expect(host.textContent).toContain("Role choices unavailable.");
   vi.mocked(api).mockResolvedValue(data());
@@ -262,10 +265,8 @@ it("disables unchanged Save during cleanup and clears controls on picker permiss
   await render();
   expect(button("Save Main role").disabled).toBe(true);
   vi.mocked(api).mockRejectedValueOnce(new ApiError("Access changed", 403));
-  await act(async () =>
-    host.querySelector<HTMLSelectElement>("select")!.focus(),
-  );
-  expect(host.querySelector("select")).toBeNull();
+  await openPicker(allPickers(host)[0]);
+  expect(host.querySelector(".search-picker")).toBeNull();
   expect(host.textContent).toContain("Access changed");
   expect(
     vi.mocked(api).mock.calls.filter((call) => call[1] === "POST"),
@@ -283,16 +284,12 @@ it("shows the saved name immediately and retains it through local progress polli
     saved_roles: { main: { name: "CWL & <safe text>", allowed: false } },
   });
   await render();
-  expect(host.querySelector("select")?.selectedOptions[0].textContent).toBe(
-    "CWL & <safe text>",
-  );
+  expect(pickerValue(allPickers(host)[0])).toBe("CWL & <safe text>");
   expect(host.textContent).toContain("Saved role is no longer eligible");
   expect(host.querySelector("safe")).toBeNull();
   vi.mocked(api).mockResolvedValue({ ...initial, roles: undefined });
   await act(async () => vi.advanceTimersByTime(5000));
-  expect(host.querySelector("select")?.selectedOptions[0].textContent).toBe(
-    "CWL & <safe text>",
-  );
+  expect(pickerValue(allPickers(host)[0])).toBe("CWL & <safe text>");
   expect(host.textContent).toContain("Saved role is no longer eligible");
   await choose("");
   expect(button("Save Main role").disabled).toBe(false);
@@ -307,9 +304,7 @@ it("offers a plain saved-role fallback and turn-off when names are unavailable",
     roles_error: "Role choices unavailable. Refresh or turn off a saved role.",
   });
   await render();
-  expect(host.querySelector("select")?.selectedOptions[0].textContent).toBe(
-    "Saved role",
-  );
+  expect(pickerValue(allPickers(host)[0])).toBe("Saved role");
   expect(host.textContent).not.toContain(ROLE);
   await choose("");
   expect(button("Save Main role").disabled).toBe(false);

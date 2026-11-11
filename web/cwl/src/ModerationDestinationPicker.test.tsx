@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import ModerationDestinationPicker from "./ModerationDestinationPicker";
+import { pickerValue } from "./searchPickerTestUtils";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -34,9 +35,9 @@ it("shows the selected destination by name without its id", async () => {
       />,
     ),
   );
-  const input = host.querySelector<HTMLInputElement>("input")!;
-  expect(input.value).toBe("#Message Logs");
-  expect(input.value).not.toContain("1400000");
+  const value = pickerValue(host);
+  expect(value).toBe("#Message Logs");
+  expect(host.textContent).not.toContain("1400000");
   await act(async () => root.unmount());
   host.remove();
 });

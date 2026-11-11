@@ -1,17 +1,3 @@
-.role-picker .strikes-role-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--wu-space-2);
-  max-height: 240px;
-  overflow: auto;
-  margin-top: var(--wu-space-2);
-}
-.role-picker button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--wu-space-2);
-  min-height: 44px;
-}
 .role-picker-color {
   display: inline-block;
   width: 12px;

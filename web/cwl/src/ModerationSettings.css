@@ -679,9 +679,6 @@
   .moderation-category-summary > .moderation-category-head > .roster-ui-button {
     justify-self: end;
   }
-  .moderation-settings .channel-keyboard-hint {
-    display: none;
-  }
   .moderation-event-head {
     align-items: start;
   }

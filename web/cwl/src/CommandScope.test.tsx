@@ -4,6 +4,11 @@ import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
 import CommandScope from "./CommandScope";
 import type { Command } from "./CommandBuilder";
+import {
+  pickOption,
+  pickerByLabel,
+  pickerValue,
+} from "./searchPickerTestUtils";
 it("adds and removes named roles without selecting anyone by default", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div");
@@ -31,12 +36,9 @@ it("adds and removes named roles without selecting anyone by default", async () 
   }
   try {
     await act(async () => root.render(<Example />));
-    const select = host.querySelector("select")!;
-    expect(select.value).toBe("");
-    await act(async () => {
-      select.value = "123";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const picker = pickerByLabel(host, "Only for these roles");
+    expect(pickerValue(picker)).toBe("Select a role");
+    await pickOption(picker, "Member");
     expect(host.textContent).toContain("Remove Member");
     await act(async () => {
       (

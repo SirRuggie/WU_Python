@@ -1,5 +1,6 @@
-import { useState } from "react";
 import type { RoleChoice } from "./CommandExtras";
+import { roleOption } from "./RolePicker";
+import SearchPicker from "./SearchPicker";
 
 export default function RoleSelect({
   roles,
@@ -18,45 +19,19 @@ export default function RoleSelect({
   onOpen?: () => void;
   unavailableLabel?: string;
 }) {
-  const [search, setSearch] = useState("");
   return (
-    <div>
-      <label>
-        Find a role
-        <input
-          type="search"
-          onFocus={onOpen}
-          disabled={disabled}
-          value={search}
-          placeholder="Type part of a role name"
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </label>
-      <label>
-        {label}
-        <select
-          value={value}
-          onFocus={onOpen}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          <option value="">Select a role</option>
-          {value && !roles.some((role) => role.id === value) && (
-            <option value={value}>{unavailableLabel}</option>
-          )}
-          {roles
-            .filter(
-              (role) =>
-                role.id === value ||
-                role.name.toLowerCase().includes(search.toLowerCase()),
-            )
-            .map((role) => (
-              <option key={role.id} value={role.id}>
-                {role.name}
-              </option>
-            ))}
-        </select>
-      </label>
-    </div>
+    <SearchPicker
+      label={label}
+      value={value}
+      options={roles.map(roleOption)}
+      onChange={onChange}
+      placeholder="Select a role"
+      searchPlaceholder="Type part of a role name"
+      emptyText="No matching roles."
+      disabled={disabled}
+      clearable
+      onOpen={onOpen}
+      fallback={{ value, label: unavailableLabel }}
+    />
   );
 }
