@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import useChoiceGroupScroll from "../useChoiceGroupScroll";
+import useChoiceRail from "../useChoiceRail";
 import "../SectionTabs.css";
 import "../ChoiceGroupLayout.css";
 
@@ -17,11 +17,12 @@ export default function ClanSettingsNavigation<T extends string>({
   onChange,
 }: Props<T>) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
-  const tabsRef = useChoiceGroupScroll<HTMLDivElement>(value);
+  const tabs = useChoiceRail<HTMLDivElement>(value);
   return (
     <div
-      ref={tabsRef}
-      className="clan-tabs section-tabs section-tabs--flow"
+      {...tabs.fadeProps}
+      ref={tabs.ref}
+      className="clan-tabs section-tabs section-tabs--flow has-horizontal-fades"
       role="tablist"
       aria-label="Clan settings"
     >

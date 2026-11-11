@@ -1,35 +1,39 @@
-import { useState } from 'react'
-import MemberActivityHistory from './MemberActivityHistory'
-import MemberTimeline from './MemberTimeline'
-import ModerationSettings from './ModerationSettings'
-import './ModerationWorkspace.css'
+import { useState } from "react";
+import MemberActivityHistory from "./MemberActivityHistory";
+import MemberTimeline from "./MemberTimeline";
+import ModerationSettings from "./ModerationSettings";
+import SectionTabs from "./SectionTabs";
+import "./ModerationWorkspace.css";
 
-type Section = 'history' | 'settings'
+type Section = "history" | "settings";
 
 export default function ModerationWorkspace({
   onDirty,
-  memberId = '',
+  memberId = "",
   onMemberRoute,
 }: {
-  onDirty?: (dirty: boolean) => void
-  memberId?: string
-  onMemberRoute?: (userId: string) => void
+  onDirty?: (dirty: boolean) => void;
+  memberId?: string;
+  onMemberRoute?: (userId: string) => void;
 }) {
-  const [section, setSection] = useState<Section>('history')
-  const [openedSettings, setOpenedSettings] = useState(false)
-  const timeline = !!memberId && section === 'history'
+  const [section, setSection] = useState<Section>("history");
+  const [openedSettings, setOpenedSettings] = useState(false);
+  const timeline = !!memberId && section === "history";
 
   const showSettings = () => {
-    setOpenedSettings(true)
-    setSection('settings')
-  }
+    setOpenedSettings(true);
+    setSection("settings");
+  };
   const showHistory = () => {
-    setSection('history')
-    if (memberId) onMemberRoute?.('')
-  }
+    setSection("history");
+    if (memberId) onMemberRoute?.("");
+  };
 
   return (
-    <section className="moderation-workspace" aria-labelledby="moderation-title">
+    <section
+      className="moderation-workspace"
+      aria-labelledby="moderation-title"
+    >
       <header className="moderation-workspace-heading">
         <div>
           <p className="eyebrow">Server tools</p>
@@ -37,25 +41,21 @@ export default function ModerationWorkspace({
           <p>Review member events and configure where notices are posted.</p>
         </div>
       </header>
-      <nav className="moderation-sections" aria-label="Moderation sections">
-        <button
-          type="button"
-          aria-pressed={section === 'history'}
-          onClick={showHistory}
-        >
-          Activity history
-        </button>
-        <button
-          type="button"
-          aria-pressed={section === 'settings'}
-          onClick={showSettings}
-        >
-          Log settings
-        </button>
-      </nav>
-      <div hidden={section !== 'history' || timeline}>
+      <SectionTabs
+        className="moderation-sections section-tabs--flow"
+        label="Moderation sections"
+        items={[
+          { id: "history", label: "Activity history" },
+          { id: "settings", label: "Log settings" },
+        ]}
+        value={section}
+        onChange={(next) =>
+          next === "history" ? showHistory() : showSettings()
+        }
+      />
+      <div hidden={section !== "history" || timeline}>
         <MemberActivityHistory
-          active={section === 'history' && !timeline}
+          active={section === "history" && !timeline}
           onViewMember={onMemberRoute}
         />
       </div>
@@ -63,14 +63,14 @@ export default function ModerationWorkspace({
         <MemberTimeline
           key={memberId}
           userId={memberId}
-          onBack={() => onMemberRoute?.('')}
+          onBack={() => onMemberRoute?.("")}
         />
       )}
       {openedSettings && (
-        <div hidden={section !== 'settings'}>
+        <div hidden={section !== "settings"}>
           <ModerationSettings onDirty={onDirty} />
         </div>
       )}
     </section>
-  )
+  );
 }

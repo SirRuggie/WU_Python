@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import useChoiceGroupScroll from "./useChoiceGroupScroll";
+import useChoiceRail from "./useChoiceRail";
 import "./FilterChips.css";
 import "./ChoiceGroupLayout.css";
 export default function FilterChips<T extends string | number>({
@@ -28,17 +28,18 @@ export default function FilterChips<T extends string | number>({
   role?: "group";
   revealSelection?: boolean;
 }) {
-  const ref = useChoiceGroupScroll<HTMLDivElement>(
+  const { ref, fadeProps } = useChoiceRail<HTMLDivElement>(
     `${value}\0${options.map((option) => option.value).join("\0")}`,
     revealSelection,
   );
   return (
     <div
+      {...fadeProps}
       ref={ref}
       className={
         variant === "pill"
-          ? `filter-chips ${className} filter-chips--pill`
-          : `filter-chips ${className}`
+          ? `filter-chips has-horizontal-fades ${className} filter-chips--pill`
+          : `filter-chips has-horizontal-fades ${className}`
       }
       role={role}
       aria-label={label}

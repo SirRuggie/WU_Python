@@ -53,7 +53,6 @@ function renderDraft(pane: 'edit' | 'preview' = 'edit') {
   hooks.values = [
     [],
     '',
-    '',
     [],
     document,
     document,
@@ -65,7 +64,6 @@ function renderDraft(pane: 'edit' | 'preview' = 'edit') {
     false,
     0,
     '',
-    0,
     null,
     '',
     '',
@@ -104,11 +102,11 @@ it('draft preview debounces, sends only edits, and never replaces the saved draf
     'POST',
     { revision: 'reviewed', values: { message: 'My unsaved text' } },
   )
-  expect(hooks.setters[10]).toHaveBeenCalledWith([
+  expect(hooks.setters[9]).toHaveBeenCalledWith([
     { type: 'text', text: 'Rendered draft' },
   ])
-  expect(hooks.setters[6]).not.toHaveBeenCalled()
   expect(hooks.setters[5]).not.toHaveBeenCalled()
+  expect(hooks.setters[4]).not.toHaveBeenCalled()
   if (cleanup) cleanup()
 })
 it('a late preview response cannot replace the next draft preview', async () => {
@@ -124,18 +122,18 @@ it('a late preview response cannot replace the next draft preview', async () => 
   resolve({ preview: [{ type: 'text', text: 'Outdated text' }] })
   await Promise.resolve()
   await Promise.resolve()
-  expect(hooks.setters[10]).not.toHaveBeenCalled()
-  expect(hooks.setters[6]).not.toHaveBeenCalled()
+  expect(hooks.setters[9]).not.toHaveBeenCalled()
+  expect(hooks.setters[5]).not.toHaveBeenCalled()
 })
 it('preview errors preserve draft text and the previous valid preview', async () => {
   transport.mockRejectedValue(new Error('Image cannot be loaded'))
   const cleanup = renderDraft().effect()
   await vi.advanceTimersByTimeAsync(700)
-  expect(hooks.setters[17]).toHaveBeenCalledWith(
+  expect(hooks.setters[15]).toHaveBeenCalledWith(
     'Showing the last valid preview. Image cannot be loaded',
   )
-  expect(hooks.setters[10]).not.toHaveBeenCalled()
-  expect(hooks.setters[6]).not.toHaveBeenCalled()
+  expect(hooks.setters[9]).not.toHaveBeenCalled()
+  expect(hooks.setters[5]).not.toHaveBeenCalled()
   if (cleanup) cleanup()
 })
 it('leaving before debounce prevents an obsolete preview request entirely', async () => {
@@ -148,7 +146,6 @@ it('saved preview is available before any edits', () => {
   hooks.values = [
     [],
     '',
-    '',
     [],
     document,
     document,
@@ -160,7 +157,6 @@ it('saved preview is available before any edits', () => {
     false,
     0,
     '',
-    0,
     null,
     '',
     '',
@@ -168,7 +164,7 @@ it('saved preview is available before any edits', () => {
   ]
   renderToStaticMarkup(<ServerManagement area="applications-settings" />)
   hooks.effects[3]()
-  expect(hooks.setters[10]).toHaveBeenCalledWith(document.preview)
+  expect(hooks.setters[9]).toHaveBeenCalledWith(document.preview)
   expect(transport).not.toHaveBeenCalled()
 })
 it('reset tools are inside a closed More options disclosure', () => {
@@ -178,7 +174,6 @@ it('reset tools are inside a closed More options disclosure', () => {
   }
   hooks.values = [
     [],
-    '',
     '',
     [],
     withActions,
@@ -191,7 +186,6 @@ it('reset tools are inside a closed More options disclosure', () => {
     false,
     0,
     '',
-    0,
     null,
     '',
     '',
@@ -232,13 +226,12 @@ it('mobile preview pane requests a draft preview and ignores it after hiding', a
   resolve({ preview: [{ type: 'text', text: 'Stale' }] })
   await Promise.resolve()
   await Promise.resolve()
-  expect(hooks.setters[10]).not.toHaveBeenCalled()
+  expect(hooks.setters[9]).not.toHaveBeenCalled()
 })
 
 it('FWA edit pane does not request or mount previews on desktop', async () => {
   hooks.values = [
     [],
-    '',
     '',
     [],
     document,
@@ -251,7 +244,6 @@ it('FWA edit pane does not request or mount previews on desktop', async () => {
     false,
     0,
     '',
-    0,
     null,
     '',
     '',
@@ -281,7 +273,6 @@ it('integration status shows every value as readable status rather than disabled
   hooks.values = [
     [],
     '',
-    '',
     [],
     status,
     status,
@@ -293,7 +284,6 @@ it('integration status shows every value as readable status rather than disabled
     false,
     0,
     '',
-    0,
     null,
     '',
     '',

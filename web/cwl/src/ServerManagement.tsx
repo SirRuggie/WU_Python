@@ -37,13 +37,13 @@ import {
   changedValues,
   fieldError,
   fieldValues,
-  filterSections,
   type ManagementDocument,
   type ManagementField,
   type ManagementSection,
   type ManagementValue,
 } from "./serverManagement";
 import "./ServerManagement.css";
+import "./navList.css";
 const apiPath = (path: string) => path.replace(/^\/api\/cwl(?=\/)/, "");
 const message = (error: unknown) =>
   error instanceof Error
@@ -384,7 +384,6 @@ function useManagementConfirmation() {
 export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
   const [sections, setSections] = useState<ManagementSection[]>([]),
     [query, setQuery] = useState(""),
-    [group, setGroup] = useState(""),
     [documents, setDocuments] = useState<ManagementSection[]>([]),
     [selected, setSelected] = useState<ManagementSection | null>(null),
     [document, setDocument] = useState<ManagementDocument | null>(null),
@@ -396,7 +395,6 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     [conflict, setConflict] = useState(false),
     [fieldPage, setFieldPage] = useState(0),
     [statusUrl, setStatusUrl] = useState(""),
-    [catalogPage, setCatalogPage] = useState(0),
     [actionResult, setActionResult] = useState<ManagementResult | null>(null);
   const [recordSearch, setRecordSearch] = useState("");
   const pickerCopy = recordPickerCopy(documents);
@@ -692,20 +690,6 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     }
   };
   const areaInfo = area ? managementAreas[area] : null;
-  const visible = filterSections(
-      area ? areaSections(sections, area) : sections,
-      query,
-    ),
-    groups = [...new Set(visible.map((section) => section.group))],
-    activeGroup = groups.includes(group) ? group : groups[0],
-    catalogItems = visible.filter(
-      (item) => query || item.group === activeGroup,
-    ),
-    catalogPages = Math.max(1, Math.ceil(catalogItems.length / 8)),
-    pageItems = catalogItems.slice(
-      Math.min(catalogPage, catalogPages - 1) * 8,
-      (Math.min(catalogPage, catalogPages - 1) + 1) * 8,
-    );
   return (
     <section
       className={`server-management ${area === "applications-settings" ? "applications-workspace" : ""} ${operationsWorkspace ? "server-operations-workspace" : ""}`}
@@ -884,106 +868,13 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       {!selected && operationsWorkspace && busy && (
         <p role="status">Loading settings…</p>
       )}
-      {!selected &&
-        !operationsWorkspace &&
-        area !== "cwl-returns" &&
-        area !== "applications-settings" && (
-          <>
-            <label className="manage-search">
-              Find a setting
-              <input
-                type="search"
-                placeholder={
-                  areaInfo
-                    ? `Search ${areaInfo.title.toLowerCase()}`
-                    : "Search settings"
-                }
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  setCatalogPage(0);
-                }}
-              />
-            </label>
-            {busy && <p role="status">Loading settings…</p>}
-            {!query && groups.length > 1 && (
-              <nav
-                className="manage-categories"
-                aria-label="Settings categories"
-              >
-                {groups.map((name) => (
-                  <button
-                    key={name}
-                    aria-pressed={activeGroup === name}
-                    className={activeGroup === name ? "active" : ""}
-                    onClick={() => {
-                      setGroup(name);
-                      setCatalogPage(0);
-                    }}
-                  >
-                    {name}
-                  </button>
-                ))}
-              </nav>
-            )}
-            {groups
-              .filter((name) => pageItems.some((item) => item.group === name))
-              .map((group) => (
-                <section className="manage-group" key={group}>
-                  <h3>{group}</h3>
-                  <div className="manage-tiles">
-                    {pageItems
-                      .filter((section) => section.group === group)
-                      .map((section) => (
-                        <button
-                          className="manage-tile"
-                          key={section.id}
-                          onClick={() => void open(section)}
-                        >
-                          <span>
-                            <strong>{section.label}</strong>
-                            <small>{section.description}</small>
-                          </span>
-                          <span aria-hidden="true">→</span>
-                        </button>
-                      ))}
-                  </div>
-                </section>
-              ))}
-            {catalogPages > 1 && (
-              <div className="manage-categories">
-                <button
-                  disabled={catalogPage === 0}
-                  onClick={() =>
-                    setCatalogPage((page) => Math.max(0, page - 1))
-                  }
-                >
-                  ← Previous
-                </button>
-                <span>
-                  Page {Math.min(catalogPage, catalogPages - 1) + 1} of{" "}
-                  {catalogPages}
-                </span>
-                <button
-                  disabled={catalogPage >= catalogPages - 1}
-                  onClick={() => setCatalogPage((page) => page + 1)}
-                >
-                  Next →
-                </button>
-              </div>
-            )}
-            {!busy && !visible.length && !error && (
-              <p>No settings match. Try another word.</p>
-            )}
-          </>
-        )}
       {selected && documents.length > 0 && (
         <section
           className="manage-record-navigation"
           aria-label={pickerCopy.label}
         >
           {documents.length <= 8 ? (
-            <div className="manage-section-choices">
+            <div className="manage-section-choices nav-list">
               {documents.map((record) => (
                 <button
                   key={record.id}

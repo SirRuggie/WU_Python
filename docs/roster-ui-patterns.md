@@ -295,9 +295,26 @@ computed free-space numbers.
   - Outside family matches only `outside_family_and_hosts`, with the same count, active chip and Clear all behavior as other statuses.
   - Footer: `Reset` + `Show N accounts`. One line explaining OR within a section, AND across sections.
 - **Active filter chips:** removable (`Assigned ✕`) + `Clear all`, above the list.
-- **Tabs:** section tabs = gold-tinted pill; pool tabs (All / Main / Lazy) = underline. One indicator each.
+- **Tabs, chips and navigation items (B-6, 2026-11-11):** three patterns only; see "Dashboard choice patterns" below.
 - **Status pill:** `Draft · not published` / `Published` / `Unpublished changes`, the same height as the buttons beside it.
 - **Undo toast:** `Assigned 5 to W. U. Lazy.127 · Undo`; shows "Undo no longer available" when a later edit invalidates it. aria-live.
+
+## Dashboard choice patterns (B-6, decided 2026-11-11)
+
+Every group of choices on the dashboard uses one of three patterns. Prompt 191
+introduced A and B; B-6 finished the last groups and added C.
+
+| Pattern | Use | Component | Selected look |
+|---|---|---|---|
+| A. Section tabs | Switch views inside one page (Strikes, Tasks, Tickets, Moderation, Clan settings, roster views) | `SectionTabs`, or `section-tabs section-tabs--flow` on a custom rail | Gold text, gold underline |
+| B. Filter chips | Filter one list (clan type, Town Hall, search kinds) | `FilterChips`, `variant="pill"` for pills | Gold outline, gold text |
+| C. Navigation items | Lists of records or clans that open an item (settings record list, Family clans directory); the sidebar uses the same look | `nav-list` class (`navList.css`) | Gold edge, 3px gold left bar, gold bold text |
+
+- No solid-gold selected state and no segmented control. Unselected navigation items keep the normal button look.
+- Every tab and chip rail scrolls inside its own strip and fades the edge that hides items (`useChoiceRail`, `has-horizontal-fades`). The page never scrolls sideways at 320, 360 and 390px.
+- Targets are at least 44px high.
+- Groups keep `aria-pressed` buttons in a named group. Only Clan settings uses the full ARIA tab pattern with arrow keys. Do not add `role="tab"` without that keyboard behavior (see `dashboard-interaction-standard.md`).
+- Later work (handoff backlog B-14): sidebar, Results and CWL step links become real `<a href>` links, and the selected tab can live in the URL.
 
 ## Layout and format rules
 

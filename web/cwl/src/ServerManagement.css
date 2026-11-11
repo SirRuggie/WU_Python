@@ -38,60 +38,6 @@
 .manage-heading > button {
   flex-shrink: 0;
 }
-.manage-search {
-  display: grid;
-  gap: var(--wu-space-2);
-  max-width: 560px;
-  margin: var(--wu-space-4) 0 var(--wu-space-5);
-}
-.manage-group {
-  margin: var(--wu-space-5) 0;
-}
-.manage-group h3 {
-  font-size: var(--wu-text-lg);
-  margin-bottom: var(--wu-space-3);
-  font-weight: var(--wu-weight-medium);
-  line-height: 1.3;
-  text-wrap: balance;
-}
-.manage-tiles {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--wu-space-3);
-}
-.server-management .manage-tile {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--wu-space-4);
-  padding: var(--wu-space-4);
-  text-align: left;
-  background: var(--wu-surface-soft);
-  border: 1px solid var(--wu-info-border);
-  min-height: 96px;
-  white-space: normal;
-}
-.manage-tile span:first-child {
-  display: grid;
-  gap: var(--wu-space-2);
-}
-.manage-tile strong {
-  font-size: var(--wu-text-md);
-  color: var(--wu-text);
-}
-.manage-tile small {
-  font-size: var(--wu-text-xs);
-  color: var(--wu-text-muted);
-  font-weight: var(--wu-weight-regular);
-  line-height: 1.5;
-}
-@media (hover: hover) and (pointer: fine) {
-  .manage-tile:hover {
-    border-color: var(--wu-text-muted);
-    background: var(--wu-surface-raised);
-  }
-}
-.manage-tile:focus-visible,
 .server-management button:focus-visible,
 .server-management input:focus-visible,
 .server-management select:focus-visible,
@@ -220,7 +166,6 @@
   .manage-heading {
     flex-direction: column;
   }
-  .manage-tiles,
   .manage-fields {
     grid-template-columns: 1fr;
   }
@@ -237,9 +182,6 @@
   .manage-save > div button {
     flex: 1;
   }
-  .manage-tile {
-    min-height: 84px;
-  }
   .manage-field-wide {
     grid-column: auto;
   }
@@ -249,12 +191,6 @@
   flex-wrap: wrap;
   gap: var(--wu-space-3);
   margin: var(--wu-space-3) 0 var(--wu-space-4);
-}
-.shell .manage-categories button.active:not(:disabled) {
-  background: var(--wu-accent);
-  border-color: var(--wu-accent);
-  color: var(--wu-accent-ink);
-  -webkit-text-fill-color: var(--wu-accent-ink);
 }
 .manage-record-picker {
   display: grid;
@@ -337,12 +273,6 @@
   min-height: 48px;
   text-align: left;
   white-space: normal;
-}
-.shell .manage-section-choices button[aria-pressed="true"]:not(:disabled) {
-  background: var(--wu-accent);
-  color: var(--wu-accent-ink);
-  border-color: var(--wu-accent);
-  -webkit-text-fill-color: var(--wu-accent-ink);
 }
 .manage-record-picker label {
   display: grid;

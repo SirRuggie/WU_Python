@@ -1177,24 +1177,6 @@ small {
   font-weight: var(--wu-weight-bold);
 }
 
-.signup-panel-tabs {
-  display: flex;
-  gap: var(--wu-space-2);
-  margin: var(--wu-space-4) 0 var(--wu-space-5);
-  flex-wrap: wrap;
-}
-.signup-panel-tabs button {
-  min-height: 46px;
-}
-.signup-panel-tabs button.active {
-  background: #d9a628;
-  color: var(--wu-accent-ink);
-  border-color: #d9a628;
-}
-.signup-panel-tabs button.active .count-pill {
-  background: transparent;
-  color: var(--wu-accent);
-}
 .pool-choice {
   margin: 0 0 var(--wu-space-5);
 }
@@ -1263,15 +1245,6 @@ small {
   }
   .pool-choice-grid button {
     min-height: 105px;
-  }
-  .signup-panel-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-  .signup-panel-tabs button {
-    padding: var(--wu-space-2);
-    font-size: var(--wu-text-md);
-    white-space: normal;
   }
 }
 .roster-actions {
@@ -1415,16 +1388,6 @@ textarea {
 textarea:focus-visible {
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
-}
-.member-nav-tabs {
-  display: flex;
-  gap: var(--wu-space-2);
-  margin: 0 0 var(--wu-space-5);
-}
-.member-nav-tabs button.active {
-  background: #d9a628;
-  border-color: #d9a628;
-  color: var(--wu-accent-ink);
 }
 .publication-status,
 .assignment-version {
@@ -1581,14 +1544,6 @@ textarea:focus-visible {
   }
 }
 @media (max-width: 650px) {
-  .member-nav-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-  .member-nav-tabs button {
-    padding: var(--wu-space-2);
-    white-space: normal;
-  }
   .publication-status,
   .assignment-version,
   .publication-row {
@@ -2078,10 +2033,6 @@ img.site-logo {
 .shell button[aria-pressed="true"] span {
   color: inherit;
   -webkit-text-fill-color: inherit;
-}
-.shell .signup-panel-tabs button.active .count-pill {
-  background: transparent;
-  color: var(--wu-accent);
 }
 .shell button:disabled {
   opacity: 1;

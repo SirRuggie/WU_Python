@@ -2,14 +2,10 @@
 .shell
   :is(
     .todo-tabs,
-    .member-nav-tabs,
-    .signup-panel-tabs,
     .workflow-tabs,
     .clan-tabs,
     .cwl-pool-tabs,
     .roster-workflow-nav,
-    .bonus-tabs,
-    .cwl-roster-tabs,
     .cwl-result-nav
   ) {
   display: flex;
@@ -25,14 +21,10 @@
 .shell
   :is(
     .todo-tabs,
-    .member-nav-tabs,
-    .signup-panel-tabs,
     .workflow-tabs,
     .clan-tabs,
     .cwl-pool-tabs,
     .roster-workflow-nav,
-    .bonus-tabs,
-    .cwl-roster-tabs,
     .cwl-result-nav
   )
   > button {
@@ -52,14 +44,10 @@
 .shell
   :is(
     .todo-tabs,
-    .member-nav-tabs,
-    .signup-panel-tabs,
     .workflow-tabs,
     .clan-tabs,
     .cwl-pool-tabs,
     .roster-workflow-nav,
-    .bonus-tabs,
-    .cwl-roster-tabs,
     .cwl-result-nav
   )
   > button:where(
@@ -74,14 +62,10 @@
 .shell
   :is(
     .todo-tabs,
-    .member-nav-tabs,
-    .signup-panel-tabs,
     .workflow-tabs,
     .clan-tabs,
     .cwl-pool-tabs,
     .roster-workflow-nav,
-    .bonus-tabs,
-    .cwl-roster-tabs,
     .cwl-result-nav
   )
   > button:is(
@@ -99,14 +83,10 @@
 .shell
   :is(
     .todo-tabs,
-    .member-nav-tabs,
-    .signup-panel-tabs,
     .workflow-tabs,
     .clan-tabs,
     .cwl-pool-tabs,
     .roster-workflow-nav,
-    .bonus-tabs,
-    .cwl-roster-tabs,
     .cwl-result-nav
   )
   > button:focus-visible {
@@ -133,14 +113,10 @@
   .shell
     :is(
       .todo-tabs,
-      .member-nav-tabs,
-      .signup-panel-tabs,
       .workflow-tabs,
       .clan-tabs,
       .cwl-pool-tabs,
       .roster-workflow-nav,
-      .bonus-tabs,
-      .cwl-roster-tabs,
       .cwl-result-nav
     )
     > button {
@@ -149,14 +125,10 @@
   .shell
     :is(
       .todo-tabs,
-      .member-nav-tabs,
-      .signup-panel-tabs,
       .workflow-tabs,
       .clan-tabs,
       .cwl-pool-tabs,
       .roster-workflow-nav,
-      .bonus-tabs,
-      .cwl-roster-tabs,
       .cwl-result-nav
     )
     > button:where(
@@ -346,9 +318,9 @@
   outline-offset: -2px;
 }
 
-/* 748: selected solid-gold tabs draw the focus ring on the dark outside paint. */
+/* Selected clan tabs draw the focus ring outside the gold underline. */
 .shell
-  :is(.clan-tabs, .cwl-roster-tabs)
+  :is(.clan-tabs)
   > button:is(
     .active,
     [aria-pressed="true"],

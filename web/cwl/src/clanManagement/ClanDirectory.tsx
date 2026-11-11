@@ -1,5 +1,6 @@
 import ClanCategories, { clanCategory } from "./ClanCategories";
 import { useEffect, useRef } from "react";
+import "../navList.css";
 
 type Row = { tag: string; name: string; type: string; logo: string };
 type Props<T extends Row> = {
@@ -95,7 +96,7 @@ export default function ClanDirectory<T extends Row>({
             <p className="small" role="status">
               {filtered.length} of {clans.length} clans
             </p>
-            <div className="clan-directory">
+            <div className="clan-directory nav-list">
               {filtered.map((row) => (
                 <button
                   disabled={disabled}
@@ -104,7 +105,13 @@ export default function ClanDirectory<T extends Row>({
                   onClick={() => onSelect(row)}
                 >
                   {row.logo && (
-                    <img src={row.logo} alt="" width={36} height={36} loading="lazy" />
+                    <img
+                      src={row.logo}
+                      alt=""
+                      width={36}
+                      height={36}
+                      loading="lazy"
+                    />
                   )}
                   <span>
                     <strong>{row.name}</strong>

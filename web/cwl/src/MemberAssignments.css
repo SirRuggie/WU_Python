@@ -164,9 +164,6 @@
 .workspace main:has(> .member-assignments) {
   padding-top: var(--wu-space-4);
 }
-.workspace main:has(> .member-assignments) .member-nav-tabs {
-  margin-bottom: var(--wu-space-3);
-}
 .member-assignments > .cwl-page-description {
   font-size: var(--wu-text-sm);
   line-height: 1.35;
@@ -237,9 +234,6 @@
 @media (max-width: 650px) {
   .workspace main:has(> .member-assignments) {
     padding-top: var(--wu-space-3);
-  }
-  .workspace main:has(> .member-assignments) .member-nav-tabs {
-    margin-bottom: var(--wu-space-2);
   }
   .member-assignments .member-compact-status {
     padding: var(--wu-space-2) var(--wu-space-2);

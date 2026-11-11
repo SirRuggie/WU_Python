@@ -141,12 +141,6 @@
 @media (max-width: 680px) {
   .shell .roster-workspace :is(.roster-workflow-nav, .roster-list-pool-tabs) {
     scrollbar-width: none;
-    mask-image: linear-gradient(
-      to right,
-      #000 0,
-      #000 calc(100% - 12px),
-      transparent
-    );
     padding-right: 12px;
   }
   .shell

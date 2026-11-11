@@ -192,11 +192,18 @@ timezone, plus whole-clan raid status. See `activity-calendar.md` for schedule
 sources and limitations. Wars uses full-clan API scores rather than personal task
 rows. Existing `/todo` links remain valid.
 
-Use gold underline strips for sibling sections and a single segmented container
-for short filter sets. Keep actual actions (Save, Retry, Send) as buttons. Narrow
+Use gold underline tabs for sibling sections, chips for filter sets, and gold-edge
+navigation items for record lists (see "Dashboard choice patterns" in
+`roster-ui-patterns.md`). Keep actual actions (Save, Retry, Send) as buttons. Narrow
 activity strips scroll within their rail rather than overflowing the page; keyboard
 focus makes off-screen buttons reachable. Do not apply tab roles without tab keyboard
 behavior: current activity filters remain native pressed buttons in a named group.
+
+B-6 validation (2026-11-11): isolated fixtures (25 clans, moderation, three
+settings records) in headless Chrome at 320, 360, 390 and 1440px. Checked page
+overflow, 44px targets on rail and list buttons, edge-fade state on overflowing
+rails, the selected look of the record list, clan list and Moderation tabs, and
+that no write request was sent. Screen readers were not tested.
 
 Validation: 50-account/28-clan isolated browser samples at desktop 1280px and mobile
 320/390px settings; member versus staff navigation; escaped names; player search to

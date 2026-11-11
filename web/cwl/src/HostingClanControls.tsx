@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import useChoiceGroupScroll from "./useChoiceGroupScroll";
+import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
 import "./ChoiceGroupLayout.css";
 import { Archive, Plus, Search } from "lucide-react";
@@ -38,7 +38,7 @@ export default function HostingClanControls({
   const familyAllowed = useDashboardPermission("clans");
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"family" | "tag">("family");
-  const modeTabsRef = useChoiceGroupScroll<HTMLDivElement>(mode);
+  const modeTabs = useChoiceRail<HTMLDivElement>(mode);
   const [family, setFamily] = useState<Choice[]>([]);
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState("");
@@ -174,8 +174,9 @@ export default function HostingClanControls({
           }
         >
           <div
-            ref={modeTabsRef}
-            className="workflow-tabs section-tabs section-tabs--flow"
+            {...modeTabs.fadeProps}
+            ref={modeTabs.ref}
+            className="workflow-tabs section-tabs section-tabs--flow has-horizontal-fades"
           >
             <Button
               aria-pressed={mode === "family"}

@@ -49,8 +49,6 @@ import {
 } from "./rosterReleaseModel";
 import StaffSignupControls from "./StaffSignupControls";
 import { useDashboardPermission } from "./DashboardPermissions";
-import { useHorizontalFades } from "./useHorizontalFades";
-import "./horizontalFades.css";
 import "./RosterWorkspace.css";
 import WeightQueue from "./WeightQueue";
 import CompareClans from "./CompareClans";
@@ -167,7 +165,6 @@ export default function RosterWorkspace({
   const [focusClanTag, setFocusClanTag] = useState<string | null>(null);
   const [focusClanRequest, setFocusClanRequest] = useState(0);
   useEffect(() => setFocusClanTag(null), [seasonId]);
-  const tabFades = useHorizontalFades<HTMLDivElement>();
   const [refreshEpoch, setRefreshEpoch] = useState(0);
   const viewPool =
     mode === "weights"
@@ -1196,7 +1193,7 @@ export default function RosterWorkspace({
           <div className="roster-workspace-navigation">
             {canRoster && (
               <SectionTabs
-                className="roster-workflow-nav has-horizontal-fades section-tabs--flow"
+                className="roster-workflow-nav section-tabs--flow"
                 label="Roster workspace views"
                 items={(
                   [
@@ -1222,9 +1219,6 @@ export default function RosterWorkspace({
                 }}
                 disabled={uiLocked && !working}
                 revealSelection
-                rootRef={tabFades.ref}
-                data-fade-left={tabFades.left}
-                data-fade-right={tabFades.right}
               />
             )}
             {mode === "assign" ? (

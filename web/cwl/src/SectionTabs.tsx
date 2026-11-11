@@ -1,5 +1,5 @@
 import type { HTMLAttributes, ReactNode } from "react";
-import useChoiceGroupScroll from "./useChoiceGroupScroll";
+import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
 import "./ChoiceGroupLayout.css";
 
@@ -23,7 +23,7 @@ export default function SectionTabs<T extends string>({
   revealSelection?: boolean;
   rootRef?: (node: HTMLDivElement | null) => void;
 } & Omit<HTMLAttributes<HTMLDivElement>, "children" | "onChange">) {
-  const ref = useChoiceGroupScroll<HTMLDivElement>(
+  const { ref, fadeProps } = useChoiceRail<HTMLDivElement>(
     `${value}\0${items.map((item) => item.id).join("\0")}`,
     revealSelection,
     rootRef,
@@ -31,8 +31,9 @@ export default function SectionTabs<T extends string>({
   return (
     <div
       {...groupProps}
+      {...fadeProps}
       ref={ref}
-      className={`section-tabs ${className}`}
+      className={`section-tabs has-horizontal-fades ${className}`}
       role="group"
       aria-label={label}
     >

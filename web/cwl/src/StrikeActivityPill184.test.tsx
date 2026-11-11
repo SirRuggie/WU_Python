@@ -49,7 +49,7 @@ it("opts only the Strikes Account views group into pills while preserving its la
     expect(buttons[0].getAttribute("aria-pressed")).toBe("true");
     expect(buttons[3].getAttribute("aria-pressed")).toBe("false");
     expect(host.querySelector('[aria-label="Default group"]')!.className).toBe(
-      "filter-chips ",
+      "filter-chips has-horizontal-fades ",
     );
     expect(fetch).toHaveBeenCalledTimes(1);
   } finally {

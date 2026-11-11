@@ -20,7 +20,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("retains rich section labels, caller refs/fade attributes and per-option disabled guards", () => {
+it("retains rich section labels, caller refs, own edge-fade state and per-option disabled guards", () => {
   const changed = vi.fn(),
     ref = vi.fn();
   act(() =>
@@ -49,7 +49,9 @@ it("retains rich section labels, caller refs/fade attributes and per-option disa
   );
   const group = host.querySelector('[role="group"]')!;
   expect(ref).toHaveBeenCalledWith(group);
-  expect(group.getAttribute("data-fade-right")).toBe("true");
+  // Fade state is measured by SectionTabs itself; a caller value cannot override it.
+  expect(group.getAttribute("data-fade-right")).toBe("false");
+  expect(group.classList.contains("has-horizontal-fades")).toBe(true);
   expect(group.querySelector("strong")?.textContent).toBe("Wars");
   expect(group.querySelector("small")?.textContent).toBe("3 accounts");
   const buttons = [...group.querySelectorAll("button")];
