@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import ConfirmDialog from "../ConfirmDialog";
 import { Button } from "../rosterUi/primitives";
+import SearchPicker from "../SearchPicker";
 import ClockFields from "./ClockFields";
 import {
   API_BASE,
@@ -12,6 +13,7 @@ import {
   nameParts,
   problemText,
   sameDraft,
+  voiceOption,
   zoneCity,
   type ClockDraft,
   type VoiceChannel,
@@ -58,9 +60,8 @@ export default function WorldClockRow({
   const [error, setError] = useState("");
   const [confirmRemove, setConfirmRemove] = useState(false);
   const panelId = useId();
-  const channelId = useId();
   const rowRef = useRef<HTMLElement>(null);
-  const channelRef = useRef<HTMLSelectElement>(null);
+  const channelRef = useRef<HTMLButtonElement>(null);
   const problem = hasProblem({ ...clock, enabled });
   const dirty = open && !sameDraft(draft, draftFrom(clock));
 
@@ -237,42 +238,29 @@ export default function WorldClockRow({
             disabled={busy}
           />
           <div>
-            <label className="world-clock-label" htmlFor={channelId}>
-              Channel
-            </label>
-            <select
-              id={channelId}
-              ref={channelRef}
-              className="world-clock-input"
-              value={draft.channel_id}
-              disabled={busy || !channelsAvailable}
-              onChange={(event) =>
-                setDraft({ ...draft, channel_id: event.target.value })
-              }
-            >
-              {!voiceChannels.some(
-                (channel) => channel.id === draft.channel_id,
-              ) && (
-                <option value={draft.channel_id}>
-                  {draft.channel_id
-                    ? "Missing channel"
-                    : "Select a voice channel"}
-                </option>
+            <SearchPicker
+              label="Channel"
+              triggerRef={channelRef}
+              options={voiceChannels.map((channel) =>
+                voiceOption(
+                  channel,
+                  channel.used && channel.id !== clock.channel_id
+                    ? "has a clock"
+                    : "",
+                ),
               )}
-              {voiceChannels.map((channel) => (
-                <option
-                  key={channel.id}
-                  value={channel.id}
-                  disabled={channel.used && channel.id !== clock.channel_id}
-                >
-                  🔊 {channel.name}
-                  {channel.category ? ` · ${channel.category}` : ""}
-                  {channel.used && channel.id !== clock.channel_id
-                    ? " · has a clock"
-                    : ""}
-                </option>
-              ))}
-            </select>
+              value={draft.channel_id}
+              fallback={
+                draft.channel_id
+                  ? { value: draft.channel_id, label: "Missing channel" }
+                  : undefined
+              }
+              placeholder="Select a voice channel"
+              searchPlaceholder="Search voice channels"
+              emptyText="No voice channels match."
+              disabled={busy || !channelsAvailable}
+              onChange={(channel_id) => setDraft({ ...draft, channel_id })}
+            />
             <p className="world-clock-help">
               {channelsAvailable
                 ? "Voice channels only. Use a channel no other app renames."

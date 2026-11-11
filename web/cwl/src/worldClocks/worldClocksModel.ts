@@ -114,6 +114,17 @@ export function statusCounts(clocks: WorldClock[]) {
   return { updating, problems, off };
 }
 
+/** A voice channel as a picker row: name, then its category. */
+export function voiceOption(channel: VoiceChannel, note = "") {
+  return {
+    value: channel.id,
+    label: channel.name,
+    detail: channel.category || undefined,
+    icon: "🔊",
+    disabledNote: note || undefined,
+  };
+}
+
 export function zoneCity(zone: string) {
   const parts = zone.split("/");
   return (parts[parts.length - 1] || zone).replace(/_/g, " ");

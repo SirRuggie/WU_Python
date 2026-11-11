@@ -196,7 +196,9 @@ it("the alert Fix button opens the broken clock at its channel field", async () 
   await click(button("Fix", host.querySelector(".world-clock-alert")!));
   const open = host.querySelector(".world-clock-row.is-open")!;
   expect(open.classList.contains("is-problem")).toBe(true);
-  expect(document.activeElement?.tagName).toBe("SELECT");
+  expect(
+    document.activeElement?.classList.contains("search-picker-trigger"),
+  ).toBe(true);
 });
 
 it("a switch saves at once with the clock revision", async () => {
@@ -476,9 +478,14 @@ it("the category picker is searchable and saves only on Save", async () => {
     }
   });
   await click(button("Settings"));
+  const trigger = host.querySelector<HTMLButtonElement>(
+    ".search-picker-trigger",
+  )!;
+  expect(trigger.textContent).toContain("Live World Times");
+  expect(trigger.textContent).not.toContain("#");
+  await click(trigger);
   const input = host.querySelector<HTMLInputElement>('input[role="combobox"]')!;
-  expect(input.value).toContain("Live World Times");
-  await act(async () => input.focus());
+  expect(input.placeholder).toBe("Search categories");
   await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
@@ -488,7 +495,7 @@ it("the category picker is searchable and saves only on Save", async () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   const options = Array.from(host.querySelectorAll('[role="option"]'));
-  expect(options.map((node) => node.textContent)).toEqual(["#Voice Lounge"]);
+  expect(options.map((node) => node.textContent)).toEqual(["Voice Lounge"]);
   expect(host.textContent).not.toContain("900000000000000009"); // No raw ids.
   await click(options[0]);
   expect(puts).toHaveLength(0);
@@ -501,6 +508,48 @@ it("the category picker is searchable and saves only on Save", async () => {
       interval_minutes: 6,
     },
   ]);
+});
+
+it("add clock: a channel with a clock cannot be selected; empty zone search lists the chip cities", async () => {
+  await render(data([clock("a")]));
+  await click(button("+ Add clock"));
+  const sheet = document.querySelector(".world-clock-sheet")!;
+  await click(sheet.querySelector<HTMLButtonElement>(".search-picker-trigger"));
+  const zones = Array.from(sheet.querySelectorAll('[role="option"]')).map(
+    (node) => node.textContent,
+  );
+  expect(zones[0]).toContain("New York");
+  expect(zones[0]).toContain("has a clock");
+  expect(zones[1]).toContain("Jakarta");
+  await act(async () => {
+    sheet
+      .querySelector<HTMLInputElement>('input[role="combobox"]')!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+  });
+  await click(
+    Array.from(sheet.querySelectorAll("label")).find((node) =>
+      node.textContent?.includes("Use an existing voice channel"),
+    ),
+  );
+  const triggers = sheet.querySelectorAll<HTMLButtonElement>(
+    ".search-picker-trigger",
+  );
+  await click(triggers[triggers.length - 1]);
+  const rows = Array.from(
+    sheet.querySelectorAll<HTMLElement>('[role="option"]'),
+  );
+  const used = rows.find((node) => node.textContent?.includes("old"))!;
+  expect(used.getAttribute("aria-disabled")).toBe("true");
+  expect(used.textContent).toContain("has a clock");
+  await click(used);
+  expect(triggers[triggers.length - 1].textContent).toContain(
+    "Select a voice channel",
+  );
+  expect(host.textContent + sheet.textContent).not.toContain(
+    "900000000000000050",
+  );
 });
 
 it("model helpers", () => {

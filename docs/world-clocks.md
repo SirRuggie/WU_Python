@@ -132,9 +132,16 @@ clocks.
   Search-only codes fill common zones where tzdata has only a number (BRT for
   São Paulo, GST for Dubai, SGT for Singapore); those zones still need a typed
   code for the channel name.
-- "New channels go in" (Settings) uses the shared channel search
-  (`ChannelCombobox`, names only). Choosing a category changes the draft;
-  nothing saves until Save settings.
+- Time zone, "New channels go in" (Settings) and both voice channel fields
+  (Add clock and the clock edit panel) use the shared `SearchPicker`
+  (`web/cwl/src/SearchPicker.tsx`, pilot for the dashboard-wide dropdown
+  change, 2026-11-11). The closed field shows the selected value with its
+  icon and second line. On a phone (700 px or less) the list opens as a
+  full-screen sheet sized to the visible area above the keyboard
+  (`visualViewport`); on wider screens it opens under the field and moves the
+  content down. With an empty search the time zone list shows the chip cities.
+  A voice channel that already has a clock shows "has a clock" and cannot be
+  selected. Selecting only changes the draft; nothing saves until Save.
 
 - Each On/Off switch saves at once. A failed switch goes back and shows the
   error.

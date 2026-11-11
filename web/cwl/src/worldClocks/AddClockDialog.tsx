@@ -2,10 +2,12 @@ import { useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, ApiError } from "../api";
 import { Button } from "../rosterUi/primitives";
+import SearchPicker from "../SearchPicker";
 import ClockFields from "./ClockFields";
 import {
   API_BASE,
   newRequestId,
+  voiceOption,
   type ClockDraft,
   type ClockSettings,
   type VoiceChannel,
@@ -38,7 +40,6 @@ export default function AddClockDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
-  const channelId = useId();
   const [draft, setDraft] = useState<ClockDraft>({
     zone: "",
     flag: "",
@@ -52,7 +53,6 @@ export default function AddClockDialog({
   // so the server answers from its receipt instead of creating a 2nd channel.
   const requestId = useRef(newRequestId());
   const category = categories.find((row) => row.id === settings.category_id);
-  const free = voiceChannels.filter((channel) => !channel.used);
 
   useLayoutEffect(() => {
     const opener = document.activeElement;
@@ -72,7 +72,11 @@ export default function AddClockDialog({
   const ready =
     !!draft.zone &&
     channelsAvailable &&
-    (mode === "create" ? !!category : !!draft.channel_id);
+    (mode === "create"
+      ? !!category
+      : voiceChannels.some(
+          (channel) => channel.id === draft.channel_id && !channel.used,
+        ));
 
   async function submit() {
     if (!ready || busy) return;
@@ -169,27 +173,21 @@ export default function AddClockDialog({
             </span>
           </label>
           {mode === "existing" && (
-            <div>
-              <label className="world-clock-label" htmlFor={channelId}>
-                Voice channel
-              </label>
-              <select
-                id={channelId}
-                className="world-clock-input"
-                value={draft.channel_id}
-                onChange={(event) =>
-                  setDraft({ ...draft, channel_id: event.target.value })
-                }
-              >
-                <option value="">Select a voice channel</option>
-                {free.map((channel) => (
-                  <option key={channel.id} value={channel.id}>
-                    🔊 {channel.name}
-                    {channel.category ? ` · ${channel.category}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SearchPicker
+              label="Voice channel"
+              options={[...voiceChannels]
+                // Free channels first; ones with a clock stay visible below.
+                .sort((a, b) => Number(a.used) - Number(b.used))
+                .map((channel) =>
+                  voiceOption(channel, channel.used ? "has a clock" : ""),
+                )}
+              value={draft.channel_id}
+              placeholder="Select a voice channel"
+              searchPlaceholder="Search voice channels"
+              emptyText="No voice channels match."
+              disabled={busy}
+              onChange={(channel_id) => setDraft({ ...draft, channel_id })}
+            />
           )}
         </fieldset>
         {!channelsAvailable && (

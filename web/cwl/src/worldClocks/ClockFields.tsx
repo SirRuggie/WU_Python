@@ -72,6 +72,7 @@ export default function ClockFields({
     <>
       <ZonePicker
         value={draft.zone}
+        flag={draft.flag}
         chips={chips}
         usedZones={usedZones}
         disabled={disabled}
