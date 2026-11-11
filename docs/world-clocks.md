@@ -92,7 +92,7 @@ overwrites a newer staff edit.
 | POST | `` | Add a clock (`mode: create` or `existing`, `request_id` UUID) |
 | PATCH | `/{clock_id}` | On/Off switch, saves at once |
 | PUT | `/{clock_id}` | Save zone, flag, code, channel |
-| DELETE | `/{clock_id}` | Remove the clock. The channel stays. |
+| DELETE | `/{clock_id}` | Delete the clock's voice channel in Discord, then remove the clock (see Remove below) |
 
 "Create channel and add" creates a voice channel in the selected category and
 copies the category's permission overwrites. A receipt keyed by the request id
@@ -140,7 +140,16 @@ clocks.
   error.
 - An open clock has its own Save. Changes show at the next update. There is no
   "Update now".
-- Remove asks first (red confirm). WU Wizard stops renaming; the channel stays.
+- Remove asks first (red confirm that names the channel) and fully removes:
+  it deletes the clock's voice channel in Discord, then the clock (Ruggie,
+  2026-11-11, replacing D6 "channel stays"). To keep the channel, turn the
+  clock Off instead.
+- Remove rules: the revision is checked before any Discord call. The channel is
+  read first and deleted only if it is a voice channel in this server;
+  anything else is kept and reported. A channel that is already gone still
+  removes the clock. If Discord refuses or does not confirm the delete (403,
+  429, timeout, 5xx), the clock is not removed and the page shows why, so the
+  next press tries again.
 - A clock with a problem shows a red switch, a message and a Fix button.
 - Raw Discord IDs are never shown.
 

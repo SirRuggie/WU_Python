@@ -30,6 +30,8 @@ class FakeDiscord:
         self.channels = [CATEGORY, VOICE, VOICE2, TEXT]
         self.posts = []
         self.fail_post = None
+        self.fail_delete = None
+        self.deletes = []
         self.down = False
         self.next_id = 900000000000000100
 
@@ -42,6 +44,16 @@ class FakeDiscord:
             found = next((c for c in self.channels if c["id"] == path.split("/")[2]), None)
             if not found:
                 raise web.HTTPNotFound(text="gone")
+            return found
+        if method == "DELETE" and path.startswith("/channels/"):
+            cid = path.split("/")[2]
+            self.deletes.append((cid, kwargs))
+            if self.fail_delete:
+                raise self.fail_delete
+            found = next((c for c in self.channels if c["id"] == cid), None)
+            if not found:
+                raise server_management.DiscordItemNotFound(10003)
+            self.channels.remove(found)
             return found
         if method == "POST" and path == f"/guilds/{GUILD}/channels":
             self.posts.append(kwargs)
@@ -291,12 +303,61 @@ def test_edit_to_a_used_channel_conflicts(env):
         run(api.edit(request(body, clock_id=other["_id"])))
 
 
-def test_remove_keeps_the_discord_channel(env):
-    row = run(env.store.add_clock({"zone": "America/New_York", "flag": "", "code": None, "channel_id": VOICE["id"]}, "1"))
-    with pytest.raises(web.HTTPConflict):
+def clock_on(env, channel_id):
+    return run(env.store.add_clock({"zone": "America/New_York", "flag": "", "code": None, "channel_id": channel_id}, "1"))
+
+
+def test_remove_deletes_the_clock_voice_channel_then_the_clock(env):
+    row = clock_on(env, VOICE["id"])
+    with pytest.raises(web.HTTPConflict):  # Stale revision: nothing deleted.
         run(api.remove(request({"revision": "7"}, clock_id=row["_id"])))
-    run(api.remove(request({"revision": "1"}, clock_id=row["_id"])))
-    assert run(env.store.list_clocks()) == [] and VOICE in env.discord.channels
+    assert env.discord.deletes == [] and VOICE in env.discord.channels
+    result = payload(run(api.remove(request({"revision": "1"}, clock_id=row["_id"]))))
+    assert result["channel"] == "deleted"
+    assert [cid for cid, _ in env.discord.deletes] == [VOICE["id"]]
+    assert env.discord.deletes[0][1].get("roster_delivery") is True
+    assert run(env.store.list_clocks()) == [] and VOICE not in env.discord.channels
+
+
+def test_remove_when_channel_is_already_gone_still_removes_the_clock(env):
+    row = clock_on(env, "900000000000000777")
+    assert payload(run(api.remove(request({"revision": "1"}, clock_id=row["_id"]))))["channel"] == "gone"
+    assert run(env.store.list_clocks()) == [] and env.discord.deletes == []
+
+
+def test_remove_never_deletes_a_channel_that_is_not_a_voice_channel(env):
+    row = clock_on(env, TEXT["id"])  # Should never happen; the guard still holds.
+    assert payload(run(api.remove(request({"revision": "1"}, clock_id=row["_id"]))))["channel"] == "kept"
+    assert env.discord.deletes == [] and TEXT in env.discord.channels
+    assert run(env.store.list_clocks()) == []
+
+
+@pytest.mark.parametrize("error, status, text", [
+    (server_management.DiscordDeliveryUncertain("timeout"), web.HTTPServiceUnavailable, "did not confirm"),
+    (web.HTTPForbidden(text="no"), web.HTTPBadRequest, "permissions"),
+    (web.HTTPTooManyRequests(text="slow"), web.HTTPServiceUnavailable, "Try again"),
+])
+def test_remove_keeps_the_clock_when_discord_does_not_delete(env, error, status, text):
+    row = clock_on(env, VOICE["id"])
+    env.discord.fail_delete = error
+    with pytest.raises(status) as raised:
+        run(api.remove(request({"revision": "1"}, clock_id=row["_id"])))
+    assert text in raised.value.text and "not removed" in raised.value.text and "bot" not in raised.value.text
+    assert len(run(env.store.list_clocks())) == 1
+
+
+def test_remove_with_discord_down_removes_nothing(env):
+    row = clock_on(env, VOICE["id"])
+    env.discord.down = True
+    with pytest.raises(web.HTTPServiceUnavailable):
+        run(api.remove(request({"revision": "1"}, clock_id=row["_id"])))
+    assert len(run(env.store.list_clocks())) == 1
+
+
+def test_remove_without_a_channel_just_removes_the_clock(env):
+    row = clock_on(env, None)
+    assert payload(run(api.remove(request({"revision": "1"}, clock_id=row["_id"]))))["channel"] == "none"
+    assert env.discord.deletes == []
 
 
 def test_settings_validation_and_save(env):
@@ -357,3 +418,33 @@ def test_unchanged_category_is_not_checked_with_discord_again(env):
     saved = payload(run(api.save_settings(request({"revision": "1", "time_format": "24h", "interval_minutes": 6,
                                                    "category_id": CATEGORY["id"]}))))
     assert saved["settings"]["time_format"] == "24h"
+
+
+def test_remove_keeps_a_voice_channel_from_another_server(env):
+    other = {"id": "900000000000000888", "type": 2, "name": "x", "guild_id": "111111111111111111"}
+    env.discord.channels.append(other)
+    row = clock_on(env, other["id"])
+    assert payload(run(api.remove(request({"revision": "1"}, clock_id=row["_id"]))))["channel"] == "kept"
+    assert env.discord.deletes == [] and other in env.discord.channels
+
+
+def test_remove_when_channel_cannot_be_read_removes_nothing(env, monkeypatch):
+    row = clock_on(env, VOICE["id"])
+    fake = env.discord
+
+    async def hidden(request_, method, path, **kwargs):
+        if method == "GET" and path.startswith("/channels/"):
+            raise web.HTTPForbidden(text="Discord does not allow this action. Check bot permissions.")
+        return await fake(request_, method, path, **kwargs)
+    monkeypatch.setattr(api, "discord", hidden)
+    with pytest.raises(web.HTTPBadRequest) as raised:  # Never 403: that means "dashboard access lost".
+        run(api.remove(request({"revision": "1"}, clock_id=row["_id"])))
+    assert "not removed" in raised.value.text and "bot" not in raised.value.text
+    assert fake.deletes == [] and len(run(env.store.list_clocks())) == 1
+
+
+def test_remove_when_channel_vanishes_between_read_and_delete(env):
+    row = clock_on(env, VOICE["id"])
+    env.discord.fail_delete = server_management.DiscordItemNotFound(10003)
+    assert payload(run(api.remove(request({"revision": "1"}, clock_id=row["_id"]))))["channel"] == "gone"
+    assert run(env.store.list_clocks()) == []

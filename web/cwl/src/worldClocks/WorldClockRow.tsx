@@ -141,13 +141,22 @@ export default function WorldClockRow({
 
   async function remove() {
     setBusy(true);
+    setError("");
     try {
-      await api(`${API_BASE}/${clock.id}`, "DELETE", {
-        revision: clock.revision,
-      });
+      const result = await api<{ channel?: string }>(
+        `${API_BASE}/${clock.id}`,
+        "DELETE",
+        { revision: clock.revision },
+      );
       setConfirmRemove(false);
       onOpen(false);
-      onReload("Clock removed. The channel stays in Discord.");
+      onReload(
+        result?.channel === "kept"
+          ? "Clock removed. Its channel was not a voice channel, so it stays in Discord."
+          : result?.channel === "deleted"
+            ? "Clock and channel removed."
+            : "Clock removed.",
+      );
     } catch (reason) {
       setConfirmRemove(false);
       if (reason instanceof ApiError && reason.status === 409) {
@@ -301,7 +310,11 @@ export default function WorldClockRow({
       {confirmRemove && (
         <ConfirmDialog
           heading="Remove this clock?"
-          text="WU Wizard stops renaming this channel. The channel stays. Archive or delete it in Discord."
+          text={
+            clock.channel_id && !clock.channel_missing
+              ? `This deletes the voice channel ${clock.channel_name || discordName(clock)} in Discord and removes the clock. This cannot be undone. To keep the channel, turn the clock off instead.`
+              : "This removes the clock. It has no channel in Discord to delete."
+          }
           confirmLabel={busy ? "Removing…" : "Remove clock"}
           danger
           disabled={busy}
