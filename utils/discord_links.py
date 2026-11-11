@@ -24,4 +24,3 @@ def profile_label(value: object, limit: int = 64, fallback: str = "Discord profi
     label = label.translate(_LOOKALIKES).replace("@", "@\u200b")
     label = re.sub(r"(?i)\b(https?)://", "\\1\u200b://", label)
     return " ".join(label.split()) or fallback
-
