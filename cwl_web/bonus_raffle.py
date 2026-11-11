@@ -8,7 +8,7 @@ from .participation_display import participation_json_response
 from extensions.cwl_discord_transport import AnnouncementRejected, AnnouncementUnavailable, DiscordTransport
 from utils.cwl_bonus_raffle_store import LAZY_SEASON_POOL, SEASON_POOL_JOIN, RaffleConflict, RaffleStore
 from utils.cwl_bonus_allowance import AllowanceStore
-from utils.cwl_bonus_raffle import lazy_eligibility
+from utils.cwl_bonus_raffle import eligibility, lazy_eligibility
 from .bonuses import _view, _require_draft, _bump, _validate_revision, _cas
 
 
@@ -83,6 +83,57 @@ async def state(request):
     from .app import _require, _sid, _store
     _require(request, 'editor')
     return await _response(request, _sid(request))
+
+
+def _draw_state(draws, cycle, pool, clan_tag):
+    # The newest draw per pool and clan wins; a cancelled draw only shows when nothing replaced it.
+    matching = [d for d in draws if d['cycle'] == cycle and d['pool'] == pool and d['clan_tag'] == clan_tag]
+    live = next((d for d in matching if not d['cancelled_at']), None)
+    if live is None:
+        return 'cancelled' if matching else 'none'
+    if live['delivery'] and live['delivery']['status'] == 'sent':
+        return 'sent'
+    return 'approved' if live['approved_at'] else 'saved'
+
+
+def _bonus_status(db, sid):
+    # Read-only summary from stored results; no Discord role evidence, so Lazy counts omit role weighting.
+    view = _state(db, sid)
+    minimum = view['policies']['main']
+    pools = {'main': [], 'lazy': []}
+    for pool in pools:
+        by_clan = {}
+        for account in view['accounts']:
+            if account['pool'] == pool and account.get('assigned_clan_tag'):
+                by_clan.setdefault(account['assigned_clan_tag'], []).append(account)
+        names = {c['tag']: c['name'] for c in view['clans']}
+        for tag, accounts in by_clan.items():
+            if pool == 'lazy':
+                meets = sum(1 for a in accounts if lazy_eligibility(a) is None)
+            else:
+                meets = None if minimum is None else sum(1 for a in accounts if eligibility(a, minimum) is None)
+            complete = sum(1 for a in accounts if a.get('source_complete'))
+            pools[pool].append({
+                'tag': tag, 'name': names.get(tag) or accounts[0].get('assigned_clan_name') or tag,
+                # Main has no host check; Lazy follows the season pool rule from enrich_view.
+                'active': all(a.get('host_valid') for a in accounts) if pool == 'lazy' else True,
+                'candidates': len(accounts), 'meets_rule': meets,
+                'results_state': 'captured' if complete == len(accounts) else 'partial' if complete else 'not_checked',
+                'allowance_ready': view['allowances'].get(tag, {}).get('status') == 'ready',
+                'draw_state': _draw_state(view['draws'], view['cycle'], pool, tag),
+            })
+        pools[pool].sort(key=lambda c: (c['name'].lower(), c['tag']))
+    return {'season_id': sid, 'cycle': view['cycle'], 'archived': view['season_status'] == 'archived',
+            'main_minimum': minimum, 'pools': pools}
+
+
+async def bonus_status(request):
+    from .app import _require, _sid, _store
+    _require(request, 'editor')
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        result = _bonus_status(db, sid)
+    return web.json_response(result)
 
 
 async def refresh_results(request):
@@ -353,6 +404,7 @@ def routes():
             web.patch(base + '/lazy-settings', lazy_settings),
             web.post(base + '/manual-candidates', manual_candidates),
             web.delete(base + '/manual-candidates', manual_candidates),
-            web.get(base, state), web.post(base + '/refresh-results', refresh_results), web.patch(base + '/policy', policy),
+            web.get(base, state), web.get(API + '/seasons/{season_id}/bonus-status', bonus_status),
+            web.post(base + '/refresh-results', refresh_results), web.patch(base + '/policy', policy),
             web.post(base + '/preview', preview), web.post(base + '/draw', draw),
             web.post(base + '/{draw_id}/approve', approve), web.post(base + '/{draw_id}/cancel', cancel), web.post(base + '/{draw_id}/send', send)]

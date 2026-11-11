@@ -1,5 +1,6 @@
 """HTTP safeguards for Lazy bonus eligibility and manual candidates."""
 import unittest
+from unittest.mock import patch
 from aiohttp import web
 from test_cwl_bonus_raffle import RaffleTests
 from utils.cwl_working_roster import account_token, working_accounts
@@ -98,6 +99,92 @@ class LazyBonusApiTests(RaffleTests):
         state = await self.get_state()
         self.assertEqual(state['manual_candidate_conflicts'][0]['tag'], '#Q2Y')
         self.assertNotIn('#C2Y', [h['tag'] for h in state['lazy_hosts']])
+
+    @property
+    def status_url(self):
+        return f'/seasons/{self.sid}/bonus-status'
+
+    async def status(self):
+        response = await self.call('GET', self.status_url, self.owner)
+        self.assertEqual(response.status, 200, await response.text())
+        return await response.json()
+
+    async def test_bonus_status_auth_and_archived_season(self):
+        await self.ready_lazy()
+        self.assertEqual((await self.call('GET', self.status_url)).status, 401)
+        self.assertEqual((await self.call('GET', self.status_url, self.member)).status, 403)
+        self.assertEqual((await self.call('GET', f'/seasons/{self.sid + 99}/bonus-status', self.owner)).status, 404)
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE seasons SET status='archived' WHERE id=?", (self.sid,))
+        status = await self.status()
+        self.assertTrue(status['archived'])
+
+    async def test_bonus_status_makes_no_discord_lookup_and_no_write(self):
+        await self.ready_lazy()
+        counts = lambda: [self.app['store'].one(f'SELECT COUNT(*) AS n FROM {t}')['n'] for t in (
+            'signups', 'roster_entries', 'bonus_raffle_draws', 'bonus_confirmations', 'participation_source_results')]
+        rows = counts()
+        with patch('cwl_web.manage_roles.searchable_members') as members:
+            await self.status()
+        members.assert_not_called()
+        self.assertEqual(counts(), rows)
+
+    async def test_bonus_status_counts_match_the_full_bonus_read(self):
+        state = await self.ready_lazy()
+        body = {'tag': '#Q2Y', 'clan_tag': '#C2Y', 'reason': 'Fill remaining bonus slot', 'revision': state['revision']}
+        response = await self.call('POST', self.base + '/manual-candidates', self.owner, json=body)
+        self.assertEqual(response.status, 200, await response.text())
+        full = await self.get_state()
+        status = await self.status()
+        self.assertEqual(status['season_id'], self.sid)
+        self.assertEqual(status['cycle'], full['cycle'])
+        self.assertFalse(status['archived'])
+        self.assertEqual(status['main_minimum'], full['policies']['main'])
+        self.assertEqual(status['pools']['main'], [])
+        (clan,) = status['pools']['lazy']
+        accounts = [a for a in full['accounts'] if a['pool'] == 'lazy' and a['assigned_clan_tag'] == '#C2Y']
+        self.assertEqual(clan['tag'], '#C2Y')
+        self.assertEqual(clan['name'], full['clans'][0]['name'])
+        self.assertTrue(clan['active'])
+        self.assertEqual(clan['candidates'], len(accounts))
+        self.assertEqual(clan['meets_rule'], sum(1 for a in accounts if not a['exclusion']))
+        self.assertEqual(clan['results_state'], 'partial')
+        self.assertEqual(clan['allowance_ready'], full['allowances']['#C2Y']['status'] == 'ready')
+        self.assertEqual(clan['draw_state'], 'none')
+        self.set_host_pools('main', 'main')
+        (clan,) = (await self.status())['pools']['lazy']
+        self.assertFalse(clan['active'])
+
+    async def test_bonus_status_main_pool_minimum_and_draw_states(self):
+        await self.ready()
+        status = await self.status()
+        (clan,) = status['pools']['main']
+        self.assertEqual((status['main_minimum'], clan['meets_rule'], clan['candidates']), (5, 1, 1))
+        self.assertEqual((clan['results_state'], clan['draw_state'], clan['active']), ('captured', 'none', True))
+        with self.app['store'].tx() as db:
+            db.execute('DELETE FROM bonus_raffle_policy WHERE season_id=?', (self.sid,))
+        self.assertIsNone((await self.status())['pools']['main'][0]['meets_rule'])
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO bonus_raffle_policy VALUES (?,'main',5)", (self.sid,))
+        self.allowance_evidence()
+        self.assertTrue((await self.status())['pools']['main'][0]['allowance_ready'])
+        draw = await self.draw()
+        self.assertEqual((await self.status())['pools']['main'][0]['draw_state'], 'saved')
+        draw = await self.approve(draw)
+        self.assertEqual((await self.status())['pools']['main'][0]['draw_state'], 'approved')
+        await self.send(draw)
+        self.assertEqual((await self.status())['pools']['main'][0]['draw_state'], 'sent')
+
+    async def test_bonus_status_cancelled_draw_and_missing_results(self):
+        await self.ready()
+        self.allowance_evidence()
+        draw = await self.draw()
+        response = await self.call('POST', self.base + f"/{draw['id']}/cancel", self.owner, json={'reason': 'Wrong count'})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertEqual((await self.status())['pools']['main'][0]['draw_state'], 'cancelled')
+        with self.app['store'].tx() as db:
+            db.execute('DELETE FROM participation_source_results WHERE season_id=?', (self.sid,))
+        self.assertEqual((await self.status())['pools']['main'][0]['results_state'], 'not_checked')
 
     async def test_flags_override_role_weight_and_stale_approval(self):
         state = await self.ready_lazy()

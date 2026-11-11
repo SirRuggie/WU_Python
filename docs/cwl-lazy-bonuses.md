@@ -71,3 +71,7 @@ reviewed under the new rules. Approved historical snapshots remain readable.
 Approval and announcement remain separate. Delivery retains durable receipts;
 uncertain Discord sends are not automatically retried. No live messages or real
 bonus draws are needed to test this workflow.
+
+`GET /api/cwl/seasons/{season_id}/bonus-status` is a light read-only summary per pool and
+hosting clan (candidates, rule counts, results, allowance and draw state). It makes no Discord
+or Clash call, so Lazy counts omit role weighting, and it uses the bonus page's editor grant.
