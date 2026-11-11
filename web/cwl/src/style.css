@@ -137,17 +137,18 @@ label {
 /* Field labels (naming a select, text input or textarea) are gold like the
    World clocks fields. Checkbox and radio option labels keep the muted ink. */
 label:where(
-  :has(
-    > select,
-    > textarea,
-    > input:not([type="checkbox"]):not([type="radio"])
-  ),
-  [for]:has(
-    + select,
-    + textarea,
-    + input:not([type="checkbox"]):not([type="radio"])
-  )
-) {
+    :has(
+      > select,
+      > textarea,
+      > input:not([type="checkbox"]):not([type="radio"])
+    ),
+    [for]:has(
+      + select,
+      + textarea,
+      + input:not([type="checkbox"]):not([type="radio"])
+    )
+  ):where(:not(.global-search-field, .todo-search)) {
+  /* Search boxes built as a label keep their muted icon. */
   color: var(--wu-accent);
 }
 label > input:not([type="checkbox"]):not([type="radio"]),
