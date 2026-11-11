@@ -175,9 +175,12 @@ export default function AddClockDialog({
           {mode === "existing" && (
             <SearchPicker
               label="Voice channel"
-              options={voiceChannels.map((channel) =>
-                voiceOption(channel, channel.used ? "has a clock" : ""),
-              )}
+              options={[...voiceChannels]
+                // Free channels first; ones with a clock stay visible below.
+                .sort((a, b) => Number(a.used) - Number(b.used))
+                .map((channel) =>
+                  voiceOption(channel, channel.used ? "has a clock" : ""),
+                )}
               value={draft.channel_id}
               placeholder="Select a voice channel"
               searchPlaceholder="Search voice channels"

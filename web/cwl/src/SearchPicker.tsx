@@ -134,6 +134,7 @@ export default function SearchPicker({
   const sheet = useRef<HTMLDialogElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const closing = useRef(false);
+  const closeTimer = useRef(0);
 
   const selected =
     options.find((option) => option.value === value) ||
@@ -167,6 +168,8 @@ export default function SearchPicker({
   }
 
   function close(returnFocus: boolean) {
+    window.clearTimeout(closeTimer.current);
+    closing.current = false;
     setOpen(false);
     setQuery("");
     if (sheet.current?.open) sheet.current.close?.();
@@ -183,7 +186,7 @@ export default function SearchPicker({
     // Phone: keep the sheet up for a moment so a quick second tap lands on
     // the sheet, not on a button behind it (for example "Add clock").
     closing.current = true;
-    window.setTimeout(() => {
+    closeTimer.current = window.setTimeout(() => {
       closing.current = false;
       close(true);
     }, CLOSE_DELAY_MS);

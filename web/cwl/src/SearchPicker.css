@@ -175,6 +175,7 @@
 
 .search-picker-list li[aria-disabled="true"] {
   color: var(--wu-text-muted);
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
