@@ -137,7 +137,7 @@ SECTION_SCOPE = {
     'clans': 'clans', 'text_commands': 'text_commands',
     **dict.fromkeys(('recruit', 'recruitment_questions', 'recruitment_staff_thread'), 'recruitment'),
     **dict.fromkeys(('ticket_settings', 'ticket_testing'), 'tickets'),
-    'roles': 'member_roles', 'band_monitor': 'server_tools',
+    'roles': 'member_roles', 'band_monitor': 'server_tools', 'world_clocks': 'server_tools',
     **dict.fromkeys(('fwa_war_messages', 'fwa_blacklist', 'fwa_bases', 'fwa_points', 'fwa_sync', 'fwa_weight'), 'fwa'),
     'cwl': 'cwl_reminders', 'cwl_rosters': 'cwl_reminders',
 }

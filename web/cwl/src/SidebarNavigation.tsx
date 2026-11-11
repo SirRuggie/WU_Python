@@ -9,6 +9,7 @@ export const dashboardViews = [
   "events",
   "declaration",
   "image-gallery",
+  "world-clocks",
   "tickets",
   "staff-overview",
   "clan-management",
@@ -297,6 +298,12 @@ const sections: Section[] = [
         label: "Image gallery",
         icon: "image",
         permissions: ["text_commands"],
+      },
+      {
+        view: "world-clocks",
+        label: "World clocks",
+        icon: "worldClock",
+        permissions: ["server_tools"],
       },
       {
         view: "connections-settings",

@@ -121,7 +121,12 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
     sections
       .find((section) => section.id === "bot")
       ?.items.map((item) => item.label),
-  ).toEqual(["Command triggers", "Image gallery", "Integrations"]);
+  ).toEqual([
+    "Command triggers",
+    "Image gallery",
+    "World clocks",
+    "Integrations",
+  ]);
   expect(
     sections
       .find((section) => section.id === "admin")
@@ -132,7 +137,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
       (item) => `${item.view}:${item.step || item.signupPanel || ""}`,
     ),
   );
-  expect(destinations).toHaveLength(33);
+  expect(destinations).toHaveLength(34);
   expect(new Set(destinations).size).toBe(destinations.length);
   const html = markup("home", [], true);
   expect(html.indexOf("Staff overview")).toBeLessThan(
@@ -157,7 +162,7 @@ it("preserves each permission list and hides empty groups or unauthorized direct
     ["tickets", ["tickets", "applications-settings"]],
     ["fwa", ["fwa-settings"]],
     ["text_commands", ["text-commands", "image-gallery"]],
-    ["server_tools", ["connections-settings"]],
+    ["server_tools", ["world-clocks", "connections-settings"]],
   ];
   for (const [scope, expected] of cases) {
     const staffViews = visibleNavigationSections(false, false, [scope])

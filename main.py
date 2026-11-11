@@ -161,6 +161,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.gauntlet_help",
         "extensions.tasks.ticket_testing",
         "extensions.tasks.cards_deadlines",
+        "extensions.tasks.world_clocks",
         "extensions.commands.tickets_legacy",
         "extensions.commands.tickets",
         "extensions.events.channel.ticket_channel_monitor",
