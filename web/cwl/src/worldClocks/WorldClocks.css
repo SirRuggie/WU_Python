@@ -264,7 +264,8 @@
   border-top: 1px solid var(--wu-border-subtle);
 }
 
-.world-clock-label {
+.world-clock-label,
+.world-clock-setting .channel-combobox > label {
   display: block;
   margin: 0 0 6px;
   padding: 0;
@@ -273,7 +274,8 @@
   font-weight: var(--wu-weight-medium);
 }
 
-.world-clock-input {
+.world-clock-input,
+.world-clock-setting .channel-combobox-input input {
   box-sizing: border-box;
   width: 100%;
   min-height: 48px;
@@ -284,6 +286,16 @@
   color: var(--wu-text);
   font: inherit;
   font-size: var(--wu-text-md);
+}
+
+/* The category picker reuses the shared channel search. Its typing tip shows
+   only while the field has focus; it stays in the accessible description. */
+.world-clock-setting .channel-combobox:not(:focus-within) .channel-picker-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 
 .world-clock-input[aria-invalid="true"] {

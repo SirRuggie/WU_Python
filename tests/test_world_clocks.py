@@ -162,3 +162,13 @@ def test_flag_rejects_invisible_and_direction_characters(flag):
 @pytest.mark.parametrize("flag", ["🏴\u200d☠\ufe0f", "🏴\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f"])
 def test_flag_keeps_joiner_sequences_and_subdivision_flags(flag):
     assert rules.validate_clock({"zone": "America/New_York", "flag": flag, "code": None}, WINTER)["flag"] == flag
+
+
+@pytest.mark.parametrize("zone, codes", [
+    ("America/New_York", ["EST", "EDT"]), ("America/Los_Angeles", ["PST", "PDT"]),
+    ("Europe/London", ["GMT", "BST"]), ("Asia/Manila", ["PHT"]), ("Asia/Kolkata", ["IST"]),
+    ("Australia/Sydney", ["AEDT", "AEST"]), ("Asia/Dubai", ["GST"]), ("America/Sao_Paulo", ["BRT"]),
+    ("Asia/Kathmandu", []),
+])
+def test_zone_codes_cover_both_halves_of_the_year(zone, codes):
+    assert rules.zone_codes(zone, WINTER) == codes

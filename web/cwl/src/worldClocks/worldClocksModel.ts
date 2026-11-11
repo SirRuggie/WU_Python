@@ -70,6 +70,8 @@ export type ZoneRow = {
   region: string;
   flag: string;
   offset: string;
+  /** Letter codes now and in the other half of the year, e.g. ["CST", "CDT"]. */
+  codes?: string[];
 };
 
 export type ClockPreview = {
@@ -147,16 +149,39 @@ export function sameDraft(a: ClockDraft, b: ClockDraft) {
   );
 }
 
-export function searchZones(rows: ZoneRow[], query: string, limit = 8) {
+/**
+ * Search by city, region, offset or code (EST, CDT, PHT …).
+ *
+ * Zones whose code equals a typed word come first, and among those the common
+ * cities (`preferred`, the city chips) lead, so "CST" shows Chicago before
+ * the other Central zones and before China Standard Time.
+ */
+export function searchZones(
+  rows: ZoneRow[],
+  query: string,
+  limit = 8,
+  preferred: string[] = [],
+) {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
+  const rank = (row: ZoneRow) => {
+    const codes = (row.codes || []).map((code) => code.toLowerCase());
+    const codeHit = words.some((word) => codes.includes(word));
+    const chip = preferred.indexOf(row.zone);
+    return (
+      (codeHit ? 0 : 2) + (chip >= 0 ? 0 : 1) + (chip >= 0 ? chip / 100 : 0)
+    );
+  };
   return rows
     .filter((row) => {
       const text =
-        `${row.city} ${row.region} ${row.zone} ${row.offset}`.toLowerCase();
+        `${row.city} ${row.region} ${row.zone} ${row.offset} ${(row.codes || []).join(" ")}`.toLowerCase();
       return words.every((word) => text.includes(word));
     })
-    .slice(0, limit);
+    .map((row, index) => ({ row, index, rank: rank(row) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .slice(0, limit)
+    .map((item) => item.row);
 }
 
 export function newRequestId() {

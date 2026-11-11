@@ -170,8 +170,9 @@ async def zones(request):
     for zone in sorted(rules.zones()):
         region, _, city = zone.partition("/")
         rows.append({"zone": zone, "city": city.replace("_", " ").replace("/", " · "), "region": region,
-                     "flag": rules.flag_for(zone), "offset": rules.offset_label(
-                         datetime.now(timezone.utc).astimezone(rules.zone_info(zone)).utcoffset())})
+                     "flag": rules.flag_for(zone),
+                     "offset": rules.offset_label(now.astimezone(rules.zone_info(zone)).utcoffset()),
+                     "codes": rules.zone_codes(zone, now)})
     return respond({"zones": rows, "now": now})
 
 

@@ -1,5 +1,6 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
+import ChannelCombobox from "../ChannelCombobox";
 import FilterChips from "../FilterChips";
 import { Button } from "../rosterUi/primitives";
 import {
@@ -27,7 +28,6 @@ export default function ClockSettingsPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const categoryId = useId();
   const dirty =
     draft.category_id !== settings.category_id ||
     draft.time_format !== settings.time_format ||
@@ -67,29 +67,16 @@ export default function ClockSettingsPanel({
   return (
     <div className="world-clock-settings">
       <div className="world-clock-setting">
-        <label className="world-clock-label" htmlFor={categoryId}>
-          New channels go in
-        </label>
-        <select
-          id={categoryId}
-          className="world-clock-input"
+        <ChannelCombobox
+          label="New channels go in"
+          channels={categories.map((row) => ({ ...row, type: 4 }))}
           value={draft.category_id || ""}
           disabled={busy || !channelsAvailable}
-          onChange={(event) =>
-            setDraft({ ...draft, category_id: event.target.value || null })
+          nameOnly
+          onChange={(value) =>
+            setDraft({ ...draft, category_id: value || null })
           }
-        >
-          <option value="">Select a category</option>
-          {!categories.some((row) => row.id === draft.category_id) &&
-            draft.category_id && (
-              <option value={draft.category_id}>Missing category</option>
-            )}
-          {categories.map((row) => (
-            <option key={row.id} value={row.id}>
-              {row.name}
-            </option>
-          ))}
-        </select>
+        />
         <p className="world-clock-help">
           New voice channels copy this category's permissions.
         </p>

@@ -376,6 +376,112 @@ it("turning an open clock off keeps its unsaved edits", async () => {
   expect(after?.value).toBe("NYC");
 });
 
+it("zone search finds codes and puts common cities first", () => {
+  const rows = [
+    {
+      zone: "America/Belize",
+      city: "Belize",
+      region: "America",
+      flag: "🇧🇿",
+      offset: "GMT-6",
+      codes: ["CST"],
+    },
+    {
+      zone: "America/Chicago",
+      city: "Chicago",
+      region: "America",
+      flag: "🇺🇸",
+      offset: "GMT-6",
+      codes: ["CST", "CDT"],
+    },
+    {
+      zone: "Asia/Shanghai",
+      city: "Shanghai",
+      region: "Asia",
+      flag: "🇨🇳",
+      offset: "GMT+8",
+      codes: ["CST"],
+    },
+    {
+      zone: "Europe/Budapest",
+      city: "Budapest",
+      region: "Europe",
+      flag: "🇭🇺",
+      offset: "GMT+1",
+      codes: ["CET", "CEST"],
+    },
+    {
+      zone: "America/New_York",
+      city: "New York",
+      region: "America",
+      flag: "🇺🇸",
+      offset: "GMT-5",
+      codes: ["EST", "EDT"],
+    },
+  ];
+  const chips = ["America/New_York", "America/Chicago"];
+  expect(searchZones(rows, "CST", 8, chips).map((row) => row.zone)).toEqual([
+    "America/Chicago",
+    "America/Belize",
+    "Asia/Shanghai",
+  ]);
+  expect(searchZones(rows, "cdt", 8, chips).map((row) => row.zone)).toEqual([
+    "America/Chicago",
+  ]);
+  // "est" is inside "Budapest", but the exact code match comes first.
+  expect(searchZones(rows, "est", 8, chips).map((row) => row.zone)).toEqual([
+    "America/New_York",
+    "Europe/Budapest",
+  ]);
+});
+
+it("the category picker is searchable and saves only on Save", async () => {
+  const puts: unknown[] = [];
+  const payload = data([clock("a")]);
+  payload.categories = [
+    { id: "900000000000000001", name: "⏳ ⇒ Live World Times" },
+    { id: "900000000000000009", name: "Voice Lounge" },
+  ];
+  await render(payload, (path, method, body) => {
+    if (path.endsWith("/settings") && method === "PUT") {
+      puts.push(body);
+      return {
+        settings: {
+          ...payload.settings,
+          category_id: "900000000000000009",
+          revision: "2",
+        },
+      };
+    }
+  });
+  await click(button("Settings"));
+  const input = host.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+  expect(input.value).toContain("Live World Times");
+  await act(async () => input.focus());
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    setter.call(input, "loun");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const options = Array.from(host.querySelectorAll('[role="option"]'));
+  expect(options.map((node) => node.textContent)).toEqual(["#Voice Lounge"]);
+  expect(host.textContent).not.toContain("900000000000000009"); // No raw ids.
+  await click(options[0]);
+  expect(puts).toHaveLength(0);
+  await click(button("Save settings"));
+  expect(puts).toEqual([
+    {
+      revision: "1",
+      category_id: "900000000000000009",
+      time_format: "12h",
+      interval_minutes: 6,
+    },
+  ]);
+});
+
 it("model helpers", () => {
   expect(statusCounts(NINE)).toEqual({ updating: 7, problems: 1, off: 1 });
   const rows = [
