@@ -138,6 +138,8 @@
 .notice.bonus-clan-notice .bonus-inline-action {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 44px;
   min-height: 44px;
   vertical-align: middle;
   color: var(--wu-text);

@@ -603,6 +603,23 @@ describe("phone layout", () => {
       "Refresh attacks from Clash": true,
     });
   });
+  it("a player lookup still running after the editor closes disables Refresh attacks from Clash", async () => {
+    await mount();
+    await act(async () => button("Add player by tag").click());
+    await type(
+      host.querySelector<HTMLInputElement>('input[name="player-tag"]')!,
+      "#P9",
+    );
+    api.mockImplementation(never);
+    await act(async () => button("Find player").click());
+    // The toggle closes the editor; the lookup keeps running.
+    await act(async () => button("Add player by tag").click());
+    expect(host.querySelector(".bonus-add-candidate")).toBeNull();
+    expect(await menuItems()).toEqual({
+      Refresh: true,
+      "Refresh attacks from Clash": true,
+    });
+  });
   it("Refresh attacks from Clash posts the existing check", async () => {
     await mount();
     await select("Refresh attacks from Clash");
