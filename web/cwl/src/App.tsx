@@ -522,6 +522,19 @@ function App() {
     window.addEventListener('keydown', shortcut)
     return () => window.removeEventListener('keydown', shortcut)
   })
+  // Results → one player on Strikes. Staff add the strike there themselves.
+  const openStrikePlayer = (tag: string) => {
+    if (navigation.current?.pending) return
+    const proceed = () => {
+      navigation.current?.write({view: 'strikes', season: '', strikeTag: tag}, true)
+      setActivityVisit(window.history.state?.wuDashboardIndex || 0)
+      setReplacementClan(''); setReplacementTag(''); setStrikeFilterState(''); setFlowFrom(undefined)
+      setStrikeTag(tag)
+      acceptRoute('strikes')
+    }
+    if (!canLeave(proceed)) return
+    proceed()
+  }
   const openPublication = (step: 'review' | 'announce') => {
     if (navigation.current?.pending || !canOpenPublication(step) || (view === 'publication' && publicationStep === step)) return
     const proceed = () => {
@@ -1242,7 +1255,7 @@ function App() {
             />
           )
         }
-        {view === 'participation' && session.can_edit && <ParticipationWorkspace onBonus={allowedView("bonuses") === "bonuses" ? (state) => changeView("bonuses", "", undefined, "register", undefined, typeof state === "string" ? state : "") : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'participation' && session.can_edit && <ParticipationWorkspace onAddStrike={strikePermissions(session.dashboard_permissions, session.is_owner).add ? openStrikePlayer : undefined} onBonus={allowedView("bonuses") === "bonuses" ? (state) => changeView("bonuses", "", undefined, "register", undefined, typeof state === "string" ? state : "") : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'bonuses' && session.can_edit && <BonusWorkspace onResults={allowedView("participation") === "participation" ? (state) => changeView("participation", "", undefined, "register", undefined, typeof state === "string" ? state : "") : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === "roster" && session.can_edit && (
           <RosterWorkspace

@@ -199,6 +199,8 @@ def _export_snapshot(db, season_id: int, kind: str, basis: str, stamp: str) -> d
                 row['_participation_display_source'] = {
                     'source_attacks': part.get('source_attacks'),
                     'source_stars': part.get('source_stars'),
+                    # Private display fact; never an export column.
+                    'source_no_show': part.get('source_no_show', False),
                 }
             recorded = part.get("previous_results") if not matches_roster else None
             recorded = recorded or part

@@ -79,3 +79,8 @@ bonus draws are needed to test this workflow.
 `GET /api/cwl/seasons/{season_id}/bonus-status` is a light read-only summary per pool and
 hosting clan (candidates, rule counts, results, allowance and draw state). It makes no Discord
 or Clash call, so Lazy counts omit role weighting, and it uses the bonus page's editor grant.
+
+Did not join (2026-11-11): an assigned account with raw source status `no_data`
+(`source_no_show`) is a hard Lazy exclusion, "Did not join the CWL clan", that a
+staff reason cannot override. Main excludes it with the same reason without
+blocking the draw, and the Bonus status counts it as captured.

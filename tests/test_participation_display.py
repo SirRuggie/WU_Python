@@ -56,7 +56,7 @@ def test_sealed_final_war_is_healthy_display_without_changing_raw_inputs_or_data
         'failed_clan': False, 'round': 2,
     }
     assert rows == original
-    assert {k: v for k, v in output[0].items() if k != 'display_status'} == original[0]
+    assert {k: v for k, v in output[0].items() if k not in ('display_status', 'did_not_join')} == original[0]
     assert db.total_changes == writes
     assert list(db.iterdump()) == before
 
@@ -137,12 +137,12 @@ def test_final_payload_decoration_preserves_policy_fingerprint_and_saved_snapsho
     assert _fingerprint(payload) == fingerprint
     assert output['fingerprint'] == 'existing-reviewed-token'
     assert output['accounts'][0]['display_status']['code'] == 'in_progress'
-    assert {k: v for k, v in output['accounts'][0].items() if k != 'display_status'} == row
+    assert {k: v for k, v in output['accounts'][0].items() if k not in ('display_status', 'did_not_join')} == row
     assert eligibility(output['accounts'][0], 4) == eligibility(row, 4) is None
     assert lazy_eligibility(output['accounts'][0]) == lazy_eligibility(row) is None
     old = output['draws'][0]['snapshot']['winners'][0]
     assert old['display_status']['code'] == 'not_recent'
-    assert {k: v for k, v in old.items() if k != 'display_status'} == row
+    assert {k: v for k, v in old.items() if k not in ('display_status', 'did_not_join')} == row
     assert db.total_changes == changes
 
 
@@ -277,5 +277,5 @@ def test_sync_month_mismatch_precedes_saved_failure_and_unchecked_status():
         assert output['display_status']['code'] == 'season_mismatch'
         assert output['display_status']['failed_clan'] is False
         assert output['display_status']['warning'] == 'The CWL month from Clash does not match this month.'
-        assert {key: value for key, value in output.items() if key != 'display_status'} == original
+        assert {key: value for key, value in output.items() if key not in ('display_status', 'did_not_join')} == original
         assert row == original

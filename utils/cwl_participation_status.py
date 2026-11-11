@@ -2,6 +2,20 @@
 from dataclasses import dataclass
 
 
+def ended_group_clans(db, season_id: int, cycle: str | None) -> frozenset:
+    """Clans whose saved league group has finished; only these prove a no-show."""
+    if not cycle:
+        return frozenset()
+    return frozenset(
+        row["clan_tag"] for row in db.execute(
+            "SELECT clan_tag,state FROM participation_group_observations "
+            "WHERE season_id=? AND cycle=?",
+            (season_id, cycle),
+        )
+        if str(row["state"]).upper().replace("_", "") == "ENDED"
+    )
+
+
 @dataclass(frozen=True)
 class ParticipationEvidence:
     group_state: str | None = None
@@ -13,7 +27,8 @@ class ParticipationEvidence:
     last_check_failed: bool = False
 
 
-def effective_participation_status(stored_status, *, complete, has_results, evidence, sync_status=None):
+def effective_participation_status(stored_status, *, complete, has_results, evidence, sync_status=None,
+                                   did_not_join=False):
     """Interpret existing evidence for display only.
 
     Callers must retain stored_status/complete for bonus and export decisions.
@@ -39,6 +54,9 @@ def effective_participation_status(stored_status, *, complete, has_results, evid
         return result('historical', 'Saved history')
     if stored_status in ('never', 'missing', 'unassigned'):
         return result(stored_status, 'No assigned clan' if stored_status == 'unassigned' else 'Not checked')
+    if did_not_join:
+        # A final result for a finished CWL, never an incomplete one.
+        return result('did_not_join', 'Did not join')
     if evidence.failure_reason:
         return result('stale' if has_results else 'unavailable', 'Last saved results' if has_results else 'Results unavailable',
                       warning='This clan could not refresh. Showing its last saved results.' if has_results

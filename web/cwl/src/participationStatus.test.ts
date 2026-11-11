@@ -55,4 +55,12 @@ describe('selected CWL month mismatch', () => {
       affected: 0, count: 1, updated: 0,
     });
   });
+  it('treats Did not join and unassigned accounts as final, not incomplete', () => {
+    const rows = [
+      { assigned_clan_tag: '#A', display_status: status('complete') },
+      { assigned_clan_tag: '#A', display_status: { ...status('did_not_join'), label: 'Did not join' } },
+      { assigned_clan_tag: null, display_status: { ...status('unassigned'), label: 'No assigned clan' } },
+    ];
+    expect(participationSummary(rows)).toMatchObject({ label: 'CWL complete', warning: '' });
+  });
 });

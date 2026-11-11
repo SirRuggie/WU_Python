@@ -19,6 +19,8 @@ def _lazy_hard_exclusion(account):
         return 'Hosting clan is no longer an active Lazy clan in this season'
     if account.get('roster_changed'):
         return 'Roster changed; reconcile results before drawing'
+    if account.get('source_no_show'):
+        return 'Did not join the CWL clan'
     if not account.get('in_current_roster') and not account.get('manual_candidate'):
         return 'Account is not in the current signup roster'
     if account.get('tag_valid') is False:
@@ -72,6 +74,9 @@ def lazy_eligibility(account):
 def eligibility(account, minimum):
     if not account.get('in_current_roster') or account.get('roster_changed'):
         return 'Roster changed; reconcile results before drawing'
+    if account.get('source_no_show'):
+        # A final result, not a gap: excluded without blocking the draw.
+        return 'Did not join the CWL clan'
     if not account.get('source_complete') or account.get('source_status') not in ('complete', 'stale', 'historical'):
         return 'Results are not complete'
     attacks = account.get('attacks')

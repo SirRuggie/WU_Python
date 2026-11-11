@@ -18,6 +18,7 @@ import {
   matchesOutcome,
   outcomeCounts,
   outcomeLabels,
+  outcomeOrder,
   resultTimeText,
   type OutcomeFilter,
 } from "./participationOutcome";
@@ -42,6 +43,8 @@ type Props = {
   /** Opens Bonus medals with pool, clan and step keys; absent without bonus access. */
   onBonus?: (state?: string) => void;
   onSeasonChange: (id: string) => void;
+  /** Opens Strikes on one player; absent without strike add access. */
+  onAddStrike?: (tag: string) => void;
   urlState?: string;
   onUrlState?: (state: string, push: boolean) => void;
 };
@@ -58,6 +61,7 @@ export default function ParticipationWorkspace({
   onSeasonChange,
   onDirty: reportDirty,
   onBonus,
+  onAddStrike,
   urlState = "",
   onUrlState,
 }: Props) {
@@ -841,13 +845,20 @@ export default function ParticipationWorkspace({
               variant="pill"
               value={activeOutcome}
               disabled={controlsLocked}
-              options={(
-                ["all", "meets", "below", "partial", "not_checked"] as const
-              ).map((value) => ({
-                value,
-                label: value === "all" ? "All" : outcomeLabels[value],
-                count: counts[value],
-              }))}
+              options={(["all", ...outcomeOrder] as const)
+                .filter(
+                  (value) =>
+                    !["did_not_join", "filler", "not_assigned"].includes(
+                      value,
+                    ) ||
+                    counts[value] > 0 ||
+                    activeOutcome === value,
+                )
+                .map((value) => ({
+                  value,
+                  label: value === "all" ? "All" : outcomeLabels[value],
+                  count: counts[value],
+                }))}
               onChange={(next) => {
                 setOutcome(next);
                 emit({ outcome: next });
@@ -887,6 +898,7 @@ export default function ParticipationWorkspace({
                       onSave={save}
                       onReset={resetToSource}
                       onDirty={onDirty}
+                      onAddStrike={onAddStrike}
                     />
                   </li>
                 ))}

@@ -1388,3 +1388,22 @@ preserves the staff member's future-month checkbox choice. Open post uses the
 shared link style, with short month/status copy. This review uses fake Discord and
 owned databases; it does not establish live delivery. Release remains held for the
 owner's preview approval. Final gate evidence is recorded in the PR review notes.
+
+### Did not join, Filler and Not assigned outcomes (2026-11-11)
+
+Owner decisions, walked one at a time. An assigned account whose clan finished CWL
+(league group `ENDED`) and that is in neither the league-group roster nor any
+observed war roster shows a red "Did not join" outcome. The raw source status
+`no_data` gives `source_no_show`; only the display layer adds `did_not_join`, and
+only for an `ENDED` group, because members can still be added earlier. An
+unassigned account shows a neutral "Filler" when it has a roster filler mark,
+otherwise "Not assigned". Accounts no longer signed up stay hidden (current
+Results lists current signups only). The three new outcome chips appear only when
+counted. Did not join is a final result: it never counts as incomplete on Bonus
+medals, it excludes the account from Main and Lazy draws without blocking the
+draw, and a staff review reason cannot cover it. Strikes stay staff-reviewed: on a
+Did not join card, staff with strike add access get an "Add strike" ⋯ item that
+only opens Strikes on that player; the existing manual strike editor and its
+confirmation write the strike. CWL is still never an automatic strike source. The
+Main draw's "Resolve incomplete" blocker links to Results filtered by pool, clan
+and, when all incomplete players share one, the outcome.

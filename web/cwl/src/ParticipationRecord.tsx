@@ -1,7 +1,7 @@
 import AccountCard from "./AccountCard";
 import useConfirmDialog from "./useConfirmDialog";
 import { useEffect, useId, useRef, useState } from "react";
-import { Info } from "lucide-react";
+import { Flag, Info } from "lucide-react";
 import DiscordIdentity from "./DiscordIdentity";
 import useDiscordIdentities from "./useDiscordIdentities";
 import { StatusPill } from "./rosterUi/primitives";
@@ -43,19 +43,35 @@ type Props = {
   ) => Promise<ParticipationAccount>;
   onReset: (account: ParticipationAccount) => Promise<ParticipationAccount>;
   onDirty: (tag: string, dirty: boolean) => void;
+  /** Opens Strikes on this player; absent without strike access. */
+  onAddStrike?: (tag: string) => void;
 };
 
 /** Card ⋯ menu items. Add new actions to this list. */
 export function participationMenuItems({
   account,
   onDetails,
+  onAddStrike,
 }: {
   account: ParticipationAccount;
   onDetails: (trigger: HTMLElement) => void;
+  onAddStrike?: (tag: string) => void;
 }): ActionMenuItem[] {
   return [
     discordMessageItem(account.user_id),
     { id: "details", label: "Details", icon: Info, onAction: onDetails },
+    // Staff review first: this only opens Strikes; nothing is written here.
+    ...(account.did_not_join && onAddStrike
+      ? [
+          {
+            id: "add-strike",
+            label: "Add strike",
+            icon: Flag,
+            separatorBefore: true,
+            onAction: () => onAddStrike(account.tag),
+          },
+        ]
+      : []),
   ];
 }
 
@@ -71,6 +87,7 @@ export default function ParticipationRecord({
   onSave,
   onReset,
   onDirty,
+  onAddStrike,
 }: Props) {
   const { confirm, dialog: confirmation } = useConfirmDialog(
     `${account.tag}:${account.revision}:${publicationVersion}:${readonly}:${locked}:${open}`,
@@ -293,7 +310,11 @@ export default function ParticipationRecord({
         <ActionMenu
           name={account.player_name}
           disabled={locked}
-          items={participationMenuItems({ account, onDetails: openFrom })}
+          items={participationMenuItems({
+            account,
+            onDetails: openFrom,
+            onAddStrike,
+          })}
         />
       }
     >

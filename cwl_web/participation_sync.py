@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from aiohttp import web
 
 from utils.cwl_working_roster import working_accounts, account_token
+from utils.cwl_participation_status import ended_group_clans
 from utils.cwl_bonus_allowance import AllowanceStore
 from .providers import (
     ProviderUnavailable,
@@ -246,11 +247,16 @@ def settings_view(db, season_id: int) -> dict:
 def source_row(db, season_id: int, cycle: str | None, player_tag: str):
     if not cycle:
         return None
-    return db.execute(
+    row = db.execute(
         "SELECT * FROM participation_source_results "
         "WHERE season_id=? AND cycle=? AND tag=?",
         (season_id, cycle, player_tag),
     ).fetchone()
+    if row is None or row["status"] != "no_data":
+        return row
+    # Did not join needs the assigned clan's finished group; members can
+    # still be added while CWL runs.
+    return {**dict(row), "ended_clans": ended_group_clans(db, season_id, cycle)}
 
 
 def _participants(db, season_id: int) -> dict:

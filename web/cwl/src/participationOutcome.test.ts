@@ -48,6 +48,62 @@ describe("participation outcome", () => {
     expect(outcomeLabels.partial).toBe("Partial results");
     expect(outcomeLabels.not_checked).toBe("Not checked");
   });
+  it("shows Did not join, Filler and Not assigned before any rule", () => {
+    expect(
+      participationOutcome(
+        {
+          ...lazy(null, null, false),
+          assigned_clan_tag: "#PQ",
+          did_not_join: true,
+        },
+        null,
+      ),
+    ).toBe("did_not_join");
+    expect(
+      participationOutcome(
+        { ...main(null, false), assigned_clan_tag: "#PQ", did_not_join: true },
+        null,
+      ),
+    ).toBe("did_not_join");
+    expect(
+      participationOutcome(
+        {
+          ...lazy(null, null, false),
+          assigned_clan_tag: null,
+          roster_filler: true,
+        },
+        null,
+      ),
+    ).toBe("filler");
+    expect(
+      participationOutcome(
+        { ...lazy(null, null, false), assigned_clan_tag: null },
+        null,
+      ),
+    ).toBe("not_assigned");
+    // Accounts without an assignment field keep the normal rule.
+    expect(participationOutcome(lazy(null, null), null)).toBe("not_checked");
+    expect(outcomeTone("did_not_join")).toBe("danger");
+    expect(outcomeTone("filler")).toBe("neutral");
+    expect(outcomeLabels.did_not_join).toBe("Did not join");
+    const counts = outcomeCounts(
+      [
+        {
+          ...lazy(null, null, false),
+          assigned_clan_tag: "#PQ",
+          did_not_join: true,
+        },
+        { ...lazy(4, 9), assigned_clan_tag: "#PQ" },
+      ],
+      null,
+    );
+    expect(counts).toMatchObject({
+      all: 2,
+      did_not_join: 1,
+      meets: 1,
+      not_checked: 0,
+    });
+  });
   it("uses the saved Main minimum and gives no outcome without one", () => {
     expect(participationOutcome(main(3), 3)).toBe("meets");
     expect(participationOutcome(main(2), 3)).toBe("below");
@@ -75,6 +131,9 @@ describe("participation outcome", () => {
       below: 1,
       partial: 1,
       not_checked: 1,
+      did_not_join: 0,
+      filler: 0,
+      not_assigned: 0,
     });
     expect(rows.filter((row) => matchesOutcome(row, "below", null))).toEqual([
       rows[1],

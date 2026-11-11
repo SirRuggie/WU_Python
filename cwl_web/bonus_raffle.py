@@ -112,7 +112,8 @@ def _bonus_status(db, sid):
                 meets = sum(1 for a in accounts if lazy_eligibility(a) is None)
             else:
                 meets = None if minimum is None else sum(1 for a in accounts if eligibility(a, minimum) is None)
-            complete = sum(1 for a in accounts if a.get('source_complete'))
+            # Did not join is a final result, so it never leaves results open.
+            complete = sum(1 for a in accounts if a.get('source_complete') or a.get('source_no_show'))
             pools[pool].append({
                 'tag': tag, 'name': names.get(tag) or accounts[0].get('assigned_clan_name') or tag,
                 # Main has no host check; Lazy follows the season pool rule from enrich_view.
