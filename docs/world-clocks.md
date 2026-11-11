@@ -86,7 +86,7 @@ overwrites a newer staff edit.
 | Method | Path | Use |
 | --- | --- | --- |
 | GET | `` | Settings, clocks, categories, voice channels, chips, next update, recent runs |
-| GET | `/zones` | Zone list for the search |
+| GET | `/zones` | Zone list for the search, with each zone's letter codes now and in the other half of the year (`codes`, for example `["CST", "CDT"]`) |
 | POST | `/preview` | Name now and in the other half of the year |
 | PUT | `/settings` | Category, time format, interval |
 | POST | `` | Add a clock (`mode: create` or `existing`, `request_id` UUID) |
@@ -125,6 +125,16 @@ A full category (50 channels) is refused before any Discord call. Maximum 25
 clocks.
 
 ## Page behavior
+
+- Zone search matches city, country, region, offset and code (EST, EDT, CST,
+  CDT, PST, GMT, BST, PHT …). Zones whose code equals the typed word come
+  first, and the 12 chip cities lead each group, so "CST" shows Chicago first.
+  Search-only codes fill common zones where tzdata has only a number (BRT for
+  São Paulo, GST for Dubai, SGT for Singapore); those zones still need a typed
+  code for the channel name.
+- "New channels go in" (Settings) uses the shared channel search
+  (`ChannelCombobox`, names only). Choosing a category changes the draft;
+  nothing saves until Save settings.
 
 - Each On/Off switch saves at once. A failed switch goes back and shows the
   error.

@@ -56,7 +56,12 @@ export default function ZonePicker({
     };
   }, [query, zones.length]);
 
-  const matches = searchZones(zones, query);
+  const matches = searchZones(
+    zones,
+    query,
+    8,
+    chips.map((chip) => chip.zone),
+  );
   const chipValue = chips.some((chip) => chip.zone === value) ? value : null;
 
   return (
@@ -70,7 +75,7 @@ export default function ZonePicker({
         type="search"
         value={query}
         disabled={disabled}
-        placeholder="Search a city or country"
+        placeholder="Search a city, country or code (EST)"
         autoComplete="off"
         aria-controls={listId}
         onChange={(event) => setQuery(event.target.value)}
@@ -96,6 +101,7 @@ export default function ZonePicker({
                 <span className="world-clock-zone-city">{row.city}</span>
                 <small>
                   {row.region} · {row.offset}
+                  {row.codes?.length ? ` · ${row.codes.join("/")}` : ""}
                 </small>
               </button>
             </li>

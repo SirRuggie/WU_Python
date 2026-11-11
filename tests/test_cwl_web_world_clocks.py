@@ -344,6 +344,10 @@ def test_preview_and_zones(env):
     zones = payload(run(api.zones(request())))["zones"]
     assert any(row["zone"] == "Asia/Manila" for row in zones)
     assert not any(row["zone"].startswith("Etc/") for row in zones)
+    by_zone = {row["zone"]: row for row in zones}
+    assert set(by_zone["America/Chicago"]["codes"]) == {"CST", "CDT"}
+    assert by_zone["Asia/Manila"]["codes"] == ["PHT"]
+    assert by_zone["Asia/Dubai"]["codes"] == ["GST"]  # Search only; naming still needs a typed code.
 
 
 def test_unchanged_category_is_not_checked_with_discord_again(env):

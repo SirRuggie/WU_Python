@@ -140,6 +140,25 @@ def other_half(zone: str, at: datetime) -> datetime | None:
     return None
 
 
+# Search-only codes for common zones where tzdata has only a number. They help
+# search find the zone; channel names still need a typed code there.
+SEARCH_CODES = {"America/Sao_Paulo": ("BRT",), "Asia/Dubai": ("GST",), "Asia/Singapore": ("SGT",)}
+
+
+def zone_codes(zone: str, at: datetime) -> list[str]:
+    """Letter codes the zone uses now and in the other half of the year, for search.
+
+    For example America/Chicago gives ["CST", "CDT"] in November. Numeric-only
+    zones give [].
+    """
+    codes = [auto_code(zone, at)]
+    later = other_half(zone, at)
+    if later is not None:
+        codes.append(auto_code(zone, later))
+    codes.extend(SEARCH_CODES.get(zone, ()))
+    return list(dict.fromkeys(code for code in codes if code))
+
+
 def mark(now: datetime, interval: int = DEFAULT_INTERVAL) -> datetime:
     """The latest update mark at or before now (:00, :06, :12 … for 6)."""
     now = now.astimezone(timezone.utc)
