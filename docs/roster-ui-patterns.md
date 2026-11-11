@@ -903,3 +903,6 @@ Short lists (dropdown rollout PR 2):
   its fix (`bonusReviewBlockers` in `bonusRaffle.ts` is the one source for the
   lines and the disabled state). "Discord roles unavailable · Retry" and
   "Results not captured" show as lines but do not disable the button.
+- Results cards: the card body opens Details; the shared `⋯` menu holds DM +
+  Details (`participationMenuItems` list). Attacks and stars come from Clash
+  and are read only; Details saves staff notes only.

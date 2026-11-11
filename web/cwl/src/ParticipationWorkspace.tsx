@@ -425,8 +425,6 @@ export default function ParticipationWorkspace({
     revision: number,
     publicationVersion: number | null,
     sourceCheckedAt: string | null,
-    attacks: number | null,
-    stars: number | null,
     notes: string,
   ): Promise<ParticipationAccount> => {
     const sid = seasonId;
@@ -440,8 +438,6 @@ export default function ParticipationWorkspace({
           publication_version: publicationVersion ?? 0,
           roster_token: account.roster_token,
           source_checked_at: sourceCheckedAt,
-          attacks,
-          stars,
           notes,
         },
       );
@@ -458,7 +454,7 @@ export default function ParticipationWorkspace({
         );
         setNotice({
           kind: "success",
-          text: `${account.player_name} results saved.`,
+          text: `${account.player_name} notes saved.`,
         });
       }
       return result.account;

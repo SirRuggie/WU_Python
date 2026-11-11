@@ -39,11 +39,13 @@ const button = (name: string, within: ParentNode = document) =>
 // Prompt 228: the editor has one dismiss action, Cancel (no separate Close).
 const dismiss = () =>
   button("Cancel", document.querySelector(".participation-dialog")!);
-const render = (locked = false) =>
+// Results are read only; the one reset reconciles a changed assignment.
+const changed: ParticipationAccount = { ...account, roster_changed: true };
+const render = (locked = false, row = account) =>
   act(async () =>
     root.render(
       <ParticipationRecord
-        account={account}
+        account={row}
         publicationVersion={1}
         readonly={false}
         locked={locked}
@@ -77,7 +79,11 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
+it("an override-only record has no Use synced results button", async () => {
+  expect(button("Use synced results")).toBeUndefined();
+});
 it("Use synced results cancels without writes and confirms once despite double tap", async () => {
+  await render(false, changed);
   await act(async () => button("Use synced results").click());
   expect(reset).not.toHaveBeenCalled();
   expect(save).not.toHaveBeenCalled();
@@ -97,12 +103,13 @@ it("Use synced results cancels without writes and confirms once despite double t
     confirm.click();
   });
   expect(reset).toHaveBeenCalledTimes(1);
-  expect(reset).toHaveBeenCalledWith(account);
+  expect(reset).toHaveBeenCalledWith(changed);
   expect(save).not.toHaveBeenCalled();
 });
 it("permission/lock change cancels a pending decision", async () => {
+  await render(false, changed);
   await act(async () => button("Use synced results").click());
-  await render(true);
+  await render(true, changed);
   expect(document.querySelector(".confirm-dialog")).toBeNull();
   expect(reset).not.toHaveBeenCalled();
 });
@@ -114,6 +121,7 @@ it("closing during reset cannot write twice", async () => {
         finish = resolve;
       }),
   );
+  await render(false, changed);
   await act(async () => button("Use synced results").click());
   await act(async () =>
     button(
@@ -123,7 +131,7 @@ it("closing during reset cannot write twice", async () => {
   );
   await act(async () => dismiss().click());
   expect(close).not.toHaveBeenCalled();
-  await act(async () => finish(account));
+  await act(async () => finish(changed));
   expect(reset).toHaveBeenCalledTimes(1);
 });
 it("discard editor cancellation retains the draft; confirmed discard closes without writes", async () => {
@@ -144,10 +152,7 @@ it("discard editor cancellation retains the draft; confirmed discard closes with
   expect(close).not.toHaveBeenCalled();
   await act(async () => dismiss().click());
   await act(async () =>
-    button(
-      "Discard results",
-      document.querySelector(".confirm-dialog")!,
-    ).click(),
+    button("Discard notes", document.querySelector(".confirm-dialog")!).click(),
   );
   expect(close).toHaveBeenCalledTimes(1);
   expect(reset).not.toHaveBeenCalled();
@@ -171,8 +176,8 @@ it("keeps the direct unlocked Save callback arguments and single-submit guard", 
     notes.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => {
-    button("Save results").click();
-    button("Save results").click();
+    button("Save notes").click();
+    button("Save notes").click();
   });
   expect(save).toHaveBeenCalledTimes(1);
   expect(save).toHaveBeenCalledWith(
@@ -180,8 +185,6 @@ it("keeps the direct unlocked Save callback arguments and single-submit guard", 
     1,
     1,
     null,
-    2,
-    6,
     "Changed",
   );
   expect(reset).not.toHaveBeenCalled();

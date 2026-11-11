@@ -185,32 +185,43 @@
 .participation-values small {
   font-size: var(--wu-text-xs);
 }
-.participation-row-action {
-  min-width: 44px;
-  min-height: 44px;
-  padding: var(--wu-space-1) var(--wu-space-1);
+/* The name button stretches over the card so the whole card opens Details. */
+.participation-card-open {
+  display: block;
+  max-width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
   border: 0;
-  background: transparent;
-  color: var(--wu-text-muted);
-  font-size: var(--wu-text-md);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.participation-card-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.participation-card-open:focus-visible {
+  outline: none;
+}
+.participation-card-open:focus-visible::after {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: -2px;
 }
 @media (hover: hover) and (pointer: fine) {
-  .participation-row-action:hover {
-    background: #ffffff10;
+  .participation-card-open:not(:disabled):hover::after {
+    background: #ffffff08;
   }
 }
-.participation-visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.participation-row .account-card-action {
+  position: relative;
+  z-index: 1;
 }
 .participation-empty {
   margin: var(--wu-space-4) 0;
@@ -280,11 +291,15 @@
   font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
 }
-.participation-source,
+.participation-dialog-capture {
+  margin: 0 0 var(--wu-space-3);
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+  text-wrap: pretty;
+}
 .participation-previous {
   border-bottom: 1px solid #ffffff20;
 }
-.participation-source summary,
 .participation-previous summary {
   display: flex;
   align-items: center;
@@ -293,24 +308,19 @@
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
 }
-.participation-source p,
 .participation-previous p {
   margin: var(--wu-space-1) 0 var(--wu-space-3);
   font-size: var(--wu-text-xs);
   text-wrap: pretty;
 }
-.participation-source button {
-  margin-bottom: var(--wu-space-2);
+.participation-dialog .notice button {
+  display: block;
+  margin-top: var(--wu-space-2);
   min-height: 44px;
-}
-.participation-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--wu-space-3);
-  margin: var(--wu-space-4) 0;
 }
 .participation-notes {
   display: block;
+  margin-top: var(--wu-space-4);
 }
 .participation-notes textarea {
   display: block;
@@ -414,7 +424,6 @@
 }
 /* Native disclosure markers disappear with flex summaries; restore a consistent cue. */
 .participation-capture-settings > summary::before,
-.participation-source summary::before,
 .participation-previous summary::before,
 .participation-history > summary::before {
   content: "▸";
@@ -423,7 +432,6 @@
   color: var(--wu-text-muted);
 }
 .participation-capture-settings[open] > summary::before,
-.participation-source[open] summary::before,
 .participation-previous[open] summary::before,
 .participation-history[open] > summary::before {
   content: "▾";

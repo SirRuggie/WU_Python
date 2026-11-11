@@ -125,28 +125,6 @@ export type ParticipationFilters = {
   sort: ParticipationSort;
 };
 
-export function participationValidation(
-  attacks: number | null,
-  stars: number | null,
-  notes: string,
-): string | null {
-  if (
-    attacks !== null &&
-    (!Number.isInteger(attacks) || attacks < 0 || attacks > 7)
-  )
-    return "Attacks must be a whole number from 0 to 7.";
-  if (stars !== null && (!Number.isInteger(stars) || stars < 0 || stars > 21))
-    return "Stars must be a whole number from 0 to 21.";
-  if (attacks !== null && stars !== null && stars > attacks * 3)
-    return "Stars cannot exceed three times the recorded attacks.";
-  if (notes.length > 2000) return "Notes must be 2,000 characters or fewer.";
-  return null;
-}
-export function parseOptionalCount(raw: string): number | null | undefined {
-  if (!raw.trim()) return null;
-  if (!/^\d+$/.test(raw.trim())) return undefined;
-  return Number(raw.trim());
-}
 export function visibleParticipation(
   accounts: ParticipationAccount[],
   filters: ParticipationFilters,
