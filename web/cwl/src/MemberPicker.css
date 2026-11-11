@@ -9,6 +9,9 @@
 .member-search input {
   width: 100%;
   min-height: 44px;
+  border-color: var(--wu-border);
+  border-radius: 14px;
+  background-color: var(--wu-bg);
 }
 .member-picker .member-options {
   margin-top: var(--wu-space-3);

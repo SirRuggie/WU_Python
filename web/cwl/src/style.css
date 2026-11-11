@@ -96,6 +96,14 @@ select {
   max-width: 100%;
   font-size: var(--wu-text-md);
 }
+/* Native dropdowns take the World clocks field look (see SearchPicker.css):
+   same box size, the phone's own picker and arrow stay. The Tasks sort pill
+   keeps its own look. */
+select:where(:not(.todo-sort select)) {
+  border-color: var(--wu-border);
+  border-radius: 14px;
+  background-color: var(--wu-bg);
+}
 input:where(
   :not(.welcome-screen .primary):not(.roster-workspace *):not(
       .compare-workspace *
@@ -125,6 +133,22 @@ label {
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
   font-weight: var(--wu-weight-medium);
+}
+/* Field labels (naming a select, text input or textarea) are gold like the
+   World clocks fields. Checkbox and radio option labels keep the muted ink. */
+label:where(
+  :has(
+    > select,
+    > textarea,
+    > input:not([type="checkbox"]):not([type="radio"])
+  ),
+  [for]:has(
+    + select,
+    + textarea,
+    + input:not([type="checkbox"]):not([type="radio"])
+  )
+) {
+  color: var(--wu-accent);
 }
 label > input:not([type="checkbox"]):not([type="radio"]),
 label > select {

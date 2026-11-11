@@ -855,3 +855,19 @@ priority, units) keeps the native `<select>`.
 - Shared wrappers: `ChannelCombobox`, `RoleSelect`, `RolePicker`
   (`roleOption` builds a role row with its colour dot), `StrikeMemberSelect`.
   Tests drive pickers through `searchPickerTestUtils.ts`.
+
+Short lists (dropdown rollout PR 2):
+
+- Native selects take the World clocks field look from one base rule in
+  `style.css`: 14 px corners, `var(--wu-bg)` field, `var(--wu-border)` edge.
+  The phone's own picker and arrow stay. Size is unchanged (min-height 44 px,
+  padding, font size, border width), so compact dropdowns keep their size. The
+  rule has element specificity (`:where`), so any page rule wins.
+- The Tasks sort pill (`.todo-sort select`) is excluded and keeps its own look.
+- Field labels (a `<label>` wrapping a select, text input or textarea, or
+  naming the field right after it with `for`) are gold. Checkbox and radio
+  labels stay muted. Page rules that set a label colour are left as they were:
+  `.clan-settings-panel label`, `.hub-toolbar label`, `.preference label`,
+  `.roster-ui-input label`, the joining-instructions editor label.
+- `MemberPicker` and the Compare clan picker (`.compare-clan-picker`) take the
+  look only, with no behaviour or size change.
