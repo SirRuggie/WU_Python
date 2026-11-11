@@ -139,13 +139,14 @@ def current_account_view(snapshot, saved=None, source=None, *, archived=False):
 
 
 def _validate(body, fail):
-    required = {"publication_version", "revision", "attacks", "stars", "notes"}
-    if not required <= set(body) or set(body) - required - {"source_checked_at", "roster_token"}:
+    required = {"publication_version", "revision", "notes"}
+    optional = {"attacks", "stars", "source_checked_at", "roster_token"}
+    if not required <= set(body) or set(body) - required - optional:
         fail(400, "The request is not complete. Refresh the page and try again.")
     publication_version = body["publication_version"]
     revision = body["revision"]
-    attacks = body["attacks"]
-    stars = body["stars"]
+    attacks = body.get("attacks")
+    stars = body.get("stars")
     notes = body["notes"]
     checked = body.get("source_checked_at")
     if type(publication_version) is not int or publication_version < 0:
@@ -269,12 +270,13 @@ async def patch_participation(request):
         if revision != current_revision:
             _fail(409, "The participation changed. Refresh before you save.")
         current = current_account_view(snapshot, saved, source)
-        attack_changed = attacks != current["attacks"]
-        star_changed = stars != current["stars"]
-        attack_override = attack_changed or bool(saved["attacks_override"]) if saved is not None else attack_changed
-        star_override = star_changed or bool(saved["stars_override"]) if saved is not None else star_changed
-        manual_attacks = attacks if attack_changed else saved["attacks"] if saved is not None else None
-        manual_stars = stars if star_changed else saved["stars"] if saved is not None else None
+        # Results are read only; any sent values must match what Clash reported.
+        if ("attacks" in body and attacks != current["attacks"]) or ("stars" in body and stars != current["stars"]):
+            _fail(400, "Results come from Clash. Only notes can be saved.")
+        attack_override = bool(saved["attacks_override"]) if saved is not None else False
+        star_override = bool(saved["stars_override"]) if saved is not None else False
+        manual_attacks = saved["attacks"] if saved is not None else None
+        manual_stars = saved["stars"] if saved is not None else None
         unchanged = saved is not None and (
             saved["attacks"], saved["stars"], saved["notes"],
             bool(saved["attacks_override"]), bool(saved["stars_override"])

@@ -31,8 +31,9 @@ def _lazy_hard_exclusion(account):
 def lazy_eligibility(account):
     """Lazy rule: 4+ attacks, or 3+ attacks and 8+ stars.
 
-    Complete results are required. Staff may override thresholds and review exclusions with a reason, but
-    cannot override identity, assignment, reconciliation, or same-cycle rules.
+    Complete results are required, except that a reason may cover results that were never captured.
+    Staff may override thresholds and review exclusions with a reason, but cannot override partial or
+    invalid results, identity, assignment, reconciliation, or same-cycle rules.
     """
     hard = _lazy_hard_exclusion(account)
     if hard:
@@ -53,6 +54,8 @@ def lazy_eligibility(account):
     if attacks is not None and stars is not None and stars > attacks * 3:
         return 'Participation totals are inconsistent'
     incomplete = not account.get('source_complete') or attacks is None or stars is None
+    # "Not checked": nothing was captured, so a staff reason may stand in for results.
+    not_checked = not account.get('source_complete') and attacks is None and stars is None
     if incomplete:
         flagged.append('Complete participation results are unavailable')
     elif not (attacks >= 4 or (attacks >= 3 and stars >= 8)):
@@ -60,7 +63,7 @@ def lazy_eligibility(account):
     if account.get('three_cycle_cooldown'):
         flagged.append('Received a bonus in one of the previous three CWL months')
     if flagged:
-        if not incomplete and str(review.get('override_reason') or '').strip():
+        if (not incomplete or not_checked) and str(review.get('override_reason') or '').strip():
             return None
         return '; '.join(flagged)
     return None
