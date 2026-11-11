@@ -4,6 +4,7 @@ import { memberPaths, savedSignupTarget } from "./memberLinks";
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";
 import { cwlPaths } from "./staffLinks";
 import { managementPaths } from "./managementLinks";
+import { parseResultsState, resultsStateQuery } from "./resultsUrlState";
 const staffPaths: Record<string, string> = {
   ...cwlPaths,
   ...managementPaths,
@@ -26,7 +27,10 @@ export type DashboardRoute = {
   step?: "review" | "announce";
   activityFilter?: string;
   activityKind?: "war" | "cwl";
+  /** Results and Bonus medals: pool, clan, outcome, sort and step keys. */
+  resultsState?: string;
 };
+const resultsViews = ["participation", "bonuses"];
 export function dashboardTarget(
   search: string,
   pathname = "/",
@@ -99,6 +103,10 @@ export function dashboardTarget(
     ...(value === "publication" &&
     ["review", "announce"].includes(params.get("step") || "")
       ? { step: params.get("step") as "review" | "announce" }
+      : {}),
+    ...(resultsViews.includes(value || "") &&
+    resultsStateQuery(parseResultsState(search))
+      ? { resultsState: resultsStateQuery(parseResultsState(search)) }
       : {}),
     ...(value === "replacements" &&
     /^#[0289PYLQGRJCUV]{3,15}$/.test(params.get("clan") || "")
@@ -177,6 +185,10 @@ export function dashboardPath(route: DashboardRoute) {
   }
   if (route.season && seasonViews.has(route.view))
     params.set("season", route.season);
+  if (resultsViews.includes(route.view) && route.resultsState)
+    new URLSearchParams(
+      resultsStateQuery(parseResultsState(route.resultsState)),
+    ).forEach((value, key) => params.set(key, value));
   return `${path || "/"}${params.size ? `?${params}` : ""}`;
 }
 type HistoryPort = Pick<History, "state" | "pushState" | "replaceState" | "go">;

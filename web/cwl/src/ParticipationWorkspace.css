@@ -5,6 +5,15 @@
 .participation-page-head {
   margin-bottom: var(--wu-space-4);
 }
+.cwl-page-header > .participation-season {
+  display: grid;
+  flex: 0 1 200px;
+  min-width: 0;
+  font-size: var(--wu-text-xs);
+}
+.participation-season select {
+  width: 100%;
+}
 .participation-page-head p {
   margin-bottom: 0;
   text-wrap: pretty;
@@ -22,30 +31,19 @@
   align-items: center;
   gap: var(--wu-space-3);
 }
-.participation-capture-main > div:first-child {
+.participation-capture-line {
   min-width: 0;
-}
-.participation-capture-main strong,
-.participation-capture-main span {
-  display: block;
+  margin: 0;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
-.participation-capture-main strong {
-  font-size: var(--wu-text-sm);
+.participation-capture-line strong {
+  color: var(--wu-text);
 }
-.participation-capture-main span {
-  margin-top: var(--wu-space-1);
-  font-size: var(--wu-text-sm);
-  color: var(--wu-text-muted);
-}
-.participation-capture-actions {
-  display: flex;
-  gap: var(--wu-space-2);
+.participation-capture-main > .roster-player-menu {
   flex: 0 0 auto;
-}
-.participation-capture-actions button {
-  min-height: 44px;
-  font-size: var(--wu-text-md);
 }
 .participation-capture-warning {
   margin: var(--wu-space-3) 0 0;
@@ -121,6 +119,38 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.participation-outcomes {
+  margin: 0 0 var(--wu-space-2);
+}
+.participation-list-heading span,
+.participation-outcomes small {
+  font-variant-numeric: tabular-nums;
+}
+/* Outcome tone sits on the chip and the tally numbers; the card stays neutral. */
+.participation-values .participation-tally.is-success {
+  color: var(--wu-success);
+}
+.participation-values .participation-tally.is-danger {
+  color: var(--roster-card-text-danger);
+}
+.participation-values .participation-tally.is-warning {
+  color: var(--wu-warning);
+}
+.participation-values small {
+  color: var(--wu-text-muted);
+}
+.participation-row .participation-clan {
+  color: var(--wu-text-muted);
+  font-weight: var(--wu-weight-regular);
+}
+.participation-row .participation-outcome {
+  min-height: 24px;
+  padding: 0.1rem 0.5rem;
+  font-size: var(--wu-text-xs);
 }
 .participation-list > [hidden] {
   display: none;
@@ -191,6 +221,9 @@
   max-width: calc(100vw - 16px);
   max-height: calc(100dvh - 24px);
   overflow: auto;
+  overscroll-behavior: contain;
+  /* The sticky footer never covers a focused field. */
+  scroll-padding-bottom: 96px;
   margin: auto;
   padding: var(--wu-space-5);
   border: 1px solid #53575f;
@@ -343,21 +376,23 @@
   text-wrap: pretty;
 }
 @media (max-width: 760px) {
-  .participation-capture-main {
-    align-items: flex-start;
+  .participation-capture {
+    padding: var(--wu-space-1) var(--wu-space-1) var(--wu-space-1)
+      var(--wu-space-3);
+  }
+  /* Each select keeps its longest option; the row wraps instead of cutting text. */
+  .participation-toolbar {
+    display: flex;
     flex-wrap: wrap;
   }
-  .participation-capture-actions {
-    width: 100%;
+  .participation-toolbar > * {
+    flex: 1 1 auto;
   }
-  .participation-capture-actions button {
-    flex: 1;
+  .participation-toolbar > :first-child {
+    flex: 1 1 160px;
   }
-  .participation-toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .participation-toolbar label:first-child {
-    grid-column: 1 / -1;
+  .participation-toolbar > :nth-child(2) {
+    flex: 0 1 auto;
   }
   .participation-history-row {
     grid-template-columns: minmax(0, 1fr);
@@ -366,12 +401,6 @@
 @media (max-width: 420px) {
   .participation-sync-fields {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .participation-toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .participation-toolbar label:first-child {
-    grid-column: 1 / -1;
   }
   .participation-dialog {
     padding: var(--wu-space-5);

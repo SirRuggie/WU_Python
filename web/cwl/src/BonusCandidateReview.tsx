@@ -79,8 +79,7 @@ export default function BonusCandidateReview({
         )}
         {account.three_cycle_cooldown && (
           <p>
-            <strong>One-season sit-out:</strong> Bonus approved in each of the
-            preceding three CWL seasons
+            <strong>Sit-out:</strong> Bonus in the last 3 CWL seasons
             {account.cooldown_cycles?.length
               ? ` (${account.cooldown_cycles.join(", ")})`
               : ""}

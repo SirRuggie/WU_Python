@@ -1,0 +1,155 @@
+/* One step bar for Results and Bonus medals. Gold marks only the current step. */
+.bonus-step-bar {
+  margin: var(--wu-space-2) 0 var(--wu-space-4);
+  min-width: 0;
+}
+.bonus-step-list {
+  display: flex;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--wu-border-subtle);
+}
+.bonus-step {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.bonus-step > :is(a, span) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--wu-space-2);
+  min-height: 44px;
+  padding: var(--wu-space-2) var(--wu-space-2);
+  border-bottom: 3px solid transparent;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+  text-decoration: none;
+}
+.bonus-step > a:focus-visible {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: -3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .bonus-step > a:hover {
+    color: var(--wu-text);
+  }
+}
+.bonus-step-mark {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+.bonus-step.is-done > :is(a, span) {
+  color: var(--wu-text);
+}
+.bonus-step.is-done .bonus-step-mark {
+  border-color: var(--wu-success);
+  color: var(--wu-success);
+}
+.bonus-step.is-current > :is(a, span) {
+  color: var(--wu-accent);
+  border-bottom-color: var(--wu-accent);
+  font-weight: var(--wu-weight-bold);
+}
+.bonus-step.is-blocked > :is(a, span) {
+  color: var(--wu-danger);
+  border-bottom-color: var(--wu-danger);
+}
+.bonus-step-reason {
+  flex-basis: 100%;
+  font-size: var(--wu-text-xs);
+  line-height: 1.3;
+}
+.bonus-step-compact {
+  display: none;
+}
+.bonus-step-unavailable {
+  margin: var(--wu-space-1) 0 0;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.bonus-step-unavailable button {
+  min-height: 44px;
+  padding: 0 var(--wu-space-2);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-decoration: underline;
+}
+.bonus-step-bar .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.bonus-step-dots {
+  display: inline-flex;
+  gap: 6px;
+}
+.bonus-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--wu-border);
+}
+.bonus-step-dot.is-done {
+  background: var(--wu-success);
+}
+.bonus-step-dot.is-blocked {
+  background: var(--wu-danger);
+}
+.bonus-step-dot.is-current,
+.bonus-step-dot.is-active:not(.is-blocked) {
+  background: var(--wu-accent);
+}
+
+/* Phones: one line that expands to the full bar. */
+@media (max-width: 700px) {
+  .bonus-step-compact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--wu-space-3);
+    width: 100%;
+    min-height: 44px;
+    padding: var(--wu-space-2) var(--wu-space-3);
+    border: 1px solid var(--wu-border-subtle);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--wu-text);
+    font-size: var(--wu-text-sm);
+    text-align: left;
+  }
+  .bonus-step-list {
+    display: none;
+  }
+  .bonus-step-list.is-expanded {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: var(--wu-space-2);
+    border-bottom: 0;
+  }
+  .bonus-step-list.is-expanded .bonus-step > :is(a, span) {
+    border-bottom: 0;
+    border-left: 3px solid transparent;
+  }
+  .bonus-step-list.is-expanded .bonus-step.is-current > :is(a, span) {
+    border-left-color: var(--wu-accent);
+  }
+  .bonus-step-list.is-expanded .bonus-step.is-blocked > :is(a, span) {
+    border-left-color: var(--wu-danger);
+  }
+  .bonus-step-reason {
+    flex-basis: auto;
+  }
+}

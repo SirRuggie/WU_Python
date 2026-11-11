@@ -3,6 +3,14 @@ import useConfirmDialog from "./useConfirmDialog";
 import { useEffect, useId, useRef, useState } from "react";
 import DiscordIdentity from "./DiscordIdentity";
 import useDiscordIdentities from "./useDiscordIdentities";
+import { StatusPill } from "./rosterUi/primitives";
+import {
+  countText,
+  outcomeLabels,
+  outcomeTone,
+  participationOutcome,
+  resultDateText,
+} from "./participationOutcome";
 import {
   canUseSyncedResults,
   parseOptionalCount,
@@ -13,10 +21,12 @@ import {
 
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : "Could not save results.";
-const dateText = (value: string) => new Date(value).toLocaleString();
+const dateText = resultDateText;
 
 type Props = {
   account: ParticipationAccount;
+  /** Saved Main minimum; Main shows no outcome without one. */
+  mainMinimum?: number | null;
   publicationVersion: number | null;
   readonly: boolean;
   locked: boolean;
@@ -44,6 +54,7 @@ const values = (row: ParticipationAccount) => ({
 
 export default function ParticipationRecord({
   account,
+  mainMinimum = null,
   publicationVersion,
   readonly,
   locked,
@@ -99,6 +110,8 @@ export default function ParticipationRecord({
   const canReset = canUseSyncedResults(account);
   const attackValue = parseOptionalCount(draft.attacks);
   const starValue = parseOptionalCount(draft.stars);
+  const outcome = participationOutcome(account, mainMinimum);
+  const tally = outcome ? ` is-${outcomeTone(outcome)}` : "";
   const validation =
     attackValue === undefined || starValue === undefined
       ? "Use whole numbers for attacks and stars, or leave them blank."
@@ -244,26 +257,45 @@ export default function ParticipationRecord({
       meta={[
         <>TH {account.town_hall ?? "—"}</>,
         account.tag,
-        account.assigned_clan_name || account.assigned_clan_tag || "Unplaced",
+        <span className="participation-clan">
+          {account.assigned_clan_name ||
+            account.assigned_clan_tag ||
+            "Unplaced"}
+        </span>,
       ]}
-      status={{
-        tone: account.roster_changed ? "bad" : "neutral",
-        content: account.roster_changed
-          ? "Assignment changed"
-          : participationStatus(account).label,
-      }}
+      status={
+        account.roster_changed
+          ? { tone: "bad", content: "Assignment changed" }
+          : outcome
+            ? {
+                tone: "neutral",
+                content: (
+                  <StatusPill
+                    tone={outcomeTone(outcome)}
+                    className="participation-outcome"
+                  >
+                    {outcomeLabels[outcome]}
+                  </StatusPill>
+                ),
+              }
+            : undefined
+      }
       flags={[
         hasOverride && !account.roster_changed ? "Staff correction" : null,
       ]}
       values={
         <div className="participation-values">
           <span>
-            <strong>{account.attacks ?? "—"}</strong>
+            <strong className={`participation-tally${tally}`}>
+              {account.attacks ?? "—"}
+            </strong>
             <small> Attacks</small>
           </span>
           <span className="participation-value-separator"> · </span>
           <span>
-            <strong>{account.stars ?? "—"}</strong>
+            <strong className={`participation-tally${tally}`}>
+              {account.stars ?? "—"}
+            </strong>
             <small> Stars</small>
           </span>
         </div>
@@ -341,9 +373,6 @@ export default function ParticipationRecord({
                 "Unplaced"}
             </small>
           </div>
-          <button type="button" disabled={busy} onClick={closeEditor}>
-            Close
-          </button>
         </div>
         {open && (
           <DiscordIdentity
@@ -371,8 +400,14 @@ export default function ParticipationRecord({
               {account.previous_results.assigned_clan_name ||
                 account.previous_results.assigned_clan_tag ||
                 "Unplaced"}{" "}
-              · {account.previous_results.attacks ?? "—"} attacks ·{" "}
-              {account.previous_results.stars ?? "—"} stars
+              ·{" "}
+              {account.previous_results.attacks === null
+                ? "— attacks"
+                : countText(account.previous_results.attacks, "attack")}{" "}
+              ·{" "}
+              {account.previous_results.stars === null
+                ? "— stars"
+                : countText(account.previous_results.stars, "star")}
             </p>
           </details>
         )}
@@ -393,8 +428,15 @@ export default function ParticipationRecord({
         <details className="participation-source">
           <summary>Synced source and corrections</summary>
           <p>
-            Synced: {account.source_attacks ?? "Unrecorded"} attacks ·{" "}
-            {account.source_stars ?? "Unrecorded"} stars
+            Synced:{" "}
+            {account.source_attacks === null ||
+            account.source_attacks === undefined
+              ? "Unrecorded attacks"
+              : countText(account.source_attacks, "attack")}{" "}
+            ·{" "}
+            {account.source_stars === null || account.source_stars === undefined
+              ? "Unrecorded stars"
+              : countText(account.source_stars, "star")}
           </p>
           <p>
             {participationStatus(account).label}
@@ -447,6 +489,8 @@ export default function ParticipationRecord({
             Attacks
             <input
               type="number"
+              name="attacks"
+              autoComplete="off"
               min="0"
               max="7"
               step="1"
@@ -466,6 +510,8 @@ export default function ParticipationRecord({
             Stars
             <input
               type="number"
+              name="stars"
+              autoComplete="off"
               min="0"
               max="21"
               step="1"
@@ -485,6 +531,8 @@ export default function ParticipationRecord({
         <label className="participation-notes">
           Staff notes
           <textarea
+            name="notes"
+            autoComplete="off"
             rows={3}
             maxLength={2000}
             value={draft.notes}

@@ -53,7 +53,83 @@ export type RaffleData = Omit<BonusData, 'accounts'> & {
 }
 export const attacksText = (account: RaffleAccount) => account.attacks === null
   ? 'Not Available'
-  : `${account.attacks}${account.season_rounds ? `/${account.season_rounds}` : ''} attacks${account.attacks_override ? ' · Staff correction' : ''}`
+  : `${account.attacks}${account.season_rounds ? `/${account.season_rounds}` : ''} ${account.attacks === 1 && !account.season_rounds ? 'attack' : 'attacks'}${account.attacks_override ? ' · Staff correction' : ''}`
+
+/** Reasons that apply to a whole hosting clan. They show once, above the list. */
+export const CLAN_WIDE_REASONS: Record<string, string> = {
+  'Hosting clan is no longer an active Lazy clan in this season': 'Hosting clan is not an active Lazy clan this season',
+  'Complete participation results are unavailable': 'Results not captured',
+}
+const SHORT_REASONS: Record<string, string> = {
+  'Does not meet the Lazy CWL participation rule': '',
+  'Below the minimum attacks': '',
+  'Results are not complete': '',
+  'Missed CWL sync': 'Missed sync',
+  'Lingering in hosting clan': 'Lingering',
+  'Left the family': 'Left family',
+  'Received a bonus in one of the previous three CWL months': 'Bonus in last 3 seasons',
+  'Already selected for a bonus this CWL month': 'Already selected',
+  'Already selected for a bonus this season': 'Already selected',
+}
+const reasonParts = (account: RaffleAccount) =>
+  (account.exclusion || '').split('; ').map(part => part.trim()).filter(Boolean)
+
+/** Player-specific reasons only; the outcome chip already says Below rule. */
+export function playerReasons(account: RaffleAccount): string[] {
+  return [...new Set(reasonParts(account)
+    .filter(part => !(part in CLAN_WIDE_REASONS))
+    .map(part => part in SHORT_REASONS ? SHORT_REASONS[part] : part)
+    .filter(Boolean))]
+}
+
+/** Clan-wide reasons shared by every listed account. */
+export function clanWideReasons(accounts: RaffleAccount[]): string[] {
+  if (!accounts.length) return []
+  return Object.keys(CLAN_WIDE_REASONS)
+    .filter(reason => accounts.every(account => reasonParts(account).includes(reason)))
+    .map(reason => CLAN_WIDE_REASONS[reason])
+}
+
+export type BonusReviewGuard = {
+  canManage: boolean;
+  archived: boolean;
+  policyDirty: boolean;
+  roleDirty: boolean;
+  reviewDirty: boolean;
+  candidateOpen: boolean;
+  countReady: boolean;
+  needsMinimum: boolean;
+  rolesUnavailable: boolean;
+  resultsMissing: boolean;
+}
+export type BonusReviewBlocker =
+  | 'access' | 'archived' | 'minimum-dirty' | 'role-dirty' | 'open-review'
+  | 'count' | 'minimum' | 'roles' | 'results'
+
+export type BonusReviewLine = { id: BonusReviewBlocker; text: string; blocks: boolean }
+
+/**
+ * The one source for the lines under Review eligibility. Only `blocks` lines
+ * disable the button (today's conditions); the others show the fix only.
+ */
+export function bonusReviewBlockers(guard: BonusReviewGuard): BonusReviewLine[] {
+  const lines: [boolean, BonusReviewBlocker, string, boolean][] = [
+    [!guard.canManage, 'access', 'Bonus access needed', true],
+    [guard.archived, 'archived', 'Archived season · read only', true],
+    [guard.policyDirty, 'minimum-dirty', 'Save the minimum', true],
+    [guard.roleDirty, 'role-dirty', 'Save the representative role', true],
+    [guard.reviewDirty || guard.candidateOpen, 'open-review', 'Save the open review', true],
+    [!guard.countReady, 'count', 'Enter the bonus count', true],
+    [guard.needsMinimum, 'minimum', 'Set the Main minimum', true],
+    [guard.rolesUnavailable, 'roles', 'Discord roles unavailable · Retry', false],
+    [guard.resultsMissing, 'results', 'Results not captured', false],
+  ]
+  return lines.filter(([active]) => active).map(([, id, text, blocks]) => ({ id, text, blocks }))
+}
+
+export function reviewBlocked(lines: BonusReviewLine[]): boolean {
+  return lines.some(line => line.blocks)
+}
 
 export type BonusListMode = 'candidates' | 'eligible' | 'excluded' | 'winners'
 

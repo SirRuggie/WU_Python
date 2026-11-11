@@ -82,6 +82,7 @@ it.each([
         root.render(
           <ParticipationWorkspace
             onBonus={next}
+            urlState="pool=main&clan=%23C2Y"
             seasonId="1"
             seasons={[
               {
@@ -95,12 +96,21 @@ it.each([
           />,
         );
       });
-      expect(host.querySelectorAll(".cwl-next-cue")).toHaveLength(1);
+      // Prompt 228: the step bar replaces the bottom "Next: Bonus medals" cue.
+      // It shows only for one selected hosting clan.
+      expect(host.querySelectorAll(".cwl-next-cue")).toHaveLength(0);
+      expect(host.querySelectorAll(".bonus-step-bar")).toHaveLength(1);
       const beforeCalls = fixture.api.mock.calls.length;
       await act(async () =>
-        (host.querySelector(".cwl-next-cue") as HTMLButtonElement).click(),
+        (
+          host.querySelector(
+            '.bonus-step[data-step="eligibility"] a',
+          ) as HTMLAnchorElement
+        ).click(),
       );
-      expect(next).toHaveBeenCalledOnce();
+      expect(next).toHaveBeenCalledExactlyOnceWith(
+        "pool=main&clan=%23C2Y&step=eligibility",
+      );
       expect(fixture.api.mock.calls).toHaveLength(beforeCalls);
       const text = host.textContent || "";
       expect(
@@ -115,7 +125,8 @@ it.each([
       if (status === "partial") {
         expect(text).toContain("CWL in progress · round 2 of 7");
         // Prompt164 removes the duplicate capture count; list scope stays visible.
-        expect(text).toContain("1 matching · 1 current signups");
+        // Prompt 228 counts the selected pool only.
+        expect(text).toContain("1 player · Main CWL");
         expect(host.querySelector(".participation-capture")?.textContent)
           .not.toContain("current signups in this view");
         expect(text).not.toContain("CWL observations are incomplete");

@@ -17,16 +17,22 @@ Each normally excludes the account for that dashboard season. Staff can include
 an otherwise excluded account with a nonempty reason. The review records the
 actor and timestamp and preserves append-only before/after history.
 
-A Clash account confirmed for a bonus in each of the three preceding calendar
-CWL months sits out the current month. It is eligible the following month if the
-other requirements are met, because the skipped month breaks the streak. This
-uses non-voided dashboard confirmations across dashboard seasons, not inferred
-in-game medal history. Earlier unrecorded awards cannot be inferred.
+A Clash account confirmed for a bonus in any of the three preceding calendar
+CWL months sits out the current month. Example: a bonus in January makes the
+account ineligible for February, March and April; it can enter the May lottery.
+This uses non-voided dashboard confirmations across dashboard seasons, not
+inferred in-game medal history. Earlier unrecorded awards cannot be inferred.
+The three Lazy bonus rules: follow the Lazy CWL rules; play 60% of the event (4+
+attacks, or 3 attacks with 8+ stars); no bonus in the previous three seasons.
 
-A reason can override participation, infractions, or this streak restriction. It
+A reason can override participation, infractions, or this sit-out. It
 cannot override malformed data, a mismatched/stale assignment, a non-Lazy host,
 or a second bonus to the same account in the same month. Discord role evidence
 must also be available before eligible accounts can enter the draw.
+
+A hosting clan counts as Lazy for a season when its season pool (Build roster) is
+Lazy. The directory pool is the fallback. A clan archived after the season still
+counts for that season.
 
 ## Manual candidates and weighted draws
 
@@ -67,3 +73,7 @@ reviewed under the new rules. Approved historical snapshots remain readable.
 Approval and announcement remain separate. Delivery retains durable receipts;
 uncertain Discord sends are not automatically retried. No live messages or real
 bonus draws are needed to test this workflow.
+
+`GET /api/cwl/seasons/{season_id}/bonus-status` is a light read-only summary per pool and
+hosting clan (candidates, rule counts, results, allowance and draw state). It makes no Discord
+or Clash call, so Lazy counts omit role weighting, and it uses the bonus page's editor grant.

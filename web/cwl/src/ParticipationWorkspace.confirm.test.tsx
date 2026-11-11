@@ -27,6 +27,26 @@ const button = (name: string, within: ParentNode = document) =>
   )!;
 const writes = () =>
   api.mock.calls.filter((call) => call[1] && call[1] !== "GET");
+// Refresh list sits in the capture card's shared ⋯ menu (prompt 228).
+async function menuAction(label: string) {
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(
+        ".participation-capture .roster-action-trigger",
+      )!
+      .click(),
+  );
+  const item = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((e) => e.textContent?.trim() === label)!;
+  await act(async () => {
+    item.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0 }),
+    );
+    item.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+    item.click();
+  });
+}
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   localStorage.clear();
@@ -69,7 +89,7 @@ afterEach(async () => {
 });
 it("Refresh Cancel retains unsaved month, confirmed refresh reads once and never saves", async () => {
   const before = api.mock.calls.length;
-  await act(async () => button("Refresh list").click());
+  await menuAction("Refresh list");
   expect(api.mock.calls).toHaveLength(before);
   await act(async () =>
     button("Cancel", document.querySelector(".confirm-dialog")!).click(),
@@ -78,10 +98,8 @@ it("Refresh Cancel retains unsaved month, confirmed refresh reads once and never
     host.querySelector<HTMLInputElement>('input[type="month"]')!.value,
   ).toBe("2026-12");
   expect(writes()).toHaveLength(0);
-  await act(async () => {
-    button("Refresh list").click();
-    button("Refresh list").click();
-  });
+  await menuAction("Refresh list");
+  await menuAction("Refresh list");
   await act(async () => {
     const confirm = button(
       "Discard and refresh",
@@ -97,25 +115,14 @@ it("Refresh Cancel retains unsaved month, confirmed refresh reads once and never
   ).toBe("2026-11");
 });
 it("season change cancellation and double confirmation preserve callback value and zero writes", async () => {
+  // The season field is the short-list native select (prompt 228).
   async function select() {
-    await act(async () =>
-      host
-        .querySelector<HTMLButtonElement>(
-          ".cwl-page-header .roster-menu-trigger",
-        )!
-        .click(),
-    );
-    const item = [
-      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ].find((e) => e.textContent?.trim() === "December")!;
+    const field = host.querySelector<HTMLSelectElement>(
+      '.cwl-page-header select[name="season"]',
+    )!;
     await act(async () => {
-      item.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true, button: 0 }),
-      );
-      item.dispatchEvent(
-        new MouseEvent("mouseup", { bubbles: true, button: 0 }),
-      );
-      item.click();
+      field.value = "2";
+      field.dispatchEvent(new Event("change", { bubbles: true }));
     });
   }
   await select();

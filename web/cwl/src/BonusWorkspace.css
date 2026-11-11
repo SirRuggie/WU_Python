@@ -17,69 +17,191 @@
   justify-content: space-between;
   gap: var(--roster-space-3);
 }
+/* One muted month and Clash-check line; refresh actions sit in its ⋯ menu. */
 .bonus-context {
-  min-height: 44px;
-  margin: var(--wu-space-3) 0;
-  color: var(--roster-text);
+  margin: calc(-1 * var(--wu-space-2)) 0 var(--wu-space-2);
 }
-.bonus-context > span {
+.bonus-context > p {
+  min-width: 0;
+  margin: 0;
   color: var(--roster-text-muted);
   font-size: var(--wu-text-sm);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
-.bonus-context button,
+.bonus-context > p strong {
+  color: inherit;
+}
+.bonus-context > .roster-player-menu {
+  flex: 0 0 auto;
+}
 .bonus-quiet-action {
   background: transparent;
   border: 0;
   color: var(--wu-text);
   text-decoration: underline;
 }
-.bonus-context button {
-  min-height: 44px;
-  padding: var(--wu-space-2) var(--wu-space-3);
-}
-.bonus-steps {
-  display: flex;
-  gap: var(--wu-space-1);
-  list-style: none;
-  margin: var(--wu-space-3) 0 var(--wu-space-4);
-  padding: 0 0 var(--wu-space-2);
-  border-bottom: 1px solid var(--roster-border-subtle);
-  overflow-x: auto;
-}
-.bonus-steps li {
-  flex: 1 0 auto;
-  min-width: 100px;
-  padding: var(--wu-space-2) var(--wu-space-3);
-  color: var(--roster-text-muted);
-  font-size: var(--wu-text-sm);
-  border-bottom: 2px solid transparent;
-  white-space: nowrap;
-}
-.bonus-steps li[aria-current] {
-  color: var(--roster-gold);
-  border-color: var(--roster-gold);
-}
-.bonus-steps li span {
-  font-weight: var(--wu-weight-bold);
-  margin-right: var(--wu-space-2);
-}
-.bonus-controls {
-  display: flex;
-  align-items: end;
-  flex-wrap: wrap;
-  gap: var(--roster-space-3);
-  padding: var(--wu-space-1) 0 var(--wu-space-4);
-}
-.bonus-controls label {
-  flex: 1 1 250px;
-  max-width: 520px;
+.cwl-page-header > .bonus-season {
+  display: grid;
+  flex: 0 1 200px;
   min-width: 0;
+  font-size: var(--wu-text-xs);
 }
-.bonus-controls label select {
+.bonus-season select {
   width: 100%;
 }
-.bonus-controls button {
+/* Hosting clan cards: the Compare clan-card row; gold marks the selected card. */
+.bonus-clan-search {
+  display: block;
+  max-width: 320px;
+  margin: 0 0 var(--wu-space-2);
+}
+.bonus-clan-search input {
+  width: 100%;
+}
+.bonus-clan-cards {
+  display: flex;
+  gap: var(--wu-space-2);
+  max-width: 100%;
+  margin: 0 0 var(--wu-space-3);
+  padding-bottom: var(--wu-space-1);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  /* Snapped cards start clear of the 10px edge fade. */
+  scroll-padding-inline: 10px;
+  scrollbar-width: thin;
+}
+.bonus-workspace button.bonus-clan-card {
+  display: grid;
+  flex: 0 0 auto;
+  align-content: start;
+  gap: var(--wu-space-1);
+  min-width: 160px;
+  max-width: 260px;
+  min-height: 56px;
+  padding: var(--wu-space-2) var(--wu-space-3);
+  border: 1px solid var(--roster-border);
+  border-radius: 14px;
+  background: var(--roster-surface-raised);
+  color: var(--roster-text);
+  text-align: left;
+  white-space: normal;
+  scroll-snap-align: start;
+}
+.bonus-clan-card strong {
+  font-size: var(--wu-text-md);
+  overflow-wrap: anywhere;
+}
+.bonus-clan-card small {
+  color: var(--roster-text-muted);
+  font-size: var(--wu-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.bonus-workspace button.bonus-clan-card[aria-pressed="true"] {
+  border-color: var(--roster-gold);
+  box-shadow: inset 0 0 0 1px var(--roster-gold);
+}
+.bonus-workspace button.bonus-clan-card[aria-pressed="true"] strong {
+  color: var(--roster-gold);
+}
+@media (hover: hover) and (pointer: fine) {
+  .bonus-workspace button.bonus-clan-card:hover:not(:disabled) {
+    border-color: var(--wu-text-muted);
+  }
+}
+/* Clan-wide reasons: the shared amber notice, one 44px line per reason. */
+.notice.bonus-clan-notice {
+  display: block;
+  margin: 0 0 var(--wu-space-2);
+  padding: 0 var(--wu-space-3);
+}
+.bonus-clan-notice p {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
   min-height: 44px;
+  margin: 0;
+}
+.bonus-clan-notice p + p {
+  border-top: 1px solid var(--wu-warning-border);
+}
+.bonus-clan-notice svg {
+  flex: none;
+}
+.bonus-clan-notice span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Each fix is its own 44px box inside its line, never over a neighbour. */
+.bonus-clan-notice a,
+.notice.bonus-clan-notice .bonus-inline-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  vertical-align: middle;
+  color: var(--wu-text);
+  font-size: inherit;
+}
+.bonus-inline-action {
+  min-height: 44px;
+  padding: 0 var(--wu-space-1);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.bonus-blockers {
+  margin: calc(-1 * var(--wu-space-2)) 0 var(--wu-space-3);
+  padding: 0;
+  list-style: none;
+  color: var(--roster-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.bonus-blockers li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: 44px;
+}
+.bonus-blockers li > .bonus-inline-action:only-child,
+.bonus-blockers li > a {
+  padding-left: 0;
+  color: var(--wu-text);
+}
+.bonus-stats > .bonus-inline-count {
+  min-width: 130px;
+  flex: 1 1 0;
+  display: grid;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-2) var(--wu-space-4);
+}
+.bonus-inline-count span {
+  font-size: var(--wu-text-sm);
+}
+.bonus-inline-count input {
+  width: 100%;
+  max-width: 120px;
+  font-variant-numeric: tabular-nums;
+}
+.bonus-account-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wu-space-1) var(--wu-space-2);
+  margin-top: var(--wu-space-1);
+}
+.bonus-account-list .bonus-outcome {
+  min-height: 24px;
+  padding: 0.1rem 0.5rem;
+  font-size: var(--wu-text-xs);
+}
+.bonus-account-outcome .bonus-account-state small {
+  margin-top: 0;
 }
 .bonus-flow {
   border-top: 1px solid var(--roster-border-subtle);
@@ -238,8 +360,7 @@
   text-align: center;
 }
 @media (hover: hover) and (pointer: fine) {
-  .bonus-quiet-action:hover,
-  .bonus-context button:hover {
+  .bonus-quiet-action:hover {
     text-decoration: underline;
   }
 }
@@ -355,11 +476,20 @@
   display: flex;
   align-items: center;
   gap: var(--roster-space-3);
+  min-width: 0;
+  max-width: 100%;
   min-height: 44px;
 }
 .bonus-check input {
   flex: none;
   width: auto;
+  min-width: 0;
+}
+/* The label text wraps at 360px instead of widening the page. */
+.bonus-check > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .bonus-action-bar {
   display: flex;
@@ -427,37 +557,74 @@
   border: 0;
 }
 @media (max-width: 650px) {
-  .bonus-context {
-    flex-wrap: wrap;
+  /* Phones: the swipeable Compare clan-card row. */
+  .bonus-clan-cards {
+    margin-bottom: var(--wu-space-2);
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
   }
-  .bonus-steps {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    overflow: visible;
-    gap: var(--wu-space-1);
+  .bonus-clan-cards::-webkit-scrollbar {
+    display: none;
   }
-  .bonus-steps li {
-    min-width: 0;
-    white-space: normal;
-    padding: var(--wu-space-2) var(--wu-space-2);
+  .bonus-workspace button.bonus-clan-card {
+    flex: 0 0 78%;
+    max-width: none;
   }
-  .bonus-context > span {
-    order: 3;
+  .bonus-workspace button.bonus-clan-card:only-child {
     flex-basis: 100%;
   }
+  /* The selected card already names the clan; the heading stays for screen readers. */
+  .bonus-clan-heading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .bonus-flow {
+    padding-top: var(--wu-space-2);
+  }
+  .bonus-candidates-heading {
+    margin: var(--wu-space-2) 0 var(--wu-space-1);
+  }
+  /* Phones: the three numbers stay on one compact row. */
+  .bonus-stats {
+    flex-wrap: nowrap;
+    margin: var(--wu-space-2) 0;
+  }
+  /* Wider field cell: the label sits beside its input, not above it. */
+  .bonus-stats > .bonus-inline-count {
+    display: flex;
+    align-items: center;
+    flex-grow: 1.6;
+    gap: var(--wu-space-2);
+    min-width: 0;
+    padding: var(--wu-space-1) var(--wu-space-2);
+  }
+  .bonus-inline-count span {
+    min-width: 0;
+    font-size: var(--wu-text-xs);
+    line-height: 1.25;
+  }
+  .bonus-inline-count input {
+    flex: 0 0 56px;
+  }
   .bonus-stats > div {
-    min-width: 95px;
-    padding: var(--wu-space-3) var(--wu-space-2);
+    min-width: 0;
+    padding: var(--wu-space-1) var(--wu-space-2);
     flex-direction: column;
-    gap: var(--wu-space-1);
+    gap: 0;
     font-variant-numeric: tabular-nums;
   }
   .bonus-stats strong {
-    font-size: var(--wu-text-xl);
+    font-size: var(--wu-text-lg);
     font-variant-numeric: tabular-nums;
   }
   .bonus-stats span {
     font-size: var(--wu-text-xs);
+    line-height: 1.25;
     font-variant-numeric: tabular-nums;
   }
   .bonus-account-list li {
@@ -472,18 +639,11 @@
     grid-column: 2;
     grid-row: 1 / 3;
   }
-  .bonus-controls > button {
-    flex: 1 1 100%;
-  }
   .bonus-action-bar > button {
     width: 100%;
   }
 }
 @media (max-width: 380px) {
-  .bonus-steps li {
-    min-width: 88px;
-    font-size: var(--wu-text-sm);
-  }
   .bonus-candidates-heading {
     flex-wrap: wrap;
   }
