@@ -23,7 +23,7 @@ export function resultsPageMode(
   if (!grants.results) return "steps";
   const state = parseResultsState(urlState);
   if (!state.clan) return "list";
-  if (state.step) return "steps";
+  if (state.step || state.view) return "steps";
   if (previous) return previous;
   return state.outcome && state.outcome !== "all" ? "list" : "steps";
 }

@@ -340,6 +340,64 @@ describe("Bonus clan cards", () => {
     await mount(base, "pool=lazy&clan=%238QQ&step=draw");
     expect(cards()[1].getAttribute("aria-pressed")).toBe("true");
   });
+  it("without a status read, a card pushes the steps marker and the page data replaces it with the step", async () => {
+    const data = { ...base, draws: [savedDraw()] };
+    // The status read never answers, as on a first open that is still waiting.
+    api
+      .mockReset()
+      .mockImplementation((route: string) =>
+        route.endsWith("/bonus-status")
+          ? new Promise(() => {})
+          : Promise.resolve(data),
+      );
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <BonusWorkspace
+          seasonId="1"
+          seasons={[
+            { id: 1, label: "November", status: "draft", signup_open: true },
+          ]}
+          onSeasonChange={() => {}}
+          urlState="pool=lazy"
+          onUrlState={urlState}
+          onResults={results}
+        />,
+      ),
+    );
+    await act(async () => cards()[1].click());
+    expect(urlState.mock.calls[0]).toEqual([
+      expect.stringContaining("open=steps"),
+      true,
+    ]);
+    expect(urlState.mock.calls.at(-1)).toEqual([
+      "pool=lazy&clan=%238QQ&step=approve",
+      false,
+    ]);
+    expect(openPanel()).toBe("approve");
+    expect(
+      urlState.mock.calls.filter(([query]) => /open=/.test(query)),
+    ).toHaveLength(1);
+  });
+  it("an address with the steps marker is replaced by the step and never keeps the marker", async () => {
+    await mount(
+      { ...base, draws: [savedDraw()] },
+      "pool=lazy&clan=%238QQ&open=steps",
+    );
+    expect(urlState).toHaveBeenCalledTimes(1);
+    expect(urlState).toHaveBeenLastCalledWith(
+      "pool=lazy&clan=%238QQ&step=approve",
+      false,
+    );
+    expect(openPanel()).toBe("approve");
+  });
+  it("an old address without the marker or a step still opens and writes nothing to the history", async () => {
+    await mount(base, "pool=lazy&clan=%232YQ");
+    expect(cards()[0].getAttribute("aria-pressed")).toBe("true");
+    expect(urlState).not.toHaveBeenCalled();
+  });
 });
 
 describe("Step blockers", () => {
@@ -670,7 +728,11 @@ describe("Bonus steps", () => {
     expect(writes()).toHaveLength(1);
     expect(writes()[0][0]).toBe("/seasons/1/bonus-raffle/draw");
     expect(openPanel()).toBe("approve");
-    expect(urlState).toHaveBeenLastCalledWith("pool=lazy&clan=%232YQ", false);
+    // The replaced entry always carries the step, so Forward restores the steps view.
+    expect(urlState).toHaveBeenLastCalledWith(
+      "pool=lazy&clan=%232YQ&step=approve",
+      false,
+    );
     expect(button("Approve winners")).toBeDefined();
   });
   it("shows Approve, Cancel this draw and the Announce step for a saved draw", async () => {
@@ -1040,10 +1102,10 @@ describe("phone layout", () => {
       flow.querySelector(".bonus-stats")!,
       [...flow.querySelectorAll(".bonus-blockers")][1],
       flow.querySelector(".bonus-rules-line")!,
-      summary("Bonus count and source"),
       flow.querySelector(".bonus-candidates-heading h3")!,
       flow.querySelector(".bonus-account-list")!,
       button("Add player by tag", flow),
+      summary("Bonus count and source"),
     ];
     expect(sequence.every(Boolean)).toBe(true);
     for (let index = 1; index < sequence.length; index += 1)

@@ -191,6 +191,14 @@ describe("one page for two addresses", () => {
     expect(
       resultsPageMode("pool=lazy&clan=%232YQ&step=draw", "list", grants),
     ).toBe("steps");
+    // Every steps entry carries a step or the steps marker, so Forward never lands on the list.
+    expect(
+      resultsPageMode("pool=lazy&clan=%232YQ&step=approve", "list", grants),
+    ).toBe("steps");
+    expect(
+      resultsPageMode("pool=lazy&clan=%232YQ&open=steps", "list", grants),
+    ).toBe("steps");
+    // An old address with neither keeps the view the page is in.
     expect(resultsPageMode("pool=lazy&clan=%232YQ", "list", grants)).toBe(
       "list",
     );

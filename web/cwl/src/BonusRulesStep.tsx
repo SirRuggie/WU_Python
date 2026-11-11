@@ -162,6 +162,22 @@ export default function BonusRulesStep({
           last 3 seasons
         </p>
       )}
+      <div className="bonus-candidates-heading">
+        <h3 data-dashboard-focus-fallback tabIndex={-1}>
+          Players
+        </h3>
+        {minimumPreview && (
+          <p className="bonus-preview-note">Preview · not saved</p>
+        )}
+      </div>
+      <BonusAccountList
+        accounts={accounts}
+        minimum={chipMinimum}
+        onReview={onReview}
+        busy={listBusy}
+        searchable
+      />
+      {addCandidate}
       <details
         ref={countDetails}
         className="bonus-secondary bonus-count-source"
@@ -216,22 +232,6 @@ export default function BonusRulesStep({
           </p>
         )}
       </details>
-      <div className="bonus-candidates-heading">
-        <h3 data-dashboard-focus-fallback tabIndex={-1}>
-          Players
-        </h3>
-        {minimumPreview && (
-          <p className="bonus-preview-note">Preview · not saved</p>
-        )}
-      </div>
-      <BonusAccountList
-        accounts={accounts}
-        minimum={chipMinimum}
-        onReview={onReview}
-        busy={listBusy}
-        searchable
-      />
-      {addCandidate}
     </>
   );
 }

@@ -105,6 +105,10 @@ export default function BonusWorkspace({
     setUrlPool(next);
   };
   const [step, setStep] = useState<BonusStep | undefined>(initial.current.step);
+  // An address with the steps marker waits for the page data to name its step.
+  const [stepPending, setStepPending] = useState(
+    !!initial.current.view && !initial.current.step,
+  );
   // Where the page landed; typing a count must not move the open panel.
   const [landing, setLanding] = useState<BonusStep | undefined>();
   const [status, setStatus] = useState<BonusStatus | null>(null);
@@ -586,25 +590,40 @@ export default function BonusWorkspace({
       resetContext(data, next.pool || pool);
     }
     setStep(next.step);
+    setStepPending(!!next.view && !next.step);
   }, [urlState]);
   const emit = (
-    next: { pool?: Pool; clan?: string; step?: BonusStep },
+    next: {
+      pool?: Pool;
+      clan?: string;
+      step?: BonusStep;
+      view?: "steps";
+    },
     push = true,
   ) => {
     const query = resultsStateQuery({
       pool: next.pool ?? pool,
       clan: "clan" in next ? next.clan || undefined : clanTag || undefined,
       step: "step" in next ? next.step : step,
+      view: next.view,
     });
     emitted.current = query;
     onUrlState?.(query, push);
   };
+  // The steps view always carries a step; the page's own data names it.
+  useEffect(() => {
+    if (!stepPending || !data || !selectedClan) return;
+    setStepPending(false);
+    setStep(defaultStep);
+    emit({ step: defaultStep }, false);
+  }, [stepPending, data, selectedClan?.tag, defaultStep]);
   // After a saved action the page follows the first step that is not done.
   const followFlow = () => {
     setLanding(undefined);
     if (step === undefined) return;
     setStep(undefined);
-    emit({ step: undefined }, false);
+    setStepPending(true);
+    emit({ step: undefined, view: "steps" }, false);
   };
   const openStepTo = (target: BonusStep, pick?: ResultsUrlState) => {
     setStep(target);
@@ -1006,15 +1025,17 @@ export default function BonusWorkspace({
               onSelect={async (tag) => {
                 if (tag === clanTag || !(await canDiscard())) return;
                 // The address names the step, so Back and Forward return to it.
-                const target = firstOpenStep(
-                  status?.pools[pool].find((host) => host.tag === tag),
-                  pool,
-                  status?.main_minimum ?? null,
+                const host = status?.pools[pool].find(
+                  (item) => item.tag === tag,
                 );
+                const target = host
+                  ? firstOpenStep(host, pool, status?.main_minimum ?? null)
+                  : undefined;
                 setClanTag(tag);
                 setStep(target);
+                setStepPending(!target);
                 resetContext();
-                emit({ clan: tag, step: target });
+                emit({ clan: tag, step: target, view: "steps" });
               }}
               onAll={allClans}
             />

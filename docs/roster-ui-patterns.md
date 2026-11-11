@@ -7,7 +7,7 @@
 | Member clan destination                         | My clan assignments                                     |
 | Member without a clan assignment                | Waiting for a clan                                      |
 | Staff account without a placement               | Unplaced                                                |
-| Bonus page and navigation                       | Bonus medals                                            |
+| Bonus page and navigation                       | Results & bonuses                                       |
 | 15/30-player limit and progress labels          | Clan size                                               |
 | Hide the member roster                          | Hide roster; Roster hidden.                             |
 | Campaign message/reminder workspace             | Signup reminders                                        |
@@ -423,7 +423,7 @@ Results & bonuses (the player lists, Review and the draw lists) and the Exports 
 
 - A card that opens a panel stretches its name button (`account-card-open`) over the whole card; the `⋯` menu repeats that action. The player list opens Details; a clan's steps open Review.
 - Bonus Review opens in the shared `ActionPanel` (bottom sheet on phones, centered dialog on desktop), never inline below the list. Close, Escape, backdrop and Back go through the unsaved-edit discard confirm. Without bonus access the card button and menu item are disabled.
-- Exports cards are read-only: no menu. Rows show TH, tag, CWL and hosting clan in the metadata line; Roster adds `Weight`, Signups and Results history add `Clash capture`, Bonus medals history shows the selection as a pill plus the date and reason.
+- Exports cards are read-only: no menu. Rows show TH, tag, CWL and hosting clan in the metadata line; Roster adds `Weight`, Signups and Results history add `Clash capture`, Saved bonus history shows the selection as a pill plus the date and reason.
 
 ## Signup-change review
 

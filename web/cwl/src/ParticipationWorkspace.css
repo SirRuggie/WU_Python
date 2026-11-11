@@ -60,9 +60,8 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-/* The warning stays one line; the 44px touch target overlaps the line above and below. */
+/* The 44px touch target sits inside its own line; it never overlaps a neighbour. */
 .participation-capture-warning .participation-inline-action {
-  margin-block: -14px;
   vertical-align: baseline;
 }
 .participation-toolbar {

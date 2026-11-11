@@ -9,6 +9,7 @@ export const resultsStateKeys = [
   "outcome",
   "sort",
   "step",
+  "open",
 ] as const;
 export type ResultsSort = "name" | "attacks-desc" | "stars-desc";
 export type ResultsUrlState = {
@@ -17,6 +18,8 @@ export type ResultsUrlState = {
   outcome?: OutcomeFilter;
   sort?: ResultsSort;
   step?: BonusStep;
+  /** Steps view with the step not known yet (`open=steps`); the steps page replaces it with a step. The key is not `view`, which names the dashboard page. */
+  view?: "steps";
 };
 const outcomes = [
   "all",
@@ -49,6 +52,7 @@ export function parseResultsState(query: string): ResultsUrlState {
     outcome: value("outcome", outcomes) as OutcomeFilter | undefined,
     sort: value("sort", sorts) as ResultsSort | undefined,
     step: (step && (legacySteps[step] || step)) as BonusStep | undefined,
+    view: params.get("open") === "steps" ? "steps" : undefined,
   };
 }
 
@@ -61,6 +65,7 @@ export function resultsStateQuery(state: ResultsUrlState): string {
     params.set("outcome", state.outcome);
   if (state.sort && state.sort !== "name") params.set("sort", state.sort);
   if (state.step) params.set("step", state.step);
+  else if (state.view) params.set("open", state.view);
   return params.toString();
 }
 

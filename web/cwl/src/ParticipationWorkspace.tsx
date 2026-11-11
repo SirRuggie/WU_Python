@@ -491,16 +491,20 @@ export default function ParticipationWorkspace({
     onBonus(query);
   };
   // The address names the step, so Back and Forward return to the same view.
-  const stepsQuery = (tag: string) =>
-    resultsStateQuery({
+  // With no status read yet the steps page names the step once its data loads.
+  const stepsQuery = (tag: string) => {
+    const host = status?.pools[pool].find((item) => item.tag === tag);
+    return resultsStateQuery({
       pool,
       clan: tag,
-      step: firstOpenStep(
-        status?.pools[pool].find((host) => host.tag === tag),
-        pool,
-        status?.main_minimum ?? null,
-      ),
+      step: host
+        ? firstOpenStep(host, pool, status?.main_minimum ?? null)
+        : undefined,
+      view: "steps",
     });
+  };
+  const checkNowBlocked =
+    writesLocked || !!dirtyTags.size || archived || !data?.sync?.cycle;
   const chooseClan = (next: string) => {
     if (next === clan) return;
     if (onBonus && next !== "all") {
@@ -617,11 +621,7 @@ export default function ParticipationWorkspace({
                   {
                     id: "check",
                     label: "Check Clash now",
-                    disabled:
-                      writesLocked ||
-                      !!dirtyTags.size ||
-                      archived ||
-                      !data.sync?.cycle,
+                    disabled: checkNowBlocked,
                     onAction: () => void syncNow(),
                   },
                   {
@@ -649,13 +649,7 @@ export default function ParticipationWorkspace({
                 <button
                   type="button"
                   className="participation-inline-action"
-                  disabled={
-                    controlsLocked ||
-                    writesLocked ||
-                    !!dirtyTags.size ||
-                    archived ||
-                    !data.sync?.cycle
-                  }
+                  disabled={controlsLocked || checkNowBlocked}
                   onClick={() => void syncNow()}
                 >
                   Check Clash now

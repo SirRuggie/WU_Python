@@ -38,6 +38,32 @@ describe("Results and Bonus URL state", () => {
       resultsStateQuery({ pool: "main", outcome: "all", sort: "name" }),
     ).toBe("pool=main");
   });
+  it("keeps the steps marker apart from the page key and drops it once a step is named", () => {
+    expect(parseResultsState("pool=lazy&clan=%232YQ&open=steps").view).toBe(
+      "steps",
+    );
+    expect(parseResultsState("open=x").view).toBeUndefined();
+    // The dashboard page key `view` never reads as the marker.
+    expect(parseResultsState("view=steps").view).toBeUndefined();
+    expect(
+      resultsStateQuery({ pool: "lazy", clan: "#2YQ", view: "steps" }),
+    ).toBe("pool=lazy&clan=%232YQ&open=steps");
+    expect(
+      resultsStateQuery({
+        pool: "lazy",
+        clan: "#2YQ",
+        step: "approve",
+        view: "steps",
+      }),
+    ).toBe("pool=lazy&clan=%232YQ&step=approve");
+    const route = dashboardTarget(
+      "?season=4&pool=lazy&clan=%232YQ&open=steps",
+      "/cwl/results",
+    );
+    expect(dashboardPath(route)).toBe(
+      "/cwl/results?season=4&pool=lazy&clan=%232YQ&open=steps",
+    );
+  });
   it("opens one page from /cwl/results and the older /cwl/bonuses", () => {
     for (const path of ["/cwl/results", "/cwl/bonuses"] as const) {
       const route = dashboardTarget(

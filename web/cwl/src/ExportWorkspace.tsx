@@ -57,7 +57,7 @@ const choices: { kind: Kind; label: string; description: string }[] = [
   },
   {
     kind: "bonus-history",
-    label: "Bonus medals history",
+    label: "Saved bonus history",
     description: "Saved selections, not confirmed game awards.",
   },
 ];
