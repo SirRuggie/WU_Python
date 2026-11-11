@@ -56,6 +56,40 @@ approved NO WAR corrections or restore databases for a code rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 
+## Shared player cards on Bonus medals and Exports — 2026-11-11 (frontend only)
+
+- PR [#297](https://github.com/SirRuggie/WU_Python/pull/297), merge commit
+  `7771de450d0a8b6400db1f02411021dbaab25cae`, local tag
+  `bonus-exports-cards-297-1`. Released by Shaka (Claude) on Ruggie's
+  "Release 297".
+- The diff from the live `8e800f7a` touches only `web/cwl/src` and docs.
+  Backend (`backend/8e800f7a…`, PID 3222929) and bot were not changed or
+  restarted; gateway PID 307279 unchanged.
+- Frontend `current`: `8e800f7a…` → `7771de45…` at 2026-11-11T18:15:20Z,
+  through `stage-release.py` (clean tagged clone, `npm ci`, 2256 tests in 339
+  files passed; `tsc -b` and build ran in the helper) and `switch-release.py`.
+- Public entry `index-BbWuEoxV.js`, SHA-256
+  `413d79834735d44a43819785e2ad7d7e237cd3c687447e23b21319d499ab2327`;
+  `index.html` SHA-256
+  `818c69d32ed93b264b083ad04704fcb911f1872cd56492f4f055154cfcc2b10c` equals
+  the served file. Index and 13 affected assets (BonusWorkspace,
+  ExportWorkspace, ParticipationWorkspace, AccountCard, PlayerCardMeta,
+  exportPreview JS/CSS) match the manifest. `/api/cwl/config` 200, anonymous
+  `/api/cwl/seasons` and `bonus-status` 401, no tracebacks.
+- SQLite online backup
+  `.local/bonus-exports-cards-297-release-20261111T181331Z/dashboard.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `c83842c890a8a9c2b66d94bf4bce063b4d75f599baab2f88f08306ef3efb3fcd`.
+  Season 1: lazy 147 signups / 146 assigned / 131 locks, main 23 / 23 / 23,
+  publication version 6, roster revision 621. All 73 table counts identical
+  before and after.
+- Signed-out smoke: `/cwl/bonuses`, `/cwl/exports` and `/cwl/results` load
+  the new entry; only console error is the expected 401 on `auth/me`; GETs
+  only. Signed-in smoke by Shaka SKIPPED (built-in browser signed out).
+- Rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py
+  8e800f7a50b5ee54ec3c8b5058eae7b79095485b`. Never restore the database for a
+  code rollback.
+
 ## Did not join release — 2026-11-11 (backend and frontend)
 
 - PR [#295](https://github.com/SirRuggie/WU_Python/pull/295), merge commit
