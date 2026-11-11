@@ -104,12 +104,12 @@ it.each([
       await act(async () =>
         (
           host.querySelector(
-            '.bonus-step[data-step="eligibility"] a',
+            '.bonus-step[data-step="rules"] a',
           ) as HTMLAnchorElement
         ).click(),
       );
       expect(next).toHaveBeenCalledExactlyOnceWith(
-        "pool=main&clan=%23C2Y&step=eligibility",
+        "pool=main&clan=%23C2Y&step=rules",
       );
       expect(fixture.api.mock.calls).toHaveLength(beforeCalls);
       const text = host.textContent || "";

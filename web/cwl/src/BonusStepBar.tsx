@@ -4,6 +4,7 @@ import {
   bonusStepStates,
   type BonusStatus,
   type BonusStep,
+  type BonusStepInput,
 } from "./bonusStatus";
 import { plainClick, resultsStateQuery } from "./resultsUrlState";
 import type { OutcomeFilter } from "./participationOutcome";
@@ -16,6 +17,10 @@ type Props = {
   status: BonusStatus | null;
   failed: boolean;
   onRetry: () => void;
+  /** What the page computed from its full data; the status read fills the rest. */
+  input?: BonusStepInput;
+  /** Bonus medals holds Results as step 1; Results & participation is its own page. */
+  resultsInPage?: boolean;
   /** Steps whose page the user cannot open render as text. */
   canOpen: (step: BonusStep) => boolean;
   onSelect: (step: BonusStep, query: string) => void;
@@ -27,21 +32,23 @@ export function bonusStepHref(
   pool: Pool,
   clan: string,
   outcome?: OutcomeFilter,
+  resultsInPage = false,
 ) {
+  const page = step === "results" && !resultsInPage;
   const query = resultsStateQuery({
     pool,
     clan: clan || undefined,
-    outcome: step === "results" ? outcome : undefined,
-    step: step === "results" ? undefined : step,
+    outcome: page ? outcome : undefined,
+    step: page ? undefined : step,
   });
-  const path = step === "results" ? "/cwl/results" : "/cwl/bonuses";
+  const path = page ? "/cwl/results" : "/cwl/bonuses";
   return {
     query,
     href: `${path}?season=${encodeURIComponent(seasonId)}${query ? `&${query}` : ""}`,
   };
 }
 
-/** Results → Eligibility → Draw → Approval → Announcement for one hosting clan. */
+/** Results → Rules & count → Draw → Approve → Announce & award for one hosting clan. */
 export default function BonusStepBar({
   seasonId,
   pool,
@@ -49,6 +56,8 @@ export default function BonusStepBar({
   status,
   failed,
   onRetry,
+  input,
+  resultsInPage = false,
   canOpen,
   onSelect,
 }: Props) {
@@ -56,8 +65,13 @@ export default function BonusStepBar({
   const host = clan
     ? status?.pools[pool].find((item) => item.tag === clan) || null
     : null;
-  const loading = !status && !failed;
-  const steps = bonusStepStates(host, pool, status?.main_minimum ?? null);
+  const loading = !status && !failed && !input;
+  const steps = bonusStepStates(
+    host,
+    pool,
+    status?.main_minimum ?? null,
+    input,
+  );
   const active = steps.findIndex(
     (step) => step.state === "current" || step.state === "blocked",
   );
@@ -83,6 +97,7 @@ export default function BonusStepBar({
         type="button"
         className="bonus-step-compact"
         aria-expanded={expanded}
+        aria-controls="bonus-step-list"
         onClick={() => setExpanded((value) => !value)}
       >
         <span>{summary}</span>
@@ -95,9 +110,19 @@ export default function BonusStepBar({
           ))}
         </span>
       </button>
-      <ol className={`bonus-step-list${expanded ? " is-expanded" : ""}`}>
+      <ol
+        id="bonus-step-list"
+        className={`bonus-step-list${expanded ? " is-expanded" : ""}`}
+      >
         {steps.map((step, index) => {
-          const { href, query } = bonusStepHref(seasonId, step.id, pool, clan);
+          const { href, query } = bonusStepHref(
+            seasonId,
+            step.id,
+            pool,
+            clan,
+            undefined,
+            resultsInPage,
+          );
           const state = failed || loading ? "todo" : step.state;
           const label = (
             <>

@@ -29,19 +29,26 @@ const outcomes = [
   "not_assigned",
 ];
 const sorts = ["name", "attacks-desc", "stars-desc"];
-const steps = ["results", "eligibility", "draw", "approval", "announcement"];
+const steps = ["results", "rules", "draw", "approve", "announce"];
+/** Links saved before the step names changed keep working. */
+const legacySteps: Record<string, string> = {
+  eligibility: "rules",
+  approval: "approve",
+  announcement: "announce",
+};
 
 export function parseResultsState(query: string): ResultsUrlState {
   const params = new URLSearchParams(query);
   const value = (key: string, allowed: string[]) =>
     allowed.includes(params.get(key) || "") ? params.get(key)! : undefined;
   const clan = params.get("clan") || "";
+  const step = value("step", [...steps, ...Object.keys(legacySteps)]);
   return {
     pool: value("pool", ["main", "lazy"]) as Pool | undefined,
     clan: /^#[0289PYLQGRJCUV]{3,15}$/.test(clan) ? clan : undefined,
     outcome: value("outcome", outcomes) as OutcomeFilter | undefined,
     sort: value("sort", sorts) as ResultsSort | undefined,
-    step: value("step", steps) as BonusStep | undefined,
+    step: (step && (legacySteps[step] || step)) as BonusStep | undefined,
   };
 }
 

@@ -20,6 +20,19 @@ describe("Results and Bonus URL state", () => {
       parseResultsState("pool=x&clan=bad&outcome=x&sort=th-asc&step=x"),
     ).toEqual({});
   });
+  it("maps the old step names and keeps the new ones", () => {
+    for (const [old, now] of [
+      ["eligibility", "rules"],
+      ["approval", "approve"],
+      ["announcement", "announce"],
+      ["results", "results"],
+      ["rules", "rules"],
+      ["draw", "draw"],
+      ["approve", "approve"],
+      ["announce", "announce"],
+    ] as const)
+      expect(parseResultsState(`step=${old}`).step).toBe(now);
+  });
   it("leaves defaults out of the query", () => {
     expect(
       resultsStateQuery({ pool: "main", outcome: "all", sort: "name" }),
@@ -35,11 +48,12 @@ describe("Results and Bonus URL state", () => {
         path,
       );
       expect(route.view).toBe(view);
+      // The old step name opens the renamed step.
       expect(route.resultsState).toBe(
-        "pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approval",
+        "pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approve",
       );
       expect(dashboardPath(route)).toBe(
-        `${path}?season=4&pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approval`,
+        `${path}?season=4&pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approve`,
       );
     }
   });

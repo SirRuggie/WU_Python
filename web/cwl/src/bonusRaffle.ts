@@ -1,5 +1,6 @@
 import type { Pool } from './api'
 import type { BonusAccount, BonusClan, BonusData } from './bonus'
+import type { BonusStep } from './bonusStatus'
 
 export type BonusReview = {
   flags: string[];
@@ -101,34 +102,61 @@ export type BonusReviewGuard = {
   countReady: boolean;
   needsMinimum: boolean;
   rolesUnavailable: boolean;
+  /** Every player lacks results and no staff reason covers them. */
   resultsMissing: boolean;
+  /** Players still without a result or a covering staff reason. */
+  uncheckedCount: number;
+  /** Staff can open Review for an unchecked player (Lazy, with access). */
+  canReviewUnchecked: boolean;
+  cycleMissing: boolean;
+  hostInactive: boolean;
 }
-export type BonusReviewBlocker =
+export type BonusBlockerId =
   | 'access' | 'archived' | 'minimum-dirty' | 'role-dirty' | 'open-review'
-  | 'count' | 'minimum' | 'roles' | 'results'
+  | 'count' | 'minimum' | 'roles' | 'results' | 'partial' | 'cycle' | 'inactive'
 
-export type BonusReviewLine = { id: BonusReviewBlocker; text: string; blocks: boolean }
+export type BonusBlockerLine = {
+  id: BonusBlockerId; text: string;
+  /** A blocking line disables the action it guards. */
+  blocks: boolean;
+  /** The step bar shows this line as the step's red reason. */
+  bar: boolean;
+}
 
 /**
- * The one source for the lines under Review eligibility. Only `blocks` lines
- * disable the button (today's conditions); the others show the fix only.
+ * The one source of blockers. The step bar, the lines in each panel and every
+ * disabled action read this; nothing else decides.
  */
-export function bonusReviewBlockers(guard: BonusReviewGuard): BonusReviewLine[] {
-  const lines: [boolean, BonusReviewBlocker, string, boolean][] = [
-    [!guard.canManage, 'access', 'Bonus access needed', true],
-    [guard.archived, 'archived', 'Archived season · read only', true],
-    [guard.policyDirty, 'minimum-dirty', 'Save the minimum', true],
-    [guard.roleDirty, 'role-dirty', 'Save the representative role', true],
-    [guard.reviewDirty || guard.candidateOpen, 'open-review', 'Save the open review', true],
-    [!guard.countReady, 'count', 'Enter the bonus count', true],
-    [guard.needsMinimum, 'minimum', 'Set the Main minimum', true],
-    [guard.rolesUnavailable, 'roles', 'Discord roles unavailable · Retry', false],
-    [guard.resultsMissing, 'results', 'Results not captured', false],
-  ]
-  return lines.filter(([active]) => active).map(([, id, text, blocks]) => ({ id, text, blocks }))
+export function bonusStepBlockers(guard: BonusReviewGuard): Record<BonusStep, BonusBlockerLine[]> {
+  const line = (active: boolean, id: BonusBlockerId, text: string, blocks: boolean, bar = blocks): [boolean, BonusBlockerLine] =>
+    [active, { id, text, blocks, bar }]
+  const pick = (lines: [boolean, BonusBlockerLine][]) => lines.filter(([active]) => active).map(([, item]) => item)
+  const access = line(!guard.canManage, 'access', 'Bonus access needed', true)
+  const archived = line(guard.archived, 'archived', 'Archived season · read only', true)
+  const minimumDirty = line(guard.policyDirty, 'minimum-dirty', 'Save the minimum', true)
+  const roleDirty = line(guard.roleDirty, 'role-dirty', 'Save the representative role', true)
+  const openReview = line(guard.reviewDirty || guard.candidateOpen, 'open-review', 'Save the open review', true)
+  const draw = pick([access, archived, minimumDirty, roleDirty, openReview])
+  return {
+    results: pick([
+      line(guard.cycleMissing, 'cycle', 'CWL month not set', false, true),
+      line(guard.resultsMissing, 'results', 'Results not captured', false, true),
+      line(!guard.resultsMissing && guard.uncheckedCount > 0, 'partial', `${guard.uncheckedCount} not checked${guard.canReviewUnchecked ? ' · Review' : ''}`, false, true),
+    ]),
+    rules: pick([
+      access, archived, minimumDirty, roleDirty, openReview,
+      line(!guard.countReady, 'count', 'Enter the bonus count', true),
+      line(guard.needsMinimum && !guard.policyDirty, 'minimum', 'Set the Main minimum', true),
+      line(guard.hostInactive, 'inactive', 'Hosting clan is not an active Lazy clan this season', false, true),
+      line(guard.rolesUnavailable, 'roles', 'Discord roles unavailable · Retry', false),
+    ]),
+    draw,
+    approve: pick([access, archived]),
+    announce: pick([archived]),
+  }
 }
 
-export function reviewBlocked(lines: BonusReviewLine[]): boolean {
+export function reviewBlocked(lines: BonusBlockerLine[]): boolean {
   return lines.some(line => line.blocks)
 }
 

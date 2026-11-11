@@ -1,4 +1,5 @@
 import { api, type Pool } from "./api";
+import { countText } from "./participationOutcome";
 
 export type BonusDrawState =
   "none" | "saved" | "approved" | "sent" | "cancelled";
@@ -34,14 +35,13 @@ export async function loadBonusStatus(seasonId: string): Promise<BonusStatus> {
   return result;
 }
 
-export type BonusStep =
-  "results" | "eligibility" | "draw" | "approval" | "announcement";
+export type BonusStep = "results" | "rules" | "draw" | "approve" | "announce";
 export const bonusSteps: { id: BonusStep; label: string }[] = [
   { id: "results", label: "Results" },
-  { id: "eligibility", label: "Eligibility" },
+  { id: "rules", label: "Rules & count" },
   { id: "draw", label: "Draw" },
-  { id: "approval", label: "Approval" },
-  { id: "announcement", label: "Announcement" },
+  { id: "approve", label: "Approve" },
+  { id: "announce", label: "Announce & award" },
 ];
 export type BonusStepState = "done" | "current" | "blocked" | "todo";
 export type BonusStepView = {
@@ -50,25 +50,35 @@ export type BonusStepView = {
   state: BonusStepState;
   reason: string;
 };
+/** The page knows more than the status read: it passes what it computed. */
+export type BonusStepInput = {
+  done?: Record<BonusStep, boolean>;
+  reasons?: Partial<Record<BonusStep, string>>;
+};
 
-/** Step states for one hosting clan, from the light status read only. */
+/** Step states for one hosting clan; the page can override from its full data. */
 export function bonusStepStates(
   clan: BonusStatusClan | null | undefined,
   pool: Pool,
   mainMinimum: number | null,
+  input: BonusStepInput = {},
 ): BonusStepView[] {
   const drawn = ["saved", "approved", "sent"].includes(clan?.draw_state || "");
-  const done: Record<BonusStep, boolean> = {
-    results: clan?.results_state === "captured",
-    eligibility: drawn,
+  const done: Record<BonusStep, boolean> = input.done || {
+    results: drawn || clan?.results_state === "captured",
+    rules:
+      drawn ||
+      (!!clan?.active &&
+        (pool !== "main" || mainMinimum !== null) &&
+        !!clan.allowance_ready),
     draw: drawn,
-    approval: ["approved", "sent"].includes(clan?.draw_state || ""),
-    announcement: clan?.draw_state === "sent",
+    approve: ["approved", "sent"].includes(clan?.draw_state || ""),
+    announce: clan?.draw_state === "sent",
   };
-  const blockers: Record<BonusStep, string> = {
+  const fallback: Record<BonusStep, string> = {
     results:
       clan?.results_state === "not_checked" ? "Results not captured" : "",
-    eligibility: !clan?.active
+    rules: !clan?.active
       ? "Inactive host"
       : pool === "main" && mainMinimum === null
         ? "Set the Main minimum"
@@ -76,33 +86,48 @@ export function bonusStepStates(
           ? "Enter the bonus count"
           : "",
     draw: "",
-    approval: "",
-    announcement: "",
+    approve: "",
+    announce: "",
   };
-  const first = clan ? bonusSteps.findIndex((step) => !done[step.id]) : -1;
+  const known = !!clan || !!input.done;
+  const first = known ? bonusSteps.findIndex((step) => !done[step.id]) : -1;
   return bonusSteps.map((step, index) => {
-    const state: BonusStepState = !clan
+    const reason = input.done
+      ? input.reasons?.[step.id] || ""
+      : fallback[step.id];
+    const state: BonusStepState = !known
       ? "todo"
       : done[step.id]
         ? "done"
         : index === first
-          ? blockers[step.id]
+          ? reason
             ? "blocked"
             : "current"
           : "todo";
     return {
       ...step,
       state,
-      reason: state === "blocked" ? blockers[step.id] : "",
+      reason: state === "blocked" ? reason : "",
     };
   });
 }
 
-/** Card state on Bonus medals: Draft, Saved, Approved, Sent or Inactive. */
+/** Card state on Bonus medals: Draft, Draw saved, Approved, Sent or Inactive. */
 export function bonusClanState(clan: BonusStatusClan) {
-  if (!clan.active) return "Inactive";
   if (clan.draw_state === "sent") return "Sent";
   if (clan.draw_state === "approved") return "Approved";
-  if (clan.draw_state === "saved") return "Saved";
+  if (clan.draw_state === "saved") return "Draw saved";
+  if (!clan.active) return "Inactive";
   return "Draft";
+}
+
+/** Card line: the meet count shows before a draw; a draw replaces it. */
+export function bonusClanCardText(clan: BonusStatusClan) {
+  if (["saved", "approved", "sent"].includes(clan.draw_state))
+    return bonusClanState(clan);
+  const count =
+    clan.meets_rule === null
+      ? countText(clan.candidates, "candidate")
+      : `${clan.meets_rule} of ${clan.candidates} meet`;
+  return `${count} · ${bonusClanState(clan)}`;
 }

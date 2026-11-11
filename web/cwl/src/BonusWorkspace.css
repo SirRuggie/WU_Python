@@ -103,32 +103,7 @@
     border-color: var(--wu-text-muted);
   }
 }
-/* Clan-wide reasons: the shared amber notice, one 44px line per reason. */
-.notice.bonus-clan-notice {
-  display: block;
-  margin: 0 0 var(--wu-space-2);
-  padding: 0 var(--wu-space-3);
-}
-.bonus-clan-notice p {
-  display: flex;
-  align-items: center;
-  gap: var(--wu-space-2);
-  min-height: 44px;
-  margin: 0;
-}
-.bonus-clan-notice p + p {
-  border-top: 1px solid var(--wu-warning-border);
-}
-.bonus-clan-notice svg {
-  flex: none;
-}
-.bonus-clan-notice span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-/* Each fix is its own 44px box inside its line, never over a neighbour. */
-.bonus-clan-notice a,
-.notice.bonus-clan-notice .bonus-inline-action {
+.bonus-inline-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -149,7 +124,7 @@
   text-underline-offset: 3px;
 }
 .bonus-blockers {
-  margin: calc(-1 * var(--wu-space-2)) 0 var(--wu-space-3);
+  margin: 0 0 var(--wu-space-3);
   padding: 0;
   list-style: none;
   color: var(--roster-text-muted);
@@ -167,8 +142,8 @@
   color: var(--wu-text);
 }
 .bonus-stats > .bonus-inline-count {
-  min-width: 130px;
-  flex: 1 1 0;
+  min-width: 100%;
+  flex: 1 1 100%;
   display: grid;
   gap: var(--wu-space-1);
   padding: var(--wu-space-2) var(--wu-space-4);
@@ -178,7 +153,6 @@
 }
 .bonus-inline-count input {
   width: 100%;
-  max-width: 120px;
   font-variant-numeric: tabular-nums;
 }
 .bonus-flow {
@@ -230,14 +204,10 @@
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
-.bonus-stats span,
-.bonus-support {
+.bonus-stats span {
   color: var(--roster-text-muted);
   font-size: var(--wu-text-sm);
   font-variant-numeric: tabular-nums;
-}
-.bonus-support {
-  margin: var(--wu-space-2) 0 var(--wu-space-4);
 }
 .bonus-workspace details {
   border-top: 1px solid var(--roster-border-subtle);
@@ -601,4 +571,52 @@
 .bonus-workspace .notice a {
   color: inherit;
   text-decoration: underline;
+}
+
+/* One step panel is open; done steps are one line with Change. */
+.bonus-step-panels {
+  margin-top: var(--wu-space-2);
+}
+.bonus-clan-heading {
+  margin: var(--wu-space-3) 0 var(--wu-space-2);
+}
+.bonus-step-panel > h3 {
+  margin: 0 0 var(--wu-space-3);
+}
+.bonus-step-done {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-3);
+  min-height: 44px;
+  margin: 0;
+  border-top: 1px solid var(--roster-border-subtle);
+  color: var(--roster-text-muted);
+}
+.bonus-step-done .bonus-inline-action {
+  flex: none;
+  color: var(--wu-accent);
+}
+.bonus-blockers li.is-alert {
+  color: var(--wu-danger);
+}
+.bonus-action-blocker,
+.bonus-rules-line,
+.bonus-step-note,
+.bonus-preview-note,
+.bonus-field-hint {
+  margin: var(--wu-space-2) 0;
+  color: var(--roster-text-muted);
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
+}
+.bonus-field-hint {
+  display: block;
+  margin: 0;
+}
+.bonus-count-field input {
+  width: 100%;
+}
+.bonus-candidates-heading .bonus-preview-note {
+  margin: 0;
 }

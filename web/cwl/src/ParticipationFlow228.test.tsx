@@ -323,7 +323,7 @@ it("step links carry pool and clan to Bonus medals", async () => {
   await mount("pool=lazy&clan=%232YQ");
   await act(async () => partC.resolve(status(3)));
   expect(host.querySelector(".bonus-step.is-current")?.textContent).toContain(
-    "Approval",
+    "Approve",
   );
   const draw = [
     ...host.querySelectorAll<HTMLAnchorElement>(".bonus-step-list a"),
