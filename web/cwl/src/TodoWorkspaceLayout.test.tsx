@@ -159,6 +159,23 @@ it("shows a deep-link search and keeps the field when its text is cleared", asyn
   expect(host!.querySelector('input[name="todo-search"]')).not.toBeNull();
 });
 
+it("moves focus to the accounts chip when closing search removes the search button", async () => {
+  await mount();
+  await act(async () => button("Search tasks").click());
+  const input = host!.querySelector<HTMLInputElement>(
+    'input[name="todo-search"]',
+  )!;
+  await type(input, "zzz");
+  const cwl = [
+    ...host!.querySelectorAll<HTMLButtonElement>(".todo-tabs button"),
+  ].find((tab) => tab.textContent?.includes("CWL"))!;
+  await act(async () => cwl.click());
+  await act(async () => button("Clear and close search").click());
+  expect(host!.querySelector(".todo-search-row")).toBeNull();
+  expect(host!.querySelector('button[aria-label="Search tasks"]')).toBeNull();
+  expect(document.activeElement).toBe(host!.querySelector(".todo-chip"));
+});
+
 it("toggles auto-refresh with one pause button", async () => {
   await mount();
   const pause = button("Pause auto-refresh");
