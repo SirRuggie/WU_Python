@@ -56,6 +56,32 @@ approved NO WAR corrections or restore databases for a code rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 
+## B-6 tab cleanup release — 2026-11-11 (frontend only)
+
+- PR [#280](https://github.com/SirRuggie/WU_Python/pull/280), merge commit
+  `3d04372aa4b9614489dfd0dcf1434c9c32d22033`, local tag `b6-tab-cleanup-1`.
+  Shaka APPROVED head `5aa382a`. Released by Shaka (Claude).
+- Frontend `current`: `38c68ae625d1de4292410e5b318cb87fbc9e1c0b` →
+  `3d04372aa4b9614489dfd0dcf1434c9c32d22033` at 2026-11-11T01:59Z, through
+  `stage-release.py` (clean tagged worktree, `npm ci`) and `switch-release.py`.
+  The `web/cwl` diff from `38c68ae` contains only PR #280. Backend
+  (`249a83e3`) and bot were not changed or restarted.
+- Public entry `index-s3SoFMZS.js`, CSS `index-DXqKCkzK.css`; `index.html`
+  SHA-256 `ad4cdf23c006814e36a3307f42e3e96e7f27332f05b3fcc242e723e214a6b1ce`.
+  Index and 13 changed feature assets (ClanManagement, ModerationWorkspace,
+  ServerManagement, RosterWorkspace, navList, FilterChips, TextCommands) match
+  the manifest. `/api/cwl/config` 200, anonymous `/api/cwl/seasons` 401.
+- SQLite online backup
+  `.local/b6-tab-cleanup-release-280-20261111T015830Z/dashboard.sqlite3`:
+  integrity ok, equal to live. Season 1: lazy 147 signups / 146 assigned /
+  131 locks, main 23 / 23 / 23, publication version 6, roster revision 621.
+  All 73 table counts identical before and after.
+- Signed-in smoke by Shaka SKIPPED (built-in browser signed out; Chrome
+  extension not connected). Signed-out home checked at 375 and 800 px. Ruggie
+  checked Family clans, Moderation and an FWA tools setting signed in on his
+  phone at 2026-11-11T02:10Z: "Looks good".
+- Rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py 38c68ae625d1de4292410e5b318cb87fbc9e1c0b`.
+
 ## Moderation logging release — 2026-10-30
 
 - PR #68 / `moderation-logs-1` at `c494022e924994435496c3e4f0722eb781460380` shipped bot → ready → backend → ready → frontend. Integrated 4,863 backend tests / 21 skipped / 162 subtests and 933 frontend tests passed; final tagged frontend tests/TypeScript/build passed, with only three documentation files changed from the integrated checked tree. Seventeen mocked release checks passed.
