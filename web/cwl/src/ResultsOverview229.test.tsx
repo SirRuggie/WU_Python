@@ -194,9 +194,9 @@ describe("season overview", () => {
   it("selecting a clan card opens that clan's steps and writes nothing", async () => {
     await mount();
     await act(async () => cards()[0].click());
-    // The address names the first step that is not done, so Back and Forward return to it.
+    // The steps page names the step once its data loads.
     expect(bonus).toHaveBeenCalledExactlyOnceWith(
-      "pool=lazy&clan=%232YQ&step=draw",
+      "pool=lazy&clan=%232YQ&open=steps",
     );
     expect(writes()).toHaveLength(0);
   });
@@ -219,7 +219,7 @@ describe("season overview", () => {
       confirm.click();
     });
     expect(bonus).toHaveBeenCalledExactlyOnceWith(
-      "pool=lazy&clan=%238QQ&step=announce",
+      "pool=lazy&clan=%238QQ&open=steps",
     );
     expect(writes()).toHaveLength(0);
   });

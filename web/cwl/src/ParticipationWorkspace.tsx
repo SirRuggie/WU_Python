@@ -15,11 +15,7 @@ import ResultsSettingsSheet, {
 import useUnsavedWork from "./useUnsavedWork";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
-import {
-  firstOpenStep,
-  loadBonusStatus,
-  type BonusStatus,
-} from "./bonusStatus";
+import { loadBonusStatus, type BonusStatus } from "./bonusStatus";
 import {
   countText,
   matchesOutcome,
@@ -490,19 +486,10 @@ export default function ParticipationWorkspace({
       return;
     onBonus(query);
   };
-  // The address names the step, so Back and Forward return to the same view.
-  // With no status read yet the steps page names the step once its data loads.
-  const stepsQuery = (tag: string) => {
-    const host = status?.pools[pool].find((item) => item.tag === tag);
-    return resultsStateQuery({
-      pool,
-      clan: tag,
-      step: host
-        ? firstOpenStep(host, pool, status?.main_minimum ?? null)
-        : undefined,
-      view: "steps",
-    });
-  };
+  // The steps page names the step once its data loads, so the status read
+  // and the open step never disagree.
+  const stepsQuery = (tag: string) =>
+    resultsStateQuery({ pool, clan: tag, view: "steps" });
   const checkNowBlocked =
     writesLocked || !!dirtyTags.size || archived || !data?.sync?.cycle;
   const chooseClan = (next: string) => {

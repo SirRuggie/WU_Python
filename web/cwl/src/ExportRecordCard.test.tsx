@@ -98,7 +98,7 @@ it("Results history keeps saved notes behind a disclosure", async () => {
   expect(details.hasAttribute("open")).toBe(false);
 });
 
-it("Bonus medals history shows the selection as a pill and keeps names as text", async () => {
+it("Saved bonus history shows the selection as a pill and keeps names as text", async () => {
   const card = await show("bonus-history", {
     player_name: "<b>@everyone</b>",
     tag: "#P2Y",

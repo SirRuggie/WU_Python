@@ -161,9 +161,9 @@ it("hides the step bar until one hosting clan is selected", async () => {
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   // A hosting clan opens its steps on the combined page; the list stays put.
-  // The address names the step (a saved draw waits at Approve), so Back and Forward return to it.
+  // The steps page names the step once its data loads.
   expect(bonus).toHaveBeenCalledExactlyOnceWith(
-    "pool=lazy&clan=%232YQ&step=approve",
+    "pool=lazy&clan=%232YQ&open=steps",
   );
 });
 

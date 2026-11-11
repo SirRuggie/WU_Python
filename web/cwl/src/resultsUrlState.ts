@@ -2,7 +2,7 @@ import type { Pool } from "./api";
 import type { BonusStep } from "./bonusStatus";
 import type { OutcomeFilter } from "./participationOutcome";
 
-/** Results and Bonus medals keep pool, clan, outcome, sort and step in the URL. */
+/** Results & bonuses keeps pool, clan, outcome, sort, step and the open marker in the URL. */
 export const resultsStateKeys = [
   "pool",
   "clan",

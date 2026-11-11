@@ -34,7 +34,6 @@ import ResultsSettingsSheet, {
 import {
   bonusStepStates,
   bonusSteps,
-  firstOpenStep,
   loadBonusStatus,
   type BonusStatus,
   type BonusStep,
@@ -1024,18 +1023,13 @@ export default function BonusWorkspace({
               disabled={busy || lookingUp}
               onSelect={async (tag) => {
                 if (tag === clanTag || !(await canDiscard())) return;
-                // The address names the step, so Back and Forward return to it.
-                const host = status?.pools[pool].find(
-                  (item) => item.tag === tag,
-                );
-                const target = host
-                  ? firstOpenStep(host, pool, status?.main_minimum ?? null)
-                  : undefined;
+                // The page data names the step once it loads, so the status
+                // read and the open step never disagree.
                 setClanTag(tag);
-                setStep(target);
-                setStepPending(!target);
+                setStep(undefined);
+                setStepPending(true);
                 resetContext();
-                emit({ clan: tag, step: target, view: "steps" });
+                emit({ clan: tag, step: undefined, view: "steps" });
               }}
               onAll={allClans}
             />

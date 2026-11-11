@@ -328,12 +328,16 @@ describe("Bonus clan cards", () => {
       ).click(),
     );
     expect(cards()[1].getAttribute("aria-pressed")).toBe("true");
-    // The address names the step too (a saved draw waits at Approve).
-    expect(urlState).toHaveBeenLastCalledWith(
-      "pool=lazy&clan=%238QQ&step=approve",
+    // The marker is pushed; the page data then names the step in place.
+    expect(urlState.mock.calls[0]).toEqual([
+      "pool=lazy&clan=%238QQ&open=steps",
       true,
+    ]);
+    expect(urlState).toHaveBeenLastCalledWith(
+      "pool=lazy&clan=%238QQ&step=rules",
+      false,
     );
-    expect(openPanel()).toBe("approve");
+    expect(openPanel()).toBe("rules");
     expect(writes()).toHaveLength(0);
   });
   it("restores the clan from the URL", async () => {
@@ -380,6 +384,68 @@ describe("Bonus clan cards", () => {
     expect(
       urlState.mock.calls.filter(([query]) => /open=/.test(query)),
     ).toHaveLength(1);
+  });
+  it("with the status read loaded, a card pushes the steps marker and the page data picks the step", async () => {
+    // Status says Results is partial; the page counts a saved reason as checked.
+    const lazyStatus = {
+      ...status,
+      pools: {
+        ...status.pools,
+        lazy: [
+          { ...status.pools.lazy[0], results_state: "partial" },
+          status.pools.lazy[1],
+        ],
+      },
+    };
+    const data = {
+      ...base,
+      accounts: [
+        account("#P1", "Alpha", "#2YQ"),
+        account("#P2", "Bravo", "#2YQ", {
+          attacks: null,
+          stars: null,
+          source_complete: false,
+          bonus_review: {
+            flags: [],
+            override_reason: "Played, Clash was down",
+          },
+        }),
+        account("#P3", "Charlie", "#8QQ"),
+      ],
+    };
+    api
+      .mockReset()
+      .mockImplementation((route: string) =>
+        Promise.resolve(route.endsWith("/bonus-status") ? lazyStatus : data),
+      );
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <BonusWorkspace
+          seasonId="1"
+          seasons={[
+            { id: 1, label: "November", status: "draft", signup_open: true },
+          ]}
+          onSeasonChange={() => {}}
+          urlState="pool=lazy&clan=%238QQ&step=draw"
+          onUrlState={urlState}
+          onResults={results}
+        />,
+      ),
+    );
+    await act(async () => cards()[0].click());
+    expect(urlState.mock.calls[0]).toEqual([
+      expect.stringContaining("open=steps"),
+      true,
+    ]);
+    expect(urlState.mock.calls[0][0]).not.toContain("step=");
+    expect(urlState.mock.calls.at(-1)).toEqual([
+      "pool=lazy&clan=%232YQ&step=rules",
+      false,
+    ]);
+    expect(openPanel()).toBe("rules");
   });
   it("an address with the steps marker is replaced by the step and never keeps the marker", async () => {
     await mount(
