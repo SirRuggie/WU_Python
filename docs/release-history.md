@@ -56,6 +56,37 @@ approved NO WAR corrections or restore databases for a code rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 
+## Results & bonuses one flow — 2026-11-11 (frontend only)
+
+- PR [#299](https://github.com/SirRuggie/WU_Python/pull/299), merge commit
+  `11959254eedfef916e2a136e5df9370a3890a3c8`, local tag
+  `results-bonuses-229-1`. Built and released by Shaka (Claude) on Ruggie's
+  "release 229". Final refuter verdict ACCEPT on head `56c82382`.
+- The diff from the live `7771de45` (plus docs-only `afbf2472`) touches only
+  `web/cwl/src` and docs. Backend (`backend/8e800f7a…`, PID 3222929) and bot
+  were not changed or restarted.
+- Frontend `current`: `7771de45…` → `11959254…` at about 2026-11-11T20:38Z,
+  through `stage-release.py` (clean tagged clone, `npm ci`, 2331 tests in 344
+  files passed before staging) and `switch-release.py`.
+- Public entry `index-DKmp4ptE.js`, SHA-256
+  `45224e61561c467832ac486a48dc5052d038805bf8121b32c15c62b2078c181f`; served
+  `index.html` SHA-256
+  `d601404d9c24ff82820e10a0fc78b1e2e5a0286ce39590fd4a73a35a8a6ddefb` equals the
+  release file. All 149 manifest assets fetched from the public site match.
+  `/api/cwl/config` 200; anonymous `/api/cwl/seasons` and `bonus-status` 401.
+- SQLite online backup
+  `.local/results-bonuses-229-release-20261111T203343Z/dashboard.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `a41ba2ed3c4ae729e2ee50b02ced62054f370653ec82e4f3921eaf26882ed606`. All 73
+  table counts identical before and after.
+- Signed-out smoke at 360 px: `/cwl/results`, `/cwl/bonuses` and
+  `/cwl/exports` load the new entry; only console error is the expected 401;
+  no horizontal overflow; app requests GET only. Signed-in smoke SKIPPED
+  (built-in browser signed out).
+- Rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py
+  7771de450d0a8b6400db1f02411021dbaab25cae`. Never restore the database for a
+  code rollback.
+
 ## Shared player cards on Bonus medals and Exports — 2026-11-11 (frontend only)
 
 - PR [#297](https://github.com/SirRuggie/WU_Python/pull/297), merge commit
