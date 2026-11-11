@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timezone
 
 from utils import dashboard_urls
+from utils.discord_links import profile_label
 from utils.member_events import GUILD_ID, HISTORY_TYPES, safe_text
 
 EVENT_STYLE = {
@@ -180,7 +181,8 @@ def _user_reference(value: object, names: dict | None = None, name: object = Non
     uid = _snowflake(value)
     label = name if _named(name) else (names or {}).get(uid)
     if uid and _named(label) and _named(label) != uid:
-        return f"[{_inert(label, 120)}](https://discord.com/users/{uid})"
+        text = profile_label(label, 120, fallback="")
+        return f"[{text}](https://discord.com/users/{uid})" if text else f"<@{uid}>"
     return f"<@{uid}>" if uid else (_inert(label, 60) or "Unknown")
 
 

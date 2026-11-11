@@ -343,7 +343,7 @@ async def named_voter_components(document, *, page=0):
 
 
 def build_named_voter_components(document: dict, *, labels=None, page=0) -> list[Container]:
-    from extensions.commands.loot_leaderboard import profile_label
+    from utils.discord_links import profile_label
     labels = labels or {}
     counts, total = _option_counts(document)
     rows, page, pages = _voter_page(document, page)
