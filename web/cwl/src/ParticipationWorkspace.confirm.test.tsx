@@ -4,11 +4,39 @@ import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
+// A retained result edit is the unsaved work the guards protect (not a live editor).
+vi.mock("./ParticipationRecord", () => ({
+  default: ({
+    account,
+    onDirty,
+  }: {
+    account: { tag: string };
+    onDirty: (tag: string, dirty: boolean) => void;
+  }) => (
+    <button onClick={() => onDirty(account.tag, true)}>
+      Retain local result edit
+    </button>
+  ),
+}));
 import ParticipationWorkspace from "./ParticipationWorkspace";
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
 const change = vi.fn(),
   data = {
-    accounts: [],
+    accounts: [
+      {
+        tag: "#PYY",
+        player_name: "Fixture",
+        pool: "main",
+        assigned_clan_tag: "#PQQ",
+        assigned_clan_name: "Family",
+        attacks: 1,
+        stars: 3,
+        town_hall: 18,
+        notes: "",
+        revision: 1,
+        in_latest_publication: true,
+      },
+    ],
     publication_version: 1,
     sync: {
       cycle: "2026-11",
@@ -27,7 +55,7 @@ const button = (name: string, within: ParentNode = document) =>
   )!;
 const writes = () =>
   api.mock.calls.filter((call) => call[1] && call[1] !== "GET");
-// Refresh list sits in the capture card's shared ⋯ menu (prompt 228).
+// Refresh sits in the capture card's shared ⋯ menu (prompts 228 and 229).
 async function menuAction(label: string) {
   await act(async () =>
     host
@@ -73,33 +101,23 @@ beforeEach(async () => {
       />,
     ),
   );
-  host.querySelector("details")!.open = true;
-  const month = host.querySelector<HTMLInputElement>('input[type="month"]')!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    )!.set!.call(month, "2026-12");
-    month.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await act(async () => button("Retain local result edit").click());
 });
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-it("Refresh Cancel retains unsaved month, confirmed refresh reads once and never saves", async () => {
+it("Refresh Cancel retains the unsaved result edit, confirmed refresh reads once and never saves", async () => {
   const before = api.mock.calls.length;
-  await menuAction("Refresh list");
+  await menuAction("Refresh");
   expect(api.mock.calls).toHaveLength(before);
   await act(async () =>
     button("Cancel", document.querySelector(".confirm-dialog")!).click(),
   );
-  expect(
-    host.querySelector<HTMLInputElement>('input[type="month"]')!.value,
-  ).toBe("2026-12");
+  expect(api.mock.calls).toHaveLength(before);
   expect(writes()).toHaveLength(0);
-  await menuAction("Refresh list");
-  await menuAction("Refresh list");
+  await menuAction("Refresh");
+  await menuAction("Refresh");
   await act(async () => {
     const confirm = button(
       "Discard and refresh",
@@ -110,9 +128,6 @@ it("Refresh Cancel retains unsaved month, confirmed refresh reads once and never
   });
   expect(api.mock.calls).toHaveLength(before + 1);
   expect(writes()).toHaveLength(0);
-  expect(
-    host.querySelector<HTMLInputElement>('input[type="month"]')!.value,
-  ).toBe("2026-11");
 });
 it("season change cancellation and double confirmation preserve callback value and zero writes", async () => {
   // The season field is the short-list native select (prompt 228).

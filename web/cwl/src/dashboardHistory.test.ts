@@ -219,9 +219,21 @@ it("round trips every staff CWL destination, including legacy links and OAuth re
   for (const [view, path] of Object.entries(cwlPaths)) {
     const legacy = dashboardTarget(`?view=${view}&season=12`);
     const expected = dashboardPath(legacy);
-    const canonical = view === "manage-signups" ? "roster" : view;
+    // Two older addresses open pages that moved: Build roster and Results & bonuses.
+    const canonical =
+      view === "manage-signups"
+        ? "roster"
+        : view === "bonuses"
+          ? "participation"
+          : view;
     expect(
-      expected.startsWith(view === "manage-signups" ? "/cwl/roster" : path),
+      expected.startsWith(
+        view === "manage-signups"
+          ? "/cwl/roster"
+          : view === "bonuses"
+            ? "/cwl/results"
+            : path,
+      ),
     ).toBe(true);
     for (const suffix of ["", "/"]) {
       const target = dashboardTarget("?view=access&season=12", path + suffix);

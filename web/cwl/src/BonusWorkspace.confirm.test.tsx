@@ -68,6 +68,7 @@ beforeEach(async () => {
         seasons={[
           { id: 1, label: "November", status: "draft", signup_open: true },
         ]}
+        urlState="pool=lazy&clan=%23PQQ"
         onSeasonChange={() => {}}
       />,
     ),

@@ -46,6 +46,6 @@ it('opens saved signups directly and keeps the enabled member season',()=>{
 it('keeps staff page, season and supported tab across a failed sign-in retry',()=>{
  expect(loginPath('?season=12&step=announce&signin_error=discord',true,'/cwl/publish')).toBe('/api/cwl/auth/discord?view=publication&season=12&step=announce&retry=1')
  expect(loginPath('?season=12&next=https://evil.test',false,'/cwl/roster')).toBe('/api/cwl/auth/discord?view=roster&season=12')
- expect(loginPath('?view=access',false,'/cwl/bonuses')).toBe('/api/cwl/auth/discord?view=bonuses')
+ expect(loginPath('?view=access',false,'/cwl/bonuses')).toBe('/api/cwl/auth/discord?view=participation')
  expect(loginPath('?next=//evil.test',false,'/settings/integrations')).toBe('/api/cwl/auth/discord?view=connections-settings')
 })

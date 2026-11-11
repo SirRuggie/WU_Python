@@ -42,7 +42,7 @@ const data = {
   sync: { enabled: false, warning: null, last_checked_at: null },
   publication_version: 1,
 };
-// Prompt 228: Bonus selects a clan card; Results uses the short-list select.
+// Prompt 228: Bonus selects a clan card (prompt 229: no clan selected shows cards only); Results uses the short-list select.
 async function selectCurrent(host: HTMLElement) {
   const card = host.querySelector<HTMLButtonElement>(
     '.bonus-clan-card[aria-pressed="true"]',
@@ -82,6 +82,7 @@ for (const workspace of ["Bonus", "Participation"]) {
             <BonusWorkspace
               seasonId="1"
               seasons={[]}
+              urlState="pool=main&clan=%23PQQ"
               onSeasonChange={() => {}}
             />
           ) : (

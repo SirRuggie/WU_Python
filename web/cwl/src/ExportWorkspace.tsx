@@ -4,6 +4,9 @@ import { fetchReadWithRetry } from "./readRetry";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Season } from "./api";
 import ExportRecordCard, { type ExportKind } from "./ExportRecordCard";
+import ParticipationHistory from "./ParticipationHistory";
+import BonusHistory from "./BonusHistory";
+import { useDashboardPermission } from "./DashboardPermissions";
 import "./ExportWorkspace.css";
 import {
   exportDateText as dateText,
@@ -87,6 +90,8 @@ export default function ExportWorkspace({
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [attempt, setAttempt] = useState(0);
+  const canBonusHistory =
+    useDashboardPermission("cwl_bonuses") || useDashboardPermission("cwl_send");
   const previewRequest = useRef(0);
   const downloadController = useRef<AbortController | null>(null);
   const mounted = useRef(true);
@@ -481,6 +486,17 @@ export default function ExportWorkspace({
                 </p>
               </details>
             </>
+          )}
+          <ParticipationHistory
+            key={`results:${seasonId}`}
+            seasonId={seasonId}
+            onAccessDenied={(cause) => {
+              setPreviewDenied(true);
+              setPreviewError(errorText(cause));
+            }}
+          />
+          {canBonusHistory && (
+            <BonusHistory key={`bonus:${seasonId}`} seasonId={seasonId} />
           )}
         </>
       )}

@@ -19,7 +19,7 @@ type Props = {
   onRetry: () => void;
   /** What the page computed from its full data; the status read fills the rest. */
   input?: BonusStepInput;
-  /** Bonus medals holds Results as step 1; Results & participation is its own page. */
+  /** The step panels hold Results as step 1; the player list is the page without a clan. */
   resultsInPage?: boolean;
   /** Steps whose page the user cannot open render as text. */
   canOpen: (step: BonusStep) => boolean;
@@ -41,7 +41,7 @@ export function bonusStepHref(
     outcome: page ? outcome : undefined,
     step: page ? undefined : step,
   });
-  const path = page ? "/cwl/results" : "/cwl/bonuses";
+  const path = "/cwl/results";
   return {
     query,
     href: `${path}?season=${encodeURIComponent(seasonId)}${query ? `&${query}` : ""}`,

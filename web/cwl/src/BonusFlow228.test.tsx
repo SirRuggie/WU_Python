@@ -9,7 +9,6 @@ vi.mock("./DashboardPermissions", () => ({
   useDashboardPermission: () => permission.value,
 }));
 import BonusWorkspace from "./BonusWorkspace";
-import { pickerByLabel, pickOption } from "./searchPickerTestUtils";
 import {
   bonusStepBlockers,
   reviewBlocked,
@@ -156,7 +155,7 @@ const button = (name: string, within: ParentNode = document) =>
   [...within.querySelectorAll<HTMLButtonElement>("button")].find(
     (b) => b.textContent?.trim() === name,
   )!;
-async function mount(data: object = base, state = "pool=lazy") {
+async function mount(data: object = base, state = "pool=lazy&clan=%232YQ") {
   api
     .mockReset()
     .mockImplementation((route: string) =>
@@ -167,7 +166,9 @@ async function mount(data: object = base, state = "pool=lazy") {
             ? previewData
             : route === "/announcement-channels"
               ? { channels: [] }
-              : data,
+              : route === "/announcement-roles"
+                ? { roles: [] }
+                : data,
       ),
     );
   host = document.createElement("div");
@@ -205,8 +206,11 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
+// The All clans card is tested on its own.
 const cards = () => [
-  ...host.querySelectorAll<HTMLButtonElement>(".bonus-clan-card"),
+  ...host.querySelectorAll<HTMLButtonElement>(
+    ".bonus-clan-card:not(.bonus-clan-all)",
+  ),
 ];
 const typeCount = async (value: string) => {
   const input = host.querySelector<HTMLInputElement>(
@@ -251,7 +255,7 @@ describe("Bonus page loading", () => {
             { id: 1, label: "November", status: "draft", signup_open: true },
           ]}
           onSeasonChange={() => {}}
-          urlState="pool=lazy"
+          urlState="pool=lazy&clan=%232YQ"
           onUrlState={urlState}
           onResults={results}
         />,
@@ -501,7 +505,7 @@ describe("Step blockers", () => {
         accounts: [account("#P9", "Main player", "#2YQ", { pool: "main" })],
         allowances: { "#2YQ": allowance },
       },
-      "pool=main",
+      "pool=main&clan=%232YQ",
     );
     expect(openPanel()).toBe("rules");
     expect(blockerText()).toEqual(["Set the Main minimum"]);
@@ -560,11 +564,11 @@ describe("Bonus steps", () => {
     expect(stepLabels()).toEqual(["✓ Results · 2 players, 1 meet ruleChange"]);
   });
   it("restores the open step from the URL, including old step names", async () => {
-    await mount(base, "pool=lazy&step=results");
+    await mount(base, "pool=lazy&clan=%232YQ&step=results");
     expect(openPanel()).toBe("results");
     await act(async () => root.unmount());
     host.remove();
-    await mount(base, "pool=lazy&step=eligibility");
+    await mount(base, "pool=lazy&clan=%232YQ&step=eligibility");
     expect(openPanel()).toBe("rules");
     expect(host.querySelector('[aria-current="step"]')?.textContent).toContain(
       "Rules & count",
@@ -587,7 +591,7 @@ describe("Bonus steps", () => {
     expect(writes()).toHaveLength(0);
   });
   it("hides Draw, Approve and Announce actions until the earlier steps are done", async () => {
-    await mount(base, "pool=lazy&step=draw");
+    await mount(base, "pool=lazy&clan=%232YQ&step=draw");
     expect(openPanel()).toBe("draw");
     expect(host.textContent).toContain("Finish Rules & count first.");
     expect(button("Draw and save winners")).toBeUndefined();
@@ -605,7 +609,7 @@ describe("Bonus steps", () => {
     expect(writes()).toHaveLength(0);
   });
   it("loads the draw preview once when Draw opens, with no Review eligibility button", async () => {
-    await mount(withAllowance, "pool=lazy&step=draw");
+    await mount(withAllowance, "pool=lazy&clan=%232YQ&step=draw");
     expect(previews()).toHaveLength(1);
     expect(previews()[0]).toEqual([
       "/seasons/1/bonus-raffle/preview",
@@ -620,7 +624,7 @@ describe("Bonus steps", () => {
     expect(writes()).toHaveLength(0);
   });
   it("clears the preview when the count changes and loads it again for the new count", async () => {
-    await mount(withAllowance, "pool=lazy&step=draw");
+    await mount(withAllowance, "pool=lazy&clan=%232YQ&step=draw");
     expect(previews()).toHaveLength(1);
     await act(async () => stepLink("rules").click());
     await act(async () =>
@@ -649,7 +653,7 @@ describe("Bonus steps", () => {
     expect(writes()).toHaveLength(0);
   });
   it("saves winners only from the button, then moves to Approve", async () => {
-    await mount(withAllowance, "pool=lazy&step=draw");
+    await mount(withAllowance, "pool=lazy&clan=%232YQ&step=draw");
     const saved = savedDraw({ clan_tag: "#2YQ" });
     api.mockImplementation((route: string, method?: string) =>
       Promise.resolve(
@@ -732,7 +736,7 @@ describe("Bonus steps", () => {
   it("keeps removed names out of the page", async () => {
     await mount(
       { ...base, allowances: { "#2YQ": allowance } },
-      "pool=lazy&step=rules",
+      "pool=lazy&clan=%232YQ&step=rules",
     );
     expect(openPanel()).toBe("rules");
     const text = host.textContent || "";
@@ -808,7 +812,7 @@ it("the step bar opens Results in the page with the pool and clan", async () => 
   await mount();
   const link = host.querySelector<HTMLAnchorElement>(".bonus-step-list a")!;
   expect(link.getAttribute("href")).toBe(
-    "/cwl/bonuses?season=1&pool=lazy&clan=%232YQ&step=results",
+    "/cwl/results?season=1&pool=lazy&clan=%232YQ&step=results",
   );
   await act(async () => link.click());
   // Results is step 1 of this page; the other page is not opened.
@@ -876,6 +880,7 @@ describe("phone layout", () => {
     expect(await menuItems()).toEqual({
       Refresh: false,
       "Check Clash now": false,
+      Settings: false,
     });
     expect(writes()).toHaveLength(0);
   });
@@ -926,7 +931,7 @@ describe("phone layout", () => {
             ...base,
             accounts: [account("#P9", "Main player", "#2YQ", { pool: "main" })],
           },
-          "pool=main",
+          "pool=main&clan=%232YQ",
         );
         await type(
           host.querySelector<HTMLInputElement>(
@@ -934,24 +939,6 @@ describe("phone layout", () => {
           )!,
           "4",
         );
-      },
-    ],
-    [
-      "unsaved representative role",
-      async () => {
-        await mount();
-        const roles = { roles: [{ id: "111111111111111111", name: "Rep" }] };
-        api.mockImplementation((route: string) =>
-          Promise.resolve(route === "/announcement-roles" ? roles : base),
-        );
-        const details = [...host.querySelectorAll("details")].find((item) =>
-          item.textContent?.startsWith("FWA Rep odds settings"),
-        )!;
-        await act(async () => {
-          details.open = true;
-          details.dispatchEvent(new Event("toggle"));
-        });
-        await pickOption(pickerByLabel(host, "Representative role"), "Rep");
       },
     ],
     [
@@ -978,6 +965,7 @@ describe("phone layout", () => {
     expect(await menuItems()).toEqual({
       Refresh: name === "player lookup running" || name === "request running",
       "Check Clash now": true,
+      Settings: name === "player lookup running" || name === "request running",
     });
   });
   it("a player lookup still running after the editor closes disables Check Clash now", async () => {
@@ -995,6 +983,7 @@ describe("phone layout", () => {
     expect(await menuItems()).toEqual({
       Refresh: true,
       "Check Clash now": true,
+      Settings: true,
     });
   });
   it("Check Clash now posts the existing check", async () => {
@@ -1028,7 +1017,7 @@ describe("phone layout", () => {
     expect(reads()).toBe(before + 2);
     expect(writes()).toHaveLength(0);
   });
-  it("orders Rules & count: notice, stats, count line, rules, source, players, add, odds", async () => {
+  it("orders Rules & count: notice, stats, count line, rules, source, players, add", async () => {
     await mount({
       ...base,
       accounts: [
@@ -1052,7 +1041,6 @@ describe("phone layout", () => {
       flow.querySelector(".bonus-candidates-heading h3")!,
       flow.querySelector(".bonus-account-list")!,
       button("Add player by tag", flow),
-      summary("FWA Rep odds settings"),
     ];
     expect(sequence.every(Boolean)).toBe(true);
     for (let index = 1; index < sequence.length; index += 1)
@@ -1067,8 +1055,10 @@ describe("phone layout", () => {
     expect(flow.querySelector(".bonus-rules-line")?.textContent).toContain(
       "4+ attacks, or 3 attacks and 8+ stars",
     );
-    // The odds settings sit below the step panel, not inside it.
-    expect(flow.contains(summary("FWA Rep odds settings"))).toBe(false);
+    // Draw odds moved to the Settings sheet; no disclosure is left on the page.
+    expect(summary("FWA Rep odds settings")).toBeUndefined();
+    expect(summary("Capture settings")).toBeUndefined();
+    expect(summary("Saved bonus history")).toBeUndefined();
   });
   it("reveals the selected card nearest in the clan strip", async () => {
     // A 300 px strip at 16 px; cards are 260 px wide and 280 px apart.
@@ -1094,13 +1084,167 @@ describe("phone layout", () => {
       await mount(base, "pool=lazy&clan=%238QQ");
       expect(cards()[1].getAttribute("aria-pressed")).toBe("true");
       // Right edge aligned: the previous card keeps peeking at the left.
-      expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(240);
+      // The All clans card comes first, so the strip is one card longer.
+      expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(520);
       await act(async () => cards()[0].click());
-      expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(0);
+      expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(280);
     } finally {
       rect.mockRestore();
       delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
       delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
     }
+  });
+});
+
+describe("Results & bonuses page: clan steps half", () => {
+  const poolTab = (label: string) =>
+    [...host.querySelectorAll<HTMLButtonElement>(".cwl-pool-tabs button")].find(
+      (tab) => tab.textContent?.trim() === label,
+    )!;
+  const renderBonusOnly = async (state: string, data: object = base) => {
+    api
+      .mockReset()
+      .mockImplementation((route: string) =>
+        Promise.resolve(
+          route.endsWith("/bonus-status")
+            ? status
+            : route === "/announcement-roles"
+              ? { roles: [] }
+              : data,
+        ),
+      );
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <BonusWorkspace
+          seasonId="1"
+          seasons={[
+            { id: 1, label: "November", status: "draft", signup_open: true },
+          ]}
+          onSeasonChange={() => {}}
+          urlState={state}
+          onUrlState={urlState}
+        />,
+      ),
+    );
+  };
+  it("shows the clan cards only when no clan is selected", async () => {
+    await mount(base, "pool=lazy");
+    expect(openPanel()).toBeUndefined();
+    expect(host.querySelector(".bonus-step-bar")).toBeNull();
+    expect(host.querySelector(".bonus-account-list")).toBeNull();
+    expect(cards().map((card) => card.textContent)).toEqual([
+      "Lazy One5 of 8 meet · Draft",
+      "Lazy TwoDraw saved",
+    ]);
+    expect(
+      host.querySelector(".bonus-clan-all")!.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+  it("names the page Results & bonuses and leaves no settings or history disclosure", async () => {
+    await mount();
+    expect(host.querySelector("h1")?.textContent).toBe("Results & bonuses");
+    expect(host.querySelector("details summary")?.textContent).not.toMatch(
+      /FWA Rep odds|Saved bonus history|Capture settings/,
+    );
+    const text = host.textContent || "";
+    for (const removed of [
+      "FWA Rep odds settings",
+      "Saved bonus history",
+      "Saved results history",
+      "Capture settings",
+    ])
+      expect(text).not.toContain(removed);
+    expect(
+      [...host.querySelectorAll("details")].filter((node) =>
+        /history|odds|capture/i.test(node.textContent || ""),
+      ),
+    ).toHaveLength(0);
+  });
+  it("All clans goes to the player list through the unsaved-change guard", async () => {
+    await mount();
+    const all = host.querySelector<HTMLButtonElement>(".bonus-clan-all")!;
+    await typeCount("4");
+    await act(async () => all.click());
+    expect(results).not.toHaveBeenCalled();
+    await act(async () =>
+      button("Cancel", document.querySelector(".confirm-dialog")!).click(),
+    );
+    expect(results).not.toHaveBeenCalled();
+    expect(
+      host.querySelector<HTMLInputElement>(".bonus-inline-count input")!.value,
+    ).toBe("4");
+    await act(async () => all.click());
+    await act(async () =>
+      button(
+        "Discard bonus edits",
+        document.querySelector(".confirm-dialog")!,
+      ).click(),
+    );
+    expect(results).toHaveBeenCalledExactlyOnceWith("pool=lazy");
+    expect(writes()).toHaveLength(0);
+  });
+  it("without Results access All clans clears the clan and shows the cards only", async () => {
+    await renderBonusOnly("pool=lazy&clan=%232YQ&step=rules");
+    expect(openPanel()).toBe("rules");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>(".bonus-clan-all")!.click(),
+    );
+    expect(urlState).toHaveBeenLastCalledWith("pool=lazy", true);
+    expect(openPanel()).toBeUndefined();
+    expect(host.querySelector(".bonus-step-bar")).toBeNull();
+    expect(cards()).toHaveLength(2);
+    expect(writes()).toHaveLength(0);
+  });
+  it("changing the pool asks first when the page has an unsaved count", async () => {
+    await mount();
+    await typeCount("4");
+    await act(async () => poolTab("Main CWL").click());
+    const dialog = document.querySelector(".confirm-dialog")!;
+    expect(dialog).not.toBeNull();
+    await act(async () => button("Cancel", dialog).click());
+    expect(poolTab("Lazy CWL").getAttribute("aria-pressed")).toBe("true");
+    expect(urlState).not.toHaveBeenCalled();
+    expect(writes()).toHaveLength(0);
+  });
+  it("changing the step keeps the typed count in place", async () => {
+    await mount();
+    await typeCount("4");
+    await act(async () => stepLink("results").click());
+    expect(openPanel()).toBe("results");
+    await act(async () => stepLink("rules").click());
+    expect(
+      host.querySelector<HTMLInputElement>(".bonus-inline-count input")!.value,
+    ).toBe("4");
+    expect(writes()).toHaveLength(0);
+  });
+  it("CWL month not set: the Results blocker opens Settings, with no write", async () => {
+    await mount({ ...base, cycle: null }, "pool=lazy&clan=%232YQ&step=results");
+    const open = host.querySelector<HTMLButtonElement>(
+      ".bonus-blockers .bonus-inline-action",
+    )!;
+    expect(open.textContent).toBe("Open Settings");
+    await act(async () => open.click());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(document.querySelector("dialog.results-settings")).not.toBeNull();
+    expect(
+      [...document.querySelectorAll(".results-settings-section h3")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["CWL capture", "Lazy draw odds"]);
+    expect(writes()).toHaveLength(0);
+  });
+  it("without Results access the month blocker is plain text and Settings holds the odds only", async () => {
+    await renderBonusOnly("pool=lazy&clan=%232YQ&step=results", {
+      ...base,
+      cycle: null,
+    });
+    expect(
+      host.querySelector(".bonus-blockers .bonus-inline-action"),
+    ).toBeNull();
   });
 });

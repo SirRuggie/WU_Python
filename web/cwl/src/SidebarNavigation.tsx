@@ -34,7 +34,6 @@ export const dashboardViews = [
   "roster",
   "publication",
   "participation",
-  "bonuses",
   "staff",
   "access",
   "issues",
@@ -186,15 +185,9 @@ const sections: Section[] = [
       },
       {
         view: "participation",
-        permissions: ["cwl_results"],
-        label: "Results & participation",
+        permissions: ["cwl_results", "cwl_bonuses", "cwl_send"],
+        label: "Results & bonuses",
         icon: "results",
-      },
-      {
-        view: "bonuses",
-        permissions: ["cwl_bonuses", "cwl_send"],
-        label: "Bonus medals",
-        icon: "medal",
       },
       {
         view: "exports",
@@ -360,6 +353,21 @@ export function visibleNavigationSections(
       ),
     }))
     .filter((section) => section.items.length > 0);
+}
+/** Which halves of Results & bonuses a user can use; every API still checks. */
+export function resultsPageAccess(
+  isOwner: boolean,
+  permissions: string[] = [],
+) {
+  const has = (scopes: string[]) =>
+    isOwner ||
+    scopes.some(
+      (scope) => permissions.includes(scope) || permissions.includes("cwl"),
+    );
+  return {
+    results: has(["cwl_results"]),
+    bonuses: has(["cwl_bonuses", "cwl_send"]),
+  };
 }
 export function navigationLabel(
   view: DashboardView,

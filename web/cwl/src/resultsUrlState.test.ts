@@ -38,23 +38,24 @@ describe("Results and Bonus URL state", () => {
       resultsStateQuery({ pool: "main", outcome: "all", sort: "name" }),
     ).toBe("pool=main");
   });
-  it("round-trips through the dashboard route for both pages", () => {
-    for (const [path, view] of [
-      ["/cwl/results", "participation"],
-      ["/cwl/bonuses", "bonuses"],
-    ] as const) {
+  it("opens one page from /cwl/results and the older /cwl/bonuses", () => {
+    for (const path of ["/cwl/results", "/cwl/bonuses"] as const) {
       const route = dashboardTarget(
         "?season=4&pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approval",
         path,
       );
-      expect(route.view).toBe(view);
+      expect(route.view).toBe("participation");
       // The old step name opens the renamed step.
       expect(route.resultsState).toBe(
         "pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approve",
       );
+      // Both addresses write the one canonical path.
       expect(dashboardPath(route)).toBe(
-        `${path}?season=4&pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approve`,
+        "/cwl/results?season=4&pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approve",
       );
+      expect(
+        dashboardTarget("?view=bonuses&season=4&pool=lazy&step=draw").view,
+      ).toBe("participation");
     }
   });
   it("keeps the keys off other pages", () => {

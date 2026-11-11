@@ -32,7 +32,7 @@ import AccountLinkHelp from './AccountLinkHelp'
 import DashboardIcon from './DashboardIcon'
 import { strikePermissions } from './strikePermissions'
 import {isManagementArea, managementAreas} from './managementAreas'
-import SidebarNavigation, { navigationSection, navigationLabel, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
+import SidebarNavigation, { navigationSection, navigationLabel, resultsPageAccess, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
 import { loginPath } from './memberLinks'
 import { DashboardHistory, dashboardTarget, seasonViews, activityContext } from './dashboardHistory'
 import './Welcome.css'
@@ -75,8 +75,7 @@ const DashboardHome = lazy(() => import('./DashboardHome'))
 const ExportWorkspace = lazy(() => import('./ExportWorkspace'))
 const RosterWorkspace = lazy(() => import('./RosterWorkspace'))
 const PublicationWorkspace = lazy(() => import('./PublicationWorkspace'))
-const ParticipationWorkspace = lazy(() => import('./ParticipationWorkspace'))
-const BonusWorkspace = lazy(() => import('./BonusWorkspace'))
+const ResultsBonusesWorkspace = lazy(() => import('./ResultsBonusesWorkspace'))
 const MemberAssignments = lazy(() => import('./MemberAssignments'))
 const ImageGallery = lazy(() => import('./CommandImageLibrary').then(module => ({default:module.ImageGallery})))
 const TicketBrowser = lazy(() => import('./TicketBrowser'))
@@ -435,7 +434,7 @@ function App() {
     if (view === 'staff' && cwlDirty) return deferCwlLeave('Leave Seasons? Unsaved changes will be discarded.', action)
     if (view === 'signup' && (pending || signupBusy.current)) return false
     if (view === 'signup' && (signupDirty || savedSignupDirty)) return deferCwlLeave('Leave without submitting your CWL selections? Your saved signups will stay unchanged.', action)
-    if (['participation', 'bonuses'].includes(view) && cwlDirty) return deferCwlLeave('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.', action)
+    if (view === 'participation' && cwlDirty) return deferCwlLeave('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.', action)
     if (view === 'access' && cwlDirty) return window.confirm('Discard unsaved access changes?')
     if (view === 'declaration' && rosterBusy) return false
     if (view === 'declaration' && cwlDirty) return deferCwlLeave('Discard the unsaved ping channel change?', action)
@@ -478,7 +477,7 @@ function App() {
     if (navigation.current?.pending) return
     const proceed = () => {
       const destination = allowedView(next)
-      const resultsTarget = ["participation", "bonuses"].includes(destination) ? results : ""
+      const resultsTarget = destination === "participation" ? results : ""
       if (destination === "clan-management" && destination !== view) {
         setFamilyRoute(undefined);
         setFamilyVisit(visit => visit + 1);
@@ -669,7 +668,7 @@ function App() {
         ...(destination === "signup" ? { signupPanel } : {}),
         season: seasonViews.has(destination) ? staffSeasonId : seasonId,
         ...(destination === "publication" ? { step: publicationStep } : {}),
-        ...(["participation", "bonuses"].includes(destination) ? { resultsState } : {}),
+        ...(destination === "participation" ? { resultsState } : {}),
       },
       false,
     );
@@ -680,9 +679,9 @@ function App() {
     catch (error) { setNotice({ kind: 'error', text: message(error) }) }
     finally { setPending(false) }
   }
-  // Results and Bonus medals keep pool, clan, outcome, sort and step in the URL.
+  // Results & bonuses keeps pool, clan, outcome, sort and step in the URL.
   const changeResultsState = (state: string, push: boolean) => {
-    if (navigation.current?.pending || !['participation', 'bonuses'].includes(view)) return
+    if (navigation.current?.pending || view !== 'participation') return
     navigation.current?.write({ view, season: staffSeasonId, resultsState: state }, push && !isTourReadOnly())
     setActivityVisit(window.history.state?.wuDashboardIndex || 0)
     setResultsState(state)
@@ -985,7 +984,7 @@ function App() {
     {menuOpen && <button className="scrim" tabIndex={-1} aria-hidden="true" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
     {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
     <div className="workspace" inert={mobile && menuOpen}>
-      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><img className="topbar-logo" src="/brand/wu-helmet-39.png" srcSet="/brand/wu-helmet-39.png 1x, /brand/wu-helmet-78.png 2x, /brand/wu-helmet-117.png 3x" alt="" aria-hidden="true" width={26} height={32} /><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'member-timezones' ? 'Members' : view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image gallery' : view === 'world-clocks' ? 'World clocks' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : (view === 'strikes' || view === 'replacements') ? 'Strikes & replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'bases' ? 'Base bank' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? signupPanel === 'saved' ? 'My signups' : 'Sign up' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Signup reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus medals' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports' : 'Staff access'}</strong></div>{mobile ? <AccountMenu user={session.user} onSignOut={signOut} variant="avatar" disabled={pending} replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} /> : <AccountIdentity user={session.user} />}</header>
+      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><img className="topbar-logo" src="/brand/wu-helmet-39.png" srcSet="/brand/wu-helmet-39.png 1x, /brand/wu-helmet-78.png 2x, /brand/wu-helmet-117.png 3x" alt="" aria-hidden="true" width={26} height={32} /><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'member-timezones' ? 'Members' : view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image gallery' : view === 'world-clocks' ? 'World clocks' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : (view === 'strikes' || view === 'replacements') ? 'Strikes & replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'bases' ? 'Base bank' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? signupPanel === 'saved' ? 'My signups' : 'Sign up' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Signup reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & bonuses' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports' : 'Staff access'}</strong></div>{mobile ? <AccountMenu user={session.user} onSignOut={signOut} variant="avatar" disabled={pending} replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} /> : <AccountIdentity user={session.user} />}</header>
       <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view, publicationStep)}>
         {(session.is_owner || session.can_edit || !!session.dashboard_permissions?.length) && <DashboardStorageStatus />}
         {["roster", "publication", "declaration"].includes(view) && (
@@ -1008,8 +1007,8 @@ function App() {
           onFinalize={() => openPublication('review')}
           onAnnounce={() => openPublication('announce')}
         />}
-        {session.can_edit && ['participation','bonuses','exports'].includes(view) &&
-          (['participation','bonuses','exports'] as const).filter(target => allowedView(target) === target).length > 1 && (
+        {session.can_edit && ['participation','exports'].includes(view) &&
+          (['participation','exports'] as const).filter(target => allowedView(target) === target).length > 1 && (
           <nav
             {...resultsTabs.fadeProps}
             ref={resultsTabs.ref}
@@ -1018,8 +1017,7 @@ function App() {
           >
             {(
               [
-                ["participation", "Participation"],
-                ["bonuses", "Bonus medals"],
+                ["participation", "Results & bonuses"],
                 ["exports", "Exports"],
               ] as const
             )
@@ -1255,8 +1253,7 @@ function App() {
             />
           )
         }
-        {view === 'participation' && session.can_edit && <ParticipationWorkspace onAddStrike={strikePermissions(session.dashboard_permissions, session.is_owner).add ? openStrikePlayer : undefined} onBonus={allowedView("bonuses") === "bonuses" ? (state) => changeView("bonuses", "", undefined, "register", undefined, typeof state === "string" ? state : "") : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
-        {view === 'bonuses' && session.can_edit && <BonusWorkspace onResults={allowedView("participation") === "participation" ? (state) => changeView("participation", "", undefined, "register", undefined, typeof state === "string" ? state : "") : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'participation' && session.can_edit && <ResultsBonusesWorkspace grants={resultsPageAccess(session.is_owner, session.dashboard_permissions || [])} onAddStrike={strikePermissions(session.dashboard_permissions, session.is_owner).add ? openStrikePlayer : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === "roster" && session.can_edit && (
           <RosterWorkspace
             onPublication={draft => setFlowPublication({season: seasonId, draft})}

@@ -16,7 +16,6 @@ import { useDashboardPermission } from "./DashboardPermissions";
 import { api, ApiError, type Pool, type Season } from "./api";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import useUnsavedWork from "./useUnsavedWork";
-import useChoiceRail from "./useChoiceRail";
 import BonusStepBar, { bonusStepHref } from "./BonusStepBar";
 import BonusCandidateReview from "./BonusCandidateReview";
 import BonusStepPanel from "./BonusStepPanel";
@@ -26,10 +25,11 @@ import BonusAddCandidate from "./BonusAddCandidate";
 import BonusDrawStep from "./BonusDrawStep";
 import BonusApproveStep from "./BonusApproveStep";
 import BonusAnnounceStep from "./BonusAnnounceStep";
-import BonusLazyOdds from "./BonusLazyOdds";
-import BonusHistory from "./BonusHistory";
+import BonusClanCards from "./BonusClanCards";
+import ResultsSettingsSheet, {
+  type SettingsSaved,
+} from "./ResultsSettingsSheet";
 import {
-  bonusClanCardText,
   bonusStepStates,
   bonusSteps,
   loadBonusStatus,
@@ -62,13 +62,10 @@ type Props = {
   onSeasonChange: (id: string) => void;
   urlState?: string;
   onUrlState?: (state: string, push: boolean) => void;
-  /** Opens Results with pool and clan keys; absent without Results access. */
+  /** Opens the results list with pool, clan and outcome keys; absent without Results access. */
   onResults?: (state?: string) => void;
 };
 
-const CLAN_SEARCH_MIN = 8;
-
-type Role = { id: string; name: string };
 type PlayerLookup = {
   account: {
     tag: string;
@@ -117,12 +114,12 @@ export default function BonusWorkspace({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [clanTag, setClanTag] = useState(initial.current.clan || "");
-  const [clanQuery, setClanQuery] = useState("");
-  const clanRail = useChoiceRail<HTMLDivElement>(clanTag);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const settingsTrigger = useRef<HTMLElement | null>(null);
   const countInput = useRef<HTMLInputElement | null>(null);
   const countDetails = useRef<HTMLDetailsElement | null>(null);
   const minimumInput = useRef<HTMLInputElement | null>(null);
-  const roleDetails = useRef<HTMLDetailsElement | null>(null);
   const flowSection = useRef<HTMLDivElement | null>(null);
   const [minimum, setMinimum] = useState("");
   const [slots, setSlots] = useState("");
@@ -138,10 +135,6 @@ export default function BonusWorkspace({
     null,
   );
   const [lookingUp, setLookingUp] = useState(false);
-  const [roleId, setRoleId] = useState("");
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [rolesError, setRolesError] = useState("");
-  const [rolesLoading, setRolesLoading] = useState(false);
   const reviewOpener = useRef<HTMLElement | null>(null);
   const addOpener = useRef<HTMLButtonElement | null>(null);
   const candidateTagInput = useRef<HTMLInputElement | null>(null);
@@ -161,15 +154,8 @@ export default function BonusWorkspace({
   const archived = data?.season_status !== "draft";
   const policyDirty =
     pool === "main" && !!data && minimum !== String(data.policies.main ?? "");
-  const roleDirty =
-    pool === "lazy" &&
-    !!data &&
-    roleId !==
-      (data.lazy_settings?.representative_role_id || "769130325460254740");
   const formDirty =
-    reviewDirty ||
-    (candidateOpen && !!(candidateTag || candidateReason)) ||
-    roleDirty;
+    reviewDirty || (candidateOpen && !!(candidateTag || candidateReason));
   const unsaved =
     policyDirty ||
     formDirty ||
@@ -182,7 +168,10 @@ export default function BonusWorkspace({
           draw.cycle === data.cycle &&
           !draw.cancelled_at,
       ));
-  useUnsavedWork(unsaved || busy || lookingUp || !!cancelReason, onDirty);
+  useUnsavedWork(
+    unsaved || settingsDirty || busy || lookingUp || !!cancelReason,
+    onDirty,
+  );
 
   const currentClans =
     data?.clans.filter((clan) =>
@@ -285,7 +274,7 @@ export default function BonusWorkspace({
     canManage,
     archived: !!archived,
     policyDirty,
-    roleDirty,
+    roleDirty: false,
     reviewDirty,
     candidateOpen,
     countReady: !!countReady,
@@ -360,11 +349,11 @@ export default function BonusWorkspace({
     !drawGate &&
     !reviewBlocked(blockers.draw);
 
-  const resultsLink = bonusStepHref(seasonId, "results", pool, clanTag);
-  const openResults = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!plainClick(event) || !onResults) return;
-    event.preventDefault();
-    onResults(resultsLink.query);
+  const openSettings = () => {
+    settingsTrigger.current = document.querySelector<HTMLElement>(
+      ".bonus-context .roster-action-trigger",
+    );
+    setSettingsOpen(true);
   };
   // Incomplete players open Results filtered to them when they share one outcome.
   const incompleteOutcomes = new Set(
@@ -395,7 +384,6 @@ export default function BonusWorkspace({
     lookingUp ||
     !!archived ||
     policyDirty ||
-    roleDirty ||
     reviewDirty ||
     candidateOpen ||
     !data?.cycle;
@@ -432,11 +420,6 @@ export default function BonusWorkspace({
       case "minimum":
       case "minimum-dirty":
         return action(() => focusField(minimumInput.current));
-      case "role-dirty":
-        return action(() => {
-          if (roleDetails.current) roleDetails.current.open = true;
-          focusField(roleDetails.current);
-        });
       case "open-review":
         return action(() =>
           focusField(
@@ -473,10 +456,7 @@ export default function BonusWorkspace({
       case "cycle":
         return onResults ? (
           <>
-            {line.text} ·{" "}
-            <a href={resultsLink.href} onClick={openResults}>
-              Open Results
-            </a>
+            {line.text} · {action(openSettings, "Open Settings")}
           </>
         ) : (
           line.text
@@ -509,9 +489,6 @@ export default function BonusWorkspace({
     lookupPending.current = false;
     setLookingUp(false);
     setMinimum(String(source?.policies[nextPool] ?? ""));
-    setRoleId(
-      source?.lazy_settings?.representative_role_id || "769130325460254740",
-    );
     setManualCount(false);
     setLanding(undefined);
     clearPreview();
@@ -551,9 +528,6 @@ export default function BonusWorkspace({
       if (request !== generation.current) return;
       setData(result);
       clearPreview();
-      setRoleId(
-        result.lazy_settings?.representative_role_id || "769130325460254740",
-      );
       // The step bar and clan states read after the list, never before it.
       void loadStatus();
     } catch (cause) {
@@ -640,9 +614,10 @@ export default function BonusWorkspace({
   useEffect(() => {
     if (data) setMinimum(String(data.policies[pool] ?? ""));
   }, [data, pool]);
+  // A clan from another pool or season is dropped; no clan shows the cards only.
   useEffect(() => {
-    if (data && !clans.some((clan) => clan.tag === clanTag))
-      setClanTag(clans[0]?.tag || "");
+    if (data && clanTag && !clans.some((clan) => clan.tag === clanTag))
+      setClanTag("");
   }, [data, pool, clanTag]);
 
   const mutate = async (
@@ -697,13 +672,22 @@ export default function BonusWorkspace({
       void load();
     }
   };
+  const allClans = async () => {
+    if (!clanTag || !(await canDiscard())) return;
+    if (onResults) {
+      onResults(resultsStateQuery({ pool }));
+      return;
+    }
+    setClanTag("");
+    resetContext();
+    emit({ clan: undefined, step: undefined });
+  };
   // Read-only: the draw preview. It never writes.
   const review = async () => {
     if (
       working.current ||
       !selectedClan ||
       policyDirty ||
-      roleDirty ||
       reviewDirty ||
       candidateOpen ||
       !countReady ||
@@ -814,20 +798,6 @@ export default function BonusWorkspace({
   const openFirstUnchecked = async () => {
     if (unchecked[0]) await openReview(unchecked[0], null);
   };
-  const loadRoles = async () => {
-    if (roles.length || rolesLoading) return;
-    setRolesLoading(true);
-    setRolesError("");
-    try {
-      const result = await api<{ roles: Role[] }>("/announcement-roles");
-      setRoles(result.roles);
-    } catch (cause) {
-      setRolesError(errorText(cause));
-    } finally {
-      setRolesLoading(false);
-    }
-  };
-
   const locked = !canManage || busy || !!archived || !!draw;
   const meetsRule =
     pool === "main" && chipMinimum === null
@@ -890,7 +860,10 @@ export default function BonusWorkspace({
   return (
     <div className="bonus-workspace roster-ui">
       {confirmation}
-      <CwlPageHeader className="bonus-page-head" title={<h1>Bonus medals</h1>}>
+      <CwlPageHeader
+        className="bonus-page-head"
+        title={<h1>Results &amp; bonuses</h1>}
+      >
         <label className="bonus-season">
           Season
           <select
@@ -938,11 +911,17 @@ export default function BonusWorkspace({
                 disabled: checkClashDisabled,
                 onAction: checkClash,
               },
+              {
+                id: "settings",
+                label: "Settings",
+                disabled: busy || lookingUp,
+                onAction: openSettings,
+              },
             ]}
           />
         </div>
       )}
-      {seasonId && (
+      {seasonId && selectedClan && (
         <BonusStepBar
           seasonId={seasonId}
           pool={pool}
@@ -950,7 +929,7 @@ export default function BonusWorkspace({
           status={status}
           failed={statusFailed}
           onRetry={() => void loadStatus()}
-          input={data && selectedClan ? stepInput : undefined}
+          input={data ? stepInput : undefined}
           resultsInPage
           canOpen={() => true}
           onSelect={async (target, query) => {
@@ -1002,67 +981,22 @@ export default function BonusWorkspace({
               }
             }}
           />
-          {clans.length >= CLAN_SEARCH_MIN && (
-            <label className="bonus-clan-search">
-              Find a clan
-              <input
-                type="search"
-                name="clan-search"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="Clan name…"
-                value={clanQuery}
-                onChange={(event) => setClanQuery(event.target.value)}
-              />
-            </label>
-          )}
           {clans.length > 0 && (
-            <div
-              {...clanRail.fadeProps}
-              ref={clanRail.ref}
-              className="bonus-clan-cards has-horizontal-fades"
-              role="group"
-              aria-label="Hosting clan"
-            >
-              {clans
-                .filter(
-                  (clan) =>
-                    clan.tag === clanTag ||
-                    clan.name
-                      .toLowerCase()
-                      .includes(clanQuery.trim().toLowerCase()),
-                )
-                .map((clan) => {
-                  const state = status?.pools[pool].find(
-                    (item) => item.tag === clan.tag,
-                  );
-                  return (
-                    <button
-                      type="button"
-                      key={clan.tag}
-                      className="bonus-clan-card"
-                      aria-pressed={clan.tag === clanTag}
-                      disabled={busy || lookingUp}
-                      onClick={async () => {
-                        if (clan.tag === clanTag || !(await canDiscard()))
-                          return;
-                        setClanTag(clan.tag);
-                        resetContext();
-                        emit({ clan: clan.tag, step: undefined });
-                      }}
-                    >
-                      <strong>{clan.name}</strong>
-                      <small>
-                        {state
-                          ? bonusClanCardText(state)
-                          : statusFailed
-                            ? clan.tag
-                            : "…"}
-                      </small>
-                    </button>
-                  );
-                })}
-            </div>
+            <BonusClanCards
+              clans={clans}
+              selected={clanTag}
+              pool={pool}
+              status={status}
+              statusFailed={statusFailed}
+              disabled={busy || lookingUp}
+              onSelect={async (tag) => {
+                if (tag === clanTag || !(await canDiscard())) return;
+                setClanTag(tag);
+                resetContext();
+                emit({ clan: tag, step: undefined });
+              }}
+              onAll={allClans}
+            />
           )}
           {!clans.length && (
             <p>
@@ -1071,26 +1005,18 @@ export default function BonusWorkspace({
             </p>
           )}
           {archived && <p className="notice">Archived season · Read only</p>}
-          {!data.sync.enabled && (
+          {!data.sync.enabled && onResults && (
             <p className="notice error" role="alert">
               <span>
-                Automatic CWL capture is off. Enable checks in{" "}
-                <a
-                  href={`/cwl/results?season=${encodeURIComponent(seasonId)}`}
-                  onClick={(event) => {
-                    // Ctrl/Cmd and middle selection open a new tab untouched.
-                    if (!plainClick(event) || (!unsaved && !cancelReason))
-                      return;
-                    event.preventDefault();
-                    const href = event.currentTarget.href;
-                    void canDiscard().then((allowed) => {
-                      if (allowed) window.location.assign(href);
-                    });
-                  }}
+                Automatic CWL capture is off. Enable it in Settings to retain
+                results ·{" "}
+                <button
+                  type="button"
+                  className="bonus-inline-action"
+                  onClick={openSettings}
                 >
-                  Participation
-                </a>{" "}
-                to retain results.
+                  Open Settings
+                </button>
               </span>
             </p>
           )}
@@ -1258,7 +1184,7 @@ export default function BonusWorkspace({
                       busy,
                       archived: !!archived,
                       policyDirty,
-                      roleDirty,
+                      roleDirty: false,
                       reviewDirty,
                       reviewOpen: !!reviewTag,
                       candidateOpen,
@@ -1389,44 +1315,22 @@ export default function BonusWorkspace({
               )}
             </div>
           )}
-          {selectedClan && pool === "lazy" && (
-            <BonusLazyOdds
-              detailsRef={roleDetails}
-              roles={roles}
-              roleId={roleId}
-              rolesLoading={rolesLoading}
-              rolesError={rolesError}
-              disabled={busy || !!archived || !canManage}
-              canSave={
-                canManage &&
-                !busy &&
-                !archived &&
-                !reviewDirty &&
-                !candidateOpen &&
-                roleDirty &&
-                /^\d{15,22}$/.test(roleId)
-              }
-              onOpen={() => void loadRoles()}
-              onRetryRoles={() => void loadRoles()}
-              onRole={(id) => {
-                setRoleId(id);
-                clearPreview();
-              }}
-              onSave={() =>
-                void mutate(
-                  "/lazy-settings",
-                  {
-                    representative_role_id: roleId,
-                    revision: data.revision,
-                  },
-                  "Representative role saved. Check the draw again before saving.",
-                  "PATCH",
-                )
-              }
-            />
-          )}
-          <BonusHistory data={data} />
         </>
+      )}
+      {settingsOpen && seasonId && (
+        <ResultsSettingsSheet
+          seasonId={seasonId}
+          canCapture={!!onResults}
+          canOdds={canManage}
+          archived={!!archived}
+          trigger={settingsTrigger.current}
+          onDirty={setSettingsDirty}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={(saved: SettingsSaved) => {
+            void saved;
+            void load();
+          }}
+        />
       )}
     </div>
   );

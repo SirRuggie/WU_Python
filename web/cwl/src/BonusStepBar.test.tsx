@@ -155,7 +155,7 @@ describe("bonus step bar", () => {
       "/cwl/results?season=1&pool=lazy&clan=%232YQ",
     );
     expect(links[2].getAttribute("href")).toBe(
-      "/cwl/bonuses?season=1&pool=lazy&clan=%232YQ&step=draw",
+      "/cwl/results?season=1&pool=lazy&clan=%232YQ&step=draw",
     );
     expect(links[2].getAttribute("aria-current")).toBe("step");
     expect(host.querySelector(".bonus-step.is-current")?.textContent).toContain(
@@ -167,10 +167,10 @@ describe("bonus step bar", () => {
       "pool=lazy&clan=%232YQ&step=draw",
     );
   });
-  it("keeps Results as an in-page step on Bonus medals", async () => {
+  it("keeps Results as an in-page step in the clan steps", async () => {
     const { host } = await render({ resultsInPage: true });
     expect(host.querySelector(".bonus-step-list a")?.getAttribute("href")).toBe(
-      "/cwl/bonuses?season=1&pool=lazy&clan=%232YQ&step=results",
+      "/cwl/results?season=1&pool=lazy&clan=%232YQ&step=results",
     );
   });
   it("shows what the page computed, including a typed count, before the status arrives", async () => {

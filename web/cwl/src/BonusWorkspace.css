@@ -43,66 +43,6 @@
 .bonus-season select {
   width: 100%;
 }
-/* Hosting clan cards: the Compare clan-card row; gold marks the selected card. */
-.bonus-clan-search {
-  display: block;
-  max-width: 320px;
-  margin: 0 0 var(--wu-space-2);
-}
-.bonus-clan-search input {
-  width: 100%;
-}
-.bonus-clan-cards {
-  display: flex;
-  gap: var(--wu-space-2);
-  max-width: 100%;
-  margin: 0 0 var(--wu-space-3);
-  padding-bottom: var(--wu-space-1);
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-  /* Snapped cards start clear of the 10px edge fade. */
-  scroll-padding-inline: 10px;
-  scrollbar-width: thin;
-}
-.bonus-workspace button.bonus-clan-card {
-  display: grid;
-  flex: 0 0 auto;
-  align-content: start;
-  gap: var(--wu-space-1);
-  min-width: 160px;
-  max-width: 260px;
-  min-height: 56px;
-  padding: var(--wu-space-2) var(--wu-space-3);
-  border: 1px solid var(--roster-border);
-  border-radius: 14px;
-  background: var(--roster-surface-raised);
-  color: var(--roster-text);
-  text-align: left;
-  white-space: normal;
-  scroll-snap-align: start;
-}
-.bonus-clan-card strong {
-  font-size: var(--wu-text-md);
-  overflow-wrap: anywhere;
-}
-.bonus-clan-card small {
-  color: var(--roster-text-muted);
-  font-size: var(--wu-text-xs);
-  font-variant-numeric: tabular-nums;
-}
-.bonus-workspace button.bonus-clan-card[aria-pressed="true"] {
-  border-color: var(--roster-gold);
-  box-shadow: inset 0 0 0 1px var(--roster-gold);
-}
-.bonus-workspace button.bonus-clan-card[aria-pressed="true"] strong {
-  color: var(--roster-gold);
-}
-@media (hover: hover) and (pointer: fine) {
-  .bonus-workspace button.bonus-clan-card:hover:not(:disabled) {
-    border-color: var(--wu-text-muted);
-  }
-}
 .bonus-inline-action {
   display: inline-flex;
   align-items: center;
@@ -450,19 +390,6 @@
 .bonus-message-preview .discord-preview {
   margin: 0;
 }
-.bonus-history {
-  margin-top: var(--wu-space-4);
-}
-.bonus-history-row {
-  padding: var(--wu-space-3) 0;
-  border-bottom: 1px solid var(--roster-surface-soft);
-  overflow-wrap: anywhere;
-}
-.bonus-history-row small {
-  display: block;
-  color: var(--roster-text-muted);
-  margin-top: var(--wu-space-1);
-}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -475,22 +402,6 @@
   border: 0;
 }
 @media (max-width: 650px) {
-  /* Phones: the swipeable Compare clan-card row. */
-  .bonus-clan-cards {
-    margin-bottom: var(--wu-space-2);
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-  .bonus-clan-cards::-webkit-scrollbar {
-    display: none;
-  }
-  .bonus-workspace button.bonus-clan-card {
-    flex: 0 0 78%;
-    max-width: none;
-  }
-  .bonus-workspace button.bonus-clan-card:only-child {
-    flex-basis: 100%;
-  }
   /* The selected card already names the clan; the heading stays for screen readers. */
   .bonus-clan-heading {
     position: absolute;

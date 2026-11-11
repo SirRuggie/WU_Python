@@ -1,46 +1,35 @@
-import type { RefObject } from "react";
 import SearchPicker from "./SearchPicker";
 import { roleOption } from "./RolePicker";
 
 type Role = { id: string; name: string };
 
 type Props = {
-  detailsRef: RefObject<HTMLDetailsElement | null>;
   roles: Role[];
   roleId: string;
   rolesLoading: boolean;
   rolesError: string;
   disabled: boolean;
   canSave: boolean;
-  onOpen: () => void;
   onRetryRoles: () => void;
   onRole: (id: string) => void;
   onSave: () => void;
 };
 
-/** FWA Rep odds settings (Lazy only). */
+/** FWA Rep role for Lazy draw odds; one section of the Settings sheet. */
 export default function BonusLazyOdds({
-  detailsRef,
   roles,
   roleId,
   rolesLoading,
   rolesError,
   disabled,
   canSave,
-  onOpen,
   onRetryRoles,
   onRole,
   onSave,
 }: Props) {
   return (
-    <details
-      ref={detailsRef}
-      className="bonus-secondary"
-      onToggle={(event) => {
-        if (event.currentTarget.open) onOpen();
-      }}
-    >
-      <summary>FWA Rep odds settings</summary>
+    <section className="results-settings-section" aria-label="Lazy draw odds">
+      <h3>Lazy draw odds</h3>
       <p>
         Members with this Discord role get 2 chances in Lazy draws. Each account
         can win only one time. With 2 chances, an account does not always have
@@ -69,6 +58,6 @@ export default function BonusLazyOdds({
       <button type="button" disabled={!canSave} onClick={onSave}>
         Save role
       </button>
-    </details>
+    </section>
   );
 }

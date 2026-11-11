@@ -99,11 +99,7 @@ it("sidebar Build resets to Accounts and topbar names follow each CWL destinatio
         (button) => button.textContent?.trim() === "Results",
       ),
     ).toBe(false);
-    for (const label of [
-      "Results & participation",
-      "Bonus medals",
-      "Exports",
-    ]) {
+    for (const label of ["Results & bonuses", "Exports"]) {
       const item = nav(label);
       expect(item).toBeDefined();
       expect(

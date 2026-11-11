@@ -8,7 +8,10 @@ import FilterChips from "./FilterChips";
 import SearchPicker from "./SearchPicker";
 import BonusStepBar from "./BonusStepBar";
 import ParticipationRecord from "./ParticipationRecord";
-import ParticipationHistory from "./ParticipationHistory";
+import BonusClanCards from "./BonusClanCards";
+import ResultsSettingsSheet, {
+  type SettingsSaved,
+} from "./ResultsSettingsSheet";
 import useUnsavedWork from "./useUnsavedWork";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
@@ -28,7 +31,6 @@ import {
   type ResultsSort,
 } from "./resultsUrlState";
 import {
-  validCwlCycle,
   visibleParticipation,
   participationSummary,
   type ParticipationAccount,
@@ -40,7 +42,7 @@ type Props = {
   seasonId: string;
   seasons: Season[];
   onDirty?: (dirty: boolean) => void;
-  /** Opens Bonus medals with pool, clan and step keys; absent without bonus access. */
+  /** Opens the bonus steps with pool, clan and step keys; absent without bonus access. */
   onBonus?: (state?: string) => void;
   onSeasonChange: (id: string) => void;
   /** Opens Strikes on one player; absent without strike add access. */
@@ -75,14 +77,9 @@ export default function ParticipationWorkspace({
   } | null>(null);
   const [dirtyTags, setDirtyTags] = useState<Set<string>>(new Set());
   const [activeEditorTag, setActiveEditorTag] = useState<string | null>(null);
-  const [syncDraft, setSyncDraft] = useState<{
-    cycle: string;
-    enabled: boolean;
-    expected_updated_at: string | null;
-  } | null>(null);
-  const [syncDirty, setSyncDirty] = useState(false);
-  const syncDirtyRef = useRef(false);
-  syncDirtyRef.current = syncDirty;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const settingsTrigger = useRef<HTMLElement | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   const syncPending = useRef(false);
   const [syncError, setSyncError] = useState("");
@@ -119,7 +116,7 @@ export default function ParticipationWorkspace({
   const { confirm, dialog: confirmation } = useConfirmDialog(
     `${seasonId}:${controlsLocked}:${archived}:${error}`,
   );
-  useUnsavedWork(dirtyTags.size > 0 || syncDirty || syncBusy, reportDirty);
+  useUnsavedWork(dirtyTags.size > 0 || settingsDirty || syncBusy, reportDirty);
 
   const emit = (
     next: {
@@ -167,7 +164,7 @@ export default function ParticipationWorkspace({
   );
   const clearProtected = () => {
     setData(null);
-    setSyncDraft(null);
+    setSettingsOpen(false);
     setNotice(null);
     setActiveEditorTag(null);
     setDirtyTags(new Set());
@@ -197,12 +194,6 @@ export default function ParticipationWorkspace({
       );
       if (id !== requestId.current || currentSeason.current !== sid) return;
       setData(result);
-      if (result.sync && !syncDirtyRef.current)
-        setSyncDraft({
-          cycle: result.sync.cycle || "",
-          enabled: result.sync.enabled,
-          expected_updated_at: result.sync.updated_at ?? null,
-        });
       // The step bar reads after the list, so it never delays the players.
       if (statusEnabled.current) void loadStatus(sid);
     } catch (cause) {
@@ -222,7 +213,6 @@ export default function ParticipationWorkspace({
     setStatus(null);
     setStatusFailed(false);
     setError("");
-    setSyncDirty(false);
     setSyncError("");
     setSearch("");
     // A season change starts a new list; the first visit keeps the URL state.
@@ -245,7 +235,7 @@ export default function ParticipationWorkspace({
   const changeSeason = async (id: string) => {
     if (controlsLocked || id === seasonId) return;
     if (
-      (dirtyTags.size || syncDirty) &&
+      dirtyTags.size &&
       !(await confirm(
         `Discard unsaved participation changes and open another season?`,
         "Discard and change season",
@@ -258,7 +248,7 @@ export default function ParticipationWorkspace({
   const refreshList = async () => {
     if (controlsLocked) return;
     if (
-      (dirtyTags.size || syncDirty) &&
+      dirtyTags.size &&
       !(await confirm(
         "Discard unsaved participation changes and refresh?",
         "Discard and refresh",
@@ -269,73 +259,33 @@ export default function ParticipationWorkspace({
       setDirtyTags(new Set());
       setRecordEpoch((current) => current + 1);
     }
-    setSyncDirty(false);
-    syncDirtyRef.current = false;
     setSyncError("");
     void load();
   };
-  const saveSyncSettings = async () => {
-    if (
-      !seasonId ||
-      !syncDraft ||
-      syncBusy ||
-      syncPending.current ||
-      editing ||
-      archived ||
-      error ||
-      !validCwlCycle(syncDraft.cycle)
-    )
+  // The sheet saved a setting: reload what it can change.
+  const settingsSaved = async (saved: SettingsSaved) => {
+    if (saved.kind === "odds") {
+      if (onBonus) void loadStatus(seasonId);
       return;
-    const sid = seasonId;
-    const cycleChanged = syncDraft.cycle !== data?.sync?.cycle;
-    if (
-      cycleChanged &&
-      dirtyTags.size &&
-      !(await confirm(
-        `Changing the CWL month will discard unsaved result edits for ${dirtyTags.size} account${dirtyTags.size === 1 ? "" : "s"}. Continue?`,
-        "Change CWL month",
-      ))
-    )
-      return;
-    syncPending.current = true;
-    setSyncBusy(true);
-    setSyncError("");
-    try {
-      const result = await api<{ sync: ParticipationSync }>(
-        `/seasons/${encodeURIComponent(sid)}/participation/sync-settings`,
-        "POST",
-        syncDraft,
-      );
-      if (currentSeason.current !== sid) return;
-      setSyncDirty(false);
-      syncDirtyRef.current = false;
-      if (cycleChanged) {
-        setData(null);
-        setDirtyTags(new Set());
-        setRecordEpoch((current) => current + 1);
-      } else
-        setData((current) =>
-          current ? { ...current, sync: result.sync } : current,
-        );
-      await load();
-      if (currentSeason.current === sid)
-        setNotice({
-          kind: "success",
-          text: result.sync.enabled
-            ? "Automatic CWL capture enabled."
-            : "Automatic CWL capture disabled. You can still check manually.",
-        });
-    } catch (cause) {
-      if (currentSeason.current === sid) {
-        if (cause instanceof ApiError && [401, 403].includes(cause.status))
-          clearProtected();
-        setSyncError(errorText(cause));
-        if (cause instanceof ApiError && cause.status === 409) await load();
-      }
-    } finally {
-      syncPending.current = false;
-      setSyncBusy(false);
     }
+    if (saved.cycleChanged) {
+      setData(null);
+      setDirtyTags(new Set());
+      setRecordEpoch((current) => current + 1);
+    }
+    await load();
+    setNotice({
+      kind: "success",
+      text: saved.enabled
+        ? "Automatic CWL capture enabled."
+        : "Automatic CWL capture disabled. You can still check manually.",
+    });
+  };
+  const openSettings = () => {
+    settingsTrigger.current = document.querySelector<HTMLElement>(
+      ".participation-capture .roster-action-trigger",
+    );
+    setSettingsOpen(true);
   };
   const syncNow = async () => {
     if (
@@ -346,8 +296,7 @@ export default function ParticipationWorkspace({
       dirtyTags.size ||
       archived ||
       error ||
-      !data?.sync?.cycle ||
-      syncDirty
+      !data?.sync?.cycle
     )
       return;
     const sid = seasonId;
@@ -524,18 +473,39 @@ export default function ParticipationWorkspace({
     { value: "all", label: "All clans" },
     ...clans.map(([tag, name]) => ({ value: tag, label: name, detail: tag })),
   ];
+  // Opening the steps leaves this list, so unsaved result edits are confirmed first.
+  const openSteps = async (query: string) => {
+    if (!onBonus || controlsLocked) return;
+    if (
+      dirtyTags.size &&
+      !(await confirm(
+        "Discard unsaved participation changes and open the bonus steps?",
+        "Discard and continue",
+      ))
+    )
+      return;
+    onBonus(query);
+  };
   const chooseClan = (next: string) => {
     if (next === clan) return;
+    if (onBonus && next !== "all") {
+      void openSteps(resultsStateQuery({ pool, clan: next }));
+      return;
+    }
     setClan(next);
     emit({ clan: next });
   };
+  // Clan cards come from the status read; the list's own clans stand in until it loads.
+  const cardClans = status
+    ? status.pools[pool].map((host) => ({ tag: host.tag, name: host.name }))
+    : clans.map(([tag, name]) => ({ tag, name }));
 
   return (
     <div className="participation-workspace">
       {confirmation}
       <CwlPageHeader
         className="participation-page-head"
-        title={<h1>Results &amp; participation</h1>}
+        title={<h1>Results &amp; bonuses</h1>}
       >
         <label className="participation-season">
           Season
@@ -564,10 +534,10 @@ export default function ParticipationWorkspace({
           status={status}
           failed={statusFailed}
           onRetry={() => void loadStatus(seasonId)}
-          canOpen={() => true}
+          canOpen={(step) => step === "results" || !!onBonus}
           onSelect={(step, query) => {
             if (step !== "results") {
-              onBonus(query);
+              void openSteps(query);
               return;
             }
             const next = parseResultsState(query);
@@ -635,23 +605,27 @@ export default function ParticipationWorkspace({
                     disabled:
                       writesLocked ||
                       !!dirtyTags.size ||
-                      syncDirty ||
                       archived ||
                       !data.sync?.cycle,
                     onAction: () => void syncNow(),
                   },
                   {
                     id: "refresh",
-                    label: "Refresh list",
+                    label: "Refresh",
                     onAction: () => void refreshList(),
+                  },
+                  {
+                    id: "settings",
+                    label: "Settings",
+                    onAction: openSettings,
                   },
                 ]}
               />
             </div>
             {!data.sync?.enabled && (
               <p className="participation-capture-warning" role="status">
-                Automatic CWL capture is off. Enable it in Capture settings to
-                retain current results.
+                Automatic CWL capture is off. Enable it in Settings to retain
+                current results.
               </p>
             )}
             {statusSummary.warning && (
@@ -666,101 +640,17 @@ export default function ParticipationWorkspace({
             )}
             {!data.sync?.cycle && (
               <p className="participation-capture-warning">
-                Set the CWL month in Capture settings before checking Clash.
+                Set the CWL month in Settings before checking Clash ·{" "}
+                <button
+                  type="button"
+                  className="participation-inline-action"
+                  disabled={controlsLocked}
+                  onClick={openSettings}
+                >
+                  Open Settings
+                </button>
               </p>
             )}
-            <details className="participation-capture-settings">
-              <summary>Capture settings{syncDirty ? " · Unsaved" : ""}</summary>
-              <div className="participation-sync-fields">
-                <label>
-                  CWL month
-                  <input
-                    type="month"
-                    name="cwl-month"
-                    autoComplete="off"
-                    value={syncDraft?.cycle || ""}
-                    disabled={archived || writesLocked}
-                    onChange={(event) => {
-                      setSyncDraft((current) => ({
-                        cycle: event.target.value,
-                        enabled: current?.enabled || false,
-                        expected_updated_at:
-                          current?.expected_updated_at ?? null,
-                      }));
-                      setSyncDirty(true);
-                    }}
-                  />
-                </label>
-                <label className="participation-sync-toggle">
-                  <input
-                    type="checkbox"
-                    name="capture-enabled"
-                    checked={syncDraft?.enabled || false}
-                    disabled={archived || writesLocked}
-                    onChange={(event) => {
-                      setSyncDraft((current) => ({
-                        cycle: current?.cycle || "",
-                        enabled: event.target.checked,
-                        expected_updated_at:
-                          current?.expected_updated_at ?? null,
-                      }));
-                      setSyncDirty(true);
-                    }}
-                  />
-                  Check automatically every 15 minutes
-                </label>
-              </div>
-              <div className="participation-sync-meta">
-                <small>
-                  Month source:{" "}
-                  {data.sync?.cycle_source === "manage_binding"
-                    ? "Manage CWL settings"
-                    : data.sync?.cycle_source === "settings"
-                      ? "Staff setting"
-                      : "None"}
-                </small>
-                <small>
-                  Last success:{" "}
-                  {data.sync?.last_success_at ? (
-                    <time dateTime={data.sync.last_success_at}>
-                      {resultTimeText(data.sync.last_success_at)}
-                    </time>
-                  ) : (
-                    "Never"
-                  )}
-                </small>
-              </div>
-              {syncDirty && (
-                <div className="participation-settings-actions">
-                  <button
-                    type="button"
-                    disabled={
-                      archived ||
-                      writesLocked ||
-                      !validCwlCycle(syncDraft?.cycle || "")
-                    }
-                    onClick={() => void saveSyncSettings()}
-                  >
-                    Save capture settings
-                  </button>
-                  <button
-                    type="button"
-                    disabled={controlsLocked}
-                    onClick={() => {
-                      setSyncDraft({
-                        cycle: data.sync?.cycle || "",
-                        enabled: !!data.sync?.enabled,
-                        expected_updated_at: data.sync?.updated_at ?? null,
-                      });
-                      setSyncDirty(false);
-                      setSyncError("");
-                    }}
-                  >
-                    Discard changes
-                  </button>
-                </div>
-              )}
-            </details>
           </section>
           {archived && (
             <div className="notice">
@@ -776,6 +666,20 @@ export default function ParticipationWorkspace({
               emit({ pool: next, clan: "all" });
             }}
           />
+          {onBonus && cardClans.length > 0 && (
+            <BonusClanCards
+              clans={cardClans}
+              selected={clan === "all" ? "" : clan}
+              pool={pool}
+              status={status}
+              statusFailed={statusFailed}
+              disabled={controlsLocked}
+              onSelect={(tag) =>
+                void openSteps(resultsStateQuery({ pool, clan: tag }))
+              }
+              onAll={() => chooseClan("all")}
+            />
+          )}
           <div className="participation-toolbar">
             <label>
               Find a player or clan
@@ -935,15 +839,20 @@ export default function ParticipationWorkspace({
               </button>
             </nav>
           )}
-          <ParticipationHistory
-            key={seasonId}
-            seasonId={seasonId}
-            onAccessDenied={(cause) => {
-              clearProtected();
-              setError(errorText(cause));
-            }}
-          />
         </>
+      )}
+      {settingsOpen && seasonId && (
+        <ResultsSettingsSheet
+          seasonId={seasonId}
+          canCapture
+          canOdds={!!onBonus}
+          archived={!!archived}
+          dirtyResults={dirtyTags.size}
+          trigger={settingsTrigger.current}
+          onDirty={setSettingsDirty}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={settingsSaved}
+        />
       )}
     </div>
   );

@@ -160,7 +160,8 @@ it("hides the step bar until one hosting clan is selected", async () => {
     select.value = "#2YQ";
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  expect(host.querySelectorAll(".bonus-step-bar")).toHaveLength(1);
+  // A hosting clan opens its steps on the combined page; the list stays put.
+  expect(bonus).toHaveBeenCalledExactlyOnceWith("pool=lazy&clan=%232YQ");
 });
 
 it("renders the list before the status read resolves and never calls the full bonus read", async () => {
@@ -319,7 +320,7 @@ it("Main shows no chip without a saved minimum and the rule chip with one", asyn
   expect(host.querySelector(shown)?.textContent).toBe("Below rule");
 });
 
-it("step links carry pool and clan to Bonus medals", async () => {
+it("step links carry pool and clan to the clan steps", async () => {
   await mount("pool=lazy&clan=%232YQ");
   await act(async () => partC.resolve(status(3)));
   expect(host.querySelector(".bonus-step.is-current")?.textContent).toContain(
@@ -329,7 +330,7 @@ it("step links carry pool and clan to Bonus medals", async () => {
     ...host.querySelectorAll<HTMLAnchorElement>(".bonus-step-list a"),
   ].find((link) => link.textContent?.includes("Draw"))!;
   expect(draw.getAttribute("href")).toBe(
-    "/cwl/bonuses?season=1&pool=lazy&clan=%232YQ&step=draw",
+    "/cwl/results?season=1&pool=lazy&clan=%232YQ&step=draw",
   );
   await act(async () => draw.click());
   expect(bonus).toHaveBeenCalledExactlyOnceWith(
