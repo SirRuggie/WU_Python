@@ -22,7 +22,7 @@ vi.mock("./ParticipationWorkspace", () => ({
       <p data-testid="list-state">{urlState}</p>
       <button onClick={() => onDirty?.(true)}>Hold list edit</button>
       {onBonus ? (
-        <button onClick={() => onBonus("pool=lazy&clan=%232YQ")}>
+        <button onClick={() => onBonus("pool=lazy&clan=%232YQ&step=draw")}>
           Open steps
         </button>
       ) : (
@@ -166,13 +166,34 @@ describe("one page for two addresses", () => {
     );
     await act(async () => button("Open steps")!.click());
     await settle();
-    expect(text("steps-state")).toBe("pool=lazy&clan=%232YQ");
+    expect(text("steps-state")).toBe("pool=lazy&clan=%232YQ&step=draw");
     expect(location.pathname).toBe("/cwl/results");
-    expect(location.search).toContain("clan=%232YQ");
+    expect(location.search).toContain("clan=%232YQ&step=draw");
     await act(async () => button("Open list")!.click());
     await settle();
     expect(text("list-state")).toBe("pool=lazy&clan=%232YQ&outcome=partial");
     expect(host.querySelector('[data-testid="steps"]')).toBeNull();
+  });
+  it("Back returns to the list; the address Forward restores names the steps view", async () => {
+    const { host, button, text, settle } = await mount(
+      "/cwl/results?season=1&pool=lazy",
+      both,
+    );
+    await act(async () => button("Open steps")!.click());
+    await settle();
+    expect(text("steps-state")).toBe("pool=lazy&clan=%232YQ&step=draw");
+    await act(async () => history.back());
+    await settle();
+    expect(text("list-state")).toBe("pool=lazy");
+    expect(host.querySelector('[data-testid="steps"]')).toBeNull();
+    // happy-dom has no forward entry, so the address Forward restores is checked directly.
+    const grants = { results: true, bonuses: true };
+    expect(
+      resultsPageMode("pool=lazy&clan=%232YQ&step=draw", "list", grants),
+    ).toBe("steps");
+    expect(resultsPageMode("pool=lazy&clan=%232YQ", "list", grants)).toBe(
+      "list",
+    );
   });
   it("guards leaving the page while the list has unsaved work", async () => {
     const { button, settle } = await mount("/cwl/results?season=1", both);

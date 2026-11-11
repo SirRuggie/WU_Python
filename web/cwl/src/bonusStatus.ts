@@ -112,6 +112,19 @@ export function bonusStepStates(
   });
 }
 
+/** The first step of a hosting clan that is not done; an address names it. */
+export function firstOpenStep(
+  clan: BonusStatusClan | null | undefined,
+  pool: Pool,
+  mainMinimum: number | null,
+): BonusStep {
+  return (
+    bonusStepStates(clan, pool, mainMinimum).find(
+      (view) => view.state !== "done",
+    )?.id || "announce"
+  );
+}
+
 /** Card state on Bonus medals: Draft, Draw saved, Approved, Sent or Inactive. */
 export function bonusClanState(clan: BonusStatusClan) {
   if (clan.draw_state === "sent") return "Sent";

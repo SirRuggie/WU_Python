@@ -15,7 +15,11 @@ import ResultsSettingsSheet, {
 import useUnsavedWork from "./useUnsavedWork";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
-import { loadBonusStatus, type BonusStatus } from "./bonusStatus";
+import {
+  firstOpenStep,
+  loadBonusStatus,
+  type BonusStatus,
+} from "./bonusStatus";
 import {
   countText,
   matchesOutcome,
@@ -486,10 +490,21 @@ export default function ParticipationWorkspace({
       return;
     onBonus(query);
   };
+  // The address names the step, so Back and Forward return to the same view.
+  const stepsQuery = (tag: string) =>
+    resultsStateQuery({
+      pool,
+      clan: tag,
+      step: firstOpenStep(
+        status?.pools[pool].find((host) => host.tag === tag),
+        pool,
+        status?.main_minimum ?? null,
+      ),
+    });
   const chooseClan = (next: string) => {
     if (next === clan) return;
     if (onBonus && next !== "all") {
-      void openSteps(resultsStateQuery({ pool, clan: next }));
+      void openSteps(stepsQuery(next));
       return;
     }
     setClan(next);
@@ -630,7 +645,21 @@ export default function ParticipationWorkspace({
             )}
             {statusSummary.warning && (
               <p className="participation-capture-warning" role="status">
-                {statusSummary.warning}
+                {statusSummary.warning} ·{" "}
+                <button
+                  type="button"
+                  className="participation-inline-action"
+                  disabled={
+                    controlsLocked ||
+                    writesLocked ||
+                    !!dirtyTags.size ||
+                    archived ||
+                    !data.sync?.cycle
+                  }
+                  onClick={() => void syncNow()}
+                >
+                  Check Clash now
+                </button>
               </p>
             )}
             {syncError && (
@@ -674,9 +703,7 @@ export default function ParticipationWorkspace({
               status={status}
               statusFailed={statusFailed}
               disabled={controlsLocked}
-              onSelect={(tag) =>
-                void openSteps(resultsStateQuery({ pool, clan: tag }))
-              }
+              onSelect={(tag) => void openSteps(stepsQuery(tag))}
               onAll={() => chooseClan("all")}
             />
           )}

@@ -194,7 +194,10 @@ describe("season overview", () => {
   it("selecting a clan card opens that clan's steps and writes nothing", async () => {
     await mount();
     await act(async () => cards()[0].click());
-    expect(bonus).toHaveBeenCalledExactlyOnceWith("pool=lazy&clan=%232YQ");
+    // The address names the first step that is not done, so Back and Forward return to it.
+    expect(bonus).toHaveBeenCalledExactlyOnceWith(
+      "pool=lazy&clan=%232YQ&step=draw",
+    );
     expect(writes()).toHaveLength(0);
   });
   it("asks before leaving with an unsaved result edit", async () => {
@@ -215,7 +218,9 @@ describe("season overview", () => {
       confirm.click();
       confirm.click();
     });
-    expect(bonus).toHaveBeenCalledExactlyOnceWith("pool=lazy&clan=%238QQ");
+    expect(bonus).toHaveBeenCalledExactlyOnceWith(
+      "pool=lazy&clan=%238QQ&step=announce",
+    );
     expect(writes()).toHaveLength(0);
   });
   it("a step in the bar asks the same question", async () => {
@@ -294,5 +299,35 @@ describe("page menu", () => {
         (node) => node.textContent,
       ),
     ).toEqual(["CWL capture"]);
+  });
+  it("the old-results warning carries Check Clash now on the overview too", async () => {
+    const old = {
+      code: "not_recent",
+      label: "Results need a check",
+      warning: "These results have not been checked recently.",
+      failed_clan: false,
+      round: null,
+      last_check_failed: false,
+    };
+    api.mockImplementation(async (route: string) =>
+      route.endsWith("/bonus-status")
+        ? status
+        : route === "/announcement-roles"
+          ? { roles: [] }
+          : {
+              ...participation,
+              accounts: participation.accounts.map((item) => ({
+                ...item,
+                display_status: old,
+              })),
+            },
+    );
+    await mount();
+    const warning = host.querySelector(".participation-capture-warning")!;
+    expect(warning.textContent).toContain(
+      "These results have not been checked recently.",
+    );
+    expect(button("Check Clash now", warning)).toBeDefined();
+    expect(writes()).toHaveLength(0);
   });
 });

@@ -193,6 +193,9 @@
 .bonus-policy button {
   min-height: 44px;
 }
+.bonus-policy .bonus-blockers {
+  margin: 0;
+}
 .bonus-candidates-heading {
   margin: var(--wu-space-4) 0 var(--wu-space-2);
 }
@@ -418,46 +421,81 @@
   .bonus-candidates-heading {
     margin: var(--wu-space-2) 0 var(--wu-space-1);
   }
-  /* Phones: the three numbers stay on one compact row. */
+  .bonus-action-bar > button {
+    width: 100%;
+  }
+}
+@media (max-width: 700px) {
+  /* The count field takes its own full-width row: label above, hint below. */
   .bonus-stats {
-    flex-wrap: nowrap;
     margin: var(--wu-space-2) 0;
   }
-  /* Wider field cell: the label sits beside its input, not above it. */
   .bonus-stats > .bonus-inline-count {
-    display: flex;
-    align-items: center;
-    flex-grow: 1.6;
-    gap: var(--wu-space-2);
     min-width: 0;
-    padding: var(--wu-space-1) var(--wu-space-2);
+    padding: var(--wu-space-2) 0;
+    border-bottom: 1px solid var(--roster-border-subtle);
   }
   .bonus-inline-count span {
-    min-width: 0;
     font-size: var(--wu-text-xs);
     line-height: 1.25;
   }
-  .bonus-inline-count input {
-    flex: 0 0 56px;
-  }
+  /* The tiles share one row that fits 320px. */
   .bonus-stats > div {
     min-width: 0;
     padding: var(--wu-space-1) var(--wu-space-2);
     flex-direction: column;
     gap: 0;
-    font-variant-numeric: tabular-nums;
   }
   .bonus-stats strong {
     font-size: var(--wu-text-lg);
-    font-variant-numeric: tabular-nums;
   }
   .bonus-stats span {
     font-size: var(--wu-text-xs);
     line-height: 1.25;
-    font-variant-numeric: tabular-nums;
   }
-  .bonus-action-bar > button {
-    width: 100%;
+  /* Old results: one line of text with its action, not a padded box. */
+  .bonus-workspace .notice.bonus-stale {
+    display: block;
+    padding: var(--wu-space-1) var(--wu-space-2);
+    margin-bottom: var(--wu-space-2);
+    font-size: var(--wu-text-sm);
+    line-height: 1.3;
+  }
+  .bonus-stale .bonus-inline-action {
+    margin-block: -14px;
+    vertical-align: baseline;
+  }
+  /* Blocker lines are text lines; the 44px touch target overlaps the line. */
+  .bonus-blockers {
+    margin-bottom: var(--wu-space-2);
+  }
+  .bonus-blockers li {
+    min-height: 0;
+  }
+  .bonus-blockers .bonus-inline-action {
+    margin-block: -12px;
+  }
+  /* The minimum field and its Save button share a row, its blocker under them. */
+  .bonus-policy {
+    margin: var(--wu-space-2) 0;
+  }
+  .bonus-policy label {
+    flex: 1 1 120px;
+    width: auto;
+    min-width: 0;
+  }
+  .bonus-policy .bonus-blockers {
+    flex: 1 0 100%;
+    margin: 0;
+  }
+  /* Source details sit below the player list; the summary is one stop. */
+  .bonus-step-panel {
+    display: flex;
+    flex-direction: column;
+  }
+  .bonus-step-panel > .bonus-count-source {
+    order: 1;
+    margin-top: var(--wu-space-2);
   }
 }
 @media (max-width: 380px) {

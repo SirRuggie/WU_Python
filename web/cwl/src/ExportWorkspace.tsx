@@ -90,8 +90,9 @@ export default function ExportWorkspace({
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [attempt, setAttempt] = useState(0);
-  const canBonusHistory =
-    useDashboardPermission("cwl_bonuses") || useDashboardPermission("cwl_send");
+  const canBonuses = useDashboardPermission("cwl_bonuses");
+  const canSend = useDashboardPermission("cwl_send");
+  const canBonusHistory = canBonuses || canSend;
   const previewRequest = useRef(0);
   const downloadController = useRef<AbortController | null>(null);
   const mounted = useRef(true);

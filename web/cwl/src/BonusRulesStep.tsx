@@ -105,8 +105,8 @@ export default function BonusRulesStep({
             >
               Save minimum
             </button>
+            <BonusBlockers lines={here(["minimum"])} fix={fix} />
           </div>
-          <BonusBlockers lines={here(["minimum"])} fix={fix} />
         </>
       )}
       <div className="bonus-stats">
@@ -162,7 +162,10 @@ export default function BonusRulesStep({
           last 3 seasons
         </p>
       )}
-      <details ref={countDetails} className="bonus-secondary">
+      <details
+        ref={countDetails}
+        className="bonus-secondary bonus-count-source"
+      >
         <summary>Bonus count and source</summary>
         <p className="bonus-allowance-reason">
           {allowance?.reason || "Check Clash now to see the allowance."}

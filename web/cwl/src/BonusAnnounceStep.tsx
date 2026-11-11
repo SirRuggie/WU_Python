@@ -18,7 +18,9 @@ export default function BonusAnnounceStep({
   if (!draw || gate) return <p className="bonus-action-blocker">{gate}</p>;
   return (
     <>
-      <p className="bonus-step-note">Give the medals in Clash.</p>
+      <p className="bonus-step-note">
+        Give the medals in Clash. The announcement does not award them.
+      </p>
       <BonusAnnouncement
         key={draw.id}
         draw={draw}

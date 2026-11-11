@@ -328,7 +328,12 @@ describe("Bonus clan cards", () => {
       ).click(),
     );
     expect(cards()[1].getAttribute("aria-pressed")).toBe("true");
-    expect(urlState).toHaveBeenLastCalledWith("pool=lazy&clan=%238QQ", true);
+    // The address names the step too (a saved draw waits at Approve).
+    expect(urlState).toHaveBeenLastCalledWith(
+      "pool=lazy&clan=%238QQ&step=approve",
+      true,
+    );
+    expect(openPanel()).toBe("approve");
     expect(writes()).toHaveLength(0);
   });
   it("restores the clan from the URL", async () => {
@@ -342,7 +347,6 @@ describe("Step blockers", () => {
     canManage: true,
     archived: false,
     policyDirty: false,
-    roleDirty: false,
     reviewDirty: false,
     candidateOpen: false,
     countReady: true,
@@ -383,7 +387,6 @@ describe("Step blockers", () => {
       canManage: true,
       archived: true,
       policyDirty: true,
-      roleDirty: true,
       reviewDirty: true,
       candidateOpen: true,
       countReady: true,
@@ -398,7 +401,6 @@ describe("Step blockers", () => {
       canManage: "Bonus access needed",
       archived: "Archived season · read only",
       policyDirty: "Save the minimum",
-      roleDirty: "Save the representative role",
       reviewDirty: "Save the open review",
       candidateOpen: "Save the open review",
       countReady: "Enter the bonus count",
@@ -676,7 +678,8 @@ describe("Bonus steps", () => {
     expect(openPanel()).toBe("approve");
     expect(button("Approve winners")).toBeDefined();
     expect(host.textContent).toContain("Cancel this draw");
-    expect(stepLabels().join("|")).toContain("Draw · 1 winners saved");
+    expect(stepLabels().join("|")).toContain("Draw · 1 winner saved");
+    expect(stepLabels().join("|")).not.toContain("1 winners");
     await act(async () => stepLink("announce").click());
     expect(host.textContent).toContain("Finish Approve first.");
     expect(writes()).toHaveLength(0);
@@ -1246,5 +1249,147 @@ describe("Results & bonuses page: clan steps half", () => {
     expect(
       host.querySelector(".bonus-blockers .bonus-inline-action"),
     ).toBeNull();
+  });
+});
+
+describe("Results & bonuses page: rework round", () => {
+  const seasons = [
+    { id: 1, label: "November", status: "draft", signup_open: true },
+  ];
+  const view = (state: string, withResults: boolean) => (
+    <BonusWorkspace
+      seasonId="1"
+      seasons={seasons}
+      onSeasonChange={() => {}}
+      urlState={state}
+      onUrlState={urlState}
+      onResults={withResults ? results : undefined}
+    />
+  );
+  const render = async (
+    state: string,
+    impl: (route: string, method?: string) => Promise<object>,
+    withResults = false,
+  ) => {
+    api.mockReset().mockImplementation(impl);
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => root.render(view(state, withResults)));
+  };
+  const reply =
+    (data: object, preview: () => Promise<object> = async () => previewData) =>
+    (route: string) =>
+      route.endsWith("/bonus-status")
+        ? Promise.resolve(status)
+        : route.endsWith("/preview")
+          ? preview()
+          : route === "/announcement-channels"
+            ? Promise.resolve({ channels: [] })
+            : Promise.resolve(data);
+  const count = (text: string, part: string) => text.split(part).length - 1;
+
+  it("Back to an address with no clan clears the clan and shows the cards only", async () => {
+    await render("pool=lazy&clan=%232YQ&step=rules", reply(base));
+    expect(openPanel()).toBe("rules");
+    await act(async () => root.render(view("pool=lazy", false)));
+    expect(openPanel()).toBeUndefined();
+    expect(host.querySelector(".bonus-step-bar")).toBeNull();
+    expect(host.querySelector(".bonus-account-list")).toBeNull();
+    expect(cards()).toHaveLength(2);
+    expect(
+      host.querySelector(".bonus-clan-all")!.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(writes()).toHaveLength(0);
+  });
+  it("drops a preview that arrives after the clan changed", async () => {
+    let release!: (value: object) => void;
+    const held = new Promise<object>((resolve) => (release = resolve));
+    const charlie = {
+      ...previewData,
+      clan_tag: "#8QQ",
+      clan_name: "Lazy Two",
+      eligible: [account("#P3", "Charlie", "#8QQ")],
+    };
+    let calls = 0;
+    await render(
+      "pool=lazy&clan=%232YQ&step=draw",
+      reply(
+        {
+          ...base,
+          allowances: { "#2YQ": allowance, "#8QQ": allowance },
+        },
+        // The first preview is still loading when the clan changes.
+        () => (++calls === 1 ? held : Promise.resolve(charlie)),
+      ),
+    );
+    expect(previews()).toHaveLength(1);
+    // Back to another clan's Draw step while the first preview is loading.
+    await act(async () =>
+      root.render(view("pool=lazy&clan=%238QQ&step=draw", false)),
+    );
+    await act(async () => release(previewData));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    // Only the clan on screen has a preview; the late one for Lazy One is dropped.
+    expect(
+      previews().map((call) => (call[2] as { clan_tag: string }).clan_tag),
+    ).toEqual(["#2YQ", "#8QQ"]);
+    expect(host.textContent).not.toContain("Alpha");
+    expect(host.textContent).toContain("Charlie");
+    expect(host.querySelector(".working-status")).toBeNull();
+    expect(writes()).toHaveLength(0);
+  });
+  it("shows Archived season and CWL month not set once each", async () => {
+    await render(
+      "pool=lazy&clan=%232YQ&step=rules",
+      reply({ ...base, season_status: "archived" }),
+    );
+    expect(count(host.textContent || "", "Archived season")).toBe(1);
+    await act(async () => root.unmount());
+    host.remove();
+    await render(
+      "pool=lazy&clan=%232YQ&step=results",
+      reply({ ...base, cycle: null }),
+    );
+    expect(count(host.textContent || "", "CWL month not set")).toBe(1);
+    expect(host.querySelector(".bonus-context p")?.textContent).toBe(
+      "Clash not checked yet",
+    );
+  });
+  it("says once that the medals are given in Clash", async () => {
+    await render(
+      "pool=lazy&clan=%238QQ&step=announce",
+      reply({
+        ...base,
+        draws: [savedDraw({ approved_at: "2026-11-11T11:00:00Z" })],
+      }),
+    );
+    const text = host.textContent || "";
+    expect(count(text, "Give the medals in Clash.")).toBe(1);
+    expect(text).toContain("The announcement does not award them.");
+    expect(count(text, "does not award")).toBe(1);
+    expect(text).not.toContain("Staff must award");
+  });
+  it("without Results access the page keeps Saved bonus history, read only when opened", async () => {
+    await render("pool=lazy&clan=%232YQ&step=rules", reply(base));
+    const summary = host.querySelector(".bonus-history summary")!;
+    expect(summary.textContent).toContain("Saved bonus history");
+    const reads = () =>
+      api.mock.calls.filter((call) => call[0] === "/seasons/1/bonus-raffle");
+    expect(reads()).toHaveLength(1);
+    await act(async () => {
+      const details = host.querySelector<HTMLDetailsElement>(".bonus-history")!;
+      details.open = true;
+      details.dispatchEvent(new Event("toggle", { bubbles: true }));
+    });
+    expect(reads()).toHaveLength(2);
+    expect(writes()).toHaveLength(0);
+  });
+  it("with Results access the history stays in Exports only", async () => {
+    await render("pool=lazy&clan=%232YQ&step=rules", reply(base), true);
+    expect(host.querySelector(".bonus-history")).toBeNull();
+    expect(host.textContent).not.toContain("Saved bonus history");
   });
 });

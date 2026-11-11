@@ -3,6 +3,8 @@ import "./rosterUi/tokens.css";
 import CwlPageHeader from "./CwlPageHeader";
 import useConfirmDialog from "./useConfirmDialog";
 import { exportMonthLabel } from "./exportPreview";
+import { countLabel } from "./countLabel";
+import BonusHistory from "./BonusHistory";
 import {
   useCallback,
   useEffect,
@@ -32,6 +34,7 @@ import ResultsSettingsSheet, {
 import {
   bonusStepStates,
   bonusSteps,
+  firstOpenStep,
   loadBonusStatus,
   type BonusStatus,
   type BonusStep,
@@ -274,7 +277,6 @@ export default function BonusWorkspace({
     canManage,
     archived: !!archived,
     policyDirty,
-    roleDirty: false,
     reviewDirty,
     candidateOpen,
     countReady: !!countReady,
@@ -318,7 +320,8 @@ export default function BonusWorkspace({
     reasons: Object.fromEntries(
       bonusSteps.map((item) => [
         item.id,
-        blockers[item.id].find((line) => line.bar)?.text || "",
+        blockers[item.id].find((line) => line.bar && line.id !== "archived")
+          ?.text || "",
       ]),
     ) as Partial<Record<BonusStep, string>>,
   };
@@ -340,8 +343,11 @@ export default function BonusWorkspace({
     return waiting ? `Finish ${waiting.label} first.` : "";
   };
   const drawGate = gateFor("draw");
+  // The page notice says "Archived season" once; no step repeats it.
+  const stepLines = (id: BonusStep) =>
+    blockers[id].filter((line) => line.id !== "archived");
   const firstBlocking = (id: BonusStep) =>
-    blockers[id].find((line) => line.blocks)?.text || "";
+    stepLines(id).find((line) => line.blocks)?.text || "";
   const previewAllowed =
     !!data &&
     !!selectedClan &&
@@ -574,8 +580,9 @@ export default function BonusWorkspace({
       setPool(next.pool);
       resetContext(data, next.pool);
     }
-    if (next.clan && next.clan !== clanTag) {
-      setClanTag(next.clan);
+    // An address with no clan shows the clan cards only.
+    if ((next.clan || "") !== clanTag) {
+      setClanTag(next.clan || "");
       resetContext(data, next.pool || pool);
     }
     setStep(next.step);
@@ -679,6 +686,7 @@ export default function BonusWorkspace({
       return;
     }
     setClanTag("");
+    setStep(undefined);
     resetContext();
     emit({ clan: undefined, step: undefined });
   };
@@ -695,20 +703,24 @@ export default function BonusWorkspace({
     )
       return;
     working.current = true;
-    previewKeyRef.current = previewKey;
+    const key = previewKey;
+    previewKeyRef.current = key;
     setBusy(true);
     setError("");
     setPreview(null);
     const request = ++generation.current;
+    // A change of clan, pool, step setup or data clears the key; that preview is dropped.
+    const current = () =>
+      request === generation.current && previewKeyRef.current === key;
     try {
       const result = await api<RafflePreview>(path + "/preview", "POST", {
         pool,
         clan_tag: clanTag,
         slots: requestedSlots,
       });
-      if (request === generation.current) setPreview(result);
+      if (current()) setPreview(result);
     } catch (cause) {
-      if (request === generation.current) {
+      if (current()) {
         if (cause instanceof ApiError && [401, 403].includes(cause.status))
           setData(null);
         setError(errorText(cause));
@@ -828,7 +840,7 @@ export default function BonusWorkspace({
         ? `Minimum ${savedMinimum} attacks · `
         : ""
     }${total ?? "?"} bonuses`,
-    draw: `${draw?.snapshot.winners.length ?? 0} winners saved`,
+    draw: `${countLabel(draw?.snapshot.winners.length ?? 0, "winner")} saved`,
     approve: "Winners approved",
     announce: "Announcement sent",
   };
@@ -888,10 +900,12 @@ export default function BonusWorkspace({
       {data && (
         <div className="bonus-context">
           <p>
-            <strong>
-              {data.cycle ? exportMonthLabel(data.cycle) : "CWL month not set"}
-            </strong>{" "}
-            ·{" "}
+            {/* An unset month is said once, by the Results blocker. */}
+            {data.cycle && (
+              <>
+                <strong>{exportMonthLabel(data.cycle)}</strong> ·{" "}
+              </>
+            )}
             {data.sync.last_checked_at
               ? `Clash checked ${resultDateText(data.sync.last_checked_at)}`
               : "Clash not checked yet"}
@@ -991,9 +1005,16 @@ export default function BonusWorkspace({
               disabled={busy || lookingUp}
               onSelect={async (tag) => {
                 if (tag === clanTag || !(await canDiscard())) return;
+                // The address names the step, so Back and Forward return to it.
+                const target = firstOpenStep(
+                  status?.pools[pool].find((host) => host.tag === tag),
+                  pool,
+                  status?.main_minimum ?? null,
+                );
                 setClanTag(tag);
+                setStep(target);
                 resetContext();
-                emit({ clan: tag, step: undefined });
+                emit({ clan: tag, step: target });
               }}
               onAll={allClans}
             />
@@ -1021,7 +1042,7 @@ export default function BonusWorkspace({
             </p>
           )}
           {staleText && (
-            <p className="notice" role="status">
+            <p className="notice bonus-stale" role="status">
               {staleText} ·{" "}
               <button
                 type="button"
@@ -1060,7 +1081,7 @@ export default function BonusWorkspace({
                 "rules",
                 <BonusRulesStep
                   pool={pool}
-                  lines={blockers.rules}
+                  lines={stepLines("rules")}
                   fix={blockerFix}
                   locked={locked}
                   minimum={minimum}
@@ -1184,7 +1205,6 @@ export default function BonusWorkspace({
                       busy,
                       archived: !!archived,
                       policyDirty,
-                      roleDirty: false,
                       reviewDirty,
                       reviewOpen: !!reviewTag,
                       candidateOpen,
@@ -1314,6 +1334,10 @@ export default function BonusWorkspace({
                 />
               )}
             </div>
+          )}
+          {/* Exports holds the history for anyone who can open it. */}
+          {!onResults && (
+            <BonusHistory key={`bonus:${seasonId}`} seasonId={seasonId} />
           )}
         </>
       )}

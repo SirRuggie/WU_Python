@@ -96,7 +96,6 @@ export type BonusReviewGuard = {
   canManage: boolean;
   archived: boolean;
   policyDirty: boolean;
-  roleDirty: boolean;
   reviewDirty: boolean;
   candidateOpen: boolean;
   countReady: boolean;
@@ -112,7 +111,7 @@ export type BonusReviewGuard = {
   hostInactive: boolean;
 }
 export type BonusBlockerId =
-  | 'access' | 'archived' | 'minimum-dirty' | 'role-dirty' | 'open-review'
+  | 'access' | 'archived' | 'minimum-dirty' | 'open-review'
   | 'count' | 'minimum' | 'roles' | 'results' | 'partial' | 'cycle' | 'inactive'
 
 export type BonusBlockerLine = {
@@ -134,9 +133,8 @@ export function bonusStepBlockers(guard: BonusReviewGuard): Record<BonusStep, Bo
   const access = line(!guard.canManage, 'access', 'Bonus access needed', true)
   const archived = line(guard.archived, 'archived', 'Archived season · read only', true)
   const minimumDirty = line(guard.policyDirty, 'minimum-dirty', 'Save the minimum', true)
-  const roleDirty = line(guard.roleDirty, 'role-dirty', 'Save the representative role', true)
   const openReview = line(guard.reviewDirty || guard.candidateOpen, 'open-review', 'Save the open review', true)
-  const draw = pick([access, archived, minimumDirty, roleDirty, openReview])
+  const draw = pick([access, archived, minimumDirty, openReview])
   return {
     results: pick([
       line(guard.cycleMissing, 'cycle', 'CWL month not set', false, true),
@@ -144,7 +142,7 @@ export function bonusStepBlockers(guard: BonusReviewGuard): Record<BonusStep, Bo
       line(!guard.resultsMissing && guard.uncheckedCount > 0, 'partial', `${guard.uncheckedCount} not checked${guard.canReviewUnchecked ? ' · Review' : ''}`, false, true),
     ]),
     rules: pick([
-      access, archived, minimumDirty, roleDirty, openReview,
+      access, archived, minimumDirty, openReview,
       line(!guard.countReady, 'count', 'Enter the bonus count', true),
       line(guard.needsMinimum && !guard.policyDirty, 'minimum', 'Set the Main minimum', true),
       line(guard.hostInactive, 'inactive', 'Hosting clan is not an active Lazy clan this season', false, true),
@@ -177,7 +175,6 @@ export type BonusDrawGuard = {
   busy: boolean;
   archived: boolean;
   policyDirty: boolean;
-  roleDirty: boolean;
   reviewDirty: boolean;
   reviewOpen: boolean;
   candidateOpen: boolean;
@@ -187,6 +184,6 @@ export type BonusDrawGuard = {
 
 export function canSaveBonusDraw(guard: BonusDrawGuard): boolean {
   return guard.canManage && !guard.busy && !guard.archived && !guard.policyDirty &&
-    !guard.roleDirty && !guard.reviewDirty && !guard.reviewOpen && !guard.candidateOpen &&
+    !guard.reviewDirty && !guard.reviewOpen && !guard.candidateOpen &&
     !guard.lookingUp && !guard.blocked
 }
