@@ -17,6 +17,8 @@ const CATEGORY = 4;
 const FORUM_POST = 11;
 const FORUM = 15;
 const LOOKUP_ID = /^[0-9]{15,22}$/;
+// Prefix so a lookup row never equals the saved value (a saved but hidden post).
+const LOOKUP = "lookup:";
 
 function typeWord(type: number) {
   if (type === FORUM_POST) return "Forum post";
@@ -52,12 +54,14 @@ export default function ChannelCombobox({
   function search(query: string): PickerOption[] {
     const lookupId = query.trim();
     if (isLookup(lookupId))
-      return [{ value: lookupId, label: "Look up channel or forum post ID" }];
+      return [
+        { value: LOOKUP + lookupId, label: "Look up channel or forum post ID" },
+      ];
     return filterChannels(channels, query).map(channelOption);
   }
 
   function choose(id: string) {
-    if (isLookup(id)) onResolve?.(id);
+    if (id.startsWith(LOOKUP)) onResolve?.(id.slice(LOOKUP.length));
     else onChange(id);
   }
 

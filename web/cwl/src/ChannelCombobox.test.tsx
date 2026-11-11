@@ -80,6 +80,18 @@ it("offers a lookup row for an unknown ID and calls onResolve, not onChange", as
   expect(onChange).not.toHaveBeenCalled();
 });
 
+it("looks up a saved but hidden post when its own ID is pasted", async () => {
+  const picker = await mount("999999999999999999");
+  expect(pickerValue(picker)).toContain("Selected channel unavailable");
+  await pickOption(
+    picker,
+    "Look up channel or forum post ID",
+    "999999999999999999",
+  );
+  expect(onResolve).toHaveBeenCalledWith("999999999999999999");
+  expect(onChange).not.toHaveBeenCalled();
+});
+
 it("has no lookup row without onResolve", async () => {
   const picker = await mount("", false);
   await openPicker(picker);
