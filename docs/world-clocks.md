@@ -42,7 +42,8 @@ parentheses: `🇬🇧 GMT · 5:12pm · Wed 11`. Format set by Ruggie 2026-11-11
   English names (not the server locale). East of GMT it can show the next day
   (`🇦🇺 AEDT (GMT+11) · 4:12am · Thu 12`). The day changes at the first mark
   after local midnight, so it costs no extra renames. Longest possible name
-  is about 45 characters (6-letter code, tag flag, `GMT+5:45`); limit 100.
+  is about 55 characters (16-character flag, 6-letter code, `GMT+13:45`);
+  limit 100.
 - Flag: from `zone.tab`, with Paris/Berlin/Amsterdam as 🇪🇺. Staff can change
   it. The flag may not contain letters, digits, `@ # < > \``, or invisible and
   direction characters (Unicode Cc, Cf, Zl, Zp, except the zero-width joiner
