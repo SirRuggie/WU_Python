@@ -550,6 +550,99 @@ export function changedSettings(
   );
 }
 
+/** One on/off switch. Switches save at once; other edits stay in the draft. */
+export type SwitchChange =
+  | {
+      scope: "category";
+      key: CategoryKind;
+      values: Pick<CategoryConfig, "mode">;
+    }
+  | {
+      scope: "event";
+      key: ModerationKind;
+      values: Pick<EventConfig, "enabled">;
+    };
+
+export type SwitchFeedback = {
+  key: string;
+  state: "saving" | "saved" | "draft" | "error";
+  message: string;
+};
+export type SwitchResult = "saving" | "draft" | "ignored";
+
+export function switchKey(change: Pick<SwitchChange, "scope" | "key">) {
+  return `${change.scope}:${change.key}`;
+}
+
+export function applySwitch(
+  settings: SettingsDraft,
+  change: SwitchChange,
+): SettingsDraft {
+  const next = cloneSettings(settings);
+  if (change.scope === "category")
+    next.categories[change.key] = {
+      ...next.categories[change.key],
+      ...change.values,
+    };
+  else
+    next.events[change.key] = { ...next.events[change.key], ...change.values };
+  return next;
+}
+
+/** True when the switch's own category or event has unsaved draft edits. */
+export function switchItemEdited(
+  saved: SettingsDraft,
+  draft: SettingsDraft,
+  change: SwitchChange,
+): boolean {
+  const before = cloneSettings(saved);
+  const after = cloneSettings(draft);
+  const pair =
+    change.scope === "category"
+      ? [before.categories[change.key], after.categories[change.key]]
+      : [before.events[change.key], after.events[change.key]];
+  return JSON.stringify(pair[0]) !== JSON.stringify(pair[1]);
+}
+
+/**
+ * Keep the draft's unsaved edits on top of newly saved settings. A field the
+ * draft did not change takes the new saved value.
+ */
+export function rebaseDraft(
+  oldSaved: SettingsDraft,
+  draft: SettingsDraft,
+  newSaved: SettingsDraft,
+): SettingsDraft {
+  const base = cloneSettings(oldSaved);
+  const mine = cloneSettings(draft);
+  const next = cloneSettings(newSaved);
+  const pick = <T>(before: T, edited: T, latest: T): T =>
+    JSON.stringify(before) === JSON.stringify(edited) ? latest : edited;
+  const categories = {} as CategorySettings;
+  for (const key of categoryKinds)
+    categories[key] = pick(
+      base.categories[key],
+      mine.categories[key],
+      next.categories[key],
+    );
+  const events = {} as EventSettings;
+  for (const key of moderationKinds)
+    events[key] = pick(base.events[key], mine.events[key], next.events[key]);
+  const bots = pick(
+    base.ignored_bot_ids,
+    mine.ignored_bot_ids,
+    next.ignored_bot_ids,
+  );
+  return {
+    main: pick(base.main, mine.main, next.main),
+    categories,
+    events,
+    ignores: pick(base.ignores, mine.ignores, next.ignores),
+    invite_names: pick(base.invite_names, mine.invite_names, next.invite_names),
+    ...(bots ? { ignored_bot_ids: bots } : {}),
+  };
+}
+
 export function categoryForEvent(kind: ModerationKind): CategoryKind {
   return (
     eventTypes.find((event) => event.key === kind)?.category || "moderation"
@@ -646,7 +739,7 @@ export function saveModerationSettings(
 
 export function moderationSettingsError(
   cause: unknown,
-  operation: "read" | "save" | "test",
+  operation: "read" | "save" | "switch" | "test",
 ) {
   if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
     return {
@@ -663,7 +756,9 @@ export function moderationSettingsError(
       message:
         operation === "save"
           ? "These settings changed since you loaded them. Your edits are preserved; reload the latest version before saving again."
-          : "Saved settings changed. Refresh before sending a test log.",
+          : operation === "switch"
+            ? "These settings changed since you loaded them. Select Refresh settings, then try again."
+            : "Saved settings changed. Refresh before sending a test log.",
     };
   }
   return {
@@ -676,6 +771,8 @@ export function moderationSettingsError(
           ? "Could not load moderation settings."
           : operation === "save"
             ? "Could not save moderation settings. Your edits are preserved."
-            : "Could not confirm the test log. Check Discord before trying again.",
+            : operation === "switch"
+              ? "Could not save this switch. Try again."
+              : "Could not confirm the test log. Check Discord before trying again.",
   };
 }

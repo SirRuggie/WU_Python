@@ -581,6 +581,23 @@
   color: var(--roster-card-text-danger);
   -webkit-text-fill-color: currentColor;
 }
+.moderation-switch-feedback {
+  display: block;
+  color: #c7d1de;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.moderation-category-title .moderation-switch-feedback {
+  margin-top: 2px;
+}
+.moderation-switch-feedback.is-saved {
+  color: var(--roster-card-text-success);
+}
+.moderation-switch-feedback.is-error {
+  color: var(--roster-card-text-danger);
+}
 .moderation-event-editor {
   display: grid;
   gap: 8px;

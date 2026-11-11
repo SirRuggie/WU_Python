@@ -214,16 +214,19 @@ beforeEach(async () => {
     ],
     updated_at: null,
   });
-  transport.mockImplementation(async (path: string, method?: string) => {
-    if (path === "/manage/member-events/settings" && method === "PUT")
-      return { ...fixture, revision: 5 };
-    if (path === "/manage/member-events/settings")
-      return structuredClone(fixture);
-    if (path === "/manage/member-events/test") return { sent: true };
-    if (path === "/manage/member-events/health") return health();
-    if (path === "/manage/member-events/invites") return invites();
-    throw new Error(`Unexpected ${path}`);
-  });
+  transport.mockImplementation(
+    async (path: string, method?: string, body?: SettingsResponse) => {
+      // The PUT echoes the saved body with the next revision, like the backend.
+      if (path === "/manage/member-events/settings" && method === "PUT")
+        return { ...fixture, ...body, revision: body!.revision + 1 };
+      if (path === "/manage/member-events/settings")
+        return structuredClone(fixture);
+      if (path === "/manage/member-events/test") return { sent: true };
+      if (path === "/manage/member-events/health") return health();
+      if (path === "/manage/member-events/invites") return invites();
+      throw new Error(`Unexpected ${path}`);
+    },
+  );
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -234,7 +237,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-it("requires explicit save and supports discard of an event override", async () => {
+it("requires explicit save for an event override and supports discard", async () => {
   await openEvent("join");
   const override = host.querySelector<HTMLSelectElement>(
     '[aria-label="Joins channel override"]',
@@ -250,14 +253,10 @@ it("requires explicit save and supports discard of an event override", async () 
   );
   await act(async () => button("Discard").click());
   expect(host.textContent).toContain("Posts to #main-logs");
-  const joinSwitch = host.querySelector<HTMLInputElement>(
-    '[aria-label="Joins logging"]',
-  )!;
-  await act(async () => joinSwitch.click());
-  await act(async () => button("Save changes").click());
-  expect(
-    transport.mock.calls.find((call) => call[1] === "PUT")?.[2],
-  ).toMatchObject({ revision: 4, events: { join: { enabled: false } } });
+  expect(host.textContent).not.toContain("Unsaved changes");
+  expect(transport.mock.calls.filter((call) => call[1] === "PUT")).toHaveLength(
+    0,
+  );
 });
 it("renders the payload preview and confirms a test without saving", async () => {
   await openEvent("kick");
@@ -321,7 +320,7 @@ it("saves new keys and categories in the payload", async () => {
       .querySelector<HTMLInputElement>('[aria-label="Emoji logging"]')!
       .click(),
   );
-  await act(async () => button("Save changes").click());
+  await settle();
   const body = transport.mock.calls.find((call) => call[1] === "PUT")?.[2];
   expect(body.events.emoji.enabled).toBe(false);
   expect(Object.keys(body.events)).toHaveLength(32);
@@ -389,14 +388,202 @@ it("keeps unsaved edits after a revision conflict", async () => {
       throw new ApiError("Revision changed", 409);
     return structuredClone(fixture);
   });
-  const joinSwitch = host.querySelector<HTMLInputElement>(
-    '[aria-label="Joins logging"]',
-  )!;
-  await act(async () => joinSwitch.click());
+  await change(
+    host.querySelector<HTMLSelectElement>(".moderation-ignore-group select")!,
+    "other",
+  );
   await act(async () => button("Save changes").click());
-  expect(joinSwitch.checked).toBe(false);
+  expect(host.textContent).toContain("#other-logs");
   expect(host.textContent).toContain("Your edits are preserved");
   expect(host.textContent).toContain("Unsaved changes");
+});
+
+const puts = () => transport.mock.calls.filter((call) => call[1] === "PUT");
+const eventSwitch = (label: string) =>
+  host.querySelector<HTMLInputElement>(`[aria-label="${label} logging"]`)!;
+
+it("saves a switch at once with the saved revision and no Save step", async () => {
+  expect(host.querySelector(".moderation-settings-save")).toBeNull();
+  await act(async () => eventSwitch("Joins").click());
+  await settle();
+  expect(puts()).toHaveLength(1);
+  expect(puts()[0][2]).toMatchObject({
+    revision: 4,
+    events: { join: { enabled: false }, leave: { enabled: true } },
+  });
+  expect(eventSwitch("Joins").checked).toBe(false);
+  const row = host.querySelector('[data-event="join"]')!;
+  expect(row.querySelector(".moderation-switch-feedback")?.textContent).toBe(
+    "Saved",
+  );
+  expect(host.querySelector(".moderation-settings-save")).toBeNull();
+  // The next switch uses the new revision from the response.
+  await act(async () => eventSwitch("Leaves").click());
+  await settle();
+  expect(puts()[1][2]).toMatchObject({
+    revision: 5,
+    events: { leave: { enabled: false } },
+  });
+});
+
+it("saves a category switch at once", async () => {
+  await act(async () => eventSwitch("Members").click());
+  await settle();
+  expect(puts()).toHaveLength(1);
+  expect(puts()[0][2].categories.members.mode).toBe("off");
+  const card = host.querySelector(".moderation-category-card")!;
+  expect(card.querySelector(".moderation-switch-feedback")?.textContent).toBe(
+    "Saved",
+  );
+});
+
+it("keeps other unsaved edits out of a switch save and in the draft", async () => {
+  await change(
+    host.querySelector<HTMLSelectElement>(".moderation-ignore-group select")!,
+    "other",
+  );
+  expect(host.textContent).toContain("Unsaved changes");
+  await act(async () => eventSwitch("Joins").click());
+  await settle();
+  expect(puts()).toHaveLength(1);
+  expect(puts()[0][2].ignores.channel_ids).toEqual([]);
+  expect(puts()[0][2].events.join.enabled).toBe(false);
+  expect(host.textContent).toContain("#other-logs");
+  expect(host.textContent).toContain("Unsaved changes");
+  expect(eventSwitch("Joins").checked).toBe(false);
+  await act(async () => button("Save changes").click());
+  expect(puts()[1][2]).toMatchObject({
+    revision: 5,
+    ignores: { channel_ids: ["other"] },
+    events: { join: { enabled: false } },
+  });
+});
+
+it("blocks a second switch while one is saving", async () => {
+  let release: (value: unknown) => void = () => {};
+  transport.mockImplementation(async (path: string, method?: string) => {
+    if (path === "/manage/member-events/settings" && method === "PUT")
+      return new Promise((resolve) => {
+        release = () =>
+          resolve({
+            ...fixture,
+            events: {
+              ...fixture.events,
+              join: { ...fixture.events.join, enabled: false },
+            },
+            revision: 5,
+          });
+      });
+    if (path === "/manage/member-events/settings")
+      return structuredClone(fixture);
+    if (path === "/manage/member-events/invites") return invites();
+    return health();
+  });
+  await act(async () => eventSwitch("Joins").click());
+  expect(eventSwitch("Joins").disabled).toBe(true);
+  expect(eventSwitch("Leaves").disabled).toBe(true);
+  expect(
+    host.querySelector('[data-event="join"] .moderation-switch-feedback')
+      ?.textContent,
+  ).toBe("Saving…");
+  await act(async () => eventSwitch("Joins").click());
+  await act(async () => eventSwitch("Leaves").click());
+  expect(puts()).toHaveLength(1);
+  await act(async () => release(null));
+  await settle();
+  expect(eventSwitch("Joins").disabled).toBe(false);
+  expect(eventSwitch("Joins").checked).toBe(false);
+});
+
+it("reverts a switch after a revision conflict and offers refresh", async () => {
+  transport.mockImplementation(async (path: string, method?: string) => {
+    if (path === "/manage/member-events/settings" && method === "PUT")
+      throw new ApiError("Revision changed", 409);
+    if (path === "/manage/member-events/invites") return invites();
+    if (path === "/manage/member-events/health") return health();
+    return structuredClone(fixture);
+  });
+  await act(async () => eventSwitch("Joins").click());
+  await settle();
+  expect(eventSwitch("Joins").checked).toBe(true);
+  const feedback = host.querySelector(
+    '[data-event="join"] .moderation-switch-feedback',
+  )!;
+  expect(feedback.getAttribute("role")).toBe("alert");
+  expect(feedback.textContent).toContain("changed since you loaded them");
+  expect(feedback.textContent).toContain("Refresh settings");
+  expect(host.textContent).not.toContain("Unsaved changes");
+});
+
+it("reverts a switch after a network failure", async () => {
+  transport.mockImplementation(async (path: string, method?: string) => {
+    if (path === "/manage/member-events/settings" && method === "PUT")
+      throw new Error("Network down");
+    if (path === "/manage/member-events/invites") return invites();
+    if (path === "/manage/member-events/health") return health();
+    return structuredClone(fixture);
+  });
+  await act(async () => eventSwitch("Members").click());
+  await settle();
+  expect(eventSwitch("Members").checked).toBe(true);
+  expect(host.textContent).toContain("Network down");
+  expect(host.textContent).not.toContain("Unsaved changes");
+});
+
+it("clears settings when a switch save is denied", async () => {
+  transport.mockImplementation(async (path: string, method?: string) => {
+    if (path === "/manage/member-events/settings" && method === "PUT")
+      throw new ApiError("Forbidden", 403);
+    if (path === "/manage/member-events/invites") return invites();
+    if (path === "/manage/member-events/health") return health();
+    return structuredClone(fixture);
+  });
+  await act(async () => eventSwitch("Joins").click());
+  await settle();
+  expect(host.querySelector('[aria-label="Joins logging"]')).toBeNull();
+  expect(host.textContent).toContain("Your staff access has changed");
+});
+
+it("keeps a switch in the draft when it needs a channel first", async () => {
+  await remount({
+    main: { channel_id: null, forum_tag_id: null },
+    events: {
+      ...structuredClone(fixture.events),
+      join: { enabled: false, channel_id: null, forum_tag_id: null },
+    },
+  });
+  await act(async () => eventSwitch("Joins").click());
+  await settle();
+  expect(puts()).toHaveLength(0);
+  expect(eventSwitch("Joins").checked).toBe(true);
+  const row = host.querySelector('[data-event="join"]')!;
+  expect(row.querySelector(".moderation-switch-feedback")?.textContent).toBe(
+    "Not saved. Select a channel, then select Save changes.",
+  );
+  expect(row.querySelector(".moderation-event-editor")).not.toBeNull();
+  expect(host.textContent).toContain("Unsaved changes");
+});
+
+it("keeps a switch in the draft when its own event has unsaved edits", async () => {
+  await openEvent("join");
+  await change(
+    host.querySelector<HTMLSelectElement>(
+      '[aria-label="Joins channel override"]',
+    )!,
+    "other",
+  );
+  await act(async () => eventSwitch("Joins").click());
+  await settle();
+  expect(puts()).toHaveLength(0);
+  expect(
+    host.querySelector('[data-event="join"] .moderation-switch-feedback')
+      ?.textContent,
+  ).toBe("Not saved. Select Save changes to apply.");
+  await act(async () => button("Save changes").click());
+  expect(puts()[0][2].events.join).toMatchObject({
+    enabled: false,
+    channel_id: "other",
+  });
 });
 
 it("restores the last active mode despite a retained own channel", async () => {
@@ -543,7 +730,14 @@ it("lists invites with uses and saves edited names; clearing removes", async () 
     host.querySelector<HTMLInputElement>('[aria-label="Name for abc123"]')!,
     "",
   );
-  expect(host.textContent).toContain("All changes saved");
+  // The saved name is now an edit until Save changes removes it.
+  expect(host.textContent).toContain("Unsaved changes");
+  await act(async () => button("Save changes").click());
+  expect(
+    transport.mock.calls.filter((call) => call[1] === "PUT").at(-1)?.[2]
+      .invite_names,
+  ).toEqual({});
+  expect(host.textContent).not.toContain("Unsaved changes");
 });
 it("lists stale saved names, removes them from the draft only, and validates names", async () => {
   const stale = structuredClone(fixture);
@@ -596,7 +790,11 @@ it("shows invite load failure without blocking the settings form", async () => {
     '[aria-label="Joins logging"]',
   )!;
   await act(async () => join.click());
-  expect(button("Save changes").disabled).toBe(false);
+  await settle();
+  expect(transport.mock.calls.filter((call) => call[1] === "PUT")).toHaveLength(
+    1,
+  );
+  expect(join.checked).toBe(false);
 });
 it("shows the empty invite state", async () => {
   invites.mockResolvedValue({ invites: [], updated_at: null });
@@ -618,7 +816,7 @@ it("loads an old response that lacks the new keys", async () => {
   await act(async () => root.render(<ModerationSettings />));
   await settle();
   expect(host.textContent).toContain("Ignored channels");
-  expect(host.textContent).toContain("All changes saved");
+  expect(host.textContent).not.toContain("Unsaved changes");
 });
 
 const remount = async (changes: Record<string, unknown>) => {
@@ -996,7 +1194,7 @@ it.each([
     await edit();
     expect(button("Save changes").disabled).toBe(false);
     await act(async () => button("Discard").click());
-    expect(button("Save changes").disabled).toBe(true);
+    expect(host.querySelector(".moderation-settings-save")).toBeNull();
     expect(
       transport.mock.calls.filter(([, method]) => method === "PUT"),
     ).toHaveLength(0);

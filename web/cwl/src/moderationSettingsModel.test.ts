@@ -8,8 +8,11 @@ vi.mock("./api", async (original) => ({
 
 import { ApiError } from "./api";
 import {
+  applySwitch,
   changedSettings,
   cloneSettings,
+  rebaseDraft,
+  switchItemEdited,
   destinationName,
   effectiveDestination,
   eventTypes,
@@ -421,4 +424,56 @@ it("names a missing channel without showing its id", () => {
   expect(destinationName({ ...target, channel_id: "main" }, channels)).toBe(
     "#logs",
   );
+});
+
+it("applies one switch without touching other fields", () => {
+  const before = cloneSettings(settings);
+  const after = applySwitch(before, {
+    scope: "event",
+    key: "join",
+    values: { enabled: false },
+  });
+  expect(after.events.join.enabled).toBe(false);
+  expect(after.events.join.channel_id).toBe(before.events.join.channel_id);
+  expect(before.events.join.enabled).toBe(settings.events.join.enabled);
+  const off = applySwitch(before, {
+    scope: "category",
+    key: "members",
+    values: { mode: "off" },
+  });
+  expect(off.categories.members.mode).toBe("off");
+  expect(off.categories.members.channel_id).toBe(
+    before.categories.members.channel_id,
+  );
+});
+
+it("detects unsaved edits on the switch's own item only", () => {
+  const saved = cloneSettings(settings);
+  const draft = cloneSettings(settings);
+  draft.ignores = { channel_ids: ["main"], role_ids: [] };
+  const join = {
+    scope: "event" as const,
+    key: "join" as const,
+    values: { enabled: false },
+  };
+  expect(switchItemEdited(saved, draft, join)).toBe(false);
+  draft.events.join = { ...draft.events.join, channel_id: "override" };
+  expect(switchItemEdited(saved, draft, join)).toBe(true);
+});
+
+it("rebases unsaved edits onto newly saved settings", () => {
+  const oldSaved = cloneSettings(settings);
+  const draft = cloneSettings(settings);
+  draft.ignores = { channel_ids: ["main"], role_ids: [] };
+  draft.events.join = { ...draft.events.join, enabled: false };
+  const newSaved = cloneSettings(settings);
+  newSaved.events.join = { ...newSaved.events.join, enabled: false };
+  newSaved.events.leave = { ...newSaved.events.leave, enabled: false };
+  const rebased = rebaseDraft(oldSaved, draft, newSaved);
+  expect(rebased.ignores.channel_ids).toEqual(["main"]);
+  expect(rebased.events.join.enabled).toBe(false);
+  expect(rebased.events.leave.enabled).toBe(false);
+  expect(changedSettings(newSaved, rebased)).toBe(true);
+  const clean = rebaseDraft(oldSaved, cloneSettings(oldSaved), newSaved);
+  expect(changedSettings(newSaved, clean)).toBe(false);
 });
