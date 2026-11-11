@@ -320,7 +320,7 @@ class LazyBonusApiTests(RaffleTests):
                      'Prior award', '[]', '505227988229554179', cycle))
         preview = await self.review_preview()
         excluded = next(a for a in preview['excluded'] if a['tag'] == '#P2Y')
-        self.assertIn('previous three CWL months', excluded['exclusion'])
+        self.assertIn('Received a Lazy bonus in one of the previous three CWL months', excluded['exclusion'])
         state = await self.get_state()
         response = await self.call('PATCH', self.base + '/account-review', self.owner, json={
             'tag': '#P2Y', 'flags': [], 'override_reason': 'Staff approved cooldown exception',

@@ -1464,7 +1464,8 @@ is removed. "Find a player" and Sort share one row. The Results overview root
 now carries `roster-ui`, so its controls get the shared tokens (the cards were
 plain text without it). Backend: the three-month Lazy sit-out counts earlier
 Lazy bonuses only; a Main bonus does not count. Phone order: Season, status,
-Main/Lazy tabs, Hosting clan, search and Sort, list or steps.
+Main/Lazy tabs, Hosting clan, search and Sort, list or steps. The overview
+now uses the roster-ui focus ring (3px) like the steps view.
 
 Later:
 

@@ -74,6 +74,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  /* Flex items drop the space beside the button; keep the gap after "·". */
+  column-gap: 0.25em;
   min-height: 44px;
 }
 .bonus-blockers li > .bonus-inline-action:only-child,

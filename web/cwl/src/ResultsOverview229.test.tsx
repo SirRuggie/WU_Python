@@ -255,9 +255,7 @@ describe("season overview", () => {
   });
   it("All clans returns to the full list without opening steps", async () => {
     await mount(true, "pool=lazy&clan=%232YQ");
-    expect(host.querySelector(".bonus-clan-line")?.textContent).toBe(
-      "5 of 8 meet · Draft",
-    );
+    expect(host.querySelector(".bonus-clan-line")).toBeNull();
     await pickClan("all");
     expect(bonus).not.toHaveBeenCalled();
     expect(clanSelect().value).toBe("all");
@@ -405,6 +403,8 @@ describe("page menu", () => {
       "These results have not been checked recently.",
     );
     expect(button("Check Clash now", warning)).toBeDefined();
+    // The separator cannot wrap onto a line of its own.
+    expect(warning.textContent).toContain("recently. · Check Clash now");
     expect(writes()).toHaveLength(0);
   });
 });

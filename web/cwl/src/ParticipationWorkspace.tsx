@@ -626,7 +626,7 @@ export default function ParticipationWorkspace({
             )}
             {statusSummary.warning && (
               <p className="participation-capture-warning" role="status">
-                {statusSummary.warning} ·{" "}
+                {statusSummary.warning}&nbsp;·{" "}
                 <button
                   type="button"
                   className="participation-inline-action"

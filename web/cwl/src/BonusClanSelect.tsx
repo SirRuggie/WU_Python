@@ -41,12 +41,11 @@ export default function BonusClanSelect({
       };
     }),
   ];
+  // A selected clan's state is already in its option text.
   const line =
-    selected === "all"
-      ? opensSteps
-        ? "Select a clan to open its bonus steps."
-        : ""
-      : stateText(selected);
+    selected === "all" && opensSteps
+      ? "Select a clan to open its bonus steps."
+      : "";
   return (
     <div className="bonus-clan-select">
       {clans.length > CLAN_PICKER_LIMIT ? (

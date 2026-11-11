@@ -303,10 +303,8 @@ describe("Bonus hosting clan dropdown", () => {
     ]);
     expect(clanSelect().options[0].textContent).toBe("All clans");
     expect(isSelected(0)).toBe(true);
-    // The line under the dropdown names the selected clan's state.
-    expect(host.querySelector(".bonus-clan-line")?.textContent).toBe(
-      "5 of 8 meet · Draft",
-    );
+    // The option text carries the state; no second line repeats it.
+    expect(host.querySelector(".bonus-clan-line")).toBeNull();
     expect(host.textContent).not.toContain("Find a clan");
     expect(host.querySelector(".bonus-clan-card")).toBeNull();
     expect(
@@ -906,6 +904,9 @@ describe("Bonus steps", () => {
       host.querySelector<HTMLInputElement>('input[name="account-search"]')!
         .placeholder,
     ).toBe("Name or #TAG…");
+    expect(host.querySelector(".bonus-account-search")?.textContent).toContain(
+      "Find a player",
+    );
     expect(host.querySelector(".bonus-field-hint")?.textContent).toBe(
       "Number in Clash · 1–50",
     );

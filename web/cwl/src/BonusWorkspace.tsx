@@ -1058,7 +1058,7 @@ export default function BonusWorkspace({
           )}
           {staleText && (
             <p className="notice bonus-stale" role="status">
-              {staleText} ·{" "}
+              {staleText}&nbsp;·{" "}
               <button
                 type="button"
                 className="bonus-inline-action"
