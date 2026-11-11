@@ -205,9 +205,12 @@ export function newRequestId() {
   });
 }
 
-/** Split "🇺🇸 EST GMT-5 · 9:30pm" so the time never wraps on its own. */
+/**
+ * Split "🇺🇸 EST (GMT-5) · 9:30pm · Wed 11" at the first dot, so the time and
+ * day stay together and never wrap on their own.
+ */
 export function nameParts(name: string) {
-  const index = name.lastIndexOf(" · ");
+  const index = name.indexOf(" · ");
   return index < 0
     ? { label: name, time: "" }
     : { label: name.slice(0, index), time: name.slice(index + 3) };
