@@ -58,7 +58,7 @@ def lazy_eligibility(account):
     elif not (attacks >= 4 or (attacks >= 3 and stars >= 8)):
         flagged.append('Does not meet the Lazy CWL participation rule')
     if account.get('three_cycle_cooldown'):
-        flagged.append('Received a bonus in each of the previous three CWL months')
+        flagged.append('Received a bonus in one of the previous three CWL months')
     if flagged:
         if not incomplete and str(review.get('override_reason') or '').strip():
             return None

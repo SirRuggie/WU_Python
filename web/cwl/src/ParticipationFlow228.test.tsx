@@ -270,6 +270,10 @@ it("cards get an outcome chip and tinted numbers but no card tone", async () => 
     expect(card(name).querySelector(".player-card")!.className).toBe(
       "player-card",
     );
+    const root = card(name).querySelector("article.shared-account-card")!;
+    expect(root.className).not.toMatch(
+      /is-assigned|compare-account-missing|\b(good|bad)\b|is-(good|bad|success|danger)/,
+    );
     for (const value of card(name).querySelectorAll(
       ".participation-values strong",
     ))

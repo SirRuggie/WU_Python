@@ -1325,18 +1325,20 @@ export default function BonusWorkspace({
                       </div>
                     </section>
                   )}
-                  <p className="bonus-support">
-                    Qualifies with four attacks, or three attacks and eight
-                    stars; flags and exclusions still apply.
-                  </p>
-                  <details className="bonus-secondary">
-                    <summary>Eligibility rules</summary>
-                    <p>
-                      If an account got a bonus in 3 seasons in a row, it cannot
-                      enter the next season. The dashboard has no record of
-                      bonuses from before.
-                    </p>
-                  </details>
+                  {pool === "lazy" && (
+                    <div className="bonus-support">
+                      <strong>Bonus rules</strong>
+                      <ol>
+                        <li>Follow the Lazy CWL rules.</li>
+                        <li>
+                          Play 60% of the event: 4+ attacks, or 3 attacks and 8+
+                          stars.
+                        </li>
+                        <li>No bonus in the previous 3 seasons.</li>
+                      </ol>
+                      <p>Bonuses from before the dashboard are not recorded.</p>
+                    </div>
+                  )}
                   <AccountList
                     accounts={clanAccounts}
                     minimum={data.policies.main}

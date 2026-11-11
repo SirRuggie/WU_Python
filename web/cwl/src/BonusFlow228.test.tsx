@@ -161,6 +161,43 @@ const blockerText = () =>
     (item) => item.textContent,
   );
 
+describe("Bonus page loading", () => {
+  it("renders the candidate list while the status request is pending", async () => {
+    let release!: (value: object) => void;
+    const held = new Promise<object>((resolve) => (release = resolve));
+    api
+      .mockReset()
+      .mockImplementation((route: string) =>
+        route.endsWith("/bonus-status") ? held : Promise.resolve(base),
+      );
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <BonusWorkspace
+          seasonId="1"
+          seasons={[
+            { id: 1, label: "November", status: "draft", signup_open: true },
+          ]}
+          onSeasonChange={() => {}}
+          urlState="pool=lazy"
+          onUrlState={urlState}
+          onResults={results}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("Alpha");
+    expect(cards().map((card) => card.textContent)).not.toContain(
+      "Lazy One5 of 8 meet · Draft",
+    );
+    await act(async () => release(status));
+    expect(cards().map((card) => card.textContent)).toContain(
+      "Lazy One5 of 8 meet · Draft",
+    );
+  });
+});
+
 describe("Bonus clan cards", () => {
   it("show name, meet count and state from the status read", async () => {
     await mount();

@@ -266,11 +266,11 @@ class RaffleStore:
         if len(prior) != 3:
             return False
         placeholders = ','.join('?' for _ in prior)
-        rows = self.db.execute(
-            f'SELECT DISTINCT cycle FROM bonus_confirmations WHERE tag=? AND cycle IN ({placeholders}) AND voided_at IS NULL',
+        row = self.db.execute(
+            f'SELECT 1 FROM bonus_confirmations WHERE tag=? AND cycle IN ({placeholders}) AND voided_at IS NULL LIMIT 1',
             (tag, *prior),
-        )
-        return {row['cycle'] for row in rows} == set(prior)
+        ).fetchone()
+        return row is not None
 
     def enrich_view(self, view):
         """Attach Lazy review state and persisted manual candidates to the preview view."""
