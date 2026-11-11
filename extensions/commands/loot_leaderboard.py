@@ -5,7 +5,6 @@ import logging
 import re
 import sqlite3
 import time
-import unicodedata
 
 import hikari
 import lightbulb
@@ -23,6 +22,7 @@ from utils.constants import WU_GOLD, WU_RED, WARRIORS_UNITED_GUILD_ID
 from utils.gold_loot import refresh_board, load_town_halls
 from utils.emoji import emojis
 from utils import bot_data
+from utils.discord_links import profile_label  # noqa: F401  (re-exported)
 
 loader = lightbulb.Loader()
 _log = logging.getLogger(__name__)
@@ -39,26 +39,6 @@ def safe_name(value):
     value = ''.join(c for c in value if c.isprintable())[:32]
     value = value.replace('@', '@\u200b').replace('<', '‹').replace('>', '›')
     return re.sub(r'([\\`*_~|\[\]()])', r'\\\1', value)
-
-
-def profile_label(value):
-    """Avoid backslash escapes inside Discord masked-link labels.
-
-    Use visually similar punctuation so names with separators or Markdown
-    characters cannot break the link into literal source text.
-    """
-    # Discord parses emoji before masked links in some clients. Keep the
-    # anchor text free of emoji, flags, joiners and variation selectors.
-    label = ''.join(c for c in value if c.isprintable()
-                    and unicodedata.category(c) != 'So'
-                    and not ('\U0001f3fb' <= c <= '\U0001f3ff')
-                    and c not in '\ufe0e\ufe0f\u20e3')[:64]
-    label = label.translate(str.maketrans({
-        '|': '│', '\\': '╲', '[': '［', ']': '］',
-        '(': '（', ')': '）', '*': '∗', '_': '＿',
-        '~': '～', '`': '′', '<': '‹', '>': '›',
-    }))
-    return ' '.join(label.replace('@', '@\u200b').split()) or 'Discord profile'
 
 
 async def load_discord_labels(owners, *, rest=None, guild_id=WARRIORS_UNITED_GUILD_ID):

@@ -66,7 +66,7 @@ class ProfileLinkTests(unittest.TestCase):
                          "roles_removed", "message_delete", "message_bulk_delete", *OBJECT_KINDS):
                 row = sample_row(kind)
                 known = self.text(builder(row, names={self.moderator: "Mod [one]"}))
-                self.assertIn(f"by [Mod \\[one\\]](https://discord.com/users/{self.moderator})", known)
+                self.assertIn(f"by [Mod ［one］](https://discord.com/users/{self.moderator})", known)
                 self.assertIn(f"by <@{self.moderator}>", self.text(builder(row)))
             row = sample_row("member_update")
             self.assertIn(f"**Changed by**\n[Actor](https://discord.com/users/{self.moderator})",

@@ -106,7 +106,8 @@ async def panel_data(event_id):
 
 
 def render(data):
-    from extensions.commands.loot_leaderboard import profile_label, safe_name, stamp
+    from extensions.commands.loot_leaderboard import safe_name, stamp
+    from utils.discord_links import profile_label
     event = data['event']
     current = store.utcnow()
     started = event['starts_at'] and current >= datetime.fromisoformat(event['starts_at'])
