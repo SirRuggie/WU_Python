@@ -38,7 +38,7 @@ export default function CompareClanPicker({
       title={replace ? "Change clan in this column" : "Select clans"}
       trigger={trigger}
       onClose={onClose}
-      className="roster-ui"
+      className="roster-ui compare-clan-picker"
       expandOnSearchFocus
     >
       <Input

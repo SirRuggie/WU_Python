@@ -108,6 +108,17 @@
 .compare-mobile-navigation {
   display: none;
 }
+/* Clan picker fields: World clocks look (14 px corners, page colour, gold label). */
+.compare-clan-picker .roster-ui-input label,
+.compare-clan-picker .roster-menu-label {
+  color: var(--wu-accent);
+}
+.compare-clan-picker .roster-ui-input-control input,
+.compare-clan-picker .roster-menu-trigger {
+  border-color: var(--wu-border);
+  border-radius: 14px;
+  background: var(--wu-bg);
+}
 .compare-picker-list {
   display: grid;
   gap: 8px;
