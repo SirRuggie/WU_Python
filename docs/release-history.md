@@ -56,6 +56,32 @@ approved NO WAR corrections or restore databases for a code rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 
+## Read-only results release — 2026-11-11 (backend and frontend)
+
+- PR [#293](https://github.com/SirRuggie/WU_Python/pull/293), merge commit
+  `d225e33d14a357e566d4caa35f4ad1f0c9383b29`, local tag
+  `readonly-results-293-1`. Built and released by Shaka (Claude) on Ruggie's
+  decisions in the thread "Audit bonus medals pages". Head `f5a8bdb` ACCEPTED
+  after one REWORK round (card body mouse click, partial-results label).
+- Changes: attacks and stars are read only (save route returns 400 for changes;
+  notes still save); a logged bonus review reason covers never-captured Lazy
+  results; the whole Results card opens a read-only Details panel; shared ⋯ menu
+  with DM and Details; amber "Partial results" label.
+- Backend: `release.conf` `backend/965c3f74…` → `backend/d225e33d…`; PID
+  3051555 → 3100542, cwd verified, config 200, anonymous seasons 401, no
+  tracebacks. Bot unchanged and not restarted; workspace fast-forwarded.
+- Frontend `current`: `be2a40c7…` → `d225e33d…` (clean tagged clone, 2244
+  tests and `tsc -b` passed). Entry `index-6U8qQMH3.js`; served `index.html`
+  equals the release file; 6 affected assets match the manifest.
+- Backup `.local/readonly-results-293-release-20261111T163949Z/dashboard.sqlite3`:
+  integrity ok, equal to live; 162 participation records with 0 staff
+  overrides. All 73 table counts identical before and after.
+- Signed-in smoke by Shaka SKIPPED (no signed-in browser).
+- Rollback: backend `release.conf` back to `backend/965c3f746b75793b37a1c7862de8a435e9e5fe76`
+  then daemon-reload and restart `wu-cwl-demo-web`; frontend
+  `switch-release.py be2a40c7ecdc128f7e4833b8f07c92ee50d1581c`. Never restore
+  the database for a code rollback.
+
 ## Bonus and participation flow release — 2026-11-11 (backend and frontend)
 
 - PR [#291](https://github.com/SirRuggie/WU_Python/pull/291) (prompt 228),
