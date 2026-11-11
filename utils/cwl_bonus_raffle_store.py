@@ -81,6 +81,13 @@ CREATE TABLE IF NOT EXISTS bonus_raffle_pages (
 """
 
 
+# A hosting clan is Lazy for a season by its season pool (Build roster), falling back to the
+# directory pool. A clan archived after the season still counts when it has assigned accounts.
+SEASON_POOL_JOIN = 'LEFT JOIN lineup_rules r ON r.season_id=l.season_id AND r.tag=c.tag'
+LAZY_SEASON_POOL = "COALESCE(r.pool,c.pool)='lazy'"
+ACTIVE_IN_SEASON = '(c.archived=0 OR EXISTS (SELECT 1 FROM roster_entries e WHERE e.season_id=l.season_id AND e.assigned_clan_tag=c.tag))'
+
+
 class RaffleConflict(ValueError):
     pass
 
@@ -181,7 +188,7 @@ class RaffleStore:
         if not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 500:
             raise RaffleConflict('Explain why this account is being added (up to 500 characters)')
         reason = reason.strip()
-        host = self.db.execute('SELECT c.name FROM clans c JOIN lineup l ON l.tag=c.tag WHERE l.season_id=? AND c.tag=? AND c.archived=0 AND c.pool=?', (self.sid, clan_tag, 'lazy')).fetchone()
+        host = self.db.execute(f'SELECT c.name FROM clans c JOIN lineup l ON l.tag=c.tag {SEASON_POOL_JOIN} WHERE l.season_id=? AND c.tag=? AND c.archived=0 AND {LAZY_SEASON_POOL}', (self.sid, clan_tag)).fetchone()
         if not host:
             raise RaffleConflict('Choose an active Lazy hosting clan in this season')
         signup = self.db.execute('SELECT s.pool,r.assigned_clan_tag FROM signups s LEFT JOIN roster_entries r ON r.season_id=s.season_id AND r.tag=s.tag WHERE s.season_id=? AND s.tag=?', (self.sid, tag)).fetchone()
@@ -272,7 +279,7 @@ class RaffleStore:
         reviews = self.account_reviews()
         cycle = view.get('cycle')
         active_hosts = {row['tag'] for row in self.db.execute(
-            "SELECT c.tag FROM clans c JOIN lineup l ON l.tag=c.tag WHERE l.season_id=? AND c.archived=0 AND c.pool='lazy'",
+            f"SELECT c.tag FROM clans c JOIN lineup l ON l.tag=c.tag {SEASON_POOL_JOIN} WHERE l.season_id=? AND {ACTIVE_IN_SEASON} AND {LAZY_SEASON_POOL}",
             (self.sid,),
         )}
         for account in accounts:
@@ -321,10 +328,10 @@ class RaffleStore:
             by_tag[tag] = manual
         view['accounts'] = accounts
         view['bonus_reviews'] = reviews
-        view['lazy_hosts'] = [dict(row) for row in self.db.execute('SELECT c.tag,c.name FROM clans c JOIN lineup l ON l.tag=c.tag WHERE l.season_id=? AND c.archived=0 AND c.pool=? ORDER BY c.name COLLATE NOCASE,c.tag', (self.sid, 'lazy'))]
+        view['lazy_hosts'] = [dict(row) for row in self.db.execute(f'SELECT c.tag,c.name FROM clans c JOIN lineup l ON l.tag=c.tag {SEASON_POOL_JOIN} WHERE l.season_id=? AND {ACTIVE_IN_SEASON} AND {LAZY_SEASON_POOL} ORDER BY c.name COLLATE NOCASE,c.tag', (self.sid,))]
         current_clans = {row.get('tag') for row in view.get('clans', [])}
         for candidate in self.db.execute(
-            "SELECT DISTINCT c.tag,c.name FROM bonus_raffle_manual_candidates m JOIN clans c ON c.tag=m.clan_tag JOIN lineup l ON l.tag=c.tag AND l.season_id=m.season_id WHERE m.season_id=? AND c.archived=0 AND c.pool='lazy'",
+            f"SELECT DISTINCT c.tag,c.name FROM bonus_raffle_manual_candidates m JOIN clans c ON c.tag=m.clan_tag JOIN lineup l ON l.tag=c.tag AND l.season_id=m.season_id {SEASON_POOL_JOIN} WHERE m.season_id=? AND {ACTIVE_IN_SEASON} AND {LAZY_SEASON_POOL}",
             (self.sid,),
         ):
             if candidate['tag'] not in current_clans:

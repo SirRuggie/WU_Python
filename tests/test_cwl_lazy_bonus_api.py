@@ -37,6 +37,68 @@ class LazyBonusApiTests(RaffleTests):
         self.assertEqual(response.status, 200, await response.text())
         return await response.json()
 
+    def set_host_pools(self, season_pool, directory_pool, *, archived=0):
+        with self.app['store'].tx() as db:
+            db.execute('UPDATE clans SET pool=?,archived=? WHERE tag=?', (directory_pool, archived, '#C2Y'))
+            db.execute('DELETE FROM lineup_rules WHERE season_id=? AND tag=?', (self.sid, '#C2Y'))
+            if season_pool is not None:
+                db.execute('INSERT INTO lineup_rules(season_id,tag,pool) VALUES (?,?,?)', (self.sid, '#C2Y', season_pool))
+
+    async def host_state(self):
+        state = await self.get_state()
+        valid = next(a for a in state['accounts'] if a['tag'] == '#P2Y')['host_valid']
+        return valid, [h['tag'] for h in state['lazy_hosts']], state
+
+    async def test_host_check_uses_the_season_pool_with_directory_fallback(self):
+        await self.ready_lazy()
+        cases = [
+            ('lazy', None, True), ('lazy', 'main', True), ('main', 'lazy', False),
+            (None, 'lazy', True), (None, 'main', False),
+        ]
+        for season_pool, directory_pool, expected in cases:
+            self.set_host_pools(season_pool, directory_pool)
+            valid, hosts, _ = await self.host_state()
+            self.assertEqual(valid, expected, (season_pool, directory_pool))
+            self.assertEqual(hosts, ['#C2Y'] if expected else [], (season_pool, directory_pool))
+
+    async def test_host_archived_after_the_season_counts_only_with_assigned_accounts(self):
+        await self.ready_lazy()
+        self.set_host_pools('lazy', None, archived=1)
+        valid, hosts, state = await self.host_state()
+        self.assertTrue(valid)
+        self.assertEqual(hosts, ['#C2Y'])
+        with self.app['store'].tx() as db:
+            db.execute('DELETE FROM roster_entries WHERE season_id=?', (self.sid,))
+        valid, hosts, _ = await self.host_state()
+        self.assertEqual(hosts, [])
+
+    async def test_host_outside_the_season_lineup_is_invalid(self):
+        await self.ready_lazy()
+        self.set_host_pools('lazy', 'lazy')
+        with self.app['store'].tx() as db:
+            db.execute('PRAGMA foreign_keys=OFF')
+            db.execute('DELETE FROM lineup_rules WHERE season_id=? AND tag=?', (self.sid, '#C2Y'))
+            db.execute('DELETE FROM lineup WHERE season_id=? AND tag=?', (self.sid, '#C2Y'))
+        valid, hosts, _ = await self.host_state()
+        self.assertFalse(valid)
+        self.assertEqual(hosts, [])
+
+    async def test_manual_candidate_host_uses_season_pool_and_rejects_archived_clans(self):
+        state = await self.ready_lazy()
+        body = {'tag': '#Q2Y', 'clan_tag': '#C2Y', 'reason': 'Fill remaining bonus slot', 'revision': state['revision']}
+        self.set_host_pools('main', 'lazy')
+        self.assertEqual((await self.call('POST', self.base + '/manual-candidates', self.owner, json=body)).status, 400)
+        self.set_host_pools('lazy', None, archived=1)
+        self.assertEqual((await self.call('POST', self.base + '/manual-candidates', self.owner, json=body)).status, 400)
+        self.set_host_pools('lazy', None)
+        response = await self.call('POST', self.base + '/manual-candidates', self.owner, json=body)
+        self.assertEqual(response.status, 200, await response.text())
+        # An existing manual candidate whose host stops being Lazy for the season is reported, not dropped.
+        self.set_host_pools('main', 'lazy')
+        state = await self.get_state()
+        self.assertEqual(state['manual_candidate_conflicts'][0]['tag'], '#Q2Y')
+        self.assertNotIn('#C2Y', [h['tag'] for h in state['lazy_hosts']])
+
     async def test_flags_override_role_weight_and_stale_approval(self):
         state = await self.ready_lazy()
         body = {'tag': '#P2Y', 'flags': ['lingering'], 'override_reason': '', 'revision': state['revision']}

@@ -28,6 +28,10 @@ cannot override malformed data, a mismatched/stale assignment, a non-Lazy host,
 or a second bonus to the same account in the same month. Discord role evidence
 must also be available before eligible accounts can enter the draw.
 
+A hosting clan counts as Lazy for a season when its season pool (Build roster) is
+Lazy. The directory pool is the fallback. A clan archived after the season still
+counts for that season.
+
 ## Manual candidates and weighted draws
 
 Add player by tag verifies the player and linked Discord owner through the

@@ -6,7 +6,7 @@ import sqlite3
 from aiohttp import web
 from .participation_display import participation_json_response
 from extensions.cwl_discord_transport import AnnouncementRejected, AnnouncementUnavailable, DiscordTransport
-from utils.cwl_bonus_raffle_store import RaffleConflict, RaffleStore
+from utils.cwl_bonus_raffle_store import LAZY_SEASON_POOL, SEASON_POOL_JOIN, RaffleConflict, RaffleStore
 from utils.cwl_bonus_allowance import AllowanceStore
 from utils.cwl_bonus_raffle import lazy_eligibility
 from .bonuses import _view, _require_draft, _bump, _validate_revision, _cas
@@ -320,7 +320,7 @@ async def manual_candidates(request):
         except (ValueError, TypeError):
             _fail(400, "Select an active Lazy hosting clan")
         with _store(request).tx() as db:
-            host = db.execute("SELECT c.tag FROM clans c JOIN lineup l ON c.tag=l.tag WHERE l.season_id=? AND c.tag=? AND c.archived=0 AND c.pool='lazy'", (sid, clan_tag)).fetchone()
+            host = db.execute(f"SELECT c.tag FROM clans c JOIN lineup l ON c.tag=l.tag {SEASON_POOL_JOIN} WHERE l.season_id=? AND c.tag=? AND c.archived=0 AND {LAZY_SEASON_POOL}", (sid, clan_tag)).fetchone()
             if not host:
                 _fail(400, "Select an active Lazy hosting clan in this season")
         provider = request.app['providers']
