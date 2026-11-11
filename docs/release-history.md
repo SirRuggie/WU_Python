@@ -56,6 +56,34 @@ approved NO WAR corrections or restore databases for a code rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 
+## Did not join release — 2026-11-11 (backend and frontend)
+
+- PR [#295](https://github.com/SirRuggie/WU_Python/pull/295), merge commit
+  `8e800f7a50b5ee54ec3c8b5058eae7b79095485b`, local tag `did-not-join-295-1`.
+  Built and released by Shaka (Claude) on Ruggie's decisions in the thread
+  "CWL results are incomplete"; merge on Ruggie's "merge it". Independent
+  refuter: REWORK (bonus rules not gated on a finished group) → ACCEPT on head
+  `256a96b`.
+- Changes: Did not join (finished CWL group, not in league-group or war
+  rosters), Filler and Not assigned outcomes; Did not join never counts as
+  incomplete and is excluded from Main and Lazy draws without blocking; "Add
+  strike" ⋯ item only opens Strikes; Main "Resolve incomplete" links to Results.
+- Backend: `release.conf` `backend/d225e33d…` → `backend/8e800f7a…`; PID
+  3100542 → 3222929, cwd verified, config 200, anonymous seasons 401, no
+  tracebacks. Bot unchanged and not restarted (it imports none of the changed
+  modules); workspace fast-forwarded.
+- Frontend `current`: `d225e33d…` → `8e800f7a…` (clean tagged clone, 2248 tests
+  and `tsc -b` passed). Entry `index-BEbs58hr.js`; served `index.html` equals
+  the release file; 9 affected assets match.
+- Backup `.local/did-not-join-295-release-20261111T171652Z/dashboard.sqlite3`: integrity ok, equal to live. All 73 table
+  counts identical before and after.
+- Signed-in smoke by Shaka SKIPPED (the browser was not signed in).
+- Rollback: backend `release.conf` back to
+  `backend/d225e33d14a357e566d4caa35f4ad1f0c9383b29`, then daemon-reload and
+  restart `wu-cwl-demo-web`; frontend `switch-release.py
+  d225e33d14a357e566d4caa35f4ad1f0c9383b29`. Never restore the database for a
+  code rollback.
+
 ## Read-only results release — 2026-11-11 (backend and frontend)
 
 - PR [#293](https://github.com/SirRuggie/WU_Python/pull/293), merge commit
