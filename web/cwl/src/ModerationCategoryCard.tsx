@@ -13,6 +13,9 @@ import {
   type ModerationKind,
   type SettingsDraft,
   type SettingsResponse,
+  type SwitchChange,
+  type SwitchFeedback,
+  type SwitchResult,
 } from "./moderationSettingsModel";
 
 type Props = {
@@ -26,6 +29,8 @@ type Props = {
   busy: boolean;
   inventoryAvailable: boolean;
   dirty: boolean;
+  switchFeedback: SwitchFeedback | null;
+  onSwitch: (change: SwitchChange) => SwitchResult;
   onCategory: (category: CategoryKind, values: Partial<CategoryConfig>) => void;
   onEvent: (kind: ModerationKind, values: Partial<EventConfig>) => void;
   onResolve: (scope: "category" | "event", key: string, id: string) => void;
@@ -86,6 +91,8 @@ export default function ModerationCategoryCard({
   busy,
   inventoryAvailable,
   dirty,
+  switchFeedback,
+  onSwitch,
   onCategory,
   onEvent,
   onResolve,
@@ -112,6 +119,15 @@ export default function ModerationCategoryCard({
   const selectedCategoryChannel = channels.find(
     (channel) => channel.id === config.channel_id,
   );
+  const feedbackFor = (key: string) =>
+    switchFeedback?.key === key ? (
+      <small
+        className={`moderation-switch-feedback roster-ui is-${switchFeedback.state}`}
+        role={switchFeedback.state === "error" ? "alert" : "status"}
+      >
+        {switchFeedback.message}
+      </small>
+    ) : null;
   const summary = moderationRoutingSummary(
     events.map((event) => event.key),
     draft,
@@ -135,6 +151,7 @@ export default function ModerationCategoryCard({
               <span aria-hidden="true">{icon}</span> {label}
             </span>
             <small>{summary}</small>
+            {feedbackFor(`category:${category}`)}
           </span>
           <label
             className="moderation-category-switch"
@@ -146,11 +163,19 @@ export default function ModerationCategoryCard({
               aria-label={`${label} logging`}
               checked={active}
               disabled={busy}
-              onChange={(event) =>
-                onCategory(category, {
-                  mode: event.target.checked ? previousMode.current : "off",
-                })
-              }
+              onChange={(event) => {
+                const result = onSwitch({
+                  scope: "category",
+                  key: category,
+                  values: {
+                    mode: event.target.checked ? previousMode.current : "off",
+                  },
+                });
+                if (result === "draft") {
+                  setOpen(true);
+                  setCategoryEditing(true);
+                }
+              }}
             />
             <span className="moderation-category-track" aria-hidden="true" />
             <span>{active ? "On" : "Off"}</span>
@@ -245,9 +270,14 @@ export default function ModerationCategoryCard({
                     aria-label={`${event.label} logging`}
                     checked={value.enabled}
                     disabled={busy}
-                    onChange={(change) =>
-                      onEvent(event.key, { enabled: change.target.checked })
-                    }
+                    onChange={(change) => {
+                      const result = onSwitch({
+                        scope: "event",
+                        key: event.key,
+                        values: { enabled: change.target.checked },
+                      });
+                      if (result === "draft") setOpenPicker(event.key);
+                    }}
                   />
                   <span
                     aria-hidden="true"
@@ -276,6 +306,7 @@ export default function ModerationCategoryCard({
                     ? `Posts to ${destinationName(state.target, channels)}`
                     : "Not posting"}
               </p>
+              {feedbackFor(`event:${event.key}`)}
               {editing && (
                 <div className="moderation-event-editor">
                   <div className="moderation-event-override">

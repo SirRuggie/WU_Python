@@ -499,3 +499,36 @@ Limits:
   can drop one name until that bot acts again.
 - A recovered kick or ban waits the same 1 to 2 seconds as a live one, so a long backlog posts
   slowly.
+
+## Switches save at once — November 11, 2026
+
+Ruggie's decision (B-11 world clocks discussion, 2026-11-11): each on/off switch saves at
+once. Log settings follows the same rule.
+
+- A category or event switch sends one `PUT /manage/member-events/settings` with the saved
+  settings, the saved `revision` and only that switch changed. Other unsaved edits (channel
+  pickers, routing selects, ignore lists, ignored bots, invite names) are not sent; they stay in
+  the draft and still need **Save changes**. After the save, unchanged draft fields take the new
+  saved values (`rebaseDraft`).
+- The switch moves at once and shows "Saving…", then "Saved". All switches are disabled while
+  one save runs, so a double tap cannot send two writes.
+- On a revision conflict (409) or another failure the switch goes back to its saved position
+  and shows the error under the switch. A conflict tells staff to select **Refresh settings**.
+  401/403 clears the settings like the other paths. A failed switch is never retried.
+- The switch joins the draft instead of saving when its own category or event has unsaved
+  edits, when channel inventory is unavailable, or when the result would leave an enabled
+  notice without a valid saved destination. It then says "Not saved" and opens that item's
+  Change panel.
+- The Save bar shows only for draft edits, a blocked save, a running Save, or right after
+  **Save changes** succeeded. **Send test** stays tied to saved settings.
+
+Checks: vitest (unit and component tests for instant save, revision use, kept draft edits,
+double tap, 409, network failure, 403, needs-channel and own-item fallbacks), TypeScript, Vite
+build, scoped Prettier, `git diff --check`, backend pytest. An isolated browser check against
+`tests/fixtures/moderation_logs.py` (real backend handlers, in-memory Mongo, fake Discord) at
+360×800 and 1440×1000 confirmed: one switch makes one PUT and one revision step; a concurrent
+write from another tab makes the next switch return 409, revert, and write nothing; after
+Refresh the switch saves again; no Discord posts; no horizontal overflow.
+Known gap: `tests/moderation-logs.browser.cjs` was already out of date before this change (it
+expects Preview outside the Change panel and a "Reload settings" button), so it fails at its
+first Preview step. It was not updated here.

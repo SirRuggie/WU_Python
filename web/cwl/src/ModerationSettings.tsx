@@ -8,6 +8,7 @@ import ModerationIgnoredBots from "./ModerationIgnoredBots";
 import ModerationIgnoreLists from "./ModerationIgnoreLists";
 import ModerationInviteNames from "./ModerationInviteNames";
 import {
+  applySwitch,
   changedSettings,
   cloneSettings,
   destinationName,
@@ -18,7 +19,10 @@ import {
   hasInvalidEventDestination,
   moderationRegistry,
   moderationSettingsError,
+  rebaseDraft,
   saveModerationSettings,
+  switchItemEdited,
+  switchKey,
   type CategoryConfig,
   type CategoryKind,
   type Destination,
@@ -28,11 +32,34 @@ import {
   type RouteTarget,
   type SettingsDraft,
   type SettingsResponse,
+  type SwitchChange,
+  type SwitchFeedback,
+  type SwitchResult,
 } from "./moderationSettingsModel";
 import "./ModerationSettings.css";
 
 type DialogState =
   { type: "test"; event: ModerationKind } | { type: "reload" } | null;
+
+/** Keep page-only fields (inventory, previews) that a PUT response omits. */
+function mergeSaved(
+  result: SettingsResponse,
+  saved: SettingsResponse,
+): SettingsResponse {
+  return {
+    ...result,
+    ...cloneSettings(result),
+    channels: saved.channels,
+    channels_available: saved.channels_available,
+    roles: saved.roles,
+    roles_available: saved.roles_available,
+    warning: saved.warning,
+    preview_names: saved.preview_names,
+    preview_cards: saved.preview_cards,
+    forum_preview_cards: saved.forum_preview_cards,
+    bot_actors: result.bot_actors ?? saved.bot_actors,
+  };
+}
 
 export default function ModerationSettings({
   onDirty,
@@ -47,6 +74,10 @@ export default function ModerationSettings({
   const [notice, setNotice] = useState("");
   const [dialog, setDialog] = useState<DialogState>(null);
   const [inviteReset, setInviteReset] = useState(0);
+  const [switchFeedback, setSwitchFeedback] = useState<SwitchFeedback | null>(
+    null,
+  );
+  const [switchSaving, setSwitchSaving] = useState(false);
   const request = useRef(0);
   const lastChannels = useRef<Destination[] | null>(null);
   const channels = saved?.channels || [];
@@ -63,6 +94,7 @@ export default function ModerationSettings({
     setLoading(true);
     setError("");
     setNotice("");
+    setSwitchFeedback(null);
     try {
       const result = await api<SettingsResponse>(
         "/manage/member-events/settings",
@@ -103,6 +135,7 @@ export default function ModerationSettings({
   const clearFeedback = () => {
     setError("");
     setNotice("");
+    setSwitchFeedback(null);
   };
   const updateMain = (value: RouteTarget) => {
     setDraft((current) => (current ? { ...current, main: value } : current));
@@ -220,6 +253,15 @@ export default function ModerationSettings({
     !!draft &&
     Object.values(draft.invite_names).some((name) => !!inviteNameError(name));
 
+  // Switches save at once, so the bar shows only for draft edits, a blocked
+  // save, a running Save, or right after Save succeeded.
+  const savedNotice = "Moderation settings saved.";
+  const showSaveBar =
+    dirty ||
+    invalidDestination ||
+    (busy && !switchSaving) ||
+    notice === savedNotice;
+
   const save = async () => {
     if (!saved || !draft || !dirty || busy || invalidDestination || invalidName)
       return;
@@ -229,21 +271,9 @@ export default function ModerationSettings({
     try {
       const result = await saveModerationSettings(saved, draft);
       if (request.current !== id) return;
-      setSaved({
-        ...result,
-        ...cloneSettings(result),
-        channels: saved.channels,
-        channels_available: saved.channels_available,
-        roles: saved.roles,
-        roles_available: saved.roles_available,
-        warning: saved.warning,
-        preview_names: saved.preview_names,
-        preview_cards: saved.preview_cards,
-        forum_preview_cards: saved.forum_preview_cards,
-        bot_actors: result.bot_actors ?? saved.bot_actors,
-      });
+      setSaved(mergeSaved(result, saved));
       setDraft(cloneSettings(result));
-      setNotice("Moderation settings saved.");
+      setNotice(savedNotice);
     } catch (cause) {
       if (request.current !== id) return;
       const failure = moderationSettingsError(cause, "save");
@@ -256,6 +286,93 @@ export default function ModerationSettings({
     } finally {
       if (request.current === id) setBusy(false);
     }
+  };
+
+  /**
+   * A switch saves at once: the PUT carries the saved settings plus this one
+   * change, so other unsaved edits stay in the draft. The switch joins the
+   * draft instead when its own item has unsaved edits or the result needs a
+   * channel that is not saved yet.
+   */
+  const toggleSwitch = (change: SwitchChange): SwitchResult => {
+    if (!saved || !draft || busy || loading) return "ignored";
+    const key = switchKey(change);
+    const body = applySwitch(saved, change);
+    const nextDraft = applySwitch(draft, change);
+    setError("");
+    setNotice("");
+    if (!changedSettings(saved, body)) {
+      setDraft(nextDraft);
+      setSwitchFeedback(null);
+      return "ignored";
+    }
+    if (
+      switchItemEdited(saved, draft, change) ||
+      !inventoryAvailable ||
+      hasInvalidDestination(body, saved.channels)
+    ) {
+      setDraft(nextDraft);
+      setSwitchFeedback({
+        key,
+        state: "draft",
+        message: hasInvalidDestination(nextDraft, saved.channels)
+          ? "Not saved. Select a channel, then select Save changes."
+          : "Not saved. Select Save changes to apply.",
+      });
+      return "draft";
+    }
+    const previous =
+      change.scope === "category"
+        ? ({
+            scope: "category",
+            key: change.key,
+            values: { mode: draft.categories[change.key].mode },
+          } as SwitchChange)
+        : ({
+            scope: "event",
+            key: change.key,
+            values: { enabled: draft.events[change.key].enabled },
+          } as SwitchChange);
+    const hadEdits = changedSettings(saved, draft);
+    const id = ++request.current;
+    setDraft(nextDraft);
+    setBusy(true);
+    setSwitchSaving(true);
+    setSwitchFeedback({ key, state: "saving", message: "Saving…" });
+    void (async () => {
+      try {
+        const result = await saveModerationSettings(saved, body);
+        if (request.current !== id) return;
+        setSaved(mergeSaved(result, saved));
+        setDraft((current) =>
+          !current || !hadEdits
+            ? cloneSettings(result)
+            : rebaseDraft(saved, current, result),
+        );
+        setSwitchFeedback({ key, state: "saved", message: "Saved" });
+      } catch (cause) {
+        if (request.current !== id) return;
+        const failure = moderationSettingsError(cause, "switch");
+        if (failure.denied) {
+          lastChannels.current = null;
+          setSaved(null);
+          setDraft(null);
+          setSwitchFeedback(null);
+          setError(failure.message);
+          return;
+        }
+        setDraft((current) =>
+          current ? applySwitch(current, previous) : current,
+        );
+        setSwitchFeedback({ key, state: "error", message: failure.message });
+      } finally {
+        if (request.current === id) {
+          setBusy(false);
+          setSwitchSaving(false);
+        }
+      }
+    })();
+    return "saving";
   };
 
   const discard = () => {
@@ -419,6 +536,8 @@ export default function ModerationSettings({
                 busy={busy}
                 inventoryAvailable={inventoryAvailable}
                 dirty={dirty}
+                switchFeedback={switchFeedback}
+                onSwitch={toggleSwitch}
                 onCategory={updateCategory}
                 onEvent={updateEvent}
                 onResolve={(scope, key, id) =>
@@ -462,39 +581,49 @@ export default function ModerationSettings({
             resetKey={`${saved.revision}:${inviteReset}`}
             onName={updateInviteName}
           />
-          <div className="moderation-settings-save">
-            {invalidDestination && (
-              <p className="moderation-destination-warning" role="status">
-                An enabled notice needs an available destination and any
-                required forum tag before saving.
-              </p>
-            )}
+          {showSaveBar && (
+            <div className="moderation-settings-save">
+              {invalidDestination && (
+                <p className="moderation-destination-warning" role="status">
+                  An enabled notice needs an available destination and any
+                  required forum tag before saving.
+                </p>
+              )}
 
-            <p>
-              <span
-                className={
-                  dirty ? "moderation-dirty-dot" : "moderation-clean-dot"
-                }
-                aria-hidden="true"
-              />
-              {dirty ? "Unsaved changes" : "All changes saved"}
-            </p>
-            <div>
-              <button type="button" onClick={discard} disabled={!dirty || busy}>
-                Discard
-              </button>
-              <button
-                className="primary"
-                type="button"
-                disabled={
-                  !dirty || busy || loading || invalidDestination || invalidName
-                }
-                onClick={() => void save()}
-              >
-                {busy ? "Saving…" : "Save changes"}
-              </button>
+              <p>
+                <span
+                  className={
+                    dirty ? "moderation-dirty-dot" : "moderation-clean-dot"
+                  }
+                  aria-hidden="true"
+                />
+                {dirty ? "Unsaved changes" : "All changes saved"}
+              </p>
+              <div>
+                <button
+                  type="button"
+                  onClick={discard}
+                  disabled={!dirty || busy}
+                >
+                  Discard
+                </button>
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={
+                    !dirty ||
+                    busy ||
+                    loading ||
+                    invalidDestination ||
+                    invalidName
+                  }
+                  onClick={() => void save()}
+                >
+                  {busy && !switchSaving ? "Saving…" : "Save changes"}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
 
