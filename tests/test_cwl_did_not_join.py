@@ -11,16 +11,22 @@ SNAPSHOT = {'tag': '#PYY', 'user_id': '1', 'player_name': 'Fixture', 'town_hall'
             'pool': 'lazy', 'assigned_clan_tag': '#PQQ', 'assigned_clan_name': 'Family'}
 
 
-def source(status, *, hours=2):
+def source(status, *, hours=2, ended=('#PQQ',)):
     checked = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    return {'attacks': None, 'stars': None, 'status': status, 'complete': 0,
-            'checked_at': checked, 'warning': None, 'roster_token': account_token(SNAPSHOT)}
+    row = {'attacks': None, 'stars': None, 'status': status, 'complete': 0,
+           'checked_at': checked, 'warning': None, 'roster_token': account_token(SNAPSHOT)}
+    if status == 'no_data':
+        row['ended_clans'] = frozenset(ended)
+    return row
 
 
 def test_raw_no_data_survives_the_stale_label():
     row = current_account_view(SNAPSHOT, None, source('no_data'))
     assert row['source_status'] == 'stale'
     assert row['source_no_show'] is True
+    # Mid-CWL (group not ENDED) or another clan's finished group never proves a no-show.
+    assert current_account_view(SNAPSHOT, None, source('no_data', ended=()))['source_no_show'] is False
+    assert current_account_view(SNAPSHOT, None, source('no_data', ended=('#OTHER',)))['source_no_show'] is False
     assert current_account_view(SNAPSHOT, None, source('partial'))['source_no_show'] is False
     assert current_account_view(SNAPSHOT, None, None)['source_no_show'] is False
 
@@ -108,3 +114,17 @@ def test_did_not_join_status_is_final_not_incomplete():
     row = current_account_view(SNAPSHOT, None, source('no_data'))
     shown = decorate_participation_accounts([row], {'#PQQ': evidence})[0]
     assert shown['display_status']['code'] == 'did_not_join'
+
+
+def test_source_row_adds_ended_clans_only_for_no_data():
+    import sqlite3
+    from cwl_web.participation_sync import source_row
+    db = sqlite3.connect(':memory:'); db.row_factory = sqlite3.Row
+    db.execute('CREATE TABLE participation_source_results(season_id,cycle,tag,attacks,stars,status,complete,checked_at,warning,roster_token)')
+    db.execute('CREATE TABLE participation_group_observations(season_id,cycle,clan_tag,state)')
+    db.executemany('INSERT INTO participation_group_observations VALUES (1,"2026-11",?,?)',
+                   [('#PQQ', 'ENDED'), ('#WAR', 'WAR')])
+    db.executemany('INSERT INTO participation_source_results VALUES (1,"2026-11",?,NULL,NULL,?,0,NULL,NULL,NULL)',
+                   [('#A', 'no_data'), ('#B', 'partial')])
+    assert source_row(db, 1, '2026-11', '#A')['ended_clans'] == frozenset({'#PQQ'})
+    assert 'ended_clans' not in source_row(db, 1, '2026-11', '#B').keys()

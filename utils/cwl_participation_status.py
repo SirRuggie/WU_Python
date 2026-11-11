@@ -2,6 +2,20 @@
 from dataclasses import dataclass
 
 
+def ended_group_clans(db, season_id: int, cycle: str | None) -> frozenset:
+    """Clans whose saved league group has finished; only these prove a no-show."""
+    if not cycle:
+        return frozenset()
+    return frozenset(
+        row["clan_tag"] for row in db.execute(
+            "SELECT clan_tag,state FROM participation_group_observations "
+            "WHERE season_id=? AND cycle=?",
+            (season_id, cycle),
+        )
+        if str(row["state"]).upper().replace("_", "") == "ENDED"
+    )
+
+
 @dataclass(frozen=True)
 class ParticipationEvidence:
     group_state: str | None = None

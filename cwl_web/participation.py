@@ -9,6 +9,7 @@ from aiohttp import web
 
 from .providers import tag as normalize_tag
 from utils.cwl_working_roster import working_accounts, account_token
+from utils.roster_player_marks import marks as roster_marks
 from .participation_sync import settings_view, source_row
 from .participation_display import participation_evidence, decorate_participation_accounts
 
@@ -101,7 +102,11 @@ def _account_view(snapshot, saved=None, source=None, *, archived=False):
         "source_status": source_status,
         "source_complete": bool(source["complete"]) if source is not None else False,
         # Raw Clash evidence: not in the league group or any observed war.
-        "source_no_show": source is not None and source["status"] == "no_data",
+        # source_row adds ended_clans only to no_data rows.
+        "source_no_show": bool(
+            isinstance(source, dict) and source["status"] == "no_data"
+            and identity["assigned_clan_tag"] in (source.get("ended_clans") or ())
+        ),
         "source_checked_at": source_checked,
         "source_warning": source["warning"] if source is not None else None,
         "attacks_override": attacks_override,
@@ -234,11 +239,10 @@ async def get_participation(request):
             )
             for player_tag in sorted(set(saved) if history else set(current))
         ]
-        fillers = {row[0] for row in db.execute(
-            "SELECT tag FROM roster_player_marks WHERE roster_filler=1")}
+        fillers = roster_marks(db)
         for account in accounts:
             account["in_latest_publication"] = account["tag"] in published_tags
-            account["roster_filler"] = account["tag"] in fillers
+            account["roster_filler"] = bool(fillers.get(account["tag"], {}).get("roster_filler"))
         accounts = decorate_participation_accounts(
             accounts, participation_evidence(db, season_id, settings['cycle'], accounts=accounts),
             sync_status=None if history else settings['status'],
