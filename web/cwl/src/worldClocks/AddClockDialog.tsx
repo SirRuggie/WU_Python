@@ -2,10 +2,12 @@ import { useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, ApiError } from "../api";
 import { Button } from "../rosterUi/primitives";
+import SearchPicker from "../SearchPicker";
 import ClockFields from "./ClockFields";
 import {
   API_BASE,
   newRequestId,
+  voiceOption,
   type ClockDraft,
   type ClockSettings,
   type VoiceChannel,
@@ -38,7 +40,6 @@ export default function AddClockDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
-  const channelId = useId();
   const [draft, setDraft] = useState<ClockDraft>({
     zone: "",
     flag: "",
@@ -169,27 +170,20 @@ export default function AddClockDialog({
             </span>
           </label>
           {mode === "existing" && (
-            <div>
-              <label className="world-clock-label" htmlFor={channelId}>
-                Voice channel
-              </label>
-              <select
-                id={channelId}
-                className="world-clock-input"
-                value={draft.channel_id}
-                onChange={(event) =>
-                  setDraft({ ...draft, channel_id: event.target.value })
-                }
-              >
-                <option value="">Select a voice channel</option>
-                {free.map((channel) => (
-                  <option key={channel.id} value={channel.id}>
-                    🔊 {channel.name}
-                    {channel.category ? ` · ${channel.category}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SearchPicker
+              label="Voice channel"
+              options={free.map((channel) => voiceOption(channel))}
+              value={draft.channel_id}
+              placeholder="Select a voice channel"
+              searchPlaceholder="Search voice channels"
+              emptyText={
+                free.length
+                  ? "No voice channels match."
+                  : "No free voice channels. Create a new one instead."
+              }
+              disabled={busy}
+              onChange={(channel_id) => setDraft({ ...draft, channel_id })}
+            />
           )}
         </fieldset>
         {!channelsAvailable && (

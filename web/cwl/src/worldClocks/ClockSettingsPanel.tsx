@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
-import ChannelCombobox from "../ChannelCombobox";
 import FilterChips from "../FilterChips";
+import SearchPicker from "../SearchPicker";
 import { Button } from "../rosterUi/primitives";
 import {
   API_BASE,
@@ -67,12 +67,26 @@ export default function ClockSettingsPanel({
   return (
     <div className="world-clock-settings">
       <div className="world-clock-setting">
-        <ChannelCombobox
+        <SearchPicker
           label="New channels go in"
-          channels={categories.map((row) => ({ ...row, type: 4 }))}
+          options={categories.map((row) => ({
+            value: row.id,
+            label: row.name,
+          }))}
           value={draft.category_id || ""}
+          fallback={
+            draft.category_id
+              ? {
+                  value: draft.category_id,
+                  label: "Selected category unavailable",
+                }
+              : undefined
+          }
+          placeholder="Select a category"
+          searchPlaceholder="Search categories"
+          emptyText="No categories match."
           disabled={busy || !channelsAvailable}
-          nameOnly
+          clearable
           onChange={(value) =>
             setDraft({ ...draft, category_id: value || null })
           }

@@ -1,0 +1,265 @@
+/* Shared search picker. World clocks look (DESIGN.md): gold label, 48 px
+   field with 14 px corners on the page colour, gold edge on the selected row. */
+
+.search-picker {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.search-picker-label {
+  color: var(--wu-accent);
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
+}
+
+.search-picker-field {
+  display: flex;
+  gap: var(--wu-space-2);
+  min-width: 0;
+}
+
+.search-picker .search-picker-trigger {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-2);
+  min-width: 0;
+  min-height: 48px;
+  padding: var(--wu-space-1) var(--wu-space-3);
+  border: 1px solid var(--wu-border);
+  border-radius: 14px;
+  background: var(--wu-bg);
+  color: var(--wu-text);
+  font: inherit;
+  font-size: var(--wu-text-md);
+  text-align: left;
+}
+
+.search-picker .search-picker-trigger[aria-expanded="true"] {
+  border-color: var(--wu-accent);
+}
+
+.search-picker .search-picker-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.search-picker-value {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  min-width: 0;
+}
+
+.search-picker-placeholder {
+  color: var(--wu-text-muted);
+}
+
+.search-picker-chevron {
+  flex: none;
+  color: var(--wu-text-muted);
+}
+
+.search-picker .search-picker-clear {
+  flex: none;
+  width: 48px;
+  min-height: 48px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 14px;
+}
+
+.search-picker-icon {
+  flex: none;
+  width: 24px;
+  text-align: center;
+}
+
+.search-picker-text {
+  display: grid;
+  min-width: 0;
+}
+
+.search-picker-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-picker-text small {
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+  overflow-wrap: anywhere;
+}
+
+/* Panel: under the field on wider screens, inside the sheet on phones. */
+.search-picker-panel {
+  display: grid;
+  gap: var(--wu-space-2);
+  min-width: 0;
+  padding: var(--wu-space-2);
+  border: 1px solid var(--wu-border);
+  border-radius: 14px;
+  background: var(--wu-surface);
+}
+
+.search-picker-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-picker-search svg {
+  position: absolute;
+  left: var(--wu-space-3);
+  color: var(--wu-text-muted);
+  pointer-events: none;
+}
+
+.search-picker-search input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 var(--wu-space-3) 0 40px;
+  border: 1px solid var(--wu-border);
+  border-radius: 14px;
+  background: var(--wu-bg);
+  color: var(--wu-text);
+  font: inherit;
+  /* 16 px stops phones from zooming into the field. */
+  font-size: var(--wu-text-md);
+}
+
+.search-picker-list {
+  display: grid;
+  gap: var(--wu-space-1);
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.search-picker-list:empty {
+  display: none;
+}
+
+.search-picker-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  min-height: 48px;
+  padding: var(--wu-space-1) var(--wu-space-3);
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: 10px;
+  background: var(--wu-surface-raised);
+  color: var(--wu-text);
+  font-size: var(--wu-text-sm);
+  cursor: pointer;
+}
+
+.search-picker-list li.is-active {
+  border-color: var(--wu-text-muted);
+}
+
+.search-picker-list li[aria-selected="true"] {
+  box-shadow: inset 3px 0 0 var(--wu-accent);
+  color: var(--wu-accent);
+}
+
+.search-picker-list li[aria-disabled="true"] {
+  color: var(--wu-text-muted);
+  cursor: not-allowed;
+}
+
+@media (hover: hover) {
+  .search-picker-list li:not([aria-disabled="true"]):hover {
+    border-color: var(--wu-text-muted);
+  }
+}
+
+.search-picker-status {
+  margin: 0;
+  padding: 0 var(--wu-space-1);
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+}
+
+.search-picker :is(button, input):focus-visible,
+.search-picker-sheet :is(button, input):focus-visible {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
+}
+
+/* Phone sheet: full screen, sized to the area above the keyboard. */
+.search-picker-sheet {
+  box-sizing: border-box;
+  position: fixed;
+  inset: var(--search-picker-top, 0) auto auto 0;
+  width: 100vw;
+  max-width: 100vw;
+  height: var(--search-picker-height, 100dvh);
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--wu-surface);
+  color: var(--wu-text);
+}
+
+.search-picker-sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.search-picker-sheet::backdrop {
+  background: rgb(0 0 0 / 60%);
+}
+
+.search-picker-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-2);
+  padding: calc(var(--wu-space-2) + env(safe-area-inset-top)) var(--wu-space-4)
+    var(--wu-space-2);
+  border-bottom: 1px solid var(--wu-border-subtle);
+}
+
+.search-picker-sheet-head h2 {
+  margin: 0;
+  color: var(--wu-accent);
+  font-size: var(--wu-text-lg);
+}
+
+.search-picker-sheet .search-picker-panel {
+  flex: 1;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  padding: var(--wu-space-3) var(--wu-space-4)
+    calc(var(--wu-space-3) + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: 0;
+}
+
+.search-picker-sheet .search-picker-list {
+  max-height: none;
+  align-content: start;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .search-picker-sheet[open] {
+    animation: search-picker-in 160ms ease-out;
+  }
+}
+
+@keyframes search-picker-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}

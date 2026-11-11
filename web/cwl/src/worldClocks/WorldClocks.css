@@ -264,8 +264,7 @@
   border-top: 1px solid var(--wu-border-subtle);
 }
 
-.world-clock-label,
-.world-clock-setting .channel-combobox > label {
+.world-clock-label {
   display: block;
   margin: 0 0 6px;
   padding: 0;
@@ -274,8 +273,7 @@
   font-weight: var(--wu-weight-medium);
 }
 
-.world-clock-input,
-.world-clock-setting .channel-combobox-input input {
+.world-clock-input {
   box-sizing: border-box;
   width: 100%;
   min-height: 48px;
@@ -286,16 +284,6 @@
   color: var(--wu-text);
   font: inherit;
   font-size: var(--wu-text-md);
-}
-
-/* The category picker reuses the shared channel search. Its typing tip shows
-   only while the field has focus; it stays in the accessible description. */
-.world-clock-setting .channel-combobox:not(:focus-within) .channel-picker-hint {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
 }
 
 .world-clock-input[aria-invalid="true"] {
@@ -322,50 +310,6 @@
   display: grid;
   gap: var(--wu-space-2);
   min-width: 0;
-}
-
-.world-clock-zone .world-clock-label {
-  margin: 0;
-}
-
-.world-clock-zone-results {
-  display: grid;
-  gap: var(--wu-space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.world-clock-zone-results button {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--wu-space-2);
-  width: 100%;
-  min-height: 44px;
-  padding: var(--wu-space-1) var(--wu-space-3);
-  border: 1px solid var(--wu-border-subtle);
-  border-radius: 10px;
-  background: var(--wu-surface-raised);
-  color: var(--wu-text);
-  font: inherit;
-  font-size: var(--wu-text-sm);
-  text-align: left;
-  cursor: pointer;
-}
-
-.world-clock-zone-results button[aria-pressed="true"] {
-  box-shadow: inset 3px 0 0 var(--wu-accent);
-  color: var(--wu-accent);
-}
-
-.world-clock-zone-results small {
-  color: var(--wu-text-muted);
-  font-size: var(--wu-text-xs);
-}
-
-.world-clock-zone-city {
-  font-weight: var(--wu-weight-medium);
 }
 
 .world-clock-chips small {
