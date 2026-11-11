@@ -1,7 +1,7 @@
 import { useDashboardPermission } from "./DashboardPermissions";
 import type { PublicationDraft } from "./publication";
 import "./CwlStepStrip.css";
-import useChoiceGroupScroll from "./useChoiceGroupScroll";
+import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
 import "./ChoiceGroupLayout.css";
 
@@ -54,7 +54,7 @@ export default function CwlStepStrip({
   const signups = useDashboardPermission("cwl_signups");
   const publish = useDashboardPermission("cwl_publish");
   const send = useDashboardPermission("cwl_send");
-  const stepsRef = useChoiceGroupScroll<HTMLElement>(step);
+  const steps = useChoiceRail<HTMLElement>(step);
   const publicationStatus =
     draft?.draft_changed ||
     (!draft?.published && (draft?.preview.assigned_count ?? 0) > 0)
@@ -64,8 +64,9 @@ export default function CwlStepStrip({
         : "";
   return (
     <nav
-      ref={stepsRef}
-      className="cwl-step-strip roster-ui section-tabs section-tabs--flow"
+      {...steps.fadeProps}
+      ref={steps.ref}
+      className="cwl-step-strip roster-ui section-tabs section-tabs--flow has-horizontal-fades"
       aria-label="CWL workflow"
     >
       {(roster || signups) && (

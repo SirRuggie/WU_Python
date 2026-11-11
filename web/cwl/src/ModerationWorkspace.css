@@ -18,26 +18,7 @@
 }
 
 .moderation-sections {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-  border-bottom: 1px solid #495563;
-}
-
-.moderation-sections button {
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-bottom: 3px solid transparent;
-  border-radius: 8px 8px 0 0;
-  background: transparent;
-  color: #c2cbd7;
-}
-
-.moderation-sections button[aria-pressed="true"] {
-  border-bottom-color: #e3b341;
-  color: #fff;
+  margin-bottom: var(--wu-space-4);
 }
 
 .moderation-workspace button:focus-visible {

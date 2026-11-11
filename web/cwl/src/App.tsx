@@ -1,5 +1,5 @@
 import CwlPageHeader from "./CwlPageHeader"
-import useChoiceGroupScroll from "./useChoiceGroupScroll";
+import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
 import "./ChoiceGroupLayout.css";
 import useConfirmDialog from "./useConfirmDialog"
@@ -103,7 +103,7 @@ function App() {
   const [flowPublication, setFlowPublication] = useState<{season: string; draft: PublicationDraft} | null>(null)
   const [rosterReadiness, setRosterReadiness] = useState<ReadinessFilter>('all')
   const [view, setView] = useState<View>(entryTarget.view)
-  const resultsTabsRef = useChoiceGroupScroll<HTMLElement>(view);
+  const resultsTabs = useChoiceRail<HTMLElement>(view);
   const [rosterBusy, setRosterBusy] = useState(false)
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -984,8 +984,9 @@ function App() {
         {session.can_edit && ['participation','bonuses','exports'].includes(view) &&
           (['participation','bonuses','exports'] as const).filter(target => allowedView(target) === target).length > 1 && (
           <nav
-            ref={resultsTabsRef}
-            className="cwl-result-nav section-tabs section-tabs--flow"
+            {...resultsTabs.fadeProps}
+            ref={resultsTabs.ref}
+            className="cwl-result-nav section-tabs section-tabs--flow has-horizontal-fades"
             aria-label="Results sections"
           >
             {(

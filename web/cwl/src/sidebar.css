@@ -250,30 +250,6 @@ div.shell {
   display: none;
 }
 
-.cwl-workspace-nav {
-  display: flex;
-  align-items: start;
-  gap: var(--wu-space-3);
-  margin-bottom: var(--wu-space-4);
-  min-width: 0;
-}
-.cwl-roster-tabs {
-  display: flex;
-  gap: var(--wu-space-2);
-  flex: 1;
-  min-width: 0;
-}
-.cwl-roster-tabs button {
-  flex: 1;
-  min-height: 48px;
-  white-space: normal;
-}
-.shell .cwl-roster-tabs button.active:not(:disabled) {
-  background: var(--wu-accent);
-  border: 1px solid var(--wu-accent);
-  color: var(--wu-accent-ink);
-  -webkit-text-fill-color: var(--wu-accent-ink);
-}
 .cwl-result-nav {
   display: flex;
   flex-wrap: wrap;
@@ -351,17 +327,6 @@ div.shell {
     text-overflow: clip;
     white-space: normal;
   }
-  .cwl-workspace-nav {
-    flex-wrap: wrap;
-    gap: var(--wu-space-1);
-  }
-  .cwl-roster-tabs {
-    flex-basis: 100%;
-  }
-  .cwl-roster-tabs button {
-    font-size: var(--wu-text-md);
-    padding: var(--wu-space-2) var(--wu-space-1);
-  }
 }
 
 @media (max-width: 370px) {
@@ -375,25 +340,6 @@ div.shell {
   }
   .shell .topbar .user-display-name {
     display: none;
-  }
-}
-
-/* Route shortcuts stay compact; settings and exports live in the sidebar. */
-.shell .cwl-workspace-nav {
-  margin-bottom: var(--wu-space-3);
-}
-.shell .cwl-roster-tabs {
-  margin: 0;
-  width: 100%;
-}
-.shell .cwl-roster-tabs > button {
-  flex: 1 1 0;
-  min-height: 44px;
-}
-@media (max-width: 650px) {
-  .shell .cwl-roster-tabs > button {
-    padding: var(--wu-space-2) var(--wu-space-1);
-    font-size: var(--wu-text-md);
   }
 }
 

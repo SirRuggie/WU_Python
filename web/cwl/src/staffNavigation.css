@@ -1,28 +1,3 @@
-.staff-section-menu {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--wu-space-2);
-  margin: 0 0 var(--wu-space-4);
-}
-.staff-section-menu button {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: var(--wu-space-2);
-  min-height: 48px;
-  white-space: normal;
-}
-.staff-section-menu button[aria-pressed="true"] {
-  background: #d9a628;
-  color: var(--wu-accent-ink);
-  border-color: #d9a628;
-}
-.staff-section-menu button span {
-  border-radius: 20px;
-  padding: var(--wu-space-1) var(--wu-space-1);
-  background: #ffffff18;
-  font-size: var(--wu-text-md);
-}
 .staff-section-tools {
   display: flex;
   gap: var(--wu-space-4);
@@ -85,14 +60,6 @@
   flex: none;
 }
 @media (max-width: 700px) {
-  .staff-section-menu {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--wu-space-2);
-  }
-  .staff-section-menu button {
-    font-size: var(--wu-text-md);
-    padding: var(--wu-space-2) var(--wu-space-1);
-  }
   .staff-section-tools {
     display: grid;
     grid-template-columns: 1fr;
@@ -149,9 +116,6 @@
     line-height: 1.15;
     text-wrap: balance;
     letter-spacing: -0.02em;
-  }
-  .staff-section-menu {
-    margin-bottom: var(--wu-space-3);
   }
 }
 @media (max-width: 480px) {

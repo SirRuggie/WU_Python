@@ -84,10 +84,10 @@ it.each(["sections", "pills"])(
   },
 );
 
-it("preserves the exact default FilterChips DOM, including its trailing class space", () => {
+it("preserves the exact default FilterChips DOM with edge-fade state, including its trailing class space", () => {
   const props = { label: "Status", value: "one", options, onChange: () => {} };
   const baseline =
-    '<div class="filter-chips " aria-label="Status"><button type="button" aria-pressed="true">One <small>2</small></button><button type="button" aria-pressed="false">Two <small>0</small></button></div>';
+    '<div data-fade-left="false" data-fade-right="false" class="filter-chips has-horizontal-fades " aria-label="Status"><button type="button" aria-pressed="true">One <small>2</small></button><button type="button" aria-pressed="false">Two <small>0</small></button></div>';
   expect(renderToStaticMarkup(<FilterChips {...props} />)).toBe(baseline);
   expect(
     renderToStaticMarkup(<FilterChips {...props} variant="default" />),
@@ -95,7 +95,10 @@ it("preserves the exact default FilterChips DOM, including its trailing class sp
   expect(
     renderToStaticMarkup(<FilterChips {...props} className="custom" />),
   ).toBe(
-    baseline.replace('class="filter-chips "', 'class="filter-chips custom"'),
+    baseline.replace(
+      'class="filter-chips has-horizontal-fades "',
+      'class="filter-chips has-horizontal-fades custom"',
+    ),
   );
   expect(renderToStaticMarkup(<FilterChips {...props} disabled />)).toBe(
     baseline
@@ -119,6 +122,8 @@ it("gives SectionTabs the existing named group semantics and caller class", () =
   expect(host.querySelector('[role="group"]')?.getAttribute("aria-label")).toBe(
     "Strike sections",
   );
-  expect(host.firstElementChild?.className).toBe("section-tabs strikes-tabs");
+  expect(host.firstElementChild?.className).toBe(
+    "section-tabs has-horizontal-fades strikes-tabs",
+  );
   expect(host.querySelector('[role="tab"]')).toBeNull();
 });

@@ -1,4 +1,4 @@
-import useChoiceGroupScroll from "./useChoiceGroupScroll";
+import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
 import "./ChoiceGroupLayout.css";
 import {
@@ -47,7 +47,7 @@ export default function ClanManagement({
   const [view, setView] = useState<"overview" | "clans" | "history">(
     initialRoute?.tab || "clans",
   );
-  const viewTabsRef = useChoiceGroupScroll<HTMLDivElement>(view);
+  const viewTabs = useChoiceRail<HTMLDivElement>(view);
   const reminderEditor = useRef<ReminderEditor | null>(null);
   const initialClanPending = useRef(initialRoute?.tag);
   const [reminderChanges, setReminderChanges] = useState(0);
@@ -424,7 +424,11 @@ export default function ClanManagement({
         <button
           disabled={disabled}
           onClick={async () => {
-            if (dirty && !(await confirmAction("Discard unsaved clan changes?"))) return;
+            if (
+              dirty &&
+              !(await confirmAction("Discard unsaved clan changes?"))
+            )
+              return;
             ++editGeneration.current;
             setSaved(null);
             setDraft(null);
@@ -439,8 +443,9 @@ export default function ClanManagement({
         </button>
       </div>
       <div
-        ref={viewTabsRef}
-        className="clan-tabs section-tabs section-tabs--flow"
+        {...viewTabs.fadeProps}
+        ref={viewTabs.ref}
+        className="clan-tabs section-tabs section-tabs--flow has-horizontal-fades"
         aria-label="Clan management views"
       >
         {(

@@ -106,7 +106,7 @@ async function runWidth(browser, width, errors, writes) {
     assert.equal(await rows.count(), 1, `${width}: history search`);
     await page.getByLabel("Search name or Discord ID").fill("");
     await page.getByRole("button", { name: "Apply filters" }).click();
-    await page.getByRole("navigation", { name: "Moderation sections" })
+    await page.getByRole("group", { name: "Moderation sections" })
       .getByRole("button", { name: "Log settings" }).click();
     await page.getByRole("heading", { name: "Main log channel" }).waitFor();
     for (const event of ["Joins", "Leaves", "Kicks", "Bans"]) {

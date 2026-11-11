@@ -192,8 +192,9 @@ timezone, plus whole-clan raid status. See `activity-calendar.md` for schedule
 sources and limitations. Wars uses full-clan API scores rather than personal task
 rows. Existing `/todo` links remain valid.
 
-Use gold underline strips for sibling sections and a single segmented container
-for short filter sets. Keep actual actions (Save, Retry, Send) as buttons. Narrow
+Use gold underline tabs for sibling sections, chips for filter sets, and gold-edge
+navigation items for record lists (see "Dashboard choice patterns" in
+`roster-ui-patterns.md`). Keep actual actions (Save, Retry, Send) as buttons. Narrow
 activity strips scroll within their rail rather than overflowing the page; keyboard
 focus makes off-screen buttons reachable. Do not apply tab roles without tab keyboard
 behavior: current activity filters remain native pressed buttons in a named group.
