@@ -112,12 +112,19 @@ def decorate_participation_accounts(accounts, evidence, *, sync_status=None):
     """Return copies; callers keep raw source fields for all decisions."""
     result = deepcopy(accounts)
     for account in result:
+        facts = evidence.get(account.get('assigned_clan_tag'), ParticipationEvidence())
+        # Only a finished CWL proves a no-show; members can still be added earlier.
+        account['did_not_join'] = bool(
+            account.get('source_no_show') and account.get('assigned_clan_tag')
+            and str(facts.group_state or '').upper() == 'ENDED'
+        )
         account['display_status'] = effective_participation_status(
             account.get('source_status'), complete=account.get('source_complete', False),
             has_results=(account.get('source_attacks') is not None
                          or account.get('source_stars') is not None),
-            evidence=evidence.get(account.get('assigned_clan_tag'), ParticipationEvidence()),
+            evidence=facts,
             sync_status=sync_status,
+            did_not_join=account['did_not_join'],
         )
     return result
 
@@ -171,7 +178,7 @@ def decorate_participation_payload(db, season_id, payload, *, now=None):
             # Rebuild each path separately. deepcopy's alias preservation would
             # let a historical path overwrite the current account's status.
             result = {key: visit(item, own_cycle) for key, item in value.items()
-                      if key not in ('display_status', '_participation_display_source')}
+                      if key not in ('display_status', 'did_not_join', '_participation_display_source')}
             if participation_account(value):
                 # Saved draws from another month must not borrow today's check.
                 facts = evidence if own_cycle == cycle else {}

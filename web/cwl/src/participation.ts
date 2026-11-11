@@ -41,6 +41,10 @@ export type ParticipationAccount = {
   display_status?: ParticipationDisplayStatus;
   source_checked_at?: string | null;
   source_complete?: boolean;
+  /** Finished CWL with no league-group or war roster entry. */
+  did_not_join?: boolean;
+  /** Staff marked this account as a roster filler. */
+  roster_filler?: boolean;
   attacks_override?: boolean;
   stars_override?: boolean;
   source_warning?: string | null;
@@ -83,6 +87,8 @@ export function participationSummary(accounts: StatusAccount[], sync?: { status?
     };
   }
   const statuses = accounts.map(participationStatus);
+  // Did not join and unassigned accounts are final; they never make CWL incomplete.
+  const settled = statuses.filter(status => !['did_not_join', 'unassigned'].includes(status.code));
   const failed = accounts.filter(account => participationStatus(account).failed_clan);
   const clans = [...new Map(failed.map(account => [account.assigned_clan_tag,
     account.assigned_clan_name || account.assigned_clan_tag || 'Unknown clan'])).values()];
@@ -90,7 +96,7 @@ export function participationSummary(accounts: StatusAccount[], sync?: { status?
   const active = statuses.some(status => status.code === 'in_progress');
   const updated = statuses.filter(status => ['in_progress', 'complete', 'preparation'].includes(status.code)).length;
   const label = active ? `CWL in progress${round ? ` · round ${round} of 7` : ''}`
-    : statuses.length && statuses.every(status => status.code === 'complete') ? 'CWL complete'
+    : settled.length && settled.every(status => status.code === 'complete') ? 'CWL complete'
     : statuses.find(status => status.warning)?.label
       || (sync?.status === 'waiting' ? syncStatusLabel('waiting', sync.cycle)
         : statuses[0]?.label || 'No accounts in this view');

@@ -8,7 +8,7 @@ export type BonusAccount = {
   tag: string; player_name: string; pool: Pool; assigned_clan_tag: string | null; assigned_clan_name: string | null;
   attacks: number | null; stars: number | null; source_status: string; source_warning: string | null;
   last_confirmed_bonus: PreviousBonus | null; recommended: boolean | null; eligibility_reason: string | null;
-  display_status?: ParticipationDisplayStatus; source_complete: boolean; already_confirmed_this_cycle: boolean; selected: boolean; reason: string
+  display_status?: ParticipationDisplayStatus; source_complete: boolean; did_not_join?: boolean; already_confirmed_this_cycle: boolean; selected: boolean; reason: string
 }
 export type BonusHistory = {
   id: number; tag: string; player_name: string; clan_tag: string | null; clan_name: string | null;

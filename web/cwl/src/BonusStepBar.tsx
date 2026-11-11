@@ -6,6 +6,7 @@ import {
   type BonusStep,
 } from "./bonusStatus";
 import { plainClick, resultsStateQuery } from "./resultsUrlState";
+import type { OutcomeFilter } from "./participationOutcome";
 import "./BonusStepBar.css";
 
 type Props = {
@@ -25,10 +26,12 @@ export function bonusStepHref(
   step: BonusStep,
   pool: Pool,
   clan: string,
+  outcome?: OutcomeFilter,
 ) {
   const query = resultsStateQuery({
     pool,
     clan: clan || undefined,
+    outcome: step === "results" ? outcome : undefined,
     step: step === "results" ? undefined : step,
   });
   const path = step === "results" ? "/cwl/results" : "/cwl/bonuses";

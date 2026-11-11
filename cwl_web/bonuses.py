@@ -238,6 +238,9 @@ def _preview(db, season_id):
             blocks.append(f"{account['player_name']} is already confirmed for this CWL month")
         if not account["assigned_clan_tag"]:
             blocks.append(f"{account['player_name']} has no recorded hosting clan")
+        if account.get("source_no_show"):
+            blocks.append(f"{account['player_name']} did not join the CWL clan")
+            continue
         if not account["source_complete"]:
             blocks.append(f"CWL results are not complete for {account['player_name']}")
             incomplete = True

@@ -100,6 +100,8 @@ def _account_view(snapshot, saved=None, source=None, *, archived=False):
         "source_stars": source_stars,
         "source_status": source_status,
         "source_complete": bool(source["complete"]) if source is not None else False,
+        # Raw Clash evidence: not in the league group or any observed war.
+        "source_no_show": source is not None and source["status"] == "no_data",
         "source_checked_at": source_checked,
         "source_warning": source["warning"] if source is not None else None,
         "attacks_override": attacks_override,
@@ -232,8 +234,11 @@ async def get_participation(request):
             )
             for player_tag in sorted(set(saved) if history else set(current))
         ]
+        fillers = {row[0] for row in db.execute(
+            "SELECT tag FROM roster_player_marks WHERE roster_filler=1")}
         for account in accounts:
             account["in_latest_publication"] = account["tag"] in published_tags
+            account["roster_filler"] = account["tag"] in fillers
         accounts = decorate_participation_accounts(
             accounts, participation_evidence(db, season_id, settings['cycle'], accounts=accounts),
             sync_status=None if history else settings['status'],

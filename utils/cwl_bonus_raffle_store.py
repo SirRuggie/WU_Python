@@ -317,6 +317,7 @@ class RaffleStore:
                 'tag': tag, 'user_id': row['user_id'], 'player_name': row['player_name'], 'town_hall': row['town_hall'],
                 'pool': 'lazy', 'assigned_clan_tag': row['clan_tag'], 'assigned_clan_name': row['clan_name'],
                 'attacks': attacks, 'stars': stars, 'source_status': status, 'source_complete': complete,
+                'source_no_show': status == 'no_data',
                 'checked_at': checked_at, 'warning': warning, 'roster_changed': False,
                 'in_current_roster': False, 'manual_candidate': True, 'manual_candidate_reason': row['reason'],
                 'tag_valid': True, 'source': 'manual', 'candidate_source': 'manual', 'already_confirmed_this_cycle': any(c.get('tag') == tag for c in view.get('cycle_confirmed', [])),

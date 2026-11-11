@@ -129,6 +129,34 @@ it("menu items are an extendable list with DM and Details", () => {
   expect(unlinked[0]).toMatchObject({ id: "dm", disabled: true });
 });
 
+it("Add strike shows only for Did not join with strike access, and only navigates", () => {
+  const details = vi.fn();
+  const addStrike = vi.fn();
+  const ids = (
+    patch: Partial<ParticipationAccount>,
+    onAddStrike?: (tag: string) => void,
+  ) =>
+    participationMenuItems({
+      account: { ...account, ...patch },
+      onDetails: details,
+      onAddStrike,
+    }).map((item) => item.id);
+  expect(ids({}, addStrike)).toEqual(["dm", "details"]);
+  expect(ids({ did_not_join: true })).toEqual(["dm", "details"]);
+  const items = participationMenuItems({
+    account: { ...account, did_not_join: true },
+    onDetails: details,
+    onAddStrike: addStrike,
+  });
+  expect(items.map((item) => item.id)).toEqual(["dm", "details", "add-strike"]);
+  expect(items[2]).toMatchObject({
+    label: "Add strike",
+    separatorBefore: true,
+  });
+  items[2].onAction?.(document.createElement("button"));
+  expect(addStrike).toHaveBeenCalledWith("#PYY");
+});
+
 it("Details is a read-only summary with notes and no result inputs", async () => {
   await render({ open: true });
   const dialog = host.querySelector(".participation-dialog")!;

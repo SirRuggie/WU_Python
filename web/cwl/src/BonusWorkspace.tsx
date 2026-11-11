@@ -387,9 +387,13 @@ export default function BonusWorkspace({
     clanAccounts.some(
       (account) => account.representative_status === "unavailable",
     );
+  // Did not join is a final result, never a missing one.
+  const resultAccounts = clanAccounts.filter(
+    (account) => !account.did_not_join,
+  );
   const resultsMissing =
-    clanAccounts.length > 0 &&
-    clanAccounts.every(
+    resultAccounts.length > 0 &&
+    resultAccounts.every(
       (account) => account.attacks === null || !account.source_complete,
     );
   const blockers = bonusReviewBlockers({
@@ -420,6 +424,25 @@ export default function BonusWorkspace({
     if (!plainClick(event) || !onResults) return;
     event.preventDefault();
     onResults(resultsLink.query);
+  };
+  // Incomplete players open Results filtered to them when they share one outcome.
+  const incompleteOutcomes = new Set(
+    (preview?.excluded || [])
+      .filter((account) => !account.did_not_join && !account.source_complete)
+      .map((account) => participationOutcome(account, data?.policies.main))
+      .filter((outcome) => outcome === "partial" || outcome === "not_checked"),
+  );
+  const incompleteLink = bonusStepHref(
+    seasonId,
+    "results",
+    pool,
+    clanTag,
+    incompleteOutcomes.size === 1 ? [...incompleteOutcomes][0] : undefined,
+  );
+  const openIncomplete = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!plainClick(event) || !onResults) return;
+    event.preventDefault();
+    onResults(incompleteLink.query);
   };
   const focusField = (field: HTMLElement | null) => {
     field?.scrollIntoView?.({ block: "center" });
@@ -1278,7 +1301,21 @@ export default function BonusWorkspace({
                   {!!preview.blocking_reasons.length && (
                     <div className="notice error" role="alert">
                       {preview.blocking_reasons.map((reason) => (
-                        <p key={reason}>{reason}</p>
+                        <p key={reason}>
+                          {reason}
+                          {reason.startsWith("Resolve incomplete") &&
+                            onResults && (
+                              <>
+                                {" · "}
+                                <a
+                                  href={incompleteLink.href}
+                                  onClick={openIncomplete}
+                                >
+                                  Check these players
+                                </a>
+                              </>
+                            )}
+                        </p>
                       ))}
                       <p>Refresh the results before you draw.</p>
                     </div>

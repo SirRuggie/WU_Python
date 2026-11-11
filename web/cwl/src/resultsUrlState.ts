@@ -18,7 +18,16 @@ export type ResultsUrlState = {
   sort?: ResultsSort;
   step?: BonusStep;
 };
-const outcomes = ["all", "meets", "below", "partial", "not_checked"];
+const outcomes = [
+  "all",
+  "meets",
+  "below",
+  "partial",
+  "not_checked",
+  "did_not_join",
+  "filler",
+  "not_assigned",
+];
 const sorts = ["name", "attacks-desc", "stars-desc"];
 const steps = ["results", "eligibility", "draw", "approval", "announcement"];
 
