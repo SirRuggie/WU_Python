@@ -147,9 +147,25 @@ const chip = (label: string) =>
     ),
   ].find((button) => button.textContent?.startsWith(label))!;
 
-it("renders the list before the status read resolves and never calls the full bonus read", async () => {
+it("hides the step bar until one hosting clan is selected", async () => {
   await mount();
+  await act(async () => partC.resolve(status(3)));
   expect(names()).toEqual(["Alpha", "Bravo", "Charlie"]);
+  expect(host.querySelector(".bonus-step-bar")).toBeNull();
+  const select = host.querySelector<HTMLSelectElement>(
+    '.participation-toolbar select[name="clan"]',
+  )!;
+  expect(select.options[0].textContent).toBe("All clans");
+  await act(async () => {
+    select.value = "#2YQ";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(host.querySelectorAll(".bonus-step-bar")).toHaveLength(1);
+});
+
+it("renders the list before the status read resolves and never calls the full bonus read", async () => {
+  await mount("pool=lazy&clan=%232YQ");
+  expect(names()).toEqual(["Alpha", "Bravo"]);
   expect(host.querySelector(".bonus-step-mark")?.textContent).toBe("…");
   const routes = api.mock.calls.map((call) => call[0] as string);
   expect(routes[0]).toBe("/seasons/1/participation");
@@ -163,9 +179,9 @@ it("renders the list before the status read resolves and never calls the full bo
 });
 
 it("a status read failure keeps the list and shows one muted retry line", async () => {
-  await mount();
+  await mount("pool=lazy&clan=%232YQ");
   await act(async () => partC.reject(new Error("down")));
-  expect(names()).toEqual(["Alpha", "Bravo", "Charlie"]);
+  expect(names()).toEqual(["Alpha", "Bravo"]);
   expect(host.querySelectorAll(".bonus-step-unavailable")).toHaveLength(1);
   expect(host.querySelector(".bonus-step-unavailable")?.textContent).toBe(
     "Status unavailable · Retry",

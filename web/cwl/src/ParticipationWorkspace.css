@@ -380,11 +380,19 @@
     padding: var(--wu-space-1) var(--wu-space-1) var(--wu-space-1)
       var(--wu-space-3);
   }
+  /* Each select keeps its longest option; the row wraps instead of cutting text. */
   .participation-toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
   }
-  .participation-toolbar label:first-child {
-    grid-column: 1 / -1;
+  .participation-toolbar > * {
+    flex: 1 1 auto;
+  }
+  .participation-toolbar > :first-child {
+    flex: 1 1 160px;
+  }
+  .participation-toolbar > :nth-child(2) {
+    flex: 0 1 auto;
   }
   .participation-history-row {
     grid-template-columns: minmax(0, 1fr);
@@ -393,12 +401,6 @@
 @media (max-width: 420px) {
   .participation-sync-fields {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .participation-toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .participation-toolbar label:first-child {
-    grid-column: 1 / -1;
   }
   .participation-dialog {
     padding: var(--wu-space-5);

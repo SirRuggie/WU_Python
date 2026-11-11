@@ -443,3 +443,112 @@ it("the step bar opens Results with the pool and clan", async () => {
   expect(results).toHaveBeenCalledExactlyOnceWith("pool=lazy&clan=%232YQ");
   expect(host.querySelector(".bonus-steps")).toBeNull();
 });
+
+describe("phone layout", () => {
+  const trigger = () =>
+    host.querySelector<HTMLButtonElement>(
+      ".bonus-context .roster-action-trigger",
+    )!;
+  // Label → disabled for each item of the open ⋯ menu, then closes it.
+  const menuItems = async () => {
+    await act(async () => trigger().click());
+    const items = Object.fromEntries(
+      [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].map(
+        (item) => [
+          item.textContent?.trim(),
+          item.getAttribute("aria-disabled") === "true",
+        ],
+      ),
+    );
+    await act(async () => trigger().click());
+    return items;
+  };
+  it("the month line ⋯ menu holds both refresh actions with their disabled rules", async () => {
+    await mount();
+    expect(host.querySelector(".bonus-context p")?.textContent).toBe(
+      "November 2026 · Clash not checked yet",
+    );
+    expect(host.querySelector(".bonus-controls")).toBeNull();
+    expect(button("Refresh attacks from Clash", host)).toBeUndefined();
+    expect(await menuItems()).toEqual({
+      Refresh: false,
+      "Refresh attacks from Clash": false,
+    });
+    // An open candidate editor blocks the Clash write but not the reread.
+    await act(async () => button("Add player by tag").click());
+    expect(await menuItems()).toEqual({
+      Refresh: false,
+      "Refresh attacks from Clash": true,
+    });
+    expect(writes()).toHaveLength(0);
+  });
+  it("disables Refresh attacks from Clash without a CWL month", async () => {
+    await mount({ ...base, cycle: null });
+    expect(await menuItems()).toEqual({
+      Refresh: false,
+      "Refresh attacks from Clash": true,
+    });
+  });
+  it("orders the clan: notice, stats, list, review, rules, count, add, odds", async () => {
+    await mount({
+      ...base,
+      accounts: [
+        account("#P1", "Alpha", "#2YQ", {
+          representative_status: "unavailable",
+        }),
+      ],
+    });
+    const flow = host.querySelector(".bonus-flow")!;
+    const summary = (text: string) =>
+      [...flow.querySelectorAll("summary")].find(
+        (item) => item.textContent === text,
+      )!;
+    const sequence = [
+      flow.querySelector(".bonus-clan-notice")!,
+      flow.querySelector(".bonus-stats")!,
+      flow.querySelector(".bonus-account-list")!,
+      button("Review eligibility", flow),
+      flow.querySelector(".bonus-blockers")!,
+      [...flow.querySelectorAll(".bonus-support")].find((item) =>
+        item.textContent?.startsWith("Bonus rules"),
+      )!,
+      summary("Bonus count and source"),
+      button("Add player by tag", flow),
+      summary("FWA Rep odds settings"),
+    ];
+    expect(sequence.every(Boolean)).toBe(true);
+    for (let index = 1; index < sequence.length; index += 1)
+      expect(
+        sequence[index - 1].compareDocumentPosition(sequence[index]) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+        String(index),
+      ).toBeTruthy();
+    expect(
+      flow.querySelector(".bonus-clan-notice svg")?.getAttribute("aria-hidden"),
+    ).toBe("true");
+    expect(flow.querySelector(".bonus-clan-notice")?.textContent).toBe(
+      "Discord roles unavailable · Retry",
+    );
+  });
+  it("starts the clan strip at the selected card", async () => {
+    // Cards are 280 px apart; the strip starts at 16 px.
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const strip = this.closest<HTMLElement>(".bonus-clan-cards");
+        const left = this.classList.contains("bonus-clan-card")
+          ? 16 + [...strip!.children].indexOf(this) * 280 - strip!.scrollLeft
+          : 16;
+        return { left, right: left + 260, top: 0, bottom: 0 } as DOMRect;
+      });
+    try {
+      await mount(base, "pool=lazy&clan=%238QQ");
+      expect(cards()[1].getAttribute("aria-pressed")).toBe("true");
+      expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(280);
+      await act(async () => cards()[0].click());
+      expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(0);
+    } finally {
+      rect.mockRestore();
+    }
+  });
+});

@@ -82,6 +82,7 @@ it.each([
         root.render(
           <ParticipationWorkspace
             onBonus={next}
+            urlState="pool=main&clan=%23C2Y"
             seasonId="1"
             seasons={[
               {
@@ -96,6 +97,7 @@ it.each([
         );
       });
       // Prompt 228: the step bar replaces the bottom "Next: Bonus medals" cue.
+      // It shows only for one selected hosting clan.
       expect(host.querySelectorAll(".cwl-next-cue")).toHaveLength(0);
       expect(host.querySelectorAll(".bonus-step-bar")).toHaveLength(1);
       const beforeCalls = fixture.api.mock.calls.length;
@@ -107,7 +109,7 @@ it.each([
         ).click(),
       );
       expect(next).toHaveBeenCalledExactlyOnceWith(
-        "pool=main&step=eligibility",
+        "pool=main&clan=%23C2Y&step=eligibility",
       );
       expect(fixture.api.mock.calls).toHaveLength(beforeCalls);
       const text = host.textContent || "";

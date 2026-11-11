@@ -521,7 +521,7 @@ export default function ParticipationWorkspace({
   const statusSummary = participationSummary(visible, data?.sync);
   const poolLabel = pool === "main" ? "Main CWL" : "Lazy CWL";
   const clanOptions = [
-    { value: "all", label: "All hosting clans" },
+    { value: "all", label: "All clans" },
     ...clans.map(([tag, name]) => ({ value: tag, label: name, detail: tag })),
   ];
   const chooseClan = (next: string) => {
@@ -555,11 +555,12 @@ export default function ParticipationWorkspace({
           </select>
         </label>
       </CwlPageHeader>
-      {seasonId && onBonus && (
+      {/* The step bar tracks one hosting clan; with all clans it has no state. */}
+      {seasonId && onBonus && clan !== "all" && (
         <BonusStepBar
           seasonId={seasonId}
           pool={pool}
-          clan={clan === "all" ? "" : clan}
+          clan={clan}
           status={status}
           failed={statusFailed}
           onRetry={() => void loadStatus(seasonId)}
@@ -795,7 +796,7 @@ export default function ParticipationWorkspace({
                 value={clan}
                 options={clanOptions}
                 disabled={controlsLocked}
-                placeholder="All hosting clans"
+                placeholder="All clans"
                 searchPlaceholder="Search clans"
                 emptyText="No clans match."
                 onChange={chooseClan}

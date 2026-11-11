@@ -95,7 +95,7 @@ for (const workspace of ["Bonus", "Participation"]) {
       );
       let input: HTMLInputElement | null = null;
       if (workspace === "Bonus") {
-        expect(host.querySelector(".bonus-context > strong")?.textContent).toBe(
+        expect(host.querySelector(".bonus-context strong")?.textContent).toBe(
           "November 2026",
         );
         await act(async () =>

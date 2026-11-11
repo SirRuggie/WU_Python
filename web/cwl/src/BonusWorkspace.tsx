@@ -6,11 +6,14 @@ import { exportMonthLabel } from "./exportPreview";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type MouseEvent,
 } from "react";
+import { TriangleAlert } from "lucide-react";
+import ActionMenu from "./rosterUi/ActionMenu";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { api, ApiError, type Pool, type Season } from "./api";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
@@ -253,7 +256,8 @@ export default function BonusWorkspace({
   const [notice, setNotice] = useState("");
   const [clanTag, setClanTag] = useState(initial.current.clan || "");
   const [clanQuery, setClanQuery] = useState("");
-  const clanRail = useChoiceRail<HTMLDivElement>(clanTag);
+  const [clanStrip, setClanStrip] = useState<HTMLDivElement | null>(null);
+  const clanRail = useChoiceRail<HTMLDivElement>(clanTag, false, setClanStrip);
   const countInput = useRef<HTMLInputElement | null>(null);
   const countDetails = useRef<HTMLDetailsElement | null>(null);
   const minimumInput = useRef<HTMLInputElement | null>(null);
@@ -605,6 +609,22 @@ export default function BonusWorkspace({
     if (data && !clans.some((clan) => clan.tag === clanTag))
       setClanTag(clans[0]?.tag || "");
   }, [data, pool, clanTag]);
+  // The selected card snaps to the strip start, so no card opens cut off.
+  useLayoutEffect(() => {
+    const selected = clanStrip?.querySelector<HTMLElement>(
+      ':scope > [aria-pressed="true"]',
+    );
+    if (!clanStrip || !selected) return;
+    const style = getComputedStyle(clanStrip);
+    const start =
+      clanStrip.getBoundingClientRect().left +
+      clanStrip.clientLeft +
+      (parseFloat(style.scrollPaddingLeft) || 0);
+    clanStrip.scrollLeft = Math.max(
+      0,
+      clanStrip.scrollLeft + selected.getBoundingClientRect().left - start,
+    );
+  }, [clanStrip, clanTag, pool, clans.length]);
 
   const mutate = async (
     suffix: string,
@@ -761,6 +781,48 @@ export default function BonusWorkspace({
     }
   };
 
+  // One compact line per clan-wide reason: icon, text and its fix.
+  const clanNotice = selectedClan && clanNotices.length > 0 && (
+    <div className="bonus-clan-notice" role="status">
+      {clanNotices.map((text) => (
+        <p key={text}>
+          <TriangleAlert size={16} aria-hidden="true" />
+          <span>
+            {text}
+            {text === "Results not captured" && (
+              <>
+                {" · "}
+                {onResults ? (
+                  <a href={resultsLink.href} onClick={openResults}>
+                    Open Results
+                  </a>
+                ) : (
+                  "Check Results & participation"
+                )}
+              </>
+            )}
+            {text.startsWith("Hosting clan") && (
+              <> · Set its season pool in Build roster</>
+            )}
+            {text === "Discord roles unavailable" && (
+              <>
+                {" · "}
+                <button
+                  type="button"
+                  className="bonus-inline-action"
+                  disabled={busy || lookingUp}
+                  onClick={refresh}
+                >
+                  Retry
+                </button>
+              </>
+            )}
+          </span>
+        </p>
+      ))}
+    </div>
+  );
+
   return (
     <div className="bonus-workspace roster-ui">
       {confirmation}
@@ -786,6 +848,50 @@ export default function BonusWorkspace({
           </select>
         </label>
       </CwlPageHeader>
+      {data && (
+        <div className="bonus-context">
+          <p>
+            <strong>
+              {data.cycle ? exportMonthLabel(data.cycle) : "CWL month not set"}
+            </strong>{" "}
+            ·{" "}
+            {data.sync.last_checked_at
+              ? `Clash checked ${resultDateText(data.sync.last_checked_at)}`
+              : "Clash not checked yet"}
+          </p>
+          <ActionMenu
+            name="Bonus results"
+            items={[
+              {
+                id: "refresh",
+                label: "Refresh",
+                disabled: busy || lookingUp,
+                onAction: () => void refresh(),
+              },
+              {
+                id: "refresh-results",
+                label: "Refresh attacks from Clash",
+                disabled:
+                  !canManage ||
+                  busy ||
+                  lookingUp ||
+                  archived ||
+                  policyDirty ||
+                  roleDirty ||
+                  reviewDirty ||
+                  candidateOpen ||
+                  !data.cycle,
+                onAction: () =>
+                  void mutate(
+                    "/refresh-results",
+                    {},
+                    "CWL check finished. Review this clan’s status before drawing.",
+                  ),
+              },
+            ]}
+          />
+        </div>
+      )}
       {seasonId && (
         <BonusStepBar
           seasonId={seasonId}
@@ -831,23 +937,6 @@ export default function BonusWorkspace({
       {!seasonId && <p>Select a season to begin.</p>}
       {data && (
         <>
-          <div className="bonus-context">
-            <strong>
-              {data.cycle ? exportMonthLabel(data.cycle) : "CWL month not set"}
-            </strong>
-            <span>
-              {data.sync.last_checked_at
-                ? `Clash checked ${resultDateText(data.sync.last_checked_at)}`
-                : "Clash not checked yet"}
-            </span>
-            <button
-              type="button"
-              disabled={busy || lookingUp}
-              onClick={refresh}
-            >
-              Refresh
-            </button>
-          </div>
           {archived && <p className="notice">Archived season · Read only</p>}
           {!data.cycle && (
             <p className="notice">
@@ -959,69 +1048,6 @@ export default function BonusWorkspace({
                 })}
             </div>
           )}
-          {selectedClan && clanNotices.length > 0 && (
-            <div className="notice bonus-clan-notice" role="status">
-              {clanNotices.map((text) => (
-                <p key={text}>
-                  {text}
-                  {text === "Results not captured" && (
-                    <>
-                      {" · "}
-                      {onResults ? (
-                        <a href={resultsLink.href} onClick={openResults}>
-                          Open Results
-                        </a>
-                      ) : (
-                        "Check Results & participation"
-                      )}
-                    </>
-                  )}
-                  {text.startsWith("Hosting clan") && (
-                    <> · Set its season pool in Build roster</>
-                  )}
-                  {text === "Discord roles unavailable" && (
-                    <>
-                      {" · "}
-                      <button
-                        type="button"
-                        className="bonus-inline-action"
-                        disabled={busy || lookingUp}
-                        onClick={refresh}
-                      >
-                        Retry
-                      </button>
-                    </>
-                  )}
-                </p>
-              ))}
-            </div>
-          )}
-
-          <div className="bonus-controls">
-            <button
-              type="button"
-              disabled={
-                !canManage ||
-                busy ||
-                lookingUp ||
-                archived ||
-                policyDirty ||
-                roleDirty ||
-                reviewDirty ||
-                candidateOpen ||
-                !data.cycle
-              }
-              onClick={() =>
-                void mutate(
-                  "/refresh-results",
-                  {},
-                  "CWL check finished. Review this clan’s status before drawing.",
-                )
-              }
-            >
-              Refresh attacks from Clash
-            </button>
-          </div>
           {!clans.length && (
             <p>
               No current signups are assigned to a hosting clan in this CWL
@@ -1031,9 +1057,10 @@ export default function BonusWorkspace({
 
           {selectedClan && !draw && (
             <section ref={flowSection} className="bonus-flow" aria-busy={busy}>
-              <div className="bonus-section-heading">
+              <div className="bonus-section-heading bonus-clan-heading">
                 <h2>{selectedClan.name}</h2>
               </div>
+              {clanNotice}
               <div className="bonus-stats">
                 {leagueMissing ? (
                   <label className="bonus-inline-count">
@@ -1092,64 +1119,6 @@ export default function BonusWorkspace({
                   </span>
                 </div>
               </div>
-              <p className="bonus-support">
-                {allowance?.reason ||
-                  "Refresh Clash results to check the allowance."}
-              </p>
-              <details ref={countDetails} className="bonus-secondary">
-                <summary>Bonus count and source</summary>
-                <p>
-                  {allowance?.league || "League unknown"}
-                  {allowance?.team_size
-                    ? ` · ${allowance.team_size} vs ${allowance.team_size}`
-                    : ""}{" "}
-                  · {allowance?.completed_wars ?? 0}/{allowance?.rounds ?? "?"}{" "}
-                  wars complete
-                  {allowance?.base != null
-                    ? ` · ${allowance.base} base + ${allowance.wins} wins${allowance.status === "ready" ? ` = ${allowance.total}` : ""}`
-                    : ""}
-                </p>
-                <label className="bonus-check">
-                  <input
-                    type="checkbox"
-                    name="manual-count"
-                    checked={manualCount}
-                    disabled={!canManage || busy || archived}
-                    onChange={(event) => {
-                      setManualCount(event.target.checked);
-                      setPreview(null);
-                    }}
-                  />
-                  <span>Use the total shown in Clash</span>
-                </label>
-                {manualCount && !leagueMissing && (
-                  <label>
-                    Total bonuses shown in Clash
-                    <input
-                      ref={countInput}
-                      type="number"
-                      name="bonus-count"
-                      autoComplete="off"
-                      inputMode="numeric"
-                      min="1"
-                      max="50"
-                      step="1"
-                      value={slots}
-                      disabled={!canManage || busy || archived}
-                      onChange={(event) => {
-                        setSlots(event.target.value);
-                        setPreview(null);
-                      }}
-                    />
-                  </label>
-                )}
-                {manualCount && (
-                  <p className="bonus-caution">
-                    Staff-confirmed count; not API-verified.
-                  </p>
-                )}
-              </details>
-
               {pool === "main" ? (
                 <div className="bonus-policy">
                   <label>
@@ -1205,6 +1174,260 @@ export default function BonusWorkspace({
                     <h3 ref={candidateHeading} tabIndex={-1}>
                       Candidate review
                     </h3>
+                  </div>
+                  <AccountList
+                    accounts={clanAccounts}
+                    minimum={data.policies.main}
+                    onReview={async (account, opener) => {
+                      if (await canLeaveEditor()) {
+                        setCandidateOpen(false);
+                        setCandidateTag("");
+                        setCandidateReason("");
+                        setCandidateLookup(null);
+                        reviewOpener.current = opener;
+                        setReviewTag(account.tag);
+                        setPreview(null);
+                        setError("");
+                      }
+                    }}
+                    busy={busy || !canManage || archived}
+                    searchable
+                  />
+                  {reviewAccount && (
+                    <BonusCandidateReview
+                      key={reviewAccount.tag}
+                      account={reviewAccount}
+                      busy={busy}
+                      onDirty={setReviewDirty}
+                      onCancel={async () => {
+                        if (await canLeaveEditor()) closeReview();
+                      }}
+                      onRemove={
+                        reviewAccount.manual_candidate
+                          ? async () => {
+                              if (
+                                !(await confirm(
+                                  `Remove ${reviewAccount.player_name} from this bonus candidate pool? The CWL signup and roster will stay unchanged.`,
+                                  "Remove candidate",
+                                ))
+                              )
+                                return;
+                              if (
+                                await mutate(
+                                  "/manual-candidates",
+                                  {
+                                    tag: reviewAccount.tag,
+                                    revision: data.revision,
+                                  },
+                                  "Manual candidate removed. Review eligibility again.",
+                                  "DELETE",
+                                )
+                              ) {
+                                closeReview();
+                              }
+                            }
+                          : undefined
+                      }
+                      error={error}
+                      onSave={async (flags, overrideReason) => {
+                        const saved = await mutate(
+                          "/account-review",
+                          {
+                            tag: reviewAccount.tag,
+                            flags,
+                            override_reason: overrideReason,
+                            revision: data.revision,
+                          },
+                          "Account review saved. Review eligibility again before drawing.",
+                          "PATCH",
+                        );
+                        if (saved) closeReview();
+                        return saved;
+                      }}
+                    />
+                  )}
+                </>
+              )}
+
+              <div className="bonus-action-bar">
+                <button
+                  type="button"
+                  className="primary"
+                  aria-describedby={
+                    blockers.length ? "bonus-review-blockers" : undefined
+                  }
+                  disabled={busy || reviewBlocked(blockers)}
+                  onClick={() => void review()}
+                >
+                  Review eligibility
+                </button>
+              </div>
+              {blockers.length > 0 && (
+                <ul id="bonus-review-blockers" className="bonus-blockers">
+                  {blockers.map((blocker) => (
+                    <li key={blocker.id}>{blockerFix(blocker)}</li>
+                  ))}
+                </ul>
+              )}
+              {preview && (
+                <section className="bonus-preview" aria-label="Draw preview">
+                  <div className="bonus-section-heading">
+                    <h3>
+                      {preview.eligible.length} eligible ·{" "}
+                      {Math.min(preview.available, preview.eligible.length)}{" "}
+                      winners
+                    </h3>
+                    <span>{preview.available} slots remaining</span>
+                  </div>
+                  <p>
+                    {preview.allowance_source === "automatic"
+                      ? "Calculated"
+                      : "Staff-confirmed"}{" "}
+                    allowance · {preview.slots} total bonuses
+                    {pool === "main" && preview.minimum !== null
+                      ? ` · Minimum ${preview.minimum} attacks`
+                      : ""}
+                  </p>
+                  {preview.available >= preview.eligible.length && (
+                    <p>
+                      Every eligible account will win. Unused slots remain open.
+                    </p>
+                  )}
+                  {!!preview.blocking_reasons.length && (
+                    <div className="notice error" role="alert">
+                      {preview.blocking_reasons.map((reason) => (
+                        <p key={reason}>{reason}</p>
+                      ))}
+                      <p>Refresh the results before you draw.</p>
+                    </div>
+                  )}
+                  <h4>In the draw</h4>
+                  <AccountList
+                    accounts={preview.eligible}
+                    mode="eligible"
+                    minimum={data.policies.main}
+                  />
+                  <details className="bonus-secondary">
+                    <summary>Excluded ({preview.excluded.length})</summary>
+                    <AccountList
+                      accounts={preview.excluded}
+                      mode="excluded"
+                      minimum={data.policies.main}
+                    />
+                  </details>
+                  <div className="bonus-action-bar">
+                    <span>Saved draws cannot be redrawn by refreshing.</span>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={
+                        !canSaveBonusDraw({
+                          canManage,
+                          busy,
+                          archived: !!archived,
+                          policyDirty,
+                          roleDirty,
+                          reviewDirty,
+                          reviewOpen: !!reviewTag,
+                          candidateOpen,
+                          lookingUp,
+                          blocked: !!preview.blocking_reasons.length,
+                        })
+                      }
+                      onClick={() =>
+                        void mutate(
+                          "/draw",
+                          {
+                            pool,
+                            clan_tag: clanTag,
+                            slots: requestedSlots,
+                            fingerprint: preview.fingerprint,
+                          },
+                          "Winners saved. Review before approving.",
+                        )
+                      }
+                    >
+                      {preview.available >= preview.eligible.length
+                        ? "Save all winners"
+                        : "Draw and save winners"}
+                    </button>
+                  </div>
+                </section>
+              )}
+              {pool === "lazy" && (
+                <div className="bonus-support">
+                  <strong>Bonus rules</strong>
+                  <ol>
+                    <li>Follow the Lazy CWL rules.</li>
+                    <li>
+                      Play 60% of the event: 4+ attacks, or 3 attacks and 8+
+                      stars.
+                    </li>
+                    <li>No bonus in the previous 3 seasons.</li>
+                  </ol>
+                  <p>Bonuses from before the dashboard are not recorded.</p>
+                </div>
+              )}
+              <details ref={countDetails} className="bonus-secondary">
+                <summary>Bonus count and source</summary>
+                <p className="bonus-allowance-reason">
+                  {allowance?.reason ||
+                    "Refresh Clash results to check the allowance."}
+                </p>
+                <p>
+                  {allowance?.league || "League unknown"}
+                  {allowance?.team_size
+                    ? ` · ${allowance.team_size} vs ${allowance.team_size}`
+                    : ""}{" "}
+                  · {allowance?.completed_wars ?? 0}/{allowance?.rounds ?? "?"}{" "}
+                  wars complete
+                  {allowance?.base != null
+                    ? ` · ${allowance.base} base + ${allowance.wins} wins${allowance.status === "ready" ? ` = ${allowance.total}` : ""}`
+                    : ""}
+                </p>
+                <label className="bonus-check">
+                  <input
+                    type="checkbox"
+                    name="manual-count"
+                    checked={manualCount}
+                    disabled={!canManage || busy || archived}
+                    onChange={(event) => {
+                      setManualCount(event.target.checked);
+                      setPreview(null);
+                    }}
+                  />
+                  <span>Use the total shown in Clash</span>
+                </label>
+                {manualCount && !leagueMissing && (
+                  <label>
+                    Total bonuses shown in Clash
+                    <input
+                      ref={countInput}
+                      type="number"
+                      name="bonus-count"
+                      autoComplete="off"
+                      inputMode="numeric"
+                      min="1"
+                      max="50"
+                      step="1"
+                      value={slots}
+                      disabled={!canManage || busy || archived}
+                      onChange={(event) => {
+                        setSlots(event.target.value);
+                        setPreview(null);
+                      }}
+                    />
+                  </label>
+                )}
+                {manualCount && (
+                  <p className="bonus-caution">
+                    Staff-confirmed count; not API-verified.
+                  </p>
+                )}
+              </details>
+              {pool === "lazy" && (
+                <>
+                  <div className="bonus-candidates-heading">
                     <button
                       ref={addOpener}
                       type="button"
@@ -1325,91 +1548,6 @@ export default function BonusWorkspace({
                       </div>
                     </section>
                   )}
-                  {pool === "lazy" && (
-                    <div className="bonus-support">
-                      <strong>Bonus rules</strong>
-                      <ol>
-                        <li>Follow the Lazy CWL rules.</li>
-                        <li>
-                          Play 60% of the event: 4+ attacks, or 3 attacks and 8+
-                          stars.
-                        </li>
-                        <li>No bonus in the previous 3 seasons.</li>
-                      </ol>
-                      <p>Bonuses from before the dashboard are not recorded.</p>
-                    </div>
-                  )}
-                  <AccountList
-                    accounts={clanAccounts}
-                    minimum={data.policies.main}
-                    onReview={async (account, opener) => {
-                      if (await canLeaveEditor()) {
-                        setCandidateOpen(false);
-                        setCandidateTag("");
-                        setCandidateReason("");
-                        setCandidateLookup(null);
-                        reviewOpener.current = opener;
-                        setReviewTag(account.tag);
-                        setPreview(null);
-                        setError("");
-                      }
-                    }}
-                    busy={busy || !canManage || archived}
-                    searchable
-                  />
-                  {reviewAccount && (
-                    <BonusCandidateReview
-                      key={reviewAccount.tag}
-                      account={reviewAccount}
-                      busy={busy}
-                      onDirty={setReviewDirty}
-                      onCancel={async () => {
-                        if (await canLeaveEditor()) closeReview();
-                      }}
-                      onRemove={
-                        reviewAccount.manual_candidate
-                          ? async () => {
-                              if (
-                                !(await confirm(
-                                  `Remove ${reviewAccount.player_name} from this bonus candidate pool? The CWL signup and roster will stay unchanged.`,
-                                  "Remove candidate",
-                                ))
-                              )
-                                return;
-                              if (
-                                await mutate(
-                                  "/manual-candidates",
-                                  {
-                                    tag: reviewAccount.tag,
-                                    revision: data.revision,
-                                  },
-                                  "Manual candidate removed. Review eligibility again.",
-                                  "DELETE",
-                                )
-                              ) {
-                                closeReview();
-                              }
-                            }
-                          : undefined
-                      }
-                      error={error}
-                      onSave={async (flags, overrideReason) => {
-                        const saved = await mutate(
-                          "/account-review",
-                          {
-                            tag: reviewAccount.tag,
-                            flags,
-                            override_reason: overrideReason,
-                            revision: data.revision,
-                          },
-                          "Account review saved. Review eligibility again before drawing.",
-                          "PATCH",
-                        );
-                        if (saved) closeReview();
-                        return saved;
-                      }}
-                    />
-                  )}
                   <details
                     ref={roleDetails}
                     className="bonus-secondary"
@@ -1478,112 +1616,6 @@ export default function BonusWorkspace({
                   </details>
                 </>
               )}
-
-              <div className="bonus-action-bar">
-                <button
-                  type="button"
-                  className="primary"
-                  aria-describedby={
-                    blockers.length ? "bonus-review-blockers" : undefined
-                  }
-                  disabled={busy || reviewBlocked(blockers)}
-                  onClick={() => void review()}
-                >
-                  Review eligibility
-                </button>
-              </div>
-              {blockers.length > 0 && (
-                <ul id="bonus-review-blockers" className="bonus-blockers">
-                  {blockers.map((blocker) => (
-                    <li key={blocker.id}>{blockerFix(blocker)}</li>
-                  ))}
-                </ul>
-              )}
-              {preview && (
-                <section className="bonus-preview" aria-label="Draw preview">
-                  <div className="bonus-section-heading">
-                    <h3>
-                      {preview.eligible.length} eligible ·{" "}
-                      {Math.min(preview.available, preview.eligible.length)}{" "}
-                      winners
-                    </h3>
-                    <span>{preview.available} slots remaining</span>
-                  </div>
-                  <p>
-                    {preview.allowance_source === "automatic"
-                      ? "Calculated"
-                      : "Staff-confirmed"}{" "}
-                    allowance · {preview.slots} total bonuses
-                    {pool === "main" && preview.minimum !== null
-                      ? ` · Minimum ${preview.minimum} attacks`
-                      : ""}
-                  </p>
-                  {preview.available >= preview.eligible.length && (
-                    <p>
-                      Every eligible account will win. Unused slots remain open.
-                    </p>
-                  )}
-                  {!!preview.blocking_reasons.length && (
-                    <div className="notice error" role="alert">
-                      {preview.blocking_reasons.map((reason) => (
-                        <p key={reason}>{reason}</p>
-                      ))}
-                      <p>Refresh the results before you draw.</p>
-                    </div>
-                  )}
-                  <h4>In the draw</h4>
-                  <AccountList
-                    accounts={preview.eligible}
-                    mode="eligible"
-                    minimum={data.policies.main}
-                  />
-                  <details className="bonus-secondary">
-                    <summary>Excluded ({preview.excluded.length})</summary>
-                    <AccountList
-                      accounts={preview.excluded}
-                      mode="excluded"
-                      minimum={data.policies.main}
-                    />
-                  </details>
-                  <div className="bonus-action-bar">
-                    <span>Saved draws cannot be redrawn by refreshing.</span>
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={
-                        !canSaveBonusDraw({
-                          canManage,
-                          busy,
-                          archived: !!archived,
-                          policyDirty,
-                          roleDirty,
-                          reviewDirty,
-                          reviewOpen: !!reviewTag,
-                          candidateOpen,
-                          lookingUp,
-                          blocked: !!preview.blocking_reasons.length,
-                        })
-                      }
-                      onClick={() =>
-                        void mutate(
-                          "/draw",
-                          {
-                            pool,
-                            clan_tag: clanTag,
-                            slots: requestedSlots,
-                            fingerprint: preview.fingerprint,
-                          },
-                          "Winners saved. Review before approving.",
-                        )
-                      }
-                    >
-                      {preview.available >= preview.eligible.length
-                        ? "Save all winners"
-                        : "Draw and save winners"}
-                    </button>
-                  </div>
-                </section>
-              )}
             </section>
           )}
 
@@ -1600,6 +1632,7 @@ export default function BonusWorkspace({
                   </p>
                 </div>
               </div>
+              {clanNotice}
               <div className="bonus-stats">
                 <div>
                   <strong>{draw.snapshot.winners.length}</strong>
