@@ -56,7 +56,7 @@ export default function ModerationIgnoreLists({
 }: Props) {
   const channelName = (id: string) => {
     const channel = channels.find((item) => item.id === id);
-    return channel ? `#${channel.name}` : `Channel ${id}`;
+    return channel ? `#${channel.name}` : "Deleted channel";
   };
   const available = channels.filter(
     (item) => !ignores.channel_ids.includes(item.id),

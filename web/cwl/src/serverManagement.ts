@@ -31,13 +31,13 @@ export function actionConfirmation(prompt:string,fields:ManagementField[],draft:
 
 export function recordPickerCopy(records:ManagementSection[]) {
  const paths=records.map(record=>record.endpoint||'').join(' ')
- if(paths.includes('/ticket-settings/'))return {label:'Ticket settings',search:'Search ticket settings',placeholder:'Channels, wait times or staff access'}
- if(/\/fwa_(weight|bases)\//.test(paths))return {label:'Town Hall settings',search:'Search Town Hall settings',placeholder:'Town Hall level'}
- if(paths.includes('/fwa_blacklist/'))return {label:'Blocked clan',search:'Search blocked clans',placeholder:'Clan name or tag'}
- if(paths.includes('/fwa_points/'))return {label:'Clan or points settings',search:'Search clans or points settings',placeholder:'Clan name, tag or monitoring'}
- if(paths.includes('/return-batches/'))return {label:'Previous bulk action',search:'Search previous bulk actions',placeholder:'Action or date'}
- if(paths.includes('/return-'))return {label:'Clan or reminder setting',search:'Search clans or reminder settings',placeholder:'Clan name, tag or action'}
- return {label:'Setting',search:'Search settings',placeholder:'Setting name'}
+ if(paths.includes('/ticket-settings/'))return {label:'Ticket settings',placeholder:'Channels, wait times or staff access'}
+ if(/\/fwa_(weight|bases)\//.test(paths))return {label:'Town Hall settings',placeholder:'Town Hall level'}
+ if(paths.includes('/fwa_blacklist/'))return {label:'Blocked clan',placeholder:'Clan name or tag'}
+ if(paths.includes('/fwa_points/'))return {label:'Clan or points settings',placeholder:'Clan name, tag or monitoring'}
+ if(paths.includes('/return-batches/'))return {label:'Previous bulk action',placeholder:'Action or date'}
+ if(paths.includes('/return-'))return {label:'Clan or reminder setting',placeholder:'Clan name, tag or action'}
+ return {label:'Setting',placeholder:'Setting name'}
 }
 
 
