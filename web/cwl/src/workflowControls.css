@@ -318,7 +318,7 @@
   outline-offset: -2px;
 }
 
-/* 748: selected solid-gold tabs draw the focus ring on the dark outside paint. */
+/* Selected clan tabs draw the focus ring outside the gold underline. */
 .shell
   :is(.clan-tabs)
   > button:is(

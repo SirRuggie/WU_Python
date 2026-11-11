@@ -199,6 +199,12 @@ activity strips scroll within their rail rather than overflowing the page; keybo
 focus makes off-screen buttons reachable. Do not apply tab roles without tab keyboard
 behavior: current activity filters remain native pressed buttons in a named group.
 
+B-6 validation (2026-11-11): isolated fixtures (25 clans, moderation, three
+settings records) in headless Chrome at 320, 360, 390 and 1440px. Checked page
+overflow, 44px targets on rail and list buttons, edge-fade state on overflowing
+rails, the selected look of the record list, clan list and Moderation tabs, and
+that no write request was sent. Screen readers were not tested.
+
 Validation: 50-account/28-clan isolated browser samples at desktop 1280px and mobile
 320/390px settings; member versus staff navigation; escaped names; player search to
 filtered tasks and Back; Ctrl+K; keyboard activity activation; partial family-directory

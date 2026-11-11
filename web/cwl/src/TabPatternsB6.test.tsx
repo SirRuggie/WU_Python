@@ -117,6 +117,9 @@ it("uses the shared underline tabs for Moderation and keeps both section actions
   expect(group.classList).toContain("section-tabs--flow");
   expect(group.classList).toContain("moderation-sections");
   expect(host.textContent).toContain("Timeline panel");
+  await act(async () => buttonNamed("Activity history").click());
+  expect(route).toHaveBeenCalledWith("");
+  route.mockClear();
   await act(async () => buttonNamed("Log settings").click());
   expect(buttonNamed("Log settings").getAttribute("aria-pressed")).toBe("true");
   expect(host.textContent).toContain("Settings panel");

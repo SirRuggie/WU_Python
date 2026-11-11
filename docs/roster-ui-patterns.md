@@ -314,7 +314,7 @@ introduced A and B; B-6 finished the last groups and added C.
 - Every tab and chip rail scrolls inside its own strip and fades the edge that hides items (`useChoiceRail`, `has-horizontal-fades`). The page never scrolls sideways at 320, 360 and 390px.
 - Targets are at least 44px high.
 - Groups keep `aria-pressed` buttons in a named group. Only Clan settings uses the full ARIA tab pattern with arrow keys. Do not add `role="tab"` without that keyboard behavior (see `dashboard-interaction-standard.md`).
-- Later work (backlog B-14): sidebar, Results and CWL step links become real `<a href>` links, and the selected tab can live in the URL.
+- Later work (handoff backlog B-14): sidebar, Results and CWL step links become real `<a href>` links, and the selected tab can live in the URL.
 
 ## Layout and format rules
 

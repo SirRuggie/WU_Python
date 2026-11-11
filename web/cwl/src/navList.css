@@ -1,9 +1,9 @@
 /*
  * Pattern C: navigation item (record and clan lists).
  * Selected matches the sidebar: gold edge, gold left bar, gold text.
- * Unselected items keep the normal button look.
+ * Unselected items keep the normal button look. The mark stays while busy.
  */
-.shell .nav-list > button[aria-pressed="true"]:not(:disabled) {
+.shell .nav-list > button[aria-pressed="true"] {
   background: transparent;
   border-color: var(--wu-accent);
   color: var(--wu-accent);
