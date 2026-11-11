@@ -27,7 +27,7 @@ import BonusAddCandidate from "./BonusAddCandidate";
 import BonusDrawStep from "./BonusDrawStep";
 import BonusApproveStep from "./BonusApproveStep";
 import BonusAnnounceStep from "./BonusAnnounceStep";
-import BonusClanCards from "./BonusClanCards";
+import BonusClanSelect from "./BonusClanSelect";
 import ResultsSettingsSheet, {
   type SettingsSaved,
 } from "./ResultsSettingsSheet";
@@ -1014,14 +1014,15 @@ export default function BonusWorkspace({
             }}
           />
           {clans.length > 0 && (
-            <BonusClanCards
+            <BonusClanSelect
               clans={clans}
-              selected={clanTag}
+              selected={clanTag || "all"}
               pool={pool}
               status={status}
-              statusFailed={statusFailed}
+              opensSteps
               disabled={busy || lookingUp}
-              onSelect={async (tag) => {
+              onChange={async (tag) => {
+                if (tag === "all") return allClans();
                 if (tag === clanTag || !(await canDiscard())) return;
                 // The page data names the step once it loads, so the status
                 // read and the open step never disagree.
@@ -1031,7 +1032,6 @@ export default function BonusWorkspace({
                 resetContext();
                 emit({ clan: tag, step: undefined, view: "steps" });
               }}
-              onAll={allClans}
             />
           )}
           {!clans.length && (
@@ -1058,7 +1058,7 @@ export default function BonusWorkspace({
           )}
           {staleText && (
             <p className="notice bonus-stale" role="status">
-              {staleText} ·{" "}
+              {staleText}&nbsp;·{" "}
               <button
                 type="button"
                 className="bonus-inline-action"

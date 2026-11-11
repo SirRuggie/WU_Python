@@ -69,7 +69,7 @@ const SHORT_REASONS: Record<string, string> = {
   'Missed CWL sync': 'Missed sync',
   'Lingering in hosting clan': 'Lingering',
   'Left the family': 'Left family',
-  'Received a bonus in one of the previous three CWL months': 'Bonus in last 3 seasons',
+  'Received a Lazy bonus in one of the previous three CWL months': 'Bonus in last 3 seasons',
   'Already selected for a bonus this CWL month': 'Already selected',
   'Already selected for a bonus this season': 'Already selected',
 }

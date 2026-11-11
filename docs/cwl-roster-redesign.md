@@ -1457,6 +1457,16 @@ Accepted deviations:
 - No auto-selected clan: with no clan, the page shows cards only.
 - First player card `top` at 360x800 was not measured in a browser.
 
+Follow-up (2026-11-11): the clan cards and "Find a clan" search are replaced by
+one "Hosting clan" dropdown under the pool tabs (overview and steps; options
+"{name} · {state}"; `SearchPicker` above 20 clans). The old Results clan filter
+is removed. "Find a player" and Sort share one row. The Results overview root
+now carries `roster-ui`, so its controls get the shared tokens (the cards were
+plain text without it). Backend: the three-month Lazy sit-out counts earlier
+Lazy bonuses only; a Main bonus does not count. Phone order: Season, status,
+Main/Lazy tabs, Hosting clan, search and Sort, list or steps. The overview
+now uses the roster-ui focus ring (3px) like the steps view.
+
 Later:
 
 - (a) Winners count on the clan card ("3 winners · Approved"). Needs an additive

@@ -911,8 +911,15 @@ Short lists (dropdown rollout PR 2):
 - Only one step panel is open. A done step shows one summary line with Change.
 - A blocker shows once, in the open panel, beside its fix. The bar shows the
   same short reason. A disabled action gets one line naming the first blocker.
-- Clan cards come with "All clans" first. After a draw a card shows only
-  "Draw saved", "Approved" or "Sent".
+- One "Hosting clan" dropdown (`BonusClanSelect.tsx`) sits directly under the
+  Main/Lazy tabs, on the overview and in the steps. "All clans" is first; each
+  option reads "{name} · {state}" ("19 of 23 meet · Draft"; after a draw
+  "Draw saved", "Approved" or "Sent"). One muted line under it: "Select a clan
+  to open its bonus steps." for All clans, else the clan's state. Native select
+  up to 20 clans, `SearchPicker` above. There is no clan-card row and no
+  "Find a clan" search. Results-only staff use the same dropdown to filter the
+  list. The player row below holds "Find a player" (Name or #TAG…) and Sort on
+  one line down to 320 px.
 - Settings and capture options open in a sheet (`ActionPanel`) from the page ⋯
   menu. Saved histories live in Exports. Staff who cannot open Exports (bonus
   access without results access) keep a "Saved bonus history" disclosure at the
@@ -929,9 +936,10 @@ Short lists (dropdown rollout PR 2):
   Announce wait for the steps before them. The Draw preview loads by itself
   when the step opens and never writes; a response from another clan, pool or
   count is dropped.
-- Selecting a clan card, from the list or the steps, pushes an address that
-  names the first step that is not done (`firstOpenStep`), so Back and Forward
-  return to the same screen. An address with no clan shows the cards only.
+- Selecting a clan in the dropdown, from the list or the steps, pushes an
+  address that names the first step that is not done (`firstOpenStep`), so Back
+  and Forward return to the same screen. An address with no clan shows the
+  dropdown only.
 - Each notice shows once: "Archived season" (the page notice only), "CWL month
   not set" (the Results blocker only; the month line shows a month only when
   set) and the medals line in Announce ("Give the medals in Clash. The

@@ -66,12 +66,15 @@
 }
 .participation-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(160px, auto);
   gap: var(--wu-space-2);
   margin: var(--wu-space-3) 0;
 }
 .participation-toolbar label {
   min-width: 0;
+}
+.participation-toolbar select {
+  width: 100%;
 }
 .participation-list-heading {
   display: flex;
@@ -253,19 +256,9 @@
     padding: var(--wu-space-1) var(--wu-space-1) var(--wu-space-1)
       var(--wu-space-3);
   }
-  /* Each select keeps its longest option; the row wraps instead of cutting text. */
+  /* Search and Sort stay on one row down to 320 px; the select text truncates. */
   .participation-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-  }
-  .participation-toolbar > * {
-    flex: 1 1 auto;
-  }
-  .participation-toolbar > :first-child {
-    flex: 1 1 160px;
-  }
-  .participation-toolbar > :nth-child(2) {
-    flex: 0 1 auto;
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 44%);
   }
 }
 @media (max-width: 420px) {

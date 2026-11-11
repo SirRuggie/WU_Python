@@ -34,7 +34,7 @@ export default function BonusAccountList({
     <div className="bonus-account-results">
       {searchable && (
         <label className="bonus-account-search">
-          Find an account
+          Find a player
           <input
             type="search"
             name="account-search"

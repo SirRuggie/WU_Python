@@ -17,8 +17,9 @@ Each normally excludes the account for that dashboard season. Staff can include
 an otherwise excluded account with a nonempty reason. The review records the
 actor and timestamp and preserves append-only before/after history.
 
-A Clash account confirmed for a bonus in any of the three preceding calendar
-CWL months sits out the current month. Example: a bonus in January makes the
+A Clash account confirmed for a Lazy bonus in any of the three preceding
+calendar CWL months sits out the current month. Earlier Lazy bonuses only; a
+Main bonus does not count. Example: a bonus in January makes the
 account ineligible for February, March and April; it can enter the May lottery.
 This uses non-voided dashboard confirmations across dashboard seasons, not
 inferred in-game medal history. Earlier unrecorded awards cannot be inferred.

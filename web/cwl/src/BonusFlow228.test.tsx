@@ -206,12 +206,20 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-// The All clans card is tested on its own.
-const cards = () => [
-  ...host.querySelectorAll<HTMLButtonElement>(
-    ".bonus-clan-card:not(.bonus-clan-all)",
-  ),
-];
+// The All clans option is tested on its own.
+const clanSelect = () =>
+  host.querySelector<HTMLSelectElement>('select[name="clan"]')!;
+const cards = () =>
+  [...clanSelect().options].filter((option) => option.value !== "all");
+const optionTexts = () => cards().map((option) => option.textContent);
+const pickClan = (value: string) =>
+  act(async () => {
+    clanSelect().value = value;
+    clanSelect().dispatchEvent(new Event("change", { bubbles: true }));
+  });
+const pickIndex = (index: number) => pickClan(cards()[index].value);
+const isSelected = (index: number) =>
+  clanSelect().value === cards()[index].value;
 const typeCount = async (value: string) => {
   const input = host.querySelector<HTMLInputElement>(
     ".bonus-inline-count input",
@@ -262,13 +270,9 @@ describe("Bonus page loading", () => {
       ),
     );
     expect(host.textContent).toContain("Alpha");
-    expect(cards().map((card) => card.textContent)).not.toContain(
-      "Lazy One5 of 8 meet · Draft",
-    );
+    expect(optionTexts()).not.toContain("Lazy One · 5 of 8 meet · Draft");
     await act(async () => release(status));
-    expect(cards().map((card) => card.textContent)).toContain(
-      "Lazy One5 of 8 meet · Draft",
-    );
+    expect(optionTexts()).toContain("Lazy One · 5 of 8 meet · Draft");
   });
 });
 
@@ -289,16 +293,20 @@ describe("Bonus candidate cards", () => {
   });
 });
 
-describe("Bonus clan cards", () => {
-  it("show name, meet count and state from the status read", async () => {
+describe("Bonus hosting clan dropdown", () => {
+  it("lists each clan with its state from the status read", async () => {
     await mount();
-    expect(cards().map((card) => card.textContent)).toEqual([
-      "Lazy One5 of 8 meet · Draft",
+    expect(optionTexts()).toEqual([
+      "Lazy One · 5 of 8 meet · Draft",
       // A saved draw replaces the meet count.
-      "Lazy TwoDraw saved",
+      "Lazy Two · Draw saved",
     ]);
-    expect(cards()[0].getAttribute("aria-pressed")).toBe("true");
-    expect(host.querySelector(".bonus-clan-search")).toBeNull();
+    expect(clanSelect().options[0].textContent).toBe("All clans");
+    expect(isSelected(0)).toBe(true);
+    // The option text carries the state; no second line repeats it.
+    expect(host.querySelector(".bonus-clan-line")).toBeNull();
+    expect(host.textContent).not.toContain("Find a clan");
+    expect(host.querySelector(".bonus-clan-card")).toBeNull();
     expect(
       host.querySelector(
         '[role="menuitem"], .bonus-controls .roster-menu-trigger',
@@ -307,27 +315,27 @@ describe("Bonus clan cards", () => {
   });
   it("select with the unsaved-change guard and never write", async () => {
     await mount();
-    await act(async () => cards()[0].click());
+    await pickIndex(0);
     expect(document.querySelector(".confirm-dialog")).toBeNull();
     expect(urlState).not.toHaveBeenCalled();
     await typeCount("4");
-    await act(async () => cards()[1].click());
+    await pickIndex(1);
     expect(document.querySelector(".confirm-dialog")).not.toBeNull();
     await act(async () =>
       button("Cancel", document.querySelector(".confirm-dialog")!).click(),
     );
-    expect(cards()[0].getAttribute("aria-pressed")).toBe("true");
+    expect(isSelected(0)).toBe(true);
     expect(
       host.querySelector<HTMLInputElement>(".bonus-inline-count input")!.value,
     ).toBe("4");
-    await act(async () => cards()[1].click());
+    await pickIndex(1);
     await act(async () =>
       button(
         "Discard bonus edits",
         document.querySelector(".confirm-dialog")!,
       ).click(),
     );
-    expect(cards()[1].getAttribute("aria-pressed")).toBe("true");
+    expect(isSelected(1)).toBe(true);
     // The marker is pushed; the page data then names the step in place.
     expect(urlState.mock.calls[0]).toEqual([
       "pool=lazy&clan=%238QQ&open=steps",
@@ -342,7 +350,7 @@ describe("Bonus clan cards", () => {
   });
   it("restores the clan from the URL", async () => {
     await mount(base, "pool=lazy&clan=%238QQ&step=draw");
-    expect(cards()[1].getAttribute("aria-pressed")).toBe("true");
+    expect(isSelected(1)).toBe(true);
   });
   it("without a status read, a card pushes the steps marker and the page data replaces it with the step", async () => {
     const data = { ...base, draws: [savedDraw()] };
@@ -371,7 +379,7 @@ describe("Bonus clan cards", () => {
         />,
       ),
     );
-    await act(async () => cards()[1].click());
+    await pickIndex(1);
     expect(urlState.mock.calls[0]).toEqual([
       expect.stringContaining("open=steps"),
       true,
@@ -435,7 +443,7 @@ describe("Bonus clan cards", () => {
         />,
       ),
     );
-    await act(async () => cards()[0].click());
+    await pickIndex(0);
     expect(urlState.mock.calls[0]).toEqual([
       expect.stringContaining("open=steps"),
       true,
@@ -461,7 +469,7 @@ describe("Bonus clan cards", () => {
   });
   it("an old address without the marker or a step still opens and writes nothing to the history", async () => {
     await mount(base, "pool=lazy&clan=%232YQ");
-    expect(cards()[0].getAttribute("aria-pressed")).toBe("true");
+    expect(isSelected(0)).toBe(true);
     expect(urlState).not.toHaveBeenCalled();
   });
 });
@@ -896,6 +904,9 @@ describe("Bonus steps", () => {
       host.querySelector<HTMLInputElement>('input[name="account-search"]')!
         .placeholder,
     ).toBe("Name or #TAG…");
+    expect(host.querySelector(".bonus-account-search")?.textContent).toContain(
+      "Find a player",
+    );
     expect(host.querySelector(".bonus-field-hint")?.textContent).toBe(
       "Number in Clash · 1–50",
     );
@@ -1191,40 +1202,6 @@ describe("phone layout", () => {
     expect(summary("Capture settings")).toBeUndefined();
     expect(summary("Saved bonus history")).toBeUndefined();
   });
-  it("reveals the selected card nearest in the clan strip", async () => {
-    // A 300 px strip at 16 px; cards are 260 px wide and 280 px apart.
-    const size = (name: string, value: number) =>
-      Object.defineProperty(HTMLElement.prototype, name, {
-        configurable: true,
-        get(this: HTMLElement) {
-          return this.classList.contains("bonus-clan-cards") ? value : 0;
-        },
-      });
-    size("clientWidth", 300);
-    size("scrollWidth", 820);
-    const rect = vi
-      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-      .mockImplementation(function (this: HTMLElement) {
-        const strip = this.closest<HTMLElement>(".bonus-clan-cards");
-        const left = this.classList.contains("bonus-clan-card")
-          ? 16 + [...strip!.children].indexOf(this) * 280 - strip!.scrollLeft
-          : 16;
-        return { left, right: left + 260, top: 0, bottom: 0 } as DOMRect;
-      });
-    try {
-      await mount(base, "pool=lazy&clan=%238QQ");
-      expect(cards()[1].getAttribute("aria-pressed")).toBe("true");
-      // Right edge aligned: the previous card keeps peeking at the left.
-      // The All clans card comes first, so the strip is one card longer.
-      expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(520);
-      await act(async () => cards()[0].click());
-      expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(280);
-    } finally {
-      rect.mockRestore();
-      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
-      delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
-    }
-  });
 });
 
 describe("Results & bonuses page: clan steps half", () => {
@@ -1261,18 +1238,19 @@ describe("Results & bonuses page: clan steps half", () => {
       ),
     );
   };
-  it("shows the clan cards only when no clan is selected", async () => {
+  it("shows the dropdown only when no clan is selected", async () => {
     await mount(base, "pool=lazy");
     expect(openPanel()).toBeUndefined();
     expect(host.querySelector(".bonus-step-bar")).toBeNull();
     expect(host.querySelector(".bonus-account-list")).toBeNull();
-    expect(cards().map((card) => card.textContent)).toEqual([
-      "Lazy One5 of 8 meet · Draft",
-      "Lazy TwoDraw saved",
+    expect(optionTexts()).toEqual([
+      "Lazy One · 5 of 8 meet · Draft",
+      "Lazy Two · Draw saved",
     ]);
-    expect(
-      host.querySelector(".bonus-clan-all")!.getAttribute("aria-pressed"),
-    ).toBe("true");
+    expect(clanSelect().value).toBe("all");
+    expect(host.querySelector(".bonus-clan-line")?.textContent).toBe(
+      "Select a clan to open its bonus steps.",
+    );
   });
   it("names the page Results & bonuses and leaves no settings or history disclosure", async () => {
     await mount();
@@ -1296,9 +1274,8 @@ describe("Results & bonuses page: clan steps half", () => {
   });
   it("All clans goes to the player list through the unsaved-change guard", async () => {
     await mount();
-    const all = host.querySelector<HTMLButtonElement>(".bonus-clan-all")!;
     await typeCount("4");
-    await act(async () => all.click());
+    await pickClan("all");
     expect(results).not.toHaveBeenCalled();
     await act(async () =>
       button("Cancel", document.querySelector(".confirm-dialog")!).click(),
@@ -1307,7 +1284,7 @@ describe("Results & bonuses page: clan steps half", () => {
     expect(
       host.querySelector<HTMLInputElement>(".bonus-inline-count input")!.value,
     ).toBe("4");
-    await act(async () => all.click());
+    await pickClan("all");
     await act(async () =>
       button(
         "Discard bonus edits",
@@ -1317,12 +1294,10 @@ describe("Results & bonuses page: clan steps half", () => {
     expect(results).toHaveBeenCalledExactlyOnceWith("pool=lazy");
     expect(writes()).toHaveLength(0);
   });
-  it("without Results access All clans clears the clan and shows the cards only", async () => {
+  it("without Results access All clans clears the clan and shows the dropdown only", async () => {
     await renderBonusOnly("pool=lazy&clan=%232YQ&step=rules");
     expect(openPanel()).toBe("rules");
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>(".bonus-clan-all")!.click(),
-    );
+    await pickClan("all");
     expect(urlState).toHaveBeenLastCalledWith("pool=lazy", true);
     expect(openPanel()).toBeUndefined();
     expect(host.querySelector(".bonus-step-bar")).toBeNull();
@@ -1417,7 +1392,7 @@ describe("Results & bonuses page: rework round", () => {
             : Promise.resolve(data);
   const count = (text: string, part: string) => text.split(part).length - 1;
 
-  it("Back to an address with no clan clears the clan and shows the cards only", async () => {
+  it("Back to an address with no clan clears the clan and shows the dropdown only", async () => {
     await render("pool=lazy&clan=%232YQ&step=rules", reply(base));
     expect(openPanel()).toBe("rules");
     await act(async () => root.render(view("pool=lazy", false)));
@@ -1425,9 +1400,7 @@ describe("Results & bonuses page: rework round", () => {
     expect(host.querySelector(".bonus-step-bar")).toBeNull();
     expect(host.querySelector(".bonus-account-list")).toBeNull();
     expect(cards()).toHaveLength(2);
-    expect(
-      host.querySelector(".bonus-clan-all")!.getAttribute("aria-pressed"),
-    ).toBe("true");
+    expect(clanSelect().value).toBe("all");
     expect(writes()).toHaveLength(0);
   });
   it("drops a preview that arrives after the clan changed", async () => {

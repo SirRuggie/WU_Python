@@ -22,6 +22,11 @@ vi.mock("./ParticipationRecord", () => ({
   ),
 }));
 import ParticipationWorkspace from "./ParticipationWorkspace";
+import {
+  openPicker,
+  optionTexts as pickerOptionTexts,
+  pickerByLabel,
+} from "./searchPickerTestUtils";
 
 const row = (tag: string, name: string, clan: [string, string]) => ({
   tag,
@@ -89,11 +94,17 @@ const button = (name: string, within: ParentNode = document) =>
   )!;
 const writes = () =>
   api.mock.calls.filter((call) => call[1] && call[1] !== "GET");
-const cards = () => [
-  ...host.querySelectorAll<HTMLButtonElement>(
-    ".bonus-clan-card:not(.bonus-clan-all)",
-  ),
-];
+const clanSelect = () =>
+  host.querySelector<HTMLSelectElement>('select[name="clan"]')!;
+const optionTexts = () =>
+  [...clanSelect().options]
+    .filter((option) => option.value !== "all")
+    .map((option) => option.textContent);
+const pickClan = (value: string) =>
+  act(async () => {
+    clanSelect().value = value;
+    clanSelect().dispatchEvent(new Event("change", { bubbles: true }));
+  });
 async function mount(withBonus = true, state = "pool=lazy") {
   host = document.createElement("div");
   document.body.append(host);
@@ -142,15 +153,21 @@ afterEach(async () => {
 });
 
 describe("season overview", () => {
-  it("shows clan cards with their state above today's full player list", async () => {
+  it("shows one hosting clan dropdown with each clan's state above today's full player list", async () => {
     await mount();
-    expect(
-      host.querySelector(".bonus-clan-all")!.getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(cards().map((card) => card.textContent)).toEqual([
-      "Lazy One5 of 8 meet · Draft",
-      "Lazy TwoApproved",
+    expect(clanSelect().value).toBe("all");
+    expect(clanSelect().options[0].textContent).toBe("All clans");
+    expect(optionTexts()).toEqual([
+      "Lazy One · 5 of 8 meet · Draft",
+      "Lazy Two · Approved",
     ]);
+    expect(host.querySelector(".bonus-clan-line")?.textContent).toBe(
+      "Select a clan to open its bonus steps.",
+    );
+    // No clan-card row, no clan search, no second clan filter.
+    expect(host.querySelector(".bonus-clan-card")).toBeNull();
+    expect(host.textContent).not.toContain("Find a clan");
+    expect(host.querySelectorAll('select[name="clan"]')).toHaveLength(1);
     expect(
       [...host.querySelectorAll(".participation-list > li")].map(
         (item) => item.querySelector(".player-card-name-text")?.textContent,
@@ -175,12 +192,25 @@ describe("season overview", () => {
     ])
       expect(text).not.toContain(removed);
   });
-  it("orders the phone page: step bar, pool tabs, clan cards, then the list", async () => {
+  it("puts the player search and Sort on one row", async () => {
+    await mount();
+    const row = host.querySelector(".participation-toolbar")!;
+    expect(row.querySelector('input[name="search"]')).not.toBeNull();
+    expect(row.querySelector('select[name="sort"]')).not.toBeNull();
+    expect(row.querySelector('select[name="clan"]')).toBeNull();
+    expect(row.textContent).toContain("Find a player");
+    expect(row.textContent).not.toContain("Find a player or clan");
+    expect(
+      row.querySelector<HTMLInputElement>('input[name="search"]')!.placeholder,
+    ).toBe("Name or #TAG…");
+  });
+  it("orders the phone page: step bar, pool tabs, hosting clan, search row, then the list", async () => {
     await mount(true, "pool=lazy&clan=%232YQ&outcome=partial");
     const order = [
       ".bonus-step-bar",
       ".cwl-pool-tabs",
-      ".bonus-clan-cards",
+      ".bonus-clan-select",
+      ".participation-toolbar",
       ".participation-list",
     ].map((selector) => host.querySelector(selector));
     expect(order.every(Boolean)).toBe(true);
@@ -191,9 +221,9 @@ describe("season overview", () => {
         String(index),
       ).toBeTruthy();
   });
-  it("selecting a clan card opens that clan's steps and writes nothing", async () => {
+  it("selecting a clan opens that clan's steps and writes nothing", async () => {
     await mount();
-    await act(async () => cards()[0].click());
+    await pickClan("#2YQ");
     // The steps page names the step once its data loads.
     expect(bonus).toHaveBeenCalledExactlyOnceWith(
       "pool=lazy&clan=%232YQ&open=steps",
@@ -203,13 +233,13 @@ describe("season overview", () => {
   it("asks before leaving with an unsaved result edit", async () => {
     await mount();
     await act(async () => button("Retain local result edit #P1").click());
-    await act(async () => cards()[1].click());
+    await pickClan("#8QQ");
     const dialog = document.querySelector(".confirm-dialog")!;
     expect(dialog.textContent).toContain("open the bonus steps");
     expect(bonus).not.toHaveBeenCalled();
     await act(async () => button("Cancel", dialog).click());
     expect(bonus).not.toHaveBeenCalled();
-    await act(async () => cards()[1].click());
+    await pickClan("#8QQ");
     await act(async () => {
       const confirm = button(
         "Discard and continue",
@@ -223,6 +253,42 @@ describe("season overview", () => {
     );
     expect(writes()).toHaveLength(0);
   });
+  it("All clans returns to the full list without opening steps", async () => {
+    await mount(true, "pool=lazy&clan=%232YQ");
+    expect(host.querySelector(".bonus-clan-line")).toBeNull();
+    await pickClan("all");
+    expect(bonus).not.toHaveBeenCalled();
+    expect(clanSelect().value).toBe("all");
+    expect(urlState).toHaveBeenLastCalledWith("pool=lazy", true);
+    expect(host.querySelectorAll(".participation-list > li")).toHaveLength(2);
+  });
+  it("over 20 clans the dropdown is the search picker with the same state labels", async () => {
+    const many = Array.from({ length: 21 }, (_, index) => ({
+      tag: `#C${index}`,
+      name: `Clan ${index}`,
+    }));
+    api.mockImplementation(async (route: string) =>
+      route.endsWith("/bonus-status")
+        ? {
+            ...status,
+            pools: {
+              main: [],
+              lazy: many.map((clan) => hosting(clan.tag, clan.name)),
+            },
+          }
+        : route === "/announcement-roles"
+          ? { roles: [] }
+          : participation,
+    );
+    await mount();
+    expect(host.querySelector('select[name="clan"]')).toBeNull();
+    const picker = pickerByLabel(host, "Hosting clan");
+    await openPicker(picker);
+    expect(pickerOptionTexts(picker).slice(0, 2)).toEqual([
+      "All clans",
+      "Clan 0 · 5 of 8 meet · Draft",
+    ]);
+  });
   it("a step in the bar asks the same question", async () => {
     await mount(true, "pool=lazy&clan=%232YQ&outcome=partial");
     await act(async () => button("Retain local result edit #P1").click());
@@ -234,8 +300,17 @@ describe("season overview", () => {
     expect(bonus).not.toHaveBeenCalled();
   });
   it("results-only staff see the list and a bar they cannot open past Results", async () => {
-    await mount(false, "pool=lazy&clan=%232YQ&outcome=partial");
-    expect(host.querySelector(".bonus-clan-cards")).toBeNull();
+    await mount(false, "pool=lazy&clan=%232YQ");
+    // Results-only staff keep the one dropdown; selecting a clan filters the list.
+    expect(clanSelect().value).toBe("#2YQ");
+    expect(host.querySelector(".bonus-clan-line")).toBeNull();
+    await pickClan("#8QQ");
+    expect(bonus).not.toHaveBeenCalled();
+    expect(
+      [...host.querySelectorAll(".participation-list > li:not([hidden])")].map(
+        (item) => item.querySelector(".player-card-name-text")?.textContent,
+      ),
+    ).toEqual(["Bravo"]);
     // The step bar needs the bonus status; without it there is no bar.
     expect(host.querySelector(".bonus-step-bar")).toBeNull();
     expect(
@@ -328,6 +403,8 @@ describe("page menu", () => {
       "These results have not been checked recently.",
     );
     expect(button("Check Clash now", warning)).toBeDefined();
+    // The separator cannot wrap onto a line of its own.
+    expect(warning.textContent).toContain("recently. · Check Clash now");
     expect(writes()).toHaveLength(0);
   });
 });

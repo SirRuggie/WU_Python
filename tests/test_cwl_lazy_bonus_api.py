@@ -320,7 +320,7 @@ class LazyBonusApiTests(RaffleTests):
                      'Prior award', '[]', '505227988229554179', cycle))
         preview = await self.review_preview()
         excluded = next(a for a in preview['excluded'] if a['tag'] == '#P2Y')
-        self.assertIn('previous three CWL months', excluded['exclusion'])
+        self.assertIn('Received a Lazy bonus in one of the previous three CWL months', excluded['exclusion'])
         state = await self.get_state()
         response = await self.call('PATCH', self.base + '/account-review', self.owner, json={
             'tag': '#P2Y', 'flags': [], 'override_reason': 'Staff approved cooldown exception',
@@ -329,11 +329,11 @@ class LazyBonusApiTests(RaffleTests):
         preview = await self.review_preview()
         self.assertIn('#P2Y', {a['tag'] for a in preview['eligible']})
 
-    def add_prior_bonus(self, db, cycle, *, voided=False):
+    def add_prior_bonus(self, db, cycle, *, voided=False, pool='lazy'):
         batch = db.execute('INSERT INTO bonus_batches(season_id,cycle,base_revision,fingerprint,snapshot_json,confirmed_by,confirmed_at) VALUES (?,?,?,?,?,?,?)',
             (self.sid, cycle, 0, f'prior-{cycle}', '{}', '505227988229554179', cycle)).lastrowid
         db.execute('INSERT INTO bonus_confirmations(batch_id,season_id,cycle,publication_version,tag,player_name,pool,clan_tag,clan_name,attacks,stars,reason,warnings_json,confirmed_by,confirmed_at,voided_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-            (batch, self.sid, cycle, 1, '#P2Y', 'Player', 'lazy', '#C2Y', 'Lazy Host', 3, 8,
+            (batch, self.sid, cycle, 1, '#P2Y', 'Player', pool, '#C2Y', 'Lazy Host', 3, 8,
              'Prior award', '[]', '505227988229554179', cycle, cycle if voided else None))
 
     def sit_out(self, cycle):
@@ -356,6 +356,15 @@ class LazyBonusApiTests(RaffleTests):
             self.add_prior_bonus(db, '2025-12')
         self.assertTrue(self.sit_out('2026-03'))
         self.assertFalse(self.sit_out('2026-04'))
+
+    async def test_main_bonus_does_not_sit_out_a_lazy_draw(self):
+        await self.ready_lazy()
+        with self.app['store'].tx() as db:
+            self.add_prior_bonus(db, '2026-01', pool='main')
+        self.assertFalse(self.sit_out('2026-02'))
+        with self.app['store'].tx() as db:
+            self.add_prior_bonus(db, '2025-12', pool='lazy')
+        self.assertTrue(self.sit_out('2026-02'))
 
     async def test_voided_bonus_does_not_sit_out(self):
         await self.ready_lazy()

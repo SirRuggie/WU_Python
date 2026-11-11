@@ -5,10 +5,9 @@ import ActionMenu from "./rosterUi/ActionMenu";
 import "./ParticipationWorkspace.css";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import FilterChips from "./FilterChips";
-import SearchPicker from "./SearchPicker";
 import BonusStepBar from "./BonusStepBar";
 import ParticipationRecord from "./ParticipationRecord";
-import BonusClanCards from "./BonusClanCards";
+import BonusClanSelect from "./BonusClanSelect";
 import ResultsSettingsSheet, {
   type SettingsSaved,
 } from "./ResultsSettingsSheet";
@@ -55,7 +54,6 @@ const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
     : "Results could not be loaded. Try again.";
-const CLAN_PICKER_LIMIT = 20;
 
 export default function ParticipationWorkspace({
   seasonId,
@@ -469,10 +467,6 @@ export default function ParticipationWorkspace({
   });
   const statusSummary = participationSummary(visible, data?.sync);
   const poolLabel = pool === "main" ? "Main CWL" : "Lazy CWL";
-  const clanOptions = [
-    { value: "all", label: "All clans" },
-    ...clans.map(([tag, name]) => ({ value: tag, label: name, detail: tag })),
-  ];
   // Opening the steps leaves this list, so unsaved result edits are confirmed first.
   const openSteps = async (query: string) => {
     if (!onBonus || controlsLocked) return;
@@ -501,13 +495,13 @@ export default function ParticipationWorkspace({
     setClan(next);
     emit({ clan: next });
   };
-  // Clan cards come from the status read; the list's own clans stand in until it loads.
-  const cardClans = status
+  // Clan options come from the status read; the list's own clans stand in until it loads.
+  const clanChoices = status
     ? status.pools[pool].map((host) => ({ tag: host.tag, name: host.name }))
     : clans.map(([tag, name]) => ({ tag, name }));
 
   return (
-    <div className="participation-workspace">
+    <div className="participation-workspace roster-ui">
       {confirmation}
       <CwlPageHeader
         className="participation-page-head"
@@ -632,7 +626,7 @@ export default function ParticipationWorkspace({
             )}
             {statusSummary.warning && (
               <p className="participation-capture-warning" role="status">
-                {statusSummary.warning} ·{" "}
+                {statusSummary.warning}&nbsp;·{" "}
                 <button
                   type="button"
                   className="participation-inline-action"
@@ -676,21 +670,20 @@ export default function ParticipationWorkspace({
               emit({ pool: next, clan: "all" });
             }}
           />
-          {onBonus && cardClans.length > 0 && (
-            <BonusClanCards
-              clans={cardClans}
-              selected={clan === "all" ? "" : clan}
+          {clanChoices.length > 0 && (
+            <BonusClanSelect
+              clans={clanChoices}
+              selected={clan}
               pool={pool}
               status={status}
-              statusFailed={statusFailed}
+              opensSteps={!!onBonus}
               disabled={controlsLocked}
-              onSelect={(tag) => void openSteps(stepsQuery(tag))}
-              onAll={() => chooseClan("all")}
+              onChange={chooseClan}
             />
           )}
           <div className="participation-toolbar">
             <label>
-              Find a player or clan
+              Find a player
               <input
                 type="search"
                 name="search"
@@ -699,38 +692,9 @@ export default function ParticipationWorkspace({
                 value={search}
                 disabled={controlsLocked}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Find a player or clan"
+                placeholder="Name or #TAG…"
               />
             </label>
-            {clans.length > CLAN_PICKER_LIMIT ? (
-              <SearchPicker
-                label="Hosting clan"
-                value={clan}
-                options={clanOptions}
-                disabled={controlsLocked}
-                placeholder="All clans"
-                searchPlaceholder="Search clans"
-                emptyText="No clans match."
-                onChange={chooseClan}
-              />
-            ) : (
-              <label>
-                Hosting clan
-                <select
-                  name="clan"
-                  autoComplete="off"
-                  value={clan}
-                  disabled={controlsLocked}
-                  onChange={(event) => chooseClan(event.target.value)}
-                >
-                  {clanOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
             <label>
               Sort
               <select

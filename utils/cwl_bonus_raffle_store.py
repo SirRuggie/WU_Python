@@ -268,8 +268,8 @@ class RaffleStore:
             return False
         placeholders = ','.join('?' for _ in prior)
         row = self.db.execute(
-            f'SELECT 1 FROM bonus_confirmations WHERE tag=? AND cycle IN ({placeholders}) AND voided_at IS NULL LIMIT 1',
-            (tag, *prior),
+            f'SELECT 1 FROM bonus_confirmations WHERE tag=? AND pool=? AND cycle IN ({placeholders}) AND voided_at IS NULL LIMIT 1',
+            (tag, 'lazy', *prior),
         ).fetchone()
         return row is not None
 
