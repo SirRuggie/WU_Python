@@ -6,7 +6,6 @@ import { exportMonthLabel } from "./exportPreview";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -256,8 +255,7 @@ export default function BonusWorkspace({
   const [notice, setNotice] = useState("");
   const [clanTag, setClanTag] = useState(initial.current.clan || "");
   const [clanQuery, setClanQuery] = useState("");
-  const [clanStrip, setClanStrip] = useState<HTMLDivElement | null>(null);
-  const clanRail = useChoiceRail<HTMLDivElement>(clanTag, false, setClanStrip);
+  const clanRail = useChoiceRail<HTMLDivElement>(clanTag);
   const countInput = useRef<HTMLInputElement | null>(null);
   const countDetails = useRef<HTMLDetailsElement | null>(null);
   const minimumInput = useRef<HTMLInputElement | null>(null);
@@ -609,22 +607,6 @@ export default function BonusWorkspace({
     if (data && !clans.some((clan) => clan.tag === clanTag))
       setClanTag(clans[0]?.tag || "");
   }, [data, pool, clanTag]);
-  // The selected card snaps to the strip start, so no card opens cut off.
-  useLayoutEffect(() => {
-    const selected = clanStrip?.querySelector<HTMLElement>(
-      ':scope > [aria-pressed="true"]',
-    );
-    if (!clanStrip || !selected) return;
-    const style = getComputedStyle(clanStrip);
-    const start =
-      clanStrip.getBoundingClientRect().left +
-      clanStrip.clientLeft +
-      (parseFloat(style.scrollPaddingLeft) || 0);
-    clanStrip.scrollLeft = Math.max(
-      0,
-      clanStrip.scrollLeft + selected.getBoundingClientRect().left - start,
-    );
-  }, [clanStrip, clanTag, pool, clans.length]);
 
   const mutate = async (
     suffix: string,
@@ -783,7 +765,7 @@ export default function BonusWorkspace({
 
   // One compact line per clan-wide reason: icon, text and its fix.
   const clanNotice = selectedClan && clanNotices.length > 0 && (
-    <div className="bonus-clan-notice" role="status">
+    <div className="notice bonus-clan-notice" role="status">
       {clanNotices.map((text) => (
         <p key={text}>
           <TriangleAlert size={16} aria-hidden="true" />

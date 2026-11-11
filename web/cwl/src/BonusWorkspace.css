@@ -110,17 +110,21 @@
     border-color: var(--wu-text-muted);
   }
 }
-/* Clan-wide reasons: one compact line each, icon + text + fix. */
-.bonus-clan-notice {
+/* Clan-wide reasons: the shared amber notice, one 44px line per reason. */
+.notice.bonus-clan-notice {
+  display: block;
   margin: 0 0 var(--wu-space-2);
-  color: #e6c78c;
-  font-size: var(--wu-text-sm);
+  padding: 0 var(--wu-space-3);
 }
 .bonus-clan-notice p {
   display: flex;
   align-items: center;
   gap: var(--wu-space-2);
+  min-height: 44px;
   margin: 0;
+}
+.bonus-clan-notice p + p {
+  border-top: 1px solid var(--wu-warning-border);
 }
 .bonus-clan-notice svg {
   flex: none;
@@ -129,13 +133,15 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* Each fix is its own 44px box inside its line, never over a neighbour. */
 .bonus-clan-notice a,
-.bonus-clan-notice .bonus-inline-action {
+.notice.bonus-clan-notice .bonus-inline-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  vertical-align: middle;
   color: var(--wu-text);
-}
-/* The fix keeps its 44px target without making the line 44px tall. */
-.bonus-clan-notice .bonus-inline-action {
-  margin-block: -12px;
+  font-size: inherit;
 }
 .bonus-inline-action {
   min-height: 44px;
@@ -565,11 +571,6 @@
   .bonus-workspace button.bonus-clan-card:only-child {
     flex-basis: 100%;
   }
-  /* End space lets the last card snap to the start too, never cutting its neighbour. */
-  .bonus-clan-cards:has(> :nth-child(2))::after {
-    content: "";
-    flex: 0 0 calc(22% - 10px - var(--wu-space-2));
-  }
   /* The selected card already names the clan; the heading stays for screen readers. */
   .bonus-clan-heading {
     position: absolute;
@@ -591,9 +592,22 @@
     flex-wrap: nowrap;
     margin: var(--wu-space-2) 0;
   }
+  /* Wider field cell: the label sits beside its input, not above it. */
   .bonus-stats > .bonus-inline-count {
+    display: flex;
+    align-items: center;
+    flex-grow: 1.6;
+    gap: var(--wu-space-2);
     min-width: 0;
     padding: var(--wu-space-1) var(--wu-space-2);
+  }
+  .bonus-inline-count span {
+    min-width: 0;
+    font-size: var(--wu-text-xs);
+    line-height: 1.25;
+  }
+  .bonus-inline-count input {
+    flex: 0 0 56px;
   }
   .bonus-stats > div {
     min-width: 0;

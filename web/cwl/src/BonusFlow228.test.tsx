@@ -4,10 +4,12 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
+const permission = vi.hoisted(() => ({ value: true }));
 vi.mock("./DashboardPermissions", () => ({
-  useDashboardPermission: () => true,
+  useDashboardPermission: () => permission.value,
 }));
 import BonusWorkspace from "./BonusWorkspace";
+import { pickerByLabel, pickOption } from "./searchPickerTestUtils";
 import {
   bonusReviewBlockers,
   reviewBlocked,
@@ -127,6 +129,7 @@ async function mount(data: object = base, state = "pool=lazy") {
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   localStorage.clear();
+  permission.value = true;
   urlState.mockReset();
   results.mockReset();
   HTMLDialogElement.prototype.showModal = function () {
@@ -463,7 +466,34 @@ describe("phone layout", () => {
     await act(async () => trigger().click());
     return items;
   };
-  it("the month line ⋯ menu holds both refresh actions with their disabled rules", async () => {
+  const select = async (label: string) => {
+    await act(async () => trigger().click());
+    const item = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].find((node) => node.textContent?.trim() === label)!;
+    await act(async () => {
+      item.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, button: 0 }),
+      );
+      item.dispatchEvent(
+        new MouseEvent("mouseup", { bubbles: true, button: 0 }),
+      );
+      item.click();
+    });
+  };
+  const type = async (input: HTMLInputElement, value: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  const never = () => new Promise(() => {});
+  const reads = () =>
+    api.mock.calls.filter((call) => call[0] === "/seasons/1/bonus-raffle")
+      .length;
+  it("the month line ⋯ menu holds both refresh actions", async () => {
     await mount();
     expect(host.querySelector(".bonus-context p")?.textContent).toBe(
       "November 2026 · Clash not checked yet",
@@ -474,20 +504,135 @@ describe("phone layout", () => {
       Refresh: false,
       "Refresh attacks from Clash": false,
     });
-    // An open candidate editor blocks the Clash write but not the reread.
-    await act(async () => button("Add player by tag").click());
-    expect(await menuItems()).toEqual({
-      Refresh: false,
-      "Refresh attacks from Clash": true,
-    });
     expect(writes()).toHaveLength(0);
   });
-  it("disables Refresh attacks from Clash without a CWL month", async () => {
-    await mount({ ...base, cycle: null });
+  // Each of the nine existing conditions; Refresh itself waits only on work.
+  it.each([
+    [
+      "no bonus access",
+      async () => {
+        permission.value = false;
+        await mount();
+      },
+    ],
+    ["archived season", () => mount({ ...base, season_status: "archived" })],
+    ["no CWL month", () => mount({ ...base, cycle: null })],
+    [
+      "open candidate editor",
+      async () => {
+        await mount();
+        await act(async () => button("Add player by tag").click());
+      },
+    ],
+    [
+      "player lookup running",
+      async () => {
+        await mount();
+        await act(async () => button("Add player by tag").click());
+        await type(
+          host.querySelector<HTMLInputElement>('input[name="player-tag"]')!,
+          "#P9",
+        );
+        api.mockImplementation(never);
+        await act(async () => button("Find player").click());
+      },
+    ],
+    [
+      "request running",
+      async () => {
+        await mount();
+        api.mockImplementation(never);
+        await select("Refresh attacks from Clash");
+      },
+    ],
+    [
+      "unsaved Main minimum",
+      async () => {
+        await mount(
+          {
+            ...base,
+            accounts: [account("#P9", "Main player", "#2YQ", { pool: "main" })],
+          },
+          "pool=main",
+        );
+        await type(
+          host.querySelector<HTMLInputElement>(
+            'input[name="minimum-attacks"]',
+          )!,
+          "4",
+        );
+      },
+    ],
+    [
+      "unsaved representative role",
+      async () => {
+        await mount();
+        const roles = { roles: [{ id: "111111111111111111", name: "Rep" }] };
+        api.mockImplementation((route: string) =>
+          Promise.resolve(route === "/announcement-roles" ? roles : base),
+        );
+        const details = [...host.querySelectorAll("details")].find((item) =>
+          item.textContent?.startsWith("FWA Rep odds settings"),
+        )!;
+        await act(async () => {
+          details.open = true;
+          details.dispatchEvent(new Event("toggle"));
+        });
+        await pickOption(pickerByLabel(host, "Representative role"), "Rep");
+      },
+    ],
+    [
+      "unsaved account review",
+      async () => {
+        Element.prototype.scrollIntoView ||= () => {};
+        await mount();
+        await act(async () => button("Review Alpha").click());
+        await act(async () =>
+          host
+            .querySelector<HTMLInputElement>(
+              '.bonus-review-editor input[type="checkbox"]',
+            )!
+            .click(),
+        );
+      },
+    ],
+  ] as const)("%s disables Refresh attacks from Clash", async (name, setup) => {
+    await setup();
     expect(await menuItems()).toEqual({
-      Refresh: false,
+      Refresh: name === "player lookup running" || name === "request running",
       "Refresh attacks from Clash": true,
     });
+  });
+  it("Refresh attacks from Clash posts the existing check", async () => {
+    await mount();
+    await select("Refresh attacks from Clash");
+    expect(writes()).toEqual([
+      ["/seasons/1/bonus-raffle/refresh-results", "POST", {}],
+    ]);
+  });
+  it("Refresh rereads once, behind the unsaved-change guard", async () => {
+    await mount();
+    const before = reads();
+    await select("Refresh");
+    expect(reads()).toBe(before + 1);
+    await typeCount("4");
+    await select("Refresh");
+    const dialog = document.querySelector(".confirm-dialog")!;
+    expect(dialog).not.toBeNull();
+    await act(async () => button("Cancel", dialog).click());
+    expect(reads()).toBe(before + 1);
+    expect(
+      host.querySelector<HTMLInputElement>(".bonus-inline-count input")!.value,
+    ).toBe("4");
+    await select("Refresh");
+    await act(async () =>
+      button(
+        "Discard bonus edits",
+        document.querySelector(".confirm-dialog")!,
+      ).click(),
+    );
+    expect(reads()).toBe(before + 2);
+    expect(writes()).toHaveLength(0);
   });
   it("orders the clan: notice, stats, list, review, rules, count, add, odds", async () => {
     await mount({
@@ -529,9 +674,22 @@ describe("phone layout", () => {
     expect(flow.querySelector(".bonus-clan-notice")?.textContent).toBe(
       "Discord roles unavailable · Retry",
     );
+    // The shared amber notice, not a one-off colour.
+    expect(flow.querySelector(".bonus-clan-notice")!.classList).toContain(
+      "notice",
+    );
   });
-  it("starts the clan strip at the selected card", async () => {
-    // Cards are 280 px apart; the strip starts at 16 px.
+  it("reveals the selected card nearest in the clan strip", async () => {
+    // A 300 px strip at 16 px; cards are 260 px wide and 280 px apart.
+    const size = (name: string, value: number) =>
+      Object.defineProperty(HTMLElement.prototype, name, {
+        configurable: true,
+        get(this: HTMLElement) {
+          return this.classList.contains("bonus-clan-cards") ? value : 0;
+        },
+      });
+    size("clientWidth", 300);
+    size("scrollWidth", 820);
     const rect = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(function (this: HTMLElement) {
@@ -544,11 +702,14 @@ describe("phone layout", () => {
     try {
       await mount(base, "pool=lazy&clan=%238QQ");
       expect(cards()[1].getAttribute("aria-pressed")).toBe("true");
-      expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(280);
+      // Right edge aligned: the previous card keeps peeking at the left.
+      expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(240);
       await act(async () => cards()[0].click());
       expect(host.querySelector(".bonus-clan-cards")!.scrollLeft).toBe(0);
     } finally {
       rect.mockRestore();
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
     }
   });
 });
