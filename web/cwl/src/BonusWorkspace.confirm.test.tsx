@@ -79,7 +79,7 @@ afterEach(async () => {
 });
 it("removing a manual candidate requires confirm, Cancel writes zero and double tap writes once", async () => {
   const review = host.querySelector<HTMLButtonElement>(
-    ".bonus-account-list .bonus-quiet-action",
+    ".bonus-account-list .account-card-open",
   )!;
   await act(async () => review.click());
   await act(async () => button("Remove candidate").click());
@@ -111,11 +111,11 @@ it("candidate discard Cancel keeps the edit; confirmed discard closes without wr
   await act(async () =>
     host
       .querySelector<HTMLButtonElement>(
-        ".bonus-account-list .bonus-quiet-action",
+        ".bonus-account-list .account-card-open",
       )!
       .click(),
   );
-  const input = host.querySelector<HTMLTextAreaElement>(
+  const input = document.querySelector<HTMLTextAreaElement>(
     ".bonus-review-editor textarea",
   )!;
   await act(async () => {
@@ -126,7 +126,7 @@ it("candidate discard Cancel keeps the edit; confirmed discard closes without wr
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () =>
-    button("Cancel", host.querySelector(".bonus-review-editor")!).click(),
+    button("Cancel", document.querySelector(".bonus-review-editor")!).click(),
   );
   expect(document.querySelector(".confirm-dialog")).not.toBeNull();
   await act(async () =>
@@ -135,7 +135,7 @@ it("candidate discard Cancel keeps the edit; confirmed discard closes without wr
   expect(input.value).toBe("Local exception");
   expect(writes()).toHaveLength(0);
   await act(async () =>
-    button("Cancel", host.querySelector(".bonus-review-editor")!).click(),
+    button("Cancel", document.querySelector(".bonus-review-editor")!).click(),
   );
   await act(async () =>
     button(
@@ -143,6 +143,53 @@ it("candidate discard Cancel keeps the edit; confirmed discard closes without wr
       document.querySelector(".confirm-dialog")!,
     ).click(),
   );
-  expect(host.querySelector(".bonus-review-editor")).toBeNull();
+  expect(document.querySelector(".bonus-review-editor")).toBeNull();
+  expect(writes()).toHaveLength(0);
+});
+it("the whole card opens Review in a modal panel, not below the list", async () => {
+  const open = host.querySelector<HTMLButtonElement>(
+    ".bonus-account-list .account-card-open",
+  )!;
+  expect(open.getAttribute("aria-label")).toBe("Review Fixture");
+  await act(async () => open.click());
+  const panel = document.querySelector<HTMLDialogElement>(
+    "dialog.action-panel.bonus-review-editor",
+  )!;
+  expect(panel.open).toBe(true);
+  // Portaled to the page body, so it never lands at the end of the list.
+  expect(host.contains(panel)).toBe(false);
+  expect(panel.textContent).toContain("Review Fixture");
+  await act(async () =>
+    panel.querySelector<HTMLButtonElement>(".action-panel-close")!.click(),
+  );
+  expect(document.querySelector(".bonus-review-editor")).toBeNull();
+  expect(document.querySelector(".confirm-dialog")).toBeNull();
+  expect(writes()).toHaveLength(0);
+});
+it("Escape with unsaved review edits asks before closing and writes nothing", async () => {
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(
+        ".bonus-account-list .account-card-open",
+      )!
+      .click(),
+  );
+  const panel = document.querySelector<HTMLDialogElement>(
+    ".bonus-review-editor",
+  )!;
+  await act(async () =>
+    panel.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+  );
+  await act(async () => {
+    panel.dispatchEvent(new Event("cancel", { cancelable: true }));
+  });
+  expect(document.querySelector(".confirm-dialog")).not.toBeNull();
+  await act(async () =>
+    button("Cancel", document.querySelector(".confirm-dialog")!).click(),
+  );
+  expect(document.querySelector(".bonus-review-editor")).not.toBeNull();
+  expect(
+    panel.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked,
+  ).toBe(true);
   expect(writes()).toHaveLength(0);
 });

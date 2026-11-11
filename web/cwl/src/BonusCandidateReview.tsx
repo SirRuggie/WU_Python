@@ -1,5 +1,6 @@
+import ActionPanel from "./ActionPanel";
 import DiscordIdentity from "./DiscordIdentity";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { RaffleAccount } from "./bonusRaffle";
 
 export const LAZY_FLAGS = [
@@ -22,6 +23,8 @@ export const LAZY_FLAGS = [
 
 type Props = {
   account: RaffleAccount;
+  /** The card control that opened the panel; focus returns to it. */
+  trigger: HTMLElement | null;
   busy: boolean;
   error: string;
   onCancel: () => void;
@@ -32,6 +35,7 @@ type Props = {
 
 export default function BonusCandidateReview({
   account,
+  trigger,
   busy,
   error,
   onCancel,
@@ -43,34 +47,52 @@ export default function BonusCandidateReview({
   const savedReason = account.bonus_review?.override_reason || "";
   const [flags, setFlags] = useState<string[]>(savedFlags);
   const [reason, setReason] = useState(savedReason);
-  const heading = useRef<HTMLHeadingElement>(null);
   const dirty =
     flags.slice().sort().join("|") !== savedFlags.slice().sort().join("|") ||
     reason !== savedReason;
 
-  useEffect(() => {
-    heading.current?.focus({ preventScroll: true });
-    heading.current?.scrollIntoView({ block: "nearest" });
-  }, [account.tag]);
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
   useEffect(() => () => onDirty(false), [onDirty]);
 
   return (
-    <section
+    <ActionPanel
+      title={`Review ${account.player_name}`}
       className="bonus-review-editor"
-      aria-label={`Review ${account.player_name}`}
-    >
-      <div className="bonus-editor-heading">
-        <div>
-          <h3 ref={heading} tabIndex={-1}>
-            Review {account.player_name}
-          </h3>
-          <small>{account.tag}</small>
+      trigger={trigger}
+      busy={busy}
+      onClose={() => {
+        // Close, Escape, backdrop and Back all go through the discard guard.
+        onCancel();
+        // false keeps the Back entry while the discard question is open.
+        return dirty ? false : undefined;
+      }}
+      footer={
+        <div className="bonus-editor-actions">
+          {onRemove && (
+            <button
+              type="button"
+              className="bonus-remove-candidate"
+              disabled={busy}
+              onClick={() => void onRemove()}
+            >
+              Remove candidate
+            </button>
+          )}
+          <button type="button" disabled={busy} onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || !dirty || (!!reason && !reason.trim())}
+            onClick={() => void onSave(flags, reason.trim())}
+          >
+            Save review
+          </button>
         </div>
-        <button type="button" disabled={busy} onClick={onCancel}>
-          Close
-        </button>
-      </div>
+      }
+    >
+      <p className="bonus-review-tag">{account.tag}</p>
       <div className="bonus-review-context">
         {account.exclusion && (
           <p>
@@ -156,29 +178,6 @@ export default function BonusCandidateReview({
           {error}
         </p>
       )}
-      <div className="bonus-editor-actions">
-        {onRemove && (
-          <button
-            type="button"
-            className="bonus-remove-candidate"
-            disabled={busy}
-            onClick={() => void onRemove()}
-          >
-            Remove candidate
-          </button>
-        )}
-        <button type="button" disabled={busy} onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="primary"
-          disabled={busy || !dirty || (!!reason && !reason.trim())}
-          onClick={() => void onSave(flags, reason.trim())}
-        >
-          Save review
-        </button>
-      </div>
-    </section>
+    </ActionPanel>
   );
 }

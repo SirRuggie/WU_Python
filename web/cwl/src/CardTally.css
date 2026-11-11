@@ -1,0 +1,62 @@
+.card-tally {
+  display: flex;
+  gap: var(--wu-space-4);
+}
+.card-tally span:not(.card-tally-separator) {
+  min-width: 31px;
+  text-align: center;
+}
+.card-tally strong,
+.card-tally small {
+  display: block;
+}
+.card-tally strong {
+  font-size: var(--wu-text-md);
+  font-variant-numeric: tabular-nums;
+}
+.card-tally small {
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+}
+/* Outcome tone sits on the chip and the tally numbers; the card stays neutral. */
+.card-tally .card-tally-value.is-success {
+  color: var(--wu-success);
+}
+.card-tally .card-tally-value.is-danger {
+  color: var(--roster-card-text-danger);
+}
+.card-tally .card-tally-value.is-warning {
+  color: var(--wu-warning);
+}
+@media (max-width: 650px) {
+  .card-tally {
+    gap: 0;
+  }
+  .card-tally span:not(.card-tally-separator) {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    min-width: 0;
+    text-align: left;
+  }
+  .card-tally-separator {
+    white-space: pre;
+  }
+  .card-tally strong,
+  .card-tally small {
+    display: inline;
+    font-size: inherit;
+    font-weight: inherit;
+  }
+}
+@media (min-width: 651px) {
+  .card-tally-separator {
+    display: none;
+  }
+  .card-tally {
+    justify-content: flex-end;
+  }
+  .card-tally span:not(.card-tally-separator) {
+    text-align: right;
+  }
+}

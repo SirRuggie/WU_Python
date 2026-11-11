@@ -586,9 +586,13 @@ describe("phone layout", () => {
       async () => {
         Element.prototype.scrollIntoView ||= () => {};
         await mount();
-        await act(async () => button("Review Alpha").click());
         await act(async () =>
           host
+            .querySelector<HTMLButtonElement>('[aria-label="Review Alpha"]')!
+            .click(),
+        );
+        await act(async () =>
+          document
             .querySelector<HTMLInputElement>(
               '.bonus-review-editor input[type="checkbox"]',
             )!

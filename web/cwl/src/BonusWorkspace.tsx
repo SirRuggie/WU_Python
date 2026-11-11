@@ -22,8 +22,8 @@ import BonusAnnouncement from "./BonusAnnouncement";
 import BonusStepBar, { bonusStepHref } from "./BonusStepBar";
 import SearchPicker from "./SearchPicker";
 import { roleOption } from "./RolePicker";
-import { StatusPill } from "./rosterUi/primitives";
-import BonusCandidateReview, { LAZY_FLAGS } from "./BonusCandidateReview";
+import BonusCandidateReview from "./BonusCandidateReview";
+import BonusAccountCard from "./BonusAccountCard";
 import {
   bonusClanState,
   loadBonusStatus,
@@ -32,8 +32,6 @@ import {
 } from "./bonusStatus";
 import {
   countText,
-  outcomeLabels,
-  outcomeTone,
   participationOutcome,
   resultDateText,
 } from "./participationOutcome";
@@ -43,13 +41,10 @@ import {
   resultsStateQuery,
 } from "./resultsUrlState";
 import {
-  attacksText,
-  bonusCandidateStatus,
   bonusReviewBlockers,
   reviewBlocked,
   canSaveBonusDraw,
   clanWideReasons,
-  playerReasons,
   type BonusListMode,
   type BonusReviewBlocker,
   type RaffleAccount,
@@ -96,7 +91,7 @@ function AccountList({
   minimum = null,
 }: {
   accounts: RaffleAccount[];
-  onReview?: (account: RaffleAccount, opener: HTMLButtonElement) => void;
+  onReview?: (account: RaffleAccount, opener: HTMLElement) => void;
   busy?: boolean;
   searchable?: boolean;
   mode?: BonusListMode;
@@ -136,72 +131,17 @@ function AccountList({
       <ul className="bonus-account-list">
         {matching
           .slice(0, searchable ? visibleCount : matching.length)
-          .map((account) => {
-            const outcome = participationOutcome(account, minimum);
-            // Clan-wide reasons show once in the clan notice, not per row.
-            const reasons = account.exclusion
-              ? playerReasons(account)
-              : [bonusCandidateStatus(account, mode)].filter(Boolean);
-            return (
-              <li key={account.tag}>
-                <div className="bonus-account-identity">
-                  <strong>{account.player_name}</strong>
-                  <small>
-                    {account.tag}
-                    {account.manual_candidate ? " · Added by staff" : ""}
-                  </small>
-                </div>
-                <div className="bonus-account-outcome">
-                  <strong>
-                    {attacksText(account)}
-                    {account.stars !== null
-                      ? ` · ${countText(account.stars, "star")}`
-                      : ""}
-                  </strong>
-                  {(outcome || reasons.length > 0) && (
-                    <span className="bonus-account-state">
-                      {outcome && (
-                        <StatusPill
-                          tone={outcomeTone(outcome)}
-                          className="bonus-outcome"
-                        >
-                          {outcomeLabels[outcome]}
-                        </StatusPill>
-                      )}
-                      {reasons.length > 0 && (
-                        <small className="bonus-account-reason">
-                          {reasons.join(" · ")}
-                        </small>
-                      )}
-                    </span>
-                  )}
-                  {account.multiplier === 2 && <small>2× ticket weight</small>}
-                  {!!account.bonus_review?.flags.length && (
-                    <small>
-                      {account.bonus_review.flags
-                        .map(
-                          (flag) =>
-                            LAZY_FLAGS.find((item) => item.id === flag)
-                              ?.label || flag,
-                        )
-                        .join(" · ")}
-                    </small>
-                  )}
-                </div>
-                {onReview && (
-                  <button
-                    type="button"
-                    className="bonus-quiet-action"
-                    disabled={busy}
-                    onClick={(event) => onReview(account, event.currentTarget)}
-                  >
-                    Review
-                    <span className="sr-only"> {account.player_name}</span>
-                  </button>
-                )}
-              </li>
-            );
-          })}
+          .map((account) => (
+            <li key={account.tag}>
+              <BonusAccountCard
+                account={account}
+                mode={mode}
+                minimum={minimum}
+                onReview={onReview}
+                busy={busy}
+              />
+            </li>
+          ))}
       </ul>
       {searchable && matching.length > visibleCount && (
         <button
@@ -279,7 +219,7 @@ export default function BonusWorkspace({
   const [roles, setRoles] = useState<Role[]>([]);
   const [rolesError, setRolesError] = useState("");
   const [rolesLoading, setRolesLoading] = useState(false);
-  const reviewOpener = useRef<HTMLButtonElement | null>(null);
+  const reviewOpener = useRef<HTMLElement | null>(null);
   const addOpener = useRef<HTMLButtonElement | null>(null);
   const candidateTagInput = useRef<HTMLInputElement | null>(null);
   const candidateHeading = useRef<HTMLHeadingElement | null>(null);
@@ -753,15 +693,10 @@ export default function BonusWorkspace({
       }
     }
   };
+  // The Review panel returns focus to the control that opened it.
   const closeReview = () => {
     setReviewTag("");
     setReviewDirty(false);
-    const opener = reviewOpener.current;
-    requestAnimationFrame(() =>
-      (opener?.isConnected ? opener : candidateHeading.current)?.focus({
-        preventScroll: true,
-      }),
-    );
   };
   const closeCandidate = () => {
     setCandidateOpen(false);
@@ -1202,6 +1137,7 @@ export default function BonusWorkspace({
                     <BonusCandidateReview
                       key={reviewAccount.tag}
                       account={reviewAccount}
+                      trigger={reviewOpener.current}
                       busy={busy}
                       onDirty={setReviewDirty}
                       onCancel={async () => {

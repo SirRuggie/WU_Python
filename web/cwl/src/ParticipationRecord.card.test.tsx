@@ -235,8 +235,8 @@ it("returns focus to the ⋯ trigger when the menu opened Details", async () => 
 it("pressing the card button keeps its overlay in place", () => {
   // Global press feedback scales buttons; a scaled button would become the
   // overlay's containing block and pointerup would miss it.
-  const css = readFileSync("src/ParticipationWorkspace.css", "utf8");
-  const rule = css.match(/\.participation-card-open:active\s*\{([^}]*)\}/);
+  const css = readFileSync("src/AccountCard.css", "utf8");
+  const rule = css.match(/\.account-card-open:active\s*\{([^}]*)\}/);
   expect(rule?.[1]).toMatch(/scale:\s*none/);
   expect(rule?.[1]).toMatch(/transform:\s*none/);
 });
