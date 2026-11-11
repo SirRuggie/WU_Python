@@ -8,6 +8,7 @@ import {
 } from "./actionPanelHistory";
 import { countLabel } from "./countLabel";
 import SectionTabs from "./SectionTabs";
+import SearchPicker from "./SearchPicker";
 import ServerSettingsIndex from "./ServerSettingsIndex";
 import BandStatusSummary, { bandStatusWarning } from "./BandStatusSummary";
 import ApplicationSettingsIndex from "./ApplicationSettingsIndex";
@@ -396,7 +397,6 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     [fieldPage, setFieldPage] = useState(0),
     [statusUrl, setStatusUrl] = useState(""),
     [actionResult, setActionResult] = useState<ManagementResult | null>(null);
-  const [recordSearch, setRecordSearch] = useState("");
   const pickerCopy = recordPickerCopy(documents);
   const [previewStatus, setPreviewStatus] = useState(""),
     [mobilePane, setMobilePane] = useState<"edit" | "preview">("edit");
@@ -546,7 +546,6 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     setActionResult(null);
     if (!keepDocuments) {
       setDocuments([]);
-      setRecordSearch("");
     }
     setDocument(null);
     setDraft({});
@@ -889,55 +888,45 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
             </div>
           ) : (
             <div className="manage-record-picker">
-              <label>
-                {pickerCopy.search}
-                <input
-                  type="search"
-                  placeholder={pickerCopy.placeholder}
-                  value={recordSearch}
-                  onChange={(event) => setRecordSearch(event.target.value)}
-                />
-              </label>
-              <label>
-                {pickerCopy.label}
-                <select
-                  disabled={busy}
-                  value={
-                    documents.some((item) => item.id === selected.id)
-                      ? selected.id
-                      : ""
-                  }
-                  onChange={(event) => {
-                    const record = documents.find(
-                      (item) => item.id === event.target.value,
-                    );
-                    if (record) void open(record, true);
-                  }}
-                >
-                  <option value="">
-                    Select {pickerCopy.label.toLowerCase()}
-                  </option>
-                  {documents
-                    .filter(
-                      (record) =>
-                        record.id === selected.id ||
-                        `${record.label} ${record.id}`
-                          .toLowerCase()
-                          .includes(recordSearch.toLowerCase()),
+              <SearchPicker
+                label={pickerCopy.label}
+                value={
+                  documents.some((item) => item.id === selected.id)
+                    ? selected.id
+                    : ""
+                }
+                options={documents.map((record) => ({
+                  value: record.id,
+                  label: record.label,
+                }))}
+                search={(query) =>
+                  documents
+                    .filter((record) =>
+                      query
+                        .toLowerCase()
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .every((word) =>
+                          `${record.label} ${record.id}`
+                            .toLowerCase()
+                            .includes(word),
+                        ),
                     )
-                    .slice(0, 100)
-                    .map((record) => (
-                      <option value={record.id} key={record.id}>
-                        {record.label}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              {documents.length > 100 && (
-                <small>
-                  First 100 matches shown. Search to narrow the list.
-                </small>
-              )}
+                    .map((record) => ({
+                      value: record.id,
+                      label: record.label,
+                    }))
+                }
+                disabled={busy}
+                placeholder={`Select ${pickerCopy.label.toLowerCase()}`}
+                searchPlaceholder={pickerCopy.placeholder}
+                emptyText="No settings match."
+                limit={100}
+                onChange={(id) => {
+                  const record = documents.find((item) => item.id === id);
+                  if (record) void open(record, true);
+                }}
+              />
             </div>
           )}
         </section>

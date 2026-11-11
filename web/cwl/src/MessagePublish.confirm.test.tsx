@@ -126,3 +126,46 @@ it("closing after accepted publishing does not replay the request", async () => 
   expect(writes()).toHaveLength(1);
   expect(host.textContent).toBe("Closed");
 });
+it("changes the posting channel with one picker and no separate search box", async () => {
+  api.mockImplementation(async (apiPath: string) => {
+    if (apiPath === "/manage/choices")
+      return {
+        channels: [
+          { value: "111111111111111111", label: "#news" },
+          { value: "222222222222222222", label: "#general" },
+        ],
+      };
+    if (apiPath === "/fixture/destination")
+      return {
+        fields: [{ key: "channel_id", value: "111111111111111111" }],
+      };
+    return { ...page, destination_editor: "/api/cwl/fixture/destination" };
+  });
+  await act(async () => root.render(<p>Reset</p>));
+  await act(async () =>
+    root.render(
+      <MessagePublish
+        endpoint="/api/cwl/fixture"
+        dirty={false}
+        busy={false}
+        onBusy={() => {}}
+      />,
+    ),
+  );
+  await act(async () => button("Change posting channel", host).click());
+  expect(host.querySelector('input[type="search"]')).toBeNull();
+  const trigger = host.querySelector<HTMLButtonElement>(
+    ".search-picker-trigger",
+  )!;
+  expect(trigger.textContent).toContain("#news");
+  expect(host.textContent).not.toContain("111111111111111111");
+  await act(async () => trigger.click());
+  expect(api.mock.calls.filter((call) => call[1] === "PUT")).toHaveLength(0);
+  await act(async () =>
+    [...host.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((option) => option.textContent?.includes("#general"))!
+      .click(),
+  );
+  expect(trigger.textContent).toContain("#general");
+  expect(button("Save channel", host).disabled).toBe(false);
+});

@@ -372,22 +372,37 @@ it("narrows the dashboard zone menu by country and supports Show all without nic
   );
   await renderPage();
   await click("Edit Ada");
-  const country = document.querySelector<HTMLSelectElement>(
-    'select[aria-label="Country"]',
-  )!;
-  const zone = document.querySelector<HTMLSelectElement>(
-    'select[aria-label="Time zone"]',
-  )!;
-  await act(async () => {
-    country.value = "AU";
-    country.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  expect(zone.options).toHaveLength(4);
-  expect(zone.textContent).toContain("West (AWST)");
-  await act(async () => {
-    zone.value = "gmt+9:30";
-    zone.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  const picker = (label: string) =>
+    [...document.querySelectorAll<HTMLElement>(".search-picker")].find(
+      (node) =>
+        node.querySelector(".search-picker-label")?.textContent === label,
+    )!;
+  const openOptions = async (label: string) => {
+    await act(async () =>
+      picker(label)
+        .querySelector<HTMLButtonElement>(".search-picker-trigger")!
+        .click(),
+    );
+    return [...picker(label).querySelectorAll<HTMLElement>('[role="option"]')];
+  };
+  const choose = async (label: string, text: string) => {
+    const option = (await openOptions(label)).find((item) =>
+      item.textContent?.includes(text),
+    )!;
+    await act(async () => option.click());
+  };
+  await choose("Country", "Australia");
+  const zoneOptions = await openOptions("Time zone");
+  expect(zoneOptions).toHaveLength(3);
+  expect(zoneOptions.map((item) => item.textContent).join(" ")).toContain(
+    "West (AWST)",
+  );
+  await act(async () =>
+    picker("Time zone")
+      .querySelector<HTMLButtonElement>(".search-picker-trigger")!
+      .click(),
+  );
+  await choose("Time zone", "GMT+9:30");
   await act(async () =>
     [...document.body.querySelectorAll("label")]
       .find((label) =>
@@ -398,7 +413,7 @@ it("narrows the dashboard zone menu by country and supports Show all without nic
   );
   expect(document.body.textContent).toContain("Ada | GMT+9:30 🇦🇺");
   await click("Show all zones");
-  expect(zone.options).toHaveLength(5);
+  expect(await openOptions("Time zone")).toHaveLength(4);
 });
 
 it("shows uncertain saves in the editor and gives an explicit retry a fresh receipt identity", async () => {

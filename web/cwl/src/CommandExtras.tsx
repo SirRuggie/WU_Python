@@ -1,4 +1,5 @@
 import RoleSelect from "./RoleSelect";
+import SearchPicker from "./SearchPicker";
 import DashboardIcon from "./DashboardIcon";
 import { useState } from "react";
 import { apiUpload } from "./api";
@@ -166,25 +167,20 @@ export function ActionFields({
       </label>
       {item.action.kind === "reply" ? (
         <>
-          <label>
-            Show saved reply
-            <select
-              value={item.action.command}
-              onChange={(e) =>
-                onChange({
-                  ...item,
-                  action: { kind: "reply", command: e.target.value },
-                })
-              }
-            >
-              <option value="">Select a command</option>
-              {commands.map((command) => (
-                <option key={command} value={command}>
-                  {command}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SearchPicker
+            label="Show saved reply"
+            value={item.action.command}
+            options={commands.map((command) => ({
+              value: command,
+              label: command,
+            }))}
+            placeholder="Select a command"
+            searchPlaceholder="Search commands"
+            emptyText="No commands match."
+            onChange={(command) =>
+              onChange({ ...item, action: { kind: "reply", command } })
+            }
+          />
           <small>
             Only the person clicking sees the reply. Mentions do not ping.
           </small>

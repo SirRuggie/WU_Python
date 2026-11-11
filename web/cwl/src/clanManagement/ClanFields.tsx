@@ -1,6 +1,7 @@
 import DiscordIdentity from "../DiscordIdentity";
 import RolePicker, { type RoleChoice } from "../RolePicker";
 import ChannelCombobox from "../ChannelCombobox";
+import SearchPicker from "../SearchPicker";
 import type { AnnouncementChannel } from "../announcements";
 import type { Clan } from "./types";
 type Choice = { id: string; name: string; avatar_url?: string };
@@ -98,26 +99,20 @@ export default function ClanFields({
             />
           </label>
           {memberError && <p role="alert">{memberError}</p>}
-          <label>
-            Clan leader
-            <select
-              value={draft.leader_id}
-              onChange={(e) => change("leader_id", e.target.value)}
-            >
-              <option value="">Not set</option>
-              {draft.leader_id &&
-                !members.some((m) => m.id === draft.leader_id) && (
-                  <option value={draft.leader_id}>
-                    Current leader unavailable
-                  </option>
-                )}
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SearchPicker
+            label="Clan leader"
+            value={draft.leader_id}
+            options={members.map((m) => ({ value: m.id, label: m.name }))}
+            fallback={{
+              value: draft.leader_id,
+              label: "Current leader unavailable",
+            }}
+            clearable
+            placeholder="Not set"
+            searchPlaceholder="Search clan leaders"
+            emptyText="No members match."
+            onChange={(value) => change("leader_id", value)}
+          />
           {members.find((member) => member.id === draft.leader_id) && (
             <DiscordIdentity
               userId={draft.leader_id}

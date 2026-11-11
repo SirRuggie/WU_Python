@@ -508,11 +508,14 @@ it("sends the selected leave revision and retains the date and accounts after a 
   await settle();
   await input('[placeholder="Name or Discord ID"]', "Member");
   await settle();
-  const select = host.querySelector<HTMLSelectElement>("select")!;
-  await act(async () => {
-    select.value = "42";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".search-picker-trigger")!.click(),
+  );
+  await act(async () =>
+    [...host.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((option) => option.textContent?.includes("Member"))!
+      .click(),
+  );
   await input('input[type="date"]', "2027-01-01");
   await click("Save leave");
   expect(transport).toHaveBeenCalledWith("/strikes/settings/leaves", "POST", {

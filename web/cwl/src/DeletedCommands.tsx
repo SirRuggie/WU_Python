@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import ChangeHistory from "./ChangeHistory";
+import SearchPicker from "./SearchPicker";
 
 export default function DeletedCommands({
   disabled,
@@ -46,18 +47,16 @@ export default function DeletedCommands({
       {!loading && !error && !names.length && <p>No deleted commands.</p>}
       {names.length > 0 && (
         <>
-          <label>
-            Command
-            <select
-              disabled={disabled}
-              value={selected}
-              onChange={(e) => setSelected(e.target.value)}
-            >
-              {names.map((name) => (
-                <option key={name}>{name}</option>
-              ))}
-            </select>
-          </label>
+          <SearchPicker
+            label="Command"
+            value={selected}
+            options={names.map((name) => ({ value: name, label: name }))}
+            disabled={disabled}
+            placeholder="Select a command"
+            searchPlaceholder="Search deleted commands"
+            emptyText="No deleted commands match."
+            onChange={setSelected}
+          />
           {selected && (
             <ChangeHistory
               key={selected}

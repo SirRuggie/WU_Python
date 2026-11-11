@@ -10,6 +10,8 @@ import { api, ApiError, type Season } from "./api";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import useUnsavedWork from "./useUnsavedWork";
 import BonusAnnouncement from "./BonusAnnouncement";
+import SearchPicker from "./SearchPicker";
+import { roleOption } from "./roleOptions";
 import BonusCandidateReview, { LAZY_FLAGS } from "./BonusCandidateReview";
 import {
   attacksText,
@@ -190,7 +192,6 @@ export default function BonusWorkspace({
   const [roles, setRoles] = useState<Role[]>([]);
   const [rolesError, setRolesError] = useState("");
   const [rolesLoading, setRolesLoading] = useState(false);
-  const [roleSearch, setRoleSearch] = useState("");
   const reviewOpener = useRef<HTMLButtonElement | null>(null);
   const addOpener = useRef<HTMLButtonElement | null>(null);
   const candidateTagInput = useRef<HTMLInputElement | null>(null);
@@ -1068,47 +1069,23 @@ export default function BonusWorkspace({
                         </button>
                       </p>
                     )}
-                    <label>
-                      Find a role
-                      <input
-                        type="search"
-                        value={roleSearch}
-                        disabled={busy}
-                        onChange={(event) => setRoleSearch(event.target.value)}
-                        placeholder="Role name"
-                      />
-                    </label>
-                    <label>
-                      Representative role
-                      <select
-                        value={roleId}
-                        disabled={busy || archived || !canManage}
-                        onChange={(event) => {
-                          setRoleId(event.target.value);
-                          setPreview(null);
-                        }}
-                      >
-                        {roleId &&
-                          !roles.some((role) => role.id === roleId) && (
-                            <option value={roleId}>
-                              Saved role · {roleId}
-                            </option>
-                          )}
-                        {roles
-                          .filter(
-                            (role) =>
-                              role.id === roleId ||
-                              role.name
-                                .toLowerCase()
-                                .includes(roleSearch.toLowerCase()),
-                          )
-                          .map((role) => (
-                            <option key={role.id} value={role.id}>
-                              {role.name} · {role.id}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
+                    <SearchPicker
+                      label="Representative role"
+                      value={roleId}
+                      options={roles.map(roleOption)}
+                      fallback={{
+                        value: roleId,
+                        label: "Saved role (not found)",
+                      }}
+                      disabled={busy || archived || !canManage}
+                      placeholder="Select a role"
+                      searchPlaceholder="Search roles"
+                      emptyText="No roles match."
+                      onChange={(id) => {
+                        setRoleId(id);
+                        setPreview(null);
+                      }}
+                    />
                     <button
                       type="button"
                       disabled={

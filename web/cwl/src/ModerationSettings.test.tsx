@@ -388,10 +388,7 @@ it("keeps unsaved edits after a revision conflict", async () => {
       throw new ApiError("Revision changed", 409);
     return structuredClone(fixture);
   });
-  await change(
-    host.querySelector<HTMLSelectElement>(".moderation-ignore-group select")!,
-    "other",
-  );
+  await pick(host.querySelector(".moderation-ignore-group")!, "#other-logs");
   await act(async () => button("Save changes").click());
   expect(host.textContent).toContain("#other-logs");
   expect(host.textContent).toContain("Your edits are preserved");
@@ -438,10 +435,7 @@ it("saves a category switch at once", async () => {
 });
 
 it("keeps other unsaved edits out of a switch save and in the draft", async () => {
-  await change(
-    host.querySelector<HTMLSelectElement>(".moderation-ignore-group select")!,
-    "other",
-  );
+  await pick(host.querySelector(".moderation-ignore-group")!, "#other-logs");
   expect(host.textContent).toContain("Unsaved changes");
   await act(async () => eventSwitch("Joins").click());
   await settle();
@@ -676,6 +670,15 @@ const change = async (element: HTMLElement, value: string) => {
     );
   });
 };
+const pick = async (scope: Element, text: string) => {
+  await act(async () =>
+    scope.querySelector<HTMLButtonElement>(".search-picker-trigger")!.click(),
+  );
+  const option = [
+    ...scope.querySelectorAll<HTMLElement>('[role="option"]'),
+  ].find((item) => item.textContent?.includes(text))!;
+  await act(async () => option.click());
+};
 it("renders all seven categories", () => {
   const titles = [...host.querySelectorAll(".moderation-category-name")].map(
     (item) => item.textContent?.trim(),
@@ -694,10 +697,7 @@ it("renders all seven categories", () => {
   expect(host.textContent).toContain("Invite uses");
 });
 it("saves link ignores with the draft and flags them as unsaved", async () => {
-  const channelSelect = host.querySelector<HTMLSelectElement>(
-    ".moderation-ignore-group select",
-  )!;
-  await change(channelSelect, "other");
+  await pick(host.querySelector(".moderation-ignore-group")!, "#other-logs");
   expect(host.textContent).toContain("#other-logs");
   expect(host.textContent).toContain("Unsaved changes");
   await act(async () => button("Guests＋").click());
@@ -943,11 +943,22 @@ it("shows ignored bots by name, adds and removes, and saves the ids", async () =
   expect(botBlock().textContent).toContain("Unknown bot");
   expect(host.textContent).not.toContain("900000000000000001");
   expect(host.textContent).not.toContain("900000000000000009");
-  const options = [...botBlock().querySelectorAll("option")].map(
+  await act(async () =>
+    botBlock()
+      .querySelector<HTMLButtonElement>(".search-picker-trigger")!
+      .click(),
+  );
+  const options = [...botBlock().querySelectorAll('[role="option"]')].map(
     (item) => item.textContent,
   );
-  expect(options).toEqual(["Select a bot", "@Counter"]);
-  await change(botBlock().querySelector("select")!, "900000000000000002");
+  expect(options).toEqual(["@Counter"]);
+  await act(async () =>
+    botBlock().querySelector<HTMLElement>('[role="option"]')!.click(),
+  );
+  // Add mode: the field stays empty after the bot is appended.
+  expect(
+    botBlock().querySelector(".search-picker-trigger")!.textContent,
+  ).toContain("Add a bot");
   expect(botBlock().textContent).toContain("@Counter");
   expect(host.textContent).toContain("Unsaved changes");
   await act(async () =>
@@ -962,7 +973,7 @@ it("shows ignored bots by name, adds and removes, and saves the ids", async () =
 });
 it("shows the bot list as unavailable and omits it from the save", async () => {
   expect(botBlock().textContent).toContain("Bot list unavailable.");
-  expect(botBlock().querySelector("select")).toBeNull();
+  expect(botBlock().querySelector(".search-picker")).toBeNull();
   await openEvent("join");
   const override = host.querySelector<HTMLSelectElement>(
     '[aria-label="Joins channel override"]',
@@ -1182,8 +1193,7 @@ it.each([
           input.dispatchEvent(new FocusEvent("focusout", { bubbles: true })),
         );
       }
-      if (scenario === "bot-add")
-        await change(botBlock().querySelector("select")!, "900000000000000002");
+      if (scenario === "bot-add") await pick(botBlock(), "@Other");
       if (scenario === "bot-remove")
         await act(async () =>
           botBlock()
