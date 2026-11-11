@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
 import {
+  nameParts,
   searchZones,
   statusCounts,
   type WorldClock,
@@ -31,12 +32,12 @@ function clock(id: string, values: Partial<WorldClock> = {}): WorldClock {
     channel_missing: false,
     enabled: true,
     revision: "1",
-    last_name: "🇺🇸 EST GMT-5 · 9:24pm",
+    last_name: "🇺🇸 EST (GMT-5) · 9:24pm · Tue 10",
     last_renamed_at: "2026-11-11T02:24:00+00:00",
     status: "ok",
     status_detail: "",
-    name_now: "🇺🇸 EST GMT-5 · 9:30pm",
-    name_other: "🇺🇸 EDT GMT-4",
+    name_now: "🇺🇸 EST (GMT-5) · 9:30pm · Tue 10",
+    name_other: "🇺🇸 EDT (GMT-4)",
     offset_minutes: -300,
     ...values,
   };
@@ -90,7 +91,7 @@ function data(clocks: WorldClock[]): WorldClocksData {
 
 const NINE = [
   clock("a"),
-  clock("b", { zone: "Europe/London", name_now: "🇬🇧 GMT · 2:30am" }),
+  clock("b", { zone: "Europe/London", name_now: "🇬🇧 GMT · 2:30am · Wed 11" }),
   clock("c"),
   clock("d"),
   clock("e"),
@@ -98,14 +99,14 @@ const NINE = [
   clock("g"),
   clock("h", {
     zone: "Asia/Manila",
-    name_now: "🇵🇭 PHT GMT+8 · 10:30am",
+    name_now: "🇵🇭 PHT (GMT+8) · 10:30am · Wed 11",
     channel_missing: true,
     channel_name: null,
   }),
   clock("i", {
     zone: "Australia/Sydney",
     enabled: false,
-    last_name: "🇦🇺 AEDT GMT+11 · 1:00pm",
+    last_name: "🇦🇺 AEDT (GMT+11) · 1:00pm · Wed 11",
   }),
 ];
 
@@ -128,7 +129,7 @@ async function render(
           code_auto: "WIB",
           flag_auto: "🇮🇩",
           needs_code: false,
-          name_now: "🇮🇩 WIB GMT+7 · 9:30am",
+          name_now: "🇮🇩 WIB (GMT+7) · 9:30am · Wed 11",
           name_other: null,
         };
       if (path.endsWith("/zones")) return { zones: [] };
@@ -166,6 +167,23 @@ afterEach(async () => {
   document.body.innerHTML = "";
 });
 
+it("keeps the time and day together and splits old names the same way", async () => {
+  expect(nameParts("🇺🇸 EST (GMT-5) · 12:12pm · Wed 11")).toEqual({
+    label: "🇺🇸 EST (GMT-5)",
+    time: "12:12pm · Wed 11",
+  });
+  expect(nameParts("🇺🇸 EST GMT-5 · 9:30pm")).toEqual({
+    label: "🇺🇸 EST GMT-5",
+    time: "9:30pm",
+  });
+  expect(nameParts("No dot")).toEqual({ label: "No dot", time: "" });
+  await render(data(NINE));
+  const times = [...host.querySelectorAll(".world-clock-time")].map(
+    (node) => node.textContent,
+  );
+  expect(times).toContain("· 9:30pm · Tue 10");
+});
+
 it("counts states honestly and never shows a problem as a green switch", async () => {
   await render(data(NINE));
   expect(host.querySelector(".world-clock-status")?.textContent).toContain(
@@ -181,7 +199,7 @@ it("counts states honestly and never shows a problem as a green switch", async (
   expect(button("Fix", problemRow)).toBeTruthy();
   const offRow = host.querySelector(".world-clock-row.is-off")!;
   expect(offRow.textContent).toContain(
-    "Off · frozen as 🇦🇺 AEDT GMT+11 · 1:00pm",
+    "Off · frozen as 🇦🇺 AEDT (GMT+11) · 1:00pm · Wed 11",
   );
   expect(
     host.querySelector(".world-clock-discord li.is-missing")?.textContent,
@@ -324,7 +342,7 @@ it("add clock sends one request per press and keeps the id after an unconfirmed 
   await act(async () => {
     vi.advanceTimersByTime(400);
   });
-  expect(sheet.textContent).toContain("🇮🇩 WIB GMT+7 · 9:30am");
+  expect(sheet.textContent).toContain("🇮🇩 WIB (GMT+7) · 9:30am · Wed 11");
   expect(button("Create channel and add", sheet)!.disabled).toBe(false);
   await click(button("Create channel and add", sheet));
   await click(button("Create channel and add", sheet));

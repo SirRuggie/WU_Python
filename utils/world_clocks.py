@@ -20,6 +20,8 @@ TIME_FORMATS = ("12h", "24h")
 MAX_CLOCKS = 25
 NAME_LIMIT = 100  # Discord channel name limit.
 CODE = re.compile(r"[A-Z]{2,6}\Z")
+# Fixed English names: strftime("%a") would follow the server locale.
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 # Codes from tzdata that are wrong for our members.
 ZONE_CODES = {"Asia/Manila": "PHT"}
 # Flags that read better than the country flag tzdata would give.
@@ -112,20 +114,26 @@ def format_time(local: datetime, time_format: str = "12h") -> str:
 
 
 def zone_label(clock: dict, at: datetime) -> str:
-    """The name without the time, for example "🇺🇸 EST GMT-5" or "🇬🇧 GMT"."""
+    """The name without the time, for example "🇺🇸 EST (GMT-5)" or "🇬🇧 GMT"."""
     local = at.astimezone(zone_info(clock["zone"]))
     code = clock.get("code") or auto_code(clock["zone"], at)
     if not code:
         raise ValueError("Type a code for this time zone.")
     offset = offset_label(local.utcoffset() or timedelta())
     # Only a zero offset drops the offset part; a typed "GMT" on London in summer keeps "GMT+1".
-    parts = [clock.get("flag") or "", code if code == "GMT" and offset == "GMT" else f"{code} {offset}"]
+    parts = [clock.get("flag") or "", code if code == "GMT" and offset == "GMT" else f"{code} ({offset})"]
     return " ".join(part for part in parts if part)
 
 
+def format_day(local: datetime) -> str:
+    """Local short weekday and day of the month, for example "Wed 11"."""
+    return f"{WEEKDAYS[local.weekday()]} {local.day}"
+
+
 def clock_name(clock: dict, at: datetime, time_format: str = "12h") -> str:
+    """For example "🇺🇸 EST (GMT-5) · 12:12pm · Wed 11"; the day is the zone's own day."""
     local = at.astimezone(zone_info(clock["zone"]))
-    name = f"{zone_label(clock, at)} · {format_time(local, time_format)}"
+    name = f"{zone_label(clock, at)} · {format_time(local, time_format)} · {format_day(local)}"
     return name[:NAME_LIMIT]
 
 

@@ -1,7 +1,7 @@
 # World clocks
 
 WU Wizard renames voice channels so their names show local times, for example
-`🇺🇸 EST GMT-5 · 9:30pm`. It replaces the Statbot clocks (backlog B-11).
+`🇺🇸 EST (GMT-5) · 9:30pm · Wed 11`. It replaces the Statbot clocks (backlog B-11).
 Staff manage the clocks on the dashboard at Bot → World clocks
 (`/settings/world-clocks`). The page needs the `server_tools` permission.
 
@@ -24,7 +24,8 @@ every add and every channel change, not only when the task starts.
 
 ## Channel name
 
-`flag CODE GMT±n · time`. No city names.
+`flag CODE (GMT±n) · time · Day d`. No city names. Zero offset drops the
+parentheses: `🇬🇧 GMT · 5:12pm · Wed 11`. Format set by Ruggie 2026-11-11.
 
 - The code comes from the zone's abbreviation (`zoneinfo`), so summer time
   changes by itself. Overrides: `Asia/Manila` uses `PHT` (zoneinfo says `PST`).
@@ -35,8 +36,13 @@ every add and every channel change, not only when the task starts.
   follows summer time.
 - Offset label: `GMT` for zero, `GMT+5:30` for half hours. A code of `GMT`
   drops the offset only when the offset is zero, so a typed `GMT` on London in
-  summer shows `GMT GMT+1`.
+  summer shows `GMT (GMT+1)`.
 - Time format: `9:30pm` (12h, default) or `21:30` (24h), one setting for all.
+- Day: the zone's own short weekday and day of the month (`Wed 11`), in fixed
+  English names (not the server locale). East of GMT it can show the next day
+  (`🇦🇺 AEDT (GMT+11) · 4:12am · Thu 12`). The day changes at the first mark
+  after local midnight, so it costs no extra renames. Longest possible name
+  is about 45 characters (6-letter code, tag flag, `GMT+5:45`); limit 100.
 - Flag: from `zone.tab`, with Paris/Berlin/Amsterdam as 🇪🇺. Staff can change
   it. The flag may not contain letters, digits, `@ # < > \``, or invisible and
   direction characters (Unicode Cc, Cf, Zl, Zp, except the zero-width joiner

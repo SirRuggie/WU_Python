@@ -14,16 +14,16 @@ def clock(zone, flag="", code=None, **extra):
 
 
 @pytest.mark.parametrize("zone,flag,winter,summer", [
-    ("America/New_York", "🇺🇸", "🇺🇸 EST GMT-5 · 9:30pm", "🇺🇸 EDT GMT-4 · 10:30pm"),
-    ("America/Chicago", "🇺🇸", "🇺🇸 CST GMT-6 · 8:30pm", "🇺🇸 CDT GMT-5 · 9:30pm"),
-    ("America/Denver", "🇺🇸", "🇺🇸 MST GMT-7 · 7:30pm", "🇺🇸 MDT GMT-6 · 8:30pm"),
-    ("America/Los_Angeles", "🇺🇸", "🇺🇸 PST GMT-8 · 6:30pm", "🇺🇸 PDT GMT-7 · 7:30pm"),
-    ("Europe/London", "🇬🇧", "🇬🇧 GMT · 2:30am", "🇬🇧 BST GMT+1 · 3:30am"),
-    ("Europe/Paris", "🇪🇺", "🇪🇺 CET GMT+1 · 3:30am", "🇪🇺 CEST GMT+2 · 4:30am"),
-    ("Asia/Kolkata", "🇮🇳", "🇮🇳 IST GMT+5:30 · 8:00am", "🇮🇳 IST GMT+5:30 · 8:00am"),
-    ("Asia/Manila", "🇵🇭", "🇵🇭 PHT GMT+8 · 10:30am", "🇵🇭 PHT GMT+8 · 10:30am"),
+    ("America/New_York", "🇺🇸", "🇺🇸 EST (GMT-5) · 9:30pm · Tue 10", "🇺🇸 EDT (GMT-4) · 10:30pm · Wed 30"),
+    ("America/Chicago", "🇺🇸", "🇺🇸 CST (GMT-6) · 8:30pm · Tue 10", "🇺🇸 CDT (GMT-5) · 9:30pm · Wed 30"),
+    ("America/Denver", "🇺🇸", "🇺🇸 MST (GMT-7) · 7:30pm · Tue 10", "🇺🇸 MDT (GMT-6) · 8:30pm · Wed 30"),
+    ("America/Los_Angeles", "🇺🇸", "🇺🇸 PST (GMT-8) · 6:30pm · Tue 10", "🇺🇸 PDT (GMT-7) · 7:30pm · Wed 30"),
+    ("Europe/London", "🇬🇧", "🇬🇧 GMT · 2:30am · Wed 11", "🇬🇧 BST (GMT+1) · 3:30am · Thu 1"),
+    ("Europe/Paris", "🇪🇺", "🇪🇺 CET (GMT+1) · 3:30am · Wed 11", "🇪🇺 CEST (GMT+2) · 4:30am · Thu 1"),
+    ("Asia/Kolkata", "🇮🇳", "🇮🇳 IST (GMT+5:30) · 8:00am · Wed 11", "🇮🇳 IST (GMT+5:30) · 8:00am · Thu 1"),
+    ("Asia/Manila", "🇵🇭", "🇵🇭 PHT (GMT+8) · 10:30am · Wed 11", "🇵🇭 PHT (GMT+8) · 10:30am · Thu 1"),
     # Southern hemisphere: November is Sydney summer time.
-    ("Australia/Sydney", "🇦🇺", "🇦🇺 AEDT GMT+11 · 1:30pm", "🇦🇺 AEST GMT+10 · 12:30pm"),
+    ("Australia/Sydney", "🇦🇺", "🇦🇺 AEDT (GMT+11) · 1:30pm · Wed 11", "🇦🇺 AEST (GMT+10) · 12:30pm · Thu 1"),
 ])
 def test_names_switch_summer_time_both_ways(zone, flag, winter, summer):
     assert rules.clock_name(clock(zone, flag), WINTER) == winter
@@ -33,23 +33,47 @@ def test_names_switch_summer_time_both_ways(zone, flag, winter, summer):
 def test_us_switch_happens_at_the_real_moment():
     before = datetime(2027, 3, 14, 6, 59, tzinfo=timezone.utc)  # 1:59am EST
     after = datetime(2027, 3, 14, 7, 0, tzinfo=timezone.utc)    # 3:00am EDT
-    assert rules.clock_name(clock("America/New_York"), before) == "EST GMT-5 · 1:59am"
-    assert rules.clock_name(clock("America/New_York"), after) == "EDT GMT-4 · 3:00am"
+    assert rules.clock_name(clock("America/New_York"), before) == "EST (GMT-5) · 1:59am · Sun 14"
+    assert rules.clock_name(clock("America/New_York"), after) == "EDT (GMT-4) · 3:00am · Sun 14"
 
 
 def test_24_hour_format_and_midnight_noon():
     midnight = datetime(2026, 11, 11, 0, 0, tzinfo=timezone.utc)
-    assert rules.clock_name(clock("Europe/London"), midnight) == "GMT · 12:00am"
-    assert rules.clock_name(clock("Europe/London"), midnight, "24h") == "GMT · 00:00"
+    assert rules.clock_name(clock("Europe/London"), midnight) == "GMT · 12:00am · Wed 11"
+    assert rules.clock_name(clock("Europe/London"), midnight, "24h") == "GMT · 00:00 · Wed 11"
     noon = datetime(2026, 11, 11, 12, 5, tzinfo=timezone.utc)
-    assert rules.clock_name(clock("Europe/London"), noon) == "GMT · 12:05pm"
+    assert rules.clock_name(clock("Europe/London"), noon) == "GMT · 12:05pm · Wed 11"
+
+
+def test_day_is_the_zones_own_day_and_changes_at_local_midnight():
+    # Ruggie's examples (2026-11-11 17:12 UTC).
+    at = datetime(2026, 11, 11, 17, 12, tzinfo=timezone.utc)
+    assert rules.clock_name(clock("America/New_York", "🇺🇸"), at) == "🇺🇸 EST (GMT-5) · 12:12pm · Wed 11"
+    assert rules.clock_name(clock("Europe/London", "🇬🇧"), at) == "🇬🇧 GMT · 5:12pm · Wed 11"
+    assert rules.clock_name(clock("Australia/Sydney"), at) == "AEDT (GMT+11) · 4:12am · Thu 12"
+    before = datetime(2026, 11, 12, 4, 54, tzinfo=timezone.utc)  # 11:54pm EST
+    after = datetime(2026, 11, 12, 5, 0, tzinfo=timezone.utc)    # 12:00am EST
+    assert rules.clock_name(clock("America/New_York"), before) == "EST (GMT-5) · 11:54pm · Wed 11"
+    assert rules.clock_name(clock("America/New_York"), after) == "EST (GMT-5) · 12:00am · Thu 12"
+    assert rules.clock_name(clock("America/New_York"), after, "24h") == "EST (GMT-5) · 00:00 · Thu 12"
+
+
+def test_typed_gmt_code_in_summer_keeps_the_offset():
+    assert rules.clock_name(clock("Europe/London", code="GMT"), SUMMER) == "GMT (GMT+1) · 3:30am · Thu 1"
+
+
+def test_longest_name_fits_the_discord_limit():
+    england = "\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F"
+    name = rules.clock_name(clock("Asia/Kathmandu", england, "ABCDEF"), WINTER)
+    assert name.endswith("ABCDEF (GMT+5:45) · 8:15am · Wed 11")
+    assert len(name) < rules.NAME_LIMIT
 
 
 def test_numeric_abbreviation_needs_a_typed_code():
     assert rules.auto_code("Asia/Dubai", WINTER) is None
     with pytest.raises(ValueError, match="Type a code"):
         rules.clock_name(clock("Asia/Dubai"), WINTER)
-    assert rules.clock_name(clock("Asia/Dubai", "🇦🇪", "GST"), WINTER) == "🇦🇪 GST GMT+4 · 6:30am"
+    assert rules.clock_name(clock("Asia/Dubai", "🇦🇪", "GST"), WINTER) == "🇦🇪 GST (GMT+4) · 6:30am · Wed 11"
     assert rules.preview(clock("Asia/Dubai"), WINTER)["needs_code"] is True
 
 
@@ -119,8 +143,8 @@ def test_positions_skip_duplicate_slots_and_other_categories():
 
 def test_preview_gives_the_other_half_of_the_year():
     result = rules.preview(clock("America/New_York", "🇺🇸"), WINTER)
-    assert result["name_now"] == "🇺🇸 EST GMT-5 · 9:30pm"
-    assert result["name_other"] == "🇺🇸 EDT GMT-4"
+    assert result["name_now"] == "🇺🇸 EST (GMT-5) · 9:30pm · Tue 10"
+    assert result["name_other"] == "🇺🇸 EDT (GMT-4)"
     assert rules.preview(clock("Asia/Kolkata"), WINTER)["name_other"] is None
 
 
@@ -149,7 +173,7 @@ def test_positions_skip_when_another_channel_shares_a_clock_slot():
 
 def test_typed_gmt_code_keeps_a_non_zero_offset():
     summer = datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc)
-    assert rules.zone_label({"zone": "Europe/London", "flag": "", "code": "GMT"}, summer) == "GMT GMT+1"
+    assert rules.zone_label({"zone": "Europe/London", "flag": "", "code": "GMT"}, summer) == "GMT (GMT+1)"
     assert rules.zone_label({"zone": "Europe/London", "flag": "", "code": None}, WINTER) == "GMT"
 
 

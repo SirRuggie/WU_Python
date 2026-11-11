@@ -399,7 +399,7 @@ def test_preview_and_zones(env):
     data = payload(run(api.preview(request({"zone": "Asia/Dubai", "flag": "🇦🇪", "code": ""}))))
     assert data["needs_code"] is True and data["name_now"] is None
     data = payload(run(api.preview(request({"zone": "Asia/Dubai", "flag": "🇦🇪", "code": "gst"}))))
-    assert data["name_now"].startswith("🇦🇪 GST GMT+4 · ")
+    assert data["name_now"].startswith("🇦🇪 GST (GMT+4) · ")
     with pytest.raises(web.HTTPBadRequest):
         run(api.preview(request({"zone": "Bad/Zone"})))
     zones = payload(run(api.zones(request())))["zones"]

@@ -70,11 +70,11 @@ def test_renames_wrong_names_and_skips_correct_ones(store):
     async def scenario():
         await add(store, "America/New_York", "101", "🇺🇸")
         await add(store, "Europe/London", "102", "🇬🇧")
-        rest = FakeRest([channel("101", "EST : 9:21pm", 1), channel("102", "🇬🇧 GMT · 2:30am", 2)])
+        rest = FakeRest([channel("101", "EST : 9:21pm", 1), channel("102", "🇬🇧 GMT · 2:30am · Wed 11", 2)])
         entry = await task.run_once(store, rest, NOW)
         return entry, rest, await store.list_clocks()
     entry, rest, clocks = run(scenario())
-    assert rest.renames == [("101", "🇺🇸 EST GMT-5 · 9:30pm")]
+    assert rest.renames == [("101", "🇺🇸 EST (GMT-5) · 9:30pm · Tue 10")]
     assert entry["renamed"] == 1 and entry["unchanged"] == 1
     assert {c["status"] for c in clocks} == {"ok"}
 
@@ -136,7 +136,7 @@ def test_rate_limit_waits_for_next_mark_and_other_errors_mark_problem(store, err
         return entry, rest, {c["channel_id"]: c for c in await store.list_clocks()}
     entry, rest, clocks = run(scenario())
     assert clocks["101"]["status"] == status
-    assert rest.renames == [("102", "GMT · 2:30am")]  # The other clock still runs.
+    assert rest.renames == [("102", "GMT · 2:30am · Wed 11")]  # The other clock still runs.
 
 
 def test_forbidden_marks_problem(store):
@@ -226,7 +226,7 @@ def test_task_uses_saved_interval_and_format(store):
         rest = FakeRest([channel("101", "old", 1)])
         await task.run_once(store, rest, datetime(2026, 11, 11, 2, 39, tzinfo=timezone.utc))
         return rest
-    assert run(scenario()).renames == [("101", "GMT · 02:30")]
+    assert run(scenario()).renames == [("101", "GMT · 02:30 · Wed 11")]
 
 
 def test_run_history_is_pruned(store):
