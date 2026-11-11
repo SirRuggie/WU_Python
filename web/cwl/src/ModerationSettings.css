@@ -419,8 +419,7 @@
   font-weight: 700;
 }
 
-.moderation-ignore-group select,
-.moderation-ignore-group input,
+.moderation-ignore-group input:not([role="combobox"]),
 .moderation-invite-list input {
   width: 100%;
   min-width: 0;

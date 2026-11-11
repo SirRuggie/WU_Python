@@ -241,3 +241,21 @@ it("phone: back or Escape on the sheet does not close a dialog around it", async
   expect(onChange).not.toHaveBeenCalled();
   expect(sheet.hasAttribute("open")).toBe(false);
 });
+
+it("picking the current value closes without a write, like a native select", async () => {
+  phone(false);
+  const onChange = vi.fn();
+  await mount(<Harness onChange={onChange} initial="2" />);
+  const trigger = host.querySelector<HTMLButtonElement>(
+    ".search-picker-trigger",
+  )!;
+  await act(async () => trigger.click());
+  const current = Array.from(host.querySelectorAll('[role="option"]')).find(
+    (node) => node.getAttribute("aria-selected") === "true",
+  ) as HTMLElement;
+  expect(current.textContent).toContain("Lounge");
+  await act(async () => current.click());
+  expect(onChange).not.toHaveBeenCalled();
+  expect(host.querySelector(".search-picker-panel")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});

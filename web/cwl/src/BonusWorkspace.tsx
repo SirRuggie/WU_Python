@@ -11,7 +11,7 @@ import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import useUnsavedWork from "./useUnsavedWork";
 import BonusAnnouncement from "./BonusAnnouncement";
 import SearchPicker from "./SearchPicker";
-import { roleOption } from "./roleOptions";
+import { roleOption } from "./RolePicker";
 import BonusCandidateReview, { LAZY_FLAGS } from "./BonusCandidateReview";
 import {
   attacksText,

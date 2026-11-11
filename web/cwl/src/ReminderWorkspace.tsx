@@ -19,7 +19,7 @@ import {
 import { api, ApiError, type Pool } from "./api";
 import ChannelCombobox from "./ChannelCombobox";
 import SearchPicker from "./SearchPicker";
-import { roleOption } from "./roleOptions";
+import { roleOption } from "./RolePicker";
 import type { AnnouncementChannel } from "./announcements";
 import {
   campaignPatch,

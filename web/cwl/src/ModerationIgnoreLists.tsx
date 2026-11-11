@@ -76,7 +76,12 @@ export default function ModerationIgnoreLists({
           options={available.map((item) => ({
             value: item.id,
             label: `#${item.name}`,
-            detail: item.type === "text" ? undefined : "Forum",
+            detail:
+              item.type === "forum"
+                ? "Forum"
+                : item.type === "forum_post"
+                  ? "Forum post"
+                  : undefined,
           }))}
           disabled={
             disabled ||
