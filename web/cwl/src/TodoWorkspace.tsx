@@ -1,7 +1,7 @@
 import SectionTabs from "./SectionTabs";
 import "./rosterUi/tokens.css";
 import { useJourneyState, useJourneyPosition } from "./journeyState";
-import TodoActivityStatus from "./TodoActivityStatus";
+import TodoActivityStatus, { TodoPrivateNote } from "./TodoActivityStatus";
 import { loadTasks } from "./todoLoading";
 import TodoTaskCard from "./TodoTaskCard";
 import ClanGamesSummary from "./ClanGamesSummary";
@@ -12,6 +12,7 @@ import { useClock } from "./activity/useClock";
 import PushReminders from "./PushReminders";
 import { readSnapshot, writeSnapshot } from "./snapshotCache";
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown, Pause, Play, RefreshCw, Search, X } from "lucide-react";
 import { ApiError } from "./api";
 import { clanDeepLink } from "./publication";
 import TownHallIcon from "./TownHallIcon";
@@ -41,6 +42,9 @@ function Badge({ url }: { url?: string | null }) {
   ) : (
     <DashboardIcon name="shield" />
   );
+}
+function clanLabel(row: TodoRow) {
+  return row.clan_name || row.clan_tag || "Clan unknown";
 }
 export default function TodoWorkspace({
   userId,
@@ -101,6 +105,27 @@ export default function TodoWorkspace({
     `${journeyKey}:search`,
     initialSearch,
   );
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
+  const focusAfterSearch = useRef<"input" | "button" | null>(null);
+  // An active search always stays visible, so it never hides tasks unseen.
+  const searchVisible = searchOpen || !!search;
+  useEffect(() => {
+    if (focusAfterSearch.current === "input") searchInput.current?.focus();
+    if (focusAfterSearch.current === "button") searchButton.current?.focus();
+    focusAfterSearch.current = null;
+  }, [searchVisible]);
+  const openSearch = () => {
+    focusAfterSearch.current = "input";
+    setSearchOpen(true);
+  };
+  const closeSearch = () => {
+    focusAfterSearch.current = "button";
+    setSearch("");
+    setSearchOpen(false);
+  };
   const [sort, setSort] = useJourneyState(
     `${journeyKey}:sort`,
     preferences.sort,
@@ -206,38 +231,25 @@ export default function TodoWorkspace({
     selected === null
       ? accounts.length
       : accounts.filter((account) => selected.includes(account.tag)).length;
-  const unreadable = data?.views.private.rows.length || 0;
+  const unreadableRows = data?.views.private.rows || [];
   return (
     <div className="todo-workspace roster-ui">
-      <div className="page-head">
-        <div>
-          <h1>Tasks</h1>
-          <p>
-            Your accounts’ remaining attacks and personal progress.{" "}
-            {onWars ? (
-              <button
-                className="todo-wars-link"
-                onClick={() => onWars(tab === "cwl" ? "cwl" : "war")}
-              >
-                View clan war scores →
-              </button>
-            ) : (
-              "For whole-clan scores, open Wars."
-            )}
-          </p>
-        </div>
+      <div className="page-head todo-head">
+        <h1>Tasks</h1>
         <button
+          className="todo-check"
           aria-busy={loading || undefined}
           onClick={() => setRefresh((value) => value + 1)}
           disabled={loading}
         >
-          ↻ {loading ? "Checking…" : "Check now"}
+          <RefreshCw aria-hidden="true" size={16} />
+          {loading ? "Checking…" : "Check now"}
         </button>
       </div>
       <div className="todo-refresh">
-        <span role="status">
+        <span role="status" className="todo-status">
           <span
-            className={`status-dot ${data && !error && !gaps && !loading ? "active" : ""}`}
+            className={`status-dot ${data && !error && !gaps && !loading && !paused ? "active" : ""}`}
           />
           {cached
             ? error
@@ -250,15 +262,30 @@ export default function TodoWorkspace({
                 : gaps
                   ? "Some activity could not be checked · try again shortly"
                   : data
-                    ? `Last checked ${new Date(data.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                    ? `${paused ? "Auto-refresh paused · checked" : "Checked"} ${new Date(data.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
                     : "Loading your activity…"}
         </span>
         <button
+          className="todo-icon-button"
           aria-pressed={paused}
+          aria-label="Pause auto-refresh"
+          title={paused ? "Resume auto-refresh" : "Pause auto-refresh"}
           onClick={() => setPaused((value) => !value)}
         >
-          {paused ? "▶ Resume auto-refresh" : "Ⅱ Pause auto-refresh"}
+          {paused ? (
+            <Play aria-hidden="true" size={16} />
+          ) : (
+            <Pause aria-hidden="true" size={16} />
+          )}
         </button>
+        {onWars && (
+          <button
+            className="todo-wars-link"
+            onClick={() => onWars(tab === "cwl" ? "cwl" : "war")}
+          >
+            War scores →
+          </button>
+        )}
       </div>
       {error && (
         <div className="notice error" role="alert">
@@ -324,16 +351,85 @@ export default function TodoWorkspace({
             }}
             revealSelection
           />
-          <details className="todo-account-picker">
-            <summary>
+          <h2 className="todo-visually-hidden">{config.label}</h2>
+          <div className="todo-toolbar">
+            <button
+              type="button"
+              className="todo-chip"
+              aria-expanded={pickerOpen}
+              aria-controls="todo-account-panel"
+              onClick={() => setPickerOpen((open) => !open)}
+            >
               {selected === null
                 ? data.linked_account_count &&
                   accounts.length < data.linked_account_count
-                  ? `${accounts.length} of ${data.linked_account_count} accounts loaded`
-                  : "All linked accounts"
-                : `${selectedCount} account${selectedCount === 1 ? "" : "s"} selected`}{" "}
-              <span>Select accounts</span>
-            </summary>
+                  ? `${accounts.length} of ${data.linked_account_count} accounts`
+                  : "All accounts"
+                : `${selectedCount} account${selectedCount === 1 ? "" : "s"}`}
+              <ChevronDown aria-hidden="true" size={16} />
+            </button>
+            {canFilter && (
+              <label className="todo-chip todo-sort">
+                <span className="todo-visually-hidden">Sort tasks</span>
+                <select
+                  name="todo-sort"
+                  value={sort}
+                  onChange={(event) => setSort(event.target.value)}
+                >
+                  <option value="deadline">Ends soonest</option>
+                  <option value="th">Highest TH</option>
+                  <option value="name">Name A–Z</option>
+                </select>
+              </label>
+            )}
+            {canFilter && (
+              <button
+                type="button"
+                className="todo-icon-button"
+                aria-label="Search tasks"
+                aria-expanded={searchVisible}
+                aria-controls="todo-search"
+                ref={searchButton}
+                onClick={searchVisible ? closeSearch : openSearch}
+              >
+                <Search aria-hidden="true" size={16} />
+              </button>
+            )}
+          </div>
+          {canFilter && searchVisible && (
+            <div className="todo-search-row" id="todo-search">
+              <label className="todo-search">
+                <span className="todo-visually-hidden">Search tasks</span>
+                <Search aria-hidden="true" size={16} />
+                <input
+                  ref={searchInput}
+                  type="search"
+                  name="todo-search"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") closeSearch();
+                  }}
+                  placeholder="Account, tag or clan…"
+                />
+              </label>
+              <button
+                type="button"
+                className="todo-icon-button"
+                aria-label="Clear and close search"
+                onClick={closeSearch}
+              >
+                <X aria-hidden="true" size={16} />
+              </button>
+            </div>
+          )}
+          <div
+            id="todo-account-panel"
+            className="todo-account-picker"
+            hidden={!pickerOpen}
+          >
             <div className="todo-picker-tools">
               <label>
                 Find linked accounts
@@ -376,28 +472,12 @@ export default function TodoWorkspace({
               ))}
               {!filteredAccounts.length && <p>No matching linked accounts.</p>}
             </div>
-          </details>
-          <div className="todo-section-head">
-            <div>
-              <h2>
-                <DashboardIcon name={config.icon} /> {config.label}
-              </h2>
-              <p>{config.description}</p>
-            </div>
-            {canFilter && (
-              <label>
-                Sort tasks
-                <select
-                  value={sort}
-                  onChange={(event) => setSort(event.target.value)}
-                >
-                  <option value="deadline">Ending soonest</option>
-                  <option value="th">Town Hall · highest first</option>
-                  <option value="name">Account name · A–Z</option>
-                </select>
-              </label>
-            )}
           </div>
+          {tab === "cwl" && (
+            <p className="todo-tab-note">
+              Live CWL wars, separate from season signups.
+            </p>
+          )}
           {tab === "games" && view?.season ? (
             <ClanGamesSummary view={view} now={now} />
           ) : (
@@ -407,28 +487,12 @@ export default function TodoWorkspace({
               <TaskEventTimer kind={tab} now={now} />
             )
           )}
-          {canFilter && (
-            <div className="todo-search-row">
-              <label className="todo-search">
-                Search tasks
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Account, tag or clan…"
-                />
-              </label>
-              {search && (
-                <button onClick={() => setSearch("")}>Clear search</button>
-              )}
-            </div>
-          )}
           {view && (
             <>
               <TodoActivityStatus
                 view={view}
                 hasRows={rows.length > 0}
-                unreadable={tab === "war" ? unreadable : 0}
+                unreadable={tab === "war" ? unreadableRows.length : 0}
                 onAffected={() => setTab("private")}
               />
               {view.loading ? (
@@ -466,11 +530,7 @@ export default function TodoWorkspace({
                       <header>
                         <Badge url={members[0].badge_url} />
                         <div>
-                          <h3>
-                            {members[0].clan_name ||
-                              members[0].clan_tag ||
-                              "Clan unknown"}
-                          </h3>
+                          <h3>{clanLabel(members[0])}</h3>
                           {tab === "war" && members[0].fwa_outcome && (
                             <div
                               className={`todo-fwa ${members[0].fwa_outcome.status}`}
@@ -478,10 +538,10 @@ export default function TodoWorkspace({
                               <strong>
                                 {
                                   {
-                                    win: "FWA outcome: WIN",
-                                    lose: "FWA outcome: LOSE",
-                                    blacklisted: "BLACKLISTED opponent",
-                                    unknown: "FWA outcome: Unknown",
+                                    win: "FWA WIN",
+                                    lose: "FWA LOSE",
+                                    blacklisted: "BLACKLISTED",
+                                    unknown: "FWA Unknown",
                                   }[members[0].fwa_outcome.status]
                                 }
                               </strong>
@@ -492,18 +552,15 @@ export default function TodoWorkspace({
                               )}
                             </div>
                           )}
-                          <small>
-                            {members.length} account
-                            {members.length === 1 ? "" : "s"} on this page
-                          </small>
                         </div>
                         {key !== "none" && (
                           <a
                             href={clanDeepLink(key)}
                             target="_blank"
                             rel="noopener noreferrer"
+                            aria-label={`Open ${clanLabel(members[0])} in Clash of Clans`}
                           >
-                            Open Clan ↗
+                            Open ↗
                           </a>
                         )}
                       </header>
@@ -538,6 +595,12 @@ export default function TodoWorkspace({
                   </button>
                 </nav>
               )}
+              {tab === "war" && !view.loading && unreadableRows.length > 0 && (
+                <TodoPrivateNote
+                  rows={unreadableRows}
+                  onView={() => setTab("private")}
+                />
+              )}
             </>
           )}
           {tab === "cwl" && rows.length > 0 && (
@@ -546,8 +609,7 @@ export default function TodoWorkspace({
         </>
       )}
       <p className="todo-freshness">
-        This browser keeps your selected accounts and view. The page checks each
-        minute. Game data can be a few minutes late after an attack.
+        Game data can be a few minutes late after an attack.
       </p>
       <PushReminders
         key={userId}

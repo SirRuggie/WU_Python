@@ -150,7 +150,7 @@
   background: var(--wu-surface);
 }
 .roster-clan-chips .roster-clan-chip.is-room .roster-ui-progress-track > span {
-  background: #00d659;
+  background: var(--wu-success);
 }
 .roster-clan-chips .roster-clan-chip.is-over .roster-ui-progress-track > span {
   background: var(--wu-brand-red);

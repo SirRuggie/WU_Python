@@ -46,7 +46,7 @@
   ):is(.is-assigned, .compare-account-arrived) {
   --player-card-fill: #123d24;
   --player-card-glow: rgb(0 214 89 / 10%);
-  --player-card-edge: #00d659;
+  --player-card-edge: var(--wu-success);
 }
 .roster-ui
   .player-card:is(
@@ -358,8 +358,8 @@
 }
 :is(.roster-player-card, .compare-account, .declaration-player)
   .player-in-clan-pill {
-  background: #00d659;
-  border-color: #00d659;
+  background: var(--wu-success);
+  border-color: var(--wu-success);
   color: var(--wu-bg);
   -webkit-text-fill-color: currentColor;
 }

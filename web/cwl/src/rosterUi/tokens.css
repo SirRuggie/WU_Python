@@ -32,7 +32,7 @@
   --roster-card-edge-success: var(--wu-success-border);
   --roster-card-edge-danger: var(--wu-danger-border);
   --roster-card-text-muted: #e2e4eb;
-  --roster-card-text-success: #00d659;
+  --roster-card-text-success: var(--wu-success);
   --roster-card-text-danger: #ff9f9f;
   --roster-border: var(--wu-border);
   --roster-border-subtle: var(--wu-border-subtle);

@@ -4,12 +4,12 @@ export type TodoKind = 'war' | 'cwl' | 'raid' | 'games' | 'private'
 export type TodoRow = { tag: string; name: string; town_hall: number | null; clan_tag: string | null; clan_name: string | null; badge_url?: string | null; used: number | null; total: number | null; remaining: number | null; starts_at: number | null; ends_at: number | null; state: string; detail: string | null; fwa_outcome?: { status: 'win' | 'lose' | 'blacklisted' | 'unknown'; opponent: string } | null }
 export type TodoView = { loading?: boolean; season?: string; source?: string; checked_at?: string; event_start?: number; event_end?: number; ok: boolean; note: string; notes: string[]; unavailable: string; incomplete: string; rows: TodoRow[] }
 export type TodoSnapshot = { linked_account_count?: number; checked_at: string; accounts: Account[]; views: Record<TodoKind, TodoView> }
-export const todoTabs: { key: TodoKind; icon: DashboardIconName; label: string; description: string }[] = [
-  { key: 'war', icon: 'war', label: 'War', description: 'Regular-war attacks still to use, including upcoming preparation days.' },
-  { key: 'cwl', icon: 'trophy', label: 'CWL', description: 'CWL attacks still to use. This is your live war activity, separate from season signups.' },
-  { key: 'raid', icon: 'raid', label: 'Raids', description: 'Capital Raid attacks still to use for the current raid weekend.' },
-  { key: 'games', icon: 'games', label: 'Clan Games', description: 'Points earned by each account for this month’s Clan Games.' },
-  { key: 'private', icon: 'locked', label: 'Cannot check', description: 'Accounts with a private or unavailable war log. Check these accounts in the game.' },
+export const todoTabs: { key: TodoKind; icon: DashboardIconName; label: string }[] = [
+  { key: 'war', icon: 'war', label: 'War' },
+  { key: 'cwl', icon: 'trophy', label: 'CWL' },
+  { key: 'raid', icon: 'raid', label: 'Raids' },
+  { key: 'games', icon: 'games', label: 'Clan Games' },
+  { key: 'private', icon: 'locked', label: 'Cannot check' },
 ]
 export function visibleTodoRows(rows: TodoRow[], selected: string[] | null, search: string, sort: string, exactTag = false) {
   const query = search.trim().toLocaleLowerCase()

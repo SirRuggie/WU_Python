@@ -1349,3 +1349,28 @@ dashboard `cwl-backup.timer` remains every five minutes. This reduces full Mongo
 dumps from 96 to 24 per day; actual client-transfer estimates belong to the
 read-only Mongo audit rather than assuming stored/compressed size equals wire
 traffic. The intended Mongo recovery window becomes one hour plus job runtime.
+
+### Tasks page cleanup (2026-11-11)
+
+Ruggie approved eight audit decisions for the Tasks page (most-viewed page),
+mobile first. At 360 × 800 the first task card had started at 943 px.
+
+- Brand green is `#00D659`: `--wu-success`, `--wu-success-border` and the bot
+  `WU_GREEN`. The former hard-coded chip green uses `var(--wu-success)`.
+  Saved Discord templates that stored `0x43E58C` keep it until a separately
+  approved data update.
+- FWA outcome is a solid chip: green WIN, brand red LOSE/BLACKLISTED with
+  white text (5.03:1), grey unknown. Brand red as text fails 4.5:1 (3.38:1).
+- Title and Check now share one row. The intro sentence is gone. One status
+  row holds the last check, a pause icon toggle (`aria-pressed`) and
+  "War scores →".
+- No visible section heading under the tabs (a hidden h2 keeps the heading
+  order). The CWL tab keeps one note: live wars, separate from signups.
+- One toolbar row: accounts chip (opens the account list below), sort select,
+  search icon. Search opens a row under the toolbar; an active search always
+  stays visible, and closing it clears it.
+- Private war logs are a neutral note below the list ("N accounts are in a
+  clan with a private war log"), not a top warning. Failed reads keep the top
+  warning. Rows that failed for other reasons are counted separately.
+- Clan headers drop "N accounts on this page"; the link is "Open ↗" with the
+  clan name in its label. The footer is one line.
