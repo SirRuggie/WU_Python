@@ -260,23 +260,44 @@ it("shows one solid gold button at a time", async () => {
   expect(button("Close")!.getAttribute("aria-expanded")).toBe("true");
 });
 
-it("remove asks first and keeps the channel", async () => {
+it("remove asks first, names the channel it deletes, then reports it", async () => {
   const calls: unknown[] = [];
   await render(data([clock("a")]), (path, method, body) => {
     if (method === "DELETE") {
       calls.push([path, body]);
-      return { removed: "a" };
+      return { removed: "a", channel: "deleted" };
     }
   });
   await click(button("Edit"));
   await click(button("Remove clock"));
   expect(document.body.textContent).toContain(
-    "The channel stays. Archive or delete it in Discord.",
+    "This deletes the voice channel old in Discord",
   );
+  expect(document.body.textContent).toContain("turn the clock off instead");
   expect(calls).toHaveLength(0);
   const dialog = document.querySelector(".confirm-dialog")!;
   await click(button("Remove clock", dialog));
   expect(calls).toEqual([["/manage/world-clocks/a", { revision: "1" }]]);
+  expect(host.querySelector(".world-clock-notice")?.textContent).toBe(
+    "Clock and channel removed.",
+  );
+});
+
+it("a remove that Discord refuses keeps the clock open with the error", async () => {
+  await render(data([clock("a")]), (_path, method) => {
+    if (method === "DELETE")
+      throw new ApiError(
+        "Discord did not confirm the delete. The clock was not removed. Check Discord, then press Remove again.",
+        503,
+      );
+  });
+  await click(button("Edit"));
+  await click(button("Remove clock"));
+  await click(
+    button("Remove clock", document.querySelector(".confirm-dialog")!),
+  );
+  expect(host.querySelector(".world-clock-row.is-open")).toBeTruthy();
+  expect(host.textContent).toContain("The clock was not removed.");
 });
 
 it("add clock sends one request per press and keeps the id after an unconfirmed create", async () => {

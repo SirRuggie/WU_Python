@@ -17,7 +17,8 @@ from aiohttp import web
 
 from utils import world_clocks as rules
 from utils.world_clock_store import ChannelInUse, Conflict, WorldClockStore
-from .server_management import API, GUILD_ID, DiscordDeliveryUncertain, discord, mongo, require_manage
+from .server_management import (API, GUILD_ID, DiscordDeliveryUncertain, DiscordItemNotFound, discord, mongo,
+                                require_manage)
 
 BASE = API + "/world-clocks"
 SECTION = "world_clocks"
@@ -359,16 +360,57 @@ async def edit(request):
     return respond({"clock": public_clock(row, None, now, settings), "next_update": rules.next_mark(now, settings["interval_minutes"])})
 
 
+async def delete_clock_channel(request, channel_id) -> str:
+    """Delete the clock's own voice channel (Ruggie, 2026-11-11: Remove fully removes).
+
+    Returns "deleted", "gone" (already missing), "kept" (not a voice channel in
+    this server, so it is never deleted) or "none" (the clock had no channel).
+    Raises before anything is removed when Discord refuses or does not confirm.
+    """
+    if not channel_id:
+        return "none"
+    try:  # Check first: only a voice channel in this server is ever deleted.
+        found = await discord(request, "GET", f"/channels/{channel_id}")
+    except web.HTTPNotFound:
+        return "gone"
+    except web.HTTPForbidden:
+        raise web.HTTPBadRequest(text="WU Wizard cannot see this channel. Check its permissions. "
+                                      "The clock was not removed.") from None
+    if str(found.get("guild_id")) != str(GUILD_ID) or found.get("type") != VOICE:
+        return "kept"
+    try:
+        await discord(request, "DELETE", f"/channels/{channel_id}", roster_delivery=True)
+    except DiscordItemNotFound:
+        return "gone"
+    except DiscordDeliveryUncertain:
+        raise web.HTTPServiceUnavailable(text="Discord did not confirm the delete. The clock was not removed. "
+                                              "Check Discord, then press Remove again.") from None
+    except web.HTTPException as exc:
+        if exc.status in (401, 403):
+            raise web.HTTPBadRequest(text="WU Wizard cannot delete this channel. Check its permissions. "
+                                          "The clock was not removed.") from None
+        raise web.HTTPServiceUnavailable(text="Discord did not delete the channel. The clock was not removed. "
+                                              "Try again in a minute.") from None
+    return "deleted"
+
+
 async def remove(request):
     await require_manage(request, SECTION, write=True)
     target = clock_id(request)
     version = version_of(await body_of(request))
     async with mongo(request) as db:
+        row = await WorldClockStore(db).get_clock(target)
+    if row is None or row.get("version") != version:
+        raise web.HTTPConflict(text=CLOCK_CHANGED)
+    channel = await delete_clock_channel(request, row.get("channel_id"))
+    async with mongo(request) as db:
         try:
             await WorldClockStore(db).remove_clock(target, version)
         except Conflict:
-            raise web.HTTPConflict(text=CLOCK_CHANGED) from None
-    return respond({"removed": target})
+            text = CLOCK_CHANGED if channel != "deleted" else (
+                "The channel was deleted, but the clock changed meanwhile. The page shows the new version.")
+            raise web.HTTPConflict(text=text) from None
+    return respond({"removed": target, "channel": channel})
 
 
 async def save_settings(request):
