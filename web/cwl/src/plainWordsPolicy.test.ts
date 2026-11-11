@@ -12,7 +12,7 @@ const terms: [string, RegExp][] = [
   ["RosterPlayerDialog.tsx", /Summary/],
   ["DeclarationPingReview.tsx", /Message \$\{i \+ 1\} of/],
   ["rosterImagePosting.ts", /Discord is slow · wait/],
-  ["App.tsx", /'Bonus medals'/],
+  ["App.tsx", /'Results & bonuses'/],
   ["MemberAssignments.tsx", /<h1>My clan assignments<\/h1>/],
   ["MemberAssignments.tsx", /<h2>Waiting for a clan<\/h2>/],
   ["RosterFilters.tsx", /unassigned: "Unplaced"/],

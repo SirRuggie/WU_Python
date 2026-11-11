@@ -56,6 +56,5 @@ export default function BonusAnnouncement({ draw, disabled, onSend }: Props) {
       <div className="bonus-action-bar"><span>{draw.messages.length} message{draw.messages.length === 1 ? '' : 's'} · No pings</span>
         <button className="primary" disabled={!canManage || disabled || !reviewed || !channel || !channels.some(c => c.id === channel)} onClick={() => onSend(channel)}>Send announcement</button></div>
     </>}
-    <p className="small">Staff must award the bonuses in Clash of Clans. Posting this announcement does not award medals.</p>
   </section>
 }

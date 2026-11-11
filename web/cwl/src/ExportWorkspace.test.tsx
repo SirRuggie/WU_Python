@@ -115,7 +115,7 @@ it("uses the four plain dataset names and formats only preview values", async ()
     "Roster",
     "Signups",
     "Results history",
-    "Bonus medals history",
+    "Saved bonus history",
   ]);
   expect(host.querySelector(".roster-menu-current")?.textContent).toBe(
     "November 2026",

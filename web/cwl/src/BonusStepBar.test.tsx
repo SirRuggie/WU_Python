@@ -38,7 +38,7 @@ const states = (
 
 describe("bonus step states from the status read", () => {
   it("marks done, current and blocked steps from real data", () => {
-    expect(states(clan())).toEqual(["done", "current", "todo", "todo", "todo"]);
+    expect(states(clan())).toEqual(["done", "done", "current", "todo", "todo"]);
     expect(states(clan({ draw_state: "saved" }))).toEqual([
       "done",
       "done",
@@ -62,14 +62,22 @@ describe("bonus step states from the status read", () => {
     ]);
     expect(states(clan({ draw_state: "cancelled" }))).toEqual([
       "done",
+      "done",
       "current",
+      "todo",
+      "todo",
+    ]);
+    // Rules & count is done only with a count (and a Main minimum).
+    expect(states(clan({ allowance_ready: false }))).toEqual([
+      "done",
+      "blocked",
       "todo",
       "todo",
       "todo",
     ]);
     expect(states(clan({ results_state: "not_checked" }))).toEqual([
       "blocked",
-      "todo",
+      "done",
       "todo",
       "todo",
       "todo",
@@ -138,25 +146,50 @@ describe("bonus step bar", () => {
     ];
     expect(links.map((link) => link.textContent)).toEqual([
       "✓Results · Done",
-      "2Eligibility",
+      "✓Rules & count · Done",
       "3Draw",
-      "4Approval",
-      "5Announcement",
+      "4Approve",
+      "5Announce & award",
     ]);
     expect(links[0].getAttribute("href")).toBe(
       "/cwl/results?season=1&pool=lazy&clan=%232YQ",
     );
     expect(links[2].getAttribute("href")).toBe(
-      "/cwl/bonuses?season=1&pool=lazy&clan=%232YQ&step=draw",
+      "/cwl/results?season=1&pool=lazy&clan=%232YQ&step=draw",
     );
-    expect(links[1].getAttribute("aria-current")).toBe("step");
+    expect(links[2].getAttribute("aria-current")).toBe("step");
     expect(host.querySelector(".bonus-step.is-current")?.textContent).toContain(
-      "Eligibility",
+      "Draw",
     );
     await act(async () => links[2].click());
     expect(select).toHaveBeenCalledExactlyOnceWith(
       "draw",
       "pool=lazy&clan=%232YQ&step=draw",
+    );
+  });
+  it("keeps Results as an in-page step in the clan steps", async () => {
+    const { host } = await render({ resultsInPage: true });
+    expect(host.querySelector(".bonus-step-list a")?.getAttribute("href")).toBe(
+      "/cwl/results?season=1&pool=lazy&clan=%232YQ&step=results",
+    );
+  });
+  it("shows what the page computed, including a typed count, before the status arrives", async () => {
+    const { host } = await render({
+      status: null,
+      input: {
+        done: {
+          results: false,
+          rules: false,
+          draw: false,
+          approve: false,
+          announce: false,
+        },
+        reasons: { results: "2 not checked · Review" },
+      },
+    });
+    expect(host.querySelector(".bonus-step-mark")?.textContent).toBe("!");
+    expect(host.querySelector(".bonus-step.is-blocked")?.textContent).toContain(
+      "2 not checked · Review",
     );
   });
   it("lets modified clicks through without in-page navigation", async () => {
@@ -178,8 +211,13 @@ describe("bonus step bar", () => {
     const compact = host.querySelector<HTMLButtonElement>(
       ".bonus-step-compact",
     )!;
-    expect(compact.textContent).toContain("Step 2 of 5 · Eligibility");
+    expect(compact.textContent).toContain("Step 2 of 5 · Rules & count");
     expect(compact.getAttribute("aria-expanded")).toBe("false");
+    // The toggle names the list it opens.
+    expect(
+      host.querySelector(`#${compact.getAttribute("aria-controls")}`)
+        ?.className,
+    ).toContain("bonus-step-list");
     expect(host.querySelectorAll(".bonus-step-dot")).toHaveLength(5);
     await act(async () => compact.click());
     expect(compact.getAttribute("aria-expanded")).toBe("true");

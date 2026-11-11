@@ -85,10 +85,27 @@ beforeEach(async () => {
     ),
   );
   await act(async () => button("Retain local result edit").click());
-  host.querySelector<HTMLDetailsElement>(
-    ".participation-capture-settings",
-  )!.open = true;
-  const month = host.querySelector<HTMLInputElement>('input[type="month"]')!;
+  // Settings sits in the capture card's shared ⋯ menu; the month edit is in its sheet.
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(
+        ".participation-capture .roster-action-trigger",
+      )!
+      .click(),
+  );
+  const item = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((e) => e.textContent?.trim() === "Settings")!;
+  await act(async () => {
+    item.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0 }),
+    );
+    item.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+    item.click();
+  });
+  const month = document.querySelector<HTMLInputElement>(
+    '.results-settings input[type="month"]',
+  )!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
@@ -113,7 +130,9 @@ it("Change CWL month Cancel sends zero sync-settings POSTs and preserves the mon
   );
   expect(posts()).toHaveLength(0);
   expect(
-    host.querySelector<HTMLInputElement>('input[type="month"]')!.value,
+    document.querySelector<HTMLInputElement>(
+      '.results-settings input[type="month"]',
+    )!.value,
   ).toBe("2026-12");
 });
 it.each([false, true])(

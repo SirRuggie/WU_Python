@@ -7,7 +7,7 @@
 | Member clan destination                         | My clan assignments                                     |
 | Member without a clan assignment                | Waiting for a clan                                      |
 | Staff account without a placement               | Unplaced                                                |
-| Bonus page and navigation                       | Bonus medals                                            |
+| Bonus page and navigation                       | Results & bonuses                                       |
 | 15/30-player limit and progress labels          | Clan size                                               |
 | Hide the member roster                          | Hide roster; Roster hidden.                             |
 | Campaign message/reminder workspace             | Signup reminders                                        |
@@ -386,7 +386,7 @@ introduced A and B; B-6 finished the last groups and added C.
 
 ## CWL flow navigation and season controls
 
-- The CWL sidebar follows the season: Seasons → Signup reminders → Build roster → Finalize roster → Announcements → Declaration check → Return reminders → Results & participation → Bonus medals → Exports & history. Other staff destinations use flat Clans, Members, Bot and Admin groups, plus direct Staff overview and Moderation links.
+- The CWL sidebar follows the season: Seasons → Signup reminders → Build roster → Finalize roster → Announcements → Declaration check → Return reminders → Results & bonuses → Exports. Other staff destinations use flat Clans, Members, Bot and Admin groups, plus direct Staff overview and Moderation links.
 - Use the compact `1 Build · 2 Finalize · 3 Announce` strip with 44px targets, gold for the active step, an amber unpublished-changes indicator, and a check for a current publication. Keep existing routes and independent publish/send permissions.
 - Show the next-step cue at the end of Build, after a successful publication, and after a confirmed announcement delivery (not a queued send). Sidebar entry resets Build to Accounts & signups; in-visit tab choices remain remembered.
 - Seasons and the roster signup controls share one signup-visibility action. Re-read on opening, confirm explicitly, and preserve partial success without automatic retries. An open hidden season uses an amber warning and Fix; Fix only makes that season visible when signups remain open.
@@ -417,13 +417,13 @@ Glow top opacity: green/red 20%, neutral 8%, fading out at 44px before line 3. U
 
 Item 6: withdrawn rosters with placements show the amber step dot; the Build banner shares Finalize's Hidden from members wording. Background metadata enrichment includes checked_at with the location name/tag/status so already-mounted cards render completed reads. Existing season/revision/request guards remain; no backend change.
 
-### Plain list cards (Results, Bonus medals, Exports; 2026-11-11)
+### Plain list cards (Results & bonuses, Exports; 2026-11-11, page names updated by prompt 229)
 
-Results & participation, Bonus medals (Candidate review and the draw lists) and the Exports preview use one card: `AccountCard` with the `account-card-plain` modifier (neutral surface, no glow; metadata and flag lines wrap). Attacks and stars use `CardTally` (number tinted by the outcome tone); the outcome is a `StatusPill` beside it.
+Results & bonuses (the player lists, Review and the draw lists) and the Exports preview use one card: `AccountCard` with the `account-card-plain` modifier (neutral surface, no glow; metadata and flag lines wrap). Attacks and stars use `CardTally` (number tinted by the outcome tone); the outcome is a `StatusPill` beside it.
 
-- A card that opens a panel stretches its name button (`account-card-open`) over the whole card; the `⋯` menu repeats that action. Results opens Details; Bonus medals opens Review.
+- A card that opens a panel stretches its name button (`account-card-open`) over the whole card; the `⋯` menu repeats that action. The player list opens Details; a clan's steps open Review.
 - Bonus Review opens in the shared `ActionPanel` (bottom sheet on phones, centered dialog on desktop), never inline below the list. Close, Escape, backdrop and Back go through the unsaved-edit discard confirm. Without bonus access the card button and menu item are disabled.
-- Exports cards are read-only: no menu. Rows show TH, tag, CWL and hosting clan in the metadata line; Roster adds `Weight`, Signups and Results history add `Clash capture`, Bonus medals history shows the selection as a pill plus the date and reason.
+- Exports cards are read-only: no menu. Rows show TH, tag, CWL and hosting clan in the metadata line; Roster adds `Weight`, Signups and Results history add `Clash capture`, Saved bonus history shows the selection as a pill plus the date and reason.
 
 ## Signup-change review
 
@@ -880,7 +880,7 @@ Short lists (dropdown rollout PR 2):
 - `MemberPicker` and the Compare clan picker (`.compare-clan-picker`) take the
   look only, with no behaviour or size change.
 
-## Results and Bonus (prompt 228)
+## Results and Bonus (prompt 228; the flow is superseded by prompt 229 below)
 
 - Cards stay neutral: no background or edge tint by outcome. One small chip
   gives the outcome: green Meets rule, red Below rule, amber Not checked (no
@@ -893,26 +893,52 @@ Short lists (dropdown rollout PR 2):
   minimum, Main shows no chip. Bonus rows use the same chip, plus only
   player-specific reasons. Clan-wide reasons show once in a notice above the
   list.
-- Both pages share one 5-step bar (`BonusStepBar.tsx`): Results → Eligibility →
-  Draw → Approval → Announcement, for the selected pool and hosting clan. Done
-  ✓, current gold, blocked red with one short reason. Each step is a link with
-  the `pool`, `clan` and `step` keys. Phones (700 px or less) show one line,
-  "Step 2 of 5 · Eligibility" with dots, that expands to the full bar. The bar
-  reads the light `bonus-status` endpoint after the list; a failure shows one
-  muted "Status unavailable · Retry" and never blocks the list.
-- Bonus medals selects the hosting clan with a row of clan cards (name, "5 of
-  8 meet", Draft / Saved / Approved / Sent / Inactive). Phones use the Compare
-  swipeable card row. The selected card has the gold edge.
+- Step bar, clan cards and blockers: superseded by prompt 229 below.
 - Results has 5 outcome filter chips with counts (All · Meets rule · Below rule
   · Partial results · Not checked, `FilterChips`), a 3-option Sort and a Hosting clan short-list
   select (the search picker above 20 clans). The count line counts the
   selected pool only.
-- `pool`, `clan`, `outcome`, `sort` and `step` are in the URL on both pages;
-  Back and shared links restore them.
-- Under a disabled Review eligibility button, one line per blocker links to
-  its fix (`bonusReviewBlockers` in `bonusRaffle.ts` is the one source for the
-  lines and the disabled state). "Discord roles unavailable · Retry" and
-  "Results not captured" show as lines but do not disable the button.
+- `pool`, `clan`, `outcome`, `sort` and `step` are in the URL; Back, Forward and
+  shared links restore them (the clan address names the step, see prompt 229).
 - Results cards: the card body opens Details; the shared `⋯` menu holds DM +
   Details (`participationMenuItems` list). Attacks and stars come from Clash
   and are read only; Details saves staff notes only.
+
+### Results & bonuses one page (prompt 229)
+
+- One page, "Results & bonuses". No clan selected: overview. Clan selected: the
+  five steps.
+- Only one step panel is open. A done step shows one summary line with Change.
+- A blocker shows once, in the open panel, beside its fix. The bar shows the
+  same short reason. A disabled action gets one line naming the first blocker.
+- Clan cards come with "All clans" first. After a draw a card shows only
+  "Draw saved", "Approved" or "Sent".
+- Settings and capture options open in a sheet (`ActionPanel`) from the page ⋯
+  menu. Saved histories live in Exports. Staff who cannot open Exports (bonus
+  access without results access) keep a "Saved bonus history" disclosure at the
+  bottom of the page; it reads only when opened.
+- The step bar (`BonusStepBar.tsx`) is Results → Rules & count → Draw → Approve
+  → Announce, for the selected pool and clan. Done ✓, current gold, blocked red
+  with one short reason. Each step is a link with the `pool`, `clan` and `step`
+  keys. Phones (700 px or less) show one line, "Step 2 of 5 · Rules & count",
+  with dots that expand to the full bar. It reads the light `bonus-status`
+  endpoint after the list; a failure shows one muted "Status unavailable ·
+  Retry" and never blocks the list.
+- Blockers come from `bonusStepBlockers` in `bonusRaffle.ts`, the one source for
+  the step lines, the bar reasons and every disabled action. Draw, Approve and
+  Announce wait for the steps before them. The Draw preview loads by itself
+  when the step opens and never writes; a response from another clan, pool or
+  count is dropped.
+- Selecting a clan card, from the list or the steps, pushes an address that
+  names the first step that is not done (`firstOpenStep`), so Back and Forward
+  return to the same screen. An address with no clan shows the cards only.
+- Each notice shows once: "Archived season" (the page notice only), "CWL month
+  not set" (the Results blocker only; the month line shows a month only when
+  set) and the medals line in Announce ("Give the medals in Clash. The
+  announcement does not award them."). The old-results warning is one line
+  with "Check Clash now" inline on the overview and in the steps.
+- Phones (700 px or less): the Rules & count count field takes a full-width row
+  with its label above and hint below, the two tiles share the next row, the
+  minimum field and Save minimum share a row, blocker lines are text lines (the
+  44px target overlaps the line), and "Bonus count and source" sits below the
+  player list. No horizontal overflow at 320, 360 and 390 px.

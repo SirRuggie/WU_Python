@@ -20,27 +20,68 @@ describe("Results and Bonus URL state", () => {
       parseResultsState("pool=x&clan=bad&outcome=x&sort=th-asc&step=x"),
     ).toEqual({});
   });
+  it("maps the old step names and keeps the new ones", () => {
+    for (const [old, now] of [
+      ["eligibility", "rules"],
+      ["approval", "approve"],
+      ["announcement", "announce"],
+      ["results", "results"],
+      ["rules", "rules"],
+      ["draw", "draw"],
+      ["approve", "approve"],
+      ["announce", "announce"],
+    ] as const)
+      expect(parseResultsState(`step=${old}`).step).toBe(now);
+  });
   it("leaves defaults out of the query", () => {
     expect(
       resultsStateQuery({ pool: "main", outcome: "all", sort: "name" }),
     ).toBe("pool=main");
   });
-  it("round-trips through the dashboard route for both pages", () => {
-    for (const [path, view] of [
-      ["/cwl/results", "participation"],
-      ["/cwl/bonuses", "bonuses"],
-    ] as const) {
+  it("keeps the steps marker apart from the page key and drops it once a step is named", () => {
+    expect(parseResultsState("pool=lazy&clan=%232YQ&open=steps").view).toBe(
+      "steps",
+    );
+    expect(parseResultsState("open=x").view).toBeUndefined();
+    // The dashboard page key `view` never reads as the marker.
+    expect(parseResultsState("view=steps").view).toBeUndefined();
+    expect(
+      resultsStateQuery({ pool: "lazy", clan: "#2YQ", view: "steps" }),
+    ).toBe("pool=lazy&clan=%232YQ&open=steps");
+    expect(
+      resultsStateQuery({
+        pool: "lazy",
+        clan: "#2YQ",
+        step: "approve",
+        view: "steps",
+      }),
+    ).toBe("pool=lazy&clan=%232YQ&step=approve");
+    const route = dashboardTarget(
+      "?season=4&pool=lazy&clan=%232YQ&open=steps",
+      "/cwl/results",
+    );
+    expect(dashboardPath(route)).toBe(
+      "/cwl/results?season=4&pool=lazy&clan=%232YQ&open=steps",
+    );
+  });
+  it("opens one page from /cwl/results and the older /cwl/bonuses", () => {
+    for (const path of ["/cwl/results", "/cwl/bonuses"] as const) {
       const route = dashboardTarget(
         "?season=4&pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approval",
         path,
       );
-      expect(route.view).toBe(view);
+      expect(route.view).toBe("participation");
+      // The old step name opens the renamed step.
       expect(route.resultsState).toBe(
-        "pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approval",
+        "pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approve",
       );
+      // Both addresses write the one canonical path.
       expect(dashboardPath(route)).toBe(
-        `${path}?season=4&pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approval`,
+        "/cwl/results?season=4&pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc&step=approve",
       );
+      expect(
+        dashboardTarget("?view=bonuses&season=4&pool=lazy&step=draw").view,
+      ).toBe("participation");
     }
   });
   it("keeps the keys off other pages", () => {

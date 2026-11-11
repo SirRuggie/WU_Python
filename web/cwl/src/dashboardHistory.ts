@@ -27,10 +27,10 @@ export type DashboardRoute = {
   step?: "review" | "announce";
   activityFilter?: string;
   activityKind?: "war" | "cwl";
-  /** Results and Bonus medals: pool, clan, outcome, sort and step keys. */
+  /** Results & bonuses: pool, clan, outcome, sort and step keys. */
   resultsState?: string;
 };
-const resultsViews = ["participation", "bonuses"];
+const resultsViews = ["participation"];
 export function dashboardTarget(
   search: string,
   pathname = "/",
@@ -65,7 +65,9 @@ export function dashboardTarget(
         ? "members-settings"
         : requested === "manage-signups"
           ? "roster"
-          : requested;
+          : requested === "bonuses"
+            ? "participation"
+            : requested;
   return {
     ...(family && pathname !== "/clans" ? { familyClan: family } : {}),
     ...(value === "weight-trial"
@@ -134,7 +136,6 @@ export const seasonViews = new Set([
   "declaration",
   "publication",
   "participation",
-  "bonuses",
   "roster",
   "staff",
 ]);

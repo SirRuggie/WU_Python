@@ -93,8 +93,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
     "Announcements",
     "Declaration check",
     "Return reminders",
-    "Results & participation",
-    "Bonus medals",
+    "Results & bonuses",
     "Exports",
   ]);
   expect(
@@ -137,7 +136,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
       (item) => `${item.view}:${item.step || item.signupPanel || ""}`,
     ),
   );
-  expect(destinations).toHaveLength(34);
+  expect(destinations).toHaveLength(33);
   expect(new Set(destinations).size).toBe(destinations.length);
   const html = markup("home", [], true);
   expect(html.indexOf("Staff overview")).toBeLessThan(
@@ -179,7 +178,16 @@ it("preserves each permission list and hides empty groups or unauthorized direct
   expect(itemsFor(["cwl_publish"]).map((item) => item.view)).not.toContain(
     "roster",
   );
-  expect(itemsFor(["cwl_send"]).map((item) => item.view)).toContain("bonuses");
+  // One page for both halves: either grant shows it, and nothing else does.
+  expect(itemsFor(["cwl_send"]).map((item) => item.view)).toContain(
+    "participation",
+  );
+  expect(itemsFor(["cwl_bonuses"]).map((item) => item.view)).toContain(
+    "participation",
+  );
+  expect(itemsFor(["cwl_roster"]).map((item) => item.view)).not.toContain(
+    "participation",
+  );
   expect(itemsFor(["server_tools"]).map((item) => item.view)).not.toContain(
     "moderation",
   );

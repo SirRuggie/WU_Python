@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from './api';
 import type { ParticipationData } from './participation';
+import './ResultsHistory.css';
 
 /** Historical results are read only and fetched only while expanded. */
 export default function ParticipationHistory({ seasonId, onAccessDenied }: { seasonId: string; onAccessDenied: (error: ApiError) => void }) {

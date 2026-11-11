@@ -38,10 +38,10 @@ describe('bonus draw review gate', () => {
   it('keeps a reviewed draw unavailable while any local editor or blocking check is active', async () => {
     const { canSaveBonusDraw } = await import('./bonusRaffle')
     const ready = { canManage: true, busy: false, archived: false, policyDirty: false,
-      roleDirty: false, reviewDirty: false, reviewOpen: false, candidateOpen: false,
+      reviewDirty: false, reviewOpen: false, candidateOpen: false,
       lookingUp: false, blocked: false }
     expect(canSaveBonusDraw(ready)).toBe(true)
-    for (const key of ['policyDirty', 'roleDirty', 'reviewDirty', 'reviewOpen', 'candidateOpen', 'lookingUp', 'blocked', 'busy', 'archived'] as const) {
+    for (const key of ['policyDirty', 'reviewDirty', 'reviewOpen', 'candidateOpen', 'lookingUp', 'blocked', 'busy', 'archived'] as const) {
       expect(canSaveBonusDraw({ ...ready, [key]: true })).toBe(false)
     }
     expect(canSaveBonusDraw({ ...ready, canManage: false })).toBe(false)

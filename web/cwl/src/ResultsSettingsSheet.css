@@ -1,0 +1,60 @@
+/* Settings sheet for Results & bonuses: CWL capture and Lazy draw odds. */
+.results-settings .action-panel-content {
+  display: grid;
+  align-content: start;
+  gap: var(--wu-space-4);
+}
+.results-settings-section {
+  display: grid;
+  gap: var(--wu-space-3);
+  padding-top: var(--wu-space-3);
+  border-top: 1px solid var(--wu-border);
+}
+.results-settings-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.results-settings-section h3 {
+  margin: 0;
+  font-size: var(--wu-text-md);
+}
+.results-settings-section p {
+  margin: 0;
+  color: var(--wu-text-muted);
+  text-wrap: pretty;
+}
+.results-settings-section > button {
+  justify-self: start;
+  min-height: 44px;
+}
+.results-settings-fields {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  align-items: end;
+  gap: var(--wu-space-3);
+}
+.results-settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  min-height: 44px;
+}
+.results-settings-toggle input {
+  flex: 0 0 20px;
+}
+.results-settings-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-1) var(--wu-space-4);
+  color: var(--wu-text-muted);
+}
+.results-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+}
+@media (max-width: 480px) {
+  .results-settings-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

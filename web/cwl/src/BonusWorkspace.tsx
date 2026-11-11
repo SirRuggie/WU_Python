@@ -3,50 +3,54 @@ import "./rosterUi/tokens.css";
 import CwlPageHeader from "./CwlPageHeader";
 import useConfirmDialog from "./useConfirmDialog";
 import { exportMonthLabel } from "./exportPreview";
+import { countLabel } from "./countLabel";
+import BonusHistory from "./BonusHistory";
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type MouseEvent,
+  type ReactNode,
 } from "react";
-import { TriangleAlert } from "lucide-react";
 import ActionMenu from "./rosterUi/ActionMenu";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { api, ApiError, type Pool, type Season } from "./api";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import useUnsavedWork from "./useUnsavedWork";
-import useChoiceRail from "./useChoiceRail";
-import BonusAnnouncement from "./BonusAnnouncement";
 import BonusStepBar, { bonusStepHref } from "./BonusStepBar";
-import SearchPicker from "./SearchPicker";
-import { roleOption } from "./RolePicker";
 import BonusCandidateReview from "./BonusCandidateReview";
-import BonusAccountCard from "./BonusAccountCard";
+import BonusStepPanel from "./BonusStepPanel";
+import BonusResultsStep from "./BonusResultsStep";
+import BonusRulesStep from "./BonusRulesStep";
+import BonusAddCandidate from "./BonusAddCandidate";
+import BonusDrawStep from "./BonusDrawStep";
+import BonusApproveStep from "./BonusApproveStep";
+import BonusAnnounceStep from "./BonusAnnounceStep";
+import BonusClanCards from "./BonusClanCards";
+import ResultsSettingsSheet, {
+  type SettingsSaved,
+} from "./ResultsSettingsSheet";
 import {
-  bonusClanState,
+  bonusStepStates,
+  bonusSteps,
   loadBonusStatus,
   type BonusStatus,
   type BonusStep,
 } from "./bonusStatus";
-import {
-  countText,
-  participationOutcome,
-  resultDateText,
-} from "./participationOutcome";
+import { participationOutcome, resultDateText } from "./participationOutcome";
 import {
   parseResultsState,
   plainClick,
   resultsStateQuery,
+  type ResultsUrlState,
 } from "./resultsUrlState";
 import {
-  bonusReviewBlockers,
+  bonusStepBlockers,
   reviewBlocked,
   canSaveBonusDraw,
   clanWideReasons,
-  type BonusListMode,
-  type BonusReviewBlocker,
+  type BonusBlockerLine,
   type RaffleAccount,
   type RaffleData,
   type RafflePreview,
@@ -60,13 +64,10 @@ type Props = {
   onSeasonChange: (id: string) => void;
   urlState?: string;
   onUrlState?: (state: string, push: boolean) => void;
-  /** Opens Results with pool and clan keys; absent without Results access. */
+  /** Opens the results list with pool, clan and outcome keys; absent without Results access. */
   onResults?: (state?: string) => void;
 };
 
-const CLAN_SEARCH_MIN = 8;
-
-type Role = { id: string; name: string };
 type PlayerLookup = {
   account: {
     tag: string;
@@ -80,87 +81,6 @@ function errorText(cause: unknown) {
   return cause instanceof Error
     ? cause.message
     : "The action could not be completed. Refresh to check its saved status.";
-}
-
-function AccountList({
-  accounts,
-  onReview,
-  busy,
-  searchable = false,
-  mode = "candidates",
-  minimum = null,
-}: {
-  accounts: RaffleAccount[];
-  onReview?: (account: RaffleAccount, opener: HTMLElement) => void;
-  busy?: boolean;
-  searchable?: boolean;
-  mode?: BonusListMode;
-  minimum?: number | null;
-}) {
-  const [query, setQuery] = useState("");
-  const [visibleCount, setVisibleCount] = useState(20);
-  const matching = useMemo(
-    () =>
-      accounts.filter((account) =>
-        `${account.player_name} ${account.tag}`
-          .toLowerCase()
-          .includes(query.trim().toLowerCase()),
-      ),
-    [accounts, query],
-  );
-
-  return (
-    <div className="bonus-account-results">
-      {searchable && (
-        <label className="bonus-account-search">
-          Find an account
-          <input
-            type="search"
-            name="account-search"
-            autoComplete="off"
-            spellCheck={false}
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setVisibleCount(20);
-            }}
-            placeholder="Player name or tag"
-          />
-        </label>
-      )}
-      <ul className="bonus-account-list">
-        {matching
-          .slice(0, searchable ? visibleCount : matching.length)
-          .map((account) => (
-            <li key={account.tag}>
-              <BonusAccountCard
-                account={account}
-                mode={mode}
-                minimum={minimum}
-                onReview={onReview}
-                busy={busy}
-              />
-            </li>
-          ))}
-      </ul>
-      {searchable && matching.length > visibleCount && (
-        <button
-          type="button"
-          className="bonus-show-more"
-          onClick={() => setVisibleCount((count) => count + 20)}
-        >
-          Show 20 more · {matching.length - visibleCount} remaining
-        </button>
-      )}
-      {!matching.length && (
-        <p className="bonus-empty">
-          {query
-            ? "No accounts match this search."
-            : "No accounts in this group."}
-        </p>
-      )}
-    </div>
-  );
 }
 
 export default function BonusWorkspace({
@@ -184,6 +104,12 @@ export default function BonusWorkspace({
     setUrlPool(next);
   };
   const [step, setStep] = useState<BonusStep | undefined>(initial.current.step);
+  // An address with the steps marker waits for the page data to name its step.
+  const [stepPending, setStepPending] = useState(
+    !!initial.current.view && !initial.current.step,
+  );
+  // Where the page landed; typing a count must not move the open panel.
+  const [landing, setLanding] = useState<BonusStep | undefined>();
   const [status, setStatus] = useState<BonusStatus | null>(null);
   const [statusFailed, setStatusFailed] = useState(false);
   const statusRequest = useRef(0);
@@ -194,13 +120,13 @@ export default function BonusWorkspace({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [clanTag, setClanTag] = useState(initial.current.clan || "");
-  const [clanQuery, setClanQuery] = useState("");
-  const clanRail = useChoiceRail<HTMLDivElement>(clanTag);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const settingsTrigger = useRef<HTMLElement | null>(null);
   const countInput = useRef<HTMLInputElement | null>(null);
   const countDetails = useRef<HTMLDetailsElement | null>(null);
   const minimumInput = useRef<HTMLInputElement | null>(null);
-  const roleDetails = useRef<HTMLDetailsElement | null>(null);
-  const flowSection = useRef<HTMLElement | null>(null);
+  const flowSection = useRef<HTMLDivElement | null>(null);
   const [minimum, setMinimum] = useState("");
   const [slots, setSlots] = useState("");
   const [manualCount, setManualCount] = useState(false);
@@ -215,15 +141,12 @@ export default function BonusWorkspace({
     null,
   );
   const [lookingUp, setLookingUp] = useState(false);
-  const [roleId, setRoleId] = useState("");
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [rolesError, setRolesError] = useState("");
-  const [rolesLoading, setRolesLoading] = useState(false);
   const reviewOpener = useRef<HTMLElement | null>(null);
   const addOpener = useRef<HTMLButtonElement | null>(null);
   const candidateTagInput = useRef<HTMLInputElement | null>(null);
   const drawHeading = useRef<HTMLHeadingElement | null>(null);
   const previousStage = useRef<number | null>(null);
+  const previewKeyRef = useRef("");
   const generation = useRef(0);
   const lookupGeneration = useRef(0);
   const lookupPending = useRef(false);
@@ -237,15 +160,8 @@ export default function BonusWorkspace({
   const archived = data?.season_status !== "draft";
   const policyDirty =
     pool === "main" && !!data && minimum !== String(data.policies.main ?? "");
-  const roleDirty =
-    pool === "lazy" &&
-    !!data &&
-    roleId !==
-      (data.lazy_settings?.representative_role_id || "769130325460254740");
   const formDirty =
-    reviewDirty ||
-    (candidateOpen && !!(candidateTag || candidateReason)) ||
-    roleDirty;
+    reviewDirty || (candidateOpen && !!(candidateTag || candidateReason));
   const unsaved =
     policyDirty ||
     formDirty ||
@@ -258,7 +174,10 @@ export default function BonusWorkspace({
           draw.cycle === data.cycle &&
           !draw.cancelled_at,
       ));
-  useUnsavedWork(unsaved || busy || lookingUp || !!cancelReason, onDirty);
+  useUnsavedWork(
+    unsaved || settingsDirty || busy || lookingUp || !!cancelReason,
+    onDirty,
+  );
 
   const currentClans =
     data?.clans.filter((clan) =>
@@ -326,43 +245,124 @@ export default function BonusWorkspace({
     clanAccounts.some(
       (account) => account.representative_status === "unavailable",
     );
+  const savedMinimum = data?.policies.main ?? null;
+  const typedMinimum =
+    /^\d+$/.test(minimum) && Number(minimum) <= 7 ? Number(minimum) : null;
+  const minimumPreview =
+    pool === "main" && policyDirty && typedMinimum !== null;
+  const chipMinimum = minimumPreview ? typedMinimum : savedMinimum;
+
   // Did not join is a final result, never a missing one.
   const resultAccounts = clanAccounts.filter(
     (account) => !account.did_not_join,
   );
-  const resultsMissing =
+  // A saved staff reason covers a player with nothing captured.
+  const unchecked = resultAccounts.filter(
+    (account) =>
+      (account.attacks === null || !account.source_complete) &&
+      !(
+        account.attacks === null &&
+        account.stars === null &&
+        account.bonus_review?.override_reason
+      ),
+  );
+  const allMissing =
     resultAccounts.length > 0 &&
     resultAccounts.every(
       (account) => account.attacks === null || !account.source_complete,
     );
-  const blockers = bonusReviewBlockers({
+  const clanWide = clanWideReasons(clanAccounts);
+  const canReviewUnchecked = pool === "lazy" && canManage && !archived;
+  const hostInactive =
+    (!!hostStatus && !hostStatus.active) ||
+    clanWide.includes("Hosting clan is not an active Lazy clan this season");
+  const blockers = bonusStepBlockers({
     canManage,
     archived: !!archived,
     policyDirty,
-    roleDirty,
     reviewDirty,
     candidateOpen,
-    countReady,
+    countReady: !!countReady,
     needsMinimum: pool === "main" && data?.policies.main === null,
     rolesUnavailable,
-    resultsMissing,
+    resultsMissing:
+      unchecked.length > 0 &&
+      (allMissing || clanWide.includes("Results not captured")),
+    uncheckedCount: unchecked.length,
+    canReviewUnchecked,
+    cycleMissing: !!data && !data.cycle,
+    hostInactive,
   });
-  // A reason that covers the whole clan shows once, above the list.
-  const clanNotices = [
-    ...new Set([
-      ...(hostStatus && !hostStatus.active
-        ? ["Hosting clan is not an active Lazy clan this season"]
-        : []),
-      ...clanWideReasons(clanAccounts),
-      ...(resultsMissing ? ["Results not captured"] : []),
-      ...(rolesUnavailable ? ["Discord roles unavailable"] : []),
-    ]),
-  ];
-  const resultsLink = bonusStepHref(seasonId, "results", pool, clanTag);
-  const openResults = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!plainClick(event) || !onResults) return;
-    event.preventDefault();
-    onResults(resultsLink.query);
+
+  // Step states come from the page's own data; the status read fills the gaps.
+  const drawState = !draw
+    ? "none"
+    : draw.delivery?.status === "sent"
+      ? "sent"
+      : draw.approved_at
+        ? "approved"
+        : "saved";
+  const drawn = drawState !== "none";
+  const stepDone: Record<BonusStep, boolean> = {
+    results:
+      drawn ||
+      (clanAccounts.length
+        ? unchecked.length === 0
+        : hostStatus?.results_state === "captured"),
+    rules:
+      drawn ||
+      ((pool !== "main" || data?.policies.main != null) &&
+        !!countReady &&
+        !hostInactive),
+    draw: drawn,
+    approve: drawState === "approved" || drawState === "sent",
+    announce: drawState === "sent",
+  };
+  const stepInput = {
+    done: stepDone,
+    reasons: Object.fromEntries(
+      bonusSteps.map((item) => [
+        item.id,
+        blockers[item.id].find((line) => line.bar && line.id !== "archived")
+          ?.text || "",
+      ]),
+    ) as Partial<Record<BonusStep, string>>,
+  };
+  const stepViews = bonusStepStates(
+    hostStatus || null,
+    pool,
+    data?.policies.main ?? null,
+    stepInput,
+  );
+  const defaultStep: BonusStep =
+    stepViews.find((view) => view.state !== "done")?.id || "announce";
+  const openStep = step || landing || defaultStep;
+  // Draw, Approve and Announce wait for every step before them.
+  const gateFor = (id: BonusStep) => {
+    const index = bonusSteps.findIndex((item) => item.id === id);
+    const waiting = stepViews
+      .slice(0, index)
+      .find((view) => view.state !== "done");
+    return waiting ? `Finish ${waiting.label} first.` : "";
+  };
+  const drawGate = gateFor("draw");
+  // The page notice says "Archived season" once; no step repeats it.
+  const stepLines = (id: BonusStep) =>
+    blockers[id].filter((line) => line.id !== "archived");
+  const firstBlocking = (id: BonusStep) =>
+    stepLines(id).find((line) => line.blocks)?.text || "";
+  const previewAllowed =
+    !!data &&
+    !!selectedClan &&
+    !draw &&
+    !drawGate &&
+    !reviewBlocked(blockers.draw);
+
+  const openSettings = () => {
+    settingsTrigger.current = document.querySelector<HTMLElement>(
+      ".bonus-context .roster-action-trigger",
+    );
+    setSettingsOpen(true);
   };
   // Incomplete players open Results filtered to them when they share one outcome.
   const incompleteOutcomes = new Set(
@@ -387,13 +387,37 @@ export default function BonusWorkspace({
     field?.scrollIntoView?.({ block: "center" });
     field?.focus({ preventScroll: true });
   };
-  const blockerFix = (blocker: { id: BonusReviewBlocker; text: string }) => {
-    const action = (onClick: () => void, text = blocker.text) => (
-      <button type="button" className="bonus-inline-action" onClick={onClick}>
+  const checkClashDisabled =
+    !canManage ||
+    busy ||
+    lookingUp ||
+    !!archived ||
+    policyDirty ||
+    reviewDirty ||
+    candidateOpen ||
+    !data?.cycle;
+  const checkClash = () =>
+    void mutate(
+      "/refresh-results",
+      {},
+      "CWL check finished. Review this clan’s status before drawing.",
+    );
+  const blockerFix = (line: BonusBlockerLine): ReactNode => {
+    const action = (
+      onClick: () => void,
+      text = line.text,
+      disabled = false,
+    ) => (
+      <button
+        type="button"
+        className="bonus-inline-action"
+        disabled={disabled}
+        onClick={onClick}
+      >
         {text}
       </button>
     );
-    switch (blocker.id) {
+    switch (line.id) {
       case "count":
         return action(() => {
           if (!leagueMissing && countDetails.current) {
@@ -405,11 +429,6 @@ export default function BonusWorkspace({
       case "minimum":
       case "minimum-dirty":
         return action(() => focusField(minimumInput.current));
-      case "role-dirty":
-        return action(() => {
-          if (roleDetails.current) roleDetails.current.open = true;
-          focusField(roleDetails.current);
-        });
       case "open-review":
         return action(() =>
           focusField(
@@ -425,15 +444,36 @@ export default function BonusWorkspace({
           </>
         );
       case "results":
-        return onResults ? (
-          <a href={resultsLink.href} onClick={openResults}>
-            {blocker.text}
-          </a>
-        ) : (
-          blocker.text
+        return (
+          <>
+            {line.text} ·{" "}
+            {action(checkClash, "Check Clash now", checkClashDisabled)}
+          </>
         );
+      case "partial":
+        return canReviewUnchecked ? (
+          <>
+            {unchecked.length} not checked ·{" "}
+            {action(() => void openFirstUnchecked(), "Review")}
+          </>
+        ) : (
+          <>
+            {line.text} ·{" "}
+            {action(checkClash, "Check Clash now", checkClashDisabled)}
+          </>
+        );
+      case "cycle":
+        return onResults ? (
+          <>
+            {line.text} · {action(openSettings, "Open Settings")}
+          </>
+        ) : (
+          line.text
+        );
+      case "inactive":
+        return <>{line.text} · Set its season pool in Build roster</>;
       default:
-        return blocker.text;
+        return line.text;
     }
   };
   const stage = draw?.approved_at ? 3 : draw ? 2 : preview ? 1 : 0;
@@ -446,16 +486,21 @@ export default function BonusWorkspace({
     previousStage.current = stage;
   }, [stage]);
 
+  useEffect(() => {
+    if (data && selectedClan && !landing) setLanding(defaultStep);
+  }, [data, selectedClan?.tag, landing]);
+  const clearPreview = () => {
+    previewKeyRef.current = "";
+    setPreview(null);
+  };
   const resetContext = (source = data, nextPool = pool) => {
     lookupGeneration.current += 1;
     lookupPending.current = false;
     setLookingUp(false);
     setMinimum(String(source?.policies[nextPool] ?? ""));
-    setRoleId(
-      source?.lazy_settings?.representative_role_id || "769130325460254740",
-    );
     setManualCount(false);
-    setPreview(null);
+    setLanding(undefined);
+    clearPreview();
     setSlots("");
     setCancelReason("");
     setReviewTag("");
@@ -491,10 +536,7 @@ export default function BonusWorkspace({
       const result = await api<RaffleData>(path);
       if (request !== generation.current) return;
       setData(result);
-      setPreview(null);
-      setRoleId(
-        result.lazy_settings?.representative_role_id || "769130325460254740",
-      );
+      clearPreview();
       // The step bar and clan states read after the list, never before it.
       void loadStatus();
     } catch (cause) {
@@ -541,23 +583,55 @@ export default function BonusWorkspace({
       setPool(next.pool);
       resetContext(data, next.pool);
     }
-    if (next.clan && next.clan !== clanTag) {
-      setClanTag(next.clan);
+    // An address with no clan shows the clan cards only.
+    if ((next.clan || "") !== clanTag) {
+      setClanTag(next.clan || "");
       resetContext(data, next.pool || pool);
     }
     setStep(next.step);
+    setStepPending(!!next.view && !next.step);
   }, [urlState]);
   const emit = (
-    next: { pool?: Pool; clan?: string; step?: BonusStep },
+    next: {
+      pool?: Pool;
+      clan?: string;
+      step?: BonusStep;
+      view?: "steps";
+    },
     push = true,
   ) => {
     const query = resultsStateQuery({
       pool: next.pool ?? pool,
       clan: "clan" in next ? next.clan || undefined : clanTag || undefined,
       step: "step" in next ? next.step : step,
+      view: next.view,
     });
     emitted.current = query;
     onUrlState?.(query, push);
+  };
+  // The steps view always carries a step; the page's own data names it.
+  useEffect(() => {
+    if (!stepPending || !data || !selectedClan) return;
+    setStepPending(false);
+    setStep(defaultStep);
+    emit({ step: defaultStep }, false);
+  }, [stepPending, data, selectedClan?.tag, defaultStep]);
+  // After a saved action the page follows the first step that is not done.
+  const followFlow = () => {
+    setLanding(undefined);
+    if (step === undefined) return;
+    setStep(undefined);
+    setStepPending(true);
+    emit({ step: undefined, view: "steps" }, false);
+  };
+  const openStepTo = (target: BonusStep, pick?: ResultsUrlState) => {
+    setStep(target);
+    emit(
+      pick
+        ? { pool: pick.pool, clan: pick.clan, step: target }
+        : { step: target },
+    );
+    flowSection.current?.scrollIntoView?.({ block: "start" });
   };
   useEffect(() => {
     if (candidateOpen) candidateTagInput.current?.focus();
@@ -565,9 +639,10 @@ export default function BonusWorkspace({
   useEffect(() => {
     if (data) setMinimum(String(data.policies[pool] ?? ""));
   }, [data, pool]);
+  // A clan from another pool or season is dropped; no clan shows the cards only.
   useEffect(() => {
-    if (data && !clans.some((clan) => clan.tag === clanTag))
-      setClanTag(clans[0]?.tag || "");
+    if (data && clanTag && !clans.some((clan) => clan.tag === clanTag))
+      setClanTag("");
   }, [data, pool, clanTag]);
 
   const mutate = async (
@@ -588,7 +663,7 @@ export default function BonusWorkspace({
       if (request !== generation.current || activeSeason.current !== sid)
         return false;
       setData(result);
-      setPreview(null);
+      clearPreview();
       setCancelReason("");
       setNotice(success);
       void loadStatus();
@@ -597,7 +672,7 @@ export default function BonusWorkspace({
       if (request !== generation.current) return false;
       if (cause instanceof ApiError && [401, 403].includes(cause.status))
         setData(null);
-      setPreview(null);
+      clearPreview();
       setError(errorText(cause));
       return false;
     } finally {
@@ -622,12 +697,23 @@ export default function BonusWorkspace({
       void load();
     }
   };
+  const allClans = async () => {
+    if (!clanTag || !(await canDiscard())) return;
+    if (onResults) {
+      onResults(resultsStateQuery({ pool }));
+      return;
+    }
+    setClanTag("");
+    setStep(undefined);
+    resetContext();
+    emit({ clan: undefined, step: undefined });
+  };
+  // Read-only: the draw preview. It never writes.
   const review = async () => {
     if (
       working.current ||
       !selectedClan ||
       policyDirty ||
-      roleDirty ||
       reviewDirty ||
       candidateOpen ||
       !countReady ||
@@ -635,19 +721,24 @@ export default function BonusWorkspace({
     )
       return;
     working.current = true;
+    const key = previewKey;
+    previewKeyRef.current = key;
     setBusy(true);
     setError("");
     setPreview(null);
     const request = ++generation.current;
+    // A change of clan, pool, step setup or data clears the key; that preview is dropped.
+    const current = () =>
+      request === generation.current && previewKeyRef.current === key;
     try {
       const result = await api<RafflePreview>(path + "/preview", "POST", {
         pool,
         clan_tag: clanTag,
         slots: requestedSlots,
       });
-      if (request === generation.current) setPreview(result);
+      if (current()) setPreview(result);
     } catch (cause) {
-      if (request === generation.current) {
+      if (current()) {
         if (cause instanceof ApiError && [401, 403].includes(cause.status))
           setData(null);
         setError(errorText(cause));
@@ -659,6 +750,20 @@ export default function BonusWorkspace({
       }
     }
   };
+  // The Draw step loads its preview once per setup; any change clears it.
+  const previewKey = `${seasonId}:${pool}:${clanTag}:${requestedSlots}:${data?.revision}`;
+  useEffect(() => {
+    if (
+      openStep !== "draw" ||
+      !previewAllowed ||
+      preview ||
+      busy ||
+      lookingUp ||
+      previewKeyRef.current === previewKey
+    )
+      return;
+    void review();
+  }, [openStep, previewAllowed, preview, busy, lookingUp, previewKey]);
   const lookupCandidate = async () => {
     if (!candidateTag.trim() || lookingUp || lookupPending.current) return;
     const lookup = ++lookupGeneration.current;
@@ -706,66 +811,89 @@ export default function BonusWorkspace({
       addOpener.current?.focus({ preventScroll: true }),
     );
   };
-  const loadRoles = async () => {
-    if (roles.length || rolesLoading) return;
-    setRolesLoading(true);
-    setRolesError("");
-    try {
-      const result = await api<{ roles: Role[] }>("/announcement-roles");
-      setRoles(result.roles);
-    } catch (cause) {
-      setRolesError(errorText(cause));
-    } finally {
-      setRolesLoading(false);
-    }
+  const openReview = async (
+    account: RaffleAccount,
+    opener: HTMLElement | null,
+  ) => {
+    if (!(await canLeaveEditor())) return;
+    setCandidateOpen(false);
+    setCandidateTag("");
+    setCandidateReason("");
+    setCandidateLookup(null);
+    reviewOpener.current = opener;
+    setReviewTag(account.tag);
+    clearPreview();
+    setError("");
   };
-
-  // One compact line per clan-wide reason: icon, text and its fix.
-  const clanNotice = selectedClan && clanNotices.length > 0 && (
-    <div className="notice bonus-clan-notice" role="status">
-      {clanNotices.map((text) => (
-        <p key={text}>
-          <TriangleAlert size={16} aria-hidden="true" />
-          <span>
-            {text}
-            {text === "Results not captured" && (
-              <>
-                {" · "}
-                {onResults ? (
-                  <a href={resultsLink.href} onClick={openResults}>
-                    Open Results
-                  </a>
-                ) : (
-                  "Check Results & participation"
-                )}
-              </>
-            )}
-            {text.startsWith("Hosting clan") && (
-              <> · Set its season pool in Build roster</>
-            )}
-            {text === "Discord roles unavailable" && (
-              <>
-                {" · "}
-                <button
-                  type="button"
-                  className="bonus-inline-action"
-                  disabled={busy || lookingUp}
-                  onClick={refresh}
-                >
-                  Retry
-                </button>
-              </>
-            )}
-          </span>
-        </p>
-      ))}
-    </div>
-  );
+  const openFirstUnchecked = async () => {
+    if (unchecked[0]) await openReview(unchecked[0], null);
+  };
+  const locked = !canManage || busy || !!archived || !!draw;
+  const meetsRule =
+    pool === "main" && chipMinimum === null
+      ? null
+      : clanAccounts.filter(
+          (account) => participationOutcome(account, chipMinimum) === "meets",
+        ).length;
+  const total = draw
+    ? draw.snapshot.slots
+    : manualCount && countReady
+      ? Number(slots)
+      : allowance?.status === "ready"
+        ? allowance.total
+        : null;
+  const summaries: Record<BonusStep, string> = {
+    results: `${clanAccounts.length} ${clanAccounts.length === 1 ? "player" : "players"}${
+      pool === "main" && savedMinimum === null
+        ? ""
+        : `, ${
+            clanAccounts.filter(
+              (account) =>
+                participationOutcome(account, savedMinimum) === "meets",
+            ).length
+          } meet rule`
+    }`,
+    rules: `${
+      pool === "main" && savedMinimum !== null
+        ? `Minimum ${savedMinimum} attacks · `
+        : ""
+    }${total ?? "?"} bonuses`,
+    draw: `${countLabel(draw?.snapshot.winners.length ?? 0, "winner")} saved`,
+    approve: "Winners approved",
+    announce: "Announcement sent",
+  };
+  const panel = (id: BonusStep, children: ReactNode) => {
+    const view = stepViews.find((item) => item.id === id)!;
+    return (
+      <BonusStepPanel
+        key={id}
+        id={id}
+        number={bonusSteps.findIndex((item) => item.id === id) + 1}
+        label={view.label}
+        state={view.state}
+        open={openStep === id}
+        summary={summaries[id]}
+        onChange={() => openStepTo(id)}
+        headingRef={drawHeading}
+      >
+        {children}
+      </BonusStepPanel>
+    );
+  };
+  const staleWarning = statusSummary.warning;
+  const staleText =
+    staleWarning === "These results have not been checked recently." &&
+    data?.sync.last_checked_at
+      ? `Results not checked since ${resultDateText(data.sync.last_checked_at)}`
+      : staleWarning;
 
   return (
     <div className="bonus-workspace roster-ui">
       {confirmation}
-      <CwlPageHeader className="bonus-page-head" title={<h1>Bonus medals</h1>}>
+      <CwlPageHeader
+        className="bonus-page-head"
+        title={<h1>Results &amp; bonuses</h1>}
+      >
         <label className="bonus-season">
           Season
           <select
@@ -790,10 +918,12 @@ export default function BonusWorkspace({
       {data && (
         <div className="bonus-context">
           <p>
-            <strong>
-              {data.cycle ? exportMonthLabel(data.cycle) : "CWL month not set"}
-            </strong>{" "}
-            ·{" "}
+            {/* An unset month is said once, by the Results blocker. */}
+            {data.cycle && (
+              <>
+                <strong>{exportMonthLabel(data.cycle)}</strong> ·{" "}
+              </>
+            )}
             {data.sync.last_checked_at
               ? `Clash checked ${resultDateText(data.sync.last_checked_at)}`
               : "Clash not checked yet"}
@@ -809,29 +939,21 @@ export default function BonusWorkspace({
               },
               {
                 id: "refresh-results",
-                label: "Refresh attacks from Clash",
-                disabled:
-                  !canManage ||
-                  busy ||
-                  lookingUp ||
-                  archived ||
-                  policyDirty ||
-                  roleDirty ||
-                  reviewDirty ||
-                  candidateOpen ||
-                  !data.cycle,
-                onAction: () =>
-                  void mutate(
-                    "/refresh-results",
-                    {},
-                    "CWL check finished. Review this clan’s status before drawing.",
-                  ),
+                label: "Check Clash now",
+                disabled: checkClashDisabled,
+                onAction: checkClash,
+              },
+              {
+                id: "settings",
+                label: "Settings",
+                disabled: busy || lookingUp,
+                onAction: openSettings,
               },
             ]}
           />
         </div>
       )}
-      {seasonId && (
+      {seasonId && selectedClan && (
         <BonusStepBar
           seasonId={seasonId}
           pool={pool}
@@ -839,12 +961,10 @@ export default function BonusWorkspace({
           status={status}
           failed={statusFailed}
           onRetry={() => void loadStatus()}
-          canOpen={(target) => target !== "results" || !!onResults}
+          input={data ? stepInput : undefined}
+          resultsInPage
+          canOpen={() => true}
           onSelect={async (target, query) => {
-            if (target === "results") {
-              onResults?.(query);
-              return;
-            }
             const next = parseResultsState(query);
             const moved =
               (next.pool && next.pool !== pool) ||
@@ -853,9 +973,15 @@ export default function BonusWorkspace({
             if (next.pool && next.pool !== pool) setPool(next.pool);
             if (next.clan && next.clan !== clanTag) setClanTag(next.clan);
             if (moved) resetContext(data, next.pool || pool);
-            setStep(target);
-            emit({ pool: next.pool, clan: next.clan, step: target });
-            flowSection.current?.scrollIntoView?.({ block: "start" });
+            // The red "Review" reason opens the first player who needs it.
+            const reviewNow =
+              target === "results" &&
+              canReviewUnchecked &&
+              !draw &&
+              stepViews[0].state === "blocked" &&
+              blockers.results.some((line) => line.id === "partial");
+            openStepTo(target, next);
+            if (reviewNow) await openFirstUnchecked();
           }}
         />
       )}
@@ -876,41 +1002,6 @@ export default function BonusWorkspace({
       {!seasonId && <p>Select a season to begin.</p>}
       {data && (
         <>
-          {archived && <p className="notice">Archived season · Read only</p>}
-          {!data.cycle && (
-            <p className="notice">
-              Select this season’s CWL month in Results &amp; participation
-              first.
-            </p>
-          )}
-          {!data.sync.enabled && (
-            <p className="notice error" role="alert">
-              <span>
-                Automatic CWL capture is off. Enable checks in{" "}
-                <a
-                  href={`/cwl/results?season=${encodeURIComponent(seasonId)}`}
-                  onClick={(event) => {
-                    // Ctrl/Cmd and middle selection open a new tab untouched.
-                    if (!plainClick(event) || (!unsaved && !cancelReason))
-                      return;
-                    event.preventDefault();
-                    const href = event.currentTarget.href;
-                    void canDiscard().then((allowed) => {
-                      if (allowed) window.location.assign(href);
-                    });
-                  }}
-                >
-                  Participation
-                </a>{" "}
-                to retain results.
-              </span>
-            </p>
-          )}
-          {statusSummary.warning && (
-            <p className="notice" role="status">
-              {statusSummary.warning}
-            </p>
-          )}
           <CwlPoolTabs
             value={pool}
             disabled={busy || lookingUp}
@@ -922,70 +1013,26 @@ export default function BonusWorkspace({
               }
             }}
           />
-          {clans.length >= CLAN_SEARCH_MIN && (
-            <label className="bonus-clan-search">
-              Find a clan
-              <input
-                type="search"
-                name="clan-search"
-                autoComplete="off"
-                spellCheck={false}
-                value={clanQuery}
-                onChange={(event) => setClanQuery(event.target.value)}
-              />
-            </label>
-          )}
           {clans.length > 0 && (
-            <div
-              {...clanRail.fadeProps}
-              ref={clanRail.ref}
-              className="bonus-clan-cards has-horizontal-fades"
-              role="group"
-              aria-label="Hosting clan"
-            >
-              {clans
-                .filter(
-                  (clan) =>
-                    clan.tag === clanTag ||
-                    clan.name
-                      .toLowerCase()
-                      .includes(clanQuery.trim().toLowerCase()),
-                )
-                .map((clan) => {
-                  const state = status?.pools[pool].find(
-                    (item) => item.tag === clan.tag,
-                  );
-                  return (
-                    <button
-                      type="button"
-                      key={clan.tag}
-                      className="bonus-clan-card"
-                      aria-pressed={clan.tag === clanTag}
-                      disabled={busy || lookingUp}
-                      onClick={async () => {
-                        if (clan.tag === clanTag || !(await canDiscard()))
-                          return;
-                        setClanTag(clan.tag);
-                        resetContext();
-                        emit({ clan: clan.tag, step: undefined });
-                      }}
-                    >
-                      <strong>{clan.name}</strong>
-                      <small>
-                        {state
-                          ? `${
-                              state.meets_rule === null
-                                ? countText(state.candidates, "candidate")
-                                : `${state.meets_rule} of ${state.candidates} meet`
-                            } · ${bonusClanState(state)}`
-                          : statusFailed
-                            ? clan.tag
-                            : "…"}
-                      </small>
-                    </button>
-                  );
-                })}
-            </div>
+            <BonusClanCards
+              clans={clans}
+              selected={clanTag}
+              pool={pool}
+              status={status}
+              statusFailed={statusFailed}
+              disabled={busy || lookingUp}
+              onSelect={async (tag) => {
+                if (tag === clanTag || !(await canDiscard())) return;
+                // The page data names the step once it loads, so the status
+                // read and the open step never disagree.
+                setClanTag(tag);
+                setStep(undefined);
+                setStepPending(true);
+                resetContext();
+                emit({ clan: tag, step: undefined, view: "steps" });
+              }}
+              onAll={allClans}
+            />
           )}
           {!clans.length && (
             <p>
@@ -993,739 +1040,336 @@ export default function BonusWorkspace({
               pool.
             </p>
           )}
-
-          {selectedClan && !draw && (
-            <section ref={flowSection} className="bonus-flow" aria-busy={busy}>
-              <div className="bonus-section-heading bonus-clan-heading">
-                <h2>{selectedClan.name}</h2>
-              </div>
-              {clanNotice}
-              <div className="bonus-stats">
-                {leagueMissing ? (
-                  <label className="bonus-inline-count">
-                    <span>Bonuses shown in Clash</span>
-                    <input
-                      ref={countInput}
-                      type="number"
-                      name="bonus-count"
-                      autoComplete="off"
-                      inputMode="numeric"
-                      min="1"
-                      max="50"
-                      step="1"
-                      value={slots}
-                      disabled={!canManage || busy || archived}
-                      onChange={(event) => {
-                        setManualCount(true);
-                        setSlots(event.target.value);
-                        setPreview(null);
-                      }}
-                    />
-                  </label>
-                ) : (
-                  <div>
-                    <strong>
-                      {manualCount && countReady
-                        ? Number(slots)
-                        : allowance?.status === "ready"
-                          ? allowance.total
-                          : "—"}
-                    </strong>
-                    <span>
-                      Total bonus allowance
-                      {manualCount && countReady ? " · staff count" : ""}
-                    </span>
-                  </div>
-                )}
-                <div>
-                  <strong>{clanAccounts.length}</strong>
-                  <span>Current candidates</span>
-                </div>
-                <div role="status">
-                  <strong>
-                    {preview?.eligible.length ??
-                      (pool === "lazy"
-                        ? clanAccounts.filter((account) => !account.exclusion)
-                            .length
-                        : "—")}
-                  </strong>
-                  <span>
-                    {preview
-                      ? "Verified eligible"
-                      : pool === "lazy"
-                        ? "Meets rules now"
-                        : "Qualifying"}
-                  </span>
-                </div>
-              </div>
-              {pool === "main" ? (
-                <div className="bonus-policy">
-                  <label>
-                    Minimum attacks
-                    <input
-                      ref={minimumInput}
-                      type="number"
-                      name="minimum-attacks"
-                      autoComplete="off"
-                      inputMode="numeric"
-                      min="0"
-                      max="7"
-                      step="1"
-                      value={minimum}
-                      disabled={!canManage || busy || archived}
-                      onChange={(event) => {
-                        setMinimum(event.target.value);
-                        setPreview(null);
-                      }}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={
-                      !canManage ||
-                      busy ||
-                      archived ||
-                      reviewDirty ||
-                      candidateOpen ||
-                      !policyDirty ||
-                      !/^\d+$/.test(minimum) ||
-                      Number(minimum) > 7
-                    }
-                    onClick={() =>
-                      void mutate(
-                        "/policy",
-                        {
-                          pool,
-                          minimum: Number(minimum),
-                          revision: data.revision,
-                        },
-                        "Minimum attacks saved. Earlier draws stay unchanged.",
-                        "PATCH",
-                      )
-                    }
-                  >
-                    Save minimum
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="bonus-candidates-heading">
-                    <h3 data-dashboard-focus-fallback tabIndex={-1}>
-                      Candidate review
-                    </h3>
-                  </div>
-                  <AccountList
-                    accounts={clanAccounts}
-                    minimum={data.policies.main}
-                    onReview={async (account, opener) => {
-                      if (await canLeaveEditor()) {
-                        setCandidateOpen(false);
-                        setCandidateTag("");
-                        setCandidateReason("");
-                        setCandidateLookup(null);
-                        reviewOpener.current = opener;
-                        setReviewTag(account.tag);
-                        setPreview(null);
-                        setError("");
-                      }
-                    }}
-                    busy={busy || !canManage || archived}
-                    searchable
-                  />
-                  {reviewAccount && (
-                    <BonusCandidateReview
-                      key={reviewAccount.tag}
-                      account={reviewAccount}
-                      trigger={reviewOpener.current}
-                      busy={busy}
-                      onDirty={setReviewDirty}
-                      onCancel={async () => {
-                        if (await canLeaveEditor()) closeReview();
-                      }}
-                      onRemove={
-                        reviewAccount.manual_candidate
-                          ? async () => {
-                              if (
-                                !(await confirm(
-                                  `Remove ${reviewAccount.player_name} from this bonus candidate pool? The CWL signup and roster will stay unchanged.`,
-                                  "Remove candidate",
-                                ))
-                              )
-                                return;
-                              if (
-                                await mutate(
-                                  "/manual-candidates",
-                                  {
-                                    tag: reviewAccount.tag,
-                                    revision: data.revision,
-                                  },
-                                  "Manual candidate removed. Review eligibility again.",
-                                  "DELETE",
-                                )
-                              ) {
-                                closeReview();
-                              }
-                            }
-                          : undefined
-                      }
-                      error={error}
-                      onSave={async (flags, overrideReason) => {
-                        const saved = await mutate(
-                          "/account-review",
-                          {
-                            tag: reviewAccount.tag,
-                            flags,
-                            override_reason: overrideReason,
-                            revision: data.revision,
-                          },
-                          "Account review saved. Review eligibility again before drawing.",
-                          "PATCH",
-                        );
-                        if (saved) closeReview();
-                        return saved;
-                      }}
-                    />
-                  )}
-                </>
-              )}
-
-              <div className="bonus-action-bar">
+          {archived && <p className="notice">Archived season · Read only</p>}
+          {!data.sync.enabled && onResults && (
+            <p className="notice error" role="alert">
+              <span>
+                Automatic CWL capture is off. Enable it in Settings to retain
+                results ·{" "}
                 <button
                   type="button"
-                  className="primary"
-                  aria-describedby={
-                    blockers.length ? "bonus-review-blockers" : undefined
-                  }
-                  disabled={busy || reviewBlocked(blockers)}
-                  onClick={() => void review()}
+                  className="bonus-inline-action"
+                  onClick={openSettings}
                 >
-                  Review eligibility
+                  Open Settings
                 </button>
-              </div>
-              {blockers.length > 0 && (
-                <ul id="bonus-review-blockers" className="bonus-blockers">
-                  {blockers.map((blocker) => (
-                    <li key={blocker.id}>{blockerFix(blocker)}</li>
-                  ))}
-                </ul>
-              )}
-              {preview && (
-                <section className="bonus-preview" aria-label="Draw preview">
-                  <div className="bonus-section-heading">
-                    <h3>
-                      {preview.eligible.length} eligible ·{" "}
-                      {Math.min(preview.available, preview.eligible.length)}{" "}
-                      winners
-                    </h3>
-                    <span>{preview.available} slots remaining</span>
-                  </div>
-                  <p>
-                    {preview.allowance_source === "automatic"
-                      ? "Calculated"
-                      : "Staff-confirmed"}{" "}
-                    allowance · {preview.slots} total bonuses
-                    {pool === "main" && preview.minimum !== null
-                      ? ` · Minimum ${preview.minimum} attacks`
-                      : ""}
-                  </p>
-                  {preview.available >= preview.eligible.length && (
-                    <p>
-                      Every eligible account will win. Unused slots remain open.
-                    </p>
-                  )}
-                  {!!preview.blocking_reasons.length && (
-                    <div className="notice error" role="alert">
-                      {preview.blocking_reasons.map((reason) => (
-                        <p key={reason}>
-                          {reason}
-                          {reason.startsWith("Resolve incomplete") &&
-                            onResults && (
-                              <>
-                                {" · "}
-                                <a
-                                  href={incompleteLink.href}
-                                  onClick={openIncomplete}
-                                >
-                                  Check these players
-                                </a>
-                              </>
-                            )}
-                        </p>
-                      ))}
-                      <p>Refresh the results before you draw.</p>
-                    </div>
-                  )}
-                  <h4>In the draw</h4>
-                  <AccountList
-                    accounts={preview.eligible}
-                    mode="eligible"
-                    minimum={data.policies.main}
-                  />
-                  <details className="bonus-secondary">
-                    <summary>Excluded ({preview.excluded.length})</summary>
-                    <AccountList
-                      accounts={preview.excluded}
-                      mode="excluded"
-                      minimum={data.policies.main}
-                    />
-                  </details>
-                  <div className="bonus-action-bar">
-                    <span>Saved draws cannot be redrawn by refreshing.</span>
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={
-                        !canSaveBonusDraw({
-                          canManage,
-                          busy,
-                          archived: !!archived,
-                          policyDirty,
-                          roleDirty,
-                          reviewDirty,
-                          reviewOpen: !!reviewTag,
-                          candidateOpen,
-                          lookingUp,
-                          blocked: !!preview.blocking_reasons.length,
-                        })
-                      }
-                      onClick={() =>
-                        void mutate(
-                          "/draw",
-                          {
-                            pool,
-                            clan_tag: clanTag,
-                            slots: requestedSlots,
-                            fingerprint: preview.fingerprint,
-                          },
-                          "Winners saved. Review before approving.",
-                        )
-                      }
-                    >
-                      {preview.available >= preview.eligible.length
-                        ? "Save all winners"
-                        : "Draw and save winners"}
-                    </button>
-                  </div>
-                </section>
-              )}
-              {pool === "lazy" && (
-                <div className="bonus-support">
-                  <strong>Bonus rules</strong>
-                  <ol>
-                    <li>Follow the Lazy CWL rules.</li>
-                    <li>
-                      Play 60% of the event: 4+ attacks, or 3 attacks and 8+
-                      stars.
-                    </li>
-                    <li>No bonus in the previous 3 seasons.</li>
-                  </ol>
-                  <p>Bonuses from before the dashboard are not recorded.</p>
-                </div>
-              )}
-              <details ref={countDetails} className="bonus-secondary">
-                <summary>Bonus count and source</summary>
-                <p className="bonus-allowance-reason">
-                  {allowance?.reason ||
-                    "Refresh Clash results to check the allowance."}
-                </p>
-                <p>
-                  {allowance?.league || "League unknown"}
-                  {allowance?.team_size
-                    ? ` · ${allowance.team_size} vs ${allowance.team_size}`
-                    : ""}{" "}
-                  · {allowance?.completed_wars ?? 0}/{allowance?.rounds ?? "?"}{" "}
-                  wars complete
-                  {allowance?.base != null
-                    ? ` · ${allowance.base} base + ${allowance.wins} wins${allowance.status === "ready" ? ` = ${allowance.total}` : ""}`
-                    : ""}
-                </p>
-                <label className="bonus-check">
-                  <input
-                    type="checkbox"
-                    name="manual-count"
-                    checked={manualCount}
-                    disabled={!canManage || busy || archived}
-                    onChange={(event) => {
-                      setManualCount(event.target.checked);
-                      setPreview(null);
-                    }}
-                  />
-                  <span>Use the total shown in Clash</span>
-                </label>
-                {manualCount && !leagueMissing && (
-                  <label>
-                    Total bonuses shown in Clash
-                    <input
-                      ref={countInput}
-                      type="number"
-                      name="bonus-count"
-                      autoComplete="off"
-                      inputMode="numeric"
-                      min="1"
-                      max="50"
-                      step="1"
-                      value={slots}
-                      disabled={!canManage || busy || archived}
-                      onChange={(event) => {
-                        setSlots(event.target.value);
-                        setPreview(null);
-                      }}
-                    />
-                  </label>
-                )}
-                {manualCount && (
-                  <p className="bonus-caution">
-                    Staff-confirmed count; not API-verified.
-                  </p>
-                )}
-              </details>
-              {pool === "lazy" && (
-                <>
-                  <div className="bonus-candidates-heading">
-                    <button
-                      ref={addOpener}
-                      type="button"
-                      disabled={!canManage || busy || archived}
-                      onClick={() => {
-                        setCandidateOpen((current) => !current);
-                        setCandidateLookup(null);
-                        setError("");
-                      }}
-                    >
-                      Add player by tag
-                    </button>
-                  </div>
-                  {candidateOpen && (
-                    <section
-                      className="bonus-add-candidate"
-                      aria-label="Add bonus candidate"
-                    >
-                      <p>
-                        Add an account directly to this clan’s candidate pool.
-                        This does not change its signup or roster placement.
-                      </p>
-                      <div className="bonus-lookup">
-                        <label>
-                          Player tag
-                          <input
-                            ref={candidateTagInput}
-                            name="player-tag"
-                            autoComplete="off"
-                            spellCheck={false}
-                            value={candidateTag}
-                            maxLength={20}
-                            disabled={busy || lookingUp}
-                            placeholder="#PLAYER"
-                            onChange={(event) => {
-                              setCandidateTag(event.target.value);
-                              setCandidateLookup(null);
-                            }}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          disabled={!candidateTag.trim() || busy || lookingUp}
-                          onClick={() => void lookupCandidate()}
-                        >
-                          {lookingUp ? "Looking up…" : "Find player"}
-                        </button>
-                      </div>
-                      {candidateLookup && (
-                        <p>
-                          <strong>{candidateLookup.account.name}</strong> ·{" "}
-                          {candidateLookup.account.tag} · TH{" "}
-                          {candidateLookup.account.town_hall}
-                          {candidateLookup.account.current_clan_name
-                            ? ` · ${candidateLookup.account.current_clan_name}`
-                            : ""}
-                        </p>
-                      )}
-                      <label>
-                        Reason for addition
-                        <textarea
-                          name="candidate-reason"
-                          autoComplete="off"
-                          value={candidateReason}
-                          maxLength={500}
-                          disabled={busy}
-                          onChange={(event) =>
-                            setCandidateReason(event.target.value)
-                          }
-                          placeholder="Why should this player enter this clan’s draw?"
-                        />
-                      </label>
-                      {error && (
-                        <p className="notice error" role="alert">
-                          {error}
-                        </p>
-                      )}
-                      <div className="bonus-editor-actions">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={async () => {
-                            if (await canLeaveEditor()) closeCandidate();
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          className="primary"
-                          disabled={
-                            !canManage ||
-                            busy ||
-                            !candidateLookup ||
-                            !candidateReason.trim()
-                          }
-                          onClick={() =>
-                            void (async () => {
-                              if (
-                                await mutate(
-                                  "/manual-candidates",
-                                  {
-                                    tag: candidateLookup!.account.tag,
-                                    clan_tag: clanTag,
-                                    reason: candidateReason.trim(),
-                                    revision: data.revision,
-                                  },
-                                  "Candidate added. Review eligibility before drawing.",
-                                )
-                              ) {
-                                closeCandidate();
-                              }
-                            })()
-                          }
-                        >
-                          Add candidate
-                        </button>
-                      </div>
-                    </section>
-                  )}
-                  <details
-                    ref={roleDetails}
-                    className="bonus-secondary"
-                    onToggle={(event) => {
-                      if (event.currentTarget.open) void loadRoles();
-                    }}
-                  >
-                    <summary>FWA Rep odds settings</summary>
-                    <p>
-                      Members with this Discord role get 2 chances in Lazy
-                      draws. Each account can win only one time. With 2 chances,
-                      an account does not always have twice the chance to win
-                      when the draw picks more than one winner.
-                    </p>
-                    {rolesLoading && <p role="status">Loading roles…</p>}
-                    {rolesError && (
-                      <p role="alert">
-                        {rolesError}{" "}
-                        <button type="button" onClick={() => void loadRoles()}>
-                          Retry roles
-                        </button>
-                      </p>
-                    )}
-                    <SearchPicker
-                      label="Representative role"
-                      value={roleId}
-                      options={roles.map(roleOption)}
-                      fallback={{
-                        value: roleId,
-                        label: "Saved role (not found)",
-                      }}
-                      disabled={busy || archived || !canManage}
-                      placeholder="Select a role"
-                      searchPlaceholder="Search roles"
-                      emptyText="No roles match."
-                      onChange={(id) => {
-                        setRoleId(id);
-                        setPreview(null);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      disabled={
-                        !canManage ||
-                        busy ||
-                        archived ||
-                        reviewDirty ||
-                        candidateOpen ||
-                        !roleDirty ||
-                        !/^\d{15,22}$/.test(roleId)
-                      }
-                      onClick={() =>
-                        void mutate(
-                          "/lazy-settings",
-                          {
-                            representative_role_id: roleId,
-                            revision: data.revision,
-                          },
-                          "Representative role saved. Review eligibility again before drawing.",
-                          "PATCH",
-                        )
-                      }
-                    >
-                      Save role
-                    </button>
-                  </details>
-                </>
-              )}
-            </section>
+              </span>
+            </p>
+          )}
+          {staleText && (
+            <p className="notice bonus-stale" role="status">
+              {staleText} ·{" "}
+              <button
+                type="button"
+                className="bonus-inline-action"
+                disabled={checkClashDisabled}
+                onClick={checkClash}
+              >
+                Check Clash now
+              </button>
+            </p>
           )}
 
-          {draw && (
-            <section className="bonus-flow" aria-busy={busy}>
-              <div className="bonus-section-heading">
-                <div>
-                  <h2 ref={drawHeading} tabIndex={-1}>
-                    {draw.snapshot.clan_name} · Bonus medals
-                  </h2>
-                  <p>
-                    Saved {resultDateText(draw.created_at)} ·{" "}
-                    {draw.approved_at ? "Approved" : "Awaiting staff approval"}
-                  </p>
-                </div>
-              </div>
-              {clanNotice}
-              <div className="bonus-stats">
-                <div>
-                  <strong>{draw.snapshot.winners.length}</strong>
-                  <span>Winners</span>
-                </div>
-                <div>
-                  <strong>{draw.snapshot.eligible.length}</strong>
-                  <span>Eligible</span>
-                </div>
-                <div>
-                  <strong>{draw.snapshot.slots}</strong>
-                  <span>Bonus allowance</span>
-                </div>
-              </div>
-              <AccountList
-                accounts={draw.snapshot.winners}
-                mode="winners"
-                minimum={draw.snapshot.minimum}
-              />
-              <details className="bonus-secondary">
-                <summary>Draw details and all eligible accounts</summary>
-                <p>
-                  {draw.snapshot.allowance_source === "automatic"
-                    ? "Calculated"
-                    : "Staff-confirmed"}{" "}
-                  allowance · Saved results do not change if the rules change
-                  later.
-                </p>
-                <AccountList
-                  accounts={draw.snapshot.eligible}
-                  mode="eligible"
-                  minimum={draw.snapshot.minimum}
-                />
-              </details>
-              {!draw.approved_at && (
-                <div className="bonus-action-bar">
-                  <span>
-                    Approval records the winners. It does not send a message.
-                  </span>
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={!canManage || busy || archived}
-                    onClick={() =>
-                      void mutate(
-                        `/${draw.id}/approve`,
-                        {},
-                        "Winners approved. Review the announcement and select a channel.",
-                      )
-                    }
-                  >
-                    Approve winners
-                  </button>
-                </div>
+          {selectedClan && (
+            <div
+              ref={flowSection}
+              className="bonus-step-panels"
+              aria-busy={busy}
+            >
+              <h2 className="bonus-clan-heading">{selectedClan.name}</h2>
+              {panel(
+                "results",
+                <BonusResultsStep
+                  lines={blockers.results}
+                  fix={blockerFix}
+                  accounts={clanAccounts}
+                  minimum={savedMinimum}
+                  onReview={
+                    pool === "lazy" && !draw
+                      ? (account, opener) => void openReview(account, opener)
+                      : undefined
+                  }
+                  busy={busy || !canManage || !!archived}
+                />,
               )}
-              {!draw.approved_at && (
-                <details className="bonus-secondary">
-                  <summary>Cancel this draw</summary>
-                  <p>
-                    Cancel only if the results or setup are wrong. The winners
-                    and the reason stay in history.
-                  </p>
-                  <label>
-                    Reason
-                    <textarea
-                      name="cancel-reason"
-                      autoComplete="off"
-                      maxLength={500}
-                      value={cancelReason}
-                      disabled={!canManage || busy || archived}
-                      onChange={(event) => setCancelReason(event.target.value)}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={
-                      !canManage || busy || archived || !cancelReason.trim()
-                    }
-                    onClick={() =>
-                      void mutate(
-                        `/${draw.id}/cancel`,
-                        { reason: cancelReason.trim() },
-                        "Draw cancelled. It stays in history.",
-                      )
-                    }
-                  >
-                    Confirm cancellation
-                  </button>
-                </details>
+              {panel(
+                "rules",
+                <BonusRulesStep
+                  pool={pool}
+                  lines={stepLines("rules")}
+                  fix={blockerFix}
+                  locked={locked}
+                  minimum={minimum}
+                  minimumInput={minimumInput}
+                  minimumPreview={minimumPreview}
+                  canSaveMinimum={
+                    canManage &&
+                    !busy &&
+                    !archived &&
+                    !draw &&
+                    !reviewDirty &&
+                    !candidateOpen &&
+                    policyDirty &&
+                    typedMinimum !== null
+                  }
+                  onMinimum={(value) => {
+                    setMinimum(value);
+                    clearPreview();
+                  }}
+                  onSaveMinimum={() =>
+                    void mutate(
+                      "/policy",
+                      {
+                        pool,
+                        minimum: Number(minimum),
+                        revision: data.revision,
+                      },
+                      "Minimum attacks saved. Earlier draws stay unchanged.",
+                      "PATCH",
+                    )
+                  }
+                  allowance={allowance}
+                  leagueMissing={leagueMissing}
+                  slots={slots}
+                  manualCount={manualCount}
+                  countReady={!!countReady}
+                  countInput={countInput}
+                  countDetails={countDetails}
+                  onSlots={(value) => {
+                    setSlots(value);
+                    clearPreview();
+                  }}
+                  onManualCount={(value) => {
+                    setManualCount(value);
+                    clearPreview();
+                  }}
+                  accounts={clanAccounts}
+                  chipMinimum={chipMinimum}
+                  meetsRule={meetsRule}
+                  onReview={
+                    pool === "lazy" && !draw
+                      ? (account, opener) => void openReview(account, opener)
+                      : undefined
+                  }
+                  listBusy={busy || !canManage || !!archived}
+                  addCandidate={
+                    pool === "lazy" && !draw ? (
+                      <BonusAddCandidate
+                        open={candidateOpen}
+                        disabled={!canManage || busy || !!archived}
+                        busy={busy}
+                        lookingUp={lookingUp}
+                        canManage={canManage}
+                        error={error}
+                        tag={candidateTag}
+                        reason={candidateReason}
+                        lookup={candidateLookup}
+                        openerRef={addOpener}
+                        tagInputRef={candidateTagInput}
+                        onToggle={() => {
+                          setCandidateOpen((current) => !current);
+                          setCandidateLookup(null);
+                          setError("");
+                        }}
+                        onTag={(value) => {
+                          setCandidateTag(value);
+                          setCandidateLookup(null);
+                        }}
+                        onReason={setCandidateReason}
+                        onFind={() => void lookupCandidate()}
+                        onCancel={async () => {
+                          if (await canLeaveEditor()) closeCandidate();
+                        }}
+                        onAdd={() =>
+                          void (async () => {
+                            if (
+                              await mutate(
+                                "/manual-candidates",
+                                {
+                                  tag: candidateLookup!.account.tag,
+                                  clan_tag: clanTag,
+                                  reason: candidateReason.trim(),
+                                  revision: data.revision,
+                                },
+                                "Candidate added. Check the draw again before saving.",
+                              )
+                            ) {
+                              closeCandidate();
+                            }
+                          })()
+                        }
+                      />
+                    ) : null
+                  }
+                />,
               )}
-              {draw.approved_at && (
-                <BonusAnnouncement
-                  key={draw.id}
+              {panel(
+                "draw",
+                <BonusDrawStep
+                  pool={pool}
+                  gate={drawGate}
+                  blocker={firstBlocking("draw")}
                   draw={draw}
-                  disabled={busy || archived}
+                  preview={preview}
+                  busy={busy}
+                  minimum={data.policies.main}
+                  canSave={
+                    !!preview &&
+                    canSaveBonusDraw({
+                      canManage,
+                      busy,
+                      archived: !!archived,
+                      policyDirty,
+                      reviewDirty,
+                      reviewOpen: !!reviewTag,
+                      candidateOpen,
+                      lookingUp,
+                      blocked: !!preview.blocking_reasons.length,
+                    })
+                  }
+                  reasonFix={(reason) =>
+                    reason.startsWith("Resolve incomplete") && onResults ? (
+                      <>
+                        {" · "}
+                        <a href={incompleteLink.href} onClick={openIncomplete}>
+                          Check these players
+                        </a>
+                      </>
+                    ) : null
+                  }
+                  onDraw={() =>
+                    void mutate(
+                      "/draw",
+                      {
+                        pool,
+                        clan_tag: clanTag,
+                        slots: requestedSlots,
+                        fingerprint: preview!.fingerprint,
+                      },
+                      "Winners saved. Review before approving.",
+                    ).then((saved) => saved && followFlow())
+                  }
+                />,
+              )}
+              {panel(
+                "approve",
+                <BonusApproveStep
+                  gate={gateFor("approve")}
+                  blocker={firstBlocking("approve")}
+                  draw={draw}
+                  disabled={!canManage || busy || !!archived}
+                  cancelDisabled={
+                    !canManage || busy || !!archived || !cancelReason.trim()
+                  }
+                  cancelReason={cancelReason}
+                  onCancelReason={setCancelReason}
+                  onApprove={() =>
+                    void mutate(
+                      `/${draw!.id}/approve`,
+                      {},
+                      "Winners approved. Review the announcement and select a channel.",
+                    ).then((saved) => saved && followFlow())
+                  }
+                  onCancel={() =>
+                    void mutate(
+                      `/${draw!.id}/cancel`,
+                      { reason: cancelReason.trim() },
+                      "Draw cancelled. It stays in history.",
+                    ).then((saved) => saved && followFlow())
+                  }
+                />,
+              )}
+              {panel(
+                "announce",
+                <BonusAnnounceStep
+                  gate={gateFor("announce")}
+                  draw={draw}
+                  disabled={busy || !!archived}
                   onSend={(channel, retry = false) =>
                     void mutate(
-                      `/${draw.id}/send`,
+                      `/${draw!.id}/send`,
                       { channel_id: channel, retry },
                       "Delivery status updated below.",
                     )
                   }
+                />,
+              )}
+              {reviewAccount && (
+                <BonusCandidateReview
+                  key={reviewAccount.tag}
+                  account={reviewAccount}
+                  trigger={reviewOpener.current}
+                  busy={busy}
+                  onDirty={setReviewDirty}
+                  onCancel={async () => {
+                    if (await canLeaveEditor()) closeReview();
+                  }}
+                  onRemove={
+                    reviewAccount.manual_candidate
+                      ? async () => {
+                          if (
+                            !(await confirm(
+                              `Remove ${reviewAccount.player_name} from this bonus candidate pool? The CWL signup and roster will stay unchanged.`,
+                              "Remove candidate",
+                            ))
+                          )
+                            return;
+                          if (
+                            await mutate(
+                              "/manual-candidates",
+                              {
+                                tag: reviewAccount.tag,
+                                revision: data.revision,
+                              },
+                              "Manual candidate removed. Check the draw again before saving.",
+                              "DELETE",
+                            )
+                          ) {
+                            closeReview();
+                          }
+                        }
+                      : undefined
+                  }
+                  error={error}
+                  onSave={async (flags, overrideReason) => {
+                    const saved = await mutate(
+                      "/account-review",
+                      {
+                        tag: reviewAccount.tag,
+                        flags,
+                        override_reason: overrideReason,
+                        revision: data.revision,
+                      },
+                      "Account review saved. Check the draw again before saving.",
+                      "PATCH",
+                    );
+                    if (saved) closeReview();
+                    return saved;
+                  }}
                 />
               )}
-            </section>
+            </div>
           )}
-          <details className="bonus-history">
-            <summary>Saved bonus history ({data.history.length})</summary>
-            <p className="small">
-              Dashboard selections only; this is not proof medals were awarded
-              in-game.
-            </p>
-            {data.draws
-              .filter((item) => item.cancelled_at)
-              .map((item) => (
-                <div className="bonus-history-row" key={`cancelled-${item.id}`}>
-                  <strong>{item.snapshot.clan_name} · Cancelled draw</strong>
-                  <p>{item.cancel_reason}</p>
-                  <small>{resultDateText(item.cancelled_at!)}</small>
-                  <AccountList
-                    accounts={item.snapshot.winners}
-                    mode="winners"
-                  />
-                </div>
-              ))}
-            {data.history.map((item) => (
-              <div className="bonus-history-row" key={item.id}>
-                <strong>
-                  {item.player_name} · {item.clan_name || item.clan_tag}
-                </strong>
-                <small>
-                  {item.tag} · {exportMonthLabel(item.cycle)} ·{" "}
-                  {item.voided_at ? "Voided" : "Approved"} ·{" "}
-                  {resultDateText(item.confirmed_at)}
-                </small>
-              </div>
-            ))}
-          </details>
+          {/* Exports holds the history for anyone who can open it. */}
+          {!onResults && (
+            <BonusHistory key={`bonus:${seasonId}`} seasonId={seasonId} />
+          )}
         </>
+      )}
+      {settingsOpen && seasonId && (
+        <ResultsSettingsSheet
+          seasonId={seasonId}
+          canCapture={!!onResults}
+          canOdds={canManage}
+          archived={!!archived}
+          trigger={settingsTrigger.current}
+          onDirty={setSettingsDirty}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={(saved: SettingsSaved) => {
+            void saved;
+            void load();
+          }}
+        />
       )}
     </div>
   );

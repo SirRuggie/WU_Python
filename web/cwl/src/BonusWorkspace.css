@@ -43,92 +43,7 @@
 .bonus-season select {
   width: 100%;
 }
-/* Hosting clan cards: the Compare clan-card row; gold marks the selected card. */
-.bonus-clan-search {
-  display: block;
-  max-width: 320px;
-  margin: 0 0 var(--wu-space-2);
-}
-.bonus-clan-search input {
-  width: 100%;
-}
-.bonus-clan-cards {
-  display: flex;
-  gap: var(--wu-space-2);
-  max-width: 100%;
-  margin: 0 0 var(--wu-space-3);
-  padding-bottom: var(--wu-space-1);
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-  /* Snapped cards start clear of the 10px edge fade. */
-  scroll-padding-inline: 10px;
-  scrollbar-width: thin;
-}
-.bonus-workspace button.bonus-clan-card {
-  display: grid;
-  flex: 0 0 auto;
-  align-content: start;
-  gap: var(--wu-space-1);
-  min-width: 160px;
-  max-width: 260px;
-  min-height: 56px;
-  padding: var(--wu-space-2) var(--wu-space-3);
-  border: 1px solid var(--roster-border);
-  border-radius: 14px;
-  background: var(--roster-surface-raised);
-  color: var(--roster-text);
-  text-align: left;
-  white-space: normal;
-  scroll-snap-align: start;
-}
-.bonus-clan-card strong {
-  font-size: var(--wu-text-md);
-  overflow-wrap: anywhere;
-}
-.bonus-clan-card small {
-  color: var(--roster-text-muted);
-  font-size: var(--wu-text-xs);
-  font-variant-numeric: tabular-nums;
-}
-.bonus-workspace button.bonus-clan-card[aria-pressed="true"] {
-  border-color: var(--roster-gold);
-  box-shadow: inset 0 0 0 1px var(--roster-gold);
-}
-.bonus-workspace button.bonus-clan-card[aria-pressed="true"] strong {
-  color: var(--roster-gold);
-}
-@media (hover: hover) and (pointer: fine) {
-  .bonus-workspace button.bonus-clan-card:hover:not(:disabled) {
-    border-color: var(--wu-text-muted);
-  }
-}
-/* Clan-wide reasons: the shared amber notice, one 44px line per reason. */
-.notice.bonus-clan-notice {
-  display: block;
-  margin: 0 0 var(--wu-space-2);
-  padding: 0 var(--wu-space-3);
-}
-.bonus-clan-notice p {
-  display: flex;
-  align-items: center;
-  gap: var(--wu-space-2);
-  min-height: 44px;
-  margin: 0;
-}
-.bonus-clan-notice p + p {
-  border-top: 1px solid var(--wu-warning-border);
-}
-.bonus-clan-notice svg {
-  flex: none;
-}
-.bonus-clan-notice span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-/* Each fix is its own 44px box inside its line, never over a neighbour. */
-.bonus-clan-notice a,
-.notice.bonus-clan-notice .bonus-inline-action {
+.bonus-inline-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -149,7 +64,7 @@
   text-underline-offset: 3px;
 }
 .bonus-blockers {
-  margin: calc(-1 * var(--wu-space-2)) 0 var(--wu-space-3);
+  margin: 0 0 var(--wu-space-3);
   padding: 0;
   list-style: none;
   color: var(--roster-text-muted);
@@ -167,8 +82,8 @@
   color: var(--wu-text);
 }
 .bonus-stats > .bonus-inline-count {
-  min-width: 130px;
-  flex: 1 1 0;
+  min-width: 100%;
+  flex: 1 1 100%;
   display: grid;
   gap: var(--wu-space-1);
   padding: var(--wu-space-2) var(--wu-space-4);
@@ -178,7 +93,6 @@
 }
 .bonus-inline-count input {
   width: 100%;
-  max-width: 120px;
   font-variant-numeric: tabular-nums;
 }
 .bonus-flow {
@@ -230,14 +144,10 @@
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
-.bonus-stats span,
-.bonus-support {
+.bonus-stats span {
   color: var(--roster-text-muted);
   font-size: var(--wu-text-sm);
   font-variant-numeric: tabular-nums;
-}
-.bonus-support {
-  margin: var(--wu-space-2) 0 var(--wu-space-4);
 }
 .bonus-workspace details {
   border-top: 1px solid var(--roster-border-subtle);
@@ -282,6 +192,9 @@
 }
 .bonus-policy button {
   min-height: 44px;
+}
+.bonus-policy .bonus-blockers {
+  margin: 0;
 }
 .bonus-candidates-heading {
   margin: var(--wu-space-4) 0 var(--wu-space-2);
@@ -480,19 +393,6 @@
 .bonus-message-preview .discord-preview {
   margin: 0;
 }
-.bonus-history {
-  margin-top: var(--wu-space-4);
-}
-.bonus-history-row {
-  padding: var(--wu-space-3) 0;
-  border-bottom: 1px solid var(--roster-surface-soft);
-  overflow-wrap: anywhere;
-}
-.bonus-history-row small {
-  display: block;
-  color: var(--roster-text-muted);
-  margin-top: var(--wu-space-1);
-}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -505,22 +405,6 @@
   border: 0;
 }
 @media (max-width: 650px) {
-  /* Phones: the swipeable Compare clan-card row. */
-  .bonus-clan-cards {
-    margin-bottom: var(--wu-space-2);
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-  .bonus-clan-cards::-webkit-scrollbar {
-    display: none;
-  }
-  .bonus-workspace button.bonus-clan-card {
-    flex: 0 0 78%;
-    max-width: none;
-  }
-  .bonus-workspace button.bonus-clan-card:only-child {
-    flex-basis: 100%;
-  }
   /* The selected card already names the clan; the heading stays for screen readers. */
   .bonus-clan-heading {
     position: absolute;
@@ -537,46 +421,72 @@
   .bonus-candidates-heading {
     margin: var(--wu-space-2) 0 var(--wu-space-1);
   }
-  /* Phones: the three numbers stay on one compact row. */
+  .bonus-action-bar > button {
+    width: 100%;
+  }
+}
+@media (max-width: 700px) {
+  /* The count field takes its own full-width row: label above, hint below. */
   .bonus-stats {
-    flex-wrap: nowrap;
     margin: var(--wu-space-2) 0;
   }
-  /* Wider field cell: the label sits beside its input, not above it. */
   .bonus-stats > .bonus-inline-count {
-    display: flex;
-    align-items: center;
-    flex-grow: 1.6;
-    gap: var(--wu-space-2);
     min-width: 0;
-    padding: var(--wu-space-1) var(--wu-space-2);
+    padding: var(--wu-space-2) 0;
+    border-bottom: 1px solid var(--roster-border-subtle);
   }
   .bonus-inline-count span {
-    min-width: 0;
     font-size: var(--wu-text-xs);
     line-height: 1.25;
   }
-  .bonus-inline-count input {
-    flex: 0 0 56px;
-  }
+  /* The tiles share one row that fits 320px. */
   .bonus-stats > div {
     min-width: 0;
     padding: var(--wu-space-1) var(--wu-space-2);
     flex-direction: column;
     gap: 0;
-    font-variant-numeric: tabular-nums;
   }
   .bonus-stats strong {
     font-size: var(--wu-text-lg);
-    font-variant-numeric: tabular-nums;
   }
   .bonus-stats span {
     font-size: var(--wu-text-xs);
     line-height: 1.25;
-    font-variant-numeric: tabular-nums;
   }
-  .bonus-action-bar > button {
-    width: 100%;
+  /* Old results: one line of text with its action, not a padded box. */
+  .bonus-workspace .notice.bonus-stale {
+    display: block;
+    padding: var(--wu-space-1) var(--wu-space-2);
+    margin-bottom: var(--wu-space-2);
+    font-size: var(--wu-text-sm);
+    line-height: 1.3;
+  }
+  /* The 44px touch target sits inside its own line; it never overlaps a neighbour. */
+  .bonus-stale .bonus-inline-action {
+    vertical-align: baseline;
+  }
+  .bonus-blockers {
+    margin-bottom: var(--wu-space-2);
+  }
+  .bonus-blockers li {
+    min-height: 0;
+  }
+  /* The minimum field and its Save button share a row, its blocker under them. */
+  .bonus-policy {
+    margin: var(--wu-space-2) 0;
+  }
+  .bonus-policy label {
+    flex: 1 1 120px;
+    width: auto;
+    min-width: 0;
+  }
+  .bonus-policy .bonus-blockers {
+    flex: 1 0 100%;
+    margin: 0;
+  }
+  /* Source details follow the player list in the page order too. */
+  .bonus-step-panel > .bonus-count-source {
+    margin-top: var(--wu-space-2);
   }
 }
 @media (max-width: 380px) {
@@ -601,4 +511,52 @@
 .bonus-workspace .notice a {
   color: inherit;
   text-decoration: underline;
+}
+
+/* One step panel is open; done steps are one line with Change. */
+.bonus-step-panels {
+  margin-top: var(--wu-space-2);
+}
+.bonus-clan-heading {
+  margin: var(--wu-space-3) 0 var(--wu-space-2);
+}
+.bonus-step-panel > h3 {
+  margin: 0 0 var(--wu-space-3);
+}
+.bonus-step-done {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-3);
+  min-height: 44px;
+  margin: 0;
+  border-top: 1px solid var(--roster-border-subtle);
+  color: var(--roster-text-muted);
+}
+.bonus-step-done .bonus-inline-action {
+  flex: none;
+  color: var(--wu-accent);
+}
+.bonus-blockers li.is-alert {
+  color: var(--wu-danger);
+}
+.bonus-action-blocker,
+.bonus-rules-line,
+.bonus-step-note,
+.bonus-preview-note,
+.bonus-field-hint {
+  margin: var(--wu-space-2) 0;
+  color: var(--roster-text-muted);
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
+}
+.bonus-field-hint {
+  display: block;
+  margin: 0;
+}
+.bonus-count-field input {
+  width: 100%;
+}
+.bonus-candidates-heading .bonus-preview-note {
+  margin: 0;
 }
