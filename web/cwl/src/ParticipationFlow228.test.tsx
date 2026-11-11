@@ -152,9 +152,7 @@ it("hides the step bar until one hosting clan is selected", async () => {
   await act(async () => partC.resolve(status(3)));
   expect(names()).toEqual(["Alpha", "Bravo", "Charlie"]);
   expect(host.querySelector(".bonus-step-bar")).toBeNull();
-  const select = host.querySelector<HTMLSelectElement>(
-    '.participation-toolbar select[name="clan"]',
-  )!;
+  const select = host.querySelector<HTMLSelectElement>('select[name="clan"]')!;
   expect(select.options[0].textContent).toBe("All clans");
   await act(async () => {
     select.value = "#2YQ";

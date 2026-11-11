@@ -1,0 +1,14 @@
+/* Hosting clan dropdown: one control under the pool tabs, full width on phones. */
+.bonus-clan-select {
+  max-width: 420px;
+  margin: 0 0 var(--wu-space-3);
+}
+.bonus-clan-select select {
+  width: 100%;
+}
+.bonus-clan-line {
+  margin: var(--wu-space-1) 0 0;
+  color: var(--roster-text-muted);
+  font-size: var(--wu-text-xs);
+  font-variant-numeric: tabular-nums;
+}

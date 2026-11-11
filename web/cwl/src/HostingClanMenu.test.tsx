@@ -42,15 +42,8 @@ const data = {
   sync: { enabled: false, warning: null, last_checked_at: null },
   publication_version: 1,
 };
-// Prompt 228: Bonus selects a clan card (prompt 229: no clan selected shows cards only); Results uses the short-list select.
+// Bonus and Results share the one hosting-clan dropdown; selecting the current value again changes nothing.
 async function selectCurrent(host: HTMLElement) {
-  const card = host.querySelector<HTMLButtonElement>(
-    '.bonus-clan-card[aria-pressed="true"]',
-  );
-  if (card) {
-    await act(async () => card.click());
-    return;
-  }
   const select = host.querySelector<HTMLSelectElement>('select[name="clan"]')!;
   expect(select).not.toBeNull();
   await act(async () => {
