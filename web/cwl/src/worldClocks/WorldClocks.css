@@ -1,0 +1,644 @@
+/* Bot → World clocks. Tokens only (DESIGN.md): gold = titles, labels,
+   selected and the main action; green = on; red = problem. */
+
+.world-clocks {
+  max-width: 1100px;
+  min-width: 0;
+  margin: 0 auto;
+  padding-bottom: var(--wu-space-7);
+}
+
+.world-clocks-heading {
+  margin-bottom: var(--wu-space-3);
+}
+
+.world-clocks-heading h1 {
+  margin: var(--wu-space-1) 0 var(--wu-space-2);
+}
+
+.world-clocks-heading p:last-child {
+  margin: 0;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+
+.world-clock-sections {
+  margin-bottom: var(--wu-space-4);
+}
+
+.world-clocks :is(button, input, select, summary):focus-visible {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
+}
+
+.world-clock-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2) var(--wu-space-4);
+  margin: 0 0 var(--wu-space-3);
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+
+.world-clock-status strong {
+  color: var(--wu-text);
+  font-weight: var(--wu-weight-medium);
+}
+
+.world-clock-notice,
+.world-clock-warning,
+.world-clock-alert,
+.world-clock-error {
+  margin: 0 0 var(--wu-space-3);
+  padding: var(--wu-space-2) var(--wu-space-3);
+  border: 1px solid;
+  border-radius: 14px;
+  font-size: var(--wu-text-sm);
+}
+
+.world-clock-notice {
+  border-color: var(--wu-success-border);
+  background: var(--wu-success-surface);
+  color: var(--wu-success);
+}
+
+.world-clock-warning {
+  border-color: var(--wu-warning-border);
+  background: var(--wu-warning-surface);
+  color: var(--wu-warning);
+}
+
+.world-clock-alert,
+.world-clock-error {
+  border-color: var(--wu-danger-border);
+  background: var(--wu-danger-surface);
+  color: var(--wu-danger);
+}
+
+.world-clock-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-2);
+}
+
+.world-clock-alert p,
+.world-clock-error p {
+  margin: 0;
+}
+
+.world-clock-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: start;
+  gap: var(--wu-space-5);
+}
+
+.world-clock-main {
+  display: grid;
+  gap: var(--wu-space-3);
+  min-width: 0;
+}
+
+.world-clock-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wu-space-3);
+}
+
+.world-clock-list {
+  display: grid;
+  gap: var(--wu-space-2);
+}
+
+.world-clock-empty {
+  padding: var(--wu-space-4);
+  border: 1px dashed var(--wu-border);
+  border-radius: 14px;
+}
+
+.world-clock-empty p {
+  margin: 0 0 var(--wu-space-1);
+}
+
+/* Rows */
+
+.world-clock-row {
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: 14px;
+  background: var(--wu-surface);
+}
+
+.world-clock-row.is-open {
+  border-color: var(--wu-border);
+}
+
+.world-clock-row.is-problem {
+  border-color: var(--wu-danger-border);
+}
+
+.world-clock-row-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--wu-space-2) var(--wu-space-3);
+  min-height: 64px;
+  padding: var(--wu-space-2) var(--wu-space-3);
+}
+
+.world-clock-row-text {
+  min-width: 0;
+}
+
+.world-clock-name {
+  margin: 0;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.world-clock-time {
+  white-space: nowrap;
+}
+
+.world-clock-row.is-off .world-clock-name {
+  color: var(--wu-text-muted);
+}
+
+.world-clock-sub {
+  margin: 2px 0 0;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+}
+
+.world-clock-sub.is-error,
+.world-clock-help.is-error {
+  color: var(--wu-danger);
+}
+
+/* Switch: a real checkbox with a 44px hit area. */
+
+.world-clock-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  min-height: 44px;
+  cursor: pointer;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
+}
+
+.world-clock-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.world-clock-switch-track {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  border: 1px solid var(--wu-border);
+  border-radius: 999px;
+  background: var(--wu-surface-soft);
+}
+
+.world-clock-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--wu-text-muted);
+  transition: transform 150ms ease;
+}
+
+.world-clock-switch input:checked + .world-clock-switch-track {
+  border-color: var(--wu-success-border);
+  background: var(--wu-success-surface);
+}
+
+.world-clock-switch input:checked + .world-clock-switch-track::after {
+  transform: translateX(18px);
+  background: var(--wu-success);
+}
+
+/* A problem never shows a green switch (Impeccable M6). */
+.world-clock-switch.is-problem input:checked + .world-clock-switch-track {
+  border-color: var(--wu-danger-border);
+  background: var(--wu-danger-surface);
+}
+
+.world-clock-switch.is-problem
+  input:checked
+  + .world-clock-switch-track::after {
+  background: var(--wu-danger);
+}
+
+.world-clock-switch input:focus-visible + .world-clock-switch-track {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
+}
+
+.world-clock-switch input:disabled + .world-clock-switch-track {
+  opacity: 0.6;
+}
+
+/* Edit panel and shared fields */
+
+.world-clock-panel {
+  display: grid;
+  gap: var(--wu-space-4);
+  padding: var(--wu-space-3);
+  border-top: 1px solid var(--wu-border-subtle);
+}
+
+.world-clock-label {
+  display: block;
+  margin: 0 0 6px;
+  padding: 0;
+  color: var(--wu-accent);
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
+}
+
+.world-clock-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--wu-space-3);
+  border: 1px solid var(--wu-border);
+  border-radius: 14px;
+  background: var(--wu-bg);
+  color: var(--wu-text);
+  font: inherit;
+  font-size: var(--wu-text-md);
+}
+
+.world-clock-input[aria-invalid="true"] {
+  border-color: var(--wu-danger-border);
+}
+
+.world-clock-help {
+  margin: var(--wu-space-1) 0 0;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+}
+
+.world-clock-two {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: var(--wu-space-3);
+}
+
+.world-clock-flag {
+  text-align: center;
+}
+
+.world-clock-zone {
+  display: grid;
+  gap: var(--wu-space-2);
+  min-width: 0;
+}
+
+.world-clock-zone .world-clock-label {
+  margin: 0;
+}
+
+.world-clock-zone-results {
+  display: grid;
+  gap: var(--wu-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.world-clock-zone-results button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wu-space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--wu-space-1) var(--wu-space-3);
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: 10px;
+  background: var(--wu-surface-raised);
+  color: var(--wu-text);
+  font: inherit;
+  font-size: var(--wu-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.world-clock-zone-results button[aria-pressed="true"] {
+  box-shadow: inset 3px 0 0 var(--wu-accent);
+  color: var(--wu-accent);
+}
+
+.world-clock-zone-results small {
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+}
+
+.world-clock-zone-city {
+  font-weight: var(--wu-weight-medium);
+}
+
+.world-clock-chips small {
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+}
+
+.world-clock-preview {
+  display: grid;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-2) var(--wu-space-3);
+  border-radius: 14px;
+  background: var(--wu-surface-raised);
+  font-size: var(--wu-text-sm);
+}
+
+.world-clock-preview p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.world-clock-preview-label {
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+}
+
+.world-clock-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-2);
+}
+
+.world-clock-panel-save {
+  display: flex;
+  gap: var(--wu-space-2);
+}
+
+/* Discord preview */
+
+.world-clock-aside-title {
+  margin: 0 0 var(--wu-space-2);
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
+}
+
+.world-clock-discord {
+  padding: var(--wu-space-3) var(--wu-space-2);
+  border-radius: 14px;
+  background: var(--wu-surface-raised);
+}
+
+.world-clock-discord-category {
+  margin: 0 0 var(--wu-space-1);
+  padding: 0 var(--wu-space-2);
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
+  text-transform: uppercase;
+}
+
+.world-clock-discord ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.world-clock-discord li {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-1) var(--wu-space-2);
+  color: var(--wu-text);
+  font-size: var(--wu-text-sm);
+}
+
+.world-clock-discord li.is-off {
+  color: var(--wu-text-muted);
+}
+
+.world-clock-discord li.is-missing {
+  color: var(--wu-danger);
+}
+
+.world-clock-discord li small {
+  margin-left: auto;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+}
+
+.world-clock-discord-name {
+  overflow-wrap: anywhere;
+}
+
+.world-clock-phone-preview {
+  display: none;
+}
+
+.world-clock-history,
+.world-clock-phone-preview {
+  padding: 0 var(--wu-space-3);
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: 14px;
+  background: var(--wu-surface);
+}
+
+.world-clock-history summary,
+.world-clock-phone-preview summary {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
+  cursor: pointer;
+}
+
+.world-clock-phone-preview .world-clock-discord {
+  margin-bottom: var(--wu-space-3);
+}
+
+.world-clock-history ul {
+  display: grid;
+  gap: var(--wu-space-1);
+  margin: 0 0 var(--wu-space-3);
+  padding: 0;
+  list-style: none;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+}
+
+/* Settings */
+
+.world-clock-settings {
+  display: grid;
+  gap: var(--wu-space-3);
+  max-width: 640px;
+}
+
+.world-clock-setting {
+  padding: var(--wu-space-3);
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: 14px;
+  background: var(--wu-surface);
+}
+
+.world-clock-settings-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-3);
+  min-height: 44px;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+
+/* Add clock sheet */
+
+.world-clock-sheet {
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  border: 1px solid var(--wu-border);
+  border-radius: 20px;
+  background: var(--wu-surface);
+  color: var(--wu-text);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 30%);
+}
+
+.world-clock-sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.world-clock-sheet::backdrop {
+  background: rgb(0 0 0 / 60%);
+}
+
+.world-clock-sheet-body {
+  display: grid;
+  gap: var(--wu-space-4);
+  min-height: 0;
+  padding: var(--wu-space-4);
+  overflow-y: auto;
+}
+
+.world-clock-sheet h2 {
+  margin: 0;
+  color: var(--wu-accent);
+  font-size: var(--wu-text-lg);
+}
+
+.world-clock-sheet-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--wu-space-2);
+  padding: var(--wu-space-3) var(--wu-space-4)
+    calc(var(--wu-space-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--wu-border-subtle);
+  background: var(--wu-surface);
+}
+
+.world-clock-mode {
+  display: grid;
+  gap: var(--wu-space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.world-clock-radio {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3);
+  border: 1px solid var(--wu-border);
+  border-radius: 14px;
+  background: var(--wu-bg);
+  cursor: pointer;
+}
+
+.world-clock-radio.is-selected {
+  border-color: var(--wu-accent);
+  box-shadow: inset 3px 0 0 var(--wu-accent);
+}
+
+.world-clock-radio input {
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--wu-accent);
+  flex: none;
+}
+
+.world-clock-radio small {
+  display: block;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+}
+
+@media (max-width: 650px) {
+  .world-clock-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .world-clock-aside {
+    display: none;
+  }
+
+  .world-clock-phone-preview {
+    display: block;
+  }
+
+  .world-clock-row-main {
+    gap: var(--wu-space-2);
+    padding: var(--wu-space-2);
+  }
+
+  .world-clock-switch-text {
+    display: none;
+  }
+
+  .world-clock-sheet {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 92dvh;
+    margin: auto 0 0;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .world-clock-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .world-clock-switch-track::after {
+    transition: none;
+  }
+}

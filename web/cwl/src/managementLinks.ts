@@ -14,6 +14,7 @@ export const managementPaths: Record<string, string> = {
   "text-commands": "/server/commands",
   manage: "/server",
   "image-gallery": "/settings/image-gallery",
+  "world-clocks": "/settings/world-clocks",
   tickets: "/tickets",
   access: "/settings/access",
   issues: "/settings/issues",

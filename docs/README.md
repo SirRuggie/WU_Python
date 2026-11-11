@@ -104,6 +104,10 @@ before changing durable documentation.
   writes, staff-thread parity, immediate archive, and a one-to-five-ticket
   pilot gate. Use the operations guide above for executable commands.
 
+- [world-clocks.md](world-clocks.md) — voice channel names that show local
+  times (replaces Statbot clocks): name rules, storage, the 6-minute rename
+  task, own-channels-only ordering, the dashboard API and the rollout.
+
 ## Proposals
 
 - [cwl-web-dashboard-plan.md](cwl-web-dashboard-plan.md) — approved CWL website

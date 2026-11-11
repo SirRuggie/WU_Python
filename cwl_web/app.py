@@ -278,6 +278,7 @@ MANAGEMENT_PAGE_PATHS = {
     "text-commands": "/server/commands",
     "manage": "/server",
     "image-gallery": "/settings/image-gallery",
+    "world-clocks": "/settings/world-clocks",
     "tickets": "/tickets",
     "access": "/settings/access",
     "issues": "/settings/issues",
@@ -2123,11 +2124,11 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     from .strikes import routes as strike_routes
     routes.extend(strike_routes)
     routes.extend(push_routes())
-    from . import member_role_runs, member_timezones, war_reminders, staff_overview, clan_history, clan_usage, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_content, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, member_events_insights, owner_prank
+    from . import member_role_runs, member_timezones, war_reminders, staff_overview, clan_history, clan_usage, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_content, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, member_events_insights, owner_prank, world_clocks
     app.cleanup_ctx.append(owner_prank.lifecycle)
     from .clan_artwork_cleanup import lifecycle as clan_artwork_cleanup_lifecycle
     app.cleanup_ctx.append(clan_artwork_cleanup_lifecycle)
-    for module in (member_role_runs, member_timezones, war_reminders, staff_overview, clan_history, clan_usage, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, member_events_insights, owner_prank):
+    for module in (member_role_runs, member_timezones, war_reminders, staff_overview, clan_history, clan_usage, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, member_events_insights, owner_prank, world_clocks):
         routes.extend(module.routes)
     manage_content.routes(app)
     routes.extend(issue_routes)

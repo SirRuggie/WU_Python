@@ -109,6 +109,7 @@ const icons = {
   chevronRight: ChevronRight,
   accounts: UsersRound,
   waiting: Clock,
+  worldClock: Clock,
   warning: TriangleAlert,
   attachment: Paperclip,
 } as const;
