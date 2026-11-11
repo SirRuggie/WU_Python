@@ -3,22 +3,15 @@ import RosterMenu from "./rosterUi/Menu";
 import { fetchReadWithRetry } from "./readRetry";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Season } from "./api";
-import { syncStatusLabel, type ParticipationDisplayStatus } from "./participation";
+import ExportRecordCard, { type ExportKind } from "./ExportRecordCard";
 import "./ExportWorkspace.css";
 import {
-  bonusSelectionReason,
-  bonusSelectionStatus,
+  exportDateText as dateText,
   matchesExportSearch,
-  rosterResultSummary,
   exportMonthLabel,
-  exportWeightLabel,
 } from "./exportPreview";
 
-type Kind =
-  | "accounts"
-  | "participation"
-  | "participation-history"
-  | "bonus-history";
+type Kind = ExportKind;
 type Basis = "current" | "published";
 type PreviewRow = Record<string, unknown>;
 type ExportPreview = {
@@ -66,70 +59,9 @@ const choices: { kind: Kind; label: string; description: string }[] = [
   },
 ];
 const rowLimit = 20;
-const stringValue = (value: unknown) =>
-  value === null || value === undefined || value === "" ? "—" : String(value);
-const cell = (row: PreviewRow, key: string) => stringValue(row[key]);
-const displayField = (row: PreviewRow, key: string) => {
-  if (key === "effective_weight") return exportWeightLabel(row[key]);
-  if (key === "cycle")
-    return exportMonthLabel(row[key] as string | null | undefined);
-  if (key === "pool")
-    return row.pool === "main"
-      ? "Main CWL"
-      : row.pool === "lazy"
-        ? "Lazy CWL"
-        : cell(row, key);
-  if (key === "source_status" || key === "participation_source_status") {
-    const prefix = key === "source_status" ? "" : "participation_";
-    return (row[prefix + 'display_status'] as ParticipationDisplayStatus | undefined)?.label || syncStatusLabel(row[key] as string | null | undefined);
-  }
-  if (key === "confirmed_at" && row.confirmed_at)
-    return dateText(String(row.confirmed_at));
-  return cell(row, key);
-};
-const dateText = (value: string | null) =>
-  value ? new Date(value).toLocaleString() : "Never";
+const tagOf = (row: PreviewRow) => String(row.tag ?? "");
 const errorText = (cause: unknown) =>
   cause instanceof Error ? cause.message : "Could not load the export preview.";
-
-function previewFields(kind: Kind): { key: string; label: string }[] {
-  switch (kind) {
-    case "accounts":
-      return [
-        { key: "player_name", label: "Player" },
-        { key: "pool", label: "CWL" },
-        { key: "assigned_clan_name", label: "Hosting clan" },
-        { key: "effective_weight", label: "Weight" },
-        { key: "result_summary", label: "Results for this roster" },
-      ];
-    case "participation":
-      return [
-        { key: "player_name", label: "Player" },
-        { key: "pool", label: "CWL" },
-        { key: "assigned_clan_name", label: "Hosting clan" },
-        { key: "result_summary", label: "Results for this roster" },
-        { key: "source_status", label: "Source" },
-      ];
-    case "participation-history":
-      return [
-        { key: "player_name", label: "Player" },
-        { key: "pool", label: "CWL" },
-        { key: "assigned_clan_name", label: "Hosting clan" },
-        { key: "attacks", label: "Attacks" },
-        { key: "stars", label: "Stars" },
-        { key: "source_status", label: "Source" },
-      ];
-    case "bonus-history":
-      return [
-        { key: "player_name", label: "Player" },
-        { key: "clan_name", label: "Hosting clan" },
-        { key: "cycle", label: "CWL month" },
-        { key: "selection_status", label: "Status" },
-        { key: "confirmed_at", label: "Selected on" },
-        { key: "selection_reason", label: "Reason" },
-      ];
-  }
-}
 
 export default function ExportWorkspace({
   seasonId,
@@ -314,7 +246,6 @@ export default function ExportWorkspace({
 
   const context = `${seasonId}|${kind}|${kind === "accounts" ? basis : "current"}`;
   const displayedPreview = previewFor === context ? preview : null;
-  const fields = previewFields(kind);
   const query = search.trim().toLocaleLowerCase();
   const rows = (displayedPreview?.rows || []).filter((row) =>
     matchesExportSearch(row, query, kind),
@@ -507,58 +438,13 @@ export default function ExportWorkspace({
                 </p>
               ) : (
                 <>
-                  <div className="export-records" role="list">
+                  <ul className="export-records">
                     {shown.map((row, index) => (
-                      <div
-                        className="export-record"
-                        role="listitem"
-                        key={`${kind}:${currentPage}:${index}:${cell(row, "tag")}`}
-                      >
-                        <div className="export-record-name">
-                          <strong>{cell(row, "player_name")}</strong>
-                          <small>{cell(row, "tag")}</small>
-                        </div>
-                        {fields
-                          .filter((field) => field.key !== "player_name")
-                          .map((field) => (
-                            <div
-                              key={field.key}
-                              className="export-record-field"
-                            >
-                              <small>{field.label}</small>
-                              <span>
-                                {field.key === "result_summary"
-                                  ? rosterResultSummary(
-                                      row,
-                                      kind === "accounts"
-                                        ? "participation_"
-                                        : "",
-                                    )
-                                  : kind === "bonus-history" &&
-                                      field.key === "selection_status"
-                                    ? bonusSelectionStatus(row)
-                                    : kind === "bonus-history" &&
-                                        field.key === "selection_reason"
-                                      ? bonusSelectionReason(row)
-                                      : displayField(row, field.key)}
-                              </span>
-                            </div>
-                          ))}
-                        {kind === "participation-history" &&
-                          Boolean(row.notes || row.updated_at) && (
-                            <details className="export-record-details">
-                              <summary>Saved details</summary>
-                              {Boolean(row.updated_at) && (
-                                <p>
-                                  Last saved {dateText(String(row.updated_at))}
-                                </p>
-                              )}
-                              {Boolean(row.notes) && <p>{String(row.notes)}</p>}
-                            </details>
-                          )}
-                      </div>
+                      <li key={`${kind}:${currentPage}:${index}:${tagOf(row)}`}>
+                        <ExportRecordCard kind={kind} row={row} />
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                   {lastPage > 0 && (
                     <nav
                       className="roster-pagination"

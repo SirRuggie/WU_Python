@@ -6,6 +6,7 @@ export type BonusClan = { tag: string; name: string; slots: number | null }
 export type PreviousBonus = { cycle: string; confirmed_at: string; season_id: number; clan_tag: string | null }
 export type BonusAccount = {
   tag: string; player_name: string; pool: Pool; assigned_clan_tag: string | null; assigned_clan_name: string | null;
+  user_id?: string | null; town_hall?: number | null;
   attacks: number | null; stars: number | null; source_status: string; source_warning: string | null;
   last_confirmed_bonus: PreviousBonus | null; recommended: boolean | null; eligibility_reason: string | null;
   display_status?: ParticipationDisplayStatus; source_complete: boolean; did_not_join?: boolean; already_confirmed_this_cycle: boolean; selected: boolean; reason: string

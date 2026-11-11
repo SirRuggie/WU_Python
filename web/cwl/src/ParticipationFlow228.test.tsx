@@ -296,9 +296,7 @@ it("cards get an outcome chip and tinted numbers but no card tone", async () => 
     expect(root.className).not.toMatch(
       /is-assigned|compare-account-missing|\b(good|bad)\b|is-(good|bad|success|danger)/,
     );
-    for (const value of card(name).querySelectorAll(
-      ".participation-values strong",
-    ))
+    for (const value of card(name).querySelectorAll(".card-tally strong"))
       expect(value.classList).toContain(`is-${tone}`);
   };
   expectChip("Alpha", "Meets rule", "success");

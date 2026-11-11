@@ -3,6 +3,9 @@ import { announcementMonthLabel } from "./announcementMonth";
 
 export type ExportRow = Record<string, unknown>;
 
+export const exportDateText = (value: string | null) =>
+  value ? new Date(value).toLocaleString() : "Never";
+
 export function bonusSelectionStatus(row: ExportRow): string {
   return row.voided_at ? "Voided selection" : "Saved selection";
 }

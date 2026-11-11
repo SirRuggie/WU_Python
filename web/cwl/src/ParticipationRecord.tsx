@@ -1,4 +1,5 @@
 import AccountCard from "./AccountCard";
+import CardTally from "./CardTally";
 import useConfirmDialog from "./useConfirmDialog";
 import { useEffect, useId, useRef, useState } from "react";
 import { Flag, Info } from "lucide-react";
@@ -134,7 +135,6 @@ export default function ParticipationRecord({
   // Results are read only; reconciling a changed assignment is the one reset.
   const canReset = !!account.roster_changed && canUseSyncedResults(account);
   const outcome = participationOutcome(account, mainMinimum);
-  const tally = outcome ? ` is-${outcomeTone(outcome)}` : "";
   const status = participationStatus(account);
 
   const latestBase = (row: ParticipationAccount) => ({
@@ -246,13 +246,13 @@ export default function ParticipationRecord({
 
   return (
     <AccountCard
-      className={`participation-row${account.roster_changed ? " participation-row-changed" : ""}`}
+      className={`participation-row account-card-plain${account.roster_changed ? " participation-row-changed" : ""}`}
       thLevel={account.town_hall}
       name={
         <button
           ref={opener}
           type="button"
-          className="participation-card-open"
+          className="account-card-open"
           aria-label={`Details for ${account.player_name}`}
           disabled={locked}
           onClick={() => openFrom(opener.current)}
@@ -290,21 +290,11 @@ export default function ParticipationRecord({
         hasOverride && !account.roster_changed ? "Staff correction" : null,
       ]}
       values={
-        <div className="participation-values">
-          <span>
-            <strong className={`participation-tally${tally}`}>
-              {account.attacks ?? "—"}
-            </strong>
-            <small> Attacks</small>
-          </span>
-          <span className="participation-value-separator"> · </span>
-          <span>
-            <strong className={`participation-tally${tally}`}>
-              {account.stars ?? "—"}
-            </strong>
-            <small> Stars</small>
-          </span>
-        </div>
+        <CardTally
+          attacks={account.attacks ?? "—"}
+          stars={account.stars ?? "—"}
+          tone={outcome ? outcomeTone(outcome) : null}
+        />
       }
       action={
         <ActionMenu

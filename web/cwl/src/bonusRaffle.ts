@@ -51,9 +51,10 @@ export type RaffleData = Omit<BonusData, 'accounts'> & {
   bonus_reviews?: Record<string, BonusReview>;
   lazy_hosts?: BonusClan[];
 }
-export const attacksText = (account: RaffleAccount) => account.attacks === null
-  ? 'Not Available'
-  : `${account.attacks}${account.season_rounds ? `/${account.season_rounds}` : ''} ${account.attacks === 1 && !account.season_rounds ? 'attack' : 'attacks'}${account.attacks_override ? ' · Staff correction' : ''}`
+/** Card tally value: attacks over CWL rounds when known; "—" when not captured. */
+export const attacksTally = (account: RaffleAccount) => account.attacks === null
+  ? '—'
+  : `${account.attacks}${account.season_rounds ? `/${account.season_rounds}` : ''}`
 
 /** Reasons that apply to a whole hosting clan. They show once, above the list. */
 export const CLAN_WIDE_REASONS: Record<string, string> = {

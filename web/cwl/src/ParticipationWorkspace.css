@@ -130,19 +130,6 @@
 .participation-outcomes small {
   font-variant-numeric: tabular-nums;
 }
-/* Outcome tone sits on the chip and the tally numbers; the card stays neutral. */
-.participation-values .participation-tally.is-success {
-  color: var(--wu-success);
-}
-.participation-values .participation-tally.is-danger {
-  color: var(--roster-card-text-danger);
-}
-.participation-values .participation-tally.is-warning {
-  color: var(--wu-warning);
-}
-.participation-values small {
-  color: var(--wu-text-muted);
-}
 .participation-row .participation-clan {
   color: var(--wu-text-muted);
   font-weight: var(--wu-weight-regular);
@@ -157,80 +144,6 @@
 }
 .participation-row {
   min-width: 0;
-}
-.participation-list .participation-row .roster-ui .player-card {
-  background: var(--wu-surface);
-  border: 1px solid var(--wu-border-subtle);
-}
-.participation-list .participation-row .roster-ui .player-card::before {
-  content: none;
-  display: none;
-}
-.participation-values {
-  display: flex;
-  gap: var(--wu-space-4);
-}
-.participation-values span:not(.participation-value-separator) {
-  min-width: 31px;
-  text-align: center;
-}
-.participation-values strong,
-.participation-values small {
-  display: block;
-}
-.participation-values strong {
-  font-size: var(--wu-text-md);
-  font-variant-numeric: tabular-nums;
-}
-.participation-values small {
-  font-size: var(--wu-text-xs);
-}
-/* The name button stretches over the card so the whole card opens Details. */
-.participation-card-open {
-  display: block;
-  max-width: 100%;
-  min-height: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: inherit;
-  cursor: pointer;
-}
-.participation-card-open::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-}
-/* A scaled button would become the overlay's containing block and lose the
-   pointerup; press feedback goes on the card instead. */
-.participation-card-open:active {
-  scale: none;
-  transform: none;
-}
-.participation-row .player-card:has(.participation-card-open:active) {
-  scale: 0.99;
-}
-.participation-card-open:focus-visible {
-  outline: none;
-}
-.participation-card-open:focus-visible::after {
-  outline: 2px solid var(--wu-focus);
-  outline-offset: -2px;
-}
-@media (hover: hover) and (pointer: fine) {
-  .participation-card-open:not(:disabled):hover::after {
-    background: #ffffff08;
-  }
-}
-.participation-row .account-card-action {
-  position: relative;
-  z-index: 1;
 }
 .participation-empty {
   margin: var(--wu-space-4) 0;
@@ -453,38 +366,5 @@
 @media (max-width: 650px) {
   .participation-dialog {
     padding: var(--wu-space-4);
-  }
-}
-
-@media (max-width: 650px) {
-  .participation-values {
-    gap: 0;
-  }
-  .participation-values span:not(.participation-value-separator) {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 3px;
-    min-width: 0;
-    text-align: left;
-  }
-  .participation-value-separator {
-    white-space: pre;
-  }
-  .participation-values strong,
-  .participation-values small {
-    display: inline;
-    font-size: inherit;
-    font-weight: inherit;
-  }
-}
-@media (min-width: 651px) {
-  .participation-value-separator {
-    display: none;
-  }
-  .participation-values {
-    justify-content: flex-end;
-  }
-  .participation-values span:not(.participation-value-separator) {
-    text-align: right;
   }
 }

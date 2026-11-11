@@ -10,8 +10,7 @@
 }
 .bonus-context,
 .bonus-section-heading,
-.bonus-candidates-heading,
-.bonus-editor-heading {
+.bonus-candidates-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -34,12 +33,6 @@
 }
 .bonus-context > .roster-player-menu {
   flex: 0 0 auto;
-}
-.bonus-quiet-action {
-  background: transparent;
-  border: 0;
-  color: var(--wu-text);
-  text-decoration: underline;
 }
 .cwl-page-header > .bonus-season {
   display: grid;
@@ -188,21 +181,6 @@
   max-width: 120px;
   font-variant-numeric: tabular-nums;
 }
-.bonus-account-state {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--wu-space-1) var(--wu-space-2);
-  margin-top: var(--wu-space-1);
-}
-.bonus-account-list .bonus-outcome {
-  min-height: 24px;
-  padding: 0.1rem 0.5rem;
-  font-size: var(--wu-text-xs);
-}
-.bonus-account-outcome .bonus-account-state small {
-  margin-top: 0;
-}
 .bonus-flow {
   border-top: 1px solid var(--roster-border-subtle);
   padding-top: var(--wu-space-4);
@@ -320,49 +298,13 @@
   width: 100%;
 }
 .bonus-account-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
-}
-.bonus-account-list li {
-  display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(160px, 1.1fr) auto;
-  align-items: center;
-  gap: var(--roster-space-3);
-  min-height: 58px;
-  padding: var(--wu-space-1) 0;
-  border-bottom: 1px solid var(--roster-border-subtle);
-}
-.bonus-account-identity,
-.bonus-account-outcome {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.bonus-account-identity strong,
-.bonus-account-outcome strong {
-  display: block;
-  font-size: var(--wu-text-md);
-}
-.bonus-account-identity small,
-.bonus-account-outcome small,
-.bonus-editor-heading small {
-  display: block;
-  color: var(--roster-text-muted);
-  font-size: var(--wu-text-xs);
-  margin-top: var(--wu-space-1);
-}
-.bonus-account-outcome small:first-of-type {
-  color: var(--roster-text);
-}
-.bonus-quiet-action {
-  min-height: 44px;
-  padding: var(--wu-space-2) var(--wu-space-3);
-  text-align: center;
-}
-@media (hover: hover) and (pointer: fine) {
-  .bonus-quiet-action:hover {
-    text-decoration: underline;
-  }
 }
 .bonus-empty {
   margin: var(--wu-space-3) 0;
@@ -378,7 +320,6 @@
   border: 1px solid var(--roster-border);
   text-decoration: underline;
 }
-.bonus-review-editor,
 .bonus-add-candidate {
   margin: var(--wu-space-3) 0 var(--wu-space-4);
   padding: var(--wu-space-4);
@@ -386,10 +327,12 @@
   border: 1px solid var(--roster-border);
   border-radius: 10px;
 }
-.bonus-review-editor h3 {
+.bonus-review-tag {
   margin: 0;
+  color: var(--roster-text-muted);
+  font-size: var(--wu-text-sm);
 }
-.bonus-review-editor > p,
+.bonus-review-editor .action-panel-content > p:not(.bonus-review-tag, .notice),
 .bonus-add-candidate > p {
   color: var(--roster-text-muted);
   text-wrap: pretty;
@@ -465,6 +408,11 @@
   justify-content: flex-end;
   gap: var(--wu-space-2);
   margin-top: var(--wu-space-3);
+}
+.bonus-review-editor .bonus-editor-actions {
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 0;
 }
 .bonus-editor-actions button {
   min-height: 44px;
@@ -626,18 +574,6 @@
     font-size: var(--wu-text-xs);
     line-height: 1.25;
     font-variant-numeric: tabular-nums;
-  }
-  .bonus-account-list li {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--wu-space-1) var(--wu-space-2);
-  }
-  .bonus-account-outcome {
-    grid-column: 1;
-    grid-row: 2;
-  }
-  .bonus-account-list li > button {
-    grid-column: 2;
-    grid-row: 1 / 3;
   }
   .bonus-action-bar > button {
     width: 100%;

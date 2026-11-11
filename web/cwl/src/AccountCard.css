@@ -92,3 +92,66 @@
     grid-column: 3;
   }
 }
+/* Plain surface: list cards with no placement glow (Results, Bonus medals, Exports). */
+.shared-account-card.account-card-plain .roster-ui .player-card {
+  background: var(--wu-surface);
+  border: 1px solid var(--wu-border-subtle);
+}
+.shared-account-card.account-card-plain .roster-ui .player-card::before {
+  content: none;
+  display: none;
+}
+/* Long clan names, dates and reasons wrap instead of being cut off. */
+.shared-account-card.account-card-plain .account-card-meta,
+.shared-account-card.account-card-plain .account-card-flags {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* The name button stretches over the card so the whole card opens its panel. */
+.account-card-open {
+  display: block;
+  max-width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.account-card-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+/* A scaled button would become the overlay's containing block and lose the
+   pointerup; press feedback goes on the card instead. */
+.account-card-open:active {
+  scale: none;
+  transform: none;
+}
+.shared-account-card .player-card:has(.account-card-open:active) {
+  scale: 0.99;
+}
+.account-card-open:focus-visible {
+  outline: none;
+}
+.account-card-open:focus-visible::after {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: -2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .account-card-open:not(:disabled):hover::after {
+    background: #ffffff08;
+  }
+}
+.shared-account-card:has(.account-card-open) .account-card-action {
+  position: relative;
+  z-index: 1;
+}
