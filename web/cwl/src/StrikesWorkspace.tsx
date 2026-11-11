@@ -44,6 +44,7 @@ import {
   selectedImportEntries,
   toggleLeaveTag,
 } from "./strikeSelections";
+import SearchPicker from "./SearchPicker";
 import SectionTabs from "./SectionTabs";
 import "./StrikesWorkspace.css";
 
@@ -1513,22 +1514,21 @@ export default function StrikesWorkspace({
                 </p>
               )}
               {members.length > 0 && (
-                <label>
-                  Member
-                  <select
-                    disabled={busy}
-                    value={selectedMember}
-                    onChange={(event) => chooseMember(event.target.value)}
-                  >
-                    <option value="">Select member</option>
-                    {members.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {discordIdentityName(item.id, null, item.name) ||
-                          "Discord member unavailable"}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <SearchPicker
+                  label="Member"
+                  value={selectedMember}
+                  options={members.map((item) => ({
+                    value: item.id,
+                    label:
+                      discordIdentityName(item.id, null, item.name) ||
+                      "Discord member unavailable",
+                  }))}
+                  disabled={busy}
+                  placeholder="Select member"
+                  searchPlaceholder="Search members"
+                  emptyText="No members match."
+                  onChange={chooseMember}
+                />
               )}
               {selected && (
                 <DiscordIdentity

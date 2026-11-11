@@ -18,6 +18,8 @@ import {
 } from "react";
 import { api, ApiError, type Pool } from "./api";
 import ChannelCombobox from "./ChannelCombobox";
+import SearchPicker from "./SearchPicker";
+import { roleOption } from "./RolePicker";
 import type { AnnouncementChannel } from "./announcements";
 import {
   campaignPatch,
@@ -485,24 +487,24 @@ export default function ReminderWorkspace({
               <SectionTabs
                 className="tabs workflow-tabs section-tabs--flow"
                 label="Reminder sections"
-                items={(["overview", "messages", "schedule", "history"] as const).map(
-                  (value) => {
-                    return {
-                      id: value,
-                      label: (
-                        <>
-                          {value === "overview"
-                            ? "Overview"
-                            : value === "messages"
-                              ? "Messages"
-                              : value === "schedule"
-                                ? "Schedule"
-                                : "Delivery history"}
-                        </>
-                      ),
-                    };
-                  },
-                )}
+                items={(
+                  ["overview", "messages", "schedule", "history"] as const
+                ).map((value) => {
+                  return {
+                    id: value,
+                    label: (
+                      <>
+                        {value === "overview"
+                          ? "Overview"
+                          : value === "messages"
+                            ? "Messages"
+                            : value === "schedule"
+                              ? "Schedule"
+                              : "Delivery history"}
+                      </>
+                    ),
+                  };
+                })}
                 value={tab}
                 onChange={(value) => {
                   setTab(value);
@@ -556,7 +558,10 @@ export default function ReminderWorkspace({
                       className="tabs workflow-tabs section-tabs--flow"
                       label="Message audience"
                       items={(["main", "lazy"] as const).map((value) => {
-                        return { id: value, label: <>{value === "main" ? "Main" : "Lazy"}</> };
+                        return {
+                          id: value,
+                          label: <>{value === "main" ? "Main" : "Lazy"}</>,
+                        };
                       })}
                       value={pool}
                       onChange={(value) => {
@@ -566,21 +571,20 @@ export default function ReminderWorkspace({
                     />
                   </div>
                   <div className="reminder-fields">
-                    <label>
-                      Message to edit
-                      <select
-                        value={messageId}
-                        onChange={(event) => setMessageId(event.target.value)}
-                      >
-                        {Object.entries(draft.messages)
-                          .filter(([id]) => id !== "roster")
-                          .map(([id, item]) => (
-                            <option key={id} value={id}>
-                              {item.label || id}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
+                    <SearchPicker
+                      label="Message to edit"
+                      value={messageId}
+                      options={Object.entries(draft.messages)
+                        .filter(([id]) => id !== "roster")
+                        .map(([id, item]) => ({
+                          value: id,
+                          label: item.label || id,
+                        }))}
+                      placeholder="Select a message"
+                      searchPlaceholder="Search messages"
+                      emptyText="No messages match."
+                      onChange={setMessageId}
+                    />
                   </div>
                   {selected && variant && (
                     <div className="reminder-columns">
@@ -652,33 +656,30 @@ export default function ReminderWorkspace({
                                 </button>
                               </div>
                             )}
-                            <label>
-                              Add a role
-                              <select
-                                disabled={
-                                  roleLookup.loading || !!roleLookup.error
-                                }
-                                value=""
-                                onChange={(event) => {
-                                  if (!event.target.value) return;
-                                  const next = [
-                                    ...new Set([
-                                      ...variant.role_ids,
-                                      event.target.value,
-                                    ]),
-                                  ];
-                                  setRoleText(next.join(", "));
-                                  changeVariant({ role_ids: next });
-                                }}
-                              >
-                                <option value="">Select a server role</option>
-                                {roles.map((role) => (
-                                  <option key={role.id} value={role.id}>
-                                    {role.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                            <SearchPicker
+                              label="Add a role"
+                              value=""
+                              options={roles.map((role) => ({
+                                ...roleOption(role),
+                                disabledNote: variant.role_ids.includes(role.id)
+                                  ? "Already added"
+                                  : undefined,
+                              }))}
+                              disabled={
+                                roleLookup.loading || !!roleLookup.error
+                              }
+                              placeholder="Add a role"
+                              searchPlaceholder="Search server roles"
+                              emptyText="No roles match."
+                              onChange={(id) => {
+                                if (!id) return;
+                                const next = [
+                                  ...new Set([...variant.role_ids, id]),
+                                ];
+                                setRoleText(next.join(", "));
+                                changeVariant({ role_ids: next });
+                              }}
+                            />
                             {roleLookup.loading && (
                               <p role="status">Loading roles…</p>
                             )}

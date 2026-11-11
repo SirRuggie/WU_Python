@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ScheduleEditor from "./ScheduleEditor";
 import type { ReminderSettings } from "./types";
+import { pickerValue } from "../searchPickerTestUtils";
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
 const settings: ReminderSettings = {
   enabled: false,
@@ -48,9 +49,7 @@ it("hides configured quick-add times and keeps explicit add/remove edits", () =>
   expect(onChange).toHaveBeenLastCalledWith({ minutes: [60] });
   expect(host.textContent).toContain("Remind who?");
   expect(host.textContent).toContain("Players with attacks left");
-  expect(host.querySelector<HTMLInputElement>('[role="combobox"]')!.value).toBe(
-    "#war-room",
-  );
+  expect(pickerValue(host)).toBe("#war-room");
   expect(host.textContent).not.toContain(settings.channel_id);
 });
 it("does not expose an unavailable destination ID or edit while disabled", () => {
@@ -64,9 +63,7 @@ it("does not expose an unavailable destination ID or edit while disabled", () =>
       />,
     ),
   );
-  expect(host.querySelector<HTMLInputElement>('[role="combobox"]')!.value).toBe(
-    "Selected channel unavailable",
-  );
+  expect(pickerValue(host)).toBe("Selected channel unavailable");
   expect(host.querySelector("fieldset")!.disabled).toBe(true);
   expect(host.textContent).not.toContain(settings.channel_id);
 });

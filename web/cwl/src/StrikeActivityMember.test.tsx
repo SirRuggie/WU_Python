@@ -3,6 +3,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import StrikeActivityRoster from "./StrikeActivityRoster";
+import {
+  clickOption,
+  openPicker,
+  optionTexts,
+  pickerByLabel,
+  typeInPicker,
+} from "./searchPickerTestUtils";
 import type { ActivityAccount } from "./strikeActivityView";
 const SLAYER = "100000000000000001",
   ACE = "100000000000000002",
@@ -160,23 +167,11 @@ it("filters by member on the tab, lists every account and removes with its chip"
 it("searches the Member filter by name and applies the exact ID", async () => {
   await mount("/strikes?activity_view=all");
   await act(async () => button("Filters").click());
-  const input = [
-    ...document.querySelectorAll<HTMLInputElement>("dialog input"),
-  ].find((node) =>
-    node.parentElement!.textContent!.startsWith("Discord member"),
-  )!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    )!.set!.call(input, "ac");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  const option = [
-    ...document.querySelectorAll<HTMLButtonElement>("dialog li button"),
-  ];
-  expect(option.map((node) => node.textContent)).toEqual(["@ace10 accounts"]);
-  await act(async () => option[0].click());
+  const picker = pickerByLabel(document, "Discord member");
+  await openPicker(picker);
+  await typeInPicker(picker, "ac");
+  expect(optionTexts(picker)).toEqual(["ace10 accounts"]);
+  await clickOption(picker, "ace");
   await act(async () => button("Apply filters").click());
   expect(location.search).toContain(`member=${ACE}`);
   expect(host.querySelectorAll("[data-strike-player]")).toHaveLength(10);

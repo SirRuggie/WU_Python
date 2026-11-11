@@ -3,6 +3,12 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import ClanFields from "./ClanFields";
+import {
+  clickOption,
+  openPicker,
+  optionTexts,
+  pickerByLabel,
+} from "../searchPickerTestUtils";
 const leaderId = "123456789012345678";
 const clan = {
   tag: "#AAA",
@@ -52,17 +58,15 @@ it("shows leader name and avatar, with IDs only on hover, and shares ordered rol
     expect(host.textContent).toContain("Captain Jane");
     expect(host.textContent).not.toContain(leaderId);
     expect(
-      host.querySelector(".roster-discord-identity")!.getAttribute("aria-label"),
+      host
+        .querySelector(".roster-discord-identity")!
+        .getAttribute("aria-label"),
     ).toBe("Linked Discord member");
     expect(host.querySelector(".roster-discord-identity img")).not.toBeNull();
-    const choices = host.querySelector(
-      '[aria-label="Available leader roles"]',
-    )!;
-    expect(
-      [...choices.querySelectorAll("button")].map((button) => button.title),
-    ).toEqual(["3", "1"]);
-    expect(choices.textContent).not.toContain("Bot integration");
-    act(() => choices.querySelector<HTMLButtonElement>("button")!.click());
+    const picker = pickerByLabel(host, "Find leader role");
+    await openPicker(picker);
+    expect(optionTexts(picker)).toEqual(["Captain", "Admiral"]);
+    await clickOption(picker, "Captain");
     expect(change).toHaveBeenCalledWith("leader_role_id", "3");
     await act(async () => root.render(<ClanFields {...props} members={[]} />));
     expect(host.textContent).toContain("Current leader unavailable");

@@ -8,6 +8,7 @@ vi.mock("../api", async (original) => ({
 }));
 import { api, ApiError } from "../api";
 import RoleChangeReview from "./RoleChangeReview";
+import { allPickers, pickOption } from "../searchPickerTestUtils";
 const ROLE = "333333333333333333",
   ids = ["111111111111111111", "222222222222222222"];
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
@@ -51,11 +52,7 @@ async function render(
       />,
     ),
   );
-  const select = document.querySelector("select")!;
-  await act(async () => {
-    select.value = ROLE;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await pickOption(allPickers(document)[0], "Officer");
   return onConfirm;
 }
 function button(label: string) {
@@ -167,7 +164,7 @@ it("a refused target keeps the review available and names the blocked person wit
   );
   expect(document.body.textContent).toContain("Blocked fixture person");
   expect(api).toHaveBeenCalledTimes(1);
-  expect(document.querySelector("select")).not.toBeNull();
+  expect(document.querySelector(".search-picker")).not.toBeNull();
 });
 
 it("a true preview permission loss invokes denied without confirming", async () => {

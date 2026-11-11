@@ -1,4 +1,12 @@
+import SearchPicker from "./SearchPicker";
 import { maxIgnoredBots, type BotActor } from "./moderationSettingsModel";
+
+function lastSeen(value: string | null) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime())
+    ? `Last seen ${date.toLocaleDateString()}`
+    : undefined;
+}
 
 type Props = {
   ids: string[] | undefined;
@@ -31,25 +39,24 @@ export default function ModerationIgnoredBots({
       <h3>Ignored bots</h3>
       <p>Changes made by these bots are not logged.</p>
       <div className="moderation-ignore-group">
-        <label>
-          Add an ignored bot
-          <select
-            value=""
-            disabled={
-              disabled || available.length === 0 || ids.length >= maxIgnoredBots
-            }
-            onChange={(event) => {
-              if (event.target.value) onChange([...ids, event.target.value]);
-            }}
-          >
-            <option value="">Select a bot</option>
-            {available.map((item) => (
-              <option key={item.id} value={item.id}>
-                @{item.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SearchPicker
+          label="Add an ignored bot"
+          value=""
+          options={available.map((item) => ({
+            value: item.id,
+            label: `@${item.name}`,
+            detail: lastSeen(item.last_seen),
+          }))}
+          disabled={
+            disabled || available.length === 0 || ids.length >= maxIgnoredBots
+          }
+          placeholder="Add a bot"
+          searchPlaceholder="Search bots"
+          emptyText="No bots match."
+          onChange={(id) => {
+            if (id) onChange([...ids, id]);
+          }}
+        />
         {ids.length === 0 ? (
           <small>None</small>
         ) : (

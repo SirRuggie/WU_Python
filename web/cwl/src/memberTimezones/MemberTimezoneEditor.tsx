@@ -2,6 +2,7 @@ import DiscordIdentity from "../DiscordIdentity";
 import { nicknameName } from "./nicknameName";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
+import SearchPicker from "../SearchPicker";
 import type { Directory, Member, RequestState } from "./types";
 
 type Account = { tag: string; name: string; townHallLevel: number };
@@ -186,7 +187,11 @@ export default function MemberTimezoneEditor({
   return (
     <section className="mt-editor" aria-label={`Edit ${member.name}`}>
       <h2>Edit time zone</h2>
-      <DiscordIdentity userId={member.discord_id} displayName={member.name} resolvedMember={member.discord_profile || null} />
+      <DiscordIdentity
+        userId={member.discord_id}
+        displayName={member.name}
+        resolvedMember={member.discord_profile || null}
+      />
       {warning && <p role="status">{warning}</p>}
       {error && (
         <div role="alert">
@@ -235,30 +240,30 @@ export default function MemberTimezoneEditor({
           </label>
         )
       )}
-      <label>
-        Time zone
-        <select
-          aria-label="Time zone"
-          value={zone}
-          disabled={busy}
-          onChange={(e) => {
-            change();
-            setZone(e.target.value);
-          }}
-        >
-          <option value="">Select a time zone</option>
-          {extra && (
-            <option value={extra.zone_id}>
-              {extra.gmt_label} · Imported offset
-            </option>
-          )}
-          {visibleZones.map((z) => (
-            <option key={z.id} value={z.id}>
-              {z.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SearchPicker
+        label="Time zone"
+        value={zone}
+        options={[
+          ...(extra
+            ? [
+                {
+                  value: extra.zone_id,
+                  label: extra.gmt_label,
+                  detail: "Imported offset",
+                },
+              ]
+            : []),
+          ...visibleZones.map((z) => ({ value: z.id, label: z.label })),
+        ]}
+        disabled={busy}
+        placeholder="Select a time zone"
+        searchPlaceholder="Search time zones"
+        emptyText="No time zones match."
+        onChange={(value) => {
+          change();
+          setZone(value);
+        }}
+      />
       <button
         type="button"
         disabled={allZones || busy}
@@ -266,32 +271,33 @@ export default function MemberTimezoneEditor({
       >
         Show all zones
       </button>
-      <label>
-        Country
-        <select
-          aria-label="Country"
-          value={
-            data.countries.some((c) => c.code === country) ? country : "other"
-          }
-          disabled={busy}
-          onChange={(e) => {
-            change();
-            setCountry(e.target.value === "other" ? "" : e.target.value);
-            setAllZones(e.target.value === "other");
-            setZone(
-              data.countries.find((country) => country.code === e.target.value)
-                ?.zone_id || "",
-            );
-          }}
-        >
-          <option value="other">Other / select country</option>
-          {data.countries.map((c) => (
-            <option key={c.code} value={c.code}>
-              {c.flag} {c.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SearchPicker
+        label="Country"
+        value={
+          data.countries.some((c) => c.code === country) ? country : "other"
+        }
+        options={[
+          { value: "other", label: "Other / select country" },
+          ...data.countries.map((c) => ({
+            value: c.code,
+            label: c.label,
+            icon: c.flag,
+          })),
+        ]}
+        disabled={busy}
+        placeholder="Select a country"
+        searchPlaceholder="Search countries"
+        emptyText="No countries match."
+        onChange={(value) => {
+          change();
+          setCountry(value === "other" ? "" : value);
+          setAllZones(value === "other");
+          setZone(
+            data.countries.find((country) => country.code === value)?.zone_id ||
+              "",
+          );
+        }}
+      />
       {!data.countries.some((c) => c.code === country) && (
         <label>
           Two-letter country code

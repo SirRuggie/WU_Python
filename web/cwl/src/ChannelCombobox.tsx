@@ -1,7 +1,6 @@
-import { useEffect, useId, useState, type KeyboardEvent } from "react";
 import type { AnnouncementChannel } from "./announcements";
 import { filterChannels } from "./channelSearch";
-import "./ChannelCombobox.css";
+import SearchPicker, { type PickerOption } from "./SearchPicker";
 
 type Props = {
   label: string;
@@ -10,10 +9,32 @@ type Props = {
   disabled: boolean;
   onChange: (value: string) => void;
   onResolve?: (value: string) => void;
+  /** Kept for existing call sites; raw IDs are never shown. */
   nameOnly?: boolean;
 };
 const visibleLimit = 30;
+const CATEGORY = 4;
+const FORUM_POST = 11;
+const FORUM = 15;
+const LOOKUP_ID = /^[0-9]{15,22}$/;
+// Prefix so a lookup row never equals the saved value (a saved but hidden post).
+const LOOKUP = "lookup:";
 
+function typeWord(type: number) {
+  if (type === FORUM_POST) return "Forum post";
+  if (type === FORUM) return "Forum";
+  return undefined;
+}
+
+function channelOption(channel: AnnouncementChannel): PickerOption {
+  return {
+    value: channel.id,
+    label: channel.type === CATEGORY ? channel.name : `#${channel.name}`,
+    detail: typeWord(channel.type),
+  };
+}
+
+/** Channel field with name search; a pasted ID finds the channel too. */
 export default function ChannelCombobox({
   label,
   channels,
@@ -21,168 +42,49 @@ export default function ChannelCombobox({
   disabled,
   onChange,
   onResolve,
-  nameOnly = false,
 }: Props) {
-  const id = useId();
-  const inputId = `${id}-input`;
-  const listId = `${id}-list`;
-  const hintId = `${id}-hint`;
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
-  const chosen = channels.find((channel) => channel.id === value);
-  const matching = filterChannels(channels, query);
-  const lookupId = query.trim();
-  const canResolve =
+  const options = channels.map(channelOption);
+
+  // An ID that is not in the list can only be looked up, never selected.
+  const isLookup = (id: string) =>
     !!onResolve &&
-    /^[0-9]{15,22}$/.test(lookupId) &&
-    !channels.some((channel) => channel.id === lookupId);
-  const visible = canResolve
-    ? [{ id: lookupId, name: "Look up channel or forum post ID", type: -1 }]
-    : matching.slice(0, visibleLimit);
-  const activeOption =
-    open && visible[active] ? `${id}-option-${active}` : undefined;
-  useEffect(() => {
-    if (!open)
-      setQuery(
-        value
-          ? chosen
-            ? nameOnly
-              ? `#${chosen.name}`
-              : `#${chosen.name} · ${chosen.id}`
-            : nameOnly
-              ? "Selected channel unavailable"
-              : `Channel ${value} (unavailable)`
-          : "",
-      );
-  }, [value, chosen?.name, open, nameOnly]);
-  useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
-  useEffect(() => {
-    if (activeOption)
-      document
-        .getElementById(activeOption)
-        ?.scrollIntoView({ block: "nearest" });
-  }, [activeOption]);
-  const choose = (channel: AnnouncementChannel) => {
-    if (channel.type === -1) onResolve?.(channel.id);
-    else onChange(channel.id);
-    setOpen(false);
-  };
-  const keyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setOpen(false);
-      return;
-    }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      if (!open) {
-        setQuery("");
-        setOpen(true);
-        setActive(0);
-        return;
-      }
-      setActive((current) =>
-        visible.length
-          ? (current + (event.key === "ArrowDown" ? 1 : -1) + visible.length) %
-            visible.length
-          : 0,
-      );
-    }
-    if (event.key === "Enter" && open) {
-      event.preventDefault();
-      if (visible[active]) choose(visible[active]);
-    }
-  };
+    LOOKUP_ID.test(id) &&
+    !channels.some((channel) => channel.id === id);
+
+  function search(query: string): PickerOption[] {
+    const lookupId = query.trim();
+    if (isLookup(lookupId))
+      return [
+        { value: LOOKUP + lookupId, label: "Look up channel or forum post ID" },
+      ];
+    return filterChannels(channels, query).map(channelOption);
+  }
+
+  function choose(id: string) {
+    if (id.startsWith(LOOKUP)) onResolve?.(id.slice(LOOKUP.length));
+    else onChange(id);
+  }
+
   return (
     <div className="channel-combobox">
-      <label htmlFor={inputId}>{label}</label>
-      <div className="channel-combobox-input">
-        <input
-          id={inputId}
-          role="combobox"
-          type="text"
-          autoComplete="off"
-          aria-autocomplete="list"
-          aria-expanded={open}
-          aria-controls={listId}
-          aria-activedescendant={activeOption}
-          aria-describedby={hintId}
-          placeholder={
-            onResolve ? "Search channels and forum posts" : "Search channels"
-          }
-          value={query}
-          disabled={disabled}
-          onFocus={() => {
-            setQuery("");
-            setActive(0);
-            setOpen(true);
-          }}
-          onBlur={() => setOpen(false)}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActive(0);
-            setOpen(true);
-          }}
-          onKeyDown={keyDown}
-        />
-        <button
-          type="button"
-          aria-label={`Clear ${label.toLowerCase()}`}
-          disabled={disabled || !value}
-          onClick={() => {
-            onChange("");
-            setOpen(false);
-          }}
-        >
-          Clear
-        </button>
-      </div>
-      <small id={hintId} className="channel-picker-hint">
-        {onResolve
-          ? "Search active forum posts and channels, or paste a post ID and select Look up. "
-          : "Type part of a channel name or ID. "}
-        <span className="channel-keyboard-hint">
-          Use arrow keys and Enter to select. Escape closes the results.
-        </span>
-      </small>
-      {open && !disabled && (
-        <div
-          id={listId}
-          role="listbox"
-          aria-label={`${label} results`}
-          className="channel-results"
-        >
-          {visible.length ? (
-            visible.map((channel, index) => (
-              <button
-                type="button"
-                role="option"
-                id={`${id}-option-${index}`}
-                aria-selected={channel.id === value}
-                className={index === active ? "active" : ""}
-                key={channel.id}
-                tabIndex={-1}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => choose(channel)}
-              >
-                <span>#{channel.name}</span>
-                {!nameOnly && <small>{channel.id}</small>}
-              </button>
-            ))
-          ) : (
-            <p role="status">No channels match “{query}”.</p>
-          )}
-          {matching.length > visibleLimit && (
-            <small className="channel-more">
-              Showing {visibleLimit} of {matching.length} channels. Keep typing
-              to narrow results.
-            </small>
-          )}
-        </div>
-      )}
+      <SearchPicker
+        label={label}
+        value={value}
+        options={options}
+        onChange={choose}
+        placeholder={
+          onResolve ? "Select a channel or forum post" : "Select a channel"
+        }
+        searchPlaceholder={
+          onResolve ? "Search channels and forum posts" : "Search channels"
+        }
+        emptyText="No channels match."
+        disabled={disabled}
+        clearable
+        fallback={{ value, label: "Selected channel unavailable" }}
+        search={search}
+        limit={visibleLimit}
+      />
     </div>
   );
 }

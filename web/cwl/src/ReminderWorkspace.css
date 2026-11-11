@@ -14,7 +14,8 @@
   flex-wrap: wrap;
   align-items: end;
 }
-.reminder-fields > label {
+.reminder-fields > label,
+.reminder-fields > .search-picker {
   flex: 1;
   min-width: 170px;
 }

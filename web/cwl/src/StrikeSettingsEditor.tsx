@@ -193,7 +193,6 @@ export default function StrikeSettingsEditor({
         selected={roles.map((role) => role.id)}
         disabled={busy}
         label="Find exempt role"
-        optionsLabel="Available exempt roles"
         onChoose={(role) => {
           setRoles((current) => [...current, role]);
           setSaved(false);

@@ -830,3 +830,28 @@ integration must preserve the accepted background filler queue predecessor.
 ## Top bar
 
 - On phones the account menu is fixed width at the right edge; only the title block flexes.
+
+## Search picker (dropdown rollout, 2026-11-11)
+
+Long-list fields use the shared `web/cwl/src/SearchPicker.tsx` (piloted on
+World clocks, PR #286). Rule: a list of about 12 or more options, or a list
+that grows (channels, roles, members, countries, time zones, commands, saved
+messages, records), uses SearchPicker. A short fixed list (sort, status,
+priority, units) keeps the native `<select>`.
+
+- Closed field: gold label, 48 px field with 14 px corners, the selected value
+  as a card (icon, name, second line). Optional remove button (`clearable`).
+- Phone (700 px or less): a full-screen sheet with the search on top, sized to
+  the area above the keyboard. Wider screens: the list opens under the field
+  and moves the content down.
+- Selecting only calls `onChange`. Picking the value that is already selected
+  does nothing (native select parity). Opening, searching and closing write
+  nothing.
+- Add mode: `value=""` and the handler appends (RolePicker, ignored channels,
+  ignored bots, reminder roles). The field stays on its placeholder.
+- Never show raw Discord IDs in rows or the closed field. Search may still
+  match a pasted ID. `ChannelCombobox` keeps its forum post lookup row
+  ("Look up channel or forum post ID"), which calls `onResolve`.
+- Shared wrappers: `ChannelCombobox`, `RoleSelect`, `RolePicker`
+  (`roleOption` builds a role row with its colour dot), `StrikeMemberSelect`.
+  Tests drive pickers through `searchPickerTestUtils.ts`.

@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { DashboardPermissions } from "./DashboardPermissions";
 import SeasonsPage from "./SeasonsPage";
+import { pickOption, pickerByLabel } from "./searchPickerTestUtils";
 import type { Season } from "./api";
 const { api } = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
@@ -161,14 +162,8 @@ it("reports a real pool-role draft as dirty without saving it", async () => {
         </DashboardPermissions.Provider>,
       ),
     );
-    const main = [...host.querySelectorAll<HTMLSelectElement>("select")].find(
-      (select) => select.parentElement?.textContent?.startsWith("Main role"),
-    )!;
-    expect(main).toBeDefined();
-    await act(async () => {
-      main.value = "123456789012345678";
-      main.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const main = pickerByLabel(host, "Main role");
+    await pickOption(main, "CWL players");
     expect(dirty).toHaveBeenLastCalledWith(true);
     expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
       true,

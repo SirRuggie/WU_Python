@@ -942,34 +942,5 @@
   color: var(--wu-text-muted);
 }
 .strike-member-select {
-  display: grid;
-  gap: var(--wu-space-2);
   min-width: 0;
-}
-.strike-member-selected {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--wu-space-2);
-}
-.strike-member-options {
-  display: grid;
-  gap: var(--wu-space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.strike-member-options button {
-  display: flex;
-  width: 100%;
-  justify-content: space-between;
-  gap: var(--wu-space-2);
-  text-align: left;
-}
-.strike-member-options .strike-member-username {
-  margin-left: var(--wu-space-2);
-  opacity: 0.7;
-}
-.strike-member-options button[aria-pressed="true"] {
-  border-color: var(--wu-gold, #a89564);
 }

@@ -1,4 +1,5 @@
 import RolePicker, { type RoleChoice } from "./RolePicker";
+import SearchPicker from "./SearchPicker";
 import {
   maxIgnoreIds,
   type Destination,
@@ -55,7 +56,7 @@ export default function ModerationIgnoreLists({
 }: Props) {
   const channelName = (id: string) => {
     const channel = channels.find((item) => item.id === id);
-    return channel ? `#${channel.name}` : `Channel ${id}`;
+    return channel ? `#${channel.name}` : "Deleted channel";
   };
   const available = channels.filter(
     (item) => !ignores.channel_ids.includes(item.id),
@@ -69,31 +70,35 @@ export default function ModerationIgnoreLists({
   return (
     <div className="moderation-ignore-lists">
       <div className="moderation-ignore-group">
-        <label>
-          Ignored channels
-          <select
-            value=""
-            disabled={
-              disabled ||
-              available.length === 0 ||
-              ignores.channel_ids.length >= maxIgnoreIds
-            }
-            onChange={(event) => {
-              if (event.target.value)
-                onChange({
-                  ...ignores,
-                  channel_ids: [...ignores.channel_ids, event.target.value],
-                });
-            }}
-          >
-            <option value="">Select a channel</option>
-            {available.map((item) => (
-              <option key={item.id} value={item.id}>
-                #{item.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SearchPicker
+          label="Ignored channels"
+          value=""
+          options={available.map((item) => ({
+            value: item.id,
+            label: `#${item.name}`,
+            detail:
+              item.type === "forum"
+                ? "Forum"
+                : item.type === "forum_post"
+                  ? "Forum post"
+                  : undefined,
+          }))}
+          disabled={
+            disabled ||
+            available.length === 0 ||
+            ignores.channel_ids.length >= maxIgnoreIds
+          }
+          placeholder="Add a channel"
+          searchPlaceholder="Search channels"
+          emptyText="No channels match."
+          onChange={(id) => {
+            if (id)
+              onChange({
+                ...ignores,
+                channel_ids: [...ignores.channel_ids, id],
+              });
+          }}
+        />
         <Chips
           ids={ignores.channel_ids}
           name={channelName}
@@ -113,7 +118,6 @@ export default function ModerationIgnoreLists({
             selected={ignores.role_ids}
             disabled={disabled || ignores.role_ids.length >= maxIgnoreIds}
             label="Ignored roles"
-            optionsLabel="Available ignored roles"
             onChoose={(role) =>
               onChange({ ...ignores, role_ids: [...ignores.role_ids, role.id] })
             }

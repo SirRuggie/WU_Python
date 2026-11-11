@@ -994,23 +994,6 @@
   line-height: 1.2;
   text-wrap: balance;
 }
-.strikes-role-options {
-  display: grid;
-  gap: var(--wu-space-1);
-  max-height: 240px;
-  overflow: auto;
-}
-.strikes-role-options button {
-  display: flex;
-  gap: var(--wu-space-2);
-  min-height: 44px;
-  align-items: center;
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-.strikes-role-options button > span:last-child {
-  margin-left: auto;
-}
 .strike-role-color {
   width: 12px;
   height: 12px;

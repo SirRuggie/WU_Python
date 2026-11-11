@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import AnnouncementFullTest from "./AnnouncementFullTest";
+import { allPickers, pickOption, pickerValue } from "./searchPickerTestUtils";
 const { api } = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock("./api", async (original) => ({
   ...(await original<object>()),
@@ -39,18 +40,11 @@ const button = (name: string) =>
 async function click(name: string) {
   await act(async () => button(name).click());
 }
+const picker = () => allPickers(host)[0];
+const trigger = () =>
+  picker().querySelector<HTMLButtonElement>(".search-picker-trigger")!;
 async function choose() {
-  await act(async () => {
-    const input = host.querySelector("input")!;
-    Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    )!.set!.call(input, "test");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await act(async () =>
-    host.querySelector<HTMLElement>('[role="option"]')!.click(),
-  );
+  await pickOption(picker(), "test-room", "test");
 }
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -97,10 +91,8 @@ it("queues only after confirmation and preserves identity on an ambiguous HTTP r
   await click("Test full post");
   await click("Send full test");
   const first = api.mock.calls[0][2];
-  expect(host.querySelector<HTMLInputElement>("input")!.disabled).toBe(true);
-  expect(host.querySelector<HTMLInputElement>("input")!.value).toContain(
-    "test-room",
-  );
+  expect(trigger().disabled).toBe(true);
+  expect(pickerValue(picker())).toContain("test-room");
   await click("Test full post");
   expect(document.querySelector("dialog")?.textContent).toContain("#test-room");
   await click("Send full test");
@@ -127,7 +119,7 @@ it("unlocks the test channel after a definite rejection", async () => {
   api.mockRejectedValueOnce(new ApiError("Forbidden", 403));
   await click("Test full post");
   await click("Send full test");
-  expect(host.querySelector<HTMLInputElement>("input")!.disabled).toBe(false);
+  expect(trigger().disabled).toBe(false);
 });
 it("replaces confirmation with done, first-message link and one Close action", async () => {
   api.mockResolvedValue({

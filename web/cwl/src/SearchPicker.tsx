@@ -178,6 +178,11 @@ export default function SearchPicker({
 
   function choose(option: PickerOption) {
     if (option.disabledNote || closing.current) return;
+    // Like a native select: picking the current value changes nothing.
+    if (option.value === value) {
+      close(true);
+      return;
+    }
     onChange(option.value);
     if (!phone) {
       close(true);

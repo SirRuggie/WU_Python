@@ -9,6 +9,7 @@ vi.mock("./api", async (original) => ({
 }));
 import { ApiError } from "./api";
 import DeclarationPingPanel from "./DeclarationPingPanel";
+import { allPickers, pickOption, pickerValue } from "./searchPickerTestUtils";
 let root: ReturnType<typeof createRoot>, host: HTMLDivElement;
 const state = {
   revision: 1,
@@ -222,9 +223,7 @@ it("a late settings reload cannot replace a newer response", async () => {
     }),
   );
   await flush();
-  expect(
-    (host.querySelector("[role=combobox]") as HTMLInputElement).value,
-  ).toBe("#newer");
+  expect(pickerValue(allPickers(host)[0])).toBe("#newer");
 });
 
 it("shows exact changed pool accounts before allowing a ping", async () => {
@@ -283,13 +282,7 @@ it("shows channel actions only after editing and blocks Ping until saved or disc
   expect(host.textContent).not.toContain(
     "Send permission is checked before every message.",
   );
-  const input = host.querySelector<HTMLInputElement>("[role=combobox]")!;
-  await act(async () => input.focus());
-  await act(async () =>
-    [...host.querySelectorAll<HTMLButtonElement>("[role=option]")]
-      .find((b) => b.textContent?.includes("#other"))!
-      .click(),
-  );
+  await pickOption(allPickers(host)[0], "#other");
   expect(button("Save channel")).toBeTruthy();
   expect(button("Discard")).toBeTruthy();
   expect(button("Ping 26 missing").disabled).toBe(true);

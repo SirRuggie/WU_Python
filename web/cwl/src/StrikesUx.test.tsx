@@ -7,6 +7,13 @@ import StrikeSettingsEditor, {
   type StrikeSettings,
 } from "./StrikeSettingsEditor";
 import StrikeHistoryRow from "./StrikeHistoryRow";
+import {
+  clickOption,
+  openPicker,
+  optionTexts,
+  pickerByLabel,
+  typeInPicker,
+} from "./searchPickerTestUtils";
 import { ApiError } from "./api";
 const transport = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (original) => ({
@@ -101,19 +108,13 @@ function SettingsFixture() {
 it("preserves server role order, hides only managed additions, and retains a conflicting limit/role draft until confirmed reload", async () => {
   transport.mockRejectedValueOnce(new ApiError("Conflict", 409));
   await render(<SettingsFixture />);
-  const options = host.querySelector('[aria-label="Available exempt roles"]')!;
-  expect(options.textContent).toContain("External-looking name");
-  expect(options.textContent).not.toContain("Helper bot");
-  expect([...options.querySelectorAll("button")].map((b) => b.title)).toEqual([
-    "3",
-    "1",
-  ]);
+  const picker = pickerByLabel(host, "Find exempt role");
+  await openPicker(picker);
+  expect(optionTexts(picker)).toEqual(["Captain", "External-looking name"]);
   expect(host.textContent).toContain("Old integration");
-  await input('[placeholder="Search role names"]', "Captain");
-  expect(options.textContent).not.toContain("External-looking");
-  await act(async () =>
-    options.querySelector<HTMLButtonElement>("button")!.click(),
-  );
+  await typeInPicker(picker, "Captain");
+  expect(optionTexts(picker)).toEqual(["Captain"]);
+  await clickOption(picker, "Captain");
   await input('input[type="number"]', "11");
   await click("Save settings");
   expect(transport).toHaveBeenCalledWith("/strikes/settings/roles", "PUT", {
@@ -508,11 +509,14 @@ it("sends the selected leave revision and retains the date and accounts after a 
   await settle();
   await input('[placeholder="Name or Discord ID"]', "Member");
   await settle();
-  const select = host.querySelector<HTMLSelectElement>("select")!;
-  await act(async () => {
-    select.value = "42";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".search-picker-trigger")!.click(),
+  );
+  await act(async () =>
+    [...host.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((option) => option.textContent?.includes("Member"))!
+      .click(),
+  );
   await input('input[type="date"]', "2027-01-01");
   await click("Save leave");
   expect(transport).toHaveBeenCalledWith("/strikes/settings/leaves", "POST", {
