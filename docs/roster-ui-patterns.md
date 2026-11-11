@@ -916,3 +916,15 @@ Short lists (dropdown rollout PR 2):
 - Results cards: the card body opens Details; the shared `⋯` menu holds DM +
   Details (`participationMenuItems` list). Attacks and stars come from Clash
   and are read only; Details saves staff notes only.
+
+### Results & bonuses one page (prompt 229)
+
+- One page, "Results & bonuses". No clan selected: overview. Clan selected: the
+  five steps.
+- Only one step panel is open. A done step shows one summary line with Change.
+- A blocker shows once, in the open panel, beside its fix. The bar shows the
+  same short reason. A disabled action gets one line naming the first blocker.
+- Clan cards come with "All clans" first. After a draw a card shows only
+  "Draw saved", "Approved" or "Sent".
+- Settings and capture options open in a sheet (`ActionPanel`) from the page ⋯
+  menu. Saved histories live in Exports.

@@ -384,7 +384,7 @@ Released as `cwl-flow-1` on 2026-10-28; S1/S2/S3 and shared player cards include
 - Create-season confirmation (Ruggie correction, 2026-10-28): before saving, “<Label> will start with the hosting clans and their settings from the previous season. Signups start empty.” For the first season: “<Label> will start with no hosting clans. Signups start empty.” After creation, use S1's actual response count: “<Label> created with N hosting clans and their settings. Signups start empty.” Do not add an inheritance-preview endpoint (S4 was declined).
 - S2 (approved 2026-10-28): optional strict-boolean `expected_signup_open` compare-and-set; a mismatch returns 409 without writes. Show and open sets member visibility first, then opens signups. A second-call failure reports partial success without retry or rollback. Fix for an already-open hidden season only changes member visibility; no signup PATCH.
 - S3 (approved 2026-10-28): `cwl_settings`-authorized read-only clan lookup validates with `tag()`, returns `{tag, name}`, 400 for invalid tags and 404 for missing clans. No database writes. Confirm still uses the existing add POST. S1/S2/S3 require one isolated backend release when approved for deployment.
-- CWL sidebar order: Seasons, Signup reminders, Build roster, Finalize roster, Announcements, Declaration check, Return reminders, Results & participation, Bonus medals, Exports & history. Other staff destinations use the flat Clans, Members, Bot and Admin groups.
+- CWL sidebar order: Seasons, Signup reminders, Build roster, Finalize roster, Announcements, Declaration check, Return reminders, Results & bonuses, Exports & history. Other staff destinations use the flat Clans, Members, Bot and Admin groups.
 - Build / Finalize / Announce use a numbered step strip, existing routes and permission-gated destinations. Missing weights replaces Weights. Declaration remains a post-publish, read-only check against the published roster; rebuilding it is a later batch.
 
 - N4 option B (approved 2026-10-28): Add hosting clan and Archive require Build roster access; settings-only staff see neither control and receive no partial roster access. Existing `cwl_settings` mutation authorization remains required by the unchanged backend. Seasons retains its own settings permissions.
@@ -1407,3 +1407,58 @@ only opens Strikes on that player; the existing manual strike editor and its
 confirmation write the strike. CWL is still never an automatic strike source. The
 Main draw's "Resolve incomplete" blocker links to Results filtered by pool, clan
 and, when all incomplete players share one, the outcome.
+
+### Results & bonuses one flow (2026-11-11)
+
+Prompt 229. Owner decisions D1-D10, accepted one at a time in the thread
+"CWL staff flow audit". Frontend only.
+
+- D1: The step bar drives the page. One step panel is open. A done step shows
+  one summary line with Change. `step` stays in the URL.
+- D2: Five steps: Results, Rules & count, Draw, Approve, Announce & award.
+  "Review eligibility" is removed. The typed count is saved only with the draw.
+- D3: Each blocker shows once, in the open step panel, beside its fix. One
+  function (`bonusStepBlockers`) feeds the bar, the lines and `disabled`.
+- D4: Main shows the same player list as Lazy. No chips until a minimum is
+  saved. A typed minimum previews chips ("Preview · not saved"). No Review on
+  Main.
+- D5: After a draw, the clan card shows only "Draw saved", "Approved" or "Sent".
+- D6: The bar uses the typed count. Results is done when every player has a
+  result or a covering staff reason. Old results warn with "Check Clash now".
+- D7: One sidebar item "Results & bonuses"; tabs "Results & bonuses · Exports".
+  No clan: overview. Clan selected: the five steps. `/cwl/results` and
+  `/cwl/bonuses` open this page; canonical path is `/cwl/results`.
+- D8: Page ⋯ menu: Check Clash now, Refresh, Settings. The Settings sheet holds
+  CWL capture and Lazy draw odds (FWA Rep role). Both saved histories moved to
+  Exports. A missing CWL month blocks step 1 with a link to Settings.
+- D9: One name per thing: Meets rule, Check Clash now, Refresh, Players,
+  In the draw / Excluded.
+- D10: Phone order: compact bar, pool tabs, clan cards, open step. Count box is
+  full width. Compact bar toggle has `aria-controls`.
+
+Accepted deviations:
+
+- The "Finish X first" gate applies to Draw, Approve and Announce only. Rules &
+  count stays usable while Results is not done, so Main can save a minimum with
+  no results.
+- The open panel stays where it landed; it does not jump to Draw while a count
+  is typed. It follows the flow after Draw, Approve and Cancel.
+- Draw and Approve buttons stay disabled while blocked. The line under them is
+  "Finish X first" or the first blocker.
+- The "N not checked · Review" link opens the first such player's Review for
+  Lazy with access. Main shows "N not checked" and Check Clash now.
+- Step 1 for a clan-selected user is the Bonus results list, not the Results
+  overview list. The overview and the outcome-filtered list still use
+  `ParticipationWorkspace`.
+- Bonus-only users keep a Results panel (blockers and Check Clash now).
+- A clan plus an outcome in the address opens the list. A clan plus a step, or
+  a clan card or filter, opens the steps.
+- `roleDirty` in `bonusRaffle.ts` is always false from the page.
+- No auto-selected clan: with no clan, the page shows cards only.
+- First player card `top` at 360x800 was not measured in a browser.
+
+Later:
+
+- (a) Winners count on the clan card ("3 winners · Approved"). Needs an additive
+  bonus-status field.
+- (b) "Awarded in Clash" tick. Needs a saved field.

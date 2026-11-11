@@ -84,3 +84,10 @@ Did not join (2026-11-11): an assigned account with raw source status `no_data`
 (`source_no_show`) is a hard Lazy exclusion, "Did not join the CWL clan", that a
 staff reason cannot override. Main excludes it with the same reason without
 blocking the draw, and the Bonus status counts it as captured.
+
+## Staff flow (prompt 229)
+
+The staff flow has five steps: Results, Rules & count, Draw, Approve, and
+Announce & award. The draw preview loads when Draw opens. The FWA Rep role and
+the capture settings are in the page ⋯ Settings. Saved histories are in
+Exports. The rules above do not change.
