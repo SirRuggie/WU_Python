@@ -195,8 +195,49 @@ it("phone: opens a full-screen sheet with the search focused", async () => {
   const general = Array.from(sheet.querySelectorAll('[role="option"]')).find(
     (node) => node.textContent?.includes("General"),
   ) as HTMLElement;
+  vi.useFakeTimers();
   await act(async () => general.click());
+  // A quick second tap still lands on the sheet and writes nothing more.
+  await act(async () => general.click());
+  expect(onChange).toHaveBeenCalledTimes(1);
   expect(onChange).toHaveBeenCalledWith("1");
+  expect(close).not.toHaveBeenCalled();
+  await act(async () => {
+    vi.advanceTimersByTime(300);
+  });
+  vi.useRealTimers();
   expect(close).toHaveBeenCalled();
   expect(sheet.querySelectorAll('[role="option"]')).toHaveLength(0);
+});
+
+it("phone: back or Escape on the sheet does not close a dialog around it", async () => {
+  phone(true);
+  Object.assign(HTMLDialogElement.prototype, {
+    showModal(this: HTMLDialogElement) {
+      this.setAttribute("open", "");
+    },
+    close(this: HTMLDialogElement) {
+      this.removeAttribute("open");
+    },
+  });
+  const outerCancel = vi.fn();
+  const onChange = vi.fn();
+  await mount(
+    <dialog open onCancel={outerCancel}>
+      <Harness onChange={onChange} />
+    </dialog>,
+  );
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".search-picker-trigger")!.click(),
+  );
+  const sheet = document.querySelector<HTMLDialogElement>(
+    "dialog.search-picker-sheet",
+  )!;
+  expect(sheet.hasAttribute("open")).toBe(true);
+  await act(async () => {
+    sheet.dispatchEvent(new Event("cancel", { cancelable: true }));
+  });
+  expect(outerCancel).not.toHaveBeenCalled();
+  expect(onChange).not.toHaveBeenCalled();
+  expect(sheet.hasAttribute("open")).toBe(false);
 });

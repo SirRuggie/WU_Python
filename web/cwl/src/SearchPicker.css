@@ -68,7 +68,9 @@
   min-height: 48px;
   padding: 0;
   justify-content: center;
+  border: 1px solid var(--wu-border);
   border-radius: 14px;
+  background: var(--wu-bg);
 }
 
 .search-picker-icon {

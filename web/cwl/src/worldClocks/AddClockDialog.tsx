@@ -53,7 +53,6 @@ export default function AddClockDialog({
   // so the server answers from its receipt instead of creating a 2nd channel.
   const requestId = useRef(newRequestId());
   const category = categories.find((row) => row.id === settings.category_id);
-  const free = voiceChannels.filter((channel) => !channel.used);
 
   useLayoutEffect(() => {
     const opener = document.activeElement;
@@ -73,7 +72,11 @@ export default function AddClockDialog({
   const ready =
     !!draft.zone &&
     channelsAvailable &&
-    (mode === "create" ? !!category : !!draft.channel_id);
+    (mode === "create"
+      ? !!category
+      : voiceChannels.some(
+          (channel) => channel.id === draft.channel_id && !channel.used,
+        ));
 
   async function submit() {
     if (!ready || busy) return;
@@ -172,15 +175,13 @@ export default function AddClockDialog({
           {mode === "existing" && (
             <SearchPicker
               label="Voice channel"
-              options={free.map((channel) => voiceOption(channel))}
+              options={voiceChannels.map((channel) =>
+                voiceOption(channel, channel.used ? "has a clock" : ""),
+              )}
               value={draft.channel_id}
               placeholder="Select a voice channel"
               searchPlaceholder="Search voice channels"
-              emptyText={
-                free.length
-                  ? "No voice channels match."
-                  : "No free voice channels. Create a new one instead."
-              }
+              emptyText="No voice channels match."
               disabled={busy}
               onChange={(channel_id) => setDraft({ ...draft, channel_id })}
             />

@@ -50,6 +50,7 @@ type Props = {
 };
 
 const PHONE_QUERY = "(max-width: 700px)";
+const CLOSE_DELAY_MS = 250;
 
 function usePhone() {
   const [phone, setPhone] = useState(
@@ -132,6 +133,7 @@ export default function SearchPicker({
   const input = useRef<HTMLInputElement>(null);
   const sheet = useRef<HTMLDialogElement>(null);
   const box = useRef<HTMLDivElement>(null);
+  const closing = useRef(false);
 
   const selected =
     options.find((option) => option.value === value) ||
@@ -172,9 +174,19 @@ export default function SearchPicker({
   }
 
   function choose(option: PickerOption) {
-    if (option.disabledNote) return;
+    if (option.disabledNote || closing.current) return;
     onChange(option.value);
-    close(true);
+    if (!phone) {
+      close(true);
+      return;
+    }
+    // Phone: keep the sheet up for a moment so a quick second tap lands on
+    // the sheet, not on a button behind it (for example "Add clock").
+    closing.current = true;
+    window.setTimeout(() => {
+      closing.current = false;
+      close(true);
+    }, CLOSE_DELAY_MS);
   }
 
   // Desktop: focus the search after the panel renders.
@@ -185,6 +197,12 @@ export default function SearchPicker({
   useEffect(() => {
     if (disabled && open) close(false);
   }, [disabled]);
+
+  // A rotation across the phone width closes the list instead of leaving it
+  // open in a layout that was never shown.
+  useEffect(() => {
+    if (open) close(false);
+  }, [phone]);
 
   // Phone: fit the sheet to the visible area, which shrinks for the keyboard.
   useEffect(() => {
@@ -242,7 +260,14 @@ export default function SearchPicker({
         : "");
 
   const panel = (
-    <div className="search-picker-panel">
+    <div
+      className="search-picker-panel"
+      onMouseDown={(event) => {
+        // Keep focus in the search when the panel padding or status is
+        // pressed (Safari does not focus buttons, so blur would close it).
+        if (event.target !== input.current) event.preventDefault();
+      }}
+    >
       <div className="search-picker-search">
         <Search aria-hidden="true" size={18} />
         <input
@@ -313,6 +338,10 @@ export default function SearchPicker({
           aria-expanded={open}
           aria-labelledby={`${labelId} ${valueId}`}
           disabled={disabled}
+          onMouseDown={(event) => {
+            // Safari: keep focus in the open search so this press closes it.
+            if (open && !phone) event.preventDefault();
+          }}
           onClick={() => (open ? close(true) : openPicker())}
         >
           <span id={valueId} className="search-picker-value">
@@ -351,7 +380,10 @@ export default function SearchPicker({
             className="search-picker-sheet"
             aria-labelledby={sheetTitleId}
             onCancel={(event) => {
+              // React passes cancel up through the portal. Stop it so a
+              // dialog around this field (Add clock) stays open.
               event.preventDefault();
+              event.stopPropagation();
               close(true);
             }}
           >
