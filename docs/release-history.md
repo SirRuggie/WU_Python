@@ -56,6 +56,41 @@ approved NO WAR corrections or restore databases for a code rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 
+## Clan dropdown and Lazy-only sit-out — 2026-11-11 (backend and frontend)
+
+- PR [#302](https://github.com/SirRuggie/WU_Python/pull/302), merge commit
+  `ab2e217b9e5ac6ece40cb6bb5e233625a178331a`, local tag
+  `clan-dropdown-302-1`. Built and released by Shaka (Claude) on Ruggie's
+  "Release 302". Refuter ACCEPT on `0ac81f82`; a copy/CSS polish commit
+  followed (2334 frontend tests rerun).
+- Changes: one "Hosting clan" dropdown with state in each option (clan cards
+  and "Find a clan" removed); Find a player and Sort on one row; overview gets
+  the shared `roster-ui` tokens; the Lazy 3-month sit-out counts only earlier
+  Lazy bonuses (Ruggie: "per pool").
+- Backend: `release.conf` `backend/0a061726…` → `backend/ab2e217b…`; PID
+  3529151 → 3574547, cwd verified, active, config 200, anonymous seasons 401,
+  no tracebacks. Python diff limited to `utils/cwl_bonus_raffle*.py` and its
+  test; the bot imports neither, so it was not restarted (`wu-bot` active).
+- Frontend `current`: `0a061726…` → `ab2e217b…` (clean tagged clone, 2334
+  tests in 344 files and 75 Lazy bonus backend tests passed before staging).
+  Entry `index-DVjQeDFr.js`, SHA-256
+  `e17c2c975eee7b7a36da3974db7bca3aeb9f29c99a2505b6ae1075576f814500`; served
+  `index.html` SHA-256
+  `617acf39966b8fec9055e45929c3d72ab30f7b189d4d17dd89fcc1e3193e9d36` equals the
+  release file; all 149 manifest assets match the public site.
+- Backup `.local/clan-dropdown-302-release-20261111T223740Z/dashboard.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `a607fee98edbed2a0ad6bc6f5469e8254877f3045243cc8b7a116acfefd5b819`. All 73
+  table counts identical before and after.
+- Signed-out smoke at 360 px on `/cwl/results`, `/cwl/bonuses`,
+  `/cwl/exports`: new entry, only the expected 401, no overflow, app requests
+  GET only. Signed-in smoke SKIPPED.
+- Rollback: backend `release.conf` back to
+  `backend/0a06172621a542bae2ee0864b5ecf251b298614a`, then daemon-reload and
+  restart `wu-cwl-demo-web`; frontend `switch-release.py
+  0a06172621a542bae2ee0864b5ecf251b298614a`. Never restore the database for a
+  code rollback.
+
 ## Results & bonuses one flow — 2026-11-11 (frontend only)
 
 - PR [#299](https://github.com/SirRuggie/WU_Python/pull/299), merge commit
