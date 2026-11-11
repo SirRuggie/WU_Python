@@ -42,22 +42,20 @@ const data = {
   sync: { enabled: false, warning: null, last_checked_at: null },
   publication_version: 1,
 };
+// Prompt 228: Bonus selects a clan card; Results uses the short-list select.
 async function selectCurrent(host: HTMLElement) {
-  await act(async () =>
-    [...host.querySelectorAll<HTMLButtonElement>(".roster-menu-trigger")]
-      .find((button) => button.textContent?.includes("Hosting clan"))!
-      .click(),
+  const card = host.querySelector<HTMLButtonElement>(
+    '.bonus-clan-card[aria-pressed="true"]',
   );
-  const item = document.querySelector<HTMLElement>(
-    '[role="menuitem"][aria-label*="selected"]',
-  )!;
-  expect(item).not.toBeNull();
+  if (card) {
+    await act(async () => card.click());
+    return;
+  }
+  const select = host.querySelector<HTMLSelectElement>('select[name="clan"]')!;
+  expect(select).not.toBeNull();
   await act(async () => {
-    item.dispatchEvent(
-      new MouseEvent("mousedown", { bubbles: true, button: 0 }),
-    );
-    item.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
-    item.click();
+    select.value = select.value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
 for (const workspace of ["Bonus", "Participation"]) {

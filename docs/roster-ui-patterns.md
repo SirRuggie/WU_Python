@@ -871,3 +871,35 @@ Short lists (dropdown rollout PR 2):
   `.roster-ui-input label`, the joining-instructions editor label.
 - `MemberPicker` and the Compare clan picker (`.compare-clan-picker`) take the
   look only, with no behaviour or size change.
+
+## Results and Bonus (prompt 228)
+
+- Cards stay neutral: no background or edge tint by outcome. One small chip
+  gives the outcome: green Meets rule, red Below rule, amber Not checked (no
+  result or partial result). Attacks and Stars numbers take the same tone;
+  labels stay muted; the clan name is quieter than the player name.
+- The rule and the tone live in one helper, `participationOutcome.ts`. Lazy: 4+
+  attacks, or 3+ attacks and 8+ stars. Main: the saved minimum; with no saved
+  minimum, Main shows no chip. Bonus rows use the same chip, plus only
+  player-specific reasons. Clan-wide reasons show once in a notice above the
+  list.
+- Both pages share one 5-step bar (`BonusStepBar.tsx`): Results → Eligibility →
+  Draw → Approval → Announcement, for the selected pool and hosting clan. Done
+  ✓, current gold, blocked red with one short reason. Each step is a link with
+  the `pool`, `clan` and `step` keys. Phones (700 px or less) show one line,
+  "Step 2 of 5 · Eligibility" with dots, that expands to the full bar. The bar
+  reads the light `bonus-status` endpoint after the list; a failure shows one
+  muted "Status unavailable · Retry" and never blocks the list.
+- Bonus medals selects the hosting clan with a row of clan cards (name, "5 of
+  8 meet", Draft / Saved / Approved / Sent / Inactive). Phones use the Compare
+  swipeable card row. The selected card has the gold edge.
+- Results has 4 outcome filter chips with counts (All · Meets rule · Below rule
+  · Not checked, `FilterChips`), a 3-option Sort and a Hosting clan short-list
+  select (the search picker above 20 clans). The count line counts the
+  selected pool only.
+- `pool`, `clan`, `outcome`, `sort` and `step` are in the URL on both pages;
+  Back and shared links restore them.
+- Under a disabled Review eligibility button, one line per blocker links to
+  its fix (`bonusReviewBlockers` in `bonusRaffle.ts` is the one source for the
+  lines and the disabled state). "Discord roles unavailable · Retry" and
+  "Results not captured" show as lines but do not disable the button.

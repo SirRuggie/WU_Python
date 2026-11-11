@@ -1,22 +1,37 @@
 import CwlPageHeader from "./CwlPageHeader";
 import useConfirmDialog from "./useConfirmDialog";
-import CwlNextLink from "./CwlNextLink";
 import { exportMonthLabel } from "./exportPreview";
-import RosterMenu from "./rosterUi/Menu";
+import ActionMenu from "./rosterUi/ActionMenu";
 import "./ParticipationWorkspace.css";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
+import FilterChips from "./FilterChips";
+import SearchPicker from "./SearchPicker";
+import BonusStepBar from "./BonusStepBar";
 import ParticipationRecord from "./ParticipationRecord";
 import ParticipationHistory from "./ParticipationHistory";
 import useUnsavedWork from "./useUnsavedWork";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, type Season } from "./api";
+import { api, ApiError, type Pool, type Season } from "./api";
+import { loadBonusStatus, type BonusStatus } from "./bonusStatus";
+import {
+  countText,
+  matchesOutcome,
+  outcomeCounts,
+  outcomeLabels,
+  resultTimeText,
+  type OutcomeFilter,
+} from "./participationOutcome";
+import {
+  parseResultsState,
+  resultsStateQuery,
+  type ResultsSort,
+} from "./resultsUrlState";
 import {
   validCwlCycle,
   visibleParticipation,
   participationSummary,
   type ParticipationAccount,
   type ParticipationData,
-  type ParticipationSort,
   type ParticipationSync,
 } from "./participation";
 
@@ -24,15 +39,18 @@ type Props = {
   seasonId: string;
   seasons: Season[];
   onDirty?: (dirty: boolean) => void;
-  onBonus?: () => void;
+  /** Opens Bonus medals with pool, clan and step keys; absent without bonus access. */
+  onBonus?: (state?: string) => void;
   onSeasonChange: (id: string) => void;
+  urlState?: string;
+  onUrlState?: (state: string, push: boolean) => void;
 };
 
 const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
     : "Results could not be loaded. Try again.";
-const dateText = (value: string) => new Date(value).toLocaleString();
+const CLAN_PICKER_LIMIT = 20;
 
 export default function ParticipationWorkspace({
   seasonId,
@@ -40,7 +58,10 @@ export default function ParticipationWorkspace({
   onSeasonChange,
   onDirty: reportDirty,
   onBonus,
+  urlState = "",
+  onUrlState,
 }: Props) {
+  const initial = useRef(parseResultsState(urlState));
   const [data, setData] = useState<ParticipationData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -64,12 +85,26 @@ export default function ParticipationWorkspace({
   const [page, setPage] = useState(0);
   const [recordEpoch, setRecordEpoch] = useState(0);
   const [search, setSearch] = useState("");
-  const [pool, setPool] = useCwlPool();
-  const [clan, setClan] = useState("all");
-  const [sort, setSort] = useState<ParticipationSort>("name");
+  const [storedPool, setStoredPool] = useCwlPool();
+  const [urlPool, setUrlPool] = useState<Pool | undefined>(
+    initial.current.pool,
+  );
+  const pool = urlPool || storedPool;
+  const [clan, setClan] = useState(initial.current.clan || "all");
+  const [outcome, setOutcome] = useState<OutcomeFilter>(
+    initial.current.outcome || "all",
+  );
+  const [sort, setSort] = useState<ResultsSort>(initial.current.sort || "name");
+  const [status, setStatus] = useState<BonusStatus | null>(null);
+  const [statusFailed, setStatusFailed] = useState(false);
+  const statusRequest = useRef(0);
+  const statusEnabled = useRef(!!onBonus);
+  statusEnabled.current = !!onBonus;
+  const emitted = useRef(urlState);
   const requestId = useRef(0);
   const currentSeason = useRef(seasonId);
   currentSeason.current = seasonId;
+  const loadedSeason = useRef<string | null>(null);
   const archived =
     seasons
       .find((season) => String(season.id) === seasonId)
@@ -81,6 +116,39 @@ export default function ParticipationWorkspace({
     `${seasonId}:${controlsLocked}:${archived}:${error}`,
   );
   useUnsavedWork(dirtyTags.size > 0 || syncDirty || syncBusy, reportDirty);
+
+  const emit = (
+    next: {
+      pool?: Pool;
+      clan?: string;
+      outcome?: OutcomeFilter;
+      sort?: ResultsSort;
+    },
+    push = true,
+  ) => {
+    const query = resultsStateQuery({
+      pool: next.pool ?? pool,
+      clan: (next.clan ?? clan) === "all" ? undefined : (next.clan ?? clan),
+      outcome: next.outcome ?? outcome,
+      sort: next.sort ?? sort,
+    });
+    emitted.current = query;
+    onUrlState?.(query, push);
+  };
+  const choosePool = (next: Pool) => {
+    setStoredPool(next);
+    setUrlPool(next);
+  };
+  // Back, Forward and shared links restore the list state.
+  useEffect(() => {
+    if (urlState === emitted.current) return;
+    emitted.current = urlState;
+    const next = parseResultsState(urlState);
+    if (next.pool) choosePool(next.pool);
+    setClan(next.clan || "all");
+    setOutcome(next.outcome || "all");
+    setSort(next.sort || "name");
+  }, [urlState]);
 
   const onDirty = useCallback(
     (tag: string, dirty: boolean) =>
@@ -100,6 +168,19 @@ export default function ParticipationWorkspace({
     setActiveEditorTag(null);
     setDirtyTags(new Set());
   };
+  const loadStatus = useCallback(async (sid: string) => {
+    const id = ++statusRequest.current;
+    setStatusFailed(false);
+    try {
+      const result = await loadBonusStatus(sid);
+      if (id !== statusRequest.current || currentSeason.current !== sid) return;
+      setStatus(result);
+    } catch {
+      if (id !== statusRequest.current || currentSeason.current !== sid) return;
+      setStatus(null);
+      setStatusFailed(true);
+    }
+  }, []);
   const load = useCallback(async () => {
     if (!seasonId) return;
     const sid = seasonId;
@@ -118,6 +199,8 @@ export default function ParticipationWorkspace({
           enabled: result.sync.enabled,
           expected_updated_at: result.sync.updated_at ?? null,
         });
+      // The step bar reads after the list, so it never delays the players.
+      if (statusEnabled.current) void loadStatus(sid);
     } catch (cause) {
       if (id !== requestId.current || currentSeason.current !== sid) return;
       setError(errorText(cause));
@@ -127,25 +210,36 @@ export default function ParticipationWorkspace({
       if (id === requestId.current && currentSeason.current === sid)
         setLoading(false);
     }
-  }, [seasonId]);
+  }, [seasonId, loadStatus]);
   useEffect(() => {
     requestId.current += 1;
+    statusRequest.current += 1;
     clearProtected();
+    setStatus(null);
+    setStatusFailed(false);
     setError("");
     setSyncDirty(false);
     setSyncError("");
     setSearch("");
-    setClan("all");
-    setSort("name");
+    // A season change starts a new list; the first visit keeps the URL state.
+    if (loadedSeason.current !== null && loadedSeason.current !== seasonId) {
+      setClan("all");
+      setOutcome("all");
+      setSort("name");
+      const query = resultsStateQuery({ pool });
+      emitted.current = query;
+      onUrlState?.(query, false);
+    }
+    loadedSeason.current = seasonId;
     if (seasonId) void load();
     return () => {
       requestId.current += 1;
     };
   }, [seasonId, load]);
-  useEffect(() => setPage(0), [search, pool, clan, sort, seasonId]);
+  useEffect(() => setPage(0), [search, pool, clan, sort, outcome, seasonId]);
 
   const changeSeason = async (id: string) => {
-    if (controlsLocked) return;
+    if (controlsLocked || id === seasonId) return;
     if (
       (dirtyTags.size || syncDirty) &&
       !(await confirm(
@@ -384,9 +478,15 @@ export default function ParticipationWorkspace({
     }
   };
 
+  const mainMinimum = status?.main_minimum ?? null;
+  const ruleShown = pool === "lazy" || mainMinimum !== null;
+  const activeOutcome = ruleShown ? outcome : "all";
+  const poolAccounts = (data?.accounts || []).filter(
+    (account) => account.pool === pool,
+  );
   const clans = [
     ...new Map(
-      (data?.accounts || [])
+      poolAccounts
         .filter((account) => account.assigned_clan_tag)
         .map((account) => [
           account.assigned_clan_tag!,
@@ -394,12 +494,16 @@ export default function ParticipationWorkspace({
         ]),
     ).entries(),
   ].sort((left, right) => left[1].localeCompare(right[1]));
-  const visible = visibleParticipation(data?.accounts || [], {
+  const filtered = visibleParticipation(data?.accounts || [], {
     search,
     pool,
     clan,
     sort,
   });
+  const counts = outcomeCounts(filtered, mainMinimum);
+  const visible = filtered.filter((account) =>
+    matchesOutcome(account, activeOutcome, mainMinimum),
+  );
   const lastPage = Math.max(0, Math.ceil(visible.length / 20) - 1);
   const currentPage = Math.min(page, lastPage);
   const visibleTags = new Set(
@@ -415,6 +519,16 @@ export default function ParticipationWorkspace({
     sort,
   });
   const statusSummary = participationSummary(visible, data?.sync);
+  const poolLabel = pool === "main" ? "Main CWL" : "Lazy CWL";
+  const clanOptions = [
+    { value: "all", label: "All hosting clans" },
+    ...clans.map(([tag, name]) => ({ value: tag, label: name, detail: tag })),
+  ];
+  const chooseClan = (next: string) => {
+    if (next === clan) return;
+    setClan(next);
+    emit({ clan: next });
+  };
 
   return (
     <div className="participation-workspace">
@@ -423,20 +537,45 @@ export default function ParticipationWorkspace({
         className="participation-page-head"
         title={<h1>Results &amp; participation</h1>}
       >
-        <RosterMenu
-          label="Season"
-          value={seasonId}
-          disabled={controlsLocked}
-          onValueChange={changeSeason}
-          options={[
-            { value: "", label: "Select a season" },
-            ...seasons.map((season) => ({
-              value: String(season.id),
-              label: season.label,
-            })),
-          ]}
-        />
+        <label className="participation-season">
+          Season
+          <select
+            name="season"
+            autoComplete="off"
+            value={seasonId}
+            disabled={controlsLocked}
+            onChange={(event) => void changeSeason(event.target.value)}
+          >
+            <option value="">Select a season</option>
+            {seasons.map((season) => (
+              <option key={season.id} value={String(season.id)}>
+                {season.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </CwlPageHeader>
+      {seasonId && onBonus && (
+        <BonusStepBar
+          seasonId={seasonId}
+          pool={pool}
+          clan={clan === "all" ? "" : clan}
+          status={status}
+          failed={statusFailed}
+          onRetry={() => void loadStatus(seasonId)}
+          canOpen={() => true}
+          onSelect={(step, query) => {
+            if (step !== "results") {
+              onBonus(query);
+              return;
+            }
+            const next = parseResultsState(query);
+            if (next.pool) choosePool(next.pool);
+            setClan(next.clan || "all");
+            emit({ pool: next.pool, clan: next.clan || "all" });
+          }}
+        />
+      )}
       {!seasonId && <p>Select a season to view participation records.</p>}
       {error && (
         <div className="notice error" role="alert">
@@ -468,45 +607,45 @@ export default function ParticipationWorkspace({
             aria-label="CWL capture status"
           >
             <div className="participation-capture-main">
-              <div>
+              <p className="participation-capture-line">
                 <strong>
-                  {data.sync?.enabled
-                    ? "Automatic capture on"
-                    : "Automatic capture off"}
-                </strong>
-                <span>
-                  {data.sync?.cycle
-                    ? exportMonthLabel(data.sync.cycle)
-                    : "CWL month not set"}{" "}
-                  · {statusSummary.label} · {statusSummary.updated} accounts updated in this view ·
-                  Last checked{" "}
-                  {data.sync?.last_checked_at
-                    ? dateText(data.sync.last_checked_at)
-                    : "never"}
-                </span>
-              </div>
-              <div className="participation-capture-actions">
-                <button
-                  type="button"
-                  disabled={
-                    writesLocked ||
-                    !!dirtyTags.size ||
-                    syncDirty ||
-                    archived ||
-                    !data.sync?.cycle
-                  }
-                  onClick={() => void syncNow()}
-                >
-                  Check Clash now
-                </button>
-                <button
-                  type="button"
-                  disabled={controlsLocked}
-                  onClick={refreshList}
-                >
-                  Refresh list
-                </button>
-              </div>
+                  {data.sync?.enabled ? "Capture on" : "Capture off"}
+                </strong>{" "}
+                ·{" "}
+                {data.sync?.cycle
+                  ? exportMonthLabel(data.sync.cycle)
+                  : "CWL month not set"}{" "}
+                · {statusSummary.label} ·{" "}
+                {data.sync?.last_checked_at ? (
+                  <time dateTime={data.sync.last_checked_at}>
+                    {resultTimeText(data.sync.last_checked_at)}
+                  </time>
+                ) : (
+                  "Not checked yet"
+                )}
+              </p>
+              <ActionMenu
+                name="CWL capture"
+                disabled={controlsLocked}
+                items={[
+                  {
+                    id: "check",
+                    label: "Check Clash now",
+                    disabled:
+                      writesLocked ||
+                      !!dirtyTags.size ||
+                      syncDirty ||
+                      archived ||
+                      !data.sync?.cycle,
+                    onAction: () => void syncNow(),
+                  },
+                  {
+                    id: "refresh",
+                    label: "Refresh list",
+                    onAction: () => void refreshList(),
+                  },
+                ]}
+              />
             </div>
             {!data.sync?.enabled && (
               <p className="participation-capture-warning" role="status">
@@ -515,7 +654,9 @@ export default function ParticipationWorkspace({
               </p>
             )}
             {statusSummary.warning && (
-              <p className="participation-capture-warning" role="status">{statusSummary.warning}</p>
+              <p className="participation-capture-warning" role="status">
+                {statusSummary.warning}
+              </p>
             )}
             {syncError && (
               <p className="participation-capture-warning" role="alert">
@@ -534,6 +675,8 @@ export default function ParticipationWorkspace({
                   CWL month
                   <input
                     type="month"
+                    name="cwl-month"
+                    autoComplete="off"
                     value={syncDraft?.cycle || ""}
                     disabled={archived || writesLocked}
                     onChange={(event) => {
@@ -550,6 +693,7 @@ export default function ParticipationWorkspace({
                 <label className="participation-sync-toggle">
                   <input
                     type="checkbox"
+                    name="capture-enabled"
                     checked={syncDraft?.enabled || false}
                     disabled={archived || writesLocked}
                     onChange={(event) => {
@@ -576,9 +720,13 @@ export default function ParticipationWorkspace({
                 </small>
                 <small>
                   Last success:{" "}
-                  {data.sync?.last_success_at
-                    ? dateText(data.sync.last_success_at)
-                    : "Never"}
+                  {data.sync?.last_success_at ? (
+                    <time dateTime={data.sync.last_success_at}>
+                      {resultTimeText(data.sync.last_success_at)}
+                    </time>
+                  ) : (
+                    "Never"
+                  )}
                 </small>
               </div>
               {syncDirty && (
@@ -622,8 +770,9 @@ export default function ParticipationWorkspace({
             value={pool}
             disabled={controlsLocked}
             onChange={(next) => {
-              setPool(next);
+              choosePool(next);
               setClan("all");
+              emit({ pool: next, clan: "all" });
             }}
           />
           <div className="participation-toolbar">
@@ -631,62 +780,103 @@ export default function ParticipationWorkspace({
               Find a player or clan
               <input
                 type="search"
+                name="search"
+                autoComplete="off"
+                spellCheck={false}
                 value={search}
                 disabled={controlsLocked}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Find a player or clan"
               />
             </label>
-            <RosterMenu
-              searchable
-              label="Hosting clan"
-              value={clan}
-              disabled={controlsLocked}
-              onValueChange={setClan}
-              options={[
-                { value: "all", label: "All hosting clans" },
-                ...clans.map(([tag, name]) => ({
-                  value: tag,
-                  label: `${name} · ${tag}`,
-                })),
-              ]}
-            />
+            {clans.length > CLAN_PICKER_LIMIT ? (
+              <SearchPicker
+                label="Hosting clan"
+                value={clan}
+                options={clanOptions}
+                disabled={controlsLocked}
+                placeholder="All hosting clans"
+                searchPlaceholder="Search clans"
+                emptyText="No clans match."
+                onChange={chooseClan}
+              />
+            ) : (
+              <label>
+                Hosting clan
+                <select
+                  name="clan"
+                  autoComplete="off"
+                  value={clan}
+                  disabled={controlsLocked}
+                  onChange={(event) => chooseClan(event.target.value)}
+                >
+                  {clanOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label>
               Sort
               <select
+                name="sort"
+                autoComplete="off"
                 value={sort}
                 disabled={controlsLocked}
-                onChange={(event) =>
-                  setSort(event.target.value as ParticipationSort)
-                }
+                onChange={(event) => {
+                  const next = event.target.value as ResultsSort;
+                  setSort(next);
+                  emit({ sort: next });
+                }}
               >
                 <option value="name">Name A–Z</option>
                 <option value="attacks-desc">Attacks high to low</option>
-                <option value="attacks-asc">Attacks low to high</option>
                 <option value="stars-desc">Stars high to low</option>
-                <option value="stars-asc">Stars low to high</option>
-                <option value="th-desc">Town Hall high to low</option>
-                <option value="th-asc">Town Hall low to high</option>
               </select>
             </label>
           </div>
+          {ruleShown && (
+            <FilterChips
+              label="Outcome"
+              className="participation-outcomes filter-chips--flow"
+              variant="pill"
+              value={activeOutcome}
+              disabled={controlsLocked}
+              options={(["all", "meets", "below", "not_checked"] as const).map(
+                (value) => ({
+                  value,
+                  label: value === "all" ? "All" : outcomeLabels[value],
+                  count: counts[value],
+                }),
+              )}
+              onChange={(next) => {
+                setOutcome(next);
+                emit({ outcome: next });
+              }}
+            />
+          )}
           <div className="participation-list-heading">
             <strong>Players</strong>
             <span>
-              {visible.length} matching · {data.accounts.length} current signups
+              {visible.length === poolAccounts.length
+                ? countText(poolAccounts.length, "player")
+                : `${visible.length} of ${countText(poolAccounts.length, "player")}`}{" "}
+              · {poolLabel}
             </span>
           </div>
           {data.accounts.length ? (
             <>
-              <div className="participation-list" role="list">
+              <ul className="participation-list">
                 {sorted.map((account) => (
-                  <div
-                    role="listitem"
+                  <li
                     key={`${seasonId}:${recordEpoch}:${account.tag}`}
                     hidden={!visibleTags.has(account.tag)}
                   >
                     <ParticipationRecord
                       account={account}
+                      mainMinimum={mainMinimum}
                       publicationVersion={data.publication_version}
                       readonly={!!archived}
                       locked={writesLocked}
@@ -701,9 +891,9 @@ export default function ParticipationWorkspace({
                       onReset={resetToSource}
                       onDirty={onDirty}
                     />
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
               {!visible.length && (
                 <p className="participation-empty">
                   No players match these filters.
@@ -745,13 +935,6 @@ export default function ParticipationWorkspace({
             }}
           />
         </>
-      )}
-      {seasonId && (
-        <CwlNextLink
-          label="Bonus medals"
-          onNext={onBonus}
-          disabled={controlsLocked}
-        />
       )}
     </div>
   );

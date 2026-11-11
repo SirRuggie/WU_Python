@@ -3,21 +3,53 @@ import "./rosterUi/tokens.css";
 import CwlPageHeader from "./CwlPageHeader";
 import useConfirmDialog from "./useConfirmDialog";
 import { exportMonthLabel } from "./exportPreview";
-import RosterMenu from "./rosterUi/Menu";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 import { useDashboardPermission } from "./DashboardPermissions";
-import { api, ApiError, type Season } from "./api";
+import { api, ApiError, type Pool, type Season } from "./api";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import useUnsavedWork from "./useUnsavedWork";
+import useChoiceRail from "./useChoiceRail";
 import BonusAnnouncement from "./BonusAnnouncement";
+import BonusStepBar, { bonusStepHref } from "./BonusStepBar";
 import SearchPicker from "./SearchPicker";
 import { roleOption } from "./RolePicker";
+import { StatusPill } from "./rosterUi/primitives";
 import BonusCandidateReview, { LAZY_FLAGS } from "./BonusCandidateReview";
+import {
+  bonusClanState,
+  loadBonusStatus,
+  type BonusStatus,
+  type BonusStep,
+} from "./bonusStatus";
+import {
+  countText,
+  outcomeLabels,
+  outcomeTone,
+  participationOutcome,
+  resultDateText,
+} from "./participationOutcome";
+import {
+  parseResultsState,
+  plainClick,
+  resultsStateQuery,
+} from "./resultsUrlState";
 import {
   attacksText,
   bonusCandidateStatus,
+  bonusReviewBlockers,
+  reviewBlocked,
   canSaveBonusDraw,
+  clanWideReasons,
+  playerReasons,
   type BonusListMode,
+  type BonusReviewBlocker,
   type RaffleAccount,
   type RaffleData,
   type RafflePreview,
@@ -29,7 +61,13 @@ type Props = {
   seasons: Season[];
   onDirty?: (dirty: boolean) => void;
   onSeasonChange: (id: string) => void;
+  urlState?: string;
+  onUrlState?: (state: string, push: boolean) => void;
+  /** Opens Results with pool and clan keys; absent without Results access. */
+  onResults?: (state?: string) => void;
 };
+
+const CLAN_SEARCH_MIN = 8;
 
 type Role = { id: string; name: string };
 type PlayerLookup = {
@@ -53,12 +91,14 @@ function AccountList({
   busy,
   searchable = false,
   mode = "candidates",
+  minimum = null,
 }: {
   accounts: RaffleAccount[];
   onReview?: (account: RaffleAccount, opener: HTMLButtonElement) => void;
   busy?: boolean;
   searchable?: boolean;
   mode?: BonusListMode;
+  minimum?: number | null;
 }) {
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(20);
@@ -79,6 +119,9 @@ function AccountList({
           Find an account
           <input
             type="search"
+            name="account-search"
+            autoComplete="off"
+            spellCheck={false}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -91,55 +134,72 @@ function AccountList({
       <ul className="bonus-account-list">
         {matching
           .slice(0, searchable ? visibleCount : matching.length)
-          .map((account) => (
-            <li key={account.tag}>
-              <div className="bonus-account-identity">
-                <strong>{account.player_name}</strong>
-                <small>
-                  {account.tag}
-                  {account.manual_candidate ? " · Added by staff" : ""}
-                </small>
-              </div>
-              <div className="bonus-account-outcome">
-                <strong>
-                  {attacksText(account)}
-                  {account.stars !== null ? ` · ${account.stars} stars` : ""}
-                </strong>
-                {(bonusCandidateStatus(account, mode) ||
-                  account.multiplier === 2) && (
+          .map((account) => {
+            const outcome = participationOutcome(account, minimum);
+            // Clan-wide reasons show once in the clan notice, not per row.
+            const reasons = account.exclusion
+              ? playerReasons(account)
+              : [bonusCandidateStatus(account, mode)].filter(Boolean);
+            return (
+              <li key={account.tag}>
+                <div className="bonus-account-identity">
+                  <strong>{account.player_name}</strong>
                   <small>
-                    {bonusCandidateStatus(account, mode)}
-                    {bonusCandidateStatus(account, mode) &&
-                    account.multiplier === 2
-                      ? " · "
+                    {account.tag}
+                    {account.manual_candidate ? " · Added by staff" : ""}
+                  </small>
+                </div>
+                <div className="bonus-account-outcome">
+                  <strong>
+                    {attacksText(account)}
+                    {account.stars !== null
+                      ? ` · ${countText(account.stars, "star")}`
                       : ""}
-                    {account.multiplier === 2 ? "2× ticket weight" : ""}
-                  </small>
+                  </strong>
+                  {(outcome || reasons.length > 0) && (
+                    <span className="bonus-account-state">
+                      {outcome && (
+                        <StatusPill
+                          tone={outcomeTone(outcome)}
+                          className="bonus-outcome"
+                        >
+                          {outcomeLabels[outcome]}
+                        </StatusPill>
+                      )}
+                      {reasons.length > 0 && (
+                        <small className="bonus-account-reason">
+                          {reasons.join(" · ")}
+                        </small>
+                      )}
+                    </span>
+                  )}
+                  {account.multiplier === 2 && <small>2× ticket weight</small>}
+                  {!!account.bonus_review?.flags.length && (
+                    <small>
+                      {account.bonus_review.flags
+                        .map(
+                          (flag) =>
+                            LAZY_FLAGS.find((item) => item.id === flag)
+                              ?.label || flag,
+                        )
+                        .join(" · ")}
+                    </small>
+                  )}
+                </div>
+                {onReview && (
+                  <button
+                    type="button"
+                    className="bonus-quiet-action"
+                    disabled={busy}
+                    onClick={(event) => onReview(account, event.currentTarget)}
+                  >
+                    Review
+                    <span className="sr-only"> {account.player_name}</span>
+                  </button>
                 )}
-                {!!account.bonus_review?.flags.length && (
-                  <small>
-                    {account.bonus_review.flags
-                      .map(
-                        (flag) =>
-                          LAZY_FLAGS.find((item) => item.id === flag)?.label ||
-                          flag,
-                      )
-                      .join(" · ")}
-                  </small>
-                )}
-              </div>
-              {onReview && (
-                <button
-                  type="button"
-                  className="bonus-quiet-action"
-                  disabled={busy}
-                  onClick={(event) => onReview(account, event.currentTarget)}
-                >
-                  Review<span className="sr-only"> {account.player_name}</span>
-                </button>
-              )}
-            </li>
-          ))}
+              </li>
+            );
+          })}
       </ul>
       {searchable && matching.length > visibleCount && (
         <button
@@ -166,14 +226,39 @@ export default function BonusWorkspace({
   seasons,
   onDirty,
   onSeasonChange,
+  urlState = "",
+  onUrlState,
+  onResults,
 }: Props) {
   const canManage = useDashboardPermission("cwl_bonuses");
-  const [pool, setPool] = useCwlPool();
+  const initial = useRef(parseResultsState(urlState));
+  const [storedPool, setStoredPool] = useCwlPool();
+  const [urlPool, setUrlPool] = useState<Pool | undefined>(
+    initial.current.pool,
+  );
+  const pool = urlPool || storedPool;
+  const setPool = (next: Pool) => {
+    setStoredPool(next);
+    setUrlPool(next);
+  };
+  const [step, setStep] = useState<BonusStep | undefined>(initial.current.step);
+  const [status, setStatus] = useState<BonusStatus | null>(null);
+  const [statusFailed, setStatusFailed] = useState(false);
+  const statusRequest = useRef(0);
+  const emitted = useRef(urlState);
+  const loadedSeason = useRef<string | null>(null);
   const [data, setData] = useState<RaffleData | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [clanTag, setClanTag] = useState("");
+  const [clanTag, setClanTag] = useState(initial.current.clan || "");
+  const [clanQuery, setClanQuery] = useState("");
+  const clanRail = useChoiceRail<HTMLDivElement>(clanTag);
+  const countInput = useRef<HTMLInputElement | null>(null);
+  const countDetails = useRef<HTMLDetailsElement | null>(null);
+  const minimumInput = useRef<HTMLInputElement | null>(null);
+  const roleDetails = useRef<HTMLDetailsElement | null>(null);
+  const flowSection = useRef<HTMLElement | null>(null);
   const [minimum, setMinimum] = useState("");
   const [slots, setSlots] = useState("");
   const [manualCount, setManualCount] = useState(false);
@@ -293,6 +378,100 @@ export default function BonusWorkspace({
   const reviewAccount = clanAccounts.find(
     (account) => account.tag === reviewTag,
   );
+  const hostStatus = status?.pools[pool].find((item) => item.tag === clanTag);
+  const leagueMissing = !allowance?.league;
+  const rolesUnavailable =
+    pool === "lazy" &&
+    clanAccounts.some(
+      (account) => account.representative_status === "unavailable",
+    );
+  const resultsMissing =
+    clanAccounts.length > 0 &&
+    clanAccounts.every(
+      (account) => account.attacks === null || !account.source_complete,
+    );
+  const blockers = bonusReviewBlockers({
+    canManage,
+    archived: !!archived,
+    policyDirty,
+    roleDirty,
+    reviewDirty,
+    candidateOpen,
+    countReady,
+    needsMinimum: pool === "main" && data?.policies.main === null,
+    rolesUnavailable,
+    resultsMissing,
+  });
+  // A reason that covers the whole clan shows once, above the list.
+  const clanNotices = [
+    ...new Set([
+      ...(hostStatus && !hostStatus.active
+        ? ["Hosting clan is not an active Lazy clan this season"]
+        : []),
+      ...clanWideReasons(clanAccounts),
+      ...(resultsMissing ? ["Results not captured"] : []),
+      ...(rolesUnavailable ? ["Discord roles unavailable"] : []),
+    ]),
+  ];
+  const resultsLink = bonusStepHref(seasonId, "results", pool, clanTag);
+  const openResults = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!plainClick(event) || !onResults) return;
+    event.preventDefault();
+    onResults(resultsLink.query);
+  };
+  const focusField = (field: HTMLElement | null) => {
+    field?.scrollIntoView?.({ block: "center" });
+    field?.focus({ preventScroll: true });
+  };
+  const blockerFix = (blocker: { id: BonusReviewBlocker; text: string }) => {
+    const action = (onClick: () => void, text = blocker.text) => (
+      <button type="button" className="bonus-inline-action" onClick={onClick}>
+        {text}
+      </button>
+    );
+    switch (blocker.id) {
+      case "count":
+        return action(() => {
+          if (!leagueMissing && countDetails.current) {
+            countDetails.current.open = true;
+            setManualCount(true);
+          }
+          requestAnimationFrame(() => focusField(countInput.current));
+        });
+      case "minimum":
+      case "minimum-dirty":
+        return action(() => focusField(minimumInput.current));
+      case "role-dirty":
+        return action(() => {
+          if (roleDetails.current) roleDetails.current.open = true;
+          focusField(roleDetails.current);
+        });
+      case "open-review":
+        return action(() =>
+          focusField(
+            document.querySelector<HTMLElement>(
+              ".bonus-review-editor, .bonus-add-candidate",
+            ),
+          ),
+        );
+      case "roles":
+        return (
+          <>
+            Discord roles unavailable · {action(() => void refresh(), "Retry")}
+          </>
+        );
+      case "results":
+        return onResults ? (
+          <a href={resultsLink.href} onClick={openResults}>
+            {blocker.text}
+          </a>
+        ) : (
+          blocker.text
+        );
+      default:
+        return blocker.text;
+    }
+  };
   const stage = draw?.approved_at ? 3 : draw ? 2 : preview ? 1 : 0;
   useEffect(() => {
     if (previousStage.current === 1 && stage === 2) {
@@ -324,6 +503,20 @@ export default function BonusWorkspace({
     setNotice("");
   };
 
+  const loadStatus = useCallback(async () => {
+    const id = ++statusRequest.current;
+    const sid = seasonId;
+    setStatusFailed(false);
+    try {
+      const result = await loadBonusStatus(sid);
+      if (id !== statusRequest.current || activeSeason.current !== sid) return;
+      setStatus(result);
+    } catch {
+      if (id !== statusRequest.current || activeSeason.current !== sid) return;
+      setStatus(null);
+      setStatusFailed(true);
+    }
+  }, [seasonId]);
   const load = useCallback(async () => {
     if (!seasonId || working.current) return;
     working.current = true;
@@ -338,6 +531,8 @@ export default function BonusWorkspace({
       setRoleId(
         result.lazy_settings?.representative_role_id || "769130325460254740",
       );
+      // The step bar and clan states read after the list, never before it.
+      void loadStatus();
     } catch (cause) {
       if (request !== generation.current) return;
       setData(null);
@@ -348,13 +543,24 @@ export default function BonusWorkspace({
         setBusy(false);
       }
     }
-  }, [path, seasonId]);
+  }, [path, seasonId, loadStatus]);
 
   useEffect(() => {
     generation.current += 1;
+    statusRequest.current += 1;
     working.current = false;
     setData(null);
-    setClanTag("");
+    setStatus(null);
+    setStatusFailed(false);
+    // The first visit keeps the clan and step from the URL.
+    if (loadedSeason.current !== null && loadedSeason.current !== seasonId) {
+      setClanTag("");
+      setStep(undefined);
+      const query = resultsStateQuery({ pool });
+      emitted.current = query;
+      onUrlState?.(query, false);
+    }
+    loadedSeason.current = seasonId;
     setError("");
     resetContext(null);
     void load();
@@ -362,6 +568,33 @@ export default function BonusWorkspace({
       generation.current += 1;
     };
   }, [load]);
+  // Back, Forward and shared links restore pool, clan and step.
+  useEffect(() => {
+    if (urlState === emitted.current) return;
+    emitted.current = urlState;
+    const next = parseResultsState(urlState);
+    if (next.pool && next.pool !== pool) {
+      setPool(next.pool);
+      resetContext(data, next.pool);
+    }
+    if (next.clan && next.clan !== clanTag) {
+      setClanTag(next.clan);
+      resetContext(data, next.pool || pool);
+    }
+    setStep(next.step);
+  }, [urlState]);
+  const emit = (
+    next: { pool?: Pool; clan?: string; step?: BonusStep },
+    push = true,
+  ) => {
+    const query = resultsStateQuery({
+      pool: next.pool ?? pool,
+      clan: "clan" in next ? next.clan || undefined : clanTag || undefined,
+      step: "step" in next ? next.step : step,
+    });
+    emitted.current = query;
+    onUrlState?.(query, push);
+  };
   useEffect(() => {
     if (candidateOpen) candidateTagInput.current?.focus();
   }, [candidateOpen]);
@@ -369,7 +602,7 @@ export default function BonusWorkspace({
     if (data) setMinimum(String(data.policies[pool] ?? ""));
   }, [data, pool]);
   useEffect(() => {
-    if (!clans.some((clan) => clan.tag === clanTag))
+    if (data && !clans.some((clan) => clan.tag === clanTag))
       setClanTag(clans[0]?.tag || "");
   }, [data, pool, clanTag]);
 
@@ -394,6 +627,7 @@ export default function BonusWorkspace({
       setPreview(null);
       setCancelReason("");
       setNotice(success);
+      void loadStatus();
       return true;
     } catch (cause) {
       if (request !== generation.current) return false;
@@ -531,32 +765,55 @@ export default function BonusWorkspace({
     <div className="bonus-workspace roster-ui">
       {confirmation}
       <CwlPageHeader className="bonus-page-head" title={<h1>Bonus medals</h1>}>
-        <RosterMenu
-          label="Season"
-          value={seasonId}
-          disabled={busy || lookingUp}
-          onValueChange={async (id) => {
-            if (await canDiscard()) onSeasonChange(id);
-          }}
-          options={[
-            { value: "", label: "Select a season" },
-            ...seasons.map((season) => ({
-              value: String(season.id),
-              label: season.label,
-            })),
-          ]}
-        />
+        <label className="bonus-season">
+          Season
+          <select
+            name="season"
+            autoComplete="off"
+            value={seasonId}
+            disabled={busy || lookingUp}
+            onChange={async (event) => {
+              const id = event.target.value;
+              if (id !== seasonId && (await canDiscard())) onSeasonChange(id);
+            }}
+          >
+            <option value="">Select a season</option>
+            {seasons.map((season) => (
+              <option key={season.id} value={String(season.id)}>
+                {season.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </CwlPageHeader>
-      <CwlPoolTabs
-        value={pool}
-        disabled={busy || lookingUp}
-        onChange={async (next) => {
-          if (await canDiscard()) {
-            setPool(next);
-            resetContext(data, next);
-          }
-        }}
-      />
+      {seasonId && (
+        <BonusStepBar
+          seasonId={seasonId}
+          pool={pool}
+          clan={clanTag}
+          status={status}
+          failed={statusFailed}
+          onRetry={() => void loadStatus()}
+          canOpen={(target) => target !== "results" || !!onResults}
+          onSelect={async (target, query) => {
+            if (target === "results") {
+              onResults?.(query);
+              return;
+            }
+            const next = parseResultsState(query);
+            const moved =
+              (next.pool && next.pool !== pool) ||
+              (next.clan && next.clan !== clanTag);
+            if (moved && !(await canDiscard())) return;
+            if (next.pool && next.pool !== pool) setPool(next.pool);
+            if (next.clan && next.clan !== clanTag) setClanTag(next.clan);
+            if (moved) resetContext(data, next.pool || pool);
+            setStep(target);
+            emit({ pool: next.pool, clan: next.clan, step: target });
+            flowSection.current?.scrollIntoView?.({ block: "start" });
+          }}
+        />
+      )}
       {error && !(data && (candidateOpen || reviewAccount)) && (
         <div className="notice error" role="alert">
           {error}{" "}
@@ -580,7 +837,7 @@ export default function BonusWorkspace({
             </strong>
             <span>
               {data.sync.last_checked_at
-                ? `Clash checked ${new Date(data.sync.last_checked_at).toLocaleString()}`
+                ? `Clash checked ${resultDateText(data.sync.last_checked_at)}`
                 : "Clash not checked yet"}
             </span>
             <button
@@ -605,7 +862,9 @@ export default function BonusWorkspace({
                 <a
                   href={`/cwl/results?season=${encodeURIComponent(seasonId)}`}
                   onClick={(event) => {
-                    if (!unsaved && !cancelReason) return;
+                    // Ctrl/Cmd and middle selection open a new tab untouched.
+                    if (!plainClick(event) || (!unsaved && !cancelReason))
+                      return;
                     event.preventDefault();
                     const href = event.currentTarget.href;
                     void canDiscard().then((allowed) => {
@@ -624,47 +883,121 @@ export default function BonusWorkspace({
               {statusSummary.warning}
             </p>
           )}
-          <ol className="bonus-steps" aria-label="Bonus progress">
-            {["Eligibility", "Saved draw", "Approval", "Announcement"].map(
-              (step, index) => (
-                <li
-                  key={step}
-                  aria-current={stage === index ? "step" : undefined}
-                >
-                  <span>{index + 1}</span>
-                  {step}
-                </li>
-              ),
-            )}
-          </ol>
+          <CwlPoolTabs
+            value={pool}
+            disabled={busy || lookingUp}
+            onChange={async (next) => {
+              if (await canDiscard()) {
+                setPool(next);
+                resetContext(data, next);
+                emit({ pool: next, clan: undefined, step: undefined });
+              }
+            }}
+          />
+          {clans.length >= CLAN_SEARCH_MIN && (
+            <label className="bonus-clan-search">
+              Find a clan
+              <input
+                type="search"
+                name="clan-search"
+                autoComplete="off"
+                spellCheck={false}
+                value={clanQuery}
+                onChange={(event) => setClanQuery(event.target.value)}
+              />
+            </label>
+          )}
+          {clans.length > 0 && (
+            <div
+              {...clanRail.fadeProps}
+              ref={clanRail.ref}
+              className="bonus-clan-cards has-horizontal-fades"
+              role="group"
+              aria-label="Hosting clan"
+            >
+              {clans
+                .filter(
+                  (clan) =>
+                    clan.tag === clanTag ||
+                    clan.name
+                      .toLowerCase()
+                      .includes(clanQuery.trim().toLowerCase()),
+                )
+                .map((clan) => {
+                  const state = status?.pools[pool].find(
+                    (item) => item.tag === clan.tag,
+                  );
+                  return (
+                    <button
+                      type="button"
+                      key={clan.tag}
+                      className="bonus-clan-card"
+                      aria-pressed={clan.tag === clanTag}
+                      disabled={busy || lookingUp}
+                      onClick={async () => {
+                        if (clan.tag === clanTag || !(await canDiscard()))
+                          return;
+                        setClanTag(clan.tag);
+                        resetContext();
+                        emit({ clan: clan.tag, step: undefined });
+                      }}
+                    >
+                      <strong>{clan.name}</strong>
+                      <small>
+                        {state
+                          ? `${
+                              state.meets_rule === null
+                                ? countText(state.candidates, "candidate")
+                                : `${state.meets_rule} of ${state.candidates} meet`
+                            } · ${bonusClanState(state)}`
+                          : statusFailed
+                            ? clan.tag
+                            : "…"}
+                      </small>
+                    </button>
+                  );
+                })}
+            </div>
+          )}
+          {selectedClan && clanNotices.length > 0 && (
+            <div className="notice bonus-clan-notice" role="status">
+              {clanNotices.map((text) => (
+                <p key={text}>
+                  {text}
+                  {text === "Results not captured" && (
+                    <>
+                      {" · "}
+                      {onResults ? (
+                        <a href={resultsLink.href} onClick={openResults}>
+                          Open Results
+                        </a>
+                      ) : (
+                        "Check Results & participation"
+                      )}
+                    </>
+                  )}
+                  {text.startsWith("Hosting clan") && (
+                    <> · Set its season pool in Build roster</>
+                  )}
+                  {text === "Discord roles unavailable" && (
+                    <>
+                      {" · "}
+                      <button
+                        type="button"
+                        className="bonus-inline-action"
+                        disabled={busy || lookingUp}
+                        onClick={refresh}
+                      >
+                        Retry
+                      </button>
+                    </>
+                  )}
+                </p>
+              ))}
+            </div>
+          )}
 
           <div className="bonus-controls">
-            <RosterMenu
-              searchable
-              label="Hosting clan"
-              value={clanTag}
-              disabled={busy || lookingUp}
-              onValueChange={async (value) => {
-                if (await canDiscard()) {
-                  setClanTag(value);
-                  resetContext();
-                }
-              }}
-              options={
-                clans.length
-                  ? clans.map((clan) => ({
-                      value: clan.tag,
-                      label: `${clan.name} · ${clan.tag}`,
-                    }))
-                  : [
-                      {
-                        value: "",
-                        label: "No assigned hosting clans",
-                        disabled: true,
-                      },
-                    ]
-              }
-            />
             <button
               type="button"
               disabled={
@@ -697,29 +1030,52 @@ export default function BonusWorkspace({
           )}
 
           {selectedClan && !draw && (
-            <section className="bonus-flow" aria-busy={busy}>
+            <section ref={flowSection} className="bonus-flow" aria-busy={busy}>
               <div className="bonus-section-heading">
                 <h2>{selectedClan.name}</h2>
               </div>
-              <div className="bonus-stats" role="status">
-                <div>
-                  <strong>
-                    {manualCount && countReady
-                      ? Number(slots)
-                      : allowance?.status === "ready"
-                        ? allowance.total
-                        : "—"}
-                  </strong>
-                  <span>
-                    Total bonus allowance
-                    {manualCount && countReady ? " · staff count" : ""}
-                  </span>
-                </div>
+              <div className="bonus-stats">
+                {leagueMissing ? (
+                  <label className="bonus-inline-count">
+                    <span>Bonuses shown in Clash</span>
+                    <input
+                      ref={countInput}
+                      type="number"
+                      name="bonus-count"
+                      autoComplete="off"
+                      inputMode="numeric"
+                      min="1"
+                      max="50"
+                      step="1"
+                      value={slots}
+                      disabled={!canManage || busy || archived}
+                      onChange={(event) => {
+                        setManualCount(true);
+                        setSlots(event.target.value);
+                        setPreview(null);
+                      }}
+                    />
+                  </label>
+                ) : (
+                  <div>
+                    <strong>
+                      {manualCount && countReady
+                        ? Number(slots)
+                        : allowance?.status === "ready"
+                          ? allowance.total
+                          : "—"}
+                    </strong>
+                    <span>
+                      Total bonus allowance
+                      {manualCount && countReady ? " · staff count" : ""}
+                    </span>
+                  </div>
+                )}
                 <div>
                   <strong>{clanAccounts.length}</strong>
                   <span>Current candidates</span>
                 </div>
-                <div>
+                <div role="status">
                   <strong>
                     {preview?.eligible.length ??
                       (pool === "lazy"
@@ -740,7 +1096,7 @@ export default function BonusWorkspace({
                 {allowance?.reason ||
                   "Refresh Clash results to check the allowance."}
               </p>
-              <details className="bonus-secondary">
+              <details ref={countDetails} className="bonus-secondary">
                 <summary>Bonus count and source</summary>
                 <p>
                   {allowance?.league || "League unknown"}
@@ -756,6 +1112,7 @@ export default function BonusWorkspace({
                 <label className="bonus-check">
                   <input
                     type="checkbox"
+                    name="manual-count"
                     checked={manualCount}
                     disabled={!canManage || busy || archived}
                     onChange={(event) => {
@@ -763,13 +1120,17 @@ export default function BonusWorkspace({
                       setPreview(null);
                     }}
                   />
-                  Use the total shown in Clash
+                  <span>Use the total shown in Clash</span>
                 </label>
-                {manualCount && (
+                {manualCount && !leagueMissing && (
                   <label>
                     Total bonuses shown in Clash
                     <input
+                      ref={countInput}
                       type="number"
+                      name="bonus-count"
+                      autoComplete="off"
+                      inputMode="numeric"
                       min="1"
                       max="50"
                       step="1"
@@ -794,7 +1155,11 @@ export default function BonusWorkspace({
                   <label>
                     Minimum attacks
                     <input
+                      ref={minimumInput}
                       type="number"
+                      name="minimum-attacks"
+                      autoComplete="off"
+                      inputMode="numeric"
                       min="0"
                       max="7"
                       step="1"
@@ -867,6 +1232,9 @@ export default function BonusWorkspace({
                           Player tag
                           <input
                             ref={candidateTagInput}
+                            name="player-tag"
+                            autoComplete="off"
+                            spellCheck={false}
                             value={candidateTag}
                             maxLength={20}
                             disabled={busy || lookingUp}
@@ -898,6 +1266,8 @@ export default function BonusWorkspace({
                       <label>
                         Reason for addition
                         <textarea
+                          name="candidate-reason"
+                          autoComplete="off"
                           value={candidateReason}
                           maxLength={500}
                           disabled={busy}
@@ -967,18 +1337,9 @@ export default function BonusWorkspace({
                       bonuses from before.
                     </p>
                   </details>
-                  {clanAccounts.some(
-                    (account) =>
-                      account.representative_status === "unavailable",
-                  ) && (
-                    <p className="notice error" role="alert">
-                      Discord role lookup is unavailable for one or more
-                      accounts. Eligible accounts need verified role status
-                      before drawing; refresh when Discord is available.
-                    </p>
-                  )}
                   <AccountList
                     accounts={clanAccounts}
+                    minimum={data.policies.main}
                     onReview={async (account, opener) => {
                       if (await canLeaveEditor()) {
                         setCandidateOpen(false);
@@ -1048,6 +1409,7 @@ export default function BonusWorkspace({
                     />
                   )}
                   <details
+                    ref={roleDetails}
                     className="bonus-secondary"
                     onToggle={(event) => {
                       if (event.currentTarget.open) void loadRoles();
@@ -1119,22 +1481,22 @@ export default function BonusWorkspace({
                 <button
                   type="button"
                   className="primary"
-                  disabled={
-                    !canManage ||
-                    busy ||
-                    archived ||
-                    policyDirty ||
-                    roleDirty ||
-                    reviewDirty ||
-                    candidateOpen ||
-                    !countReady ||
-                    (pool === "main" && data.policies.main === null)
+                  aria-describedby={
+                    blockers.length ? "bonus-review-blockers" : undefined
                   }
+                  disabled={busy || reviewBlocked(blockers)}
                   onClick={() => void review()}
                 >
                   Review eligibility
                 </button>
               </div>
+              {blockers.length > 0 && (
+                <ul id="bonus-review-blockers" className="bonus-blockers">
+                  {blockers.map((blocker) => (
+                    <li key={blocker.id}>{blockerFix(blocker)}</li>
+                  ))}
+                </ul>
+              )}
               {preview && (
                 <section className="bonus-preview" aria-label="Draw preview">
                   <div className="bonus-section-heading">
@@ -1168,10 +1530,18 @@ export default function BonusWorkspace({
                     </div>
                   )}
                   <h4>In the draw</h4>
-                  <AccountList accounts={preview.eligible} mode="eligible" />
+                  <AccountList
+                    accounts={preview.eligible}
+                    mode="eligible"
+                    minimum={data.policies.main}
+                  />
                   <details className="bonus-secondary">
                     <summary>Excluded ({preview.excluded.length})</summary>
-                    <AccountList accounts={preview.excluded} mode="excluded" />
+                    <AccountList
+                      accounts={preview.excluded}
+                      mode="excluded"
+                      minimum={data.policies.main}
+                    />
                   </details>
                   <div className="bonus-action-bar">
                     <span>Saved draws cannot be redrawn by refreshing.</span>
@@ -1223,7 +1593,7 @@ export default function BonusWorkspace({
                     {draw.snapshot.clan_name} · Bonus medals
                   </h2>
                   <p>
-                    Saved {new Date(draw.created_at).toLocaleString()} ·{" "}
+                    Saved {resultDateText(draw.created_at)} ·{" "}
                     {draw.approved_at ? "Approved" : "Awaiting staff approval"}
                   </p>
                 </div>
@@ -1242,7 +1612,11 @@ export default function BonusWorkspace({
                   <span>Bonus allowance</span>
                 </div>
               </div>
-              <AccountList accounts={draw.snapshot.winners} mode="winners" />
+              <AccountList
+                accounts={draw.snapshot.winners}
+                mode="winners"
+                minimum={draw.snapshot.minimum}
+              />
               <details className="bonus-secondary">
                 <summary>Draw details and all eligible accounts</summary>
                 <p>
@@ -1255,6 +1629,7 @@ export default function BonusWorkspace({
                 <AccountList
                   accounts={draw.snapshot.eligible}
                   mode="eligible"
+                  minimum={draw.snapshot.minimum}
                 />
               </details>
               {!draw.approved_at && (
@@ -1288,6 +1663,8 @@ export default function BonusWorkspace({
                   <label>
                     Reason
                     <textarea
+                      name="cancel-reason"
+                      autoComplete="off"
                       maxLength={500}
                       value={cancelReason}
                       disabled={!canManage || busy || archived}
@@ -1339,7 +1716,7 @@ export default function BonusWorkspace({
                 <div className="bonus-history-row" key={`cancelled-${item.id}`}>
                   <strong>{item.snapshot.clan_name} · Cancelled draw</strong>
                   <p>{item.cancel_reason}</p>
-                  <small>{new Date(item.cancelled_at!).toLocaleString()}</small>
+                  <small>{resultDateText(item.cancelled_at!)}</small>
                   <AccountList
                     accounts={item.snapshot.winners}
                     mode="winners"
@@ -1354,7 +1731,7 @@ export default function BonusWorkspace({
                 <small>
                   {item.tag} · {exportMonthLabel(item.cycle)} ·{" "}
                   {item.voided_at ? "Voided" : "Approved"} ·{" "}
-                  {new Date(item.confirmed_at).toLocaleString()}
+                  {resultDateText(item.confirmed_at)}
                 </small>
               </div>
             ))}

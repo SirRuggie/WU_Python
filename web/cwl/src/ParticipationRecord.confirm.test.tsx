@@ -36,6 +36,9 @@ const button = (name: string, within: ParentNode = document) =>
   [...within.querySelectorAll("button")].find(
     (b) => b.textContent?.trim() === name,
   )!;
+// Prompt 228: the editor has one dismiss action, Cancel (no separate Close).
+const dismiss = () =>
+  button("Cancel", document.querySelector(".participation-dialog")!);
 const render = (locked = false) =>
   act(async () =>
     root.render(
@@ -118,7 +121,7 @@ it("closing during reset cannot write twice", async () => {
       document.querySelector(".confirm-dialog")!,
     ).click(),
   );
-  await act(async () => button("Close").click());
+  await act(async () => dismiss().click());
   expect(close).not.toHaveBeenCalled();
   await act(async () => finish(account));
   expect(reset).toHaveBeenCalledTimes(1);
@@ -132,14 +135,14 @@ it("discard editor cancellation retains the draft; confirmed discard closes with
     )!.set!.call(notes, "Changed");
     notes.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await act(async () => button("Close").click());
+  await act(async () => dismiss().click());
   expect(document.querySelector(".confirm-dialog")).not.toBeNull();
   await act(async () =>
     button("Cancel", document.querySelector(".confirm-dialog")!).click(),
   );
   expect(notes.value).toBe("Changed");
   expect(close).not.toHaveBeenCalled();
-  await act(async () => button("Close").click());
+  await act(async () => dismiss().click());
   await act(async () =>
     button(
       "Discard results",

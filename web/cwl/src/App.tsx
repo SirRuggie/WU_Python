@@ -383,6 +383,7 @@ function App() {
   const [strikeTag, setStrikeTag] = useState(entryTarget.strikeTag || "");
   const [moderationMember, setModerationMember] = useState(entryTarget.moderationMember || "");
   const [strikeFilterState, setStrikeFilterState] = useState(entryTarget.strikeState || "");
+  const [resultsState, setResultsState] = useState(entryTarget.resultsState || "");
   const [flowFrom, setFlowFrom] = useState(entryTarget.flowFrom);
   const [replacementClan, setReplacementClan] = useState(entryTarget.replacementClan || '')
   const [pendingStrikeLeave, setPendingStrikeLeave] = useState<null | {action: () => void; working: boolean}>(null)
@@ -472,10 +473,12 @@ function App() {
     kind?: "war" | "cwl",
     panel: "register" | "saved" = "register",
     weights?: { player?: string; clan?: string },
+    results = "",
   ) => {
     if (navigation.current?.pending) return
     const proceed = () => {
       const destination = allowedView(next)
+      const resultsTarget = ["participation", "bonuses"].includes(destination) ? results : ""
       if (destination === "clan-management" && destination !== view) {
         setFamilyRoute(undefined);
         setFamilyVisit(visit => visit + 1);
@@ -494,11 +497,12 @@ function App() {
             ...(destination === "signup" ? { signupPanel: panel } : {}),
             season: seasonViews.has(destination) ? staffSeasonId : seasonId,
             ...(destination === "publication" ? { step: publicationStep } : {}),
+            resultsState: resultsTarget,
           },
           !isTourReadOnly(),
         );
       setActivityVisit(window.history.state?.wuDashboardIndex || 0)
-      if (destination !== view) { setReplacementClan(''); setReplacementTag(''); setStrikeTag(''); setStrikeFilterState(''); setFlowFrom(undefined); }
+      if (destination !== view) { setReplacementClan(''); setReplacementTag(''); setStrikeTag(''); setStrikeFilterState(''); setFlowFrom(undefined); setResultsState(resultsTarget); }
       if (destination === 'signup') setSignupPanel(panel)
       setActivitySearch(filter)
       setActivityKind(kind)
@@ -614,6 +618,7 @@ function App() {
       setStrikeTag(target.strikeTag || "");
       setModerationMember(target.moderationMember || "");
       setStrikeFilterState(target.strikeState || "");
+      setResultsState(target.resultsState || "");
       setFlowFrom(target.flowFrom);
       setWeightTarget({ player: target.weightPlayer, clan: target.weightClan });
       const destination = navigationState.current.allowedView(target.view);
@@ -651,15 +656,23 @@ function App() {
         ...(destination === "signup" ? { signupPanel } : {}),
         season: seasonViews.has(destination) ? staffSeasonId : seasonId,
         ...(destination === "publication" ? { step: publicationStep } : {}),
+        ...(["participation", "bonuses"].includes(destination) ? { resultsState } : {}),
       },
       false,
     );
-  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, replacementTag, strikeTag, moderationMember, strikeFilterState, flowFrom, weightTarget, familyRoute])
+  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, replacementTag, strikeTag, moderationMember, strikeFilterState, resultsState, flowFrom, weightTarget, familyRoute])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
     try { await action(); await refresh(); setNotice({ kind: 'success', text: success }) }
     catch (error) { setNotice({ kind: 'error', text: message(error) }) }
     finally { setPending(false) }
+  }
+  // Results and Bonus medals keep pool, clan, outcome, sort and step in the URL.
+  const changeResultsState = (state: string, push: boolean) => {
+    if (navigation.current?.pending || !['participation', 'bonuses'].includes(view)) return
+    navigation.current?.write({ view, season: staffSeasonId, resultsState: state }, push && !isTourReadOnly())
+    setActivityVisit(window.history.state?.wuDashboardIndex || 0)
+    setResultsState(state)
   }
   const openModerationMember = (userId: string) => {
     if (navigation.current?.pending) return
@@ -1229,8 +1242,8 @@ function App() {
             />
           )
         }
-        {view === 'participation' && session.can_edit && <ParticipationWorkspace onBonus={allowedView("bonuses") === "bonuses" ? () => changeView("bonuses") : undefined} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
-        {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'participation' && session.can_edit && <ParticipationWorkspace onBonus={allowedView("bonuses") === "bonuses" ? (state) => changeView("bonuses", "", undefined, "register", undefined, typeof state === "string" ? state : "") : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'bonuses' && session.can_edit && <BonusWorkspace onResults={allowedView("participation") === "participation" ? (state) => changeView("participation", "", undefined, "register", undefined, typeof state === "string" ? state : "") : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === "roster" && session.can_edit && (
           <RosterWorkspace
             onPublication={draft => setFlowPublication({season: seasonId, draft})}
