@@ -207,6 +207,15 @@
   inset: 0;
   border-radius: inherit;
 }
+/* A scaled button would become the overlay's containing block and lose the
+   pointerup; press feedback goes on the card instead. */
+.participation-card-open:active {
+  scale: none;
+  transform: none;
+}
+.participation-row .player-card:has(.participation-card-open:active) {
+  scale: 0.99;
+}
 .participation-card-open:focus-visible {
   outline: none;
 }

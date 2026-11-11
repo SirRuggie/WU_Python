@@ -876,7 +876,9 @@ Short lists (dropdown rollout PR 2):
 
 - Cards stay neutral: no background or edge tint by outcome. One small chip
   gives the outcome: green Meets rule, red Below rule, amber Not checked (no
-  result or partial result). Attacks and Stars numbers take the same tone;
+  result captured; a bonus review reason can cover it) or amber Partial
+  results (some numbers, not complete; a reason cannot cover it). Attacks and
+  Stars numbers take the same tone;
   labels stay muted; the clan name is quieter than the player name.
 - The rule and the tone live in one helper, `participationOutcome.ts`. Lazy: 4+
   attacks, or 3+ attacks and 8+ stars. Main: the saved minimum; with no saved
@@ -893,8 +895,8 @@ Short lists (dropdown rollout PR 2):
 - Bonus medals selects the hosting clan with a row of clan cards (name, "5 of
   8 meet", Draft / Saved / Approved / Sent / Inactive). Phones use the Compare
   swipeable card row. The selected card has the gold edge.
-- Results has 4 outcome filter chips with counts (All · Meets rule · Below rule
-  · Not checked, `FilterChips`), a 3-option Sort and a Hosting clan short-list
+- Results has 5 outcome filter chips with counts (All · Meets rule · Below rule
+  · Partial results · Not checked, `FilterChips`), a 3-option Sort and a Hosting clan short-list
   select (the search picker above 20 clans). The count line counts the
   selected pool only.
 - `pool`, `clan`, `outcome`, `sort` and `step` are in the URL on both pages;

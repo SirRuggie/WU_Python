@@ -647,9 +647,9 @@ Only published hosting-clan/account context is tracked. Match league month,
 select the correct war side, deduplicate wars, and count player attack stars
 rather than clan win bonuses. Retain collected war evidence for later outages.
 
-Source observations and staff corrections remain separate. Previously entered
-results are retained as manual overrides; staff can explicitly restore synced
-values. Notes-only edits must not freeze changing source counts. Partial,
+Source observations and staff corrections remain separate. Results come from
+Clash and are read only; Use synced results appears only for an account whose
+assignment changed. Notes-only edits must not freeze changing source counts. Partial,
 pending, unavailable, and stale evidence must be visible rather than reported
 as complete results or unexplained zeroes. Archived seasons are read-only and
 excluded from background collection. No Discord sends or bonus awards occur.

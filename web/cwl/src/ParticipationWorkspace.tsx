@@ -841,13 +841,13 @@ export default function ParticipationWorkspace({
               variant="pill"
               value={activeOutcome}
               disabled={controlsLocked}
-              options={(["all", "meets", "below", "not_checked"] as const).map(
-                (value) => ({
-                  value,
-                  label: value === "all" ? "All" : outcomeLabels[value],
-                  count: counts[value],
-                }),
-              )}
+              options={(
+                ["all", "meets", "below", "partial", "not_checked"] as const
+              ).map((value) => ({
+                value,
+                label: value === "all" ? "All" : outcomeLabels[value],
+                count: counts[value],
+              }))}
               onChange={(next) => {
                 setOutcome(next);
                 emit({ outcome: next });

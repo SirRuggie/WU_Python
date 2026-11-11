@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -180,4 +181,34 @@ it("returns focus to the card button when Details closes", async () => {
   expect(close).toHaveBeenCalledTimes(1);
   expect(document.activeElement).toBe(cardButton());
   vi.unstubAllGlobals();
+});
+
+it("returns focus to the ⋯ trigger when the menu opened Details", async () => {
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    callback(0);
+    return 0;
+  });
+  await render();
+  const trigger = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Actions for Fixture"]',
+  )!;
+  await act(async () => trigger.click());
+  const details = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((item) => item.textContent === "Details")!;
+  await act(async () => details.click());
+  expect(open).toHaveBeenCalledTimes(1);
+  await render({ open: true });
+  await render({ open: false });
+  expect(document.activeElement).toBe(trigger);
+  vi.unstubAllGlobals();
+});
+
+it("pressing the card button keeps its overlay in place", () => {
+  // Global press feedback scales buttons; a scaled button would become the
+  // overlay's containing block and pointerup would miss it.
+  const css = readFileSync("src/ParticipationWorkspace.css", "utf8");
+  const rule = css.match(/\.participation-card-open:active\s*\{([^}]*)\}/);
+  expect(rule?.[1]).toMatch(/scale:\s*none/);
+  expect(rule?.[1]).toMatch(/transform:\s*none/);
 });

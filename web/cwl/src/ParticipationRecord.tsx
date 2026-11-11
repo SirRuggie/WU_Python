@@ -51,7 +51,7 @@ export function participationMenuItems({
   onDetails,
 }: {
   account: ParticipationAccount;
-  onDetails: () => void;
+  onDetails: (trigger: HTMLElement) => void;
 }): ActionMenuItem[] {
   return [
     discordMessageItem(account.user_id),
@@ -78,6 +78,12 @@ export default function ParticipationRecord({
   const titleId = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
+  // Focus returns to whichever control opened Details: the card or ⋯.
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const openFrom = (element: HTMLElement | null) => {
+    returnFocus.current = element;
+    onOpen();
+  };
   const people = useDiscordIdentities(
     [account.user_id, account.updated_by],
     open,
@@ -232,7 +238,7 @@ export default function ParticipationRecord({
           className="participation-card-open"
           aria-label={`Details for ${account.player_name}`}
           disabled={locked}
-          onClick={onOpen}
+          onClick={() => openFrom(opener.current)}
         >
           {account.player_name}
         </button>
@@ -287,7 +293,7 @@ export default function ParticipationRecord({
         <ActionMenu
           name={account.player_name}
           disabled={locked}
-          items={participationMenuItems({ account, onDetails: onOpen })}
+          items={participationMenuItems({ account, onDetails: openFrom })}
         />
       }
     >
@@ -330,10 +336,12 @@ export default function ParticipationRecord({
         }}
         onClose={() => {
           onClose();
+          const target = returnFocus.current?.isConnected
+            ? returnFocus.current
+            : opener.current;
+          returnFocus.current = null;
           requestAnimationFrame(
-            () =>
-              opener.current?.isConnected &&
-              opener.current.focus({ preventScroll: true }),
+            () => target?.isConnected && target.focus({ preventScroll: true }),
           );
         }}
       >
