@@ -39,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 WU_GOLD = 0xF2B62A
-WU_GREEN = 0x43E58C
+WU_GREEN = 0x00D659  # was 0x43E58C for the 2026-11-10 run
 WU_RED = 0xE00010
 
 TEMPLATE_PREFIXES = ("recruit_question_template:", "fwa_war_template:")

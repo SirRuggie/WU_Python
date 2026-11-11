@@ -109,15 +109,22 @@ export default function TodoWorkspace({
   const [searchOpen, setSearchOpen] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const searchButton = useRef<HTMLButtonElement>(null);
+  const accountsChip = useRef<HTMLButtonElement>(null);
   const focusAfterSearch = useRef<"input" | "button" | null>(null);
   // An active search always stays visible, so it never hides tasks unseen.
+  // Once the field is used it stays open until the member closes it.
   const searchVisible = searchOpen || !!search;
   useEffect(() => {
     if (focusAfterSearch.current === "input") searchInput.current?.focus();
-    if (focusAfterSearch.current === "button") searchButton.current?.focus();
+    if (focusAfterSearch.current === "button")
+      (searchButton.current || accountsChip.current)?.focus();
     focusAfterSearch.current = null;
   }, [searchVisible]);
   const openSearch = () => {
+    if (searchVisible) {
+      searchInput.current?.focus();
+      return;
+    }
     focusAfterSearch.current = "input";
     setSearchOpen(true);
   };
@@ -231,7 +238,10 @@ export default function TodoWorkspace({
     selected === null
       ? accounts.length
       : accounts.filter((account) => selected.includes(account.tag)).length;
-  const unreadableRows = data?.views.private.rows || [];
+  // Same account selection as the Cannot check tab count.
+  const unreadableRows = (data?.views.private.rows || []).filter(
+    (row) => selected === null || selected.includes(row.tag),
+  );
   return (
     <div className="todo-workspace roster-ui">
       <div className="page-head todo-head">
@@ -262,14 +272,14 @@ export default function TodoWorkspace({
                 : gaps
                   ? "Some activity could not be checked · try again shortly"
                   : data
-                    ? `${paused ? "Auto-refresh paused · checked" : "Checked"} ${new Date(data.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                    ? `${paused ? "Paused · checked" : "Checked"} ${new Date(data.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
                     : "Loading your activity…"}
         </span>
         <button
           className="todo-icon-button"
           aria-pressed={paused}
           aria-label="Pause auto-refresh"
-          title={paused ? "Resume auto-refresh" : "Pause auto-refresh"}
+          title="Pause auto-refresh"
           onClick={() => setPaused((value) => !value)}
         >
           {paused ? (
@@ -358,6 +368,7 @@ export default function TodoWorkspace({
               className="todo-chip"
               aria-expanded={pickerOpen}
               aria-controls="todo-account-panel"
+              ref={accountsChip}
               onClick={() => setPickerOpen((open) => !open)}
             >
               {selected === null
@@ -382,21 +393,21 @@ export default function TodoWorkspace({
                 </select>
               </label>
             )}
-            {canFilter && (
+            {(canFilter || searchVisible) && (
               <button
                 type="button"
                 className="todo-icon-button"
                 aria-label="Search tasks"
                 aria-expanded={searchVisible}
-                aria-controls="todo-search"
+                aria-controls={searchVisible ? "todo-search" : undefined}
                 ref={searchButton}
-                onClick={searchVisible ? closeSearch : openSearch}
+                onClick={openSearch}
               >
                 <Search aria-hidden="true" size={16} />
               </button>
             )}
           </div>
-          {canFilter && searchVisible && (
+          {searchVisible && (
             <div className="todo-search-row" id="todo-search">
               <label className="todo-search">
                 <span className="todo-visually-hidden">Search tasks</span>
@@ -408,7 +419,11 @@ export default function TodoWorkspace({
                   autoComplete="off"
                   spellCheck={false}
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
+                  onFocus={() => setSearchOpen(true)}
+                  onChange={(event) => {
+                    setSearchOpen(true);
+                    setSearch(event.target.value);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Escape") closeSearch();
                   }}

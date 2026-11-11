@@ -1358,7 +1358,8 @@ mobile first. At 360 × 800 the first task card had started at 943 px.
 - Brand green is `#00D659`: `--wu-success`, `--wu-success-border` and the bot
   `WU_GREEN`. The former hard-coded chip green uses `var(--wu-success)`.
   Saved Discord templates that stored `0x43E58C` keep it until a separately
-  approved data update.
+  approved data update. `tools/migrate_brand_accents.py` now targets
+  `0x00D659`, so a dry run lists those templates; `--apply` needs Ruggie's word.
 - FWA outcome is a solid chip: green WIN, brand red LOSE/BLACKLISTED with
   white text (5.03:1), grey unknown. Brand red as text fails 4.5:1 (3.38:1).
 - Title and Check now share one row. The intro sentence is gone. One status
