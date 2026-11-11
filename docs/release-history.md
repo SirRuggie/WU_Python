@@ -56,6 +56,39 @@ approved NO WAR corrections or restore databases for a code rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 
+## Bonus and participation flow release — 2026-11-11 (backend and frontend)
+
+- PR [#291](https://github.com/SirRuggie/WU_Python/pull/291) (prompt 228),
+  merge commit `be2a40c7ecdc128f7e4833b8f07c92ee50d1581c`, local tag
+  `bonus-flow-228-1`. Built and released by Shaka (Claude) on Ruggie's
+  instruction in the thread "Audit bonus medals pages". Head `7241561`
+  passed four independent reviews (last gap fixed and its mutation checked).
+- Changes: bonus host check uses the season pool (fixes "Hosting clan is no
+  longer an active Lazy clan in this season"); new read-only
+  `GET /api/cwl/seasons/{id}/bonus-status`; any bonus in the previous 3 months
+  blocks a Lazy bonus; shared step bar, outcome chips, clan cards, phone layout.
+- Backend: `release.conf` WorkingDirectory `backend/14bcded8…` →
+  `backend/be2a40c7…`; service restarted, PID 2779146 → 3031436, cwd verified.
+  `/api/cwl/config` 200, anonymous `/api/cwl/seasons` and `bonus-status` 401,
+  no tracebacks. Bot code unchanged and not restarted (the bot does not import
+  the changed modules); workspace checkout fast-forwarded to `be2a40c7`.
+- Frontend `current`: `c95dee7e…` → `be2a40c7…` through `stage-release.py`
+  (clean tagged clone, `npm ci`, 2235 tests and `tsc -b` passed) and
+  `switch-release.py`. Entry `index-BJNXaOik.js`; `index.html` SHA-256
+  `b8c77c481b6c49fc38feb63dd004316eecbd3486be9246061d82a359520f5fd5` equals
+  the served file; 9 affected assets match the manifest.
+- SQLite online backup `.local/bonus-flow-228-release-20261111T150821Z/dashboard.sqlite3`:
+  integrity ok, equal to live. Season 1 signups lazy 147, main 23. All 73
+  table counts identical before and after.
+- Bug evidence on the backup: season 1 has 8 Lazy hosting clans; the old rule
+  accepted 6, the new rule accepts 8.
+- Signed-in smoke by Shaka SKIPPED (built-in browser signed out; Chrome
+  extension not connected).
+- Rollback: backend `release.conf` back to `backend/14bcded82ca26147e146635acfe05d19a3017ab1`,
+  `systemctl --user daemon-reload && systemctl --user restart wu-cwl-demo-web`;
+  frontend `/home/ruggie/.local/share/wu-dashboard/switch-release.py c95dee7ec2b4da31d4931f7995960ce333d4c268`.
+  No data migration; never restore the database for a code rollback.
+
 ## B-6 tab cleanup release — 2026-11-11 (frontend only)
 
 - PR [#280](https://github.com/SirRuggie/WU_Python/pull/280), merge commit
