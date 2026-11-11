@@ -79,8 +79,8 @@
 }
 .roster-ui-status.is-success,
 .roster-ui-chip.is-success {
-  border-color: #00d659;
-  background: #00d659;
+  border-color: var(--wu-success);
+  background: var(--wu-success);
   color: var(--wu-bg);
   -webkit-text-fill-color: currentColor;
 }

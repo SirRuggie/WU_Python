@@ -106,9 +106,9 @@
   -webkit-text-fill-color: currentColor;
 }
 .overview-state-tracking {
-  border-color: #00d659;
+  border-color: var(--wu-success);
   color: var(--wu-bg);
-  background: #00d659;
+  background: var(--wu-success);
   -webkit-text-fill-color: currentColor;
 }
 .overview-state-off,

@@ -292,7 +292,7 @@
   .roster-ui-progress.has-room
   .roster-ui-progress-track
   > span {
-  background: #00d659;
+  background: var(--wu-success);
 }
 .compare-workspace
   .roster-ui-progress.is-full

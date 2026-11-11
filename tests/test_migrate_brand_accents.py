@@ -99,7 +99,7 @@ def test_apply_moves_every_color_to_its_default_and_keeps_history(tmp_path):
     code, _lines = _run(collection, apply=True, backup=backup)
     docs = collection.documents
     assert code == 0
-    assert (docs["fwa_war_template:1:win"]["accent"], docs["fwa_war_template:1:win"]["revision"]) == (0x43E58C, 3)
+    assert (docs["fwa_war_template:1:win"]["accent"], docs["fwa_war_template:1:win"]["revision"]) == (0x00D659, 3)
     assert docs["fwa_war_template:1:lose"]["accent"] == 0xE00010
     assert docs["fwa_war_template:1:mismatch"]["accent"] == 0xF2B62A
     assert docs["fwa_war_template:1:blacklisted"] == _rows()[3]

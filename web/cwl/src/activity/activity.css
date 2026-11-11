@@ -54,7 +54,7 @@
 }
 .state-inWar {
   color: var(--wu-bg);
-  background: #00d659;
+  background: var(--wu-success);
   -webkit-text-fill-color: currentColor;
 }
 .state-preparation {

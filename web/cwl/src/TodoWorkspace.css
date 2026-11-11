@@ -2,21 +2,50 @@
   max-width: 1320px;
   margin: auto;
 }
-.todo-refresh {
+/* Title and Check now share one row at every width. */
+.todo-workspace .page-head.todo-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--roster-space-3);
-  flex-wrap: wrap;
+  gap: var(--wu-space-3);
+  margin-bottom: var(--wu-space-2);
+}
+.todo-head h1 {
+  margin-bottom: 0;
+  min-width: 0;
+}
+.todo-check {
+  flex: none;
+}
+.todo-check svg,
+.todo-icon-button svg,
+.todo-chip svg,
+.todo-private-note svg {
+  flex: none;
+}
+.todo-refresh {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
   color: var(--roster-text-muted);
-  font-size: var(--wu-text-md);
+  font-size: var(--wu-text-sm);
+}
+.todo-status {
+  flex: 1;
+  min-width: 0;
 }
 .todo-refresh .status-dot {
   display: inline-block;
   margin-right: var(--wu-space-2);
 }
-.todo-refresh button {
-  font-size: var(--wu-text-md);
+.shell .todo-icon-button {
+  flex: none;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--roster-border);
+  border-radius: 10px;
+  background: var(--roster-surface);
 }
 .todo-freshness {
   font-size: var(--wu-text-xs);
@@ -25,31 +54,117 @@
 }
 .todo-tabs {
   display: flex;
-  margin: var(--wu-space-4) 0;
+  margin: var(--wu-space-3) 0;
+}
+.todo-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* Accounts, sort and search: one compact row; the open search wraps on phones. */
+.todo-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  margin-bottom: var(--wu-space-3);
+}
+.shell .todo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wu-space-1);
+  min-height: 44px;
+  min-width: 0;
+  padding: 0 var(--wu-space-3);
+  border: 1px solid var(--roster-border);
+  border-radius: 999px;
+  background: var(--roster-surface);
+  color: var(--wu-text);
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
+  white-space: nowrap;
+}
+.shell .todo-chip[aria-expanded="true"] {
+  border-color: var(--wu-accent);
+  color: var(--wu-accent);
+  -webkit-text-fill-color: currentColor;
+}
+.shell button.todo-chip {
+  flex: none;
+}
+.shell .todo-sort {
+  flex: 0 1 auto;
+  padding: 0;
+}
+.shell .todo-sort select {
+  display: block;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 42px;
+  margin: 0;
+  padding: 0 var(--wu-space-2) 0 var(--wu-space-3);
+  text-overflow: ellipsis;
+  border: 0;
+  border-radius: 999px;
+  background-color: transparent;
+  color: var(--wu-text);
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
+}
+.todo-search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  max-width: 520px;
+  margin-bottom: var(--wu-space-3);
+}
+.todo-search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.todo-search > svg {
+  position: absolute;
+  left: var(--wu-space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--roster-text-muted);
+  pointer-events: none;
+}
+.todo-search > input {
+  margin: 0;
+  padding-left: calc(var(--wu-space-3) + 24px);
+  border-radius: 999px;
+}
+/* The close button clears the search; hide the browser's second clear icon. */
+.todo-search > input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.todo-tab-note {
+  margin: 0 0 var(--wu-space-3);
+  font-size: var(--wu-text-sm);
+  color: var(--roster-text-muted);
 }
 .todo-account-picker {
   border: 1px solid var(--roster-border);
   background: var(--roster-surface);
   border-radius: 13px;
-  margin-bottom: var(--wu-space-5);
+  margin-bottom: var(--wu-space-4);
   padding: var(--wu-space-4);
-}
-.todo-account-picker summary {
-  font-weight: var(--wu-weight-bold);
-  cursor: pointer;
-  min-height: 44px;
-}
-.todo-account-picker summary > span {
-  float: right;
-  font-size: var(--wu-text-sm);
-  color: var(--wu-text-muted);
-  padding-top: var(--wu-space-1);
 }
 .todo-picker-tools {
   display: flex;
   gap: var(--wu-space-3);
   align-items: end;
-  margin: var(--wu-space-4) 0 var(--wu-space-4);
+  margin: 0 0 var(--wu-space-4);
 }
 .todo-picker-tools label {
   flex: 1;
@@ -83,32 +198,6 @@
   margin-top: var(--wu-space-1);
   color: var(--roster-text-muted);
 }
-.todo-section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: end;
-  gap: var(--wu-space-4);
-  margin-bottom: var(--wu-space-4);
-}
-.todo-section-head h2 {
-  font-size: var(--wu-text-xl);
-  font-weight: var(--wu-weight-bold);
-  line-height: 1.2;
-  text-wrap: balance;
-}
-.todo-section-head p {
-  margin: 0;
-  font-size: var(--wu-text-sm);
-  max-width: 680px;
-  text-wrap: pretty;
-}
-.todo-section-head label {
-  min-width: 210px;
-}
-.todo-search {
-  margin-bottom: var(--wu-space-4);
-  max-width: 520px;
-}
 .todo-warning {
   display: flex;
   align-items: center;
@@ -134,6 +223,35 @@
 }
 .todo-warning button {
   font-size: var(--wu-text-md);
+}
+.todo-private-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wu-space-2);
+  margin: var(--wu-space-4) 0 0;
+  padding-top: var(--wu-space-3);
+  border-top: 1px solid var(--roster-border);
+  color: var(--roster-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.todo-private-note svg {
+  margin-top: 3px;
+}
+.todo-private-note p {
+  margin: 0;
+  color: inherit;
+  text-wrap: pretty;
+}
+.shell .todo-note-link {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--wu-text);
+  font-size: inherit;
+  font-weight: var(--wu-weight-bold);
+  text-decoration: underline;
 }
 .todo-notes {
   font-size: var(--wu-text-sm);
@@ -246,8 +364,8 @@
 }
 .todo-state {
   display: inline-block;
-  border: 1px solid #00d659;
-  background: #00d659;
+  border: 1px solid var(--wu-success);
+  background: var(--wu-success);
   color: var(--wu-bg);
   padding: var(--wu-space-2) var(--wu-space-3);
   font-size: var(--wu-text-xs);
@@ -379,17 +497,6 @@
   .todo-picker-list {
     grid-template-columns: 1fr;
   }
-  .todo-account-picker summary > span {
-    float: none;
-    display: block;
-    padding: var(--wu-space-1) 0 0 var(--wu-space-4);
-  }
-  .todo-section-head {
-    display: block;
-  }
-  .todo-section-head label {
-    margin-top: var(--wu-space-3);
-  }
   .todo-clan > header {
     padding: var(--wu-space-3) var(--wu-space-3);
     gap: var(--wu-space-2);
@@ -399,9 +506,6 @@
     font-weight: var(--wu-weight-medium);
     line-height: 1.3;
     text-wrap: balance;
-  }
-  .todo-clan > header small {
-    font-size: var(--wu-text-xs);
   }
   .todo-task {
     padding: var(--wu-space-4) var(--wu-space-3);
@@ -426,25 +530,37 @@
   }
 }
 
+/* FWA outcome: solid chip (green WIN, brand red LOSE/BLACKLISTED, grey unknown). */
 .todo-fwa {
-  margin: var(--wu-space-2) 0;
-  line-height: 1.5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wu-space-1) var(--wu-space-2);
+  margin-top: var(--wu-space-1);
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .todo-fwa strong {
-  display: block;
-  font-size: var(--wu-text-sm);
-  color: var(--wu-text-muted);
+  flex: none;
+  padding: 2px var(--wu-space-2);
+  border-radius: 6px;
+  background: var(--roster-surface-soft);
+  color: var(--wu-text);
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-bold);
+  -webkit-text-fill-color: currentColor;
 }
 .todo-fwa.win strong {
-  color: var(--roster-success);
+  background: var(--wu-success);
+  color: var(--wu-bg);
 }
 .todo-fwa.lose strong,
 .todo-fwa.blacklisted strong {
-  color: var(--roster-danger);
+  background: var(--wu-brand-red);
+  color: #fff;
 }
 .todo-fwa span {
-  display: block;
+  min-width: 0;
   font-size: var(--wu-text-sm);
   color: var(--roster-text-muted);
 }
@@ -502,26 +618,6 @@
     align-items: stretch;
     gap: var(--roster-space-3);
     font-variant-numeric: tabular-nums;
-  }
-}
-
-.todo-search-row {
-  display: flex;
-  align-items: end;
-  gap: var(--roster-space-3);
-  margin-bottom: var(--wu-space-4);
-}
-.todo-search-row .todo-search {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-}
-@media (max-width: 480px) {
-  .todo-search-row {
-    flex-wrap: wrap;
-  }
-  .todo-search-row .todo-search {
-    flex-basis: 100%;
   }
 }
 

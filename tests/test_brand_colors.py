@@ -16,5 +16,6 @@ def _token(name: str) -> int:
 
 def test_brand_colors_match_dashboard_tokens():
     assert int(constants.WU_GOLD) == _token("wu-accent")
+    assert int(constants.WU_GREEN) == _token("wu-success")
     assert int(constants.WU_GREEN) == _token("wu-success-border")
     assert int(constants.WU_RED) == _token("wu-brand-red")

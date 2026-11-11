@@ -97,7 +97,7 @@ Global colors live on `:root` in `web/cwl/src/tokens.css`, imported first by
 | `--wu-accent-ink`                                               | `#241b08`                         | Text on a gold fill                         |
 | `--wu-accent-soft`                                              | `#30291a`                         | Selected or active tint                     |
 | `--wu-focus`                                                    | `#f5d66e`                         | Focus ring only; never selection            |
-| `--wu-success` / `--wu-success-surface` / `--wu-success-border` | `#79c89b` / `#2b4b38` / `#43e58c` | Success                                     |
+| `--wu-success` / `--wu-success-surface` / `--wu-success-border` | `#00d659` / `#2b4b38` / `#00d659` | Success; brand green (bot `WU_GREEN`)       |
 | `--wu-warning` / `--wu-warning-surface` / `--wu-warning-border` | `#efc867` / `#30291c` / `#786435` | Warning; separate from accent               |
 | `--wu-danger` / `--wu-danger-surface` / `--wu-danger-border`    | `#f19999` / `#493235` / `#ff737d` | Errors, destructive actions                 |
 | `--wu-info` / `--wu-info-surface` / `--wu-info-border`          | `#b9d5ff` / `#1a212b` / `#495563` | Informational notices only; 1b applies this |
