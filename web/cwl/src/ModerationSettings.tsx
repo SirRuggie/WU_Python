@@ -39,9 +39,7 @@ import {
 import "./ModerationSettings.css";
 
 type DialogState =
-  | { type: "test"; event: ModerationKind }
-  | { type: "reload" }
-  | null;
+  { type: "test"; event: ModerationKind } | { type: "reload" } | null;
 
 /** Keep page-only fields (inventory, previews) that a PUT response omits. */
 function mergeSaved(
