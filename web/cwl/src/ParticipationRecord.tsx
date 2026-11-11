@@ -1,9 +1,12 @@
 import AccountCard from "./AccountCard";
 import useConfirmDialog from "./useConfirmDialog";
 import { useEffect, useId, useRef, useState } from "react";
+import { Info } from "lucide-react";
 import DiscordIdentity from "./DiscordIdentity";
 import useDiscordIdentities from "./useDiscordIdentities";
 import { StatusPill } from "./rosterUi/primitives";
+import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
+import { discordMessageItem } from "./RosterAccountMenu";
 import {
   countText,
   outcomeLabels,
@@ -13,14 +16,12 @@ import {
 } from "./participationOutcome";
 import {
   canUseSyncedResults,
-  parseOptionalCount,
-  participationValidation,
   participationStatus,
   type ParticipationAccount,
 } from "./participation";
 
 const errorText = (error: unknown) =>
-  error instanceof Error ? error.message : "Could not save results.";
+  error instanceof Error ? error.message : "Could not save notes.";
 const dateText = resultDateText;
 
 type Props = {
@@ -38,19 +39,25 @@ type Props = {
     revision: number,
     publicationVersion: number | null,
     sourceCheckedAt: string | null,
-    attacks: number | null,
-    stars: number | null,
     notes: string,
   ) => Promise<ParticipationAccount>;
   onReset: (account: ParticipationAccount) => Promise<ParticipationAccount>;
   onDirty: (tag: string, dirty: boolean) => void;
 };
 
-const values = (row: ParticipationAccount) => ({
-  attacks: row.attacks === null ? "" : String(row.attacks),
-  stars: row.stars === null ? "" : String(row.stars),
-  notes: row.notes,
-});
+/** Card ⋯ menu items. Add new actions to this list. */
+export function participationMenuItems({
+  account,
+  onDetails,
+}: {
+  account: ParticipationAccount;
+  onDetails: (trigger: HTMLElement) => void;
+}): ActionMenuItem[] {
+  return [
+    discordMessageItem(account.user_id),
+    { id: "details", label: "Details", icon: Info, onAction: onDetails },
+  ];
+}
 
 export default function ParticipationRecord({
   account,
@@ -71,13 +78,19 @@ export default function ParticipationRecord({
   const titleId = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
+  // Focus returns to whichever control opened Details: the card or ⋯.
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const openFrom = (element: HTMLElement | null) => {
+    returnFocus.current = element;
+    onOpen();
+  };
   const people = useDiscordIdentities(
     [account.user_id, account.updated_by],
     open,
   );
-  const [draft, setDraft] = useState(() => values(account));
+  const [draft, setDraft] = useState(account.notes);
   const [base, setBase] = useState(() => ({
-    ...values(account),
+    notes: account.notes,
     revision: account.revision,
     publicationVersion,
     rosterToken: account.roster_token,
@@ -86,19 +99,13 @@ export default function ParticipationRecord({
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [error, setError] = useState("");
-  const changed =
-    draft.attacks !== base.attacks ||
-    draft.stars !== base.stars ||
-    draft.notes !== base.notes;
-  const current = values(account);
+  const changed = draft !== base.notes;
   const stale =
     account.roster_token !== base.rosterToken ||
     account.revision !== base.revision ||
     publicationVersion !== base.publicationVersion ||
     (account.source_checked_at ?? null) !== base.sourceCheckedAt ||
-    current.attacks !== base.attacks ||
-    current.stars !== base.stars ||
-    current.notes !== base.notes;
+    account.notes !== base.notes;
   const hasOverride = !!(
     account.attacks_override ||
     account.stars_override ||
@@ -107,27 +114,23 @@ export default function ParticipationRecord({
   const hasSource =
     (account.source_attacks !== null && account.source_attacks !== undefined) ||
     (account.source_stars !== null && account.source_stars !== undefined);
-  const canReset = canUseSyncedResults(account);
-  const attackValue = parseOptionalCount(draft.attacks);
-  const starValue = parseOptionalCount(draft.stars);
+  // Results are read only; reconciling a changed assignment is the one reset.
+  const canReset = !!account.roster_changed && canUseSyncedResults(account);
   const outcome = participationOutcome(account, mainMinimum);
   const tally = outcome ? ` is-${outcomeTone(outcome)}` : "";
-  const validation =
-    attackValue === undefined || starValue === undefined
-      ? "Use whole numbers for attacks and stars, or leave them blank."
-      : participationValidation(attackValue, starValue, draft.notes);
+  const status = participationStatus(account);
 
+  const latestBase = (row: ParticipationAccount) => ({
+    notes: row.notes,
+    revision: row.revision,
+    publicationVersion,
+    rosterToken: row.roster_token,
+    sourceCheckedAt: row.source_checked_at ?? null,
+  });
   useEffect(() => {
     if (changed || !stale) return;
-    const latest = values(account);
-    setDraft(latest);
-    setBase({
-      ...latest,
-      revision: account.revision,
-      publicationVersion,
-      rosterToken: account.roster_token,
-      sourceCheckedAt: account.source_checked_at ?? null,
-    });
+    setDraft(account.notes);
+    setBase(latestBase(account));
   }, [account, publicationVersion, changed, stale]);
   useEffect(() => {
     onDirty(account.tag, changed || busy);
@@ -139,15 +142,8 @@ export default function ParticipationRecord({
   }, [open]);
 
   const useLatest = () => {
-    const latest = values(account);
-    setDraft(latest);
-    setBase({
-      ...latest,
-      revision: account.revision,
-      publicationVersion,
-      rosterToken: account.roster_token,
-      sourceCheckedAt: account.source_checked_at ?? null,
-    });
+    setDraft(account.notes);
+    setBase(latestBase(account));
     setError("");
   };
   const closeEditor = async () => {
@@ -155,8 +151,8 @@ export default function ParticipationRecord({
     if (
       changed &&
       !(await confirm(
-        `Discard unsaved results for ${account.player_name}?`,
-        "Discard results",
+        `Discard unsaved notes for ${account.player_name}?`,
+        "Discard notes",
       ))
     )
       return;
@@ -171,9 +167,7 @@ export default function ParticipationRecord({
       pending.current ||
       !changed ||
       stale ||
-      validation ||
-      attackValue === undefined ||
-      starValue === undefined
+      draft.length > 2000
     )
       return;
     pending.current = true;
@@ -185,19 +179,10 @@ export default function ParticipationRecord({
         base.revision,
         base.publicationVersion,
         base.sourceCheckedAt,
-        attackValue,
-        starValue,
-        draft.notes,
+        draft,
       );
-      const latest = values(saved);
-      setDraft(latest);
-      setBase({
-        ...latest,
-        revision: saved.revision,
-        publicationVersion,
-        rosterToken: saved.roster_token,
-        sourceCheckedAt: saved.source_checked_at ?? null,
-      });
+      setDraft(saved.notes);
+      setBase(latestBase(saved));
       dialog.current?.close();
     } catch (cause) {
       setError(errorText(cause));
@@ -222,7 +207,7 @@ export default function ParticipationRecord({
       : "";
     if (
       !(await confirm(
-        `Replace the attacks and stars that staff typed for ${account.player_name} with the values from Clash? Staff notes stay saved.${partial}`,
+        `Use the Clash results for ${account.player_name}'s new assignment? Staff notes stay saved.${partial}`,
         "Use synced results",
       ))
     )
@@ -232,15 +217,8 @@ export default function ParticipationRecord({
     setError("");
     try {
       const saved = await onReset(account);
-      const latest = values(saved);
-      setDraft(latest);
-      setBase({
-        ...latest,
-        revision: saved.revision,
-        publicationVersion,
-        rosterToken: saved.roster_token,
-        sourceCheckedAt: saved.source_checked_at ?? null,
-      });
+      setDraft(saved.notes);
+      setBase(latestBase(saved));
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -253,7 +231,18 @@ export default function ParticipationRecord({
     <AccountCard
       className={`participation-row${account.roster_changed ? " participation-row-changed" : ""}`}
       thLevel={account.town_hall}
-      name={account.player_name}
+      name={
+        <button
+          ref={opener}
+          type="button"
+          className="participation-card-open"
+          aria-label={`Details for ${account.player_name}`}
+          disabled={locked}
+          onClick={() => openFrom(opener.current)}
+        >
+          {account.player_name}
+        </button>
+      }
       meta={[
         <>TH {account.town_hall ?? "—"}</>,
         account.tag,
@@ -301,19 +290,11 @@ export default function ParticipationRecord({
         </div>
       }
       action={
-        <button
-          ref={opener}
-          type="button"
-          className="participation-row-action"
+        <ActionMenu
+          name={account.player_name}
           disabled={locked}
-          onClick={onOpen}
-        >
-          Details
-          <span className="participation-visually-hidden">
-            {" "}
-            for {account.player_name}
-          </span>
-        </button>
+          items={participationMenuItems({ account, onDetails: openFrom })}
+        />
       }
     >
       {confirmation}
@@ -355,10 +336,12 @@ export default function ParticipationRecord({
         }}
         onClose={() => {
           onClose();
+          const target = returnFocus.current?.isConnected
+            ? returnFocus.current
+            : opener.current;
+          returnFocus.current = null;
           requestAnimationFrame(
-            () =>
-              opener.current?.isConnected &&
-              opener.current.focus({ preventScroll: true }),
+            () => target?.isConnected && target.focus({ preventScroll: true }),
           );
         }}
       >
@@ -385,13 +368,52 @@ export default function ParticipationRecord({
           <div className="notice error" role="alert">
             Saved results belong to a previous assignment.{" "}
             {account.assigned_clan_tag
-              ? "Refresh the Clash results. Then use the values from Clash to replace the old corrections."
+              ? "Refresh the Clash results, then use them for the new assignment."
               : "Assign this account to a CWL clan, then refresh Clash results."}
+            {canReset && (
+              <button
+                type="button"
+                disabled={readonly || locked || busy || changed || stale}
+                onClick={() => void reset()}
+              >
+                Use synced results
+              </button>
+            )}
           </div>
+        )}
+        <div className="participation-dialog-summary">
+          <div>
+            <strong>{account.attacks ?? "—"}</strong>
+            <span>Attacks</span>
+          </div>
+          <div>
+            <strong>{account.stars ?? "—"}</strong>
+            <span>Stars</span>
+          </div>
+          <div>
+            <strong>{status.label}</strong>
+            <span>Clash capture</span>
+          </div>
+        </div>
+        <p className="participation-dialog-capture">
+          {hasSource
+            ? account.source_complete
+              ? "Final results from Clash"
+              : "Results so far from Clash"
+            : "No results captured from Clash"}
+          {account.source_checked_at
+            ? ` · Checked ${dateText(account.source_checked_at)}`
+            : ""}
+          {hasOverride && !account.roster_changed
+            ? " · Staff correction in use"
+            : ""}
+        </p>
+        {status.warning && (
+          <p className="participation-error">{status.warning}</p>
         )}
         {account.previous_results && (
           <details className="participation-previous">
-            <summary>Previous assignment and corrections</summary>
+            <summary>Previous assignment</summary>
             <p>
               {account.previous_results.pool === "main"
                 ? "Main CWL"
@@ -411,123 +433,6 @@ export default function ParticipationRecord({
             </p>
           </details>
         )}
-        <div className="participation-dialog-summary">
-          <div>
-            <strong>{account.attacks ?? "—"}</strong>
-            <span>Recorded attacks</span>
-          </div>
-          <div>
-            <strong>{account.stars ?? "—"}</strong>
-            <span>Recorded stars</span>
-          </div>
-          <div>
-            <strong>{participationStatus(account).label}</strong>
-            <span>Clash source</span>
-          </div>
-        </div>
-        <details className="participation-source">
-          <summary>Synced source and corrections</summary>
-          <p>
-            Synced:{" "}
-            {account.source_attacks === null ||
-            account.source_attacks === undefined
-              ? "Unrecorded attacks"
-              : countText(account.source_attacks, "attack")}{" "}
-            ·{" "}
-            {account.source_stars === null || account.source_stars === undefined
-              ? "Unrecorded stars"
-              : countText(account.source_stars, "star")}
-          </p>
-          <p>
-            {participationStatus(account).label}
-            {hasSource
-              ? account.source_complete
-                ? " · Final results"
-                : " · Results so far"
-              : ""}
-            {account.source_checked_at
-              ? ` · Checked ${dateText(account.source_checked_at)}`
-              : ""}
-          </p>
-          {participationStatus(account).warning && (
-            <p className="participation-error">
-              {participationStatus(account).warning}
-            </p>
-          )}
-
-          {hasOverride && (
-            <p>
-              Manual correction in use
-              {account.attacks_override && account.stars_override
-                ? " for attacks and stars"
-                : account.attacks_override
-                  ? " for attacks"
-                  : " for stars"}
-              .
-            </p>
-          )}
-          {hasOverride && (
-            <button
-              type="button"
-              disabled={
-                readonly || locked || busy || changed || stale || !canReset
-              }
-              onClick={() => void reset()}
-            >
-              Use synced results
-            </button>
-          )}
-          {hasOverride && !hasSource && (
-            <p>
-              Synced values are unavailable, so the correction cannot be reset
-              yet.
-            </p>
-          )}
-        </details>
-        <div className="participation-fields">
-          <label>
-            Attacks
-            <input
-              type="number"
-              name="attacks"
-              autoComplete="off"
-              min="0"
-              max="7"
-              step="1"
-              inputMode="numeric"
-              value={draft.attacks}
-              disabled={readonly || locked || busy || !!account.roster_changed}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  attacks: event.target.value,
-                }))
-              }
-              placeholder="Unrecorded"
-            />
-          </label>
-          <label>
-            Stars
-            <input
-              type="number"
-              name="stars"
-              autoComplete="off"
-              min="0"
-              max="21"
-              step="1"
-              inputMode="numeric"
-              value={draft.stars}
-              disabled={readonly || locked || busy || !!account.roster_changed}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  stars: event.target.value,
-                }))
-              }
-              placeholder="Unrecorded"
-            />
-          </label>
-        </div>
         <label className="participation-notes">
           Staff notes
           <textarea
@@ -535,27 +440,20 @@ export default function ParticipationRecord({
             autoComplete="off"
             rows={3}
             maxLength={2000}
-            value={draft.notes}
+            value={draft}
             disabled={readonly || locked || busy || !!account.roster_changed}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, notes: event.target.value }))
-            }
-            placeholder="Optional note about this correction"
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Optional note"
           />
         </label>
         {stale && changed && (
           <div className="notice error" role="alert">
-            This record or assignment changed while you were editing. Your entry
-            remains here; review the latest values before saving.
+            This record or assignment changed while you were editing. Your notes
+            remain here; review the latest values before saving.
             <button type="button" disabled={busy} onClick={useLatest}>
-              Discard entry and use latest
+              Discard notes and use latest
             </button>
           </div>
-        )}
-        {validation && changed && (
-          <p role="alert" className="participation-error">
-            {validation}
-          </p>
         )}
         {error && (
           <p role="alert" className="participation-error">
@@ -592,12 +490,11 @@ export default function ParticipationRecord({
               busy ||
               !!account.roster_changed ||
               !changed ||
-              stale ||
-              !!validation
+              stale
             }
             onClick={() => void save()}
           >
-            {busy ? "Saving…" : "Save results"}
+            {busy ? "Saving…" : "Save notes"}
           </button>
         </div>
       </dialog>

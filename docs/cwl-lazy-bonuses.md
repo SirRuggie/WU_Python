@@ -25,7 +25,9 @@ inferred in-game medal history. Earlier unrecorded awards cannot be inferred.
 The three Lazy bonus rules: follow the Lazy CWL rules; play 60% of the event (4+
 attacks, or 3 attacks with 8+ stars); no bonus in the previous three seasons.
 
-A reason can override participation, infractions, or this sit-out. It
+A reason can override participation, infractions, or this sit-out. For an
+account whose results were never captured ("Not checked"), a reason also covers
+the missing results; the review audit logs it. Partial results stay blocked. It
 cannot override malformed data, a mismatched/stale assignment, a non-Lazy host,
 or a second bonus to the same account in the same month. Discord role evidence
 must also be available before eligible accounts can enter the draw.

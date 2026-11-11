@@ -203,7 +203,13 @@ it("outcome chips count and filter, and the count line uses the selected pool", 
     [...host.querySelectorAll(".participation-outcomes button")].map(
       (button) => button.textContent,
     ),
-  ).toEqual(["All 3", "Meets rule 1", "Below rule 1", "Not checked 1"]);
+  ).toEqual([
+    "All 3",
+    "Meets rule 1",
+    "Below rule 1",
+    "Partial results 0",
+    "Not checked 1",
+  ]);
   expect(
     host.querySelector(".participation-list-heading span")?.textContent,
   ).toBe("3 players · Lazy CWL");

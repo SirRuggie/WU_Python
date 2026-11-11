@@ -102,6 +102,15 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
     async def sync(self):
         return await self.call("POST", self.base + "/sync", self.owner, json={})
 
+    def legacy_override(self, **values):
+        # Staff corrections are no longer saved; seed one made before results became read only.
+        with self.app["store"].tx() as db:
+            for field, value in values.items():
+                db.execute(
+                    f"UPDATE participation_records SET {field}=?,{field}_override=1 "
+                    "WHERE season_id=? AND tag='#P2Y'", (value, self.sid),
+                )
+
     async def account(self):
         response = await self.call("GET", self.base, self.owner)
         self.assertEqual(response.status, 200)
@@ -304,8 +313,14 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
             'publication_version': data['publication_version'], 'revision': row['revision'],
             'attacks': 2, 'stars': 5, 'notes': '', 'source_checked_at': row['source_checked_at'],
         })
+        self.assertEqual(response.status, 400, await response.text())
+        response = await self.call('PATCH', self.base + '/%23P2Y', self.owner, json={
+            'publication_version': data['publication_version'], 'revision': row['revision'],
+            'notes': 'Reviewed', 'source_checked_at': row['source_checked_at'],
+        })
         self.assertEqual(response.status, 200, await response.text())
-        edited = (await response.json())['account']
+        self.legacy_override(attacks=2, stars=5)
+        edited, _ = await self.account()
         self.assertEqual(edited['display_status']['code'], 'season_mismatch')
         self.assertEqual(edited['source_status'], 'stale')
         self.assertTrue(edited['attacks_override'])
@@ -504,8 +519,9 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
                 "source_checked_at": changed["source_checked_at"],
             },
         )
-        self.assertEqual(response.status, 200, await response.text())
-        manual = (await response.json())["account"]
+        self.assertEqual(response.status, 400, await response.text())
+        self.legacy_override(attacks=2)
+        manual, _ = await self.account()
         self.assertTrue(manual["attacks_override"])
         self.assertFalse(manual["stars_override"])
         self.assertEqual((manual["attacks"], manual["stars"]), (2, 3))
@@ -648,9 +664,10 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         row, _ = await self.account()
         response = await self.call('PATCH', self.base + '/%23P2Y', self.owner, json={
             'publication_version': 1, 'roster_token': row['roster_token'],
-            'revision': 0, 'attacks': 2, 'stars': 4, 'notes': 'Keep this note',
+            'revision': 0, 'notes': 'Keep this note',
         })
         self.assertEqual(response.status, 200, await response.text())
+        self.legacy_override(attacks=2, stars=4)
         with self.app['store'].tx() as db:
             db.execute("UPDATE signups SET pool='lazy' WHERE season_id=? AND tag='#P2Y'", (self.sid,))
         row, _ = await self.account()

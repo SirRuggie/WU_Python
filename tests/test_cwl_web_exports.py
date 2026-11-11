@@ -15,6 +15,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
     signup = fixtures.BonusTests.signup
     setup_published = fixtures.BonusTests.setup_published
     seed_complete_source = fixtures.BonusTests.seed_complete_source
+    legacy_override = fixtures.BonusTests.legacy_override
     settings = fixtures.BonusTests.settings
     select = fixtures.BonusTests.select
     preview = fixtures.BonusTests.preview
@@ -104,11 +105,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_mismatched_saved_results_are_separated_from_current_and_published_rosters(self):
         await self.setup_published()
-        response = await self.call(
-            'PATCH', f'/seasons/{self.sid}/participation/%23P2Y', self.owner,
-            json={'revision': 0, 'publication_version': 1, 'attacks': 2, 'stars': 5, 'notes': 'Old host result'},
-        )
-        self.assertEqual(response.status, 200, await response.text())
+        await self.legacy_override(attacks=2, stars=5, notes='Old host result')
         response = await self.call('POST', '/clans', self.owner, json={'tag': '#J2Y'})
         self.assertEqual(response.status, 201)
         response = await self.call(
@@ -159,9 +156,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
     async def test_bonus_history_retains_void_and_participation(self):
         await self.setup_published()
         await self.seed_complete_source()
-        response = await self.call('PATCH', f'/seasons/{self.sid}/participation/%23P2Y', self.owner,
-            json={'revision': 0, 'publication_version': 1, 'attacks': 0, 'stars': 0, 'notes': 'Reviewed'})
-        self.assertEqual(response.status, 200, await response.text())
+        await self.legacy_override(attacks=0, stars=0, notes='Reviewed')
         self.assertEqual((await self.settings(0)).status, 200)
         self.assertEqual((await self.select(1)).status, 200)
         preview = await self.preview()
@@ -244,16 +239,10 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
                     db.execute('UPDATE participation_sync_settings SET status=?,warning=?,last_checked_at=? WHERE season_id=?',
                                ('unavailable', 'Some Clash CWL data could not be refreshed; cached results are marked stale', stamp, self.sid))
                 if override is not None:
+                    await self.legacy_override(attacks=override[0], stars=override[1])
                     response = await self.call('GET', f'/seasons/{self.sid}/participation', self.owner)
                     self.assertEqual(response.status, 200, await response.text())
-                    current = (await response.json())['accounts'][0]
-                    response = await self.call('PATCH', f'/seasons/{self.sid}/participation/%23P2Y', self.owner, json={
-                        'revision': current['revision'], 'publication_version': 1,
-                        'source_checked_at': current['source_checked_at'],
-                        'attacks': override[0], 'stars': override[1], 'notes': '',
-                    })
-                    self.assertEqual(response.status, 200, await response.text())
-                    edited = (await response.json())['account']
+                    edited = (await response.json())['accounts'][0]
                     self.assertTrue(edited['attacks_override'])
                     self.assertTrue(edited['stars_override'])
                 effective_attacks, effective_stars = override if override is not None else (attacks, stars)

@@ -13,6 +13,18 @@ type Props = {
   onAssign?: (trigger: HTMLElement) => void;
   onSignup?: (trigger: HTMLElement) => void;
 };
+/** The shared DM item for every account ⋯ menu. */
+export function discordMessageItem(userId?: string | null): ActionMenuItem {
+  const contact = discordContact(userId, true);
+  return contact.href
+    ? {
+        id: "dm",
+        label: contact.label,
+        href: contact.href,
+        title: contact.title,
+      }
+    : { id: "dm", label: contact.unavailable, disabled: true };
+}
 export function rosterAccountMenuItems({
   account,
   canRoster = false,
@@ -37,17 +49,7 @@ export function rosterAccountMenuItems({
       icon: UserRoundPen,
       onAction: onSignup,
     });
-  const contact = discordContact(account.user_id, true);
-  items.push(
-    contact.href
-      ? {
-          id: "dm",
-          label: contact.label,
-          href: contact.href,
-          title: contact.title,
-        }
-      : { id: "dm", label: contact.unavailable, disabled: true },
-  );
+  items.push(discordMessageItem(account.user_id));
   items.push({
     id: "details",
     label: "Details",

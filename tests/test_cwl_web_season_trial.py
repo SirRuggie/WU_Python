@@ -46,7 +46,8 @@ class SeasonTrial(unittest.IsolatedAsyncioTestCase):
         await request('POST', '/publication', {'revision': await self.revision(), 'acknowledge_unassigned': False, 'joining_instructions': ''}, status=201)
         self.assertFalse((await request('GET', '/my-assignments', who=self.member))['draft_changed'])
         await request('POST', '/participation/sync-settings', {'cycle': '2026-10', 'enabled': False})
-        await request('PATCH', '/participation/%23P2Y', {'revision': 0, 'publication_version': 1, 'attacks': 7, 'stars': 18, 'notes': 'Season trial'})
+        await request('PATCH', '/participation/%23P2Y', {'revision': 0, 'publication_version': 1, 'attacks': 7, 'stars': 18, 'notes': 'Season trial'}, status=400)
+        await request('PATCH', '/participation/%23P2Y', {'revision': 0, 'publication_version': 1, 'notes': 'Season trial'})
         # Owner588/591: successful confirmation now needs complete source data.
         from utils.cwl_working_roster import working_accounts, account_token
         with self.app['store'].tx() as db:
@@ -82,7 +83,8 @@ class SeasonTrial(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reopened.one('SELECT status FROM seasons WHERE id=?', (self.sid,))['status'], 'archived')
         self.assertEqual(len(reopened.rows('SELECT tag FROM signups WHERE season_id=?', (self.sid,))), 2)
         self.assertEqual(len(reopened.rows('SELECT tag FROM publication_accounts WHERE publication_id IN (SELECT id FROM roster_publications WHERE season_id=?)', (self.sid,))), 2)
-        self.assertEqual(reopened.one('SELECT attacks,stars FROM participation_records WHERE season_id=? AND tag=?', (self.sid, '#P2Y')), {'attacks': 7, 'stars': 18})
+        self.assertEqual(reopened.one('SELECT notes FROM participation_records WHERE season_id=? AND tag=?', (self.sid, '#P2Y')), {'notes': 'Season trial'})
+        self.assertEqual(reopened.one('SELECT attacks,stars FROM participation_source_results WHERE season_id=? AND tag=?', (self.sid, '#P2Y')), {'attacks': 7, 'stars': 18})
         self.assertEqual(len(reopened.rows('SELECT tag FROM bonus_confirmations WHERE season_id=? AND voided_at IS NULL', (self.sid,))), 1)
         await request('PATCH', '/roster/%23P2Y', {'revision': await self.revision(), 'assigned_clan_tag': None}, status=423)
         await request('POST', '/publication', {'revision': await self.revision(), 'acknowledge_unassigned': True, 'joining_instructions': ''}, status=423)

@@ -92,3 +92,41 @@ def test_incomplete_keeps_other_flag_reasons_and_cannot_override_them(reason):
         assert lazy_eligibility(account) is None
     else:
         assert lazy_eligibility(account) == 'Left the family'
+
+
+def _not_checked(**extra):
+    return dict(tag='#P',pool='lazy',assigned_clan_tag='#A',in_current_roster=True,
+                source_complete=False,source_status='missing',attacks=None,stars=None,**extra)
+
+
+def test_reason_covers_results_that_were_never_captured():
+    account = _not_checked(bonus_review={'override_reason':'Played; sync missed'})
+    assert lazy_eligibility(account) is None
+
+
+@pytest.mark.parametrize('reason', ['', '   '])
+def test_never_captured_without_reason_stays_excluded(reason):
+    account = _not_checked(bonus_review={'override_reason':reason})
+    assert lazy_eligibility(account) == 'Complete participation results are unavailable'
+
+
+@pytest.mark.parametrize('attacks,stars', [(3, None), (None, 8), (3, 8)])
+def test_partial_results_with_reason_stay_excluded(attacks, stars):
+    account = _not_checked(bonus_review={'override_reason':'Staff override'})
+    account.update(attacks=attacks, stars=stars, source_status='partial')
+    assert lazy_eligibility(account) == 'Complete participation results are unavailable'
+
+
+@pytest.mark.parametrize('attacks,stars,message', [
+    (9, None, 'Attack result is invalid'), (None, 30, 'Star result is invalid'),
+    (1, 9, 'Participation totals are inconsistent')])
+def test_invalid_numbers_with_reason_stay_excluded(attacks, stars, message):
+    account = _not_checked(bonus_review={'override_reason':'Staff override'})
+    account.update(attacks=attacks, stars=stars)
+    assert lazy_eligibility(account) == message
+
+
+def test_never_captured_reason_does_not_lift_hard_exclusions():
+    account = _not_checked(bonus_review={'override_reason':'Staff override'},
+                           already_confirmed_this_cycle=True)
+    assert lazy_eligibility(account) == 'Already selected for a bonus this CWL month'

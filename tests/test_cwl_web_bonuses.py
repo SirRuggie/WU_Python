@@ -47,6 +47,22 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
                  "2026-10-14T16:00:00+00:00", None, token),
             )
 
+    async def legacy_override(self, *, attacks=7, stars=21, notes=""):
+        # Staff corrections are no longer saved; seed one made before results became read only.
+        saved = self.app["store"].one(
+            "SELECT revision FROM participation_records WHERE season_id=? AND tag='#P2Y'", (self.sid,),
+        )
+        participation = await self.call(
+            "PATCH", f"/seasons/{self.sid}/participation/%23P2Y", self.owner,
+            json={"publication_version": 1, "revision": saved["revision"] if saved else 0, "notes": notes},
+        )
+        self.assertEqual(participation.status, 200, await participation.text())
+        with self.app["store"].tx() as db:
+            db.execute(
+                "UPDATE participation_records SET attacks=?,stars=?,attacks_override=1,stars_override=1 "
+                "WHERE season_id=? AND tag='#P2Y'", (attacks, stars, self.sid),
+            )
+
     async def view(self):
         response = await self.call("GET", self.base, self.owner)
         self.assertEqual(response.status, 200, await response.text())
@@ -162,7 +178,7 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(third["can_confirm"])
         participation = await self.call(
             "PATCH", f"/seasons/{self.sid}/participation/%23P2Y", self.owner,
-            json={"publication_version": 1, "revision": 0, "attacks": 2, "stars": 5, "notes": "Verified"},
+            json={"publication_version": 1, "revision": 0, "notes": "Verified"},
         )
         self.assertEqual(participation.status, 200, await participation.text())
         stale = await self.call(
@@ -174,11 +190,7 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_incomplete_source_is_blocked_even_with_reason_and_warning_ack(self):
         await self.setup_published()
-        participation = await self.call(
-            "PATCH", f"/seasons/{self.sid}/participation/%23P2Y", self.owner,
-            json={"publication_version": 1, "revision": 0, "attacks": 7, "stars": 21, "notes": ""},
-        )
-        self.assertEqual(participation.status, 200)
+        await self.legacy_override()
         with self.app["store"].tx() as db:
             db.execute(
                 "INSERT INTO participation_source_results("
@@ -251,11 +263,7 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (batch, self.sid, "2026-09", 1, "#P2Y", "Player", "main", "#C2Y", "Host", 7, 21, "test", "[]", "staff", "2026-09-20T00:00:00+00:00"),
             )
-        participation = await self.call(
-            "PATCH", f"/seasons/{self.sid}/participation/%23P2Y", self.owner,
-            json={"publication_version": 1, "revision": 0, "attacks": 7, "stars": 21, "notes": ""},
-        )
-        self.assertEqual(participation.status, 200)
+        await self.legacy_override()
         self.assertEqual((await self.settings(
             0, slots=2, min_attacks=1, min_stars=1, cooldown=2,
         )).status, 200)
@@ -284,11 +292,7 @@ class BonusTests(unittest.IsolatedAsyncioTestCase):
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (batch, prior_season, "2026-09", 1, "#P2Y", "Player", "main", "#C2Y", "Host", 7, 21, "test", "[]", "staff", "2026-09-20T00:00:00+00:00"),
             )
-        participation = await self.call(
-            "PATCH", f"/seasons/{self.sid}/participation/%23P2Y", self.owner,
-            json={"publication_version": 1, "revision": 0, "attacks": 7, "stars": 21, "notes": ""},
-        )
-        self.assertEqual(participation.status, 200)
+        await self.legacy_override()
         self.assertEqual((await self.settings(0, slots=1, min_attacks=1, min_stars=1, cooldown=2)).status, 200)
         data = await self.view()
         account = data["accounts"][0]

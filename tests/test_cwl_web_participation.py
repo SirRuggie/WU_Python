@@ -29,7 +29,7 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 201, await response.text())
         return (await response.json())["published"]["version"]
 
-    async def save(self, player_tag="#P2Y", revision=0, attacks=2, stars=5, notes="", publication_version=None):
+    async def save(self, player_tag="#P2Y", revision=0, notes="", publication_version=None, **results):
         if publication_version is None:
             response = await self.call("GET", self.endpoint, self.owner)
             publication_version = (await response.json())["publication_version"] or 1
@@ -38,8 +38,7 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
             self.owner,
             json={
                 "publication_version": publication_version,
-                "revision": revision, "attacks": attacks,
-                "stars": stars, "notes": notes,
+                "revision": revision, "notes": notes, **results,
             },
         )
 
@@ -86,7 +85,7 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["updated_by"], self.owner_user_id)
         self.assertTrue(first["updated_at"].endswith("+00:00"))
         self.assertEqual((await self.save(revision=0)).status, 409)
-        response = await self.save(revision=1, attacks=7, stars=21, notes="complete")
+        response = await self.save(revision=1, notes="complete")
         self.assertEqual(response.status, 200)
         self.assertEqual((await response.json())["account"]["revision"], 2)
         self.assertEqual(await self.revision(), roster_revision)
@@ -150,7 +149,7 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["recorded_publication_version"], 1)
         self.assertTrue(row["in_latest_publication"])
         self.assertTrue(row["roster_changed"])
-        response = await self.save(revision=1, attacks=3, stars=7, notes="Later edit")
+        response = await self.save(revision=1, notes="Later edit")
         self.assertEqual(response.status, 409)
         history = await self.call("GET", self.endpoint + "?source=history", self.owner)
         self.assertEqual((await history.json())["accounts"][0]["assigned_clan_tag"], "#C2Y")
@@ -229,7 +228,7 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data['roster_source'], 'current_signups')
         row = data['accounts'][0]
         body = dict(publication_version=0, roster_token=row['roster_token'],
-                    revision=0, attacks=1, stars=2, notes='Current signup')
+                    revision=0, notes='Current signup')
         response = await self.call('PATCH', self.endpoint + '/%23P2Y', self.owner, json=body)
         self.assertEqual(response.status, 200, await response.text())
         with self.app['store'].tx() as db:
@@ -244,6 +243,27 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(row['roster_changed'])
         self.assertEqual((await self.call('GET', self.endpoint + '?source=invalid', self.owner)).status, 400)
         self.assertEqual((await self.call('GET', self.endpoint + '?source=history', self.member)).status, 403)
+
+    async def test_results_come_from_clash_and_only_notes_save(self):
+        await self.signup('main', '#P2Y')
+        await self.publish()
+        base = {'publication_version': 1, 'revision': 0, 'notes': 'Reviewed'}
+        for change in ({'attacks': 2}, {'stars': 5}, {'attacks': 2, 'stars': 5}):
+            response = await self.call('PATCH', self.endpoint + '/%23P2Y', self.owner, json={**base, **change})
+            self.assertEqual(response.status, 400, await response.text())
+            self.assertIn('Results come from Clash', await response.text())
+        self.assertEqual(self.app['store'].rows(
+            'SELECT * FROM participation_records WHERE season_id=?', (self.sid,)), [])
+        response = await self.call('PATCH', self.endpoint + '/%23P2Y', self.owner, json=base)
+        self.assertEqual(response.status, 200, await response.text())
+        account = (await response.json())['account']
+        self.assertEqual(account['notes'], 'Reviewed')
+        self.assertIsNone(account['attacks'])
+        self.assertFalse(account['attacks_override'] or account['stars_override'])
+        unchanged = {**base, 'revision': 1, 'attacks': None, 'stars': None, 'notes': 'Second'}
+        response = await self.call('PATCH', self.endpoint + '/%23P2Y', self.owner, json=unchanged)
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertEqual((await response.json())['account']['revision'], 2)
 
     async def test_removed_signup_excluded_without_republication_every_current_consumer(self):
         await self.signup('main', '#P2Y')

@@ -230,11 +230,10 @@ class LazyBonusApiTests(RaffleTests):
         self.assertTrue(any(a['tag'] == '#Q2Y' and a.get('manual_candidate') for a in state['accounts']))
         self.assertIsNone(self.app['store'].one('SELECT tag FROM signups WHERE season_id=? AND tag=?', (self.sid, '#Q2Y')))
         preview = await self.review_preview()
-        # Owner588/591/592: the manual candidate needs complete bound results;
-        # a staff exception cannot replace them. Keep the original success path.
-        self.assertEqual(len(preview['eligible']), 1)
-        excluded = next(a for a in preview['excluded'] if a['tag'] == '#Q2Y')
-        self.assertIn('Complete participation results are unavailable', excluded['exclusion'])
+        # Results for the manual candidate were never captured ("Not checked"),
+        # so its logged staff reason covers them (2026-11-11 decision).
+        self.assertEqual(len(preview['eligible']), 2)
+        self.assertFalse(any(a['tag'] == '#Q2Y' for a in preview['excluded']))
         candidate = next(a for a in state['accounts'] if a['tag'] == '#Q2Y')
         with self.app['store'].tx() as db:
             db.execute(
