@@ -222,7 +222,6 @@ export default function BonusWorkspace({
   const reviewOpener = useRef<HTMLElement | null>(null);
   const addOpener = useRef<HTMLButtonElement | null>(null);
   const candidateTagInput = useRef<HTMLInputElement | null>(null);
-  const candidateHeading = useRef<HTMLHeadingElement | null>(null);
   const drawHeading = useRef<HTMLHeadingElement | null>(null);
   const previousStage = useRef<number | null>(null);
   const generation = useRef(0);
@@ -1111,7 +1110,7 @@ export default function BonusWorkspace({
               ) : (
                 <>
                   <div className="bonus-candidates-heading">
-                    <h3 ref={candidateHeading} tabIndex={-1}>
+                    <h3 data-dashboard-focus-fallback tabIndex={-1}>
                       Candidate review
                     </h3>
                   </div>

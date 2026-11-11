@@ -332,7 +332,7 @@
   color: var(--roster-text-muted);
   font-size: var(--wu-text-sm);
 }
-.bonus-review-editor .action-panel-content > p:not(.bonus-review-tag),
+.bonus-review-editor .action-panel-content > p:not(.bonus-review-tag, .notice),
 .bonus-add-candidate > p {
   color: var(--roster-text-muted);
   text-wrap: pretty;

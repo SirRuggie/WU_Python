@@ -65,6 +65,22 @@ it("a result for another assignment shows the reason, not a tally", async () => 
   );
 });
 
+it("Signups rows show the Clash capture status with the tally", async () => {
+  const card = await show("participation", {
+    ...base,
+    attacks: 2,
+    stars: 5,
+    source_status: "complete",
+    display_status: { code: "complete", label: "Final results" },
+  });
+  expect(card.querySelector(".card-tally")!.textContent).toBe(
+    "2 Attacks · 5 Stars",
+  );
+  expect(card.querySelector(".account-card-flags")!.textContent).toBe(
+    "Clash capture: Final results",
+  );
+});
+
 it("Results history keeps saved notes behind a disclosure", async () => {
   const card = await show("participation-history", {
     ...base,

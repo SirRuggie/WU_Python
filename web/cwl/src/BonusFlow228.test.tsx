@@ -201,6 +201,23 @@ describe("Bonus page loading", () => {
   });
 });
 
+describe("Bonus candidate cards", () => {
+  it("use the shared card, and staff without bonus access cannot open Review", async () => {
+    permission.value = false;
+    await mount();
+    const alpha = host.querySelector<HTMLButtonElement>(
+      '.bonus-account-list [aria-label="Review Alpha"]',
+    )!;
+    expect(alpha.closest("article")!.classList).toContain(
+      "shared-account-card",
+    );
+    expect(alpha.disabled).toBe(true);
+    await act(async () => alpha.click());
+    expect(document.querySelector(".bonus-review-editor")).toBeNull();
+    expect(writes()).toHaveLength(0);
+  });
+});
+
 describe("Bonus clan cards", () => {
   it("show name, meet count and state from the status read", async () => {
     await mount();

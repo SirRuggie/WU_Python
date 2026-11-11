@@ -417,6 +417,14 @@ Glow top opacity: green/red 20%, neutral 8%, fading out at 44px before line 3. U
 
 Item 6: withdrawn rosters with placements show the amber step dot; the Build banner shares Finalize's Hidden from members wording. Background metadata enrichment includes checked_at with the location name/tag/status so already-mounted cards render completed reads. Existing season/revision/request guards remain; no backend change.
 
+### Plain list cards (Results, Bonus medals, Exports; 2026-11-11)
+
+Results & participation, Bonus medals (Candidate review and the draw lists) and the Exports preview use one card: `AccountCard` with the `account-card-plain` modifier (neutral surface, no glow; metadata and flag lines wrap). Attacks and stars use `CardTally` (number tinted by the outcome tone); the outcome is a `StatusPill` beside it.
+
+- A card that opens a panel stretches its name button (`account-card-open`) over the whole card; the `⋯` menu repeats that action. Results opens Details; Bonus medals opens Review.
+- Bonus Review opens in the shared `ActionPanel` (bottom sheet on phones, centered dialog on desktop), never inline below the list. Close, Escape, backdrop and Back go through the unsaved-edit discard confirm. Without bonus access the card button and menu item are disabled.
+- Exports cards are read-only: no menu. Rows show TH, tag, CWL and hosting clan in the metadata line; Roster adds `Weight`, Signups and Results history add `Clash capture`, Bonus medals history shows the selection as a pill plus the date and reason.
+
 ## Signup-change review
 
 A single header alert below the summary chips opens a side panel on desktop or full-screen sheet on phones. Amber is the default; red means a previous hosting clan is now below its known war size. Keep loading silent, Retry visible on read failure, short local dates, and the published-version caveat only for an active publication. Mark all requires confirmation with names; sequential review failures retain remaining rows and report partial progress. Reviews never modify placements or signup records.
