@@ -2,10 +2,7 @@ import type { Season } from "./api";
 import { exportMonthLabel } from "./exportPreview";
 import type { ExportRow } from "./exportPreview";
 export type ExportKind =
-  | "accounts"
-  | "participation"
-  | "participation-history"
-  | "bonus-history";
+  "accounts" | "participation" | "participation-history" | "bonus-history";
 const validMonth = (value: string | null | undefined) =>
   value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) ? value : "";
 const seasonCycle = (season: Season) =>

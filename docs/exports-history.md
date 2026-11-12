@@ -50,6 +50,5 @@ empty/denied/retry states and CSV transport. Automated and native evidence are
 recorded in the batch review artifact; these are scoped usability checks, not
 assistive-technology certification.
 
-
 Reactivating the already-selected Published/Working mode is a no-op: it neither
 clears the displayed records nor starts a read, including unpublished Working.
