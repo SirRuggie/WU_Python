@@ -30,11 +30,6 @@ const rep = (tag: string, name: string, user: string | null, note = "") => ({
 const raffle = {
   season_status: "draft",
   revision: 7,
-  sit_out_settings: [
-    { tag: "#C2Y", name: "Lazy One", months: 1 },
-    { tag: "#Q2Y", name: "Lazy Two", months: 3 },
-    { tag: "#L2Y", name: "Lazy Three", months: 2 },
-  ],
   rep_accounts: [
     rep("#P2Y", "Alpha", "111111111111111111", "REP for Edrag Rush/420"),
     rep("#Q2Y", "Bravo", null),
@@ -98,36 +93,6 @@ async function open(
   );
   await settle();
 }
-async function openAdd() {
-  const section = document.querySelector<HTMLDetailsElement>(
-    'details[aria-label="FWA Rep accounts"]',
-  )!;
-  await act(async () => {
-    section.open = true;
-    button("Add account").click();
-  });
-  await settle();
-  const byTag = document.querySelector<HTMLDetailsElement>(".rep-add-by-tag")!;
-  await act(async () => {
-    byTag.open = true;
-    byTag.dispatchEvent(new Event("toggle"));
-  });
-}
-async function rowAction(label: string, name = "Alpha") {
-  document.querySelector<HTMLDetailsElement>(
-    'details[aria-label="FWA Rep accounts"]',
-  )!.open = true;
-  await act(async () =>
-    document
-      .querySelector<HTMLButtonElement>(`[aria-label="Actions for ${name}"]`)!
-      .click(),
-  );
-  await act(async () =>
-    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-      .find((node) => node.textContent?.trim() === label)!
-      .click(),
-  );
-}
 const month = () =>
   document.querySelector<HTMLInputElement>('input[type="month"]')!;
 beforeEach(() => {
@@ -165,14 +130,13 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
-  vi.restoreAllMocks();
 });
 
 describe("Settings sheet", () => {
-  it("holds all three sections as closed disclosures with mounted content", async () => {
+  it("holds CWL capture and FWA Rep accounts, and no disclosure", async () => {
     await open();
     const sections = [
-      ...document.querySelectorAll(".results-settings-title"),
+      ...document.querySelectorAll(".results-settings-section h3"),
     ].map((node) => node.textContent);
     expect(sections).toEqual([
       "CWL capture",
@@ -180,16 +144,7 @@ describe("Settings sheet", () => {
       "FWA Rep accounts",
     ]);
     expect(document.querySelector("dialog.results-settings")).not.toBeNull();
-    expect(
-      document.querySelectorAll("details.results-settings-section"),
-    ).toHaveLength(3);
-    expect(
-      [
-        ...document.querySelectorAll<HTMLDetailsElement>(
-          "details.results-settings-section",
-        ),
-      ].every((node) => !node.open),
-    ).toBe(true);
+    expect(document.querySelector("details")).toBeNull();
     expect(month().value).toBe("2026-11");
     expect(writes()).toHaveLength(0);
   });
@@ -274,7 +229,6 @@ describe("Settings sheet", () => {
   });
   it("finds a Clan Rep, shows their accounts and adds one for x2", async () => {
     await open();
-    await openAdd();
     expect(document.body.textContent).toContain("Find Clan Rep (x2 odds)");
     await pickOption(
       pickerByLabel(document.body, "Find Clan Rep (x2 odds)"),
@@ -314,8 +268,7 @@ describe("Settings sheet", () => {
   });
   it("adds an account by tag with a note and the draw revision it loaded", async () => {
     await open();
-    await openAdd();
-    const add = button("Add tag");
+    const add = button("Add account");
     expect(add.disabled).toBe(true);
     await type(
       document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!,
@@ -343,7 +296,7 @@ describe("Settings sheet", () => {
   });
   it("edits a note and removes an account only after confirmation", async () => {
     await open();
-    await rowAction("Edit note");
+    await act(async () => button("Edit note").click());
     const input = document.querySelector<HTMLInputElement>(
       'input[name="rep-edit-note"]',
     )!;
@@ -366,12 +319,12 @@ describe("Settings sheet", () => {
     api.mockClear();
     await act(async () => root.render(<></>));
     await open();
-    await rowAction("Remove");
+    await act(async () => button("Remove").click());
     const dialog = document.querySelector(".confirm-dialog")!;
     expect(dialog.textContent).toContain("Remove Alpha (#P2Y)?");
     await act(async () => button("Cancel", dialog).click());
     expect(writes()).toHaveLength(0);
-    await rowAction("Remove");
+    await act(async () => button("Remove").click());
     await act(async () =>
       button(
         "Remove account",
@@ -388,7 +341,6 @@ describe("Settings sheet", () => {
   });
   it("shows a list conflict, reloads the list and keeps the typed tag", async () => {
     await open();
-    await openAdd();
     await type(
       document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!,
       "#V2Y",
@@ -402,7 +354,7 @@ describe("Settings sheet", () => {
           ? members
           : participation;
     });
-    await act(async () => button("Add tag").click());
+    await act(async () => button("Add account").click());
     await settle();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "already an FWA Rep account",
@@ -504,11 +456,7 @@ describe("Settings sheet", () => {
     await open({ archived: true });
     expect(month().disabled).toBe(true);
     expect(button("Add account").disabled).toBe(true);
-    expect(
-      document.querySelector<HTMLButtonElement>(
-        '[aria-label="Actions for Alpha"]',
-      )!.disabled,
-    ).toBe(true);
+    expect(button("Remove").disabled).toBe(true);
     expect(document.body.textContent).toContain("Read only");
   });
 });
@@ -559,569 +507,4 @@ it("shows one sit-out row per Lazy clan and saves only through its explicit butt
     ],
   ]);
   expect(select.value).toBe("2");
-});
-
-const section = (name: string) =>
-  document.querySelector<HTMLDetailsElement>(`details[aria-label="${name}"]`)!;
-const summaryText = (name: string) =>
-  section(name)
-    .querySelector("summary")!
-    .textContent?.replace(/\s+/g, " ")
-    .trim();
-const frame = () =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 40));
-  });
-const selectMonths = (tag: string, months: string) =>
-  act(async () => {
-    const input = document.querySelector<HTMLSelectElement>(
-      `select[name="sit-out-${tag}"]`,
-    )!;
-    input.value = months;
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-it("shows exact saved summaries, with no heading/button inside summary and no request on section toggles", async () => {
-  await open();
-  expect(summaryText("CWL capture")).toBe("CWL capture · Off · Nov 2026");
-  expect(summaryText("Sit-out after a win")).toBe(
-    "Sit-out after a win · 3 clans · 1–3 months",
-  );
-  expect(summaryText("FWA Rep accounts")).toBe("FWA Rep accounts · 3 accounts");
-  const before = api.mock.calls.length;
-  for (const node of document.querySelectorAll<HTMLDetailsElement>(
-    "details.results-settings-section",
-  )) {
-    expect(node.open).toBe(false);
-    expect(node.querySelector("summary h3, summary button")).toBeNull();
-    await act(async () => {
-      node.open = true;
-      node.open = false;
-    });
-  }
-  expect(api.mock.calls).toHaveLength(before);
-  expect(writes()).toHaveLength(0);
-});
-it.each([
-  { months: [], reps: [], sit: "No Lazy clans", rep: "None" },
-  {
-    months: [0],
-    reps: [raffle.rep_accounts[0]],
-    sit: "1 clan · None",
-    rep: "1 account",
-  },
-  { months: [1], reps: [], sit: "1 clan · 1 month", rep: "None" },
-  { months: [3, 3, 3], reps: [], sit: "3 clans · 3 months", rep: "None" },
-])(
-  "formats saved sit-out/account counts: $sit / $rep",
-  async ({ months, reps, sit, rep }) => {
-    const original = api.getMockImplementation()!;
-    api.mockImplementation((route: string) =>
-      route.endsWith("/bonus-raffle")
-        ? Promise.resolve({
-            ...raffle,
-            sit_out_settings: months.map((n, i) => ({
-              tag: `#P${i}`,
-              name: `Clan ${i}`,
-              months: n,
-            })),
-            rep_accounts: reps,
-          })
-        : original(route),
-    );
-    await open();
-    expect(summaryText("Sit-out after a win")).toBe(
-      `Sit-out after a win · ${sit}`,
-    );
-    expect(summaryText("FWA Rep accounts")).toBe(`FWA Rep accounts · ${rep}`);
-  },
-);
-it.each([false, true])(
-  "shows On/Off and Month not set from saved capture (enabled=%s)",
-  async (enabled) => {
-    const original = api.getMockImplementation()!;
-    api.mockImplementation((route: string) =>
-      route.endsWith("/participation")
-        ? Promise.resolve({
-            ...participation,
-            sync: { ...sync, cycle: null, enabled },
-          })
-        : original(route),
-    );
-    await open();
-    expect(summaryText("CWL capture")).toBe(
-      `CWL capture · ${enabled ? "On" : "Off"} · Month not set`,
-    );
-  },
-);
-it("shows Loading then Not loaded, with capture Retry/odds Refresh above all closed sections", async () => {
-  const pending: ((value: object) => void)[] = [];
-  api.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));
-  await open();
-  expect(summaryText("CWL capture")).toBe("CWL capture · Loading…");
-  expect(summaryText("Sit-out after a win")).toBe(
-    "Sit-out after a win · Loading…",
-  );
-  expect(summaryText("FWA Rep accounts")).toBe("FWA Rep accounts · Loading…");
-  await act(async () => root.render(<></>));
-  api.mockRejectedValue(new Error("Fixture read unavailable"));
-  await open();
-  for (const name of ["CWL capture", "Sit-out after a win", "FWA Rep accounts"])
-    expect(summaryText(name)).toBe(`${name} · Not loaded`);
-  const alerts = [...document.querySelectorAll('[role="alert"]')];
-  expect(alerts).toHaveLength(2);
-  for (const alert of alerts)
-    expect(
-      alert.compareDocumentPosition(section("CWL capture")) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  expect(button("Retry")).toBeDefined();
-  expect(button("Refresh")).toBeDefined();
-  expect(
-    [
-      ...document.querySelectorAll<HTMLDetailsElement>(
-        "details.results-settings-section",
-      ),
-    ].every((node) => !node.open),
-  ).toBe(true);
-});
-it("switches native exclusive names with the680px media query and removes its listener on unmount", async () => {
-  let listener: (() => void) | undefined;
-  const media = {
-    matches: true,
-    addEventListener: vi.fn((_name, fn) => {
-      listener = fn;
-    }),
-    removeEventListener: vi.fn(),
-  };
-  vi.spyOn(window, "matchMedia").mockReturnValue(
-    media as unknown as MediaQueryList,
-  );
-  await open();
-  expect(
-    [...document.querySelectorAll("details.results-settings-section")].map(
-      (node) => node.getAttribute("name"),
-    ),
-  ).toEqual(["results-settings", "results-settings", "results-settings"]);
-  await act(async () => {
-    media.matches = false;
-    listener!();
-  });
-  expect(
-    [...document.querySelectorAll("details.results-settings-section")].every(
-      (node) => !node.hasAttribute("name"),
-    ),
-  ).toBe(true);
-  await act(async () => root.render(<></>));
-  expect(media.removeEventListener).toHaveBeenCalledWith("change", listener);
-});
-it("retains capture/sit-out/tag/note drafts through closed sections and names Unsaved using saved summary values", async () => {
-  await open();
-  await type(month(), "2026-12");
-  await selectMonths("#C2Y", "6");
-  await openAdd();
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!,
-    "#V2Y",
-  );
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-note"]')!,
-    "Pending tag note",
-  );
-  for (const name of [
-    "CWL capture",
-    "Sit-out after a win",
-    "FWA Rep accounts",
-  ]) {
-    await act(async () => {
-      section(name).open = false;
-      section(name).open = true;
-    });
-    expect(summaryText(name)).toContain(" · Unsaved");
-  }
-  expect(summaryText("CWL capture")).toBe(
-    "CWL capture · Off · Nov 2026 · Unsaved",
-  );
-  expect(summaryText("Sit-out after a win")).toBe(
-    "Sit-out after a win · 3 clans · 1–3 months · Unsaved",
-  );
-  expect(month().value).toBe("2026-12");
-  expect(
-    document.querySelector<HTMLSelectElement>('select[name="sit-out-#C2Y"]')!
-      .value,
-  ).toBe("6");
-  expect(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!.value,
-  ).toBe("#V2Y");
-  expect(
-    document.querySelector<HTMLInputElement>('input[name="rep-note"]')!.value,
-  ).toBe("Pending tag note");
-  expect(document.querySelector(".rep-add-by-tag summary")?.textContent).toBe(
-    "Add by player tag · Unsaved",
-  );
-  expect(writes()).toHaveLength(0);
-  await act(async () => button("Close").click());
-  expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
-    "Discard unsaved settings?",
-  );
-});
-it("places unique primary Add account above the list; Cancel clears both forms/finder, returns focus and clears only its own dirty ownership", async () => {
-  await open();
-  const add = button("Add account");
-  expect(
-    [...document.querySelectorAll("button")].filter(
-      (node) => node.textContent?.trim() === "Add account",
-    ),
-  ).toHaveLength(1);
-  expect(add.classList.contains("is-primary")).toBe(true);
-  expect(add.getAttribute("aria-expanded")).toBe("false");
-  expect(
-    add.compareDocumentPosition(document.querySelector(".rep-accounts-list")!) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  section("FWA Rep accounts").open = true;
-  await act(async () => add.click());
-  await frame();
-  expect(
-    document.getElementById(add.getAttribute("aria-controls")!),
-  ).not.toBeNull();
-  expect(
-    document.querySelector<HTMLDetailsElement>(".rep-add-by-tag")!.open,
-  ).toBe(false);
-  expect(
-    document.querySelector(".rep-finder")!.contains(document.activeElement),
-  ).toBe(true);
-  await pickOption(
-    pickerByLabel(document.body, "Find Clan Rep (x2 odds)"),
-    "Ruggie",
-  );
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-finder-note"]')!,
-    "Finder draft",
-  );
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!,
-    "#V2Y",
-  );
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-note"]')!,
-    "Tag draft",
-  );
-  await act(async () =>
-    button("Cancel", document.querySelector(".rep-add-area")!).click(),
-  );
-  await frame();
-  expect(add.getAttribute("aria-expanded")).toBe("false");
-  expect(document.activeElement).toBe(add);
-  expect(onDirty).toHaveBeenLastCalledWith(false);
-  expect(writes()).toHaveLength(0);
-  await act(async () => add.click());
-  await frame();
-  expect(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!.value,
-  ).toBe("");
-  expect(
-    document.querySelector<HTMLInputElement>('input[name="rep-note"]')!.value,
-  ).toBe("");
-  expect(document.querySelector('input[name="rep-finder-note"]')).toBeNull();
-  expect(
-    pickerByLabel(document.body, "Find Clan Rep (x2 odds)").textContent,
-  ).toContain("Select a Clan Rep");
-});
-it("automatically opens Add by player tag for a selected Rep with no linked accounts", async () => {
-  const original = api.getMockImplementation()!;
-  api.mockImplementation((route: string) =>
-    route.includes("/staff-signups/accounts?")
-      ? Promise.resolve({ accounts: [] })
-      : original(route),
-  );
-  await open();
-  section("FWA Rep accounts").open = true;
-  await act(async () => button("Add account").click());
-  await settle();
-  await pickOption(
-    pickerByLabel(document.body, "Find Clan Rep (x2 odds)"),
-    "Ruggie",
-  );
-  await settle();
-  expect(
-    document.querySelector<HTMLDetailsElement>(".rep-add-by-tag")!.open,
-  ).toBe(true);
-  expect(writes()).toHaveLength(0);
-});
-it("successful tag add keeps the area open and retains another section's actual dirty guard", async () => {
-  await open();
-  await type(month(), "2026-12");
-  await selectMonths("#C2Y", "6");
-  await openAdd();
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!,
-    "#V2Y",
-  );
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-note"]')!,
-    "New note",
-  );
-  await act(async () => button("Add tag").click());
-  expect(button("Add account").getAttribute("aria-expanded")).toBe("true");
-  expect(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!.value,
-  ).toBe("");
-  expect(
-    document.querySelector<HTMLSelectElement>('select[name="sit-out-#C2Y"]')!
-      .value,
-  ).toBe("6");
-  expect(month().value).toBe("2026-12");
-  expect(summaryText("Sit-out after a win")).toContain("Unsaved");
-  await act(async () =>
-    button("Cancel", document.querySelector(".rep-add-area")!).click(),
-  );
-  await act(async () => button("Close").click());
-  expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
-    "Discard unsaved settings?",
-  );
-  expect(writes()).toHaveLength(1);
-});
-it("row menus portal inside the dialog; Edit note focuses input and disables other edits, then Cancel returns row focus", async () => {
-  await open();
-  section("FWA Rep accounts").open = true;
-  const trigger = document.querySelector<HTMLButtonElement>(
-    '[aria-label="Actions for Alpha"]',
-  )!;
-  await act(async () => trigger.click());
-  const menu = document.querySelector('[role="menu"]')!;
-  expect(
-    document.querySelector("dialog.results-settings")!.contains(menu),
-  ).toBe(true);
-  expect(
-    [...menu.querySelectorAll('[role="menuitem"]')].map((node) =>
-      node.textContent?.trim(),
-    ),
-  ).toEqual(["Edit note", "Remove"]);
-  expect(menu.querySelector('[role="separator"]')).not.toBeNull();
-  expect(menu.querySelector(".roster-action-danger")?.textContent).toBe(
-    "Remove",
-  );
-  await act(async () =>
-    [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')][0].click(),
-  );
-  await frame();
-  const input = document.querySelector<HTMLInputElement>(
-    'input[name="rep-edit-note"]',
-  )!;
-  expect(document.activeElement).toBe(input);
-  await type(input, "Dirty inline note");
-  await act(async () =>
-    document
-      .querySelector<HTMLButtonElement>('[aria-label="Actions for Charlie"]')!
-      .click(),
-  );
-  expect(
-    [...document.querySelectorAll('[role="menuitem"]')]
-      .find((node) => node.textContent?.trim() === "Edit note")
-      ?.getAttribute("aria-disabled"),
-  ).toBe("true");
-  await act(async () =>
-    document
-      .querySelector('[role="menu"]')!
-      .dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-      ),
-  );
-  expect(document.querySelector('[role="menu"]')).toBeNull();
-  expect(
-    document.querySelector<HTMLDialogElement>("dialog.results-settings")!.open,
-  ).toBe(true);
-  await act(async () =>
-    button("Cancel", document.querySelector(".rep-account-note-edit")!).click(),
-  );
-  await frame();
-  expect(document.activeElement).toBe(trigger);
-  expect(writes()).toHaveLength(0);
-});
-it("first Escape closes only a row menu; second native cancel reaches the dirty sheet discard guard", async () => {
-  await open();
-  await type(month(), "2026-12");
-  section("FWA Rep accounts").open = true;
-  await act(async () =>
-    document
-      .querySelector<HTMLButtonElement>('[aria-label="Actions for Alpha"]')!
-      .click(),
-  );
-  await act(async () =>
-    document
-      .querySelector('[role="menu"]')!
-      .dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-      ),
-  );
-  expect(document.querySelector('[role="menu"]')).toBeNull();
-  expect(document.querySelector(".confirm-dialog")).toBeNull();
-  expect(onClose).not.toHaveBeenCalled();
-  await act(async () =>
-    document
-      .querySelector("dialog.results-settings")!
-      .dispatchEvent(new Event("cancel", { cancelable: true })),
-  );
-  expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
-    "Discard unsaved settings?",
-  );
-  expect(writes()).toHaveLength(0);
-});
-it("Cancel in Add preserves an inline note draft and the real sheet dirty guard", async () => {
-  await open();
-  await rowAction("Edit note");
-  await frame();
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-edit-note"]')!,
-    "Dirty note",
-  );
-  await openAdd();
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!,
-    "#V2Y",
-  );
-  await act(async () =>
-    button("Cancel", document.querySelector(".rep-add-area")!).click(),
-  );
-  expect(
-    document.querySelector<HTMLInputElement>('input[name="rep-edit-note"]')!
-      .value,
-  ).toBe("Dirty note");
-  expect(summaryText("FWA Rep accounts")).toContain("Unsaved");
-  await act(async () => button("Close").click());
-  expect(document.querySelector(".confirm-dialog")).not.toBeNull();
-  expect(writes()).toHaveLength(0);
-});
-it("successful remove focuses the next grouped row menu", async () => {
-  const original = api.getMockImplementation()!;
-  api.mockImplementation((route: string, method?: string) =>
-    route.endsWith("/rep-accounts") && method === "DELETE"
-      ? Promise.resolve({
-          ...raffle,
-          revision: 8,
-          rep_accounts: raffle.rep_accounts.slice(1),
-        })
-      : original(route, method),
-  );
-  await open();
-  await rowAction("Remove");
-  await act(async () =>
-    button(
-      "Remove account",
-      document.querySelector(".confirm-dialog")!,
-    ).click(),
-  );
-  await frame();
-  expect(document.activeElement).toBe(
-    document.querySelector('[aria-label="Actions for Charlie"]'),
-  );
-  expect(writes()).toHaveLength(1);
-});
-it("saving a note restores that row menu focus without clearing a pending add form", async () => {
-  const original = api.getMockImplementation()!;
-  api.mockImplementation((route: string, method?: string) =>
-    route.endsWith("/rep-accounts") && method === "PATCH"
-      ? Promise.resolve({
-          ...raffle,
-          revision: 8,
-          rep_accounts: raffle.rep_accounts.map((row) =>
-            row.tag === "#P2Y"
-              ? { ...row, note: "Updated note", revision: 2 }
-              : row,
-          ),
-        })
-      : original(route, method),
-  );
-  await open();
-  await openAdd();
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!,
-    "#V2Y",
-  );
-  await rowAction("Edit note");
-  await frame();
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-edit-note"]')!,
-    "Updated note",
-  );
-  await act(async () => button("Save note").click());
-  await frame();
-  expect(document.activeElement).toBe(
-    document.querySelector('[aria-label="Actions for Alpha"]'),
-  );
-  expect(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!.value,
-  ).toBe("#V2Y");
-  expect(summaryText("FWA Rep accounts")).toContain("Unsaved");
-  expect(writes()).toHaveLength(1);
-});
-it.each([
-  { name: "Bravo", accounts: raffle.rep_accounts, target: "Charlie" },
-  { name: "Alpha", accounts: [raffle.rep_accounts[0]], target: null },
-])(
-  "successful removal of $name focuses previous menu or Add account when no row remains",
-  async ({ name, accounts, target }) => {
-    const original = api.getMockImplementation()!;
-    api.mockImplementation((route: string, method?: string) =>
-      route.endsWith("/rep-accounts") && method === "DELETE"
-        ? Promise.resolve({
-            ...raffle,
-            revision: 8,
-            rep_accounts: accounts.filter((row) => row.player_name !== name),
-          })
-        : route.endsWith("/bonus-raffle")
-          ? Promise.resolve({ ...raffle, rep_accounts: accounts })
-          : original(route, method),
-    );
-    await open();
-    await rowAction("Remove", name);
-    await act(async () =>
-      button(
-        "Remove account",
-        document.querySelector(".confirm-dialog")!,
-      ).click(),
-    );
-    await frame();
-    expect(document.activeElement).toBe(
-      target
-        ? document.querySelector(`[aria-label="Actions for ${target}"]`)
-        : button("Add account"),
-    );
-    expect(writes()).toHaveLength(1);
-  },
-);
-it("a successful finder add clears only its note and keeps the tag form/draft and Add area", async () => {
-  await open();
-  await openAdd();
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!,
-    "#Q2Y",
-  );
-  await type(
-    document.querySelector<HTMLInputElement>('input[name="rep-note"]')!,
-    "Other form draft",
-  );
-  await pickOption(
-    pickerByLabel(document.body, "Find Clan Rep (x2 odds)"),
-    "Ruggie",
-  );
-  const finder = document.querySelector(".rep-finder")!;
-  await type(
-    finder.querySelector<HTMLInputElement>('input[name="rep-finder-note"]')!,
-    "Finder note",
-  );
-  await act(async () => button("Add for x2", finder).click());
-  expect(
-    finder.querySelector<HTMLInputElement>('input[name="rep-finder-note"]')!
-      .value,
-  ).toBe("");
-  expect(
-    document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!.value,
-  ).toBe("#Q2Y");
-  expect(
-    document.querySelector<HTMLInputElement>('input[name="rep-note"]')!.value,
-  ).toBe("Other form draft");
-  expect(button("Add account").getAttribute("aria-expanded")).toBe("true");
-  expect(summaryText("FWA Rep accounts")).toContain("Unsaved");
-  expect(writes()).toHaveLength(1);
 });
