@@ -1476,6 +1476,13 @@ starts empty. Settings section "FWA Rep accounts" in `BonusRepAccounts.tsx`;
 the "Discord roles unavailable" blocker is removed. Details:
 `docs/cwl-lazy-bonuses.md`.
 
+Follow-up (2026-11-12): Lazy infractions (flags and staff reason) move into the
+player Details sheet and the steps "Infractions" panel; ⋯ "Review" is renamed
+"Infractions"; step cards show flag chips (overview cards do not). Frontend
+only, no new endpoint: Details reads the existing `bonus-raffle` data when it
+opens and has one Save for notes and infractions. Read only after the draw.
+Details: `docs/cwl-lazy-bonuses.md`.
+
 Later:
 
 - (a) Winners count on the clan card ("3 winners · Approved"). Needs an additive

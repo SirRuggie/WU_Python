@@ -264,14 +264,31 @@
 .bonus-review-context .bonus-review-attribution {
   color: var(--roster-text-muted);
 }
-.bonus-review-editor fieldset {
+.bonus-review-editor fieldset,
+.participation-infractions fieldset {
   border: 0;
   padding: 0;
   margin: var(--wu-space-3) 0;
 }
-.bonus-review-editor legend {
+.bonus-review-editor legend,
+.participation-infractions legend {
   font-weight: var(--wu-weight-bold);
   margin-bottom: var(--wu-space-1);
+}
+.bonus-review-readonly,
+.participation-infractions > p {
+  color: var(--roster-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.participation-infractions {
+  margin-top: var(--wu-space-4);
+}
+.participation-infractions h3 {
+  margin: 0 0 var(--wu-space-1);
+  font-size: var(--wu-text-base, 1rem);
+}
+.participation-infractions button {
+  min-height: 44px;
 }
 .bonus-flag {
   display: flex;

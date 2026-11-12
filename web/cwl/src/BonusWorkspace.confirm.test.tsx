@@ -159,7 +159,7 @@ it("the whole card opens Review in a modal panel, not below the list", async () 
   expect(panel.open).toBe(true);
   // Portaled to the page body, so it never lands at the end of the list.
   expect(host.contains(panel)).toBe(false);
-  expect(panel.textContent).toContain("Review Fixture");
+  expect(panel.textContent).toContain("Infractions for Fixture");
   await act(async () =>
     panel.querySelector<HTMLButtonElement>(".action-panel-close")!.click(),
   );

@@ -17,6 +17,19 @@ Each normally excludes the account for that dashboard season. Staff can include
 an otherwise excluded account with a nonempty reason. The review records the
 actor and timestamp and preserves append-only before/after history.
 
+Staff call the flags and the reason "Infractions". They are edited in the player
+Details sheet on Results & bonuses (Lazy players with a hosting clan, needs the
+Bonuses grant) and in the Infractions panel in the clan steps (player name or
+card ⋯ "Infractions"). Both use the same `account-review` PATCH and revision.
+The list loads only `bonus-status`; Details reads the season's `bonus-raffle`
+data once when it opens and replaces it after a save; a save also rereads
+`bonus-status`, so the clan option's "x of y meet" updates. Details has one
+footer Cancel and Save: Save writes the changed notes, then the changed
+infractions, and names the part that failed ("Notes not saved", "Infractions not
+saved"). After the clan's draw is saved, approved or sent, and in archived
+seasons, the flags are read only. Main has no Infractions. The clan steps cards
+show one chip per set flag and "Staff reason"; the overview cards show none.
+
 A Clash account confirmed for a Lazy bonus in any of the three preceding
 calendar CWL months sits out the current month. Earlier Lazy bonuses only; a
 Main bonus does not count. Example: a bonus in January makes the

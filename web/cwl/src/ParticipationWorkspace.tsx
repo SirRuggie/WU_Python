@@ -12,6 +12,8 @@ import ResultsSettingsSheet, {
   type SettingsSaved,
 } from "./ResultsSettingsSheet";
 import useUnsavedWork from "./useUnsavedWork";
+import useInfractions from "./useInfractions";
+import { useDashboardPermission } from "./DashboardPermissions";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import { loadBonusStatus, type BonusStatus } from "./bonusStatus";
@@ -108,9 +110,20 @@ export default function ParticipationWorkspace({
     seasons
       .find((season) => String(season.id) === seasonId)
       ?.status.toLowerCase() === "archived";
+  const infractions = useInfractions(
+    seasonId,
+    useDashboardPermission("cwl_bonuses"),
+    !!archived,
+    status,
+    () => {
+      if (statusEnabled.current) void loadStatus(seasonId);
+    },
+  );
   const editing = activeEditorTag !== null;
   const controlsLocked = editing || syncBusy || loading;
   const writesLocked = controlsLocked || !!error;
+  // An open sheet locks the list and other records, never its own record.
+  const ownRecordLocked = syncBusy || loading || !!error;
   const { confirm, dialog: confirmation } = useConfirmDialog(
     `${seasonId}:${controlsLocked}:${archived}:${error}`,
   );
@@ -763,7 +776,11 @@ export default function ParticipationWorkspace({
                       mainMinimum={mainMinimum}
                       publicationVersion={data.publication_version}
                       readonly={!!archived}
-                      locked={writesLocked}
+                      locked={
+                        activeEditorTag === account.tag
+                          ? ownRecordLocked
+                          : writesLocked
+                      }
                       open={activeEditorTag === account.tag}
                       onOpen={() => setActiveEditorTag(account.tag)}
                       onClose={() =>
@@ -775,6 +792,7 @@ export default function ParticipationWorkspace({
                       onReset={resetToSource}
                       onDirty={onDirty}
                       onAddStrike={onAddStrike}
+                      infractions={onBonus ? infractions : undefined}
                     />
                   </li>
                 ))}

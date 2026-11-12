@@ -5,7 +5,7 @@ import CardTally from "./CardTally";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import { StatusPill } from "./rosterUi/primitives";
 import { discordMessageItem } from "./RosterAccountMenu";
-import { LAZY_FLAGS } from "./BonusCandidateReview";
+import { infractionChips } from "./InfractionFields";
 import {
   outcomeLabels,
   outcomeTone,
@@ -23,7 +23,7 @@ type Props = {
   account: RaffleAccount;
   mode: BonusListMode;
   minimum: number | null;
-  /** Opens the Review panel; absent on read-only lists. */
+  /** Opens the Infractions panel; absent on read-only lists. */
   onReview?: (account: RaffleAccount, opener: HTMLElement) => void;
   busy?: boolean;
 };
@@ -42,16 +42,13 @@ export default function BonusAccountCard({
   const reasons = account.exclusion
     ? playerReasons(account)
     : [bonusCandidateStatus(account, mode)].filter(Boolean);
-  const reviewFlags = (account.bonus_review?.flags || []).map(
-    (flag) => LAZY_FLAGS.find((item) => item.id === flag)?.label || flag,
-  );
   const items: ActionMenuItem[] = [
     discordMessageItem(account.user_id),
     ...(onReview
       ? [
           {
             id: "review",
-            label: "Review",
+            label: "Infractions",
             icon: ClipboardCheck,
             disabled: busy,
             onAction: (trigger: HTMLElement) => onReview(account, trigger),
@@ -112,7 +109,7 @@ export default function BonusAccountCard({
         ) : null,
         account.attacks_override ? "Staff correction" : null,
         account.multiplier === 2 ? "2× ticket weight" : null,
-        reviewFlags.length ? reviewFlags.join(" · ") : null,
+        ...infractionChips(account.bonus_review),
       ]}
       action={<ActionMenu name={account.player_name} items={items} />}
     />

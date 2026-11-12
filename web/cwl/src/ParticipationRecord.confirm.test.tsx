@@ -176,8 +176,8 @@ it("keeps the direct unlocked Save callback arguments and single-submit guard", 
     notes.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => {
-    button("Save notes").click();
-    button("Save notes").click();
+    button("Save").click();
+    button("Save").click();
   });
   expect(save).toHaveBeenCalledTimes(1);
   expect(save).toHaveBeenCalledWith(

@@ -291,6 +291,91 @@ describe("Bonus candidate cards", () => {
     expect(document.querySelector(".bonus-review-editor")).toBeNull();
     expect(writes()).toHaveLength(0);
   });
+  it("the ⋯ item says Infractions and opens the panel", async () => {
+    await mount();
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Actions for Alpha"]',
+        )!
+        .click(),
+    );
+    const items = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].map((item) => item.textContent);
+    expect(items).toContain("Infractions");
+    expect(items).not.toContain("Review");
+    await act(async () =>
+      [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((item) => item.textContent === "Infractions")!
+        .click(),
+    );
+    expect(
+      document.querySelector(".bonus-review-editor")?.textContent,
+    ).toContain("Infractions for Alpha");
+  });
+  it("shows each set flag and the staff reason as a chip", async () => {
+    await mount({
+      ...base,
+      accounts: [
+        account("#P1", "Alpha", "#2YQ", {
+          bonus_review: {
+            flags: ["lingering", "missed_sync"],
+            override_reason: "Played",
+          },
+        }),
+      ],
+    });
+    const chips = [
+      ...host.querySelectorAll(".bonus-account-list .roster-ui-chip"),
+    ].map((chip) => chip.textContent);
+    expect(chips).toEqual(["Lingering", "Missed sync", "Staff reason"]);
+  });
+  it("saves the exact payload with the revision and says what changed", async () => {
+    await mount();
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>(
+          '.bonus-account-list [aria-label="Review Alpha"]',
+        )!
+        .click(),
+    );
+    const panel = document.querySelector(".bonus-review-editor")!;
+    await act(async () =>
+      [
+        ...panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+      ][1].click(),
+    );
+    await act(async () => button("Save infractions", panel).click());
+    expect(writes()).toEqual([
+      [
+        "/seasons/1/bonus-raffle/account-review",
+        "PATCH",
+        { tag: "#P1", flags: ["lingering"], override_reason: "", revision: 1 },
+      ],
+    ]);
+    expect(host.textContent).toContain(
+      "Infractions saved · Lazy One eligibility updated.",
+    );
+  });
+  it("after the draw is saved the panel opens read only", async () => {
+    await mount(
+      { ...base, draws: [savedDraw()] },
+      "pool=lazy&clan=%238QQ&step=results",
+    );
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>(
+          '.bonus-account-list [aria-label="Review Charlie"]',
+        )!
+        .click(),
+    );
+    const panel = document.querySelector(".bonus-review-editor")!;
+    expect(panel.textContent).toContain("Draw saved · read only");
+    expect(button("Save infractions", panel)).toBeUndefined();
+    expect(panel.querySelector("fieldset")!.disabled).toBe(true);
+    expect(writes()).toHaveLength(0);
+  });
 });
 
 describe("Bonus hosting clan dropdown", () => {
