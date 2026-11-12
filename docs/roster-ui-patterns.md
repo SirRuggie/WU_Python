@@ -957,3 +957,5 @@ Short lists (dropdown rollout PR 2):
   neutral `Chip` per set flag and "Staff reason"; overview cards show none.
   Details has one footer Cancel and Save. Read only after the draw
   ("Draw saved · read only"), in archived seasons and without the manage grant.
+
+Results & bonuses has one 44px “How bonuses work” header CircleHelp button opening the shared side ActionPanel with Close only, five read-only rule explanations and trigger-focus restoration; the season control stays unchanged (prompt234).

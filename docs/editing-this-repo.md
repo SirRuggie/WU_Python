@@ -136,3 +136,13 @@ edits — far less than shipping the corruption.
 **Do not attempt to reverse a double-encode in place** if any subsequent edit
 has already written correct UTF-8 into the file. The file is then mixed-encoding
 and a blanket re-encode corrupts the good parts. Revert instead.
+
+## Production adapter test boundary (Shaka1041, 2026-11-12)
+
+Tests must not import or call release helpers that touch production release
+paths, systemctl or production SQLite. The private233 coordinator and full-flow
+test were deleted after a test escaped its mocks; whether it read production
+SQLite is **unknown**. A sandbox or failed command does not establish that no
+mutation occurred. Preserve the incident evidence; do not repair its mocks and
+rerun it. Pure committed comparator tests over isolated fixture files remain
+allowed because they do not import or call production adapters.

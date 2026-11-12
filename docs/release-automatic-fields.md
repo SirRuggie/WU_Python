@@ -42,14 +42,14 @@ this evidence.
 
 ## Ordinary capture observations
 
-Only these four additional columns can vary:
+The four ordinary capture columns are:
 
-| Table | Primary key | Column |
-| --- | --- | --- |
-| `participation_source_results` | season_id, cycle, tag | `checked_at` |
-| `participation_group_observations` | season_id, cycle, clan_tag | `observed_at` |
-| `participation_war_observations` | season_id, cycle, war_tag, clan_tag | `observed_at` |
-| `participation_war_fetches` | season_id, cycle, war_tag | `observed_at` |
+| Table                              | Primary key                         | Column        |
+| ---------------------------------- | ----------------------------------- | ------------- |
+| `participation_source_results`     | season_id, cycle, tag               | `checked_at`  |
+| `participation_group_observations` | season_id, cycle, clan_tag          | `observed_at` |
+| `participation_war_observations`   | season_id, cycle, war_tag, clan_tag | `observed_at` |
+| `participation_war_fetches`        | season_id, cycle, war_tag           | `observed_at` |
 
 Keys, row sets and all neighbouring columns must remain exact. Timestamps must
 move forward inside the observation interval. Every changed row and old/new
@@ -58,11 +58,21 @@ proof tables remain exact, including weights, roster entries, signups and
 publications. This mode rejects even a receipted concurrent staff change; it
 does not inherit the older proof mode's publication/mark allowance.
 
-The coordinator's previously approved normalization of
-`participation_sync_settings.last_checked_at` is outside this new module and is
-not widened here. Its existing 13-case reader regression remains required. The
-new module itself does not ignore that column if it is present in a capture.
+Shaka1036 confirms the existing committed owner489 also checks both
+`participation_sync_settings.last_checked_at` and `last_success_at`. Non-null
+values must be aware UTC timestamps, move forward, and changed timestamps must
+fall inside the capture interval. NULL transitions are rejected; row keys,
+cycles, enabled state and every neighbouring column stay strict. This uses the
+unchanged committed comparator, not a new private adapter or normalization.
 Other role, expiry, delivery and maintenance fields remain strict.
+
+Shaka1037 changed only the existing operational reader's captured-table
+inventory: all 76 physical application tables plus the same two derived
+sections. Capture reading, derived queries and comparison policy were unchanged;
+raw clock values are retained. The original reader envelopes go directly to the
+committed comparison CLI. Actual232's four proofs and233's proof each recorded
+`changed_rows: 0`, with raw table digests exact. This note records those releases,
+not a broader clock waiver.
 
 ## Integration and validation
 

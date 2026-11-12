@@ -1,5 +1,49 @@
 # Release and rollback history
 
+## November 12, 2026 —232/233 completed (Shaka1041/1042)
+
+These dated records supersede the older current/standby labels below. Recorded
+frontend: `3f9792e7489118db1b07b6d12e63780e39e6bbf1` (233); backend:
+`e6477bd9b599461aa7499ecb9ce84fa9219bbe51` (232); bot checkout:
+`0a06172621a542bae2ee0864b5ecf251b298614a`. These are retained release facts,
+not fresh live probes or permission to rerun completed release tools.
+
+- **232**, PR313, tag `exports-excel-1`, FE/BE `e6477bd9…`: verified backup
+  `.local/exports-excel-release-evidence-232-1037/pre-stage/.local/discord-links-defaults-1-backup-20261112T211057Z/dashboard.sqlite3`,
+  SHA256 `ebd213bee483f0e76595a2ff4483006c9946f53a3d5c122cdf3de717fa21e813`.
+  All182 public hashes matched; index SHA256
+  `c33e0a4ef07c85de38129f36e946a62b55180535f8d9a2e6bfaa4a3d78849f72`,
+  `index-vW-gTMbx.js` SHA256
+  `ace397d5710963bcd524148721145dc5c772ab5d77185f5dd03b7fae553c7688`.
+  Backend normal switch/restart PID4059855→146074, InvocationID
+  `982912e2ee254ade929bcc8f1aa821b7`; bot3529055/gateway307279 unchanged.
+  Native read-only Exports closed/open at360/1440, no downloads/writes; separate
+  receipt/validator/post each exit0. Shaka1041 runtime SMOKE PASS.
+- **233**, PR314, tag `season-picker-labels-1`, frontend `3f9792e7…`: plain
+  documented stage/switch after fresh backup
+  `.local/season-picker-labels-release-evidence-233/plain-before/.local/discord-links-defaults-1-backup-20261112T212002Z/dashboard.sqlite3`,
+  SHA256 `b4560dbeb56b95831ead88b3798d9d516ea3a5a83048b316d4f6a76eea65bfcf`.
+  All180 public hashes matched; index SHA256
+  `07a4a5b4311390bfe0b941e1148e96961887f9ec609b41b3cd12d484e1199876`,
+  `index-IAlUYglT.js` SHA256
+  `b1ccc6e89830ea0963576ea019d6a0a00c17924f5ac21d693bf11cea95683f6d`.
+  Backend232 PID146074, bot3529055, gateway and configuration unchanged; no
+  backend restart. Parent native Roster/Results/Exports and range checks at360/1440
+  were read only. Results native OS popup visual was skipped; AX/DOM option
+  proof retained. Shaka1042 runtime SMOKE PASS, signed-in UI SKIPPED by Shaka.
+
+Both releases: all76 table counts/schema/raw digests, Main23/23/23 and
+Lazy147/146/131 (signups/assigned/locks), imported winners82 and six publication
+versions36/473/475/476/544/597 exact.232 four unchanged committed comparison
+proofs and233 one proof each have changed_rows0. Sequential Mongo readbacks
+matched their own SQL phases; no cross-phase transactional snapshot claim.
+Evidence: private232 `release-done.json`/`done-summary.json` and233
+`plain-done.json`/`plain-counts-proof.json`, with self-contained release reports.
+The233 escaped-test incident was closed with production SQLite read **unknown**;
+immediate parent runtime/public verification and final232 raw data were exact.
+Per1041 the private233 coordinator/tests were deleted, not repaired or rerun.
+No live workbook/Discord/AT/device/all-pages claim.230–233 closed by1042.
+
 ## Current standby and rollback targets
 
 `signup-reminders-ack-1`, commit
