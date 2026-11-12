@@ -195,3 +195,5 @@ rerun; the importer never rewrites it. Already imported rows remain strict
 no-ops regardless of later edits. Player-provider awaits occur outside database
 transactions. Production dry run/apply remain unapproved; state this conflict
 rule and the `history_only` marker in READY.
+
+Results & bonuses has a “How bonuses work” help sheet; update its text whenever rules in `utils/cwl_bonus_raffle.py` or the sit-out store change (prompt234).

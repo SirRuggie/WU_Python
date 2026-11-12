@@ -6,6 +6,7 @@ import useConfirmDialog from "./useConfirmDialog";
 import { exportMonthLabel } from "./exportPreview";
 import { countLabel } from "./countLabel";
 import BonusHistory from "./BonusHistory";
+import BonusHelpPanel from "./BonusHelpPanel";
 import {
   useCallback,
   useEffect,
@@ -881,7 +882,12 @@ export default function BonusWorkspace({
       {confirmation}
       <CwlPageHeader
         className="bonus-page-head"
-        title={<h1>Results &amp; bonuses</h1>}
+        title={
+          <>
+            <h1>Results &amp; bonuses</h1>
+            <BonusHelpPanel />
+          </>
+        }
       >
         <label className="bonus-season">
           Season

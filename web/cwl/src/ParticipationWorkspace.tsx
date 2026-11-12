@@ -1,5 +1,6 @@
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
+import BonusHelpPanel from "./BonusHelpPanel";
 import useConfirmDialog from "./useConfirmDialog";
 import { exportMonthLabel } from "./exportPreview";
 import ActionMenu from "./rosterUi/ActionMenu";
@@ -520,7 +521,12 @@ export default function ParticipationWorkspace({
       {confirmation}
       <CwlPageHeader
         className="participation-page-head"
-        title={<h1>Results &amp; bonuses</h1>}
+        title={
+          <>
+            <h1>Results &amp; bonuses</h1>
+            <BonusHelpPanel />
+          </>
+        }
       >
         <label className="participation-season">
           Season

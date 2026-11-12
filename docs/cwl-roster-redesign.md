@@ -1606,3 +1606,24 @@ changes. Exports-specific grouping remains in exportHistory.ts.
 Status: isolated frontend implementation and before/after fixture review; no
 backend, schema, endpoint or production action. Later: other nonpicker
 confirmation/server-supplied season strings are outside233.
+
+## Results & bonuses help (2026-11-12, prompt234)
+
+D1: one 44×44 Lucide CircleHelp button, “How bonuses work”, directly after
+the page h1 in its existing title area, on every step with or without a season.
+The season control stays unchanged. It opens the shared side ActionPanel with
+Close only and no footer; Close, Escape and Back restore trigger focus.
+
+D2: exactly five heading/paragraph pairs: Bonus count, Who qualifies,
+Infractions (Lazy), Sit-out after a win (Lazy), Draw. The accepted text covers
+league plus war wins, Main Rules minimum, Lazy participation, one monthly bonus,
+staff infraction exceptions, each clan's default-three-month sit-out (October
+win → February eligibility), and Settings FWA Rep accounts' 2× Lazy chance.
+Opening/closing is local read-only help: no fetch, write, workspace draft change
+or discard prompt. Gold and existing history placement stay unchanged.
+
+Status: implemented for independent refutation and isolated native review.
+Shaka1044: the native Settings modal makes the one header trigger inert; open
+help before or after Settings. No second trigger or shared-panel change. The
+programmatic draft-retention regression does not claim native reachability. Later: rule changes
+must update the help text; no backend, permissions or rule behavior change.
