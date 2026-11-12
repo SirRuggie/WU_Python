@@ -1562,3 +1562,31 @@ settings owner, resolved in one query for the list. Exports names/sorts by bound
 month, then an exact YYYY-MM label, else original free label unchanged. Months
 sort newest first; unparsed labels last by descending season id. No invented
 month. Selected Published/Working reactivation preserves records without reads.
+
+## Exports & history D6/D7 (2026-11-12, prompt232)
+
+Download season (Excel) replaces CSV. The read-only season workbook captures
+one consistent store transaction and renders outside it: roster and bonus-winner
+sheets, three clan blocks across, Main before Lazy, saved seasonal league only,
+Clash links, full numeric weights and totals, gold current-month winners. Archived
+or history-only months without a publication contain only bonus winners. Working
+uses the existing non-archived roster switch. Every text cell uses formula
+protection; Discord IDs are excluded.
+
+Download a range… is a quiet closed disclosure. From/To span at most twelve
+inclusive calendar months. All winners comes first with filters/frozen header,
+then month sheets newest first. Shaka1026: duplicate bound months fail409 naming
+the month and every matching season label; gaps fail404 naming every missing
+month. No silent pick, skip or invented month. Shaka1025: both Excel routes and
+controls require existing editor access AND owner, Bonuses or Send. Plain editors
+retain other previews. CSV endpoint, UI and obsolete transport harness are removed
+because ExportWorkspace was the only runtime caller; preview remains.
+
+Status: isolated implementation and fixture review; no application writes,
+schema migration, external provider calls or production action. Later: any range
+skip policy requires a separate decision.
+
+Shaka1027: a season without a bound CWL month or exact YYYY-MM label fails400
+for its Excel download. The message names the season and asks staff to set its
+CWL month first; preview labels remain unchanged. No month or winner scope is
+invented. The error stays next to the download control.

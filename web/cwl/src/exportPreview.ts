@@ -23,7 +23,7 @@ export function rosterResultSummary(row: ExportRow, prefix = ""): string {
   return `${attacks ?? "—"} attacks · ${stars ?? "—"} stars`;
 }
 
-/** Presentation only: export requests and CSV values retain their full values. */
+/** Presentation only: export requests and workbook values retain their full values. */
 export function exportMonthLabel(value: string | null | undefined): string {
   if (!value) return "—";
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(value)

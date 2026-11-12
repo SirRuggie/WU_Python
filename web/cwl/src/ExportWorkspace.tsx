@@ -1,8 +1,8 @@
 import CwlPageHeader from "./CwlPageHeader";
 import RosterMenu from "./rosterUi/Menu";
-import { fetchReadWithRetry } from "./readRetry";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Season } from "./api";
+import ExportDownloads from "./ExportDownloads";
 import ExportRosterView from "./ExportRosterView";
 import ExportWinnersView from "./ExportWinnersView";
 import {
@@ -80,37 +80,22 @@ export default function ExportWorkspace({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
   const [previewDenied, setPreviewDenied] = useState(false);
-  const [downloadBusy, setDownloadBusy] = useState(false);
-  const [downloadError, setDownloadError] = useState("");
-  const [downloadDenied, setDownloadDenied] = useState(false);
-  const [notice, setNotice] = useState("");
   const [attempt, setAttempt] = useState(0);
   const canBonuses = useDashboardPermission("cwl_bonuses");
   const canSend = useDashboardPermission("cwl_send");
   const canBonusHistory = canBonuses || canSend;
   const previewRequest = useRef(0);
-  const downloadController = useRef<AbortController | null>(null);
-  const mounted = useRef(true);
 
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
+  useEffect(
+    () => () => {
       previewRequest.current += 1;
-      downloadController.current?.abort();
-    };
-  }, []);
+    },
+    [],
+  );
   useEffect(() => {
     setPublication(null);
     setBasis("published");
   }, [seasonId]);
-  useEffect(() => {
-    downloadController.current?.abort();
-    setDownloadBusy(false);
-    setDownloadError("");
-    setDownloadDenied(false);
-    setNotice("");
-  }, [seasonId, kind, basis, canBonusHistory]);
   useEffect(() => {
     const request = ++previewRequest.current;
     setPreview(null);
@@ -181,93 +166,16 @@ export default function ExportWorkspace({
   }, [seasonId, kind, basis, attempt, canBonusHistory]);
 
   const changeSeason = (id: string) => {
-    downloadController.current?.abort();
     setPreview(null);
     setPublication(null);
     setBasis("published");
     onSeasonChange(id);
   };
   const changeKind = (next: Kind) => {
-    downloadController.current?.abort();
     setPreview(null);
     setKind(next);
     setBasis("published");
   };
-  const download = async () => {
-    if (
-      !seasonId ||
-      (kind === "bonus-history" && !canBonusHistory) ||
-      !displayedPreview ||
-      rows.length === 0 ||
-      previewLoading ||
-      downloadBusy ||
-      downloadController.current
-    )
-      return;
-    const controller = new AbortController();
-    downloadController.current = controller;
-    setDownloadBusy(true);
-    setDownloadError("");
-    setDownloadDenied(false);
-    setNotice("");
-    const chosenBasis =
-      kind === "accounts" && displayedPreview.summary.published_available
-        ? displayedPreview.summary.season_status === "archived"
-          ? "published"
-          : basis
-        : "current";
-    try {
-      const params = new URLSearchParams({ kind, basis: chosenBasis });
-      const response = await fetchReadWithRetry(
-        `/api/cwl/seasons/${encodeURIComponent(seasonId)}/export.csv?${params}`,
-        {
-          credentials: "same-origin",
-          signal: controller.signal,
-        },
-      );
-      if (controller.signal.aborted) return;
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        if (controller.signal.aborted) return;
-        if (response.status === 401 || response.status === 403) {
-          setPreview(null);
-          window.dispatchEvent(new Event("dashboard-access-changed"));
-        }
-        throw new ApiError(body?.error || "Download failed.", response.status);
-      }
-      if (!response.headers.get("content-type")?.includes("text/csv"))
-        throw new Error(
-          "The server did not return a CSV file. Refresh the page and try again.",
-        );
-      const file = await response.blob();
-      if (controller.signal.aborted) return;
-      const url = URL.createObjectURL(file);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `cwl-season-${seasonId}-${kind}-${chosenBasis}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setNotice("CSV download started. Check your browser downloads.");
-    } catch (cause) {
-      if (!controller.signal.aborted) {
-        const denied =
-          cause instanceof ApiError && [401, 403].includes(cause.status);
-        setDownloadDenied(denied);
-        setDownloadError(
-          denied
-            ? "You do not have access to this export."
-            : "Download failed.",
-        );
-      }
-    } finally {
-      if (downloadController.current === controller)
-        downloadController.current = null;
-      if (mounted.current && !controller.signal.aborted) setDownloadBusy(false);
-    }
-  };
-
   const context = `${seasonId}|${kind}|${kind === "accounts" ? basis : "current"}`;
   const displayedPreview = previewFor === context ? preview : null;
   const currentPublication =
@@ -290,7 +198,7 @@ export default function ExportWorkspace({
         <RosterMenu
           label="Season"
           value={seasonId}
-          disabled={downloadBusy}
+          disabled={false}
           onValueChange={changeSeason}
           options={[
             { value: "", label: "Select a season" },
@@ -312,7 +220,7 @@ export default function ExportWorkspace({
               <select
                 name="export-show"
                 value={kind}
-                disabled={downloadBusy}
+                disabled={false}
                 onChange={(event) => changeKind(event.target.value as Kind)}
               >
                 {choices
@@ -341,7 +249,6 @@ export default function ExportWorkspace({
                       type="button"
                       aria-pressed={effectiveBasis === value}
                       disabled={
-                        downloadBusy ||
                         previewLoading ||
                         (value === "published" && !publishedAvailable)
                       }
@@ -372,25 +279,23 @@ export default function ExportWorkspace({
               )}
             </div>
           )}
-          {downloadError && (
-            <div className="notice error" role="alert">
-              {downloadError}
-              {!downloadDenied && (
-                <button
-                  type="button"
-                  disabled={downloadBusy}
-                  onClick={() => void download()}
-                >
-                  Retry
-                </button>
-              )}
-            </div>
-          )}
-          {notice && (
-            <div className="notice success" role="status">
-              {notice}
-            </div>
-          )}
+          <ExportDownloads
+            seasonId={seasonId}
+            seasons={seasons}
+            basis={
+              selectedSeason?.status === "archived"
+                ? "published"
+                : effectiveBasis
+            }
+            ready={
+              Boolean(displayedPreview) && !previewLoading && !previewDenied
+            }
+            canDownload={canBonusHistory}
+            onDenied={() => {
+              setPreview(null);
+              setPreviewDenied(true);
+            }}
+          />
           {displayedPreview && !previewLoading && (
             <>
               <div className="export-ready">
@@ -406,14 +311,6 @@ export default function ExportWorkspace({
                       : "Saved data for this month"}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={downloadBusy || rows.length === 0}
-                  onClick={() => void download()}
-                >
-                  {downloadBusy ? "Preparing CSV…" : "Download CSV"}
-                </button>
               </div>
               {rows.some(
                 (row) =>
@@ -447,15 +344,6 @@ export default function ExportWorkspace({
                   </p>
                 )
               )}
-              <details className="export-about">
-                <summary>CSV format &amp; data</summary>
-                <p>
-                  Blank results remain blank. Weights use full numbers; Discord
-                  IDs remain complete. Names and notes are protected from
-                  running as spreadsheet formulas. The file reflects saved data
-                  at download time.
-                </p>
-              </details>
             </>
           )}
         </>
