@@ -122,6 +122,8 @@ export default function ParticipationWorkspace({
   const editing = activeEditorTag !== null;
   const controlsLocked = editing || syncBusy || loading;
   const writesLocked = controlsLocked || !!error;
+  // An open sheet locks the list and other records, never its own record.
+  const ownRecordLocked = syncBusy || loading || !!error;
   const { confirm, dialog: confirmation } = useConfirmDialog(
     `${seasonId}:${controlsLocked}:${archived}:${error}`,
   );
@@ -774,7 +776,11 @@ export default function ParticipationWorkspace({
                       mainMinimum={mainMinimum}
                       publicationVersion={data.publication_version}
                       readonly={!!archived}
-                      locked={writesLocked}
+                      locked={
+                        activeEditorTag === account.tag
+                          ? ownRecordLocked
+                          : writesLocked
+                      }
                       open={activeEditorTag === account.tag}
                       onOpen={() => setActiveEditorTag(account.tag)}
                       onClose={() =>
