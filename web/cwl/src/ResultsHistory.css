@@ -1,42 +1,4 @@
-/* Saved histories on Exports: read only, loaded only while open. */
-.participation-history {
-  margin: var(--wu-space-4) 0;
-  border-top: 1px solid #ffffff28;
-}
-.participation-history > summary {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  cursor: pointer;
-  color: var(--wu-text-muted);
-  font-size: var(--wu-text-sm);
-}
-.participation-history > p {
-  margin: var(--wu-space-2) 0;
-  font-size: var(--wu-text-sm);
-  text-wrap: pretty;
-}
-.participation-history-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr) auto;
-  align-items: center;
-  gap: var(--wu-space-1) var(--wu-space-3);
-  padding: var(--wu-space-2) 0;
-  border-top: 1px solid #ffffff1c;
-  font-size: var(--wu-text-sm);
-  overflow-wrap: anywhere;
-}
-.participation-history-row p {
-  grid-column: 1 / -1;
-  margin: var(--wu-space-1) 0;
-  font-size: var(--wu-text-sm);
-  text-wrap: pretty;
-}
-@media (max-width: 760px) {
-  .participation-history-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
+/* Saved bonus fallback for staff without Exports access. */
 .bonus-history {
   margin-top: var(--wu-space-4);
 }
@@ -50,14 +12,12 @@
   color: var(--roster-text-muted);
   margin-top: var(--wu-space-1);
 }
-.participation-history > summary::before,
 .bonus-history > summary::before {
   content: "▸";
   display: inline-block;
   margin-right: var(--wu-space-1);
   color: var(--wu-text-muted);
 }
-.participation-history[open] > summary::before,
 .bonus-history[open] > summary::before {
   content: "▾";
 }

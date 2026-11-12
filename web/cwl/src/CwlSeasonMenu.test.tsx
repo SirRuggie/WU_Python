@@ -114,9 +114,7 @@ it.each(["Results", "Bonus", "Exports"])(
       }
       await pick("November 2026");
       expect(change).not.toHaveBeenCalled();
-      await pick(
-        kind === "Exports" ? "December 2026 · Archived" : "December 2026",
-      );
+      await pick("December 2026");
       expect(change).toHaveBeenCalledExactlyOnceWith("2");
       expect(
         api.mock.calls.every((call) => !call[1] || call[1] === "GET"),

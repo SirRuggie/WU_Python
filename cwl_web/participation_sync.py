@@ -177,6 +177,27 @@ def _waiting_message(cycle: str) -> str:
     return f"{calendar.month_name[int(cycle[5:7])]} CWL has not started in Clash yet"
 
 
+def _resolved_cycle(settings, binding):
+    return settings['cycle'] if settings is not None else (binding['cycle'] if binding is not None else None)
+
+
+def resolved_cwl_months(db, season_ids):
+    """Resolve list metadata in one query, using the Results settings precedence."""
+    ids = list(dict.fromkeys(season_ids))
+    if not ids:
+        return {}
+    marks = ','.join('?' for _ in ids)
+    rows = db.execute(
+        'SELECT s.id,p.season_id AS settings_id,p.cycle AS settings_cycle,b.cycle AS binding_cycle '
+        'FROM seasons s LEFT JOIN participation_sync_settings p ON p.season_id=s.id '
+        'LEFT JOIN manage_campaign_bindings b ON b.season_id=s.id '
+        f'WHERE s.id IN ({marks})', ids)
+    return {row['id']: _resolved_cycle(
+        {'cycle': row['settings_cycle']} if row['settings_id'] is not None else None,
+        {'cycle': row['binding_cycle']} if row['binding_cycle'] is not None else None)
+        for row in rows}
+
+
 def settings_view(db, season_id: int) -> dict:
     row = db.execute(
         "SELECT * FROM participation_sync_settings WHERE season_id=?",
@@ -186,7 +207,7 @@ def settings_view(db, season_id: int) -> dict:
         "SELECT cycle FROM manage_campaign_bindings WHERE season_id=?",
         (season_id,),
     ).fetchone()
-    cycle = row["cycle"] if row else (binding["cycle"] if binding else None)
+    cycle = _resolved_cycle(row, binding)
     status = row["status"] if row else "never"
     warning = row["warning"] if row else None
     updated_at = row["updated_at"] if row else None

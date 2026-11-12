@@ -492,9 +492,12 @@ async def seasons(request):
     rows = _store(request).rows("SELECT * FROM seasons ORDER BY id DESC")
     if not _editor(request, session):
         rows = [row for row in rows if row['id'] == selection['season_id']]
+    from .participation_sync import resolved_cwl_months
+    with _store(request).tx() as db:
+        months = resolved_cwl_months(db, [row['id'] for row in rows])
     from .member_timing import seasons_timing
     timing = await seasons_timing(request, [row['id'] for row in rows])
-    return web.json_response({"seasons": [_season_dict(row) | dates for row, dates in zip(rows, timing)], "member_season": selection})
+    return web.json_response({"seasons": [_season_dict(row) | dates | {"cwl_month": months.get(row['id'])} for row, dates in zip(rows, timing)], "member_season": selection})
 
 
 async def set_member_season(request):

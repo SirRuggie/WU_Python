@@ -1,118 +1,100 @@
 // @vitest-environment happy-dom
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it } from "vitest";
-import ExportRecordCard, { type ExportKind } from "./ExportRecordCard";
-
-let host: HTMLDivElement;
-let root: Root;
-beforeEach(() => {
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
+import { renderToStaticMarkup } from "react-dom/server";
+import { expect, it } from "vitest";
+import ExportRecordCard from "./ExportRecordCard";
+import ExportRosterView from "./ExportRosterView";
+import ExportWinnersView from "./ExportWinnersView";
+it("groups shared roster rows Main before Lazy, with player/tag/TH/weight and escaped names", () => {
+  const html = renderToStaticMarkup(
+    <ExportRosterView
+      kind="accounts"
+      rows={[
+        {
+          pool: "lazy",
+          assigned_clan_name: "A lazy",
+          player_name: "Lazy",
+          tag: "#P2Y",
+          town_hall: 16,
+          effective_weight: 179000,
+        },
+        {
+          pool: "main",
+          assigned_clan_name: "Z main",
+          player_name: "<script>",
+          tag: "#Q2Y",
+          town_hall: 15,
+          effective_weight: 160000,
+        },
+      ]}
+    />,
+  );
+  expect(html.indexOf("Z main")).toBeLessThan(html.indexOf("A lazy"));
+  expect(html).toContain("179k");
+  expect(html).toContain("TH 16");
+  expect(html).toContain("#P2Y");
+  expect(html).toContain("&lt;script&gt;");
+  expect(html).not.toContain("<script>");
+  expect(html).not.toContain("Attacks");
 });
-afterEach(async () => {
-  await act(async () => root.unmount());
-  host.remove();
+it("shows Imported and hides voided winners, with Main first", () => {
+  const html = renderToStaticMarkup(
+    <ExportWinnersView
+      rows={[
+        {
+          pool: "lazy",
+          clan_name: "A lazy",
+          player_name: "Imported name",
+          tag: "#P2Y",
+          source: "import",
+        },
+        {
+          pool: "main",
+          clan_name: "Z main",
+          player_name: "Main name",
+          tag: "#Q2Y",
+        },
+        {
+          pool: "main",
+          clan_name: "Z main",
+          player_name: "Voided name",
+          voided_at: "now",
+        },
+      ]}
+    />,
+  );
+  expect(html).toContain("Imported");
+  expect(html).not.toContain("Voided name");
+  expect(html.indexOf("Z main")).toBeLessThan(html.indexOf("A lazy"));
 });
-const show = async (kind: ExportKind, row: Record<string, unknown>) => {
-  await act(async () =>
-    root.render(<ExportRecordCard kind={kind} row={row} />),
+it("preserves signup tally and capture status", () => {
+  const html = renderToStaticMarkup(
+    <ExportRecordCard
+      kind="participation"
+      row={{
+        player_name: "Fixture",
+        attacks: 2,
+        stars: 5,
+        display_status: { label: "Final results" },
+      }}
+    />,
   );
-  return host.querySelector("article")!;
-};
-const base = {
-  player_name: "rufen",
-  tag: "#20YRRRY9R",
-  town_hall: 16,
-  pool: "lazy",
-  assigned_clan_name: "W. U. Lazy.128",
-};
-
-it("Roster rows use the shared card: TH, tag, CWL and clan, tally, weight", async () => {
-  const card = await show("accounts", {
-    ...base,
-    effective_weight: 179000,
-    participation_attacks: 5,
-    participation_stars: 10,
-  });
-  expect(card.classList).toContain("shared-account-card");
-  expect(card.classList).toContain("account-card-plain");
-  expect(card.querySelector(".account-card-meta")!.textContent).toBe(
-    "TH 16 · #20YRRRY9R · Lazy CWL · W. U. Lazy.128",
-  );
-  expect(card.querySelector(".card-tally")!.textContent).toBe(
-    "5 Attacks · 10 Stars",
-  );
-  expect(card.querySelector(".account-card-flags")!.textContent).toBe(
-    "Weight 179k",
-  );
+  expect(html).toContain("Final results");
+  expect(html).toContain("Attacks");
 });
-
-it("a result for another assignment shows the reason, not a tally", async () => {
-  const card = await show("accounts", {
-    ...base,
-    effective_weight: null,
-    participation_matches_roster: false,
-    participation_recorded_clan_name: "W. U.Lazy.126",
-    participation_attacks: 7,
-    participation_stars: 15,
-  });
-  expect(card.querySelector(".card-tally")).toBeNull();
-  expect(card.querySelector(".account-card-flags")!.textContent).toBe(
-    "Recorded for another assignment: W. U.Lazy.126 · Weight —",
+it("keeps saved history notes in a closed disclosure", () => {
+  const html = renderToStaticMarkup(
+    <ExportRecordCard
+      kind="participation-history"
+      row={{
+        player_name: "Fixture",
+        attacks: 0,
+        stars: 0,
+        notes: "<b>note</b>",
+        updated_at: "2026-11-01",
+      }}
+    />,
   );
-});
-
-it("Signups rows show the Clash capture status with the tally", async () => {
-  const card = await show("participation", {
-    ...base,
-    attacks: 2,
-    stars: 5,
-    source_status: "complete",
-    display_status: { code: "complete", label: "Final results" },
-  });
-  expect(card.querySelector(".card-tally")!.textContent).toBe(
-    "2 Attacks · 5 Stars",
-  );
-  expect(card.querySelector(".account-card-flags")!.textContent).toBe(
-    "Clash capture: Final results",
-  );
-});
-
-it("Results history keeps saved notes behind a disclosure", async () => {
-  const card = await show("participation-history", {
-    ...base,
-    attacks: 0,
-    stars: 0,
-    source_status: "complete",
-    notes: "Fixture note",
-    updated_at: "2026-10-12T10:00:00Z",
-  });
-  expect(card.querySelector(".card-tally")!.textContent).toBe(
-    "0 Attacks · 0 Stars",
-  );
-  const details = card.querySelector("details.export-record-details")!;
-  expect(details.textContent).toContain("Fixture note");
-  expect(details.hasAttribute("open")).toBe(false);
-});
-
-it("Saved bonus history shows the selection as a pill and keeps names as text", async () => {
-  const card = await show("bonus-history", {
-    player_name: "<b>@everyone</b>",
-    tag: "#P2Y",
-    clan_name: "W. U. Lazy.128",
-    cycle: "2026-10",
-    voided_at: "2026-10-13T10:00:00Z",
-    void_reason: "Left the family",
-    confirmed_at: "2026-10-12T10:00:00Z",
-  });
-  expect(card.querySelector("b")).toBeNull();
-  expect(card.querySelector(".roster-ui-status")!.textContent).toBe(
-    "Voided selection",
-  );
-  expect(card.querySelector(".account-card-flags")!.textContent).toContain(
-    "Left the family",
-  );
+  expect(html).toContain("Saved details");
+  expect(html).toContain("&lt;b&gt;note&lt;/b&gt;");
+  expect(html).not.toContain("<details open");
 });

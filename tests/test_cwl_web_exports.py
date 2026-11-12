@@ -310,3 +310,71 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(status['last_check_failed'])
         with self.app['store'].tx() as db:
             self.assertEqual(list(db.iterdump()), dump)
+
+    async def test_bonus_history_includes_owned_import_source_without_writes(self):
+        await self.setup_published()
+        with self.app['store'].tx() as db:
+            other = db.execute("INSERT INTO seasons(label,status,signup_open,history_only) VALUES ('2026-08','archived',0,1)").lastrowid
+            for sid, tag in ((self.sid, '#Q2Y'), (other, '#G2Y')):
+                db.execute("INSERT INTO bonus_imported_winners VALUES (?,'2026-08','lazy',?,'Official <name>','#C2Y','Import clan','import','fixture','now')", (sid, tag))
+            before = list(db.iterdump())
+        response = await self.call('GET', f'/seasons/{self.sid}/export-preview?kind=bonus-history&basis=current', self.owner)
+        self.assertEqual(response.status, 200, await response.text())
+        rows = (await response.json())['rows']
+        self.assertEqual([(row['tag'], row['source'], row['record_type']) for row in rows], [('#Q2Y', 'import', 'imported_winner')])
+        self.assertEqual(rows[0]['player_name'], 'Official <name>')
+        with self.app['store'].tx() as db:
+            self.assertEqual(list(db.iterdump()), before)
+
+
+    async def test_bonus_history_permission_matrix_and_other_kinds_unchanged(self):
+        import json
+        await self.setup_published()
+        staff = self.auth('200')
+        for grant, expected in (('cwl_results', 403), ('cwl_bonuses', 200), ('cwl_send', 200)):
+            with self.app['store'].tx() as db:
+                db.execute('INSERT INTO grants(user_id,granted_by,permissions) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET permissions=excluded.permissions', ('200','fixture',json.dumps([grant])))
+            for suffix in ('export-preview', 'export.csv'):
+                url = f'/seasons/{self.sid}/{suffix}?kind=bonus-history&basis=current'
+                response = await self.call('GET',url,staff)
+                self.assertEqual(response.status, expected, (grant,suffix,await response.text()))
+                response = await self.call('GET',url,self.owner)
+                self.assertEqual(response.status,200,await response.text())
+                if grant == 'cwl_results':
+                    response = await self.call('GET',f'/seasons/{self.sid}/{suffix}?kind=accounts&basis=current',staff)
+                    self.assertEqual(response.status,200,await response.text())
+
+    async def test_seasons_resolves_bound_months_once_and_is_read_only(self):
+        from unittest.mock import patch
+        from cwl_web import participation_sync
+        await self.setup_published()
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE seasons SET label='September staff history' WHERE id=?", (self.sid,))
+            db.execute("UPDATE participation_sync_settings SET cycle='2026-09' WHERE season_id=?", (self.sid,))
+            db.execute("INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES (?,'2026-08')", (self.sid,))
+            other = db.execute("INSERT INTO seasons(label) VALUES ('2026-07')").lastrowid
+            db.execute("INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES (?,'2026-06')", (other,))
+            free = db.execute("INSERT INTO seasons(label) VALUES ('Unbound notes')").lastrowid
+            before = list(db.iterdump())
+        response = await self.call('GET','/seasons',self.owner)
+        self.assertEqual(response.status,200,await response.text())
+        by_id = {row['id']:row for row in (await response.json())['seasons']}
+        self.assertEqual(by_id[self.sid]['cwl_month'],'2026-09')
+        self.assertEqual(by_id[other]['cwl_month'],'2026-06')
+        self.assertIsNone(by_id[free]['cwl_month'])
+        original = participation_sync.resolved_cwl_months
+        queries = []
+        def counted(db, ids):
+            trace=[]
+            db.set_trace_callback(trace.append)
+            result=original(db,ids)
+            db.set_trace_callback(None)
+            queries.extend(line for line in trace if line.lstrip().upper().startswith('SELECT'))
+            return result
+        with patch.object(participation_sync,'resolved_cwl_months',side_effect=counted) as resolver:
+            response = await self.call('GET','/seasons',self.owner)
+            self.assertEqual(response.status,200,await response.text())
+            self.assertEqual(resolver.call_count,1)
+            self.assertEqual(len(queries),1)
+        with self.app['store'].tx() as db:
+            self.assertEqual(list(db.iterdump()),before)
