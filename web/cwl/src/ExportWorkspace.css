@@ -49,15 +49,10 @@
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
 }
-.export-ready button {
-  flex: 0 0 auto;
+.export-range {
+  margin: var(--wu-space-3) 0;
 }
-
-.export-about {
-  margin: var(--wu-space-3) 0 0;
-  border-bottom: 1px solid #ffffff20;
-}
-.export-about summary {
+.export-range summary {
   display: flex;
   align-items: center;
   min-height: 44px;
@@ -65,19 +60,49 @@
   cursor: pointer;
   font-size: var(--wu-text-sm);
 }
-.export-about summary::before,
+.export-range summary::before,
 .export-record-details summary::before {
   content: "▸";
   margin-right: var(--wu-space-1);
 }
-.export-about[open] summary::before,
+.export-range[open] summary::before,
 .export-record-details[open] summary::before {
   content: "▾";
 }
-.export-about p {
-  font-size: var(--wu-text-sm);
-  margin: 0 0 var(--wu-space-3);
-  text-wrap: pretty;
+.export-downloads {
+  padding-bottom: var(--wu-space-3);
+}
+.export-downloads button,
+.export-downloads select {
+  min-height: 44px;
+}
+.export-range-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px)) auto;
+  gap: var(--wu-space-3);
+  align-items: end;
+}
+.export-range-fields label {
+  min-width: 0;
+}
+.export-range-fields select {
+  width: 100%;
+}
+.export-range-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.export-downloads [role="alert"] button {
+  margin-left: var(--wu-space-2);
+}
+@media (max-width: 620px) {
+  .export-range-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .export-downloads > button {
+    width: 100%;
+  }
 }
 .export-records {
   display: grid;
@@ -105,10 +130,6 @@
     align-items: stretch;
     flex-direction: column;
   }
-  .export-ready button {
-    width: 100%;
-    min-height: 44px;
-  }
 }
 .export-mismatch-note {
   margin: 0 0 var(--wu-space-3);
@@ -135,7 +156,7 @@
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
-.export-about summary:focus-visible,
+.export-range summary:focus-visible,
 .export-record-details summary:focus-visible {
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;

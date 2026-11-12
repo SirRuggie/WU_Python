@@ -1,4 +1,4 @@
-"""Current-app Exports sample, real isolated SQLite, deterministic CSV timestamps."""
+"""Current-app Excel sample: synthetic SQLite, loopback only, no live providers."""
 
 import asyncio
 from datetime import datetime, timezone
@@ -33,6 +33,14 @@ SID = 2
 
 provider = FixtureProviders(OWNER)
 provider.players = {}
+CLANS = [
+    ("#C2Y", "Amber Knights with a long hosting name"),
+    ("#R2Y", "Bronze Hold"),
+    ("#G2Y", "Cedar Guard"),
+    ("#J2Y", "Crystal Keep"),
+    ("#Q2Y", "Dawn Watch"),
+    ("#L2Y", "Ember Hall"),
+]
 ALPHABET = "0289PYLQGRJCUV"
 PLAYERS = []
 for i in range(26):
@@ -56,20 +64,14 @@ async def family():
         source="fixture",
         status="ok",
         checked_at=datetime.now(timezone.utc).isoformat(),
-        clans=[
-            dict(tag=t, name=n, type="CWL")
-            for t, n in [
-                ("#C2Y", "Amber Knights with a long hosting name"),
-                ("#J2Y", "Crystal Keep"),
-            ]
-        ],
+        clans=[dict(tag=t, name=n, type="CWL") for t, n in CLANS],
     )
 
 
 provider.family_clans = family
-TEMP = ROOT / ".local/exports-history-231-tmp"
+TEMP = ROOT / ".local/exports-excel-232-tmp"
 TEMP.mkdir(parents=True, exist_ok=True)
-DATA = Path(tempfile.mkdtemp(prefix="exports-history-", dir=TEMP))
+DATA = Path(tempfile.mkdtemp(prefix="exports-excel-", dir=TEMP))
 app = create_app(
     db_path=str(DATA / "fixture.sqlite"),
     providers=provider,
@@ -97,10 +99,13 @@ async def sample(request, handler):
         return web.json_response(mode)
     if request.path.startswith("/_exports/scenario/"):
         scenario = request.path.rsplit("/", 1)[-1]
-        if scenario not in ('normal', 'denied', 'retry'):
+        if scenario not in ("normal", "denied", "retry"):
             raise web.HTTPNotFound()
-        mode.update(preview_error={'normal': 0, 'denied': 403, 'retry': 500}[scenario], download_error=0)
-        raise web.HTTPFound('/cwl/exports?season=2')
+        mode.update(
+            preview_error={"normal": 0, "denied": 403, "retry": 500}[scenario],
+            download_error=0,
+        )
+        raise web.HTTPFound("/cwl/exports?season=2")
     if request.path == "/_exports/state":
         with app["store"].tx() as db:
             rev = db.execute(
@@ -123,7 +128,7 @@ async def sample(request, handler):
         requests.append(dict(method=request.method, path=request.path_qs))
         error = (
             mode["download_error"]
-            if request.path.endswith("/export.csv")
+            if request.path.endswith(".xlsx")
             else (
                 mode["preview_error"] if request.path.endswith("/export-preview") else 0
             )
@@ -140,18 +145,15 @@ async def sample(request, handler):
 app.middlewares.insert(0, sample)
 with app["store"].tx() as db:
     db.execute(
-        "INSERT INTO seasons(id,label,status,signup_open) VALUES(1,'October 2026','archived',0),(2,'November 2026','draft',1),(3,'August staff history','archived',0),(4,'December 2026','draft',0),(5,'Unbound fixture notes','draft',0)"
+        "INSERT INTO seasons(id,label,status,signup_open) VALUES(1,'October 2026','archived',0),(2,'November 2026','draft',1),(3,'August staff history','archived',0),(4,'December 2026','draft',0),(5,'Unbound fixture notes','draft',0),(6,'2026-09','archived',0)"
     )
     db.execute("UPDATE member_season SET season_id=2,revision=1 WHERE id=1")
-    for t, n in [
-        ("#C2Y", "Amber Knights with a long hosting name"),
-        ("#J2Y", "Crystal Keep"),
-    ]:
+    for clan_index, (t, n) in enumerate(CLANS):
         db.execute("INSERT INTO clans(tag,name) VALUES(?,?)", (t, n))
         db.execute("INSERT INTO lineup(season_id,tag) VALUES(2,?)", (t,))
         db.execute(
             "INSERT INTO lineup_rules(season_id,tag,pool,capacity) VALUES(2,?,?,15)",
-            (t, "main" if t == "#C2Y" else "lazy"),
+            (t, "main" if clan_index < 3 else "lazy"),
         )
     for i, t in enumerate(PLAYERS):
         p = provider.players[t]
@@ -161,7 +163,7 @@ with app["store"].tx() as db:
         )
         db.execute(
             "INSERT INTO roster_entries(season_id,tag,assigned_clan_tag,manual_weight,kept) VALUES(2,?,?,171000,0)",
-            (t, "#C2Y" if i < 15 else "#J2Y"),
+            (t, CLANS[min(i // 5, 5)][0]),
         )
 
 
@@ -217,16 +219,24 @@ async def main():
                 ),
             )
         from utils.cwl_working_roster import account_token, working_accounts
-        with app['store'].tx() as db:
+
+        with app["store"].tx() as db:
             for tag in PLAYERS[:2]:
-                db.execute("INSERT INTO participation_source_results(season_id,cycle,tag,attacks,stars,status,complete,checked_at,roster_token) VALUES (2,'2026-11',?,7,21,'complete',1,?,?)", (tag,datetime.now(timezone.utc).isoformat(),account_token(working_accounts(db,2)[tag])))
+                db.execute(
+                    "INSERT INTO participation_source_results(season_id,cycle,tag,attacks,stars,status,complete,checked_at,roster_token) VALUES (2,'2026-11',?,7,21,'complete',1,?,?)",
+                    (
+                        tag,
+                        datetime.now(timezone.utc).isoformat(),
+                        account_token(working_accounts(db, 2)[tag]),
+                    ),
+                )
         await call(
             "PATCH",
             "/seasons/2/bonuses/settings",
             dict(
                 revision=0,
                 policy=dict(min_attacks=None, min_stars=None, cooldown_months=None),
-                clans=[dict(tag="#C2Y", slots=1), dict(tag="#J2Y", slots=1)],
+                clans=[dict(tag=tag, slots=1) for tag, _ in CLANS],
             ),
         )
         await call(
@@ -258,36 +268,73 @@ async def main():
                 (PLAYERS[0],),
             )
             db.execute("UPDATE roster_meta SET revision=revision+1 WHERE season_id=2")
-        with app['store'].tx() as db:
+        with app["store"].tx() as db:
             db.execute("UPDATE seasons SET history_only=1 WHERE id=3")
-            for sid,cycle in ((3,'2026-08'),(4,'2026-12')):
-                db.execute("INSERT INTO participation_sync_settings(season_id,cycle,enabled,updated_by,updated_at) VALUES (?,?,0,'fixture','now')",(sid,cycle))
-            db.execute("INSERT INTO bonus_imported_winners VALUES (3,'2026-08','lazy',?,'Imported August winner','#J2Y','Crystal Keep','import','fixture','now')", (PLAYERS[3],))
-            db.execute("INSERT INTO bonus_imported_winners VALUES (2,'2026-10','lazy',?,'Imported fixture winner','#J2Y','Crystal Keep','import','fixture','now')", (PLAYERS[4],))
-            db.execute("INSERT INTO lineup VALUES (4,'#C2Y')")
-            db.execute("INSERT INTO lineup_rules(season_id,tag,pool,capacity) VALUES (4,'#C2Y','main',15)")
-            db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall,signup_clan_tag,signup_clan_name,updated_at) SELECT 4,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall,signup_clan_tag,signup_clan_name,updated_at FROM signups WHERE season_id=2 AND tag=?", (PLAYERS[0],))
-            db.execute("INSERT INTO roster_entries(season_id,tag,assigned_clan_tag,manual_weight,kept) VALUES (4,?,'#C2Y',179000,0)",(PLAYERS[0],))
-            counts = {table: db.execute('SELECT COUNT(*) FROM '+table).fetchone()[0] for table in ('signups','roster_entries','bonus_confirmations','bonus_imported_winners','roster_publications')}
-            counts['pools']=[dict(row) for row in db.execute('SELECT season_id,pool,COUNT(*) signups,SUM(kept) locks FROM signups JOIN roster_entries USING(season_id,tag) GROUP BY season_id,pool')]
-        (OUT / 'before-counts.json').write_text(json.dumps(counts,indent=2))
-        baseline = {}
-        for kind in (
-            "accounts",
-            "participation",
-            "participation-history",
-            "bonus-history",
-        ):
-            for basis in ("current", "published"):
-                response = await session.get(
-                    base + f"/seasons/2/export.csv?kind={kind}&basis={basis}"
+            for sid, cycle in ((1, "2026-10"), (3, "2026-08"), (4, "2026-12")):
+                db.execute(
+                    "INSERT INTO participation_sync_settings(season_id,cycle,enabled,updated_by,updated_at) VALUES (?,?,0,'fixture','now')",
+                    (sid, cycle),
                 )
-                assert response.status == 200, await response.text()
-                raw = await response.read()
-                name = f"{kind}-{basis}.csv"
-                (OUT / name).write_bytes(raw)
-                baseline[name] = hashlib.sha256(raw).hexdigest()
-        (OUT / "baseline-csv-hashes.json").write_text(json.dumps(baseline, indent=2))
+            db.execute(
+                "INSERT INTO bonus_imported_winners VALUES (3,'2026-08','lazy',?,'Imported August winner','#J2Y','Crystal Keep','import','fixture','now')",
+                (PLAYERS[3],),
+            )
+            db.execute(
+                "INSERT INTO bonus_imported_winners VALUES (2,'2026-11','lazy',?,'Imported fixture winner','#J2Y','Crystal Keep','import','fixture','now')",
+                (PLAYERS[4],),
+            )
+            db.execute("INSERT INTO lineup VALUES (4,'#C2Y')")
+            db.execute(
+                "INSERT INTO lineup_rules(season_id,tag,pool,capacity) VALUES (4,'#C2Y','main',15)"
+            )
+            db.execute(
+                "INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall,signup_clan_tag,signup_clan_name,updated_at) SELECT 4,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall,signup_clan_tag,signup_clan_name,updated_at FROM signups WHERE season_id=2 AND tag=?",
+                (PLAYERS[0],),
+            )
+            db.execute(
+                "INSERT INTO roster_entries(season_id,tag,assigned_clan_tag,manual_weight,kept) VALUES (4,?,'#C2Y',179000,0)",
+                (PLAYERS[0],),
+            )
+            for tag, league in [
+                ("#C2Y", "Master League II"),
+                ("#J2Y", "Crystal League I"),
+            ]:
+                db.execute(
+                    "INSERT INTO bonus_allowance_leagues VALUES (2,'2026-11',?,?, 'fixture')",
+                    (tag, league),
+                )
+            counts = {
+                table: db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+                for table in (
+                    "signups",
+                    "roster_entries",
+                    "bonus_confirmations",
+                    "bonus_imported_winners",
+                    "roster_publications",
+                )
+            }
+            counts["pools"] = [
+                dict(row)
+                for row in db.execute(
+                    "SELECT season_id,pool,COUNT(*) signups,SUM(kept) locks FROM signups JOIN roster_entries USING(season_id,tag) GROUP BY season_id,pool"
+                )
+            ]
+        (OUT / "before-counts.json").write_text(json.dumps(counts, indent=2))
+        baseline = {}
+        for name, path in [
+            ("season-published.xlsx", "/seasons/2/export.xlsx?basis=published"),
+            ("season-working.xlsx", "/seasons/2/export.xlsx?basis=current"),
+            ("range.xlsx", "/exports/range.xlsx?from=2026-08&to=2026-11"),
+            ("history-only.xlsx", "/seasons/3/export.xlsx"),
+        ]:
+            response = await session.get(base + path)
+            assert response.status == 200, await response.text()
+            raw = await response.read()
+            (OUT / name).write_bytes(raw)
+            baseline[name] = hashlib.sha256(raw).hexdigest()
+        (OUT / "baseline-workbook-hashes.json").write_text(
+            json.dumps(baseline, indent=2)
+        )
     requests.clear()
     proof = dict(
         ready=True,

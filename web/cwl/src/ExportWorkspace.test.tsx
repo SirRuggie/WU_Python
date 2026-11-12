@@ -5,15 +5,17 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ExportWorkspace from "./ExportWorkspace";
 import { ApiError } from "./api";
 
-const { api, fetchCsv } = vi.hoisted(() => ({
+const { api, fetchExcel, access } = vi.hoisted(() => ({
   api: vi.fn(),
-  fetchCsv: vi.fn(),
+  fetchExcel: vi.fn(),
+  access: { bonuses: true, send: true },
 }));
 vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
 vi.mock("./DashboardPermissions", () => ({
-  useDashboardPermission: () => true,
+  useDashboardPermission: (name: string) =>
+    name === "cwl_bonuses" ? access.bonuses : access.send,
 }));
-vi.mock("./readRetry", () => ({ fetchReadWithRetry: fetchCsv }));
+vi.mock("./readRetry", () => ({ fetchReadWithRetry: fetchExcel }));
 const seasons = [
   { id: 1, label: "2026-11", status: "draft", signup_open: true },
   { id: 2, label: "October 2026", status: "archived", signup_open: false },
@@ -97,7 +99,9 @@ const button = (label: string) =>
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   api.mockReset();
-  fetchCsv.mockReset();
+  access.bonuses = true;
+  access.send = true;
+  fetchExcel.mockReset();
   api.mockImplementation(async (path: string) => {
     const q = new URLSearchParams(path.split("?")[1]);
     return sample(q.get("kind")!, q.get("basis")!);
@@ -162,15 +166,13 @@ it("defaults Published and keeps working rows hidden until a requested published
   );
 });
 
-it("explains disabled publication and prevents downloading zero rows", async () => {
+it("explains disabled publication and permits an empty workbook", async () => {
   api.mockResolvedValue(sample("accounts", "current", 0, false));
   await render();
   expect(button("Published").disabled).toBe(true);
   expect(button("Working").getAttribute("aria-pressed")).toBe("true");
   expect(host.textContent).toContain("Not published yet");
-  expect(button("Download CSV").disabled).toBe(true);
-  await act(async () => button("Download CSV").click());
-  expect(fetchCsv).not.toHaveBeenCalled();
+  expect(button("Download season (Excel)").disabled).toBe(false);
 });
 
 it("renders all grouped accounts without search or paging", async () => {
@@ -187,33 +189,27 @@ it("renders all grouped accounts without search or paging", async () => {
   expect(
     host.querySelector('nav[aria-label="Export preview pages"]'),
   ).toBeNull();
-  expect(button("Download CSV").disabled).toBe(false);
+  expect(button("Download season (Excel)").disabled).toBe(false);
 });
 
-it("passes the CSV body unchanged and preserves all five UI request variants", async () => {
-  const file = new Blob(
-    ["\uFEFFplayer_name,effective_weight,cycle\r\nFixture,179000,2026-11\r\n"],
-    { type: "text/csv" },
-  );
-  fetchCsv.mockImplementation(async () => ({
+it("downloads the season workbook using the selected Published or Working basis", async () => {
+  const file = new Blob(["xlsx fixture"]);
+  fetchExcel.mockResolvedValue({
     ok: true,
-    headers: { get: () => "text/csv" },
+    headers: {
+      get: (key: string) =>
+        key === "content-type"
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : null,
+    },
     blob: async () => file,
-  }));
+  });
   await render();
-  for (const [kind, basis] of [
-    ["accounts", "current"],
-    ["accounts", "published"],
-    ["participation", "current"],
-    ["participation-history", "current"],
-    ["bonus-history", "current"],
-  ]) {
-    if (select("Show").value !== kind) await change("Show", kind);
-    if (kind === "accounts") await change("Roster version", basis);
-    await act(async () => button("Download CSV").click());
-    await settle();
-    expect(fetchCsv).toHaveBeenLastCalledWith(
-      `/api/cwl/seasons/1/export.csv?kind=${kind}&basis=${basis}`,
+  for (const basis of ["current", "published"]) {
+    await change("Roster version", basis);
+    await act(async () => button("Download season (Excel)").click());
+    expect(fetchExcel).toHaveBeenLastCalledWith(
+      `/api/cwl/seasons/1/export.xlsx?basis=${basis}`,
       expect.objectContaining({
         credentials: "same-origin",
         signal: expect.any(AbortSignal),
@@ -221,13 +217,11 @@ it("passes the CSV body unchanged and preserves all five UI request variants", a
     );
     expect(URL.createObjectURL).toHaveBeenLastCalledWith(file);
   }
-  expect(fetchCsv).toHaveBeenCalledTimes(5);
-  expect(api.mock.calls.every((c) => c[1] === undefined)).toBe(true);
 });
 
 it("offers one download retry after failure and blocks duplicate pending requests", async () => {
   let finish: (value: unknown) => void = () => {};
-  fetchCsv.mockImplementationOnce(
+  fetchExcel.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
         finish = resolve;
@@ -235,10 +229,10 @@ it("offers one download retry after failure and blocks duplicate pending request
   );
   await render();
   await act(async () => {
-    button("Download CSV").click();
-    button("Download CSV").click();
+    button("Download season (Excel)").click();
+    button("Download season (Excel)").click();
   });
-  expect(fetchCsv).toHaveBeenCalledTimes(1);
+  expect(fetchExcel).toHaveBeenCalledTimes(1);
   await act(async () =>
     finish({
       ok: false,
@@ -249,30 +243,33 @@ it("offers one download retry after failure and blocks duplicate pending request
   await settle();
   expect(host.textContent).toContain("Download failed.");
   expect(host.textContent).not.toContain("Private server detail");
-  fetchCsv.mockResolvedValue({
+  fetchExcel.mockResolvedValue({
     ok: true,
-    headers: { get: () => "text/csv" },
+    headers: {
+      get: () =>
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
     blob: async () => new Blob(["179000"]),
   });
-  await act(async () => button("Retry").click());
+  await act(async () => button("Retry download").click());
   await settle();
-  expect(fetchCsv).toHaveBeenCalledTimes(2);
+  expect(fetchExcel).toHaveBeenCalledTimes(2);
 });
 
 it.each([401, 403])(
   "hides Retry and clears protected preview after denied download %i",
   async (status) => {
-    fetchCsv.mockResolvedValue({
+    fetchExcel.mockResolvedValue({
       ok: false,
       status,
       json: async () => ({ error: "Denied" }),
     });
     const changed = vi.spyOn(window, "dispatchEvent");
     await render();
-    await act(async () => button("Download CSV").click());
+    await act(async () => button("Download season (Excel)").click());
     await settle();
     expect(host.textContent).toContain(
-      "You do not have access to this export.",
+      "You do not have access to this download.",
     );
     expect(button("Retry")).toBeUndefined();
     expect(host.querySelector(".export-record")).toBeNull();
@@ -329,23 +326,26 @@ it("drops a late published response after changing the season", async () => {
   expect(host.textContent).not.toContain("Old publication");
 });
 
-it("aborts an in-flight CSV when changing season and does not offer its stale Blob", async () => {
+it("aborts an in-flight Excel when changing season and does not offer its stale Blob", async () => {
   let finish: (value: unknown) => void = () => {};
-  fetchCsv.mockImplementation(
+  fetchExcel.mockImplementation(
     () =>
       new Promise((resolve) => {
         finish = resolve;
       }),
   );
   await render();
-  await act(async () => button("Download CSV").click());
-  const signal = fetchCsv.mock.calls[0][1].signal as AbortSignal;
+  await act(async () => button("Download season (Excel)").click());
+  const signal = fetchExcel.mock.calls[0][1].signal as AbortSignal;
   await render("2");
   expect(signal.aborted).toBe(true);
   await act(async () =>
     finish({
       ok: true,
-      headers: { get: () => "text/csv" },
+      headers: {
+        get: () =>
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
       blob: async () => new Blob(["old"]),
     }),
   );
@@ -372,5 +372,27 @@ it.each([
     await settle();
     expect(host.querySelector(".export-record")?.textContent).toBe(records);
     expect(api).toHaveBeenCalledTimes(before);
+  },
+);
+
+it.each([
+  { bonuses: false, send: false, visible: false },
+  { bonuses: true, send: false, visible: true },
+  { bonuses: false, send: true, visible: true },
+])(
+  "gates workbook controls while keeping nonwinner previews: $bonuses/$send",
+  async ({ bonuses, send, visible }) => {
+    Object.assign(access, { bonuses, send });
+    await render();
+    expect(Boolean(button("Download season (Excel)"))).toBe(visible);
+    expect(
+      [...select("Show").options].some((row) => row.value === "bonus-history"),
+    ).toBe(visible);
+    expect(host.querySelector(".export-record")).not.toBeNull();
+    expect(
+      api.mock.calls.every(
+        (call) => !String(call[0]).includes("kind=bonus-history"),
+      ),
+    ).toBe(true);
   },
 );

@@ -64,6 +64,12 @@ class AllowanceStore:
     def __init__(self, db, sid, cycle):
         self.db, self.sid, self.cycle = db, sid, cycle
 
+    def saved_leagues(self):
+        """Read only season/cycle-bound league evidence; never a current profile."""
+        return {row['clan_tag']: row['league'] for row in self.db.execute(
+            'SELECT clan_tag,league FROM bonus_allowance_leagues WHERE season_id=? AND cycle=?',
+            (self.sid, self.cycle))}
+
     def capture_league(self, clan_tag, league, stamp):
         if base_allowance(league, 15, self.cycle) is not None:
             self.db.execute('INSERT OR IGNORE INTO bonus_allowance_leagues VALUES (?,?,?,?,?)',

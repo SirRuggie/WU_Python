@@ -1,6 +1,4 @@
-"""CSV export authorization, spreadsheet safety and historical accuracy."""
-import csv
-import io
+"""Preview authorization, spreadsheet safety and historical accuracy."""
 import unittest
 import test_cwl_web_bonuses as fixtures
 from cwl_web.exports import csv_cell
@@ -21,28 +19,30 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
     preview = fixtures.BonusTests.preview
     base = fixtures.BonusTests.base
 
-    async def download(self, query=''):
-        response = await self.call('GET', f'/seasons/{self.sid}/export.csv' + query, self.owner)
+    async def snapshot_rows(self, query=''):
+        # Preserve the existing scalar-domain assertions against the retained
+        # preview contract. Actual Excel encoding is tested separately.
+        response = await self.call('GET', f'/seasons/{self.sid}/export-preview' + query, self.owner)
         self.assertEqual(response.status, 200, await response.text())
-        self.assertIn('attachment;', response.headers['Content-Disposition'])
         self.assertIn('no-store', response.headers['Cache-Control'])
-        return list(csv.DictReader(io.StringIO((await response.read()).decode('utf-8-sig'))))
+        payload = await response.json()
+        return [{key: csv_cell(row.get(key)) for key in payload['columns']} for row in payload['rows']]
 
     async def test_access_empty_and_invalid_exports(self):
-        url = f'/seasons/{self.sid}/export.csv'
+        url = f'/seasons/{self.sid}/export-preview'
         self.assertEqual((await self.call('GET', url)).status, 401)
         self.assertEqual((await self.call('GET', url, self.member)).status, 403)
         self.assertEqual((await self.call('GET', url + '?kind=nope', self.owner)).status, 400)
         self.assertEqual((await self.call('GET', url + '?basis=published', self.owner)).status, 409)
-        self.assertEqual(await self.download(), [])
-        self.assertEqual((await self.call('GET', '/seasons/9999/export.csv', self.owner)).status, 404)
+        self.assertEqual(await self.snapshot_rows(), [])
+        self.assertEqual((await self.call('GET', '/seasons/9999/export-preview', self.owner)).status, 404)
 
     async def test_current_published_and_archived_exports_preserve_values(self):
         await self.setup_published()
         with self.app['store'].tx() as db:
             db.execute("UPDATE signups SET player_name=?,signup_clan_name=? WHERE season_id=?", ('=SUM(1,2)', 'Clan, "é"\nsecond line', self.sid))
             db.execute('UPDATE roster_entries SET manual_weight=174000,source_weight=176000,assigned_clan_tag=NULL WHERE season_id=?', (self.sid,))
-        rows = await self.download()
+        rows = await self.snapshot_rows()
         self.assertEqual(rows[0]['player_name'], "'=SUM(1,2)")
         self.assertEqual(rows[0]['signup_clan_name'], 'Clan, "é"\nsecond line')
         self.assertEqual(rows[0]['effective_weight'], '174000')
@@ -51,7 +51,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[0]['source_weight'], '176000')
         self.assertEqual(rows[0]['participation_attacks'], '')
         self.assertEqual(rows[0]['assigned_clan_tag'], '')
-        published = await self.download('?basis=published')
+        published = await self.snapshot_rows('?basis=published')
         self.assertEqual(published[0]['assigned_clan_tag'], '#C2Y')
         self.assertEqual(published[0]['player_name'], 'Main')
         self.assertIn('manual_weight', published[0])
@@ -59,11 +59,11 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
         with self.app['store'].tx() as db:
             db.execute("UPDATE seasons SET status='archived' WHERE id=?", (self.sid,))
         revision = await self.revision()
-        archived = await self.download()
+        archived = await self.snapshot_rows()
         self.assertEqual(archived[0]['season_status'], 'archived')
         self.assertEqual(await self.revision(), revision)
 
-    async def test_preview_is_staff_only_read_only_and_matches_csv_columns(self):
+    async def test_preview_is_staff_only_read_only_and_has_declared_columns(self):
         await self.setup_published()
         revision = await self.revision()
         url = f'/seasons/{self.sid}/export-preview?kind=accounts&basis=published'
@@ -78,10 +78,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(preview['summary']['roster_basis'], 'published')
         self.assertEqual(preview['counts']['rows'], len(preview['rows']))
         self.assertTrue(preview['rows'])
-        csv_response = await self.call('GET', f'/seasons/{self.sid}/export.csv?kind=accounts&basis=published', self.owner)
-        reader = csv.reader(io.StringIO((await csv_response.read()).decode('utf-8-sig')))
-        self.assertEqual(next(reader), preview['columns'])
-        self.assertEqual(len(list(reader)), preview['counts']['rows'])
+        self.assertTrue(all(set(preview['columns']).issubset(row) for row in preview['rows']))
         self.assertEqual(await self.revision(), revision)
 
     async def test_published_preview_excludes_current_draft_bonus_selection_and_new_signups(self):
@@ -162,17 +159,17 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
         preview = await self.preview()
         response = await self.call('POST', self.base + '/confirm', self.owner, json={'revision': 2, 'fingerprint': preview['fingerprint'], 'acknowledge_warnings': True})
         self.assertIn(response.status, (200, 201), await response.text())
-        history = await self.download('?kind=bonus-history')
+        history = await self.snapshot_rows('?kind=bonus-history')
         self.assertEqual(history[0]['record_type'], 'dashboard_selection_not_game_award')
         self.assertEqual(history[0]['attacks'], '0')
         response = await self.call('POST', self.base + '/' + history[0]['id'] + '/void', self.owner, json={'revision': 3, 'reason': 'Correction'})
         self.assertEqual(response.status, 200, await response.text())
-        history = await self.download('?kind=bonus-history')
+        history = await self.snapshot_rows('?kind=bonus-history')
         self.assertEqual(history[0]['void_reason'], 'Correction')
         self.assertTrue(history[0]['voided_at'])
         with self.app['store'].tx() as db:
             db.execute('DELETE FROM publication_accounts WHERE tag=?', ('#P2Y',))
-        participation = await self.download('?kind=participation')
+        participation = await self.snapshot_rows('?kind=participation')
         self.assertEqual(participation[0]['attacks'], '0')
         self.assertEqual(participation[0]['in_latest_publication'], 'No')
         self.assertEqual(participation[0]['notes'], 'Reviewed')
@@ -183,12 +180,12 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(csv_cell(None), '')
         self.assertEqual(csv_cell(0), '0')
 
-    async def test_accounts_csv_keeps_weight_status_separate_from_waiting_participation(self):
+    async def test_accounts_preview_keeps_weight_status_separate_from_waiting_participation(self):
         from cwl_web.exports import _export_snapshot
         from utils.cwl_working_roster import working_accounts, account_token
         await self.setup_published()
         query = '?kind=accounts&basis=published'
-        before = await self.download(query)
+        before = await self.snapshot_rows(query)
         with self.app['store'].tx() as db:
             token = account_token(working_accounts(db, self.sid)['#P2Y'])
             db.execute(
@@ -201,20 +198,20 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
             raw = _export_snapshot(db,self.sid,'accounts','published','test')
             changes = db.total_changes
             dump = list(db.iterdump())
-        rows = await self.download(query)
+        rows = await self.snapshot_rows(query)
         self.assertEqual(len(rows),len(before))
         self.assertEqual(rows[0]['source_status'],before[0]['source_status'])
         self.assertEqual(rows[0]['source_status'],raw['rows'][0]['source_status'])
         self.assertEqual(rows[0]['source_weight'],before[0]['source_weight'])
         self.assertEqual(rows[0]['effective_weight'],before[0]['effective_weight'])
-        self.assertEqual(rows[0]['participation_source_status'],'CWL has not started')
+        self.assertEqual(rows[0]['participation_source_status'],'waiting')
         self.assertEqual(rows[0]['participation_source_warning'],'October CWL has not started in Clash yet')
         self.assertEqual(rows[0]['participation_attacks'],'')
         self.assertEqual(rows[0]['participation_stars'],'')
         with self.app['store'].tx() as db:
             self.assertEqual(list(db.iterdump()),dump)
 
-    async def test_failed_capture_agrees_at_get_csv_and_both_preview_boundaries(self):
+    async def test_failed_capture_agrees_at_get_and_both_preview_boundaries(self):
         from datetime import datetime, timezone
         from unittest.mock import patch
         clock = patch('cwl_web.exports.datetime', wraps=datetime)
@@ -223,7 +220,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
         export_clock.now.return_value = datetime.now(timezone.utc)
         await self.setup_published()
         await self.seed_complete_source(attacks=2, stars=5)
-        before = (await self.download('?kind=accounts&basis=published'))[0]
+        before = (await self.snapshot_rows('?kind=accounts&basis=published'))[0]
         for attacks, stars, override, label, code in (
             (2, 5, None, 'Last saved results', 'stale'),
             (0, 0, None, 'Last saved results', 'stale'),
@@ -256,11 +253,11 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((account['source_attacks'], account['source_stars']), (attacks, stars))
                 for kind, prefix in (('accounts', 'participation_'), ('participation', '')):
                     query = f'?kind={kind}&basis=published'
-                    csv_row = next(row for row in await self.download(query) if row['tag'] == '#P2Y')
-                    self.assertEqual(csv_row[prefix + 'source_status'], label)
-                    self.assertEqual(csv_row[prefix + 'source_warning'], expected['warning'])
-                    self.assertEqual(csv_row[prefix + 'attacks'], '' if effective_attacks is None else str(effective_attacks))
-                    self.assertEqual(csv_row[prefix + 'stars'], '' if effective_stars is None else str(effective_stars))
+                    scalar_row = next(row for row in await self.snapshot_rows(query) if row['tag'] == '#P2Y')
+                    self.assertEqual(scalar_row[prefix + 'source_status'], code)
+                    self.assertEqual(scalar_row[prefix + 'source_warning'], 'CWL data unavailable')
+                    self.assertEqual(scalar_row[prefix + 'attacks'], '' if effective_attacks is None else str(effective_attacks))
+                    self.assertEqual(scalar_row[prefix + 'stars'], '' if effective_stars is None else str(effective_stars))
                     response = await self.call('GET', f'/seasons/{self.sid}/export-preview' + query, self.owner)
                     self.assertEqual(response.status, 200, await response.text())
                     preview_row = next(row for row in (await response.json())['rows'] if row['tag'] == '#P2Y')
@@ -272,7 +269,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn('participation_source_attacks', preview_row)
                         self.assertNotIn('participation_source_stars', preview_row)
                     if kind == 'accounts':
-                        self.assertEqual({key: value for key, value in csv_row.items() if not key.startswith('participation_')},
+                        self.assertEqual({key: value for key, value in scalar_row.items() if not key.startswith('participation_')},
                                          {key: value for key, value in before.items() if not key.startswith('participation_')})
                 with self.app['store'].tx() as db:
                     self.assertEqual(list(db.iterdump()), dump)
@@ -284,8 +281,8 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
             db.execute("UPDATE participation_source_results SET attacks=NULL,stars=NULL,status='unavailable',complete=0,warning='CWL data unavailable' WHERE season_id=?", (self.sid,))
             dump = list(db.iterdump())
         for kind, prefix in (('accounts', 'participation_'), ('participation', '')):
-            row = (await self.download(f'?kind={kind}&basis=published'))[0]
-            self.assertEqual(row[prefix + 'source_status'], 'Results unavailable')
+            row = (await self.snapshot_rows(f'?kind={kind}&basis=published'))[0]
+            self.assertEqual(row[prefix + 'source_status'], 'unavailable')
             self.assertEqual(row[prefix + 'source_warning'], 'CWL data unavailable')
         with self.app['store'].tx() as db:
             self.assertEqual(list(db.iterdump()), dump)
@@ -334,7 +331,7 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
         for grant, expected in (('cwl_results', 403), ('cwl_bonuses', 200), ('cwl_send', 200)):
             with self.app['store'].tx() as db:
                 db.execute('INSERT INTO grants(user_id,granted_by,permissions) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET permissions=excluded.permissions', ('200','fixture',json.dumps([grant])))
-            for suffix in ('export-preview', 'export.csv'):
+            for suffix in ('export-preview',):
                 url = f'/seasons/{self.sid}/{suffix}?kind=bonus-history&basis=current'
                 response = await self.call('GET',url,staff)
                 self.assertEqual(response.status, expected, (grant,suffix,await response.text()))

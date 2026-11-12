@@ -275,7 +275,6 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await result.json())['accounts'], [])
         response = await self.call('GET', self.endpoint + '?source=history', self.owner)
         self.assertEqual((await response.json())['accounts'][0]['tag'], '#P2Y')
-        import csv, io
         for kind in ('accounts', 'participation'):
-            response = await self.call('GET', f'/seasons/{self.sid}/export.csv?kind={kind}', self.owner)
-            self.assertEqual(list(csv.DictReader(io.StringIO((await response.text()).lstrip('\ufeff')))), [])
+            response = await self.call('GET', f'/seasons/{self.sid}/export-preview?kind={kind}', self.owner)
+            self.assertEqual((await response.json())['rows'], [])

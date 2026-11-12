@@ -1,6 +1,4 @@
 """Isolated whole-season acceptance trial; no live APIs, bot or announcements."""
-import csv
-import io
 import unittest
 import test_cwl_web_roster as fixture
 from cwl_web.store import Store
@@ -68,9 +66,9 @@ class SeasonTrial(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(assignments['draft_changed'], 'Archiving alone must not turn official placements provisional')
         self.assertEqual(len(assignments['accounts']), 2)
         for kind in ('accounts', 'participation', 'bonus-history'):
-            response = await self.call('GET', base + '/export.csv?kind=' + kind, self.owner)
+            response = await self.call('GET', base + '/export-preview?kind=' + kind, self.owner)
             self.assertEqual(response.status, 200)
-            rows = list(csv.DictReader(io.StringIO((await response.read()).decode('utf-8-sig'))))
+            rows = (await response.json())['rows']
             self.assertTrue(rows)
             self.assertEqual(rows[0]['season_status'], 'archived')
             preview = await request('GET', '/export-preview?kind=' + kind)
@@ -78,7 +76,7 @@ class SeasonTrial(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(preview['counts']['rows'], len(rows))
         await request('GET', '/export-preview?kind=bonus-history', who=self.member, status=403)
         # Reopening storage must retain the joined seasonal artifacts, not merely
-        # the final CSV or browser state. Mongo recovery has its own snapshot suite.
+        # the export or browser state. Mongo recovery has its own snapshot suite.
         reopened = Store(self.app['store'].path)
         self.assertEqual(reopened.one('SELECT status FROM seasons WHERE id=?', (self.sid,))['status'], 'archived')
         self.assertEqual(len(reopened.rows('SELECT tag FROM signups WHERE season_id=?', (self.sid,))), 2)

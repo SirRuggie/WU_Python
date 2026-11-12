@@ -1,7 +1,5 @@
-"""Read-only, staff-only CSV exports and matching JSON previews."""
+"""Read-only staff JSON previews and shared spreadsheet text protection."""
 
-import csv
-import io
 import json
 from datetime import datetime, timezone
 
@@ -29,7 +27,7 @@ def csv_cell(value):
 
 
 def _export_snapshot(db, season_id: int, kind: str, basis: str, stamp: str) -> dict:
-    """Build preview and CSV from one consistent database transaction snapshot."""
+    """Build export values from one consistent database transaction snapshot."""
     from .app import _season, _roster_rows, _latest_publication, _revision
 
     season = _season(db, season_id)
@@ -244,7 +242,7 @@ def _query(request):
 
 
 def _require_bonus_history(request, kind, session):
-    """1016: enforce the existing UI grant on both winner reads only."""
+    """1016/1025: enforce the existing UI grant on winner-containing reads."""
     if kind != 'bonus-history':
         return
     from .app import _owner, _fail
@@ -264,42 +262,3 @@ async def export_preview(request):
         result = _export_snapshot(db, season_id, kind, basis, datetime.now(timezone.utc).isoformat())
         result = decorate_export_snapshot(db, season_id, result)
     return web.json_response(result, headers={"Cache-Control": "no-store"})
-
-
-async def export_csv(request):
-    from .app import _require, _sid, _store
-
-    session = _require(request, "editor")
-    season_id = _sid(request)
-    kind, basis = _query(request)
-    _require_bonus_history(request, kind, session)
-    with _store(request).tx() as db:
-        snapshot = _export_snapshot(db, season_id, kind, basis, datetime.now(timezone.utc).isoformat())
-        snapshot = decorate_export_snapshot(db, season_id, snapshot)
-
-    output = io.StringIO(newline="")
-    writer = csv.writer(output)
-    writer.writerow(snapshot["columns"])
-    for row in snapshot["rows"]:
-        row = dict(row)
-        for prefix in ('', 'participation_'):
-            status = row.get(prefix + 'display_status')
-            if status and row.get(prefix + 'source_status') is not None:
-                row[prefix + 'source_status'] = status['label']
-                if status['warning']:
-                    row[prefix + 'source_warning'] = status['warning']
-        writer.writerow([
-            csv_cell(row.get(key))
-            if key not in {"user_id", "confirmed_by", "voided_by", "updated_by"} or not row.get(key)
-            else "'" + str(row[key])
-            for key in snapshot["columns"]
-        ])
-    return web.Response(
-        body=("\ufeff" + output.getvalue()).encode("utf-8"),
-        content_type="text/csv",
-        charset="utf-8",
-        headers={
-            "Content-Disposition": f'attachment; filename="cwl-season-{season_id}-{kind}-{basis}.csv"',
-            "Cache-Control": "no-store",
-        },
-    )
