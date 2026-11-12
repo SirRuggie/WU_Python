@@ -277,7 +277,7 @@ async def handle_inactivity_reason(ctx, action_id: str,
 
 async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None):
     await ctx.defer(ephemeral=True)
-    if not await perms.is_recruiter(ctx.member, mongo) or testing_service.is_test_scope(mongo):
+    if not await perms.is_ticket_staff(ctx.member, mongo) or testing_service.is_test_scope(mongo):
         await ctx.interaction.edit_initial_response(content="Recruiter permission required.")
         return
     parts = action_id.split(":")

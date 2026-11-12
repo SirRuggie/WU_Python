@@ -501,7 +501,7 @@ def _modal_value(ctx, custom_id: str) -> str:
 
 
 async def _require_recruiter(ctx, mongo: MongoClient) -> bool:
-    if await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return True
     await ctx.respond(
         "Only recruiters can use the ticket console.",
@@ -784,7 +784,7 @@ def build_hub_components(
         id=HUB_STATS_COMPONENT_ID,
         accent_color=ACCENT_BLUE,
         components=[
-            Text(content="# Ticket Console"),
+            Text(content="# Ticket Command"),
             Media(items=[MediaItem(
                 media=attachment,
                 description="Approved, open, and denied ticket totals.",
@@ -4714,7 +4714,7 @@ async def _shared_ticket(ctx, mongo: MongoClient, ticket_id: str) -> Mapping | N
         or not _is_shared_actions_source(ctx, state)
     ):
         return None
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return None
     doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
     if doc is None or str(doc.get("status")) != "open":
@@ -4905,7 +4905,7 @@ async def ticket_hub_page(
     if (
         not _is_shared_actions_source(ctx, state)
         or _int(state.get("guild_id")) != _int(getattr(ctx, "guild_id", 0))
-        or not await perms.is_recruiter(getattr(ctx, "member", None), mongo)
+        or not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo)
     ):
         await _execute_private_panel(
             ctx,
@@ -4927,7 +4927,7 @@ async def ticket_console_pick(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ) -> None:
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await _execute_private_panel(
             ctx,
             _notice(
@@ -5038,7 +5038,7 @@ async def ticket_console_view(
             "Run your own search to open this ticket.",
             accent=ACCENT_RED,
         )
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return _notice(
             "Recruiter access required",
             "Only recruiters can use the ticket console.",
@@ -5604,7 +5604,7 @@ async def ticket_console_find_submit(
             mentions_everyone=False,
         )
         return
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await ctx.interaction.edit_initial_response(
             components=_notice(
                 "Recruiter access required",
@@ -5676,7 +5676,7 @@ async def ticket_console_find_root_submit(
             mentions_everyone=False,
         )
         return
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await ctx.interaction.edit_initial_response(
             components=_notice(
                 "Recruiter access required",
@@ -5823,7 +5823,7 @@ async def ticket_console_browse(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ) -> None:
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await _execute_private_panel(
             ctx,
             _notice(
@@ -6472,7 +6472,7 @@ async def ticket_console_browse_pick(
             "Run your own browse to open this ticket.",
             accent=ACCENT_RED,
         )
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return _notice(
             "Recruiter access required",
             "Only recruiters can use the ticket console.",
@@ -6699,7 +6699,7 @@ async def ticket_console_overturn(
 ):
     if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
         return denied
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return _notice(
             "Recruiter access required",
             "Only recruiters can use the ticket console.",
@@ -6853,7 +6853,7 @@ async def ticket_overturn_deny_submit(
             accent=ACCENT_RED,
         ))
         return
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await ctx.interaction.edit_initial_response(components=_notice(
             "Recruiter access required",
             "Only recruiters can use the ticket console.",
@@ -6990,7 +6990,7 @@ async def ticket_console_deny_submit(
             accent=ACCENT_RED,
         ))
         return
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await ctx.interaction.edit_initial_response(components=_notice(
             "Recruiter access required",
             "Only recruiters can use the ticket console.",
@@ -7158,7 +7158,7 @@ class FindCommand(
             )
             return
         await ctx.defer(ephemeral=True)
-        if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
             await ctx.interaction.edit_initial_response(
                 content="Only recruiters can use the ticket console.",
                 user_mentions=False,
@@ -7204,7 +7204,7 @@ class HistoryCommand(
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
-        if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
             await ctx.interaction.edit_initial_response(
                 content="Only recruiters can use the ticket console.",
                 user_mentions=False,
@@ -7374,7 +7374,7 @@ async def ticket_hub_close_submit(ctx, action_id: str,
 @lightbulb.di.with_di
 async def member_history_open(ctx, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_):
     await ctx.defer(ephemeral=True)
-    if not await perms.is_recruiter(getattr(ctx, 'member', None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, 'member', None), mongo):
         await ctx.interaction.edit_initial_response(components=_notice('Recruiter access required','Only recruiters can view member history.'))
         return
     token=uuid.uuid4().hex
@@ -7391,7 +7391,7 @@ async def member_history_open(ctx, action_id: str, mongo: MongoClient = lightbul
 async def member_history_pick(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
     data=await get_state(mongo,action_id)
     if (not data or data.get('type')!='ticket_member_history' or data.get('owner_id')!=int(ctx.user.id)
-        or data.get('guild_id')!=int(ctx.guild_id) or not await perms.is_recruiter(getattr(ctx,'member',None),mongo)):
+        or data.get('guild_id')!=int(ctx.guild_id) or not await perms.is_ticket_staff(getattr(ctx,'member',None),mongo)):
         await ctx.respond('Open your own Member History panel from the recruiter console.',ephemeral=True)
         return
     user_id=int(ctx.interaction.values[0])

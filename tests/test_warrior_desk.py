@@ -192,13 +192,77 @@ def test_can_handle_matrix(kind):
     assert not can(None)
     assert can(_member(role=ROLES[kind]))
     for other, role in ROLES.items():
-        if other != kind:
-            assert not can(_member(role=role)), (kind, other)
-    # Console access is open to every handler role.
-    for role in ROLES.values():
-        assert asyncio.run(perms.is_recruiter(_member(role=role), mongo))
+        if other == kind:
+            continue
+        # Recruit roles are interchangeable on recruit types, as before.
+        both_recruit = kind in schema.RECRUIT_TICKET_TYPES and other in schema.RECRUIT_TICKET_TYPES
+        assert can(_member(role=role)) is both_recruit, (kind, other)
+    # is_recruiter keeps its original meaning; desk roles only pass is_ticket_staff.
+    for other, role in ROLES.items():
+        recruit = other in schema.RECRUIT_TICKET_TYPES
+        assert asyncio.run(perms.is_recruiter(_member(role=role), mongo)) is recruit
+        assert asyncio.run(perms.is_ticket_staff(_member(role=role), mongo))
     assert not asyncio.run(perms.is_recruiter(_member(), mongo))
+    assert not asyncio.run(perms.is_ticket_staff(_member(), mongo))
+    assert not asyncio.run(perms.is_ticket_staff(None, mongo))
+    assert not asyncio.run(perms.is_ticket_staff(_member(role=ROLES["account"], guild=999), mongo))
+    assert asyncio.run(perms.is_ticket_staff(_member(admin=True), mongo))
     assert not can(_member(role=100), "bogus")
+
+
+def test_desk_only_role_has_no_recruit_actions_by_id(monkeypatch):
+    from extensions.commands.tickets import console, flag_store, staff_creation
+    mongo = _perm_mongo()
+    desk = _member(role=102)
+    assert not asyncio.run(perms.is_recruiter(desk, mongo))
+    flagged = asyncio.run(flag_store.set_flag_authorized(
+        mongo, member=desk, actor_name="x", kind=flag_store.FLAG_GHOSTED,
+        discord_ids=5, source="test",
+    ))
+    assert flagged.outcome == store.UNAUTHORIZED
+    sent = []
+
+    async def notice(_ctx, text):
+        sent.append(text)
+
+    async def hub_state(_mongo):
+        return {"guild_id": GUILD}
+
+    monkeypatch.setattr(staff_creation, "notice", notice)
+    monkeypatch.setattr(console, "_hub_state", hub_state)
+    monkeypatch.setattr(console, "_is_shared_actions_source", lambda *_: True)
+    ctx = NS(member=desk, guild_id=GUILD, user=NS(id=7), defer=AsyncMock())
+    asyncio.run(staff_creation.open_setup(ctx, "hub", mongo=mongo))
+    assert sent and "recruiter" in sent[0]
+
+
+def test_main_role_acts_on_fwa_and_fwa_role_on_main():
+    mongo = _perm_mongo()
+    assert asyncio.run(perms.can_handle(_member(role=100), mongo, "fwa"))
+    assert asyncio.run(perms.can_handle(_member(role=101), mongo, "main"))
+    assert not asyncio.run(perms.can_handle(_member(role=100), mongo, "account"))
+    assert not asyncio.run(perms.can_handle(_member(role=100), mongo, "staff"))
+    assert not asyncio.run(perms.can_handle(_member(role=102), mongo, "main"))
+    assert not asyncio.run(perms.can_handle(_member(role=102), mongo, "fwa"))
+    assert asyncio.run(perms.can_handle(_member(admin=True), mongo, "account"))
+
+
+def test_desk_role_opens_console_and_selects_desk_ticket():
+    from extensions.commands.tickets import console
+    mongo = _perm_mongo()
+    doc = {**_ticket("account"), "type": "ticket", "status": "open"}
+    mongo.tickets = Collection([doc])
+    state = {"guild_id": GUILD}
+    ctx = NS(member=_member(role=102), guild_id=GUILD, channel_id=1)
+
+    async def run(role):
+        ctx.member = _member(role=role)
+        return await console._require_recruiter(
+            NS(member=ctx.member, respond=AsyncMock()), mongo)
+
+    assert asyncio.run(run(102)) is True
+    assert asyncio.run(run(100)) is True
+    assert asyncio.run(run(None)) is False
 
 
 def test_desk_role_cannot_approve_recruit_and_main_role_cannot_act_on_desk():
@@ -289,7 +353,8 @@ def test_account_questionnaire_has_exactly_two_questions():
         "Send the player tag of each account.",
     )
     texts = _texts(thread_service._questionnaire_components("account", None))
-    assert "1) How many accounts do you want to add?\n2) Send the player tag of each account." in texts
+    assert "1. How many accounts do you want to add?\n2. Send the player tag of each account." in texts
+    assert not any("Staff will reply as soon" in text for text in texts)
     assert not any("Town Hall" in text for text in texts)
     media = [c for c in thread_service._questionnaire_components("account", None)[0].components
              if isinstance(c, hikari.impl.MediaGalleryComponentBuilder)]
@@ -365,7 +430,7 @@ def test_account_cards_to_member():
     asyncio.run(resolve.apply_denial(bot, NS(), kind=resolve.KIND_DENY_CUSTOM, ticket=doc, reason="No."))
     assert "Staff approved your new account." in sent[0]
     assert "Congratulations" not in sent[0]
-    assert "Staff denied your new account." in sent[1]
+    assert ", staff denied your new account." in sent[1]
 
 
 def test_staff_done_copy_and_lifecycle_cards():
@@ -523,3 +588,148 @@ def test_validate_reports_desk_not_set_or_passed(monkeypatch):
     full = {**CONFIG, "ticket_target_guild_id": 11}
     result, calls = asyncio.run(run(full))
     assert result == "Warrior Desk passed." and calls[-2:] == [30, 30]
+
+
+# --- review rework --------------------------------------------------------
+
+def _creation_state(kind, shared):
+    return {
+        "guild_id": GUILD, "ticket_type": kind,
+        "candidate_parent_id": 30 if kind in schema.DESK_TICKET_TYPES else 20,
+        "staff_parent_id": 21, "recruiter_role_id": ROLES[kind],
+        "shared_staff_role_ids": list(shared), "staff_viewer_role_ids": [],
+    }
+
+
+def test_creation_recovery_config_for_desk_types():
+    for kind, shared in (("account", (100, 103)), ("staff", (100, 102))):
+        state = _creation_state(kind, shared)
+        config = thread_service._recovery_config(state, kind, GUILD)
+        parents = thread_service.parents_from_config(config, GUILD, kind)
+        assert (parents.candidate_parent_id, parents.staff_parent_id) == (30, 21)
+        assert parents.recruiter_role_id == ROLES[kind]
+        assert set(parents.shared_staff_role_ids) == set(shared)
+
+
+def test_creation_recovery_config_keeps_all_shared_roles_for_main():
+    state = _creation_state("main", (102, 103))
+    config = thread_service._recovery_config(state, "main", GUILD)
+    parents = thread_service.parents_from_config(config, GUILD, "main")
+    assert (parents.candidate_parent_id, parents.staff_parent_id, parents.recruiter_role_id) == (20, 21, 100)
+    assert set(parents.shared_staff_role_ids) == {102, 103}
+
+
+def test_account_decision_cards_are_recognised_for_crash_recovery():
+    sent = []
+
+    class Rest:
+        async def create_message(self, **kwargs):
+            sent.append(NS(content="", components=kwargs["components"]))
+
+    doc = _ticket("account")
+    doc["location"] = {"id": 101}
+    bot = NS(rest=Rest())
+    asyncio.run(resolve.apply_approval(bot, NS(), ticket=doc))
+    asyncio.run(resolve.apply_denial(bot, NS(), kind=resolve.KIND_DENY_CUSTOM, ticket=doc, reason="No."))
+    assert resolve._is_notification_card(sent[0], resolve.KIND_APPROVE)
+    assert resolve._is_notification_card(sent[1], resolve.KIND_DENY_CUSTOM)
+    assert not resolve._is_notification_card(sent[0], resolve.KIND_DENY_CUSTOM)
+
+
+def test_desk_thread_names_recover_with_status_prefix():
+    for kind in ("account", "staff"):
+        base, staff_base = thread_service.thread_names(kind, 4, "Some Name", status="")
+        closed, staff_closed = thread_service.thread_names(kind, 4, "Some Name", status="denied")
+        assert closed != base
+        assert closed in thread_service._name_variants(base)
+        assert base in thread_service._name_variants(closed)
+        assert staff_closed in thread_service._name_variants(staff_base)
+
+
+def test_desk_creation_replies_say_request_not_ticket():
+    from extensions.commands.tickets import handlers
+
+    sent = []
+
+    async def edit_error(_ctx, *, rest, content):
+        sent.append(content)
+
+    async def run(action_id, ready):
+        ctx = NS(defer=AsyncMock())
+        handlers_ready = handlers.thread_intake_ready
+        handlers.thread_intake_ready = lambda: ready
+        original = handlers.edit_error
+        handlers.edit_error = edit_error
+        try:
+            await handlers.handle_create_ticket(
+                ctx, action_id, bot=NS(rest=None), mongo=NS(), _source_message_id=1)
+        finally:
+            handlers.thread_intake_ready = handlers_ready
+            handlers.edit_error = original
+
+    asyncio.run(run("public:account", False))
+    asyncio.run(run("bogus:account", True))
+    asyncio.run(run("public:main", False))
+    assert "ticket" not in sent[0].lower() and "request" in sent[0]
+    assert "ticket" not in sent[1].lower()
+    assert "ticket" in sent[2]
+
+
+def _repair_harness(monkeypatch, *, cas_fails, delete_fails):
+    calls = {"deleted": [], "created": []}
+    state = NS(revision=3, desk_intake=None, legacy_intake=None, thread_intake=None,
+               pilot_intake=NS(guild_id=1, channel_id=2, message_id=3),
+               pilot_user_ids=(), pilot_role_ids=(), pilot_ticket_types=())
+
+    async def get_rollout(_mongo):
+        return state
+
+    async def configure_rollout(*_a, **_k):
+        if cas_fails:
+            raise RuntimeError("cas")
+
+    async def validate(*_a, **_k):
+        return "ok"
+
+    async def embed(*_a, **_k):
+        return []
+
+    async def create_message(channel, **_k):
+        calls["created"].append(channel)
+        return NS(id=555)
+
+    async def delete_message(channel, message):
+        calls["deleted"].append((channel, message))
+        if delete_fails:
+            raise RuntimeError("delete")
+
+    monkeypatch.setattr(settings.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(settings.ticket_runtime, "configure_rollout", configure_rollout)
+    monkeypatch.setattr(settings, "validate", validate)
+    monkeypatch.setattr(settings.setup, "saved_warrior_desk_embed", embed)
+    rest = NS(fetch_my_user=AsyncMock(return_value=NS(id=1)), create_message=create_message,
+              delete_message=delete_message)
+    ctx = NS(guild_id=GUILD, user=NS(id=7))
+    mongo = NS(ticket_setup=Collection([deepcopy(CONFIG)]))
+    return calls, ctx, mongo, NS(rest=rest)
+
+
+def test_repair_desk_entry_happy_path(monkeypatch):
+    calls, ctx, mongo, bot = _repair_harness(monkeypatch, cas_fails=False, delete_fails=False)
+    result = asyncio.run(settings.repair_desk_entry(ctx, mongo, bot))
+    assert result == "Warrior Desk panel posted and bound."
+    assert calls["created"] == [30] and calls["deleted"] == []
+
+
+def test_repair_desk_entry_cas_failure_removes_new_post(monkeypatch):
+    calls, ctx, mongo, bot = _repair_harness(monkeypatch, cas_fails=True, delete_fails=False)
+    with pytest.raises(RuntimeError, match="cas"):
+        asyncio.run(settings.repair_desk_entry(ctx, mongo, bot))
+    assert calls["deleted"] == [(30, 555)]
+
+
+def test_repair_desk_entry_reports_failed_cleanup(monkeypatch, capsys):
+    calls, ctx, mongo, bot = _repair_harness(monkeypatch, cas_fails=True, delete_fails=True)
+    with pytest.raises(ValueError, match="could not be removed"):
+        asyncio.run(settings.repair_desk_entry(ctx, mongo, bot))
+    assert "desk_panel_cleanup_failed" in capsys.readouterr().out

@@ -266,7 +266,7 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
         hikari.ComponentType.MEDIA_GALLERY,
         hikari.ComponentType.SEPARATOR,
     ]
-    assert container["components"][0]["content"] == "# Ticket Console"
+    assert container["components"][0]["content"] == "# Ticket Command"
     assert [attachment.filename for attachment in attachments] == [
         "ticket_overview.png", "clan_main.png", "ticket_main_status.png",
         "clan_fwa.png", "ticket_fwa_status.png",
@@ -1013,6 +1013,7 @@ def test_browse_filter_re_renders_unchanged_panel_when_not_recruiter(monkeypatch
         return ["UNCHANGED"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", denied)
+    monkeypatch.setattr(console.perms, "is_ticket_staff", denied)
     monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_render_browse_session", render)
 
@@ -2756,6 +2757,7 @@ def test_status_filter_re_renders_the_panel_instead_of_blanking_it_when_not_recr
         return ["UNCHANGED PANEL"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", denied)
+    monkeypatch.setattr(console.perms, "is_ticket_staff", denied)
     monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_render_search_session", render)
 

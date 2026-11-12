@@ -132,6 +132,8 @@ DENIAL_CARD_TITLE = (
 _LEGACY_DENIAL_CARD_TITLE = (
     "we regret to inform you that currently your application has been denied."
 )
+ACCOUNT_APPROVAL_CARD_TITLE = "Staff approved your new account."
+ACCOUNT_DENIAL_CARD_TITLE = "staff denied your new account."
 TEST_APPROVAL_CARD_TITLE = "TEST MODE: Simulated approval."
 TEST_DENIAL_CARD_TITLE = "TEST MODE: Simulated denial."
 
@@ -155,7 +157,7 @@ async def apply_denial(
     if testing_service.is_test_ticket(ticket):
         body = reason or "This is a simulated decision."
     denied_text = (
-        "Staff denied your new account."
+        ACCOUNT_DENIAL_CARD_TITLE
         if ticket.get("ticket_type") == "account"
         else "we are sorry to tell you that we denied your application."
     )
@@ -216,7 +218,7 @@ async def apply_approval(
                             f"{TEST_APPROVAL_CARD_TITLE}\n<@{user_id}> "
                             "No role, membership, invitation, or permanent history was changed."
                             if testing_service.is_test_ticket(ticket) else
-                            f"<@{user_id}> Staff approved your new account."
+                            f"<@{user_id}> {ACCOUNT_APPROVAL_CARD_TITLE}"
                             if ticket.get("ticket_type") == "account" else
                             f"<@{user_id}> **Congratulations!** Warriors United accepted you. "
                             f"A recruiter will send you your clan invite. This ticket "
@@ -294,9 +296,11 @@ def _is_notification_card(message, kind: str) -> bool:
 
     titles = (
         (APPROVAL_CARD_TITLE, _PREVIOUS_APPROVAL_CARD_TITLE,
-         _LEGACY_APPROVAL_CARD_TITLE, TEST_APPROVAL_CARD_TITLE)
+         _LEGACY_APPROVAL_CARD_TITLE, ACCOUNT_APPROVAL_CARD_TITLE,
+         TEST_APPROVAL_CARD_TITLE)
         if kind == KIND_APPROVE
-        else (DENIAL_CARD_TITLE, _LEGACY_DENIAL_CARD_TITLE, TEST_DENIAL_CARD_TITLE)
+        else (DENIAL_CARD_TITLE, _LEGACY_DENIAL_CARD_TITLE, ACCOUNT_DENIAL_CARD_TITLE,
+              TEST_DENIAL_CARD_TITLE)
     )
     content = str(getattr(message, "content", "") or "")
     if any(title in content for title in titles):
@@ -1270,7 +1274,7 @@ async def _resolve_ticket(
     """Authorize, enforce flags, CAS status, then run effects exactly once."""
     if coc_client is None:
         coc_client = account_sync.configured_coc_client()
-    if not await perms.is_recruiter(member, mongo):
+    if not await perms.is_ticket_staff(member, mongo):
         return store.Transition(store.UNAUTHORIZED, None, "recruiter permission required")
     if kind not in {KIND_APPROVE, *DENIAL_TYPE}:
         raise ValueError("unknown ticket resolution kind")
@@ -1665,7 +1669,7 @@ async def overturn_ticket(
     """
     if to_status not in schema.TERMINAL_STATUSES:
         raise ValueError("to_status must be approved or denied")
-    if not await perms.is_recruiter(member, mongo):
+    if not await perms.is_ticket_staff(member, mongo):
         return store.Transition(store.UNAUTHORIZED, None, "recruiter permission required")
     current = await store.find_one(mongo, {"_id": ticket_id, **store.RUNTIME_FILTER})
     if current is None:

@@ -2804,6 +2804,7 @@ def test_overturn_ticket_requires_recruiter(monkeypatch):
         return False
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", not_recruiter)
+    monkeypatch.setattr(resolve.perms, "is_ticket_staff", not_recruiter)
     monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     result = asyncio.run(resolve.overturn_ticket(
         object(), mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
@@ -3277,6 +3278,7 @@ def test_secure_approval_stops_before_side_effects(monkeypatch, mode):
         raise AssertionError("side effects must not run")
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "is_ticket_staff", recruiter)
     monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve.store, "find_one", find)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist)
@@ -4785,6 +4787,7 @@ def test_custom_denial_modal_defers_before_state_or_permission_work(monkeypatch)
 
     monkeypatch.setattr(close, "get_state", get)
     monkeypatch.setattr(close.perms, "is_recruiter", denied)
+    monkeypatch.setattr(close.perms, "is_ticket_staff", denied)
     monkeypatch.setattr(close.perms, "can_handle", lambda member, mongo, ticket_type: close.perms.is_recruiter(member, mongo))
     ctx = SimpleNamespace(
         user=SimpleNamespace(id=10, username="Recruiter"),

@@ -123,7 +123,7 @@ async def change(
     expected_activity_revision=None,
     expected_inactivity_token=None,
 ):
-    if not await perms.is_recruiter(member, mongo):
+    if not await perms.is_ticket_staff(member, mongo):
         return store.Transition(
             store.UNAUTHORIZED, None, "Recruiter permission required."
         )

@@ -66,7 +66,7 @@ async def settings(request):
         result['description']='Check ticket setup or restore a missing panel.'
         result['action_only']=True
         result['fields']=[field('console_channel','Staff console channel','','channel')]
-        result['actions']=[dict(id=x,label=l,confirm=c,endpoint='/manage/ticket-settings/actions/'+x) for x,l,c in [('check','Check setup','Check current ticket channels and bot permissions? No messages are sent.'),('restore_entry','Restore Apply panel','Restore the public Apply message in its bound channel?'),('restore_desk_entry','Post Warrior Desk panel','Post or repair the Warrior Desk panel in its channel?'),('restore_console','Restore staff console','Restore the staff console in the selected channel?')]]
+        result['actions']=[dict(id=x,label=l,confirm=c,endpoint='/manage/ticket-settings/actions/'+x) for x,l,c in [('check','Check setup','Check current ticket channels and bot permissions? No messages are sent.'),('restore_entry','Restore Apply panel','Restore the public Apply message in its bound channel?'),('restore_desk_entry','Post Warrior Desk panel','Post or repair the Warrior Desk panel in its channel?'),('restore_console','Post Ticket Command','Post or repair Ticket Command in the selected channel?')]]
     else:raise web.HTTPNotFound()
     return web.json_response(result)
 

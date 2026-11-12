@@ -154,7 +154,7 @@ def page(data, notice=''):
                 [button(token, 'repair_entry', 'Restore application message')])
         section('Staff console', f'**Channel:** {channel(data.get("console_channel"))}\nRefresh or recreate the staff ticket console. Select its current channel, or select a channel for first-time setup. This cannot move an existing console. Selecting Restore applies immediately.',
                 [Row(components=[Select(type=hikari.ComponentType.CHANNEL_SELECT_MENU, custom_id=f'ticket_settings:{token}:select:console_channel', placeholder='Select the staff console channel',min_values=1,max_values=1)]),
-                 button(token, 'repair_console', 'Restore staff console')])
+                 button(token, 'repair_console', 'Post Ticket Command')])
     if view != 'home':
         body.append(Separator())
         if view in ('main', 'fwa', 'access'):
@@ -232,7 +232,11 @@ async def repair_desk_entry(ctx,mongo,bot):
                 desk_intake=ticket_runtime.IntakeSource(guild(ctx),channel_id,int(new.id)),
                 pilot={'intake':{'guild_id':state.pilot_intake.guild_id,'channel_id':state.pilot_intake.channel_id,'message_id':state.pilot_intake.message_id},'user_ids':list(state.pilot_user_ids),'role_ids':list(state.pilot_role_ids),'ticket_types':list(state.pilot_ticket_types)})
         except Exception:
-            await bot.rest.delete_message(channel_id,new.id)
+            try:
+                await bot.rest.delete_message(channel_id,new.id)
+            except Exception as cleanup_error:
+                print(f"[Tickets] desk_panel_cleanup_failed channel={channel_id} message={new.id} error={type(cleanup_error).__name__}")
+                raise ValueError('The Warrior Desk panel was posted but could not be bound, and the new post could not be removed. Delete it by hand and run repair again.')
             raise
         return 'Warrior Desk panel posted and bound.'
 

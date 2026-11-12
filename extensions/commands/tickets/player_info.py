@@ -64,7 +64,7 @@ def panel(ticket, page=1):
 
 
 async def _get_ticket(ctx, mongo, ticket_id):
-    if not await perms.is_recruiter(getattr(ctx,'member',None),mongo):
+    if not await perms.is_ticket_staff(getattr(ctx,'member',None),mongo):
         return None
     doc = await store.find_one(mongo, {'_id':ticket_id, **store.RUNTIME_FILTER})
     if doc is not None and not await perms.can_handle(getattr(ctx,'member',None),mongo,doc.get('ticket_type')):

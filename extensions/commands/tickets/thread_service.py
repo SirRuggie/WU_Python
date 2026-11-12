@@ -214,7 +214,7 @@ _FLEW_THE_COOP_NAME_PREFIX = "🐔 "
 _KNOWN_NAME_PREFIXES = (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX, _FLEW_THE_COOP_NAME_PREFIX)
 THREAD_NAME_RECONCILE_LEASE = timedelta(minutes=10)
 _CANONICAL_THREAD_NAME = re.compile(
-    r"^(?:staff-)?(?:main|fwa)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    r"^(?:staff-)?(?:main|fwa|account|staff)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
 )
 
 
@@ -1563,10 +1563,9 @@ def _questionnaire_components(
                   if ticket is not None and testing_service.is_test_ticket(ticket) else []),
                 Text(content=_ACCOUNT_QUESTIONNAIRE_TITLE),
                 Text(content="\n".join(
-                    f"{number}) {question}"
+                    f"{number}. {question}"
                     for number, question in enumerate(ACCOUNT_QUESTIONS, start=1)
                 )),
-                Text(content="-# Staff will reply as soon as possible."),
             ],
         )]
     logo = guild_icon_url or "assets/branding/logo/WU_Logo.png"
@@ -2998,6 +2997,35 @@ async def _retry_or_retire_pending_delivery(
         )
 
 
+def _recovery_config(state: Mapping[str, Any], ticket_type: str, guild_id: int) -> dict[str, Any]:
+    """Rebuild the parents_from_config input from a stored creation state.
+
+    Uses the stored ids only. Every shared staff role is kept: each is mapped
+    onto one other ticket type that shares the staff parent.
+    """
+    candidate_parent = state.get("candidate_parent_id")
+    staff_parent = state.get("staff_parent_id")
+    config: dict[str, Any] = {
+        "ticket_target_guild_id": guild_id,
+        "ticket_staff_viewer_role_ids": state.get("staff_viewer_role_ids") or (),
+        f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
+    }
+    if ticket_type in schema.DESK_TICKET_TYPES:
+        config["desk_channel_id"] = candidate_parent
+        config["desk_staff_parent"] = staff_parent
+    else:
+        config[f"{ticket_type}_candidate_parent"] = candidate_parent
+        config[f"{ticket_type}_staff_parent"] = staff_parent
+    others = sorted(schema.TICKET_TYPES - {ticket_type})
+    for kind, role in zip(others, state.get("shared_staff_role_ids") or ()):
+        config[f"{kind}_thread_recruiter_role"] = role
+        if kind in schema.DESK_TICKET_TYPES:
+            config["desk_staff_parent"] = staff_parent
+        else:
+            config[f"{kind}_staff_parent"] = staff_parent
+    return config
+
+
 async def recover_pending_thread_ticket_creations(
     *,
     bot: hikari.GatewayBot,
@@ -3031,18 +3059,7 @@ async def recover_pending_thread_ticket_creations(
         counts["processed"] += 1
         ticket_type = str(state.get("ticket_type") or "")
         state_guild_id = _as_int(state.get("guild_id"))
-        config = {
-            "ticket_target_guild_id": state_guild_id,
-            "ticket_staff_viewer_role_ids": state.get("staff_viewer_role_ids") or (),
-            f"{ticket_type}_candidate_parent": state.get("candidate_parent_id"),
-            f"{ticket_type}_staff_parent": state.get("staff_parent_id"),
-            f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
-        }
-        shared_roles = state.get("shared_staff_role_ids") or ()
-        if shared_roles:
-            other_type = "fwa" if ticket_type == "main" else "main"
-            config[f"{other_type}_staff_parent"] = state.get("staff_parent_id")
-            config[f"{other_type}_thread_recruiter_role"] = shared_roles[0]
+        config = _recovery_config(state, ticket_type, state_guild_id)
         result: CreatedThreadTicket | None = None
         degraded_reason: str | None = None
         try:

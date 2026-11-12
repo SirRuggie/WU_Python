@@ -45,7 +45,7 @@ async def _validate_denial_actor(ctx, mongo: MongoClient, data: dict) -> bool:
     if int(data.get("denier_id") or 0) != int(ctx.user.id):
         await ctx.respond("Another recruiter started this denial.", ephemeral=True)
         return False
-    if not await perms.is_recruiter(ctx.member, mongo):
+    if not await perms.is_ticket_staff(ctx.member, mongo):
         await ctx.respond("You cannot deny tickets now.", ephemeral=True)
         return False
     return True
@@ -70,7 +70,7 @@ class Deny(
         # Defer the response immediately to avoid timeout
         await ctx.defer(ephemeral=True)
 
-        if not await perms.is_recruiter(ctx.member, mongo):
+        if not await perms.is_ticket_staff(ctx.member, mongo):
             await ctx.respond(
                 "❌ Only recruiters and administrators can deny tickets."
             )
@@ -164,7 +164,7 @@ class Approve(
         # Defer the response immediately to avoid timeout
         await ctx.defer(ephemeral=True)
 
-        if not await perms.is_recruiter(ctx.member, mongo):
+        if not await perms.is_ticket_staff(ctx.member, mongo):
             await ctx.respond(
                 "❌ Only recruiters and administrators can approve tickets."
             )
@@ -429,7 +429,7 @@ async def process_custom_denial_handler(
     if not guild_id or int(getattr(ctx, "guild_id", 0) or 0) != guild_id:
         await ctx.interaction.edit_initial_response(content="❌ Session expired")
         return
-    if not await perms.is_recruiter(ctx.member, mongo):
+    if not await perms.is_ticket_staff(ctx.member, mongo):
         await ctx.interaction.edit_initial_response(
             content="You cannot deny tickets now."
         )

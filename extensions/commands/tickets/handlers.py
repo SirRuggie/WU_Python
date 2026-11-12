@@ -336,10 +336,11 @@ async def handle_create_ticket(
     """Create or safely resume a private candidate/public staff thread pair."""
     await ctx.defer(ephemeral=True)
 
+    noun = "request" if action_id.rpartition(":")[2] in schema.DESK_TICKET_TYPES else "ticket"
     if not thread_intake_ready():
         await edit_error(ctx, rest=bot.rest,
             content=(
-                "❌ Tickets are not ready yet. No ticket was created. Try again soon."
+                f"❌ {noun.capitalize()}s are not ready yet. No {noun} was created. Try again soon."
             )
         )
         return
@@ -347,7 +348,7 @@ async def handle_create_ticket(
     intake_surface, separator, ticket_type = action_id.partition(":")
     if separator != ":" or intake_surface not in {"pilot", "public"}:
         await edit_error(ctx, rest=bot.rest,
-            content="❌ This ticket panel is unavailable. Ask staff for the current panel."
+            content=f"❌ This {'panel' if noun == 'request' else 'ticket panel'} is unavailable. Ask staff for the current panel."
         )
         return
     if ticket_type not in schema.TICKET_TYPES:
@@ -356,7 +357,6 @@ async def handle_create_ticket(
         )
         return
 
-    noun = "request" if ticket_type in schema.DESK_TICKET_TYPES else "ticket"
     interaction_message = getattr(ctx.interaction, "message", None)
     message_id = _source_message_id or store.as_int(getattr(interaction_message, "id", 0))
     member_roles = tuple(
@@ -458,7 +458,7 @@ async def handle_create_ticket(
     if not slot_claim.won:
         location_id = store.as_int(slot_claim.slot.get("location_id"))
         if slot_claim.slot.get("state") == ticket_runtime.SLOT_CLEANUP_REQUIRED:
-            sentences = ["⚠️ A recruiter still needs to finish your earlier ticket."]
+            sentences = [f"⚠️ A recruiter still needs to finish your earlier {noun}."]
             if location_id:
                 # A bare <#id> mention only resolves in the channel's own
                 # guild, and this slot's channel is not necessarily in
@@ -487,7 +487,7 @@ async def handle_create_ticket(
             ):
                 await _release_slot_for_missing_thread(mongo, existing_ticket["_id"])
                 message = (
-                    "⚠️ Your earlier ticket's thread was removed. "
+                    f"⚠️ Your earlier {noun}'s thread was removed. "
                     "Select the button again to start a new one."
                 )
             else:
@@ -516,7 +516,7 @@ async def handle_create_ticket(
                     f"https://discord.com/channels/{ticket_guild_id}/{location_id}"
                 )
         else:
-            message = "⏳ We are already creating your ticket. Try again in a moment."
+            message = f"⏳ We are already creating your {noun}. Try again in a moment."
         await ctx.interaction.edit_initial_response(content=message)
         return
     user_cooldowns[user_id] = now
@@ -564,19 +564,19 @@ async def handle_create_ticket(
     except thread_service.ThreadCreationBusy:
         user_cooldowns.pop(user_id, None)
         await ctx.interaction.edit_initial_response(
-            content="⏳ We are already creating your ticket. Try again in a moment."
+            content=f"⏳ We are already creating your {noun}. Try again in a moment."
         )
         return
     except thread_service.ThreadConfigurationError as error:
         user_cooldowns.pop(user_id, None)
         await edit_error(ctx, rest=bot.rest,
-            content=f"❌ Tickets are not ready: {error}. Ask an administrator."
+            content=f"❌ {noun.capitalize()}s are not ready: {error}. Ask an administrator."
         )
         return
     except hikari.RateLimitTooLongError:
         user_cooldowns[user_id] = now + timedelta(seconds=RATE_LIMIT_BACKOFF)
         await edit_error(ctx, rest=bot.rest,
-            content="⏰ Discord is rate-limiting ticket creation. Please try again in a few minutes."
+            content=f"⏰ Discord is rate-limiting {noun} creation. Please try again in a few minutes."
         )
         return
     except Exception as error:
@@ -589,8 +589,8 @@ async def handle_create_ticket(
             return
         await edit_error(ctx, rest=bot.rest,
             content=(
-                "❌ We could not finish your ticket. We saved your attempt. Try again. "
-                "We will not make a second ticket. If it fails again, ask an administrator."
+                f"❌ We could not finish your {noun}. We saved your attempt. Try again. "
+                f"We will not make a second {noun}. If it fails again, ask an administrator."
             )
         )
         return
