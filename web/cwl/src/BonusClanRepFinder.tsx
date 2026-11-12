@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import SearchPicker, { type PickerOption } from "./SearchPicker";
 import TownHallIcon from "./TownHallIcon";
@@ -18,6 +18,8 @@ type Props = {
   disabled: boolean;
   onDirty: (dirty: boolean) => void;
   onAdd: (tag: string, note: string) => Promise<boolean>;
+  onNoLinkedAccounts?: () => void;
+  autoFocus?: boolean;
 };
 
 const errorText = (cause: unknown, fallback: string) =>
@@ -31,8 +33,12 @@ export default function BonusClanRepFinder({
   disabled,
   onDirty,
   onAdd,
+  onNoLinkedAccounts,
+  autoFocus = false,
 }: Props) {
   const base = `/seasons/${encodeURIComponent(seasonId)}`;
+  const container = useRef<HTMLDivElement>(null);
+  const focused = useRef(false);
   const [members, setMembers] = useState<ClanRep[] | null>(null);
   const [membersError, setMembersError] = useState("");
   const [membersRetry, setMembersRetry] = useState(0);
@@ -84,6 +90,23 @@ export default function BonusClanRepFinder({
     };
   }, [base, userId, accountsRetry]);
 
+  useEffect(() => {
+    if (userId && accounts?.length === 0) onNoLinkedAccounts?.();
+  }, [userId, accounts, onNoLinkedAccounts]);
+  useEffect(() => {
+    if (!autoFocus || focused.current || (members === null && !membersError))
+      return;
+    const frame = requestAnimationFrame(() => {
+      const first =
+        container.current?.querySelector<HTMLElement>("button, input");
+      if (first) {
+        first.focus({ preventScroll: true });
+        focused.current = true;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [autoFocus, members, membersError]);
+
   const options: PickerOption[] = (members || []).map((member) => ({
     value: member.id,
     label: member.display_name,
@@ -98,7 +121,12 @@ export default function BonusClanRepFinder({
   };
 
   return (
-    <div className="rep-finder" role="group" aria-label="Find Clan Rep">
+    <div
+      ref={container}
+      className="rep-finder"
+      role="group"
+      aria-label="Find Clan Rep"
+    >
       {membersError ? (
         <p role="alert">
           {membersError}{" "}
