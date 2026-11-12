@@ -6,13 +6,13 @@ import sqlite3
 from aiohttp import web
 from .participation_display import participation_json_response
 from extensions.cwl_discord_transport import AnnouncementRejected, AnnouncementUnavailable, DiscordTransport
-from utils.cwl_bonus_raffle_store import LAZY_SEASON_POOL, SEASON_POOL_JOIN, RaffleConflict, RaffleStore
+from utils.cwl_bonus_raffle_store import LAZY_SEASON_POOL, REP_NOTE_MAX, SEASON_POOL_JOIN, RaffleConflict, RaffleStore
 from utils.cwl_bonus_allowance import AllowanceStore
 from utils.cwl_bonus_raffle import eligibility, lazy_eligibility
 from .bonuses import _view, _require_draft, _bump, _validate_revision, _cas
 
 
-def _state(db, sid, evidence=None):
+def _state(db, sid):
     from .app import _fail
     result = _view(db, sid, current_roster=True)
     if result is None:
@@ -21,50 +21,19 @@ def _state(db, sid, evidence=None):
     for account in result['accounts']:
         account['season_rounds'] = rounds.get(account['assigned_clan_tag'])
     store = RaffleStore(db, sid)
+    # enrich_view sets FWA Rep odds from the saved family-wide account list.
     result = store.enrich_view(result)
     for account in result['accounts']:
-        if account['pool'] != 'lazy':
-            continue
-        uid = account.get('user_id') or ''
-        trusted = evidence and evidence['role_id'] == result['lazy_settings']['representative_role_id']
-        status = 'unlinked' if not uid else 'verified' if trusted and uid in evidence['members'] else 'unavailable'
-        representative = bool(status == 'verified' and evidence['members'][uid])
-        account.update(is_representative=representative, representative_status=status,
-                       multiplier=None if status == 'unavailable' else 2 if representative else 1)
-        account['exclusion'] = lazy_eligibility(account)
+        if account['pool'] == 'lazy':
+            account['exclusion'] = lazy_eligibility(account)
     return {**result, 'policies': store.policies(), 'draws': store.draws(),
             'allowances': {c['tag']: AllowanceStore(db, sid, result['cycle']).view(c['tag']) for c in result['clans']}}
 
 
-async def _role_evidence(request, sid, *, fresh=False):
-    # Resolve outside the DB transaction. Bind the result to the exact role/user
-    # identities; concurrent configuration or roster edits therefore fail closed.
-    from .app import _store
-    from .manage_roles import searchable_members
-    with _store(request).tx() as db:
-        view = _state(db, sid)
-    role_id = view['lazy_settings']['representative_role_id']
-    users = {a['user_id'] for a in view['accounts'] if a['pool'] == 'lazy' and a.get('user_id')}
-    evidence = {'role_id': role_id, 'members': {}}
-    if not users:
-        return evidence
-    try:
-        rows = await asyncio.wait_for(searchable_members(request, force=fresh), timeout=25)
-        if not isinstance(rows, list) or any(not isinstance(r, dict) or not isinstance(r.get('user'), dict)
-                or not isinstance(r.get('roles'), list) for r in rows):
-            return evidence
-        directory = {str(r['user']['id']): {str(role) for role in r['roles']} for r in rows}
-        evidence['members'] = {uid: role_id in directory.get(uid, set()) for uid in users}
-    except (web.HTTPException, TimeoutError, KeyError, TypeError, ValueError):
-        pass
-    return evidence
-
-
 async def _response(request, sid):
     from .app import _store
-    evidence = await _role_evidence(request, sid)
     with _store(request).tx() as db:
-        result = _state(db, sid, evidence)
+        result = _state(db, sid)
     return participation_json_response(request, result)
 
 
@@ -97,7 +66,7 @@ def _draw_state(draws, cycle, pool, clan_tag):
 
 
 def _bonus_status(db, sid):
-    # Read-only summary from stored results; no Discord role evidence, so Lazy counts omit role weighting.
+    # Read-only summary from stored results; Lazy counts omit FWA Rep weighting.
     view = _state(db, sid)
     minimum = view['policies']['main']
     pools = {'main': [], 'lazy': []}
@@ -172,10 +141,9 @@ async def preview(request):
         _fail(400, 'Expected CWL pool, hosting clan and bonus count')
     selection = _selection(body)
     sid = _sid(request)
-    evidence = await _role_evidence(request, sid, fresh=True)
     with _store(request).tx() as db:
         _require_draft(db, sid, _fail)
-        result = RaffleStore(db, sid).preview(_state(db, sid, evidence), *selection)
+        result = RaffleStore(db, sid).preview(_state(db, sid), *selection)
     return participation_json_response(request, result)
 
 
@@ -187,12 +155,11 @@ async def draw(request):
         _fail(400, 'Review qualifying accounts before drawing')
     selection = _selection(body)
     sid = _sid(request)
-    evidence = await _role_evidence(request, sid, fresh=True)
     try:
         with _store(request).tx() as db:
             _require_draft(db, sid, _fail)
-            RaffleStore(db, sid).draw(_state(db, sid, evidence), *selection, body['fingerprint'], actor)
-            result = _state(db, sid, evidence)
+            RaffleStore(db, sid).draw(_state(db, sid), *selection, body['fingerprint'], actor)
+            result = _state(db, sid)
     except RaffleConflict as exc:
         _fail(409, str(exc))
     return participation_json_response(request, result)
@@ -212,15 +179,14 @@ async def approve(request):
     if await _json(request) != {}:
         _fail(400, 'Unexpected approval fields')
     sid, draw_id = _sid(request), _draw_id(request)
-    evidence = await _role_evidence(request, sid, fresh=True)
     try:
         with _store(request).tx() as db:
             _require_draft(db, sid, _fail)
             prior = RaffleStore(db, sid).get(draw_id)
-            RaffleStore(db, sid).approve(draw_id, _state(db, sid, evidence), actor)
+            RaffleStore(db, sid).approve(draw_id, _state(db, sid), actor)
             if not prior['approved_at']:
                 _bump(db, sid, actor)
-            result = _state(db, sid, evidence)
+            result = _state(db, sid)
     except (RaffleConflict, sqlite3.IntegrityError) as exc:
         _fail(409, str(exc) if isinstance(exc, RaffleConflict) else 'Bonus selections changed. Refresh and review')
     return participation_json_response(request, result)
@@ -329,26 +295,47 @@ async def account_review(request):
     return await _response(request, sid)
 
 
-async def lazy_settings(request):
+async def rep_accounts(request):
+    """Add (POST), edit the note of (PATCH) or remove (DELETE) one FWA Rep account."""
     from .app import _require, _sid, _store, _json, _fail
-    from .server_management import discord, GUILD_ID
+    from .providers import ProviderUnavailable
     actor = _require(request, 'editor')['user_id']
     body = await _json(request)
-    if (set(body) != {'representative_role_id', 'revision'} or not isinstance(body['representative_role_id'], str)
-            or not body['representative_role_id'].isdigit() or not 15 <= len(body['representative_role_id']) <= 22):
-        _fail(400, "Select a Discord role for the double-chance rule")
-    revision, sid = _validate_revision(body, _fail), _sid(request)
+    keys = {'POST': {'tag', 'note', 'revision'}, 'PATCH': {'tag', 'note', 'rep_revision', 'revision'},
+            'DELETE': {'tag', 'rep_revision', 'revision'}}[request.method]
+    tag, revision = _review_body(body, keys)
+    if 'note' in keys and (not isinstance(body['note'], str) or len(body['note'].strip()) > REP_NOTE_MAX):
+        _fail(400, f'Enter a note of up to {REP_NOTE_MAX} characters')
+    if 'rep_revision' in keys and (type(body['rep_revision']) is not int or body['rep_revision'] < 1):
+        _fail(400, 'Refresh the FWA Rep accounts and try again')
+    sid = _sid(request)
     with _store(request).tx() as db:
         _require_draft(db, sid, _fail)
         _cas(db, sid, revision, _fail)
-    roles = await discord(request, 'GET', f'/guilds/{GUILD_ID}/roles')
-    if not any(str(role.get('id')) == body['representative_role_id'] for role in roles):
-        _fail(400, "Select a role in this Discord server")
-    with _store(request).tx() as db:
-        _require_draft(db, sid, _fail)
-        _cas(db, sid, revision, _fail)
-        RaffleStore(db, sid).save_settings(body['representative_role_id'], actor)
-        _bump(db, sid, actor)
+    identity = None
+    if request.method == 'POST':
+        provider = request.app['providers']
+        try:
+            account, owner = await asyncio.wait_for(asyncio.gather(provider.player(tag), provider.linked_owner(tag)), timeout=20)
+        except (ProviderUnavailable, TimeoutError, KeyError):
+            _fail(503, 'Could not verify this player. Try again shortly')
+        if account.get('tag') != tag:
+            _fail(503, 'Player lookup did not match the requested tag')
+        identity = {'tag': tag, 'player_name': account.get('name') or tag, 'town_hall': account.get('town_hall'), 'user_id': owner}
+    try:
+        with _store(request).tx() as db:
+            _require_draft(db, sid, _fail)
+            _cas(db, sid, revision, _fail)
+            store = RaffleStore(db, sid)
+            if request.method == 'POST':
+                store.add_rep_account(identity, body['note'], actor)
+            elif request.method == 'PATCH':
+                store.update_rep_note(tag, body['note'], body['rep_revision'], actor)
+            else:
+                store.remove_rep_account(tag, body['rep_revision'], actor)
+            _bump(db, sid, actor)
+    except RaffleConflict as exc:
+        _fail(409, str(exc))
     return await _response(request, sid)
 
 
@@ -402,7 +389,9 @@ def routes():
     from .app import API
     base = API + '/seasons/{season_id}/bonus-raffle'
     return [web.patch(base + '/account-review', account_review),
-            web.patch(base + '/lazy-settings', lazy_settings),
+            web.post(base + '/rep-accounts', rep_accounts),
+            web.patch(base + '/rep-accounts', rep_accounts),
+            web.delete(base + '/rep-accounts', rep_accounts),
             web.post(base + '/manual-candidates', manual_candidates),
             web.delete(base + '/manual-candidates', manual_candidates),
             web.get(base, state), web.get(API + '/seasons/{season_id}/bonus-status', bonus_status),

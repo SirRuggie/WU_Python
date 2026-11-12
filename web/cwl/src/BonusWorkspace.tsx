@@ -240,11 +240,6 @@ export default function BonusWorkspace({
   );
   const hostStatus = status?.pools[pool].find((item) => item.tag === clanTag);
   const leagueMissing = !allowance?.league;
-  const rolesUnavailable =
-    pool === "lazy" &&
-    clanAccounts.some(
-      (account) => account.representative_status === "unavailable",
-    );
   const savedMinimum = data?.policies.main ?? null;
   const typedMinimum =
     /^\d+$/.test(minimum) && Number(minimum) <= 7 ? Number(minimum) : null;
@@ -284,7 +279,6 @@ export default function BonusWorkspace({
     candidateOpen,
     countReady: !!countReady,
     needsMinimum: pool === "main" && data?.policies.main === null,
-    rolesUnavailable,
     resultsMissing:
       unchecked.length > 0 &&
       (allMissing || clanWide.includes("Results not captured")),
@@ -436,12 +430,6 @@ export default function BonusWorkspace({
               ".bonus-review-editor, .bonus-add-candidate",
             ),
           ),
-        );
-      case "roles":
-        return (
-          <>
-            Discord roles unavailable · {action(() => void refresh(), "Retry")}
-          </>
         );
       case "results":
         return (

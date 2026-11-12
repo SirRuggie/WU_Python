@@ -1,5 +1,6 @@
-"""HTTP safeguards for Lazy bonus eligibility and manual candidates."""
+"""HTTP safeguards for Lazy bonus eligibility, manual candidates and FWA Rep accounts."""
 import unittest
+import unittest.mock
 from unittest.mock import patch
 from aiohttp import web
 from test_cwl_bonus_raffle import RaffleTests
@@ -13,14 +14,15 @@ class LazyBonusApiTests(RaffleTests):
     async def ready_lazy(self):
         await self.ready()
         self.discord_down = False
-        self.rep = True
+        self.discord_calls = 0
         async def discord(method, path, **kwargs):
+            self.discord_calls += 1
             if self.discord_down:
                 raise web.HTTPServiceUnavailable(text='Simulated Discord failure')
             if path.endswith('/roles'):
                 return [{'id': ROLE, 'name': 'FWA Rep'}]
             if path.endswith('/members'):
-                return [{'user': {'id': USER}, 'roles': [ROLE] if self.rep else []}]
+                return [{'user': {'id': USER}, 'roles': [ROLE]}]
             raise AssertionError(path)
         self.app['server_management_discord'] = discord
         async def linked_owner(tag):
@@ -30,7 +32,18 @@ class LazyBonusApiTests(RaffleTests):
             db.execute("UPDATE signups SET pool='lazy',user_id=? WHERE season_id=?", (USER, self.sid))
             db.execute("UPDATE clans SET pool='lazy' WHERE tag='#C2Y'")
             db.execute("UPDATE participation_source_results SET attacks=3,stars=8,roster_token=? WHERE season_id=?", (account_token(working_accounts(db, self.sid)['#P2Y']), self.sid))
-        return await self.get_state()
+        state = await self.get_state()
+        return await self.add_rep('#P2Y', 'REP for Edrag Rush/420', state['revision'])
+
+    async def add_rep(self, tag, note, revision, user=None, status=200):
+        response = await self.call('POST', self.base + '/rep-accounts', user or self.owner,
+                                   json={'tag': tag, 'note': note, 'revision': revision})
+        self.assertEqual(response.status, status, await response.text())
+        return await response.json() if status == 200 else None
+
+    @staticmethod
+    def rep(state, tag):
+        return next((row for row in state['rep_accounts'] if row['tag'] == tag), None)
 
     async def review_preview(self):
         response = await self.call('POST', self.base + '/preview', self.owner,
@@ -205,21 +218,73 @@ class LazyBonusApiTests(RaffleTests):
         self.assertEqual(response.status, 200, await response.text())
         draw = (await response.json())['draws'][0]
         self.assertEqual(len(draw['snapshot']['winners']), 1)
-        self.rep = False
-        self.app['member_search_directory']['loaded_at'] = -1000
+        state = await self.get_state()
+        response = await self.call('DELETE', self.base + '/rep-accounts', self.owner, json={
+            'tag': '#P2Y', 'rep_revision': self.rep(state, '#P2Y')['revision'], 'revision': state['revision']})
+        self.assertEqual(response.status, 200, await response.text())
         response = await self.call('POST', self.base + f"/{draw['id']}/approve", self.owner, json={})
         self.assertEqual(response.status, 409, await response.text())
         self.assertIsNone((await self.get_state())['draws'][0]['approved_at'])
 
-    async def test_role_failure_does_not_silently_remove_double_chance(self):
-        await self.ready_lazy()
+    async def test_odds_come_from_the_rep_list_without_discord(self):
+        state = await self.ready_lazy()
         self.discord_down = True
-        self.app['member_search_directory']['loaded_at'] = -1000
+        self.discord_calls = 0
         preview = await self.review_preview()
-        self.assertTrue(preview['blocking_reasons'])
+        self.assertFalse(preview['blocking_reasons'])
+        self.assertEqual(preview['eligible'][0]['multiplier'], 2)
+        self.assertEqual(preview['eligible'][0]['representative_status'], 'listed')
+        self.assertEqual(self.discord_calls, 0)
+        state = await self.get_state()
+        response = await self.call('DELETE', self.base + '/rep-accounts', self.owner, json={
+            'tag': '#P2Y', 'rep_revision': self.rep(state, '#P2Y')['revision'], 'revision': state['revision']})
+        self.assertEqual(response.status, 200, await response.text())
+        preview = await self.review_preview()
+        self.assertEqual(preview['eligible'][0]['multiplier'], 1)
+        self.assertEqual(preview['eligible'][0]['representative_status'], 'not_listed')
+        self.assertEqual(self.discord_calls, 0)
+
+    async def test_a_note_edit_keeps_a_saved_draw_approvable(self):
+        await self.ready_lazy()
+        preview = await self.review_preview()
         response = await self.call('POST', self.base + '/draw', self.owner,
             json={'pool': 'lazy', 'clan_tag': '#C2Y', 'slots': 2, 'fingerprint': preview['fingerprint']})
+        self.assertEqual(response.status, 200, await response.text())
+        state = await response.json()
+        draw = state['draws'][0]
+        response = await self.call('PATCH', self.base + '/rep-accounts', self.owner, json={
+            'tag': '#P2Y', 'note': 'REP for Edrag Rush', 'rep_revision': self.rep(state, '#P2Y')['revision'],
+            'revision': state['revision']})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertEqual(self.rep(await response.json(), '#P2Y')['note'], 'REP for Edrag Rush')
+        response = await self.call('POST', self.base + f"/{draw['id']}/approve", self.owner, json={})
+        self.assertEqual(response.status, 200, await response.text())
+
+    async def test_older_role_rule_draw_must_be_redrawn(self):
+        await self.ready_lazy()
+        preview = await self.review_preview()
+        response = await self.call('POST', self.base + '/draw', self.owner,
+            json={'pool': 'lazy', 'clan_tag': '#C2Y', 'slots': 2, 'fingerprint': preview['fingerprint']})
+        draw = (await response.json())['draws'][0]
+        import json
+        with self.app['store'].tx() as db:
+            snapshot = json.loads(db.execute('SELECT snapshot_json FROM bonus_raffle_draws WHERE id=?', (draw['id'],)).fetchone()[0])
+            snapshot['rules_version'] = 2
+            db.execute('UPDATE bonus_raffle_draws SET snapshot_json=? WHERE id=?', (json.dumps(snapshot), draw['id']))
+        response = await self.call('POST', self.base + f"/{draw['id']}/approve", self.owner, json={})
         self.assertEqual(response.status, 409)
+        self.assertIn('older rule set', await response.text())
+
+    async def test_rep_list_is_family_wide_and_audited(self):
+        from utils.cwl_bonus_raffle_store import RaffleStore
+        state = await self.ready_lazy()
+        rep = self.rep(state, '#P2Y')
+        self.assertEqual((rep['user_id'], rep['note'], rep['revision']), (USER, 'REP for Edrag Rush/420', 1))
+        with self.app['store'].tx() as db:
+            # Not saved per season: any season reads the same list.
+            self.assertEqual(RaffleStore(db, self.sid + 1000).rep_tags(), {'#P2Y'})
+            audit = [dict(r) for r in db.execute('SELECT tag,action,actor_id FROM bonus_raffle_rep_account_audit')]
+        self.assertEqual(audit, [{'tag': '#P2Y', 'action': 'add', 'actor_id': '505227988229554179'}])
 
     async def test_manual_candidate_verified_no_signup_mutation_and_removal(self):
         state = await self.ready_lazy()
@@ -274,7 +339,7 @@ class LazyBonusApiTests(RaffleTests):
     async def test_lazy_confirmation_uses_weighted_rule_wording(self):
         await self.ready_lazy()
         preview = await self.review_preview()
-        self.assertEqual(preview['rules_version'], 2)
+        self.assertEqual(preview['rules_version'], 3)
         self.assertIn('4+ attacks OR 3+ attacks and 8+ stars', preview['qualification_rule'])
         response = await self.call('POST', self.base + '/draw', self.owner,
             json={'pool': 'lazy', 'clan_tag': '#C2Y', 'slots': 2, 'fingerprint': preview['fingerprint']})
@@ -285,7 +350,7 @@ class LazyBonusApiTests(RaffleTests):
         self.assertEqual(response.status, 200, await response.text())
         row = self.app['store'].one('SELECT reason FROM bonus_confirmations WHERE season_id=? AND cycle=?',
                                     (self.sid, '2026-10'))
-        self.assertEqual(row['reason'], 'Representative-weighted Lazy CWL raffle')
+        self.assertEqual(row['reason'], 'FWA Rep-weighted Lazy CWL raffle')
 
     async def test_lazy_reviews_candidates_and_settings_survive_store_reopen(self):
         from cwl_web.bonuses import _view
@@ -296,8 +361,8 @@ class LazyBonusApiTests(RaffleTests):
             'tag': '#Q2Y', 'clan_tag': '#C2Y', 'reason': 'Verified missing sync', 'revision': state['revision']})
         self.assertEqual(response.status, 200, await response.text())
         state = await response.json()
-        response = await self.call('PATCH', self.base + '/lazy-settings', self.owner, json={
-            'representative_role_id': ROLE, 'revision': state['revision']})
+        response = await self.call('PATCH', self.base + '/rep-accounts', self.owner, json={
+            'tag': '#P2Y', 'note': 'Edrag Rush', 'rep_revision': 1, 'revision': state['revision']})
         self.assertEqual(response.status, 200, await response.text())
         reopened = Store(self.app['store'].path)
         with reopened.tx() as db:
@@ -306,7 +371,8 @@ class LazyBonusApiTests(RaffleTests):
         candidate = next(account for account in restored['accounts'] if account['tag'] == '#Q2Y')
         self.assertTrue(candidate['manual_candidate'])
         self.assertEqual(candidate['bonus_review']['override_reason'], 'Verified missing sync')
-        self.assertEqual(restored['lazy_settings']['representative_role_id'], ROLE)
+        self.assertEqual([(r['tag'], r['note']) for r in restored['rep_accounts']], [('#P2Y', 'Edrag Rush')])
+        self.assertEqual(next(a for a in restored['accounts'] if a['tag'] == '#P2Y')['multiplier'], 2)
         self.assertEqual(restored['manual_candidates'][0]['reason'], 'Verified missing sync')
 
     async def test_three_consecutive_prior_cycles_are_a_reasoned_lazy_exclusion(self):
@@ -374,19 +440,29 @@ class LazyBonusApiTests(RaffleTests):
 
     async def test_settings_scope_validation_and_archived_protection(self):
         state = await self.ready_lazy()
-        body = {'representative_role_id': ROLE, 'revision': state['revision']}
-        self.assertEqual((await self.call('PATCH', self.base + '/lazy-settings', self.member, json=body)).status, 403)
-        self.assertEqual((await self.call('PATCH', self.base + '/lazy-settings', self.owner,
-            json={**body, 'representative_role_id': '999999999999999999'})).status, 400)
-        self.assertEqual((await self.call('PATCH', self.base + '/lazy-settings', self.owner, json=body)).status, 200)
-        state = await self.get_state()
-        self.assertEqual(state['lazy_settings']['representative_role_id'], ROLE)
+        url = self.base + '/rep-accounts'
+        await self.add_rep('#Q2Y', '', state['revision'], user=self.member, status=403)
+        await self.add_rep('#Q2Y', 'x' * 41, state['revision'], status=400)
+        await self.add_rep('not a tag!', '', state['revision'], status=400)
+        await self.add_rep('#P2Y', '', state['revision'], status=409)
+        await self.add_rep('#Q2Y', '', state['revision'] - 1, status=409)
+        edit = {'tag': '#P2Y', 'note': 'New', 'rep_revision': 1, 'revision': state['revision']}
+        self.assertEqual((await self.call('PATCH', url, self.member, json=edit)).status, 403)
+        self.assertEqual((await self.call('PATCH', url, self.owner, json={**edit, 'rep_revision': 9})).status, 409)
+        self.assertEqual((await self.call('PATCH', url, self.owner, json={**edit, 'extra': 1})).status, 400)
+        self.assertEqual((await self.call('DELETE', url, self.member, json={'tag': '#P2Y', 'rep_revision': 1, 'revision': state['revision']})).status, 403)
+        self.assertEqual((await self.call('DELETE', url, self.owner, json={'tag': '#R2Y', 'rep_revision': 1, 'revision': state['revision']})).status, 409)
+        self.assertEqual([r['tag'] for r in (await self.get_state())['rep_accounts']], ['#P2Y'])
+        self.providers.player = unittest.mock.AsyncMock(side_effect=TimeoutError)
+        await self.add_rep('#Q2Y', '', state['revision'], status=503)
+        self.assertEqual([r['tag'] for r in (await self.get_state())['rep_accounts']], ['#P2Y'])
         self.assertEqual((await self.call('PATCH', self.base + '/policy', self.owner,
             json={'pool': 'lazy', 'minimum': 0, 'revision': state['revision']})).status, 400)
         with self.app['store'].tx() as db:
             db.execute("UPDATE seasons SET status='archived' WHERE id=?", (self.sid,))
         self.assertEqual((await self.call('POST', self.base + '/manual-candidates', self.owner,
             json={'tag': '#Q2Y', 'clan_tag': '#C2Y', 'reason': 'Extra', 'revision': state['revision']})).status, 423)
+        await self.add_rep('#Q2Y', '', state['revision'], status=423)
 
     async def test_malformed_flags_and_missing_override_reason_are_rejected(self):
         state = await self.ready_lazy()

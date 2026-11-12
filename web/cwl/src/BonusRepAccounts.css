@@ -1,0 +1,111 @@
+/* FWA Rep accounts in the Results & bonuses Settings sheet. */
+.rep-accounts-add {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--wu-space-3);
+}
+.rep-accounts-add label,
+.rep-account-note-edit label {
+  display: grid;
+  gap: var(--wu-space-1);
+}
+.rep-accounts-add input,
+.rep-account-note-edit input {
+  min-height: 44px;
+  min-width: 0;
+}
+.rep-accounts-add button,
+.rep-account-actions button {
+  min-height: 44px;
+}
+.rep-accounts-list {
+  display: grid;
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+}
+/* Same group header as Build roster; repeated here so the sheet does not
+   depend on the roster page stylesheet being loaded. */
+.rep-accounts .roster-member-heading {
+  padding: 10px 14px;
+  background: var(--wu-surface);
+  border-block: 1px solid #ffffff20;
+}
+.rep-accounts-group:first-child .roster-member-heading {
+  border-top: 0;
+}
+.rep-accounts .roster-member-heading .roster-discord-identity {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.rep-accounts .roster-member-heading > small {
+  display: block;
+  margin-top: var(--wu-space-1);
+  color: var(--wu-text-muted);
+}
+.rep-accounts-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rep-account-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3) 14px;
+}
+.rep-account-row + .rep-account-row {
+  border-top: 1px solid var(--wu-border-subtle);
+}
+.rep-account-row > :first-child {
+  align-self: start;
+}
+.rep-account-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.rep-account-main strong,
+.rep-account-main small,
+.rep-account-note {
+  overflow-wrap: anywhere;
+}
+.rep-account-main small {
+  color: var(--wu-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.rep-account-note {
+  color: var(--wu-accent);
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
+}
+.rep-account-note-edit {
+  display: grid;
+  gap: var(--wu-space-2);
+  margin-top: var(--wu-space-2);
+}
+.rep-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+}
+.results-settings-section .rep-accounts-empty {
+  color: var(--wu-text-muted);
+}
+@media (max-width: 480px) {
+  .rep-accounts-add {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rep-accounts-add button {
+    justify-self: start;
+  }
+  .rep-account-row {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+  .rep-account-row > .rep-account-actions {
+    grid-column: 2;
+  }
+}

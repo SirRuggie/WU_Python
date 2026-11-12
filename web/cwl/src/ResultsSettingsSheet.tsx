@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ActionPanel from "./ActionPanel";
-import BonusLazyOdds from "./BonusLazyOdds";
+import BonusRepAccounts from "./BonusRepAccounts";
 import useConfirmDialog from "./useConfirmDialog";
 import { api, ApiError } from "./api";
 import { exportMonthLabel } from "./exportPreview";
@@ -10,12 +10,9 @@ import {
   type ParticipationData,
   type ParticipationSync,
 } from "./participation";
-import type { RaffleData } from "./bonusRaffle";
+import type { RaffleData, RepAccount } from "./bonusRaffle";
 import "./ResultsSettingsSheet.css";
 
-export const DEFAULT_REP_ROLE = "769130325460254740";
-
-type Role = { id: string; name: string };
 type Draft = {
   cycle: string;
   enabled: boolean;
@@ -31,7 +28,7 @@ type Props = {
   seasonId: string;
   /** Results access: the CWL capture section. */
   canCapture: boolean;
-  /** Bonus access: the Lazy draw odds section. */
+  /** Bonus access: the FWA Rep accounts section. */
   canOdds: boolean;
   archived: boolean;
   /** Unsaved result edits in the page behind the sheet. */
@@ -47,7 +44,7 @@ const errorText = (cause: unknown) =>
     ? cause.message
     : "Settings could not be saved. Refresh to check their saved status.";
 
-/** CWL capture and Lazy draw odds in one sheet, off the results and bonus flow. */
+/** CWL capture and FWA Rep accounts in one sheet, off the results and bonus flow. */
 export default function ResultsSettingsSheet({
   seasonId,
   canCapture,
@@ -69,19 +66,14 @@ export default function ResultsSettingsSheet({
   const [captureError, setCaptureError] = useState("");
   const [captureLoading, setCaptureLoading] = useState(canCapture);
   const [revision, setRevision] = useState<number | null>(null);
-  const [savedRole, setSavedRole] = useState(DEFAULT_REP_ROLE);
-  const [roleId, setRoleId] = useState(DEFAULT_REP_ROLE);
-  const [oddsClosed, setOddsClosed] = useState(false);
+  const [repAccounts, setRepAccounts] = useState<RepAccount[]>([]);
+  const [repDirty, setRepDirty] = useState(false);
   const [oddsError, setOddsError] = useState("");
   const [oddsLoading, setOddsLoading] = useState(canOdds);
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [rolesError, setRolesError] = useState("");
-  const [rolesLoading, setRolesLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const pending = useRef(false);
-  const roleDirty = canOdds && roleId !== savedRole;
-  const dirty = captureDirty || roleDirty;
+  const dirty = captureDirty || (canOdds && repDirty);
   useEffect(() => {
     onDirty(dirty);
   }, [dirty, onDirty]);
@@ -107,24 +99,9 @@ export default function ResultsSettingsSheet({
       setCaptureLoading(false);
     }
   }, [base, canCapture]);
-  const loadRoles = useCallback(async () => {
-    setRolesLoading(true);
-    setRolesError("");
-    try {
-      const result = await api<{ roles: Role[] }>("/announcement-roles");
-      setRoles(result.roles);
-    } catch (cause) {
-      setRolesError(errorText(cause));
-    } finally {
-      setRolesLoading(false);
-    }
-  }, []);
   const takeOdds = (result: RaffleData) => {
     setRevision(result.revision);
-    const role =
-      result.lazy_settings?.representative_role_id || DEFAULT_REP_ROLE;
-    setSavedRole(role);
-    setRoleId(role);
+    setRepAccounts(result.rep_accounts || []);
   };
   const loadOdds = useCallback(async () => {
     if (!canOdds) return;
@@ -140,11 +117,8 @@ export default function ResultsSettingsSheet({
   }, [base, canOdds]);
   useEffect(() => {
     void loadCapture();
-    if (canOdds) {
-      void loadOdds();
-      void loadRoles();
-    }
-  }, [loadCapture, loadOdds, loadRoles, canOdds]);
+    if (canOdds) void loadOdds();
+  }, [loadCapture, loadOdds, canOdds]);
 
   const saveCapture = async () => {
     if (
@@ -206,8 +180,12 @@ export default function ResultsSettingsSheet({
       setBusy(false);
     }
   };
-  const saveRole = async () => {
-    if (busy || pending.current || archived || revision === null) return;
+  const mutateRep = async (
+    method: "POST" | "PATCH" | "DELETE",
+    body: Record<string, unknown>,
+    message: string,
+  ) => {
+    if (busy || pending.current || archived || revision === null) return false;
     const season = seasonId;
     pending.current = true;
     setBusy(true);
@@ -215,22 +193,22 @@ export default function ResultsSettingsSheet({
     setNotice("");
     try {
       const result = await api<RaffleData>(
-        `${base}/bonus-raffle/lazy-settings`,
-        "PATCH",
-        { representative_role_id: roleId, revision },
+        `${base}/bonus-raffle/rep-accounts`,
+        method,
+        { ...body, revision },
       );
-      if (sid.current !== season) return;
+      if (sid.current !== season) return false;
       takeOdds(result);
-      setNotice(
-        "Representative role saved. Check the draw again before saving.",
-      );
+      setNotice(message);
       await onSaved({ kind: "odds" });
+      return true;
     } catch (cause) {
       if (sid.current === season) {
+        // A conflict loads the latest list and keeps its message.
+        if (cause instanceof ApiError && cause.status === 409) await loadOdds();
         setOddsError(errorText(cause));
-        if (cause instanceof ApiError && cause.status === 409)
-          setOddsClosed(true);
       }
+      return false;
     } finally {
       pending.current = false;
       setBusy(false);
@@ -360,39 +338,26 @@ export default function ResultsSettingsSheet({
         )}
         {canOdds && (
           <>
-            {oddsLoading && <p role="status">Loading draw odds…</p>}
+            {oddsLoading && <p role="status">Loading FWA Rep accounts…</p>}
             {oddsError && (
               <p role="alert">
                 {oddsError}{" "}
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => {
-                    setOddsClosed(false);
-                    void loadOdds();
-                  }}
+                  onClick={() => void loadOdds()}
                 >
                   Refresh
                 </button>
               </p>
             )}
             {revision !== null && (
-              <BonusLazyOdds
-                roles={roles}
-                roleId={roleId}
-                rolesLoading={rolesLoading}
-                rolesError={rolesError}
+              <BonusRepAccounts
+                accounts={repAccounts}
                 disabled={busy || archived}
-                canSave={
-                  !busy &&
-                  !archived &&
-                  !oddsClosed &&
-                  roleDirty &&
-                  /^\d{15,22}$/.test(roleId)
-                }
-                onRetryRoles={() => void loadRoles()}
-                onRole={setRoleId}
-                onSave={() => void saveRole()}
+                onDirty={setRepDirty}
+                onConfirm={confirm}
+                onMutate={mutateRep}
               />
             )}
           </>

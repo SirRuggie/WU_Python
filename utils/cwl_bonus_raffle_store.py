@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from utils.cwl_participation_status import ended_group_clans
 from utils.cwl_bonus_raffle import announcement_pages, draw_accounts, eligibility, lazy_eligibility, LAZY_REVIEW_FLAGS
 
-DEFAULT_REPRESENTATIVE_ROLE_ID = "769130325460254740"
+REP_NOTE_MAX = 40
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS bonus_raffle_policy (
@@ -29,6 +29,16 @@ CREATE TABLE IF NOT EXISTS bonus_raffle_settings_audit (
  id INTEGER PRIMARY KEY, season_id INTEGER NOT NULL REFERENCES seasons(id),
  actor_id TEXT NOT NULL, before_json TEXT, after_json TEXT NOT NULL,
  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bonus_raffle_rep_accounts (
+ tag TEXT PRIMARY KEY, player_name TEXT NOT NULL, town_hall INTEGER, user_id TEXT,
+ note TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 1,
+ created_by TEXT NOT NULL, created_at TEXT NOT NULL,
+ updated_by TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bonus_raffle_rep_account_audit (
+ id INTEGER PRIMARY KEY, tag TEXT NOT NULL, actor_id TEXT NOT NULL, action TEXT NOT NULL,
+ before_json TEXT, after_json TEXT, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS bonus_raffle_account_reviews (
  season_id INTEGER NOT NULL REFERENCES seasons(id), tag TEXT NOT NULL,
@@ -109,25 +119,65 @@ class RaffleStore:
         rows = self.db.execute('SELECT pool,minimum FROM bonus_raffle_policy WHERE season_id=?', (self.sid,))
         return {'main': None, 'lazy': None, **{r['pool']: r['minimum'] for r in rows}}
 
-    def settings(self):
-        row = self.db.execute('SELECT representative_role_id,updated_by,updated_at FROM bonus_raffle_settings WHERE season_id=?', (self.sid,)).fetchone()
-        return {'representative_role_id': row['representative_role_id'] if row else DEFAULT_REPRESENTATIVE_ROLE_ID,
-                'updated_by': row['updated_by'] if row else None, 'updated_at': row['updated_at'] if row else None}
+    # FWA Rep accounts are one family-wide list, not saved per season. Listed
+    # accounts get two Lazy draw tickets. The per-season role tables above are
+    # kept only to preserve earlier data; nothing reads them.
+    def rep_accounts(self):
+        return [dict(row) for row in self.db.execute(
+            'SELECT tag,player_name,town_hall,user_id,note,revision,created_by,created_at,updated_by,updated_at '
+            'FROM bonus_raffle_rep_accounts ORDER BY player_name COLLATE NOCASE,tag')]
 
-    def save_settings(self, role_id, actor):
-        if not isinstance(role_id, str) or not role_id.isdigit() or not 15 <= len(role_id) <= 22:
-            raise RaffleConflict('Choose a valid Discord role ID')
-        before = self.settings()
-        after = {'representative_role_id': role_id}
-        if before['representative_role_id'] == role_id:
-            return before
+    def rep_tags(self):
+        return {row['tag'] for row in self.db.execute('SELECT tag FROM bonus_raffle_rep_accounts')}
+
+    def _rep_row(self, tag):
+        row = self.db.execute('SELECT * FROM bonus_raffle_rep_accounts WHERE tag=?', (tag,)).fetchone()
+        return dict(row) if row else None
+
+    @staticmethod
+    def _rep_note(note):
+        if not isinstance(note, str) or len(note.strip()) > REP_NOTE_MAX:
+            raise RaffleConflict(f'Enter a note of up to {REP_NOTE_MAX} characters')
+        return note.strip()
+
+    def _rep_audit(self, tag, actor, action, before, after, stamp):
+        public = lambda row: None if row is None else {k: row[k] for k in ('player_name', 'town_hall', 'user_id', 'note')}
+        self.db.execute('INSERT INTO bonus_raffle_rep_account_audit(tag,actor_id,action,before_json,after_json,created_at) VALUES (?,?,?,?,?,?)',
+                        (tag, actor, action, json.dumps(public(before)) if before else None,
+                         json.dumps(public(after)) if after else None, stamp))
+
+    def add_rep_account(self, identity, note, actor):
+        note = self._rep_note(note)
+        if self._rep_row(identity['tag']):
+            raise RaffleConflict('This account is already an FWA Rep account')
         stamp = now()
-        self.db.execute('INSERT INTO bonus_raffle_settings(season_id,representative_role_id,updated_by,updated_at) VALUES (?,?,?,?) '
-                        'ON CONFLICT(season_id) DO UPDATE SET representative_role_id=excluded.representative_role_id,updated_by=excluded.updated_by,updated_at=excluded.updated_at',
-                        (self.sid, role_id, actor, stamp))
-        self.db.execute('INSERT INTO bonus_raffle_settings_audit(season_id,actor_id,before_json,after_json,created_at) VALUES (?,?,?,?,?)',
-                        (self.sid, actor, json.dumps({'representative_role_id': before['representative_role_id']}), json.dumps(after), stamp))
-        return {**after, 'updated_by': actor, 'updated_at': stamp}
+        self.db.execute('INSERT INTO bonus_raffle_rep_accounts(tag,player_name,town_hall,user_id,note,created_by,created_at,updated_by,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
+                        (identity['tag'], identity['player_name'], identity.get('town_hall'), identity.get('user_id'), note, actor, stamp, actor, stamp))
+        self._rep_audit(identity['tag'], actor, 'add', None, self._rep_row(identity['tag']), stamp)
+
+    def _current_rep(self, tag, expected_revision):
+        row = self._rep_row(tag)
+        if not row:
+            raise RaffleConflict('This account is no longer an FWA Rep account. Refresh the list')
+        if row['revision'] != expected_revision:
+            raise RaffleConflict('This FWA Rep account changed. Refresh the list')
+        return row
+
+    def update_rep_note(self, tag, note, expected_revision, actor):
+        note = self._rep_note(note)
+        before = self._current_rep(tag, expected_revision)
+        if before['note'] == note:
+            return
+        stamp = now()
+        self.db.execute('UPDATE bonus_raffle_rep_accounts SET note=?,revision=revision+1,updated_by=?,updated_at=? WHERE tag=?',
+                        (note, actor, stamp, tag))
+        self._rep_audit(tag, actor, 'note', before, self._rep_row(tag), stamp)
+
+    def remove_rep_account(self, tag, expected_revision, actor):
+        before = self._current_rep(tag, expected_revision)
+        stamp = now()
+        self.db.execute('DELETE FROM bonus_raffle_rep_accounts WHERE tag=?', (tag,))
+        self._rep_audit(tag, actor, 'remove', before, None, stamp)
 
     def account_reviews(self):
         result = {}
@@ -287,7 +337,7 @@ class RaffleStore:
             account['three_cycle_cooldown'] = self._has_three_cycle_cooldown(account['tag'], cycle)
             account['host_valid'] = account.get('assigned_clan_tag') in active_hosts
         for account in accounts:
-            # Preserve role evidence and candidate-scoped override annotations if
+            # Preserve candidate-scoped override annotations if
             # the parent already enriched this view before calling preview.
             account['bonus_review'] = {**self._review_view(), **(account.get('bonus_review') or {}), **reviews.get(account['tag'], {})}
         for row in self.db.execute('SELECT * FROM bonus_raffle_manual_candidates WHERE season_id=?', (self.sid,)):
@@ -323,7 +373,7 @@ class RaffleStore:
                 'in_current_roster': False, 'manual_candidate': True, 'manual_candidate_reason': row['reason'],
                 'tag_valid': True, 'source': 'manual', 'candidate_source': 'manual', 'already_confirmed_this_cycle': any(c.get('tag') == tag for c in view.get('cycle_confirmed', [])),
                 'season_rounds': None, 'three_cycle_cooldown': self._has_three_cycle_cooldown(tag, cycle),
-                'manual_host_valid': host_valid, 'host_valid': host_valid, 'is_representative': False, 'representative_status': 'unlinked', 'multiplier': 1,
+                'manual_host_valid': host_valid, 'host_valid': host_valid,
                 'bonus_review': reviews.get(tag, self._review_view()),
             }
             accounts.append(manual)
@@ -340,7 +390,13 @@ class RaffleStore:
                 view.setdefault('clans', []).append({'tag': candidate['tag'], 'name': candidate['name']})
                 current_clans.add(candidate['tag'])
         view['manual_candidates'] = [dict(row) for row in self.db.execute('SELECT tag,player_name,town_hall,user_id,clan_tag,clan_name,reason,created_by,created_at,updated_by,updated_at,revision FROM bonus_raffle_manual_candidates WHERE season_id=? ORDER BY created_at,tag', (self.sid,))]
-        view['lazy_settings'] = self.settings()
+        reps = self.rep_tags()
+        for account in accounts:
+            if account.get('pool') == 'lazy':
+                listed = account['tag'] in reps
+                account.update(is_representative=listed, representative_status='listed' if listed else 'not_listed',
+                               multiplier=2 if listed else 1)
+        view['rep_accounts'] = self.rep_accounts()
         return view
 
     def save_policy(self, pool, minimum):
@@ -390,19 +446,9 @@ class RaffleStore:
                     blocks.append('Resolve incomplete or changed account results before drawing')
             else:
                 if pool == 'lazy':
-                    role_status = account.get('representative_status')
                     is_rep = account.get('is_representative')
-                    multiplier = account.get('multiplier')
-                    if role_status == 'unavailable':
-                        blocks.append('Discord representative roles could not be verified for every eligible Lazy account')
-                    elif role_status == 'unlinked':
-                        if is_rep is not False or multiplier != 1:
-                            blocks.append('Unlinked Lazy accounts must use the 1x ticket weight')
-                    elif role_status == 'verified':
-                        if type(is_rep) is not bool or multiplier != (2 if is_rep else 1):
-                            blocks.append('Lazy representative role evidence is inconsistent')
-                    else:
-                        blocks.append('Lazy representative role status is unavailable')
+                    if type(is_rep) is not bool or account.get('multiplier') != (2 if is_rep else 1):
+                        blocks.append('Lazy FWA Rep odds are inconsistent')
                 eligible.append(account)
         if not eligible:
             blocks.append('No accounts qualify for this draw')
@@ -417,12 +463,11 @@ class RaffleStore:
         clan = next((c for c in view['clans'] if c['tag'] == clan_tag), {})
         result = {'cycle': view['cycle'], 'pool': pool, 'clan_tag': clan_tag,
                   'clan_name': clan.get('name', clan_tag), 'minimum': minimum if pool == 'main' else None,
-                  'rules_version': 2 if pool == 'lazy' else 1,
+                  'rules_version': 3 if pool == 'lazy' else 1,
                   'qualification_rule': '4+ attacks OR 3+ attacks and 8+ stars' if pool == 'lazy' else None,
                   'slots': slots, 'available': available, 'confirmed': confirmed,
                   'allowance_source': 'automatic' if automatic else 'staff',
                   'allowance': allowance if automatic else None,
-                  'lazy_settings': self.settings() if pool == 'lazy' else None,
                   'eligible': eligible, 'excluded': excluded,
                   'manual_candidate_conflicts': conflicts,
                   'publication_version': view['publication_version'],
@@ -455,7 +500,7 @@ class RaffleStore:
         if draw['approved_at']:
             return draw
         snapshot = draw['snapshot']
-        if snapshot['pool'] == 'lazy' and snapshot.get('rules_version') != 2:
+        if snapshot['pool'] == 'lazy' and snapshot.get('rules_version') != 3:
             raise RaffleConflict('This saved Lazy draw uses an older rule set. Cancel and review it again before approval')
         if snapshot['cycle'] != view['cycle']:
             raise RaffleConflict('The CWL month changed. Restore the original month before approving')
@@ -469,8 +514,6 @@ class RaffleStore:
         relevant = [a for a in view['accounts'] if a['pool'] == snapshot['pool'] and a['assigned_clan_tag'] == snapshot['clan_tag']]
         if {a['tag'] for a in original} != {a['tag'] for a in relevant}:
             raise RaffleConflict('The participating accounts changed after the draw. Reconcile results before approval')
-        if snapshot['pool'] == 'lazy' and snapshot.get('lazy_settings') != self.settings():
-            raise RaffleConflict('The representative role changed since the draw. Review and draw again')
         if snapshot['pool'] == 'lazy':
             compare_fields = ('pool', 'assigned_clan_tag', 'assigned_clan_name', 'attacks', 'stars',
                               'source_complete', 'source_status', 'roster_changed', 'in_current_roster',
@@ -488,7 +531,7 @@ class RaffleStore:
             current_reason = lazy_eligibility(account) if account and snapshot['pool'] == 'lazy' else (eligibility(account, snapshot['minimum']) if account else None)
             if (not account or any(account.get(k) != old.get(k) for k in compare_fields)
                     or current_reason != old_reason):
-                raise RaffleConflict('Results, eligibility review, representative status, or roster changed since the draw. Review again; winners have not been rerolled')
+                raise RaffleConflict('Results, eligibility review, FWA Rep accounts, or roster changed since the draw. Review again; winners have not been rerolled')
             if snapshot['pool'] == 'lazy' and old.get('tag') in {row.get('tag') for row in view.get('cycle_confirmed', [])}:
                 raise RaffleConflict('This account is already confirmed for this CWL month')
         confirmed = sum(r['clan_tag'] == snapshot['clan_tag'] for r in view['cycle_confirmed'])
@@ -498,7 +541,7 @@ class RaffleStore:
                                (self.sid, snapshot['cycle'], view['revision'], fingerprint(snapshot), json.dumps(snapshot), actor, now())).lastrowid
         for account in snapshot['winners']:
             self.db.execute('INSERT INTO bonus_confirmations(batch_id,season_id,cycle,publication_version,tag,player_name,pool,clan_tag,clan_name,attacks,stars,reason,warnings_json,confirmed_by,confirmed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                            (batch, self.sid, snapshot['cycle'], snapshot['publication_version'], account['tag'], account['player_name'], snapshot['pool'], snapshot['clan_tag'], snapshot['clan_name'], account['attacks'], account['stars'], ('Representative-weighted Lazy CWL raffle' if snapshot['pool'] == 'lazy' else 'Equal-chance account raffle'), '[]', actor, now()))
+                            (batch, self.sid, snapshot['cycle'], snapshot['publication_version'], account['tag'], account['player_name'], snapshot['pool'], snapshot['clan_tag'], snapshot['clan_name'], account['attacks'], account['stars'], ('FWA Rep-weighted Lazy CWL raffle' if snapshot['pool'] == 'lazy' else 'Equal-chance account raffle'), '[]', actor, now()))
         self.db.execute('UPDATE bonus_raffle_draws SET approved_by=?,approved_at=? WHERE id=?', (actor, now(), draw_id))
         return self.get(draw_id)
 
