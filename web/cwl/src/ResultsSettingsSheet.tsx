@@ -353,6 +353,7 @@ export default function ResultsSettingsSheet({
             )}
             {revision !== null && (
               <BonusRepAccounts
+                seasonId={seasonId}
                 accounts={repAccounts}
                 disabled={busy || archived}
                 onDirty={setRepDirty}

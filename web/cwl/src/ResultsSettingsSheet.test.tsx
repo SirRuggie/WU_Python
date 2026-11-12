@@ -6,6 +6,7 @@ import { ApiError } from "./api";
 const api = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
 import ResultsSettingsSheet from "./ResultsSettingsSheet";
+import { pickerByLabel, pickOption } from "./searchPickerTestUtils";
 
 const sync = {
   cycle: "2026-11",
@@ -33,6 +34,17 @@ const raffle = {
     rep("#P2Y", "Alpha", "111111111111111111", "REP for Edrag Rush/420"),
     rep("#Q2Y", "Bravo", null),
     rep("#R2Y", "Charlie", "111111111111111111"),
+  ],
+};
+const clanReps = {
+  members: [
+    { id: "111111111111111111", display_name: "Ruggie", username: "ruggie" },
+  ],
+};
+const linked = {
+  accounts: [
+    { tag: "#P2Y", name: "Alpha", town_hall: 16 },
+    { tag: "#V2Y", name: "Victor", town_hall: 15 },
   ],
 };
 const members = {
@@ -99,13 +111,17 @@ beforeEach(() => {
     .mockImplementation(async (route: string) =>
       route.startsWith("/staff-signup-members")
         ? members
-        : route.endsWith("/bonus-raffle/rep-accounts")
-          ? { ...raffle, revision: 8, rep_accounts: [] }
-          : route.endsWith("/participation/sync-settings")
-            ? { sync: { ...sync, cycle: "2026-12", enabled: true } }
-            : route.endsWith("/bonus-raffle")
-              ? raffle
-              : participation,
+        : route.endsWith("/bonus-raffle/clan-rep-members")
+          ? clanReps
+          : route.includes("/staff-signups/accounts?user_id=")
+            ? linked
+            : route.endsWith("/bonus-raffle/rep-accounts")
+              ? { ...raffle, revision: 8, rep_accounts: [] }
+              : route.endsWith("/participation/sync-settings")
+                ? { sync: { ...sync, cycle: "2026-12", enabled: true } }
+                : route.endsWith("/bonus-raffle")
+                  ? raffle
+                  : participation,
     );
   host = document.createElement("div");
   document.body.append(host);
@@ -206,6 +222,45 @@ describe("Settings sheet", () => {
       ),
     ).toEqual([["/staff-signup-members?ids=111111111111111111"]]);
     expect(writes()).toHaveLength(0);
+  });
+  it("finds a Clan Rep, shows their accounts and adds one for x2", async () => {
+    await open();
+    expect(document.body.textContent).toContain("Find Clan Rep (x2 odds)");
+    await pickOption(
+      pickerByLabel(document.body, "Find Clan Rep (x2 odds)"),
+      "Ruggie",
+    );
+    await settle();
+    expect(
+      api.mock.calls.some(
+        (call) =>
+          call[0] ===
+          "/seasons/1/staff-signups/accounts?user_id=111111111111111111",
+      ),
+    ).toBe(true);
+    const finder = document.querySelector(".rep-finder")!;
+    // Already listed: no add control, the x2 status shows instead.
+    expect(finder.textContent).toContain("x2 · Listed");
+    expect(button("Add for x2", finder)).toBeDefined();
+    expect(
+      [...finder.querySelectorAll("button")].filter(
+        (node) => node.textContent === "Add for x2",
+      ),
+    ).toHaveLength(1);
+    await type(
+      finder.querySelector<HTMLInputElement>('input[name="rep-finder-note"]')!,
+      "REP for Edrag Rush",
+    );
+    expect(onDirty).toHaveBeenLastCalledWith(true);
+    await act(async () => button("Add for x2", finder).click());
+    expect(writes()).toEqual([
+      [
+        "/seasons/1/bonus-raffle/rep-accounts",
+        "POST",
+        { tag: "#V2Y", note: "REP for Edrag Rush", revision: 7 },
+      ],
+    ]);
+    expect(onDirty).toHaveBeenLastCalledWith(false);
   });
   it("adds an account by tag with a note and the draw revision it loaded", async () => {
     await open();

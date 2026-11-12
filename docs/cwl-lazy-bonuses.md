@@ -64,6 +64,15 @@ the actor and before/after values. A note edit does not change odds, so it does
 not make a saved draw stale. The list started empty at release; no data was
 copied from the role.
 
+"Find Clan Rep (x2 odds)" (2026-11-12) helps staff find accounts: it lists
+Discord members with the FWA Clan Rep role (`769130325460254740`, the same role
+as the FWA war messages) through a read-only
+`GET .../bonus-raffle/clan-rep-members`. Selecting a member loads their linked
+accounts through the existing staff-signup accounts read. Each account shows
+"Add for x2" (saved with the optional note box) or "x2 · Listed". Only the tag
+is saved; the role never decides odds. "Or add by player tag" stays for
+unlinked accounts.
+
 Drawing samples tickets with a cryptographic system random source and removes
 all of a winner's tickets. An account can win only once. If available slots meet
 or exceed the candidate count, all eligible accounts win without random

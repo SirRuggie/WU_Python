@@ -13,6 +13,10 @@ from utils.cwl_participation_status import ended_group_clans
 from utils.cwl_bonus_raffle import announcement_pages, draw_accounts, eligibility, lazy_eligibility, LAZY_REVIEW_FLAGS
 
 REP_NOTE_MAX = 40
+# The FWA Clan Rep Discord role (same ID as FWA_WAR_PLANS_CONFIG
+# "fwa_clan_rep_role_id"). Used only to help staff find rep accounts; the
+# saved account list alone decides draw odds.
+CLAN_REP_ROLE_ID = "769130325460254740"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS bonus_raffle_policy (
