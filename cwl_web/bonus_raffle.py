@@ -6,7 +6,7 @@ import sqlite3
 from aiohttp import web
 from .participation_display import participation_json_response
 from extensions.cwl_discord_transport import AnnouncementRejected, AnnouncementUnavailable, DiscordTransport
-from utils.cwl_bonus_raffle_store import LAZY_SEASON_POOL, REP_NOTE_MAX, SEASON_POOL_JOIN, RaffleConflict, RaffleStore
+from utils.cwl_bonus_raffle_store import CLAN_REP_ROLE_ID, LAZY_SEASON_POOL, REP_NOTE_MAX, SEASON_POOL_JOIN, RaffleConflict, RaffleStore
 from utils.cwl_bonus_allowance import AllowanceStore
 from utils.cwl_bonus_raffle import eligibility, lazy_eligibility
 from .bonuses import _view, _require_draft, _bump, _validate_revision, _cas
@@ -339,6 +339,29 @@ async def rep_accounts(request):
     return await _response(request, sid)
 
 
+async def clan_rep_members(request):
+    """Read-only: Discord members with the FWA Clan Rep role, to find rep accounts."""
+    from .app import _require, _sid, _store, _fail
+    from .manage_roles import searchable_members, member_option
+    _require(request, 'editor')
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        if db.execute('SELECT 1 FROM seasons WHERE id=?', (sid,)).fetchone() is None:
+            _fail(404, 'Season not found')
+    try:
+        rows = await asyncio.wait_for(searchable_members(request), timeout=25)
+    except (web.HTTPException, TimeoutError):
+        _fail(503, 'Discord members could not be loaded. Try again')
+    members = []
+    for row in rows:
+        if row.get('user', {}).get('bot') or CLAN_REP_ROLE_ID not in {str(role) for role in row.get('roles', [])}:
+            continue
+        option = member_option(row)
+        members.append({key: option.get(key) for key in ('id', 'display_name', 'username', 'avatar_url')})
+    members.sort(key=lambda m: (str(m['display_name']).lower(), m['id']))
+    return web.json_response({'members': members})
+
+
 async def manual_candidates(request):
     from .app import _require, _sid, _store, _json, _fail
     from .providers import ProviderUnavailable, tag as normalize_tag
@@ -389,6 +412,7 @@ def routes():
     from .app import API
     base = API + '/seasons/{season_id}/bonus-raffle'
     return [web.patch(base + '/account-review', account_review),
+            web.get(base + '/clan-rep-members', clan_rep_members),
             web.post(base + '/rep-accounts', rep_accounts),
             web.patch(base + '/rep-accounts', rep_accounts),
             web.delete(base + '/rep-accounts', rep_accounts),

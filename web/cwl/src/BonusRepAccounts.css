@@ -109,3 +109,47 @@
     grid-column: 2;
   }
 }
+.rep-finder {
+  display: grid;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3);
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: 8px;
+  background: var(--wu-surface);
+}
+.rep-finder-note {
+  display: grid;
+  gap: var(--wu-space-1);
+}
+.rep-finder-note input {
+  min-height: 44px;
+  min-width: 0;
+}
+.rep-finder-accounts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rep-finder-accounts .rep-account-row {
+  padding-inline: 0;
+}
+.rep-finder-accounts button {
+  min-height: 44px;
+}
+.rep-finder-listed {
+  color: var(--wu-accent);
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .rep-finder-accounts .rep-account-row > :last-child {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+.rep-accounts-subhead {
+  margin: var(--wu-space-2) 0 0;
+  font-size: var(--wu-text-sm);
+  color: var(--wu-text-muted);
+}

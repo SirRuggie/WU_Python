@@ -275,6 +275,34 @@ class LazyBonusApiTests(RaffleTests):
         self.assertEqual(response.status, 409)
         self.assertIn('older rule set', await response.text())
 
+    def test_clan_rep_role_matches_the_fwa_war_plans_role(self):
+        from extensions.commands.fwa.war_plans import FWA_WAR_PLANS_CONFIG
+        from utils.cwl_bonus_raffle_store import CLAN_REP_ROLE_ID
+        self.assertEqual(CLAN_REP_ROLE_ID, str(FWA_WAR_PLANS_CONFIG['fwa_clan_rep_role_id']))
+
+    async def test_clan_rep_members_lists_only_the_role_and_writes_nothing(self):
+        await self.ready_lazy()
+        OTHER = '222222222222222222'
+        async def discord(method, path, **kwargs):
+            assert method == 'GET' and path.endswith('/members'), (method, path)
+            return [{'user': {'id': USER, 'username': 'rep'}, 'nick': 'Rep One', 'roles': [ROLE]},
+                    {'user': {'id': OTHER, 'username': 'plain'}, 'roles': ['1']},
+                    {'user': {'id': '333333333333333333', 'username': 'robot', 'bot': True}, 'roles': [ROLE]}]
+        self.app['server_management_discord'] = discord
+        self.app['member_search_directory']['loaded_at'] = -1000
+        before = (await self.get_state())['revision']
+        response = await self.call('GET', self.base + '/clan-rep-members', self.owner)
+        self.assertEqual(response.status, 200, await response.text())
+        members = (await response.json())['members']
+        self.assertEqual([(m['id'], m['display_name']) for m in members], [(USER, 'Rep One')])
+        self.assertEqual((await self.get_state())['revision'], before)
+        self.assertEqual((await self.call('GET', self.base + '/clan-rep-members', self.member)).status, 403)
+        async def down(method, path, **kwargs):
+            raise web.HTTPServiceUnavailable(text='Simulated Discord failure')
+        self.app['server_management_discord'] = down
+        self.app['member_search_directory']['loaded_at'] = -1000
+        self.assertEqual((await self.call('GET', self.base + '/clan-rep-members', self.owner)).status, 503)
+
     async def test_rep_list_is_family_wide_and_audited(self):
         from utils.cwl_bonus_raffle_store import RaffleStore
         state = await self.ready_lazy()

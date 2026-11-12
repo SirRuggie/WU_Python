@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
+import BonusClanRepFinder from "./BonusClanRepFinder";
 import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
 import type { MemberOption } from "./MemberPicker";
 import TownHallIcon from "./TownHallIcon";
@@ -15,6 +16,7 @@ type Mutate = (
 ) => Promise<boolean>;
 
 type Props = {
+  seasonId: string;
   accounts: RepAccount[];
   disabled: boolean;
   onDirty: (dirty: boolean) => void;
@@ -39,6 +41,7 @@ export function repGroups(accounts: RepAccount[]) {
 
 /** FWA Rep accounts for Lazy draw odds; one section of the Settings sheet. */
 export default function BonusRepAccounts({
+  seasonId,
   accounts,
   disabled,
   onDirty,
@@ -51,6 +54,11 @@ export default function BonusRepAccounts({
   const [editNote, setEditNote] = useState("");
   const [profiles, setProfiles] = useState<Record<string, DiscordProfile>>({});
   const [resolving, setResolving] = useState(false);
+  const [finderDirty, setFinderDirty] = useState(false);
+  const listed = useMemo(
+    () => new Set(accounts.map((row) => row.tag)),
+    [accounts],
+  );
   const groups = useMemo(() => repGroups(accounts), [accounts]);
   const ids = useMemo(
     () =>
@@ -63,6 +71,7 @@ export default function BonusRepAccounts({
   );
   const editRow = accounts.find((row) => row.tag === editing);
   const dirty =
+    finderDirty ||
     !!tag.trim() ||
     !!note.trim() ||
     (!!editRow && editNote.trim() !== editRow.note);
@@ -144,6 +153,21 @@ export default function BonusRepAccounts({
     >
       <h3>FWA Rep accounts</h3>
       <p>Only these accounts get 2 chances in Lazy draws, in every season.</p>
+      <BonusClanRepFinder
+        seasonId={seasonId}
+        listed={listed}
+        noteMax={REP_NOTE_MAX}
+        disabled={disabled}
+        onDirty={setFinderDirty}
+        onAdd={(value, text) =>
+          onMutate(
+            "POST",
+            { tag: value, note: text },
+            "FWA Rep account added. Check the draw again before saving.",
+          )
+        }
+      />
+      <h4 className="rep-accounts-subhead">Or add by player tag</h4>
       <form
         className="rep-accounts-add"
         onSubmit={(event) => {
