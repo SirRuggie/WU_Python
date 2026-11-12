@@ -112,3 +112,91 @@ it("marks only the pending refresh and blocks a second native click", async () =
     host.remove();
   }
 });
+
+it("joins exact summary rows to App metadata by id without fetching again or changing counts/destinations", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const summary = {
+    checked_at: 1,
+    seasons: [
+      { id: 1, label: "2026-08", signed_up: 12, unplaced: 3 },
+      { id: 2, label: "Bound staff archive", signed_up: 2, unplaced: 1 },
+      { id: 9, label: "2026-09", signed_up: 5, unplaced: 0 },
+      { id: 10, label: "Unbound notes", signed_up: 1, unplaced: 1 },
+    ],
+    tickets: null,
+    failures_count: 0,
+    failures: [],
+    warnings: [],
+    areas: ["roster"],
+  };
+  vi.mocked(api).mockReset().mockResolvedValue(summary);
+  const metadata = [
+    {
+      id: 2,
+      label: "Bound staff archive",
+      cwl_month: "2026-10",
+      status: "archived",
+      signup_open: false,
+    },
+    {
+      id: 1,
+      label: "2026-08",
+      cwl_month: "2026-11",
+      status: "draft",
+      signup_open: true,
+    },
+  ];
+  const onNavigate = vi.fn(),
+    host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const labels = () =>
+    [...host.querySelectorAll(".staff-overview-row strong")].map(
+      (row) => row.textContent,
+    );
+  const counts = () =>
+    [...host.querySelectorAll(".staff-overview-row p")].map(
+      (row) => row.textContent,
+    );
+  try {
+    await act(async () =>
+      root.render(<StaffOverview onNavigate={onNavigate} />),
+    );
+    expect(labels()).toEqual([
+      "August 2026",
+      "Bound staff archive",
+      "September 2026",
+      "Unbound notes",
+    ]);
+    const beforeCounts = counts(),
+      reads = vi.mocked(api).mock.calls.length;
+    await act(async () =>
+      root.render(<StaffOverview seasons={metadata} onNavigate={onNavigate} />),
+    );
+    expect(labels()).toEqual([
+      "November 2026",
+      "October 2026",
+      "September 2026",
+      "Unbound notes",
+    ]);
+    expect(counts()).toEqual(beforeCounts);
+    expect(vi.mocked(api).mock.calls).toHaveLength(reads);
+    expect(summary.seasons.every((row) => !("cwl_month" in row))).toBe(true);
+    for (const button of host.querySelectorAll<HTMLButtonElement>(
+      ".staff-overview-row button",
+    ))
+      await act(async () => button.click());
+    expect(onNavigate.mock.calls).toEqual([
+      ["roster", "1"],
+      ["roster", "2"],
+      ["roster", "9"],
+      ["roster", "10"],
+    ]);
+    expect(
+      vi.mocked(api).mock.calls.every((call) => call[1] === undefined),
+    ).toBe(true);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

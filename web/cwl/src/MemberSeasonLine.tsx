@@ -1,3 +1,4 @@
+import { seasonMonthLabel } from "./seasonLabels";
 import { memberSignupsOpen } from "./memberSeason";
 import type { Season } from "./api";
 
@@ -20,7 +21,7 @@ export default function MemberSeasonLine({
     : null;
   return (
     <p className="member-season-line">
-      <strong>{season.label}</strong>
+      <strong>{seasonMonthLabel(season)}</strong>
       {open ? " · Signups open" : hideClosedStatus ? "" : " · Signups closed"}
       {open && date ? ` · closes ${date}` : ""}
     </p>

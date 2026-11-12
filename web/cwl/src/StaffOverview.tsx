@@ -1,7 +1,8 @@
+import { seasonMonthLabel } from "./seasonLabels";
 import VisitorSummary from "./VisitorSummary";
 import DashboardIcon from "./DashboardIcon";
 import { useEffect, useState } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, type Season } from "./api";
 import type { DashboardView } from "./SidebarNavigation";
 import "./StaffOverview.css";
 type Snapshot = {
@@ -30,8 +31,10 @@ const names: Partial<Record<DashboardView, string>> = {
 };
 export default function StaffOverview({
   onNavigate,
+  seasons = [],
 }: {
   onNavigate: (view: DashboardView, season?: string) => void;
+  seasons?: readonly Season[];
 }) {
   const [data, setData] = useState<Snapshot | null>(null),
     [error, setError] = useState(""),
@@ -128,7 +131,12 @@ export default function StaffOverview({
                   data.seasons.map((season) => (
                     <div className="staff-overview-row" key={season.id}>
                       <div>
-                        <strong>{season.label}</strong>
+                        <strong>
+                          {seasonMonthLabel(
+                            seasons.find((item) => item.id === season.id) ||
+                              season,
+                          )}
+                        </strong>
                         <p>
                           <b>{season.unplaced}</b> need placement ·{" "}
                           {season.signed_up} signed up

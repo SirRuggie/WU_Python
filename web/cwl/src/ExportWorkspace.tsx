@@ -5,11 +5,8 @@ import { api, ApiError, type Season } from "./api";
 import ExportDownloads from "./ExportDownloads";
 import ExportRosterView from "./ExportRosterView";
 import ExportWinnersView from "./ExportWinnersView";
-import {
-  monthSeasons,
-  seasonMonthLabel,
-  type ExportKind,
-} from "./exportHistory";
+import type { ExportKind } from "./exportHistory";
+import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import { useDashboardPermission } from "./DashboardPermissions";
 import "./ExportWorkspace.css";
 import { exportDateText as dateText } from "./exportPreview";

@@ -1,3 +1,4 @@
+import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
 import { publicationBlockingReason } from "./publicationBlockingReason";
 import CwlNextLink from "./CwlNextLink";
@@ -458,9 +459,9 @@ export default function PublicationWorkspace({
           onValueChange={onSeasonChange}
           options={[
             { value: "", label: "Select a season" },
-            ...seasons.map((season) => ({
+            ...monthSeasons(seasons).map((season) => ({
               value: String(season.id),
-              label: season.label,
+              label: seasonMonthLabel(season),
             })),
           ]}
         />

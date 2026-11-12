@@ -166,3 +166,24 @@ it("range success passes the exact months and offers the original workbook Blob"
   expect(URL.createObjectURL).toHaveBeenCalledWith(file);
   expect(host.textContent).toContain("Excel download started");
 });
+
+it("orders range months newest first while preserving twelve-month defaults and selected values", async () => {
+  await render();
+  await open();
+  const from = host.querySelector<HTMLSelectElement>('[name="export-from"]')!;
+  const to = host.querySelector<HTMLSelectElement>('[name="export-to"]')!;
+  expect([...from.options].map((row) => row.value)).toEqual(
+    seasons.map((row) => row.label).reverse(),
+  );
+  expect([...to.options].map((row) => row.value)).toEqual(
+    seasons.map((row) => row.label).reverse(),
+  );
+  expect(from.value).toBe("2026-01");
+  expect(to.value).toBe("2026-12");
+  await set("export-from", "2026-08");
+  await set("export-to", "2026-11");
+  await render();
+  expect(from.value).toBe("2026-08");
+  expect(to.value).toBe("2026-11");
+  expect(fetchReadWithRetry).not.toHaveBeenCalled();
+});

@@ -109,7 +109,7 @@ it("clears winner data when the grant is revoked", async () => {
   expect(host.textContent).toContain("You do not have access");
 });
 it("orders month-name seasons newest first without archive suffix", async () => {
-  const { monthSeasons } = await import("./exportHistory");
+  const { monthSeasons } = await import("./seasonLabels");
   expect(
     monthSeasons([
       { ...seasons[1] },
@@ -122,7 +122,7 @@ it("orders month-name seasons newest first without archive suffix", async () => 
 });
 
 it("uses the bound month before a free label, ISO fallback, then untouched free labels last", async () => {
-  const { monthSeasons, seasonMonthLabel } = await import("./exportHistory");
+  const { monthSeasons, seasonMonthLabel } = await import("./seasonLabels");
   const rows = [
     {
       id: 1,

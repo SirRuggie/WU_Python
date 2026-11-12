@@ -1,3 +1,4 @@
+import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, WandSparkles } from "lucide-react";
@@ -148,9 +149,12 @@ export default function RosterHeader({
   ).length;
   const publicationStatus =
     publication?.seasonId === seasonId ? publication.status : null;
-  const selectedSeasonLabel = seasons.find(
+  const selectedSeason = seasons.find(
     (season) => String(season.id) === seasonId,
-  )?.label;
+  );
+  const selectedSeasonLabel = selectedSeason
+    ? seasonMonthLabel(selectedSeason)
+    : undefined;
   const canAutoPlace =
     canRoster &&
     !archived &&
@@ -196,9 +200,9 @@ export default function RosterHeader({
             onValueChange={onSeasonChange}
             options={[
               { value: "", label: "Select a season" },
-              ...seasons.map((season) => ({
+              ...monthSeasons(seasons).map((season) => ({
                 value: String(season.id),
-                label: season.label,
+                label: seasonMonthLabel(season),
               })),
             ]}
           />

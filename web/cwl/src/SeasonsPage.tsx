@@ -1,3 +1,4 @@
+import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
 import CwlNextLink from "./CwlNextLink";
 import StaffSignupControls from "./StaffSignupControls";
@@ -128,9 +129,9 @@ export default function SeasonsPage({
           label="Season"
           value={seasonId}
           disabled={working}
-          options={seasons.map((item) => ({
+          options={monthSeasons(seasons).map((item) => ({
             value: String(item.id),
-            label: item.label,
+            label: seasonMonthLabel(item),
           }))}
           onValueChange={onSeasonChange}
         />
