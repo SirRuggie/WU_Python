@@ -56,6 +56,36 @@ approved NO WAR corrections or restore databases for a code rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 
+## Infractions in player Details — 2026-11-12 (frontend only)
+
+- PR [#309](https://github.com/SirRuggie/WU_Python/pull/309), merge commit
+  `e947b72399193b3d542acdf522ef0ec459f5c0da`, local tag `infractions-309-1`.
+  Built and released by Shaka (Claude) on Ruggie's "release 309". Refuter
+  ACCEPT on `cdcfb5d5`; the notes-lock fix `37073477` followed (2368 tests,
+  `tsc -b`, fixture browser check).
+- Changes: Lazy infractions (Missed sync, Lingering, Left family, staff
+  exception) in the player Details panel with one Save for notes and
+  infractions; ⋯ "Infractions" and flag chips on step cards; staff notes are
+  no longer locked by their own open Details sheet.
+- No Python changed. Backend `backend/ea46425a…` (PID 3671110) and bot not
+  changed or restarted.
+- Frontend `current`: `ea46425a…` → `e947b723…` (clean tagged clone, 2368
+  tests in 348 files passed before staging). Entry `index-CA-3Aok5.js`,
+  SHA-256 `a6c82c98910e84212e16fedddf1fa01e6a5feac9b03d56166d678d4d22f1a81b`;
+  served `index.html` SHA-256
+  `41b9fb4c67c9c29a1581a5fcbfcc6bb62a2a7007ba7163ff4e8cefc76cf54aab` equals the
+  release file; all 148 manifest assets match the public site.
+- Backup `.local/infractions-309-release-20261112T153438Z/dashboard.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `c3dc513bd9535e287441a83c8661966f37db8b0f1582dbc241230c790241bd21`. All 75
+  table counts identical before and after.
+- Signed-out smoke at 360 px on `/cwl/results`, `/cwl/bonuses`,
+  `/cwl/exports`: new entry, only the expected 401, no overflow, app requests
+  GET only. Signed-in smoke SKIPPED.
+- Rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py
+  ea46425a44eeb3327e12efe7748da7e649fad7a1`. Never restore the database for a
+  code rollback.
+
 ## Clan Rep picker for FWA Rep accounts — 2026-11-12 (backend and frontend)
 
 - PR [#306](https://github.com/SirRuggie/WU_Python/pull/306), merge commit
