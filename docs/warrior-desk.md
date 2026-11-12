@@ -76,9 +76,18 @@ tool action `restore_desk_entry` ("Post Warrior Desk panel"), which runs
 `settings.repair_desk_entry`: edit the bound message, or post a new one in
 `desk_channel_id` and CAS-bind `desk_intake`.
 
+## Console (Ticket Command)
+
+The staff console's open-ticket message has three dropdowns: New recruits
+(main + fwa), Add account and Staff, oldest first, 25 per dropdown (more via
+Find / Browse). Selecting a ticket opens its private details, gated by
+`perms.can_handle` for the ticket's type. Opening or closing an account or
+staff ticket refreshes the console the same way as main/fwa
+(`thread_service.notify_console_after_change` is type-agnostic). Layout:
+[ticket-console.md](ticket-console.md) sections 1 and 2.
+
 ## Limits
 
 - Pilot and test windows, staff-created tickets and legacy tickets stay
   `main` / `fwa`.
 - Some deep error messages in `handle_create_ticket` still say "ticket".
-- The console per-type dropdowns (Ticket Command) are a later brief.

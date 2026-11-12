@@ -139,7 +139,11 @@ REQUIRED_HUB_RECRUITER_PERMISSIONS = (
 )
 
 MAX_OPEN_PICKER = 25
-HUB_PAGE_SIZE = 3
+HUB_TYPE_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("recruits", "New recruits", ("main", "fwa")),
+    ("account", "Add account", ("account",)),
+    ("staff", "Staff", ("staff",)),
+)
 HUB_STATS_COMPONENT_ID = 809001
 HUB_ACTIONS_COMPONENT_ID = 809002
 MAX_SEARCH_RESULTS = 10
@@ -809,64 +813,62 @@ def build_hub_components(
 
 
 
+def _age_label(created_at) -> str:
+    if not isinstance(created_at, datetime):
+        return "time unknown"
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    seconds = max(0, int((utcnow() - created_at).total_seconds()))
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds >= size:
+            return f"{seconds // size}{unit} ago"
+    return "just now"
+
+
+def _hub_type_select(
+    key: str, label: str, tickets: Sequence[Mapping], open_count: int
+) -> ActionRow:
+    options = [
+        SelectOption(
+            label=(
+                str(doc.get("_console_name") or "").strip()[:100]
+                or _ticket_label(doc, username=True, markdown=False)
+            ),
+            value=_ticket_id(doc),
+            description=(
+                f"{_TICKET_TYPE_LABEL.get(_ticket_type(doc), 'Ticket')} · "
+                f"opened {_age_label(doc.get('created_at'))}"
+            )[:100],
+            emoji=_TICKET_TYPE_EMOJI.get(_ticket_type(doc), "🏆"),
+        )
+        for doc in tickets[:MAX_OPEN_PICKER]
+        if _ticket_id(doc) and len(_ticket_id(doc)) <= 100
+    ]
+    placeholder = f"{label} ({open_count} open)"
+    if open_count > len(options) and options:
+        placeholder += f" · {len(options)} shown"
+    return ActionRow(components=[TextSelectMenu(
+        custom_id=f"ticket_v2_hub_open:{key}",
+        placeholder=placeholder,
+        min_values=1, max_values=1,
+        is_disabled=not options,
+        options=options or [SelectOption(label="No open tickets", value="none")],
+    )])
+
+
 def build_hub_actions(
-    open_tickets: Sequence[Mapping],
+    open_by_group: Mapping[str, Sequence[Mapping]],
     *,
-    page: int,
+    counts: Mapping[str, int],
     total: int,
     total_tickets: int | None = None,
     updated_at: datetime | None = None,
 ) -> list[Container]:
-    pages = max(1, (total + HUB_PAGE_SIZE - 1) // HUB_PAGE_SIZE)
     children = [Text(content="## Open tickets")]
-    for index, doc in enumerate(open_tickets):
-        if index:
-            children.append(Separator(divider=True))
-        ticket_id = _ticket_id(doc)
+    for key, label, _types in HUB_TYPE_GROUPS:
+        tickets = open_by_group.get(key) or ()
         children.append(
-            Text(content=f"### {_clean(doc.get('_console_name'), limit=100)}")
-        )
-        buttons = [
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"ticket_v2_hub_details:{ticket_id}",
-                label="View Details",
-                emoji="📋",
-            )
-        ]
-        for staff, label in ((False, "Recruit Thread"), (True, "Staff Thread")):
-            url = ticket_jump_url(doc, staff=staff)
-            buttons.append(
-                LinkButton(
-                    url=url, label=label, emoji=hikari.Snowflake(1553091643639468213)
-                )
-                if url
-                else Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"ticket_v2_console_unavailable:{ticket_id}:{staff}",
-                    label=label,
-                    is_disabled=True,
-                )
-            )
-        children.append(ActionRow(components=buttons))
-        children.append(ActionRow(components=[TextSelectMenu(
-            custom_id=f"ticket_v2_hub_closure:{ticket_id}",
-            placeholder="Closure options",
-            min_values=1, max_values=1,
-            options=(
-                [SelectOption(label="Done", value="close", description="Mark this request as done", emoji="✅")]
-                if doc.get("ticket_type") == "staff" else [
-                    SelectOption(label="Approve", value="approve", description="Accept this recruit", emoji="✅"),
-                    SelectOption(label="Deny", value="deny", description="Deny with a reason", emoji="❌"),
-                    SelectOption(label="Close", value="close", description="Close without a decision", emoji="📁"),
-                ]
-            ),
-        )]))
-    if not open_tickets:
-        children.append(
-            Text(
-                content="No open tickets right now. Find and Browse still search ticket history."
-            )
+            _hub_type_select(key, label, tickets, _int(counts.get(key, len(tickets))))
         )
     children.extend(
         [
@@ -910,36 +912,14 @@ def build_hub_actions(
         label="Admin Settings",
         emoji="⚙️",
     )]))
-    if pages > 1:
-        children.append(
-            ActionRow(
-                components=[
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        custom_id="ticket_v2_hub_page:previous",
-                        label="Previous",
-                        emoji=hikari.Snowflake(1536793616863862784),
-                        is_disabled=page <= 0,
-                    ),
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        custom_id="ticket_v2_hub_page:next",
-                        label="Next",
-                        emoji=hikari.Snowflake(1536793616004022403),
-                        is_disabled=page >= pages - 1,
-                    ),
-                ]
-            )
-        )
     freshness = (
         f"Updated {_timestamp(updated_at)}" if updated_at else "Updated just now"
     )
     total_copy = total if total_tickets is None else total_tickets
     open_label = "open ticket" if total == 1 else "open tickets"
-    page_copy = f"Page {page + 1}/{pages} · " if pages > 1 else ""
     children.append(
         Text(
-            content=f"{page_copy}**{total} {open_label}** · Oldest first\n{freshness} · **{total_copy:,} tickets**"
+            content=f"**{total} {open_label}** · Oldest first\n{freshness} · **{total_copy:,} tickets**"
         )
     )
     return [
@@ -949,25 +929,25 @@ def build_hub_actions(
     ]
 
 async def _hub_actions_payload(mongo: MongoClient, state: Mapping) -> list[Container]:
-    raw_counts = await store.console_counts(mongo)
-    statuses, _ = _coerce_counts(raw_counts)
-    total = statuses.get("open", 0)
-    page = max(0, min(_int(state.get("page")), max(0, (total - 1) // HUB_PAGE_SIZE)))
-    tickets = await store.list_open_page(
-        mongo, offset=page * HUB_PAGE_SIZE, limit=HUB_PAGE_SIZE
+    raw_counts, *lists = await asyncio.gather(
+        store.console_counts(mongo),
+        *(store.list_open_by_types(mongo, types, limit=MAX_OPEN_PICKER)
+          for _key, _label, types in HUB_TYPE_GROUPS),
     )
+    statuses, by_type = _coerce_counts(raw_counts)
+    tickets = [doc for group in lists for doc in group]
     names = await asyncio.gather(
         *(thread_service.thread_names_for_ticket(mongo, doc) for doc in tickets)
     )
     for doc, names_pair in zip(tickets, names):
         doc['_console_name'] = names_pair[0]
-    await mongo.ticket_setup.update_one(
-        {"_id": HUB_STATE_ID, "page": state.get("page", 0)}, {"$set": {"page": page}}
-    )
     return build_hub_actions(
-        tickets,
-        page=page,
-        total=total,
+        {key: group for (key, _label, _types), group in zip(HUB_TYPE_GROUPS, lists)},
+        counts={
+            key: sum(_int(by_type.get(kind, {}).get("open")) for kind in types)
+            for key, _label, types in HUB_TYPE_GROUPS
+        },
+        total=statuses.get("open", 0),
         total_tickets=sum(statuses.values()),
         updated_at=utcnow(),
     )
@@ -975,7 +955,7 @@ async def _hub_actions_payload(mongo: MongoClient, state: Mapping) -> list[Conta
 
 def _coerce_counts(raw) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
     if not isinstance(raw, Mapping):
-        return {}, {"main": {}, "fwa": {}}
+        return {}, {kind: {} for kind in sorted(schema.TICKET_TYPES)}
     statuses = raw.get("statuses") or raw.get("status") or {}
     by_type = raw.get("by_type") or raw.get("ticket_types") or {}
     if not isinstance(statuses, Mapping):
@@ -989,7 +969,7 @@ def _coerce_counts(raw) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
                 str(key): _int(value)
                 for key, value in (by_type.get(kind) or {}).items()
             }
-            for kind in ("main", "fwa")
+            for kind in sorted(schema.TICKET_TYPES)
         },
     )
 
@@ -1038,7 +1018,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 14
+HUB_LAYOUT_VERSION = 15
 
 
 async def _chart_signature(mongo: MongoClient) -> str:
@@ -1108,7 +1088,6 @@ async def _ensure_hub_state(mongo: MongoClient) -> None:
             "desired_revision": 0,
             "applied_revision": -1,
             "force_pending": True,
-            "page": 0,
             "created_at": utcnow(),
         }},
         upsert=True,
@@ -1311,7 +1290,6 @@ async def _publish_hub(
     # during either Discord publish must survive for the next drain.
     entry_revision = _int(state.get("desired_revision"))
     signature = await _chart_signature(mongo)
-    signature += ":page=" + str(_int(state.get("page")))
     bindings = (
         ("message_id", HUB_STATS_COMPONENT_ID),
         ("actions_message_id", HUB_ACTIONS_COMPONENT_ID),
@@ -4784,6 +4762,25 @@ async def ticket_hub_details(
     await _execute_private_panel(ctx, components)
 
 
+@register_action("ticket_v2_hub_open", no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def ticket_hub_open(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> None:
+    """A Ticket Command dropdown selection opens the same private details."""
+    values = tuple(getattr(ctx.interaction, "values", ()) or ())
+    ticket_id = str(values[0]) if values else ""
+    if not ticket_id or ticket_id == "none":
+        await _execute_private_panel(
+            ctx, _notice("No open tickets", "There are no open tickets of this type.")
+        )
+        return
+    await ticket_hub_details(ctx, ticket_id, mongo=mongo)
+
+
 @register_action("ticket_v2_hub_approve", no_return=True, preload_state=False)
 @lightbulb.di.with_di
 async def ticket_hub_approve(
@@ -4918,11 +4915,7 @@ async def ticket_hub_page(
             ),
         )
         return
-    delta = {"next": 1, "previous": -1}.get(action_id, 0)
-    if delta:
-        await mongo.ticket_setup.update_one(
-            {"_id": HUB_STATE_ID}, {"$inc": {"page": delta}}
-        )
+    # Old messages may still carry Previous/Next; every id now just refreshes.
     await request_hub_refresh(bot, mongo, reason="console page", force=True)
 
 

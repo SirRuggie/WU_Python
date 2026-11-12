@@ -5077,22 +5077,27 @@ def test_hub_payload_produces_chart_counts_from_real_documents(monkeypatch):
         child["type"] == hikari.ComponentType.ACTION_ROW
         for child in container["components"]
     )
-    mongo.ticket_setup = Collection([{"_id": console.HUB_STATE_ID, "page": 0}])
-    actions = asyncio.run(console._hub_actions_payload(mongo, {"page": 0}))
+    mongo.ticket_setup = Collection([{"_id": console.HUB_STATE_ID}])
+    actions = asyncio.run(console._hub_actions_payload(mongo, {}))
     action_container, _ = actions[0].build()
-    ticket_rows = [
-        child for child in action_container["components"]
+    selects = [
+        node
+        for child in action_container["components"]
         if child["type"] == hikari.ComponentType.ACTION_ROW
-        and child["components"][0].get("custom_id", "").startswith("ticket_v2_hub_details:")
+        for node in child["components"]
+        if node["type"] == hikari.ComponentType.TEXT_SELECT_MENU
     ]
-    assert len(ticket_rows) == 3
-    assert all(len(row["components"]) == 3 for row in ticket_rows)
+    assert [node["placeholder"] for node in selects] == [
+        "New recruits (3 open)", "Add account (0 open)", "Staff (0 open)",
+    ]
+    assert [len(node["options"]) for node in selects] == [3, 1, 1]
+    assert [node.get("disabled", False) for node in selects] == [False, True, True]
 
 
-def test_open_console_pages_reach_tickets_beyond_old_picker_limit():
+def test_open_by_types_reaches_oldest_rows_per_type_with_stable_sort():
     documents = [
         schema.new_ticket_document(
-            ticket_type="fwa", ticket_number=number, guild_id=10,
+            ticket_type="fwa" if number % 2 else "staff", ticket_number=number, guild_id=10,
             public_thread_id=100 + number, public_parent_id=20,
             staff_thread_id=200 + number, staff_parent_id=21,
             user_id=1000 + number, username=f"Applicant {number}",
@@ -5103,8 +5108,10 @@ def test_open_console_pages_reach_tickets_beyond_old_picker_limit():
     for document in documents:
         document["runtime"] = ticket_runtime.THREAD_RUNTIME
     mongo = SimpleNamespace(tickets=Collection(list(reversed(documents))))
-    rows = asyncio.run(store.list_open_page(mongo, offset=28, limit=4))
-    assert [row["ticket_number"] for row in rows] == [29, 30, 31]
+    rows = asyncio.run(store.list_open_by_types(mongo, ("staff",), limit=3))
+    assert [row["ticket_number"] for row in rows] == [2, 4, 6]
+    rows = asyncio.run(store.list_open_by_types(mongo, ("fwa", "main"), limit=25))
+    assert [row["ticket_number"] for row in rows] == list(range(1, 32, 2))
 
 
 def test_search_identity_field_names_match_what_schema_writes():

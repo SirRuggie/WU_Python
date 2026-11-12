@@ -31,29 +31,47 @@ link-out rather than an automatic verdict.
 
 ## 1. One console for both clan types
 
-Main and FWA share the Recruiter HQ console. It consists of two stacked,
-bot-owned messages: a read-only statistics panel and an open-ticket action panel.
+The staff console is "Ticket Command". It consists of two stacked, bot-owned
+messages: a read-only statistics panel and an open-ticket action panel. All
+four ticket types (Main, FWA, Add account, Staff) appear in the action panel.
 
 ## 2. Two persistent panels with private ticket actions
 
 The first panel contains the current totals, Main/FWA breakdowns, charts, and
 flag summaries. It has no buttons, dropdowns, or footer.
 
-The second panel lists open tickets directly, oldest first, three per page. Each
-entry shows the ticket's readable name and applicable Ghosted prefix, followed by:
+The second panel has an "Open tickets" header and three type dropdowns, one
+row each:
 
-- **View Details** — the same private ticket details formerly opened by the dropdown.
-- **Recruit Thread** — a direct link to the applicant's thread.
-- **Staff Thread** — a direct link to its recruiter workspace.
-- **Approve** — the existing private approval confirmation and decision safeguards.
-- **Deny** — the reason form, followed by the existing authorized denial workflow.
+| Dropdown | Placeholder | Tickets |
+|---|---|---|
+| New recruits | `New recruits (N open)` | types `main` and `fwa` |
+| Add account | `Add account (N open)` | type `account` |
+| Staff | `Staff (N open)` | type `staff` |
 
-Each ticket has one row for Details and thread links, then a separate row for
-Approve/Deny. Separators divide tickets and the Console tools section.
-Previous/Next appear only when multiple pages exist and navigate the shared ticket list. Find, Browse, Refresh, and Create for Recruit remain
-available below it. The update timestamp and total-ticket footer appear only in
-this second panel. Pagination keeps every open ticket reachable within Discord's
-component limits; it does not truncate the queue at 25 tickets.
+Each dropdown lists up to 25 open tickets, oldest first (`created_at`, then
+`_id`), via `store.list_open_by_types`. An option shows the ticket's readable
+console name (with the Ghosted prefix when flagged), the type emoji (🏆 main,
+💎 fwa, ➕ account, 💬 staff), and "type · opened age ago". When more than 25
+are open the placeholder adds ` · 25 shown`; the rest stay reachable through
+Find and Browse. A type with no open tickets shows one "No open tickets"
+option and the dropdown is disabled. N comes from `console_counts`.
+
+Selecting an option opens the same private details panel that View Details
+formerly opened (`ticket_v2_hub_open` delegates to `ticket_hub_details`). It
+rechecks recruiter access, `perms.can_handle` for that ticket's type, and that
+the ticket is still open; otherwise the clicker gets a private notice and
+nothing is written. The details panel holds the thread links and the
+Approve / Deny / Close (Done for staff) actions. The shared message never
+changes for one person's selection.
+
+Below the dropdowns: Console tools (Find Ticket, Browse Tickets, Member History,
+Flags, Refresh), then Create for Recruit and Admin Settings, then a footer
+"**N open tickets** · Oldest first", the update time and the total-ticket
+count. There is no paging. Old `ticket_v2_hub_page:previous` / `next` and the
+old `ticket_v2_hub_details` / `ticket_v2_hub_closure` ids stay registered so
+components on older messages still answer (page ids just refresh). The panel
+uses 20 components, well under Discord's limit of 40.
 
 Ticket decisions and details are private to the clicking recruiter. They never
 replace the shared action panel with a personal result. Each private action gets
