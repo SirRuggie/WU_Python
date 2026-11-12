@@ -67,13 +67,20 @@ export default function ResultsSettingsSheet({
   const [captureLoading, setCaptureLoading] = useState(canCapture);
   const [revision, setRevision] = useState<number | null>(null);
   const [repAccounts, setRepAccounts] = useState<RepAccount[]>([]);
+  const [sitOut, setSitOut] = useState<
+    NonNullable<RaffleData["sit_out_settings"]>
+  >([]);
+  const [sitOutDraft, setSitOutDraft] = useState<Record<string, number>>({});
+  const sitOutDirty = sitOut.some(
+    (row) => (sitOutDraft[row.tag] ?? row.months) !== row.months,
+  );
   const [repDirty, setRepDirty] = useState(false);
   const [oddsError, setOddsError] = useState("");
   const [oddsLoading, setOddsLoading] = useState(canOdds);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const pending = useRef(false);
-  const dirty = captureDirty || (canOdds && repDirty);
+  const dirty = captureDirty || (canOdds && (repDirty || sitOutDirty));
   useEffect(() => {
     onDirty(dirty);
   }, [dirty, onDirty]);
@@ -102,6 +109,8 @@ export default function ResultsSettingsSheet({
   const takeOdds = (result: RaffleData) => {
     setRevision(result.revision);
     setRepAccounts(result.rep_accounts || []);
+    setSitOut(result.sit_out_settings || []);
+    setSitOutDraft({});
   };
   const loadOdds = useCallback(async () => {
     if (!canOdds) return;
@@ -209,6 +218,45 @@ export default function ResultsSettingsSheet({
         setOddsError(errorText(cause));
       }
       return false;
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  };
+  const saveSitOut = async (tag: string, months: number) => {
+    if (!canOdds || busy || pending.current || archived || revision === null)
+      return;
+    const season = seasonId;
+    pending.current = true;
+    setBusy(true);
+    setOddsError("");
+    setNotice("");
+    try {
+      const result = await api<RaffleData>(
+        `${base}/bonus-raffle/policy`,
+        "PATCH",
+        {
+          clan_tag: tag,
+          sit_out_months: months,
+          revision,
+        },
+      );
+      if (sid.current !== season) return;
+      // Preserve other unsaved clan lengths while updating the shared revision.
+      setRevision(result.revision);
+      setSitOut(result.sit_out_settings || []);
+      setSitOutDraft((current) => {
+        const next = { ...current };
+        delete next[tag];
+        return next;
+      });
+      setNotice("Sit-out length saved.");
+      await onSaved({ kind: "odds" });
+    } catch (cause) {
+      if (sid.current === season) {
+        if (cause instanceof ApiError && cause.status === 409) await loadOdds();
+        setOddsError(errorText(cause));
+      }
     } finally {
       pending.current = false;
       setBusy(false);
@@ -350,6 +398,54 @@ export default function ResultsSettingsSheet({
                   Refresh
                 </button>
               </p>
+            )}
+            {revision !== null && !oddsLoading && (
+              <section
+                className="results-settings-section"
+                aria-label="Sit-out after a win"
+              >
+                <h3>Sit-out after a win{sitOutDirty ? " · Unsaved" : ""}</h3>
+                <p>Lazy CWL · Months to sit out in this hosting clan.</p>
+                {sitOut.map((row) => {
+                  const months = sitOutDraft[row.tag] ?? row.months;
+                  return (
+                    <div className="results-sit-out-row" key={row.tag}>
+                      <label>
+                        {row.name}
+                        <select
+                          name={`sit-out-${row.tag}`}
+                          value={months}
+                          disabled={archived || busy || oddsLoading}
+                          onChange={(event) =>
+                            setSitOutDraft((current) => ({
+                              ...current,
+                              [row.tag]: Number(event.target.value),
+                            }))
+                          }
+                        >
+                          {[0, 1, 2, 3, 4, 5, 6].map((value) => (
+                            <option key={value} value={value}>
+                              {value === 0
+                                ? "None"
+                                : `${value} month${value === 1 ? "" : "s"}`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {months !== row.months && (
+                        <button
+                          type="button"
+                          disabled={archived || busy}
+                          onClick={() => void saveSitOut(row.tag, months)}
+                        >
+                          Save {row.name}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                {!sitOut.length && <p>No Lazy hosting clans in this season.</p>}
+              </section>
             )}
             {revision !== null && (
               <BonusRepAccounts

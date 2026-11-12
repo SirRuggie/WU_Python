@@ -247,6 +247,8 @@ async def get_participation(request):
             accounts, participation_evidence(db, season_id, settings['cycle'], accounts=accounts),
             sync_status=None if history else settings['status'],
         )
+        from utils.cwl_bonus_raffle_store import RaffleStore
+        RaffleStore(db, season_id).enrich_prior_winners(accounts, settings['cycle'])
         scope_counts = {'current_signups': len(current), 'saved_history': len(saved)}
     return web.json_response({
         "publication_version": latest["version"] if latest else 0,

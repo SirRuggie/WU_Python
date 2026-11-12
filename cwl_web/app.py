@@ -521,7 +521,7 @@ async def create_season(request):
     opened = _body_bool(body, "signup_open")
     try:
         with _store(request).tx() as db:
-            source = db.execute("SELECT MAX(season_id) FROM lineup").fetchone()[0]
+            source = db.execute("SELECT MAX(l.season_id) FROM lineup l JOIN seasons s ON s.id=l.season_id WHERE s.history_only=0").fetchone()[0]
             try:
                 cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
             except sqlite3.IntegrityError:
@@ -535,8 +535,8 @@ async def create_season(request):
                     (row['id'], source),
                 ).rowcount
                 db.execute(
-                    "INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight) "
-                    "SELECT ?,r.tag,r.pool,r.capacity,r.min_weight,r.max_weight FROM lineup_rules r "
+                    "INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight,sit_out_months) "
+                    "SELECT ?,r.tag,r.pool,r.capacity,r.min_weight,r.max_weight,r.sit_out_months FROM lineup_rules r "
                     "JOIN lineup l ON l.tag=r.tag AND l.season_id=? WHERE r.season_id=?",
                     (row['id'], row['id'], source),
                 )

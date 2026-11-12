@@ -19,6 +19,14 @@ REP_NOTE_MAX = 40
 CLAN_REP_ROLE_ID = "769130325460254740"
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS bonus_imported_winners (
+ season_id INTEGER NOT NULL REFERENCES seasons(id), cycle TEXT NOT NULL,
+ pool TEXT NOT NULL CHECK(pool='lazy'), player_tag TEXT NOT NULL, player_name TEXT NOT NULL,
+ clan_tag TEXT NOT NULL, clan_name TEXT NOT NULL, source TEXT NOT NULL CHECK(source='import'),
+ imported_by TEXT NOT NULL, imported_at TEXT NOT NULL,
+ PRIMARY KEY(cycle,player_tag)
+);
+CREATE INDEX IF NOT EXISTS bonus_imported_winners_player ON bonus_imported_winners(player_tag,cycle);
 CREATE TABLE IF NOT EXISTS bonus_raffle_policy (
  season_id INTEGER NOT NULL REFERENCES seasons(id), pool TEXT NOT NULL,
  minimum INTEGER NOT NULL CHECK(minimum BETWEEN 0 AND 7),
@@ -301,31 +309,124 @@ class RaffleStore:
                         (self.sid, tag, actor, 'removed', json.dumps(before, sort_keys=True), stamp))
         return {'tag': tag, 'removed_by': actor, 'removed_at': stamp}
 
+    def sit_out_settings(self):
+        """Season hosting clans only; Main has no sit-out policy."""
+        return [dict(row) for row in self.db.execute(
+            f"SELECT c.tag,c.name,COALESCE(r.sit_out_months,3) AS months FROM clans c "
+            f"JOIN lineup l ON l.tag=c.tag {SEASON_POOL_JOIN} "
+            f"WHERE l.season_id=? AND {LAZY_SEASON_POOL} ORDER BY c.name COLLATE NOCASE,c.tag",
+            (self.sid,))]
+
+    def save_sit_out(self, clan_tag, months, actor):
+        if type(months) is not int or not 0 <= months <= 6:
+            raise RaffleConflict('Select a sit-out length of 0–6 months')
+        before = next((row for row in self.sit_out_settings() if row['tag'] == clan_tag), None)
+        if not before:
+            raise RaffleConflict('Select a Lazy hosting clan in this season')
+        if before['months'] == months:
+            return
+        self.db.execute('INSERT INTO lineup_rules(season_id,tag,sit_out_months) VALUES (?,?,?) '
+                        'ON CONFLICT(season_id,tag) DO UPDATE SET sit_out_months=excluded.sit_out_months',
+                        (self.sid, clan_tag, months))
+        self.db.execute('INSERT INTO bonus_audit(season_id,actor_id,action,before_json,after_json,created_at) VALUES (?,?,?,?,?,?)',
+                        (self.sid, actor, 'sit_out', json.dumps(before),
+                         json.dumps({**before, 'months': months}), now()))
+
     @staticmethod
-    def _prior_cycles(cycle):
+    def shift_cycle(cycle, months):
         try:
-            current = datetime.strptime(cycle, '%Y-%m')
-        except (TypeError, ValueError):
-            return []
-        result = []
-        year, month = current.year, current.month
-        for _ in range(3):
-            month -= 1
-            if month == 0:
-                month, year = 12, year - 1
-            result.append(f'{year:04d}-{month:02d}')
-        return result
+            parsed = datetime.strptime(cycle, '%Y-%m')
+        except (ValueError, TypeError):
+            return None
+        ordinal = parsed.year * 12 + parsed.month - 1 + months
+        year, month = divmod(ordinal, 12)
+        return f'{year:04d}-{month + 1:02d}'
+
+    @staticmethod
+    def month_label(cycle):
+        return datetime.strptime(cycle, '%Y-%m').strftime('%b %Y') if cycle else None
+
+    def latest_lazy_win(self, tag, cycle):
+        if not self.shift_cycle(cycle, 0):
+            return None
+        row = self.db.execute(
+            "SELECT MAX(cycle) AS cycle FROM (SELECT cycle FROM bonus_confirmations "
+            "WHERE tag=? AND pool='lazy' AND voided_at IS NULL AND cycle<? "
+            "UNION ALL SELECT cycle FROM bonus_imported_winners WHERE player_tag=? AND cycle<?)",
+            (tag, cycle, tag, cycle)).fetchone()
+        return row['cycle']
+
+    def sit_out(self, tag, cycle, months):
+        latest = self.latest_lazy_win(tag, cycle)
+        eligible = self.shift_cycle(latest, months + 1) if latest else None
+        return {'prior_winner_cycle': latest, 'prior_winner_label': self.month_label(latest),
+                'sit_out_months': months, 'eligible_again': eligible,
+                'three_cycle_cooldown': bool(months and eligible and cycle < eligible)}
+
+    def enrich_prior_winners(self, accounts, cycle):
+        lengths = {row['tag']: row['months'] for row in self.sit_out_settings()}
+        reviews = self.account_reviews()
+        for account in accounts:
+            if account.get('pool') != 'lazy':
+                continue
+            account.update(self.sit_out(account['tag'], cycle, lengths.get(account.get('assigned_clan_tag'), 3)))
+            account['sit_out_excluded'] = bool(account['three_cycle_cooldown'] and not
+                str(reviews.get(account['tag'], {}).get('override_reason') or '').strip())
+        return accounts
 
     def _has_three_cycle_cooldown(self, tag, cycle):
-        prior = self._prior_cycles(cycle)
-        if len(prior) != 3:
-            return False
-        placeholders = ','.join('?' for _ in prior)
-        row = self.db.execute(
-            f'SELECT 1 FROM bonus_confirmations WHERE tag=? AND pool=? AND cycle IN ({placeholders}) AND voided_at IS NULL LIMIT 1',
-            (tag, 'lazy', *prior),
-        ).fetchone()
-        return row is not None
+        # Compatibility for callers testing the former default rule.
+        return self.sit_out(tag, cycle, 3)['three_cycle_cooldown']
+
+    def import_pool_conflicts(self, rows, seasons):
+        """Return every distinct NEW-row conflict; never reinterpret a saved staff rule."""
+        conflicts = {}
+        for row in rows:
+            if self.db.execute('SELECT 1 FROM bonus_imported_winners WHERE cycle=? AND player_tag=?',
+                               (row['cycle'], row['player_tag'])).fetchone():
+                continue
+            sid = seasons.get(row['cycle'])
+            if sid is None:
+                continue
+            rule = self.db.execute(
+                'SELECT r.pool,c.name FROM lineup_rules r JOIN clans c ON c.tag=r.tag '
+                'WHERE r.season_id=? AND r.tag=?', (sid, row['clan_tag'])).fetchone()
+            if rule is not None and rule['pool'] != 'lazy':
+                key = (row['cycle'], row['clan_tag'])
+                conflicts[key] = {'cycle': row['cycle'], 'clan_tag': row['clan_tag'],
+                                  'clan_name': rule['name'], 'existing_pool': rule['pool']}
+        return [conflicts[key] for key in sorted(conflicts)]
+
+    def ensure_import_seasons(self, rows, existing_seasons=None):
+        """Called in the import's single transaction, before binding CWL months."""
+        seasons = {}
+        for cycle in sorted({row['cycle'] for row in rows}):
+            existing = (existing_seasons or {}).get(cycle)
+            if existing:
+                seasons[cycle] = existing
+            else:
+                seasons[cycle] = self.db.execute(
+                    "INSERT INTO seasons(label,status,signup_open,history_only) VALUES (?,'archived',0,1)", (cycle,)).lastrowid
+        for row in rows:
+            sid = seasons[row['cycle']]
+            self.db.execute('INSERT OR IGNORE INTO clans(tag,name,archived) VALUES (?,?,1)',
+                            (row['clan_tag'], row['clan_name']))
+            self.db.execute('INSERT OR IGNORE INTO lineup(season_id,tag) VALUES (?,?)', (sid, row['clan_tag']))
+            # Only a TSV hosting clan is added; never copy another month's lineup.
+            self.db.execute("INSERT OR IGNORE INTO lineup_rules(season_id,tag,pool) VALUES (?,?,'lazy')",
+                            (sid, row['clan_tag']))
+        return seasons
+
+    def import_winners(self, rows, seasons, actor):
+        added = 0
+        stamp = now()
+        for row in rows:
+            added += self.db.execute(
+                "INSERT OR IGNORE INTO bonus_imported_winners(season_id,cycle,pool,player_tag,player_name,"
+                "clan_tag,clan_name,source,imported_by,imported_at) VALUES (?,?,'lazy',?,?,?,?,'import',?,?)",
+                (seasons[row['cycle']], row['cycle'], row['player_tag'], row['player_name'],
+                 row['clan_tag'], row['clan_name'], actor, stamp)).rowcount
+        return added
 
     def enrich_view(self, view):
         """Attach Lazy review state and persisted manual candidates to the preview view."""
@@ -338,7 +439,6 @@ class RaffleStore:
             (self.sid,),
         )}
         for account in accounts:
-            account['three_cycle_cooldown'] = self._has_three_cycle_cooldown(account['tag'], cycle)
             account['host_valid'] = account.get('assigned_clan_tag') in active_hosts
         for account in accounts:
             # Preserve candidate-scoped override annotations if
@@ -376,7 +476,7 @@ class RaffleStore:
                 'checked_at': checked_at, 'warning': warning, 'roster_changed': False,
                 'in_current_roster': False, 'manual_candidate': True, 'manual_candidate_reason': row['reason'],
                 'tag_valid': True, 'source': 'manual', 'candidate_source': 'manual', 'already_confirmed_this_cycle': any(c.get('tag') == tag for c in view.get('cycle_confirmed', [])),
-                'season_rounds': None, 'three_cycle_cooldown': self._has_three_cycle_cooldown(tag, cycle),
+                'season_rounds': None,
                 'manual_host_valid': host_valid, 'host_valid': host_valid,
                 'bonus_review': reviews.get(tag, self._review_view()),
             }
@@ -394,6 +494,7 @@ class RaffleStore:
                 view.setdefault('clans', []).append({'tag': candidate['tag'], 'name': candidate['name']})
                 current_clans.add(candidate['tag'])
         view['manual_candidates'] = [dict(row) for row in self.db.execute('SELECT tag,player_name,town_hall,user_id,clan_tag,clan_name,reason,created_by,created_at,updated_by,updated_at,revision FROM bonus_raffle_manual_candidates WHERE season_id=? ORDER BY created_at,tag', (self.sid,))]
+        self.enrich_prior_winners(accounts, cycle)
         reps = self.rep_tags()
         for account in accounts:
             if account.get('pool') == 'lazy':
@@ -401,6 +502,7 @@ class RaffleStore:
                 account.update(is_representative=listed, representative_status='listed' if listed else 'not_listed',
                                multiplier=2 if listed else 1)
         view['rep_accounts'] = self.rep_accounts()
+        view['sit_out_settings'] = self.sit_out_settings()
         return view
 
     def save_policy(self, pool, minimum):
@@ -467,7 +569,8 @@ class RaffleStore:
         clan = next((c for c in view['clans'] if c['tag'] == clan_tag), {})
         result = {'cycle': view['cycle'], 'pool': pool, 'clan_tag': clan_tag,
                   'clan_name': clan.get('name', clan_tag), 'minimum': minimum if pool == 'main' else None,
-                  'rules_version': 3 if pool == 'lazy' else 1,
+                  'rules_version': 4 if pool == 'lazy' else 1,
+                  'sit_out_months': next((r['months'] for r in self.sit_out_settings() if r['tag'] == clan_tag), 3) if pool == 'lazy' else None,
                   'qualification_rule': '4+ attacks OR 3+ attacks and 8+ stars' if pool == 'lazy' else None,
                   'slots': slots, 'available': available, 'confirmed': confirmed,
                   'allowance_source': 'automatic' if automatic else 'staff',
@@ -504,8 +607,12 @@ class RaffleStore:
         if draw['approved_at']:
             return draw
         snapshot = draw['snapshot']
-        if snapshot['pool'] == 'lazy' and snapshot.get('rules_version') != 3:
+        if snapshot['pool'] == 'lazy' and snapshot.get('rules_version') not in (3, 4):
             raise RaffleConflict('This saved Lazy draw uses an older rule set. Cancel and review it again before approval')
+        if snapshot['pool'] == 'lazy' and snapshot.get('rules_version') == 4:
+            length = next((r['months'] for r in self.sit_out_settings() if r['tag'] == snapshot['clan_tag']), 3)
+            if snapshot.get('sit_out_months') != length:
+                raise RaffleConflict('Rules changed · draw again')
         if snapshot['cycle'] != view['cycle']:
             raise RaffleConflict('The CWL month changed. Restore the original month before approving')
         if snapshot.get('allowance_source') == 'automatic':
@@ -531,6 +638,15 @@ class RaffleStore:
             compare_fields = ('pool', 'assigned_clan_tag', 'attacks')
         for old in original:
             account = current.get(old['tag'])
+            if snapshot['pool'] == 'lazy' and snapshot.get('rules_version') == 3 and account:
+                # Pending v3 draws keep the former three-month confirmation-only rule.
+                prior = [self.shift_cycle(view['cycle'], -n) for n in (1, 2, 3)]
+                legacy = self.db.execute(
+                    "SELECT 1 FROM bonus_confirmations WHERE tag=? AND pool='lazy' AND voided_at IS NULL AND cycle IN (?,?,?)",
+                    (old['tag'], *prior)).fetchone()
+                account = {**account, 'three_cycle_cooldown': bool(legacy), 'prior_winner_label': old.get('prior_winner_label')}
+            if snapshot['pool'] == 'lazy' and snapshot.get('rules_version') == 4 and account and account.get('three_cycle_cooldown') != old.get('three_cycle_cooldown'):
+                raise RaffleConflict('Rules changed · draw again')
             old_reason = lazy_eligibility(old) if snapshot['pool'] == 'lazy' else eligibility(old, snapshot['minimum'])
             current_reason = lazy_eligibility(account) if account and snapshot['pool'] == 'lazy' else (eligibility(account, snapshot['minimum']) if account else None)
             if (not account or any(account.get(k) != old.get(k) for k in compare_fields)

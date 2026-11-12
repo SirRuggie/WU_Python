@@ -138,7 +138,11 @@ describe("Settings sheet", () => {
     const sections = [
       ...document.querySelectorAll(".results-settings-section h3"),
     ].map((node) => node.textContent);
-    expect(sections).toEqual(["CWL capture", "FWA Rep accounts"]);
+    expect(sections).toEqual([
+      "CWL capture",
+      "Sit-out after a win",
+      "FWA Rep accounts",
+    ]);
     expect(document.querySelector("dialog.results-settings")).not.toBeNull();
     expect(document.querySelector("details")).toBeNull();
     expect(month().value).toBe("2026-11");
@@ -455,4 +459,52 @@ describe("Settings sheet", () => {
     expect(button("Remove").disabled).toBe(true);
     expect(document.body.textContent).toContain("Read only");
   });
+});
+
+it("shows one sit-out row per Lazy clan and saves only through its explicit button and bonus revision", async () => {
+  api.mockImplementation(async (route: string) => {
+    if (route.endsWith("/bonus-raffle/policy"))
+      return {
+        ...raffle,
+        revision: 8,
+        sit_out_settings: [{ tag: "#C2Y", name: "Lazy fixture", months: 2 }],
+      };
+    if (route.endsWith("/bonus-raffle"))
+      return {
+        ...raffle,
+        sit_out_settings: [{ tag: "#C2Y", name: "Lazy fixture", months: 3 }],
+      };
+    return route.includes("participation") ? participation : members;
+  });
+  await open();
+  const select = document.querySelector<HTMLSelectElement>(
+    'select[name="sit-out-#C2Y"]',
+  )!;
+  expect(select.value).toBe("3");
+  expect([...select.options].map((item) => item.textContent)).toEqual([
+    "None",
+    "1 month",
+    "2 months",
+    "3 months",
+    "4 months",
+    "5 months",
+    "6 months",
+  ]);
+  await act(async () => {
+    select.value = "2";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(writes()).toHaveLength(0);
+  await act(async () => {
+    button("Save Lazy fixture").click();
+    button("Save Lazy fixture").click();
+  });
+  expect(writes()).toEqual([
+    [
+      "/seasons/1/bonus-raffle/policy",
+      "PATCH",
+      { clan_tag: "#C2Y", sit_out_months: 2, revision: 7 },
+    ],
+  ]);
+  expect(select.value).toBe("2");
 });

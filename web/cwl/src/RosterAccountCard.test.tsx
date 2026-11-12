@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Window } from "happy-dom";
 import { readFileSync } from "node:fs";
 const capacityFixturePath = "../../../tests/fixtures/ste158_capacity_note.json";
-const backendCapacityNote = JSON.parse(readFileSync(new URL(capacityFixturePath, import.meta.url), "utf8")).capacity_note;
+const backendCapacityNote = JSON.parse(
+  readFileSync(new URL(capacityFixturePath, import.meta.url), "utf8"),
+).capacity_note;
 const cardCss = readFileSync("src/PlayerCard.css", "utf8");
 const accountCss = readFileSync("src/RosterAccountCard.css", "utf8");
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -533,4 +535,17 @@ it("keeps a filler mark in both mobile metadata and the desktop account column",
     host.querySelector(".roster-account-column-pool .roster-account-filler")
       ?.textContent,
   ).toBe("Filler");
+});
+
+it("Build roster does not show prior-winner history even when present on the account", () => {
+  const withHistory = {
+    ...account,
+    pool: "lazy" as const,
+    sit_out_excluded: true,
+    prior_winner_cycle: "2026-10",
+    eligible_again: "2027-02",
+  };
+  const markup = render({ account: withHistory });
+  expect(markup).not.toContain("Prior winner");
+  expect(markup).not.toContain("Eligible again");
 });

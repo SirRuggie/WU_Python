@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { ClipboardCheck } from "lucide-react";
+import PriorWinner from "./PriorWinner";
 import AccountCard from "./AccountCard";
 import CardTally from "./CardTally";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
@@ -104,6 +105,7 @@ export default function BonusAccountCard({
           : undefined
       }
       flags={[
+        <PriorWinner account={account} />,
         reasons.length > 0 ? (
           <span className="bonus-account-reason">{reasons.join(" · ")}</span>
         ) : null,

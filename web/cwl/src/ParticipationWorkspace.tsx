@@ -116,7 +116,8 @@ export default function ParticipationWorkspace({
     !!archived,
     status,
     () => {
-      if (statusEnabled.current) void loadStatus(seasonId);
+      // Sit-out markers and clan counts both follow the saved staff exception.
+      void load();
     },
   );
   const editing = activeEditorTag !== null;
@@ -276,7 +277,7 @@ export default function ParticipationWorkspace({
   // The sheet saved a setting: reload what it can change.
   const settingsSaved = async (saved: SettingsSaved) => {
     if (saved.kind === "odds") {
-      if (onBonus) void loadStatus(seasonId);
+      await load();
       return;
     }
     if (saved.cycleChanged) {

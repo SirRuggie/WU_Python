@@ -72,6 +72,7 @@ SQL_REQUIRED_TABLES = frozenset(
         "bonus_reviews",
         "bonus_batches",
         "bonus_confirmations",
+        "bonus_imported_winners",
         "bonus_audit",
         "counts",
         "unreviewed_signup_activity",

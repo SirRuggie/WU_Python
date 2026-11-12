@@ -58,3 +58,20 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.results-sit-out-row {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-block: 12px;
+}
+.results-sit-out-row label {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: min(180px, 100%);
+}
+.results-sit-out-row select {
+  width: 100%;
+}
