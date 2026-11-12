@@ -950,3 +950,9 @@ Short lists (dropdown rollout PR 2):
   minimum field and Save minimum share a row, blocker lines are text lines (the
   44px target overlaps the line), and "Bonus count and source" sits below the
   player list. No horizontal overflow at 320, 360 and 390 px.
+- Infractions (2026-11-12): the player Details sheet holds an "Infractions"
+  section for Lazy players (`InfractionsSection.tsx`, shared fields in
+  `InfractionFields.tsx`); the steps open the same fields in an `ActionPanel`
+  ("Infractions for {name}"). The ⋯ item reads "Infractions". Cards show a
+  neutral `Chip` per set flag and "Staff reason". Read only after the draw
+  ("Draw saved · read only"), in archived seasons and without the manage grant.

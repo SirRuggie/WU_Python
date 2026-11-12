@@ -12,6 +12,8 @@ import ResultsSettingsSheet, {
   type SettingsSaved,
 } from "./ResultsSettingsSheet";
 import useUnsavedWork from "./useUnsavedWork";
+import useInfractions from "./useInfractions";
+import { useDashboardPermission } from "./DashboardPermissions";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import { loadBonusStatus, type BonusStatus } from "./bonusStatus";
@@ -108,6 +110,12 @@ export default function ParticipationWorkspace({
     seasons
       .find((season) => String(season.id) === seasonId)
       ?.status.toLowerCase() === "archived";
+  const infractions = useInfractions(
+    seasonId,
+    useDashboardPermission("cwl_bonuses"),
+    !!archived,
+    status,
+  );
   const editing = activeEditorTag !== null;
   const controlsLocked = editing || syncBusy || loading;
   const writesLocked = controlsLocked || !!error;
@@ -775,6 +783,7 @@ export default function ParticipationWorkspace({
                       onReset={resetToSource}
                       onDirty={onDirty}
                       onAddStrike={onAddStrike}
+                      infractions={onBonus ? infractions : undefined}
                     />
                   </li>
                 ))}

@@ -1,13 +1,16 @@
 import AccountCard from "./AccountCard";
 import CardTally from "./CardTally";
 import useConfirmDialog from "./useConfirmDialog";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Flag, Info } from "lucide-react";
 import DiscordIdentity from "./DiscordIdentity";
 import useDiscordIdentities from "./useDiscordIdentities";
 import { StatusPill } from "./rosterUi/primitives";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import { discordMessageItem } from "./RosterAccountMenu";
+import InfractionsSection from "./InfractionsSection";
+import { infractionChips } from "./InfractionFields";
+import type { Infractions } from "./useInfractions";
 import {
   countText,
   outcomeLabels,
@@ -46,6 +49,8 @@ type Props = {
   onDirty: (tag: string, dirty: boolean) => void;
   /** Opens Strikes on this player; absent without strike access. */
   onAddStrike?: (tag: string) => void;
+  /** Lazy infractions; absent without bonus access. */
+  infractions?: Infractions;
 };
 
 /** Card ⋯ menu items. Add new actions to this list. */
@@ -89,6 +94,7 @@ export default function ParticipationRecord({
   onReset,
   onDirty,
   onAddStrike,
+  infractions,
 }: Props) {
   const { confirm, dialog: confirmation } = useConfirmDialog(
     `${account.tag}:${account.revision}:${publicationVersion}:${readonly}:${locked}:${open}`,
@@ -118,6 +124,34 @@ export default function ParticipationRecord({
   const pending = useRef(false);
   const [error, setError] = useState("");
   const changed = draft !== base.notes;
+  // Infractions have their own editor and save; the close guard covers both.
+  const showInfractions =
+    !!infractions && account.pool === "lazy" && !!account.assigned_clan_tag;
+  const [infractionsState, setInfractionsState] = useState({
+    dirty: false,
+    busy: false,
+  });
+  const [infractionsEpoch, setInfractionsEpoch] = useState(0);
+  const onInfractionsState = useCallback(
+    (dirty: boolean, busy: boolean) =>
+      setInfractionsState((current) =>
+        current.dirty === dirty && current.busy === busy
+          ? current
+          : { dirty, busy },
+      ),
+    [],
+  );
+  const infractionsData = infractions?.data;
+  const infractionsLoad = infractions?.state;
+  useEffect(() => {
+    if (
+      open &&
+      showInfractions &&
+      !infractionsData &&
+      infractionsLoad === "idle"
+    )
+      infractions?.load();
+  }, [open, showInfractions, infractionsData, infractionsLoad]);
   const stale =
     account.roster_token !== base.rosterToken ||
     account.revision !== base.revision ||
@@ -150,9 +184,12 @@ export default function ParticipationRecord({
     setBase(latestBase(account));
   }, [account, publicationVersion, changed, stale]);
   useEffect(() => {
-    onDirty(account.tag, changed || busy);
+    onDirty(
+      account.tag,
+      changed || busy || infractionsState.dirty || infractionsState.busy,
+    );
     return () => onDirty(account.tag, false);
-  }, [account.tag, changed, busy, onDirty]);
+  }, [account.tag, changed, busy, infractionsState, onDirty]);
   useEffect(() => {
     if (open && !dialog.current?.open) dialog.current?.showModal();
     else if (!open && dialog.current?.open) dialog.current.close();
@@ -164,16 +201,22 @@ export default function ParticipationRecord({
     setError("");
   };
   const closeEditor = async () => {
-    if (busy) return;
+    if (busy || infractionsState.busy) return;
+    const unsaved = changed || infractionsState.dirty;
     if (
-      changed &&
+      unsaved &&
       !(await confirm(
-        `Discard unsaved notes for ${account.player_name}?`,
-        "Discard notes",
+        changed && !infractionsState.dirty
+          ? `Discard unsaved notes for ${account.player_name}?`
+          : `Discard unsaved changes for ${account.player_name}?`,
+        changed && !infractionsState.dirty
+          ? "Discard notes"
+          : "Discard changes",
       ))
     )
       return;
     if (changed) useLatest();
+    if (infractionsState.dirty) setInfractionsEpoch((value) => value + 1);
     dialog.current?.close();
   };
   const save = async () => {
@@ -200,7 +243,8 @@ export default function ParticipationRecord({
       );
       setDraft(saved.notes);
       setBase(latestBase(saved));
-      dialog.current?.close();
+      // Unsaved infractions keep the sheet open for their own save.
+      if (!infractionsState.dirty) dialog.current?.close();
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -288,6 +332,12 @@ export default function ParticipationRecord({
       }
       flags={[
         hasOverride && !account.roster_changed ? "Staff correction" : null,
+        ...(showInfractions
+          ? infractionChips(
+              infractionsData?.accounts.find((item) => item.tag === account.tag)
+                ?.bonus_review,
+            )
+          : []),
       ]}
       values={
         <CardTally
@@ -457,6 +507,16 @@ export default function ParticipationRecord({
             placeholder="Optional note"
           />
         </label>
+        {showInfractions && infractions && (
+          <InfractionsSection
+            tag={account.tag}
+            clanName={account.assigned_clan_name || account.assigned_clan_tag!}
+            clanTag={account.assigned_clan_tag!}
+            infractions={infractions}
+            resetKey={infractionsEpoch}
+            onState={onInfractionsState}
+          />
+        )}
         {stale && changed && (
           <div className="notice error" role="alert">
             This record or assignment changed while you were editing. Your notes
@@ -489,7 +549,11 @@ export default function ParticipationRecord({
           </p>
         )}
         <div className="participation-dialog-actions">
-          <button type="button" disabled={busy} onClick={closeEditor}>
+          <button
+            type="button"
+            disabled={busy || infractionsState.busy}
+            onClick={closeEditor}
+          >
             Cancel
           </button>
           <button

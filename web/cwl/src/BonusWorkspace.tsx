@@ -1073,7 +1073,7 @@ export default function BonusWorkspace({
                   accounts={clanAccounts}
                   minimum={savedMinimum}
                   onReview={
-                    pool === "lazy" && !draw
+                    pool === "lazy"
                       ? (account, opener) => void openReview(account, opener)
                       : undefined
                   }
@@ -1135,7 +1135,7 @@ export default function BonusWorkspace({
                   chipMinimum={chipMinimum}
                   meetsRule={meetsRule}
                   onReview={
-                    pool === "lazy" && !draw
+                    pool === "lazy"
                       ? (account, opener) => void openReview(account, opener)
                       : undefined
                   }
@@ -1288,6 +1288,7 @@ export default function BonusWorkspace({
                   account={reviewAccount}
                   trigger={reviewOpener.current}
                   busy={busy}
+                  readOnly={!!draw}
                   onDirty={setReviewDirty}
                   onCancel={async () => {
                     if (await canLeaveEditor()) closeReview();
@@ -1328,7 +1329,7 @@ export default function BonusWorkspace({
                         override_reason: overrideReason,
                         revision: data.revision,
                       },
-                      "Account review saved. Check the draw again before saving.",
+                      `Infractions saved · ${selectedClan?.name || "Hosting clan"} eligibility updated.`,
                       "PATCH",
                     );
                     if (saved) closeReview();

@@ -1,25 +1,8 @@
 import ActionPanel from "./ActionPanel";
 import DiscordIdentity from "./DiscordIdentity";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import type { RaffleAccount } from "./bonusRaffle";
-
-export const LAZY_FLAGS = [
-  {
-    id: "missed_sync",
-    label: "Missed sync",
-    description: "Account missed the clan sync during CWL.",
-  },
-  {
-    id: "lingering",
-    label: "Lingering",
-    description: "Account stayed after it should have moved.",
-  },
-  {
-    id: "left_family",
-    label: "Left family",
-    description: "Account left the family during this CWL month.",
-  },
-] as const;
+import InfractionFields, { useInfractionDraft } from "./InfractionFields";
 
 type Props = {
   account: RaffleAccount;
@@ -31,6 +14,8 @@ type Props = {
   onDirty: (dirty: boolean) => void;
   onSave: (flags: string[], overrideReason: string) => Promise<boolean>;
   onRemove?: () => Promise<void>;
+  /** After the clan's draw is saved the flags can be read but not changed. */
+  readOnly?: boolean;
 };
 
 export default function BonusCandidateReview({
@@ -42,21 +27,18 @@ export default function BonusCandidateReview({
   onDirty,
   onSave,
   onRemove,
+  readOnly = false,
 }: Props) {
-  const savedFlags = account.bonus_review?.flags || [];
-  const savedReason = account.bonus_review?.override_reason || "";
-  const [flags, setFlags] = useState<string[]>(savedFlags);
-  const [reason, setReason] = useState(savedReason);
-  const dirty =
-    flags.slice().sort().join("|") !== savedFlags.slice().sort().join("|") ||
-    reason !== savedReason;
+  const { flags, setFlags, reason, setReason, dirty } = useInfractionDraft(
+    account.bonus_review,
+  );
 
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
   useEffect(() => () => onDirty(false), [onDirty]);
 
   return (
     <ActionPanel
-      title={`Review ${account.player_name}`}
+      title={`Infractions for ${account.player_name}`}
       className="bonus-review-editor"
       trigger={trigger}
       busy={busy}
@@ -68,7 +50,7 @@ export default function BonusCandidateReview({
       }}
       footer={
         <div className="bonus-editor-actions">
-          {onRemove && (
+          {onRemove && !readOnly && (
             <button
               type="button"
               className="bonus-remove-candidate"
@@ -79,16 +61,18 @@ export default function BonusCandidateReview({
             </button>
           )}
           <button type="button" disabled={busy} onClick={onCancel}>
-            Cancel
+            {readOnly ? "Close" : "Cancel"}
           </button>
-          <button
-            type="button"
-            className="primary"
-            disabled={busy || !dirty || (!!reason && !reason.trim())}
-            onClick={() => void onSave(flags, reason.trim())}
-          >
-            Save review
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !dirty || (!!reason && !reason.trim())}
+              onClick={() => void onSave(flags, reason.trim())}
+            >
+              Save infractions
+            </button>
+          )}
         </div>
       }
     >
@@ -135,44 +119,16 @@ export default function BonusCandidateReview({
         Mark issues from this CWL month. These flags normally exclude the
         account from the draw.
       </p>
-      <fieldset disabled={busy}>
-        <legend>Season flags</legend>
-        {LAZY_FLAGS.map((flag) => (
-          <label key={flag.id} className="bonus-flag">
-            <input
-              type="checkbox"
-              checked={flags.includes(flag.id)}
-              onChange={(event) => {
-                setFlags((current) =>
-                  event.target.checked
-                    ? [...current, flag.id]
-                    : current.filter((value) => value !== flag.id),
-                );
-              }}
-            />
-            <span>
-              <strong>{flag.label}</strong>
-              <small>{flag.description}</small>
-            </span>
-          </label>
-        ))}
-      </fieldset>
-      <label className="bonus-override-reason">
-        Include by staff exception
-        <textarea
-          value={reason}
-          maxLength={500}
-          disabled={busy}
-          onChange={(event) => setReason(event.target.value)}
-          placeholder="Leave blank to follow the automatic rules; enter a reason to override exclusion"
-        />
-      </label>
-      {reason.trim() && (
-        <p className="bonus-caution">
-          This account can enter the draw despite an automatic rule or flag. The
-          reason is saved with the review.
-        </p>
+      {readOnly && (
+        <p className="bonus-review-readonly">Draw saved · read only</p>
       )}
+      <InfractionFields
+        flags={flags}
+        reason={reason}
+        disabled={busy || readOnly}
+        onFlags={setFlags}
+        onReason={setReason}
+      />
       {error && (
         <p className="notice error" role="alert">
           {error}
