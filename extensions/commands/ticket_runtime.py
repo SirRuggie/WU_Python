@@ -57,7 +57,10 @@ LEGACY_RUNTIME = "legacy_channel"
 COUNTER_DOCUMENT_ID = "ticket_runtime_counters"
 
 _DEFAULT_LEASE_SECONDS = 120
-_VALID_TICKET_TYPES = frozenset({"main", "fwa"})
+_VALID_TICKET_TYPES = frozenset({"main", "fwa", "account", "staff"})
+# Warrior Desk request types; mirrors schema.DESK_TICKET_TYPES (this module
+# cannot import the tickets package without a cycle).
+_DESK_TICKET_TYPES = frozenset({"account", "staff"})
 _ALLOWED_PHASE_TRANSITIONS = {
     PHASE_LEGACY_ONLY: frozenset({PHASE_PREPARED}),
     PHASE_PREPARED: frozenset({PHASE_LEGACY_ONLY, PHASE_PILOT}),
@@ -123,6 +126,7 @@ class RolloutState:
     pilot_user_ids: tuple[int, ...] = ()
     pilot_role_ids: tuple[int, ...] = ()
     pilot_ticket_types: tuple[str, ...] = ("main", "fwa")
+    desk_intake: IntakeSource | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,6 +248,7 @@ def _parse_rollout(document: Mapping[str, Any] | None) -> RolloutState:
     legacy_intake = _intake_source(document.get("legacy_intake"))
     thread_intake = _intake_source(document.get("thread_intake"))
     pilot_intake = _intake_source(pilot.get("intake"))
+    desk_intake = _intake_source(document.get("desk_intake"))
     pilot_user_ids = _id_tuple(pilot.get("user_ids"))
     pilot_role_ids = _id_tuple(pilot.get("role_ids"))
     if (
@@ -267,6 +272,7 @@ def _parse_rollout(document: Mapping[str, Any] | None) -> RolloutState:
         pilot_user_ids=pilot_user_ids,
         pilot_role_ids=pilot_role_ids,
         pilot_ticket_types=normalized_types,
+        desk_intake=desk_intake,
     )
 
 
@@ -338,6 +344,7 @@ async def seed_rollout(
     legacy_intake: IntakeSource | Mapping[str, Any],
     thread_intake: IntakeSource | Mapping[str, Any],
     pilot: Mapping[str, Any],
+    desk_intake: IntakeSource | Mapping[str, Any] | None = None,
     now: datetime | None = None,
 ) -> RolloutState:
     """Insert the initial fail-safe rollout document without overwriting one."""
@@ -365,6 +372,8 @@ async def seed_rollout(
         "updated_at": moment,
         "updated_by": int(actor_id),
     }
+    if desk_intake is not None:
+        document["desk_intake"] = _source_document(desk_intake)
     try:
         await mongo.ticket_rollout.insert_one(document)
     except DuplicateKeyError:
@@ -383,9 +392,13 @@ async def configure_rollout(
     legacy_intake: IntakeSource | Mapping[str, Any],
     thread_intake: IntakeSource | Mapping[str, Any],
     pilot: Mapping[str, Any],
+    desk_intake: IntakeSource | Mapping[str, Any] | None = None,
     now: datetime | None = None,
 ) -> RolloutState:
-    """CAS-update source and allowlist configuration without changing phase."""
+    """CAS-update source and allowlist configuration without changing phase.
+
+    ``desk_intake=None`` leaves any stored Warrior Desk binding untouched.
+    """
 
     moment = now or utcnow()
     legacy_document = _source_document(legacy_intake)
@@ -397,6 +410,15 @@ async def configure_rollout(
         raise ValueError("thread public and pilot intake must use the same target guild")
     if thread_document["channel_id"] == pilot_document["intake"]["channel_id"]:
         raise ValueError("thread public and pilot intake must use separate channels")
+    changes: dict[str, Any] = {
+        "legacy_intake": legacy_document,
+        "thread_intake": thread_document,
+        "pilot": pilot_document,
+        "updated_at": moment,
+        "updated_by": int(actor_id),
+    }
+    if desk_intake is not None:
+        changes["desk_intake"] = _source_document(desk_intake)
     updated = await mongo.ticket_rollout.find_one_and_update(
         {
             "_id": ROLLOUT_ID,
@@ -404,16 +426,7 @@ async def configure_rollout(
             "revision": int(expected_revision),
             "phase": {"$in": list(VALID_PHASES)},
         },
-        {
-            "$set": {
-                "legacy_intake": legacy_document,
-                "thread_intake": thread_document,
-                "pilot": pilot_document,
-                "updated_at": moment,
-                "updated_by": int(actor_id),
-            },
-            "$inc": {"revision": 1},
-        },
+        {"$set": changes, "$inc": {"revision": 1}},
         return_document=ReturnDocument.AFTER,
     )
     if updated is None:
@@ -729,6 +742,23 @@ async def route_public_intake(
     if state.phase in {PHASE_LEGACY_ONLY, PHASE_PREPARED, PHASE_ROLLBACK_LEGACY}:
         return RouteDecision(
             ROUTE_REJECT, False, state.phase, state.revision, "thread_intake_disabled"
+        )
+
+    if str(ticket_type).strip().lower() in _DESK_TICKET_TYPES:
+        # Desk requests ride their own panel and only the live phases.
+        allowed = bool(
+            state.phase in {PHASE_THREAD_DEFAULT, PHASE_THREAD_ONLY}
+            and state.desk_intake
+            and state.desk_intake.matches(
+                guild_id=guild_id, channel_id=channel_id, message_id=message_id
+            )
+        )
+        return RouteDecision(
+            ROUTE_THREAD if allowed else ROUTE_REJECT,
+            allowed,
+            state.phase,
+            state.revision,
+            "desk_default" if allowed else "wrong_desk_intake_source",
         )
 
     if state.phase == PHASE_PILOT:

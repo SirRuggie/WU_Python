@@ -314,17 +314,23 @@ def _timestamp(value, style: str = "R") -> str:
     return f"<t:{int(value.timestamp())}:{style}>"
 
 
-def _status_meta(status) -> tuple[str, str, int]:
+def _status_meta(status, ticket_type=None) -> tuple[str, str, int]:
     key = str(status or "unknown").casefold()
+    if key == "closed" and ticket_type == "staff":
+        return ("Done", "✅", ACCENT_GREEN)
     if key in STATUS_META:
         return STATUS_META[key]
     label = _clean(key.replace("_", " ").title(), limit=40)
     return (label, "❔", ACCENT_GREY)
 
 
+_TICKET_TYPE_PREFIX = {"fwa": "FWA", "main": "Main", "account": "Account", "staff": "Staff"}
+_TICKET_TYPE_EMOJI = {"fwa": "💎", "main": "🏆", "account": "➕", "staff": "💬"}
+
+
 def _ticket_type(ticket_doc: Mapping) -> str:
     value = str(ticket_doc.get("ticket_type") or "").casefold()
-    return value if value in {"main", "fwa"} else "unknown"
+    return value if value in schema.TICKET_TYPES else "unknown"
 
 
 def _ticket_number(ticket_doc: Mapping) -> str:
@@ -349,7 +355,7 @@ def _ticket_label(ticket_doc: Mapping, *, username: bool = False, markdown: bool
     default, where a mention is used instead of the stored name.
     """
     kind = _ticket_type(ticket_doc)
-    prefix = "FWA" if kind == "fwa" else "Main" if kind == "main" else "Ticket"
+    prefix = _TICKET_TYPE_PREFIX.get(kind, "Ticket")
     label = (
         f"{prefix} {_ticket_number(ticket_doc)}"
         if testing_service.is_test_ticket(ticket_doc)
@@ -618,7 +624,7 @@ def _confirm_panel(
     )
 
 
-_TICKET_TYPE_LABEL = {"main": "Main", "fwa": "FWA"}
+_TICKET_TYPE_LABEL = {"main": "Main", "fwa": "FWA", "account": "Account", "staff": "Staff"}
 
 
 def _approve_confirm_panel(
@@ -677,7 +683,7 @@ def _open_picker_options(open_tickets: Sequence[Mapping]) -> list[SelectOption]:
             label=_ticket_label(ticket_doc, username=True, markdown=False),
             value=ticket_id,
             description=description[:100],
-            emoji="💎" if _ticket_type(ticket_doc) == "fwa" else "🏆",
+            emoji=_TICKET_TYPE_EMOJI.get(_ticket_type(ticket_doc), "🏆"),
         ))
     if options:
         return options
@@ -847,11 +853,14 @@ def build_hub_actions(
             custom_id=f"ticket_v2_hub_closure:{ticket_id}",
             placeholder="Closure options",
             min_values=1, max_values=1,
-            options=[
-                SelectOption(label="Approve", value="approve", description="Accept this recruit", emoji="✅"),
-                SelectOption(label="Deny", value="deny", description="Deny with a reason", emoji="❌"),
-                SelectOption(label="Close", value="close", description="Close without a decision", emoji="📁"),
-            ],
+            options=(
+                [SelectOption(label="Done", value="close", description="Mark this request as done", emoji="✅")]
+                if doc.get("ticket_type") == "staff" else [
+                    SelectOption(label="Approve", value="approve", description="Accept this recruit", emoji="✅"),
+                    SelectOption(label="Deny", value="deny", description="Deny with a reason", emoji="❌"),
+                    SelectOption(label="Close", value="close", description="Close without a decision", emoji="📁"),
+                ]
+            ),
         )]))
     if not open_tickets:
         children.append(
@@ -1854,20 +1863,20 @@ def _filter_selects(
             custom_id=f"ticket_v2_console_type:{action_id}",
             placeholder="Any clan type",
             min_values=0,
-            max_values=2,
+            max_values=4,
             options=[
                 SelectOption(
-                    label="Main clan",
-                    value="main",
-                    emoji="🏆",
-                    is_default="main" in selected_types,
-                ),
-                SelectOption(
-                    label="FWA clan",
-                    value="fwa",
-                    emoji="💎",
-                    is_default="fwa" in selected_types,
-                ),
+                    label=label,
+                    value=value,
+                    emoji=emoji,
+                    is_default=value in selected_types,
+                )
+                for value, label, emoji in (
+                    ("main", "Main clan", "🏆"),
+                    ("fwa", "FWA clan", "💎"),
+                    ("account", "Add account", "➕"),
+                    ("staff", "Contact staff", "💬"),
+                )
             ],
         )]),
     ]
@@ -1912,7 +1921,9 @@ def build_search_panel(
     else:
         result_rows: list[tuple[str, object]] = []
         for index, ticket_doc in enumerate(results[:MAX_SEARCH_RESULTS]):
-            status_label, status_emoji, _accent = _status_meta(ticket_doc.get("status"))
+            status_label, status_emoji, _accent = _status_meta(
+                ticket_doc.get("status"), ticket_doc.get("ticket_type")
+            )
             tags = _player_tags(ticket_doc)
             identity = f" · `{_clean_code_span(tags[0], limit=15)}`" if tags else ""
             body = (
@@ -2032,6 +2043,8 @@ BROWSE_TYPE_OPTIONS: tuple[tuple[str, str, str], ...] = (
     ("all", "All clan types", "📋"),
     ("main", "Main clan", "🏆"),
     ("fwa", "FWA clan", "💎"),
+    ("account", "Add account", "➕"),
+    ("staff", "Contact staff", "💬"),
 )
 BROWSE_PERIOD_OPTIONS: tuple[tuple[str, str, str], ...] = (
     ("all", "All time", "📋"),
@@ -2125,7 +2138,9 @@ def _browse_option_label(options: Sequence[tuple[str, str, str]], value: str) ->
 
 
 def _browse_row_line(ticket_doc: Mapping) -> str:
-    status_label, status_emoji, _accent = _status_meta(ticket_doc.get("status"))
+    status_label, status_emoji, _accent = _status_meta(
+                ticket_doc.get("status"), ticket_doc.get("ticket_type")
+            )
     return (
         f"{_ticket_label(ticket_doc)} · {_mention(ticket_doc.get('user_id'))} · "
         f"{status_emoji} {status_label} · {_timestamp(ticket_doc.get('created_at'))}"
@@ -2141,7 +2156,7 @@ def _browse_picker_options(results: Sequence[Mapping]) -> list[SelectOption]:
         options.append(SelectOption(
             label=_ticket_label(ticket_doc, username=True, markdown=False),
             value=ticket_id,
-            emoji="💎" if _ticket_type(ticket_doc) == "fwa" else "🏆",
+            emoji=_TICKET_TYPE_EMOJI.get(_ticket_type(ticket_doc), "🏆"),
         ))
     if options:
         return options
@@ -2442,7 +2457,7 @@ def _active_flags(flags: Iterable[Mapping]) -> list[Mapping]:
 
 
 def _history_entry_content(prior: Mapping) -> str:
-    label, emoji, _accent = _status_meta(prior.get("status"))
+    label, emoji, _accent = _status_meta(prior.get("status"), prior.get("ticket_type"))
     reason = prior.get("denial_reason") or prior.get("reason")
     reason_copy = f" — {_clean(reason, limit=100)}" if reason else ""
     return (
@@ -2669,7 +2684,7 @@ def build_ticket_detail(
     history: Sequence[Mapping],
 ) -> list[Container]:
     status = str(ticket_doc.get("status") or "unknown").casefold()
-    status_label, status_emoji, accent = _status_meta(status)
+    status_label, status_emoji, accent = _status_meta(status, ticket_doc.get("ticket_type"))
     tags = _player_tags(ticket_doc)
     mentioned = _mentioned_tags(ticket_doc)
     user_id = _int(ticket_doc.get("user_id"))
@@ -2859,21 +2874,25 @@ def build_ticket_detail(
     if status == "open":
         if blacklist_warning:
             components.append(Text(content=blacklist_warning))
+        is_staff_request = ticket_doc.get("ticket_type") == "staff"
         components.append(ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SUCCESS,
-                custom_id=f"ticket_v2_console_approve:{action_id}",
-                label="Approve",
-                is_disabled=blacklisted,
-            ),
-            Button(
-                style=hikari.ButtonStyle.DANGER,
-                custom_id=f"ticket_v2_console_deny:{action_id}",
-                label="Deny",
-            ),
+            *([] if is_staff_request else [
+                Button(
+                    style=hikari.ButtonStyle.SUCCESS,
+                    custom_id=f"ticket_v2_console_approve:{action_id}",
+                    label="Approve",
+                    is_disabled=blacklisted,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.DANGER,
+                    custom_id=f"ticket_v2_console_deny:{action_id}",
+                    label="Deny",
+                ),
+            ]),
             Button(style=hikari.ButtonStyle.SECONDARY,
                    custom_id=f"ticket_lifecycle_open:close|{action_id}",
-                   label="Close without a decision", emoji="📁"),
+                   label="Done" if is_staff_request else "Close without a decision",
+                   emoji="✅" if is_staff_request else "📁"),
         ]))
     elif status == "closed":
         components.append(ActionRow(components=[Button(
@@ -4722,6 +4741,8 @@ async def _shared_ticket(ctx, mongo: MongoClient, ticket_id: str) -> Mapping | N
     doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
     if doc is None or str(doc.get("status")) != "open":
         return None
+    if not await perms.can_handle(getattr(ctx, "member", None), mongo, doc.get("ticket_type")):
+        return None
     return doc
 
 
@@ -4932,7 +4953,9 @@ async def ticket_console_pick(
         )
         return
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None or str(ticket_doc.get("status")) != "open":
+    if ticket_doc is None or str(ticket_doc.get("status")) != "open" or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         await _execute_private_panel(
             ctx,
             _notice(
@@ -5029,7 +5052,9 @@ async def ticket_console_view(
             accent=ACCENT_RED,
         )
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None:
+    if ticket_doc is None or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket not found",
             "The ticket record is no longer available.",
@@ -5048,9 +5073,12 @@ async def _latest_flag_ticket(
     *,
     ticket_id: str,
     guild_id: int,
+    member=None,
 ) -> dict | None:
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
     if ticket_doc is None or _int(ticket_doc.get("guild_id")) != int(guild_id):
+        return None
+    if not await perms.can_handle(member, mongo, ticket_doc.get("ticket_type")):
         return None
     return ticket_doc
 
@@ -5179,6 +5207,7 @@ async def ticket_console_manage_flags(
         mongo,
         ticket_id=str(ticket_id or ""),
         guild_id=_int(guild_id),
+        member=getattr(ctx, "member", None),
     )
     if ticket_doc is None:
         return _notice(
@@ -5227,6 +5256,7 @@ async def ticket_flag_back(
         mongo,
         ticket_id=str(ticket_id or ""),
         guild_id=_int(guild_id),
+        member=getattr(ctx, "member", None),
     )
     if ticket_doc is None:
         return _notice(
@@ -5324,6 +5354,7 @@ async def ticket_flag_set_submit(
         mongo,
         ticket_id=str(data.get("ticket_id") or ""),
         guild_id=_int(data.get("guild_id")),
+        member=getattr(ctx, "member", None),
     )
     if ticket_doc is None:
         await _edit_flag_modal(ctx, _notice(
@@ -5441,6 +5472,7 @@ async def ticket_flag_remove_submit(
         mongo,
         ticket_id=str(data.get("ticket_id") or ""),
         guild_id=_int(data.get("guild_id")),
+        member=getattr(ctx, "member", None),
     )
     if ticket_doc is None:
         await _edit_flag_modal(ctx, _notice(
@@ -5786,7 +5818,7 @@ async def ticket_console_type(
         statuses=statuses,
         ticket_types=ticket_types,
         field="ticket_types",
-        allowed={"main", "fwa"},
+        allowed=set(schema.TICKET_TYPES),
     )
 
 
@@ -6461,7 +6493,9 @@ async def ticket_console_browse_pick(
             "No tickets match those filters.",
         )
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None:
+    if ticket_doc is None or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket not found",
             "The ticket record is no longer available.",
@@ -6582,7 +6616,9 @@ async def ticket_console_approve(
     if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
         return denied
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None:
+    if ticket_doc is None or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket not found",
             "The ticket record is no longer available.",
@@ -6644,7 +6680,9 @@ async def ticket_console_confirm_cancel(
     if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
         return denied
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None:
+    if ticket_doc is None or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket not found",
             "The ticket record is no longer available.",
@@ -6675,7 +6713,9 @@ async def ticket_console_overturn(
             accent=ACCENT_RED,
         )
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None or ticket_doc.get("status") not in schema.TERMINAL_STATUSES:
+    if ticket_doc is None or ticket_doc.get("status") not in schema.TERMINAL_STATUSES or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket changed",
             "This ticket has no decision now. Open it again from the console.",
@@ -6698,7 +6738,9 @@ async def ticket_console_overturn_approve_confirm(
     if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
         return denied
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None:
+    if ticket_doc is None or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket not found",
             "The ticket record is no longer available.",
@@ -7233,14 +7275,21 @@ async def recover_ticket_console(
 
 @register_action("ticket_lifecycle_open", opens_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
-async def ticket_lifecycle_open(ctx, action_id: str, **_kwargs):
+async def ticket_lifecycle_open(ctx, action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED, **_kwargs):
     kind, _, state_id = action_id.partition("|")
     if kind not in {"close", "reopen"}:
         return
+    done = False
+    if kind == "close":
+        # Staff requests end with "Done"; the panel state names the ticket.
+        data = await get_state(mongo, state_id)
+        ticket_doc = await store.find_one(mongo, {"_id": (data or {}).get("ticket_id"), "type": "ticket"})
+        done = bool(ticket_doc and ticket_doc.get("ticket_type") == "staff")
     await ctx.respond_with_modal(
-        title="Close without a decision" if kind == "close" else "Reopen ticket",
+        title="Done" if done else "Close without a decision" if kind == "close" else "Reopen ticket",
         custom_id=f"ticket_lifecycle_submit:{kind}|{state_id}",
-        components=[ModalActionRow().add_text_input("reason", "Reason shown in both threads",
+        components=[ModalActionRow().add_text_input("reason", "Note" if done else "Reason shown in both threads",
             required=True, style=hikari.TextInputStyle.PARAGRAPH, min_length=5, max_length=1000)],
     )
 
@@ -7288,11 +7337,13 @@ async def ticket_hub_closure(ctx, action_id: str,
     elif choice == "deny":
         await ticket_hub_deny(ctx, action_id)
     elif choice == "close":
+        ticket_doc = await store.find_one(mongo, {"_id": action_id, "type": "ticket"})
+        done = bool(ticket_doc and ticket_doc.get("ticket_type") == "staff")
         await ctx.respond_with_modal(
-            title="Close without a decision",
+            title="Done" if done else "Close without a decision",
             custom_id=f"ticket_v2_hub_close_submit:{action_id}",
             components=[ModalActionRow().add_text_input(
-                "reason", "Reason shown in both threads", required=True,
+                "reason", "Note" if done else "Reason shown in both threads", required=True,
                 style=hikari.TextInputStyle.PARAGRAPH, min_length=5, max_length=1000,
             )],
         )

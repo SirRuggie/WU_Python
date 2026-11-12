@@ -88,6 +88,12 @@ class Deny(
             )
             return
 
+        if ticket.get("ticket_type") == "staff" or not await perms.can_handle(
+            ctx.member, mongo, ticket.get("ticket_type")
+        ):
+            await ctx.respond("❌ You cannot deny this request.")
+            return
+
         user_id = ticket.get("user_id")
         if not user_id:
             await ctx.respond(
@@ -109,8 +115,7 @@ class Deny(
         })
 
         # Show denial options
-        row = ActionRow(
-            components=[
+        default_buttons = [] if ticket.get("ticket_type") == "account" else [
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"ticket_v2_deny_fwa_default:{action_id}",
@@ -121,6 +126,10 @@ class Deny(
                     custom_id=f"ticket_v2_deny_main_default:{action_id}",
                     label="Use the Main message"
                 ),
+        ]
+        row = ActionRow(
+            components=[
+                *default_buttons,
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
                     custom_id=f"ticket_v2_deny_custom:{action_id}",

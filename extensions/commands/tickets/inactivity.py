@@ -61,6 +61,7 @@ def activity_baseline(ticket):
 def eligible(ticket):
     return bool(ticket and all(ticket.get(k) == v for k, v in store.RUNTIME_FILTER.items())
                 and ticket.get("status") == "open" and not ticket.get("thread_missing")
+                and ticket.get("ticket_type") != "staff"
                 and not testing_service.is_test_ticket(ticket))
 
 
@@ -297,7 +298,7 @@ async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None
         or store.as_int(getattr(source, "id", 0)) != store.as_int(prompt.get("message_id"))):
         await ctx.interaction.edit_initial_response(content="This inactivity prompt is out of date.")
         return
-    if not await perms.is_recruiter(ctx.member, mongo):
+    if not await perms.can_handle(ctx.member, mongo, ticket.get("ticket_type")):
         await ctx.interaction.edit_initial_response(content="Recruiter permission required.")
         return
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}

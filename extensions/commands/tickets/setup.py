@@ -148,6 +148,50 @@ async def saved_public_ticket_embed(mongo, guild_id):
     return create_public_ticket_embed(sections, media=media)
 
 
+def create_warrior_desk_embed(sections=None, *, media=None, action_id="preview", preview=False) -> List[Container]:
+    """Create the public Warrior Desk panel (Add another account, Contact staff)."""
+    components = [
+        Text(content="## 🛡 Warrior Desk"),
+        Separator(divider=True),
+        Text(content=(
+            "Already a Warrior? Select a button.\n\n"
+            "**Add another account:** add a Clash account to the family.\n"
+            "**Contact staff:** conflicts, strike appeals and other questions."
+        )),
+        Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id="ticket_v2_create:public:account",
+                label="Add another account",
+                emoji="➕",
+                is_disabled=preview,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id="ticket_v2_create:public:staff",
+                label="Contact staff",
+                emoji="💬",
+                is_disabled=preview,
+            ),
+        ]),
+    ]
+    if sections is not None:
+        values = iter(sections)
+        for index, component in enumerate(components):
+            if component.type == hikari.ComponentType.TEXT_DISPLAY:
+                components[index] = Text(content=next(values))
+    if media and media.get("footer"):
+        components[3] = Media(items=[MediaItem(media=media["footer"])])
+    return [Container(accent_color=WU_GOLD, components=components)]
+
+
+async def saved_warrior_desk_embed(mongo, guild_id):
+    from extensions.commands import content
+    sections, media, _ = await content.template_for(mongo, content.DOCUMENTS["warrior_desk"], guild_id)
+    return create_warrior_desk_embed(sections, media=media)
+
+
 
 def create_ticket_embed() -> List[Container]:
     """Create the Warriors United Clan Entry embed"""

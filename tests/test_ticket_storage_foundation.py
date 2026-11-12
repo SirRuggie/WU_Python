@@ -879,6 +879,7 @@ def test_denial_proceeds_with_atomic_account_sync_retry(monkeypatch, failure):
         return store.Transition(store.WON, resolved)
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve, "process_resolution_effects", effects)
     if failure == "client_unavailable":
         monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
@@ -1036,6 +1037,7 @@ def test_approval_without_client_persists_retry_and_automatic_recovery(monkeypat
         return None
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
     monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
     blocked = asyncio.run(resolve.approve_ticket(
@@ -1107,6 +1109,7 @@ def test_approval_blocks_when_final_account_sync_is_empty_or_failed(
         return None
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "load_accounts", load)
     monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
     result = asyncio.run(resolve.approve_ticket(
@@ -1165,6 +1168,7 @@ def test_blocked_approval_refreshes_shrunken_snapshot_before_blacklist_result(
         return {"_id": "blocked"}
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "load_accounts", load)
     monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist)
@@ -1242,6 +1246,7 @@ def test_fwa_approval_completes_when_final_sync_discovers_accounts(
         return bool(delivered)
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "load_accounts", load)
     monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
     monkeypatch.setattr(
@@ -1310,6 +1315,7 @@ def test_terminal_fwa_override_approves_newly_linked_accounts(monkeypatch):
         return bool(deliveries)
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "load_accounts", load)
     monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
     monkeypatch.setattr(
@@ -1345,6 +1351,7 @@ def test_final_account_sync_exposes_new_identity_to_blacklist_gate(monkeypatch):
         return {"_id": "flag_new"} if "#NEW123" in player_tags else None
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "load_accounts", load)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist)
     result = asyncio.run(resolve.approve_ticket(
@@ -2550,6 +2557,7 @@ def test_approval_loses_when_account_snapshot_changes_after_blacklist_check_begi
         raise AssertionError("a stale approval must not run terminal effects")
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "load_accounts", load)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist)
     monkeypatch.setattr(resolve, "process_resolution_effects", effects)
@@ -2575,6 +2583,7 @@ def test_permission_is_rechecked_at_terminal_mutation_boundary(monkeypatch):
         return next(authorization)
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
     result = asyncio.run(resolve.deny_ticket(
         object(),
@@ -2617,6 +2626,7 @@ def test_deny_ticket_returns_before_effects_complete_then_wait_for_background_ef
         return store.Transition(store.WON, doc)
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
     monkeypatch.setattr(resolve, "process_resolution_effects", effects)
 
@@ -2663,6 +2673,7 @@ def test_background_effects_done_logs_when_the_result_is_not_won(monkeypatch, ca
         )
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
     monkeypatch.setattr(resolve, "process_resolution_effects", effects)
 
@@ -2793,6 +2804,7 @@ def test_overturn_ticket_requires_recruiter(monkeypatch):
         return False
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", not_recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     result = asyncio.run(resolve.overturn_ticket(
         object(), mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
         actor_name="Recruiter", to_status="denied", reason="Appeal reviewed",
@@ -2808,6 +2820,7 @@ def test_overturn_ticket_refuses_an_undecided_ticket(monkeypatch):
         return True
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     result = asyncio.run(resolve.overturn_ticket(
         object(), mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
         actor_name="Recruiter", to_status="denied", reason="Appeal reviewed",
@@ -2824,6 +2837,7 @@ def test_overturn_ticket_refuses_the_same_status(monkeypatch):
         return True
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     result = asyncio.run(resolve.overturn_ticket(
         object(), mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
         actor_name="Recruiter", to_status="approved",
@@ -2862,6 +2876,7 @@ def test_overturn_deny_after_approve_removes_recorded_roles(monkeypatch):
         removed.append((guild_id, user_id, role_id))
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve, "deny_ticket", deny)
 
     bot = SimpleNamespace(rest=SimpleNamespace(remove_role_from_member=remove_role))
@@ -2896,6 +2911,7 @@ def test_overturn_deny_after_approve_is_a_no_op_when_no_roles_were_recorded(
         raise AssertionError("nothing was ever granted; there is nothing to remove")
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve, "deny_ticket", deny)
 
     bot = SimpleNamespace(rest=SimpleNamespace(remove_role_from_member=remove_role))
@@ -2928,6 +2944,7 @@ def test_overturn_approve_after_deny_delegates_with_the_prior_decision(monkeypat
         return store.Transition(store.WON, current)
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve, "approve_ticket", approve)
 
     result = asyncio.run(resolve.overturn_ticket(
@@ -2977,6 +2994,7 @@ def test_overturn_ignores_an_unrelated_rev_bump_between_snapshot_and_transition(
         return real_snapshot_from_ticket(ticket_doc)
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve, "process_resolution_effects", effects)
     monkeypatch.setattr(account_sync, "snapshot_from_ticket", bump_once_then_snapshot)
 
@@ -3050,6 +3068,7 @@ def test_overturn_deny_to_approve_ignores_rev_bump_between_snapshot_and_transiti
         return None
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "load_accounts", load)
     monkeypatch.setattr(resolve, "process_resolution_effects", effects)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist_with_rev_bump)
@@ -3258,6 +3277,7 @@ def test_secure_approval_stops_before_side_effects(monkeypatch, mode):
         raise AssertionError("side effects must not run")
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve.store, "find_one", find)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist)
     monkeypatch.setattr(resolve.account_sync, "sync_ticket_accounts", sync)
@@ -3309,6 +3329,7 @@ def test_ticket_flag_manager_cas_rejects_stale_reason_then_binds_all_identities(
         return True
 
     monkeypatch.setattr(flag_store.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(flag_store.perms, "can_handle", lambda member, mongo, ticket_type: flag_store.perms.is_recruiter(member, mongo))
     member = SimpleNamespace(id=99)
     stale = asyncio.run(flag_store.set_flag_if_current_authorized(
         mongo,
@@ -4569,6 +4590,7 @@ def test_slash_approval_effect_failure_reports_durable_automatic_retry(monkeypat
         return None
 
     monkeypatch.setattr(close.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(close.perms, "can_handle", lambda member, mongo, ticket_type: close.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(close.store, "find_by_location", find)
     monkeypatch.setattr(close.resolve, "approve_ticket", effects_pending)
     ctx = SimpleNamespace(
@@ -4627,6 +4649,7 @@ def test_denial_effect_failure_reports_durable_automatic_retry(monkeypatch, hand
     monkeypatch.setattr(close, "get_state", get)
     monkeypatch.setattr(close, "delete_state", delete)
     monkeypatch.setattr(close.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(close.perms, "can_handle", lambda member, mongo, ticket_type: close.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(close.resolve, "deny_ticket", effects_pending)
     ctx = SimpleNamespace(
         user=SimpleNamespace(id=10, username="Recruiter"),
@@ -4683,6 +4706,7 @@ def test_denial_followups_reject_a_different_recruiter_before_any_action(monkeyp
 
     monkeypatch.setattr(close, "get_state", get)
     monkeypatch.setattr(close.perms, "is_recruiter", forbidden)
+    monkeypatch.setattr(close.perms, "can_handle", lambda member, mongo, ticket_type: close.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(close.resolve, "deny_ticket", forbidden)
     ctx = SimpleNamespace(
         user=SimpleNamespace(id=11, username="Other"), member=SimpleNamespace(id=11),
@@ -4712,6 +4736,7 @@ def test_custom_denial_opener_sends_modal_without_state_or_permission_work(monke
 
     monkeypatch.setattr(close, "get_state", forbidden)
     monkeypatch.setattr(close.perms, "is_recruiter", forbidden)
+    monkeypatch.setattr(close.perms, "can_handle", lambda member, mongo, ticket_type: close.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(dispatcher, "get_state", forbidden)
     ctx = SimpleNamespace(
         user=SimpleNamespace(id=10),
@@ -4760,6 +4785,7 @@ def test_custom_denial_modal_defers_before_state_or_permission_work(monkeypatch)
 
     monkeypatch.setattr(close, "get_state", get)
     monkeypatch.setattr(close.perms, "is_recruiter", denied)
+    monkeypatch.setattr(close.perms, "can_handle", lambda member, mongo, ticket_type: close.perms.is_recruiter(member, mongo))
     ctx = SimpleNamespace(
         user=SimpleNamespace(id=10, username="Recruiter"),
         member=SimpleNamespace(id=10),
@@ -4805,6 +4831,7 @@ def test_slash_approve_on_a_decided_ticket_names_the_decision_maker_no_overturn(
         responses.append((content, kwargs))
 
     monkeypatch.setattr(close.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(close.perms, "can_handle", lambda member, mongo, ticket_type: close.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(close.store, "find_by_location", find_by_location)
     monkeypatch.setattr(close.resolve, "approve_ticket", approve)
 
@@ -4858,6 +4885,7 @@ def test_slash_deny_button_on_a_decided_ticket_names_the_decision_maker_no_overt
         edits.append(kwargs)
 
     monkeypatch.setattr(close.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(close.perms, "can_handle", lambda member, mongo, ticket_type: close.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(close.resolve, "deny_ticket", deny)
     monkeypatch.setattr(close, "get_state", get)
     monkeypatch.setattr(close, "delete_state", delete)
@@ -4887,6 +4915,7 @@ def test_unauthorized_flag_mutation_has_no_write(monkeypatch):
         raise AssertionError("flag write ran")
 
     monkeypatch.setattr(flag_store.perms, "is_recruiter", denied)
+    monkeypatch.setattr(flag_store.perms, "can_handle", lambda member, mongo, ticket_type: flag_store.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(flag_store, "set_flag", forbidden)
     result = asyncio.run(flag_store.set_flag_authorized(
         SimpleNamespace(), member=SimpleNamespace(id=9), actor_name="Nope",
@@ -4957,6 +4986,7 @@ def test_custom_denial_modal_label_matches_the_console_wording(monkeypatch):
 
     monkeypatch.setattr(close, "get_state", forbidden)
     monkeypatch.setattr(close.perms, "is_recruiter", forbidden)
+    monkeypatch.setattr(close.perms, "can_handle", lambda member, mongo, ticket_type: close.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(dispatcher, "get_state", forbidden)
     ctx = SimpleNamespace(
         user=SimpleNamespace(id=10),
@@ -5268,6 +5298,7 @@ def test_expired_flag_manager_uses_exact_recovery_and_no_mutation(monkeypatch, e
     recruiter = AsyncMock(return_value=True)
     monkeypatch.setattr(console, 'get_state', reads)
     monkeypatch.setattr(console.perms, 'is_recruiter', recruiter)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     ctx = SimpleNamespace(user=SimpleNamespace(id=1), guild_id=2, member=object())
     state, notice = asyncio.run(console._authorized_flag_manager_state(ctx, object(), 'expired'))
     assert state is None

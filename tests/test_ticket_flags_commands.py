@@ -217,6 +217,7 @@ def test_flag_search_defers_before_permission_or_database_work(monkeypatch):
     from extensions.commands.tickets import perms
 
     monkeypatch.setattr(perms, "is_recruiter", denied)
+    monkeypatch.setattr(perms, "can_handle", lambda member, mongo, ticket_type: perms.is_recruiter(member, mongo))
     asyncio.run(flags.FlagsCommand.invoke._func(
         SimpleNamespace(identity="223456789012345678"), Context(), mongo=object(),
     ))
@@ -376,6 +377,7 @@ def test_flag_identity_infers_candidate_in_both_threads(monkeypatch,channel):
     ticket=_ticket();ticket['mentioned_tags']=['#FOREIGN']
     async def allowed(*a): return True
     monkeypatch.setattr(flags.perms,'is_recruiter',allowed)
+    monkeypatch.setattr(flags.perms, "can_handle", lambda member, mongo, ticket_type: flags.perms.is_recruiter(member, mongo))
     ctx=SimpleNamespace(channel_id=channel,guild_id=10,member=object())
     ids,tags=asyncio.run(flags.flag_identity_from_context(ctx,_mongo(ticket),(),()))
     assert ids==(str(ticket['user_id']),)
@@ -394,6 +396,7 @@ def test_flag_inference_does_not_read_before_authorization(monkeypatch):
     async def denied(*a): return False
     async def forbidden(*a): raise AssertionError('Unauthorized lookup')
     monkeypatch.setattr(flags.perms,'is_recruiter',denied)
+    monkeypatch.setattr(flags.perms, "can_handle", lambda member, mongo, ticket_type: flags.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(flags.store,'find_by_location',forbidden)
     assert asyncio.run(flags.flag_identity_from_context(SimpleNamespace(member=None),None,(),()))==((),())
 
@@ -403,6 +406,7 @@ def test_flag_inference_rejects_foreign_guild_and_non_ticket(monkeypatch,guild,c
     from tests.test_ticket_storage_foundation import _mongo,_ticket
     async def allowed(*a): return True
     monkeypatch.setattr(flags.perms,'is_recruiter',allowed)
+    monkeypatch.setattr(flags.perms, "can_handle", lambda member, mongo, ticket_type: flags.perms.is_recruiter(member, mongo))
     with pytest.raises(ValueError,match='ticket or staff thread'):
         asyncio.run(flags.flag_identity_from_context(SimpleNamespace(member=object(),guild_id=guild,channel_id=channel),_mongo(_ticket()),(),()))
 
@@ -417,6 +421,7 @@ def test_flag_add_command_passes_inferred_identity_to_authorized_writer(monkeypa
         return SimpleNamespace(outcome=store.WON,doc={'discord_ids':list(kw['discord_ids']),'player_tags':list(kw['player_tags']),'reason':kw['reason']})
     async def nothing(*a,**kw): pass
     monkeypatch.setattr(flags.perms,'is_recruiter',allowed)
+    monkeypatch.setattr(flags.perms, "can_handle", lambda member, mongo, ticket_type: flags.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(flags.flag_store,'set_flag_authorized',write)
     for name in ('_reconcile_ghost_names_best_effort','refresh_open_staff_contexts_for_flag_best_effort','request_hub_refresh_best_effort','_reply'):
         monkeypatch.setattr(flags,name,nothing)

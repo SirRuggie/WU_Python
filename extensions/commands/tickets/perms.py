@@ -10,7 +10,7 @@ inherit trust from the command that rendered it.
 import hikari
 
 from utils.mongo import MongoClient
-from extensions.commands.tickets import testing_service
+from extensions.commands.tickets import schema, testing_service
 
 
 def _as_int(value) -> int:
@@ -72,11 +72,37 @@ async def is_recruiter(member: hikari.Member | None, mongo: MongoClient) -> bool
     member_guild_id = _as_int(getattr(member, "guild_id", 0))
     if not target_guild_id or member_guild_id != target_guild_id:
         return False
-    main_role = _as_int(config.get("main_thread_recruiter_role"))
-    fwa_role = _as_int(config.get("fwa_thread_recruiter_role"))
     role_ids = {_as_int(value) for value in member.role_ids}
+    handler_roles = {
+        _as_int(config.get(f"{kind}_thread_recruiter_role")) for kind in schema.TICKET_TYPES
+    }
     return bool(
-        (main_role and main_role in role_ids)
-        or (fwa_role and fwa_role in role_ids)
+        (role_ids & (handler_roles - {0}))
         or member.permissions & hikari.Permissions.ADMINISTRATOR
     )
+
+
+async def can_handle(
+    member: hikari.Member | None, mongo: MongoClient, ticket_type: str
+) -> bool:
+    """May this member act on a ticket of ``ticket_type``?
+
+    Administrator in the bound guild, or the role configured for that exact
+    type. ``is_recruiter`` is only console access; every action that changes a
+    ticket must also pass this check with the ticket's own type.
+    """
+    if member is None:
+        return False
+    if testing_service.is_test_scope(mongo):
+        return await is_recruiter(member, mongo)
+    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    target_guild_id = _as_int(config.get("ticket_target_guild_id"))
+    if not target_guild_id or _as_int(getattr(member, "guild_id", 0)) != target_guild_id:
+        return False
+    if member.permissions & hikari.Permissions.ADMINISTRATOR:
+        return True
+    kind = str(ticket_type or "").strip().lower()
+    if kind not in schema.TICKET_TYPES:
+        return False
+    role = _as_int(config.get(f"{kind}_thread_recruiter_role"))
+    return bool(role and role in {_as_int(value) for value in member.role_ids})

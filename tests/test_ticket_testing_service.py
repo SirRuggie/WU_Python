@@ -191,6 +191,7 @@ def test_test_ticket_creation_then_simulated_approval_stays_in_scope(monkeypatch
 
     scheduled = []
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve.store, "find_one", read_ticket)
     monkeypatch.setattr(resolve.store, "transition", transition)
     monkeypatch.setattr(resolve, "_schedule_resolution_effects", lambda bot, mongo, doc: scheduled.append((bot, mongo, doc)))
@@ -229,6 +230,7 @@ def test_old_window_decision_cannot_write_in_new_window(monkeypatch):
         raise AssertionError("stale window wrote a ticket")
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve.store, "find_one", read_ticket)
     monkeypatch.setattr(resolve.store, "transition", forbidden)
     member = SimpleNamespace(id=30, guild_id=10, role_ids=(), permissions=hikari.Permissions.ADMINISTRATOR)

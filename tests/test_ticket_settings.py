@@ -99,6 +99,7 @@ def test_history_submit_checks_ownership_before_read(monkeypatch):
 def test_history_submit_uses_selected_user_and_private_panel(monkeypatch):
     monkeypatch.setattr(console,'get_state',AsyncMock(return_value={'type':'ticket_member_history','owner_id':1,'guild_id':2}))
     monkeypatch.setattr(perms,'is_recruiter',AsyncMock(return_value=True))
+    monkeypatch.setattr(perms, "can_handle", lambda member, mongo, ticket_type: perms.is_recruiter(member, mongo))
     read=AsyncMock(return_value=[]);monkeypatch.setattr(console.store,'history_for',read)
     c=ctx();c.interaction.values=['123'];m=NS()
     asyncio.run(console.member_history_pick(c,'token',mongo=m))

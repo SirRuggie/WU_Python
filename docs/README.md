@@ -91,6 +91,9 @@ before changing durable documentation.
   for all 22 registered v2 commands, permissions, examples, applicant actions,
   unbuilt candidate follow-up, and what changes when legacy is retired.
 
+- [warrior-desk.md](warrior-desk.md) — the Warrior Desk panel: `account` and
+  `staff` request types, config keys, routing, permissions, end states, copy.
+
 - [ticket-console.md](ticket-console.md) — the implemented v2 console design.
   Architecture, search, the binary flag system, ticket-history auto-detect,
   the permanence model, the chart's palette and layout, and two corrections

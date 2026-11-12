@@ -28,6 +28,7 @@ ACTIONS = {
     ("ticket_settings", "save"),
     ("ticket_settings", "check"),
     ("ticket_settings", "restore_entry"),
+    ("ticket_settings", "restore_desk_entry"),
     ("ticket_settings", "restore_console"),
     ("ticket_testing", "start"),
     ("ticket_testing", "end"),
@@ -255,7 +256,7 @@ async def dispatch(bot, mongo, row, ctx):
                     "nick": getattr(ctx.member, "display_name", str(row["user_id"]))
                 },
             }
-            for part in ("timers", "main", "fwa", "viewers"):
+            for part in ("timers", "main", "fwa", "viewers", "desk"):
                 before = history_values(cfg, part)
                 if set(before).intersection(changes):
                     token = await begin(
@@ -277,12 +278,15 @@ async def dispatch(bot, mongo, row, ctx):
                 await finish(mongo, token, history_values(fresh, part))
             return {"message": result}
         if action == "check":
-            await settings.validate(mongo, bot.rest, cfg, GUILD_ID)
+            desk = await settings.validate(mongo, bot.rest, cfg, GUILD_ID)
             return {
-                "message": "Ticket channels, permissions, and entry binding are valid."
+                "message": f"Ticket channels, permissions, and entry binding are valid. {desk}"
             }
         if action == "restore_entry":
             message = await settings.repair_entry(ctx, mongo, bot)
+            return {"message": message}
+        if action == "restore_desk_entry":
+            message = await settings.repair_desk_entry(ctx, mongo, bot)
             return {"message": message}
         from extensions.commands.tickets import console
 

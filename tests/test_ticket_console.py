@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import hikari
 import pytest
@@ -685,6 +686,7 @@ def test_browse_status_filter_updates_state_and_resets_page(monkeypatch):
         return ["RENDERED"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_session", render)
 
@@ -730,6 +732,7 @@ def test_browse_flag_filter_updates_state_and_preserves_other_filters(monkeypatc
         return ["RENDERED"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_session", render)
 
@@ -778,6 +781,7 @@ def test_browse_filter_re_renders_unchanged_panel_when_not_recruiter(monkeypatch
         return ["UNCHANGED"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", denied)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_render_browse_session", render)
 
     result = asyncio.run(console.ticket_console_browse_type(
@@ -824,6 +828,7 @@ def test_browse_page_button_advances_and_retreats_with_a_floor_of_one(monkeypatc
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_session", render)
 
@@ -875,6 +880,7 @@ def test_browse_pick_opens_the_ticket_detail_panel(monkeypatch):
         return ["DETAIL"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store, "find_one", find_one)
     monkeypatch.setattr(console, "_ticket_detail_panel", detail)
 
@@ -926,6 +932,7 @@ def test_browse_button_opens_a_fresh_ephemeral_panel(monkeypatch):
         return ["PANEL"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_create_browse_state", create_state)
     monkeypatch.setattr(console, "_render_browse_session", render)
 
@@ -1050,6 +1057,7 @@ def test_browse_period_custom_choice_enters_custom_mode(monkeypatch):
         return ["CUSTOM_PANEL"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "ticket_console_browse_custom", custom_entry)
 
     result = asyncio.run(console.ticket_console_browse_period(
@@ -1081,6 +1089,7 @@ def test_browse_custom_entry_seeds_state_defaults_and_renders_the_editor(monkeyp
         return ["EDITOR"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
     monkeypatch.setattr(console, "utcnow", lambda: datetime(2026, 9, 9, tzinfo=timezone.utc))
@@ -1123,6 +1132,7 @@ def test_browse_custom_entry_reuses_an_already_applied_range_when_reopened(monke
         return ["EDITOR"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
 
@@ -1160,6 +1170,7 @@ def test_browse_custom_from_year_select_updates_one_field_and_stays_in_the_edito
         return ["EDITOR"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
 
@@ -1197,6 +1208,7 @@ def test_browse_custom_apply_rejects_from_after_to_with_an_inline_error(monkeypa
         return ["ERROR_VIEW"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
 
@@ -1237,6 +1249,7 @@ def test_browse_custom_apply_commits_the_range_resets_page_and_shows_the_placeho
         return [_ticket(index) for index in range(1, 4)]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console.store, "browse_count", browse_count)
     monkeypatch.setattr(console.store, "browse", browse)
@@ -1271,6 +1284,7 @@ def test_browse_custom_cancel_restores_the_previous_period(monkeypatch):
         return ["LIST"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_render_browse_session", render)
 
     result = asyncio.run(console.ticket_console_browse_custom_cancel(
@@ -1599,6 +1613,7 @@ def test_flag_modal_openers_acknowledge_with_modal_before_state_or_permission(
 
     monkeypatch.setattr(dispatcher, "get_state", forbidden)
     monkeypatch.setattr(console.perms, "is_recruiter", forbidden)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
 
     asyncio.run(dispatcher._dispatch(Context(
         f"ticket_v2_flag_set:{'a' * 32}|blacklisted"
@@ -1682,6 +1697,7 @@ def test_flag_set_submit_uses_latest_ticket_discord_id_and_all_37_tags(
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store, "find_one", latest)
     monkeypatch.setattr(
         console.flag_store, "set_flag_if_current_authorized", save
@@ -1766,6 +1782,7 @@ def test_flag_remove_submit_resolves_selection_slot_and_audits_reason(monkeypatc
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store, "find_one", latest)
     monkeypatch.setattr(console.flag_store, "list_for_identity", matching)
     monkeypatch.setattr(console.flag_store, "deactivate_flag_authorized", remove)
@@ -1814,6 +1831,7 @@ def test_flag_manager_state_denies_wrong_owner_guild_or_recruiter(
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", permission)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     data, error = asyncio.run(console._authorized_flag_manager_state(
         Context(), object(), "manager",
     ))
@@ -2295,6 +2313,7 @@ def test_ticket_search_and_deny_openers_send_modals_without_prerequisite_work(
 
     monkeypatch.setattr(console, "get_state", forbidden)
     monkeypatch.setattr(console.perms, "is_recruiter", forbidden)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_create_search_state", forbidden)
 
     ctx = Context()
@@ -2347,6 +2366,7 @@ def test_public_picker_creates_ephemeral_followup_and_leaves_hub_byte_exact(monk
         return ["PRIVATE"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store, "find_one", find_one)
     monkeypatch.setattr(console, "_ticket_detail_panel", detail)
 
@@ -2409,6 +2429,7 @@ def test_search_again_submit_defers_before_permission_and_mongo_work(monkeypatch
         return ["RESULT"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console, "_create_search_state", state)
     monkeypatch.setattr(console, "_render_search_session", render)
@@ -2453,6 +2474,7 @@ def test_root_find_submit_acknowledges_before_creating_owner_bound_state(monkeyp
         return ["RESULT"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_create_search_state", state)
     monkeypatch.setattr(console, "_render_search_session", render)
 
@@ -2502,6 +2524,7 @@ def test_status_filter_re_renders_the_panel_instead_of_blanking_it_when_not_recr
         return ["UNCHANGED PANEL"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", denied)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_render_search_session", render)
 
     result = asyncio.run(console.ticket_console_status(
@@ -2612,6 +2635,7 @@ def test_console_deny_submit_authorizes_before_loading_private_state(monkeypatch
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.resolve, "deny_ticket", deny)
 
     asyncio.run(console.ticket_console_deny_submit(
@@ -2682,6 +2706,7 @@ def test_console_deny_submit_already_decided_mentions_and_suppresses_pings(monke
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console, "insert_state", insert)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.resolve, "deny_ticket", deny)
 
     asyncio.run(console.ticket_console_deny_submit(
@@ -2711,6 +2736,7 @@ def test_console_approve_opens_a_confirm_step_before_touching_anything(monkeypat
         return copy.deepcopy(ticket)
 
     monkeypatch.setattr(console.store, "find_one", find)
+    monkeypatch.setattr(console.perms, "can_handle", AsyncMock(return_value=True))
 
     ctx = SimpleNamespace(user=SimpleNamespace(id=22, username="Recruiter"))
 
@@ -2748,6 +2774,7 @@ def test_console_approve_confirm_step_completes_the_approval(monkeypatch):
         return copy.deepcopy(ticket)
 
     monkeypatch.setattr(console.store, "find_one", find)
+    monkeypatch.setattr(console.perms, "can_handle", AsyncMock(return_value=True))
 
     ctx = SimpleNamespace(
         user=SimpleNamespace(id=22, username="Recruiter"),
@@ -2895,6 +2922,7 @@ def test_console_deny_submit_shows_in_progress_notice_before_calling_deny_ticket
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.resolve, "deny_ticket", deny)
     monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
 
@@ -3036,6 +3064,7 @@ def test_direct_find_command_defers_before_permission_and_search_work(monkeypatc
         return ["RESULT"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_create_search_state", state)
     monkeypatch.setattr(console, "_render_search_session", render)
 
@@ -4899,6 +4928,7 @@ def test_shared_deny_modal_never_updates_origin_and_uses_normal_cas(monkeypatch)
 
     monkeypatch.setattr(console, "_hub_state", hub_state)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store, "find_one", find)
     monkeypatch.setattr(console.resolve, "deny_ticket", deny)
     asyncio.run(
@@ -4929,6 +4959,7 @@ def test_shared_ticket_rejects_copied_source_before_reading_ticket(monkeypatch):
     monkeypatch.setattr(console, "_hub_state", state)
     monkeypatch.setattr(console.store, "find_one", forbidden)
     monkeypatch.setattr(console.perms, "is_recruiter", forbidden)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     assert asyncio.run(console._shared_ticket(ctx, object(), "ticket_1")) is None
 
 

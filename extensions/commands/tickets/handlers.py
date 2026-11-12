@@ -19,6 +19,7 @@ from pymongo.errors import DuplicateKeyError
 
 from extensions.commands.tickets import loader, thread_intake_ready, ticket
 from extensions.commands.tickets import resolve
+from extensions.commands.tickets import schema
 from extensions.commands.tickets import store
 from extensions.commands.tickets import thread_service, testing_service
 from extensions.commands import ticket_runtime
@@ -65,11 +66,16 @@ async def _show_created_ticket(ctx, ticket, *, resumed=False):
     kind = str(ticket.get("ticket_type") or "main").upper()
     wording = "already open" if resumed else "created"
     number = f" #{ticket['ticket_number']}" if ticket.get("ticket_number") is not None else ""
+    desk = kind.lower() in schema.DESK_TICKET_TYPES
     row = hikari.impl.MessageActionRowBuilder().add_link_button(
-        f"https://discord.com/channels/{guild_id}/{location_id}", label="Open your ticket"
+        f"https://discord.com/channels/{guild_id}/{location_id}",
+        label="Open your request" if desk else "Open your ticket",
     )
     await ctx.interaction.edit_initial_response(
-        content=f"✅ Your {kind} ticket{number} is {wording}.",
+        content=(
+            f"✅ Your request{number} is {wording}."
+            if desk else f"✅ Your {kind} ticket{number} is {wording}."
+        ),
         components=[row], user_mentions=False, role_mentions=False, mentions_everyone=False,
     )
 
@@ -344,12 +350,13 @@ async def handle_create_ticket(
             content="❌ This ticket panel is unavailable. Ask staff for the current panel."
         )
         return
-    if ticket_type not in {"main", "fwa"}:
+    if ticket_type not in schema.TICKET_TYPES:
         await edit_error(ctx, rest=bot.rest,
             content="❌ That ticket type is not available."
         )
         return
 
+    noun = "request" if ticket_type in schema.DESK_TICKET_TYPES else "ticket"
     interaction_message = getattr(ctx.interaction, "message", None)
     message_id = _source_message_id or store.as_int(getattr(interaction_message, "id", 0))
     member_roles = tuple(
@@ -374,7 +381,9 @@ async def handle_create_ticket(
             f"message={message_id} error={type(error).__name__}"
         )
         await edit_error(ctx, rest=bot.rest,
-            content="❌ Tickets are not available now. No ticket was created."
+            content="❌ Requests are not available now. No request was created."
+            if noun == "request" else
+            "❌ Tickets are not available now. No ticket was created."
         )
         return
     if not route.allowed or route.route != ticket_runtime.ROUTE_THREAD:
@@ -382,7 +391,9 @@ async def handle_create_ticket(
             "❌ This test panel is not active for you. "
             "Use the current public ticket panel or ask a recruiter."
             if intake_surface == "pilot"
-            else "❌ This ticket panel is not active. Use the current panel or ask a recruiter."
+            else "❌ This panel is not active. Use the current panel or ask staff."
+            if noun == "request" else
+            "❌ This ticket panel is not active. Use the current panel or ask a recruiter."
         )
         await edit_error(ctx, rest=bot.rest, content=message)
         return
@@ -402,7 +413,7 @@ async def handle_create_ticket(
                 content=f"⏳ You can try again <t:{retry_at}:R>."
             )
             return
-    await ctx.interaction.edit_initial_response(content="🎫 Creating your ticket…")
+    await ctx.interaction.edit_initial_response(content=f"🎫 Creating your {noun}…")
     workflow_id = f"thread:{user_id}:{ticket_type}"
     try:
         slot_claim = await ticket_runtime.claim_open_slot(
@@ -439,7 +450,9 @@ async def handle_create_ticket(
             f"error={type(error).__name__}"
         )
         await edit_error(ctx, rest=bot.rest,
-            content="❌ Tickets are not available now. No ticket was created."
+            content="❌ Requests are not available now. No request was created."
+            if noun == "request" else
+            "❌ Tickets are not available now. No ticket was created."
         )
         return
     if not slot_claim.won:
@@ -497,8 +510,9 @@ async def handle_create_ticket(
                     store.as_int(existing_ticket.get("guild_id"))
                     if existing_ticket is not None else None
                 ) or int(ctx.guild_id)
+                noun = "request" if ticket_type in schema.DESK_TICKET_TYPES else "ticket"
                 message = (
-                    f"✅ You already have an open {ticket_type.upper()} ticket: "
+                    f"✅ You already have an open {ticket_type.upper()} {noun}: "
                     f"https://discord.com/channels/{ticket_guild_id}/{location_id}"
                 )
         else:
@@ -591,7 +605,9 @@ MAX_MY_TICKET_HISTORY = 5
 
 def _my_ticket_history_line(prior: dict) -> str:
     """One "My ticket" history row. Applicant-facing only: no flags or notes."""
-    kind = "FWA" if str(prior.get("ticket_type") or "").casefold() == "fwa" else "Main"
+    kind = {"fwa": "FWA", "account": "Account", "staff": "Staff"}.get(
+        str(prior.get("ticket_type") or "").casefold(), "Main"
+    )
     try:
         number = int(prior.get("ticket_number"))
     except (TypeError, ValueError):
