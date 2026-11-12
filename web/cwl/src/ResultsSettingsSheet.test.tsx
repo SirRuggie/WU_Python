@@ -3,7 +3,6 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api";
-import { pickerByLabel, pickOption } from "./searchPickerTestUtils";
 const api = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
 import ResultsSettingsSheet from "./ResultsSettingsSheet";
@@ -19,16 +18,25 @@ const sync = {
   updated_at: "2026-11-01T00:00:00Z",
 };
 const participation = { accounts: [], publication_version: 1, sync };
+const rep = (tag: string, name: string, user: string | null, note = "") => ({
+  tag,
+  player_name: name,
+  town_hall: 16,
+  user_id: user,
+  note,
+  revision: 1,
+});
 const raffle = {
   season_status: "draft",
   revision: 7,
-  lazy_settings: { representative_role_id: "769130325460254740" },
-};
-const roles = {
-  roles: [
-    { id: "111111111111111111", name: "Rep" },
-    { id: "769130325460254740", name: "FWA Rep" },
+  rep_accounts: [
+    rep("#P2Y", "Alpha", "111111111111111111", "REP for Edrag Rush/420"),
+    rep("#Q2Y", "Bravo", null),
+    rep("#R2Y", "Charlie", "111111111111111111"),
   ],
+};
+const members = {
+  options: [{ id: "111111111111111111", display_name: "Ruggie" }],
 };
 let host: HTMLDivElement;
 let root: Root;
@@ -89,10 +97,10 @@ beforeEach(() => {
   api
     .mockReset()
     .mockImplementation(async (route: string) =>
-      route === "/announcement-roles"
-        ? roles
-        : route.endsWith("/bonus-raffle/lazy-settings")
-          ? { ...raffle, revision: 8 }
+      route.startsWith("/staff-signup-members")
+        ? members
+        : route.endsWith("/bonus-raffle/rep-accounts")
+          ? { ...raffle, revision: 8, rep_accounts: [] }
           : route.endsWith("/participation/sync-settings")
             ? { sync: { ...sync, cycle: "2026-12", enabled: true } }
             : route.endsWith("/bonus-raffle")
@@ -109,12 +117,12 @@ afterEach(async () => {
 });
 
 describe("Settings sheet", () => {
-  it("holds CWL capture and Lazy draw odds, and no disclosure", async () => {
+  it("holds CWL capture and FWA Rep accounts, and no disclosure", async () => {
     await open();
     const sections = [
       ...document.querySelectorAll(".results-settings-section h3"),
     ].map((node) => node.textContent);
-    expect(sections).toEqual(["CWL capture", "Lazy draw odds"]);
+    expect(sections).toEqual(["CWL capture", "FWA Rep accounts"]);
     expect(document.querySelector("dialog.results-settings")).not.toBeNull();
     expect(document.querySelector("details")).toBeNull();
     expect(month().value).toBe("2026-11");
@@ -122,7 +130,9 @@ describe("Settings sheet", () => {
   });
   it("shows only the section a user can use", async () => {
     await open({ canOdds: false });
-    expect(document.querySelector('[aria-label="Lazy draw odds"]')).toBeNull();
+    expect(
+      document.querySelector('[aria-label="FWA Rep accounts"]'),
+    ).toBeNull();
     expect(
       api.mock.calls.some((call) => String(call[0]).includes("bonus-raffle")),
     ).toBe(false);
@@ -130,7 +140,7 @@ describe("Settings sheet", () => {
     await open({ canCapture: false });
     expect(document.querySelector('[aria-label="CWL capture"]')).toBeNull();
     expect(
-      document.querySelector('[aria-label="Lazy draw odds"]'),
+      document.querySelector('[aria-label="FWA Rep accounts"]'),
     ).not.toBeNull();
     expect(
       api.mock.calls.filter((call) =>
@@ -167,24 +177,134 @@ describe("Settings sheet", () => {
     });
     expect(onDirty).toHaveBeenLastCalledWith(false);
   });
-  it("saves the representative role with the draw revision it loaded", async () => {
+  it("groups FWA Rep accounts by Discord user with notes, unlinked last", async () => {
     await open();
-    expect(button("Save role").disabled).toBe(true);
-    await pickOption(
-      pickerByLabel(document.body, "Representative role"),
-      "Rep",
+    const groups = [...document.querySelectorAll(".rep-accounts-group")].map(
+      (group) => ({
+        head: group.querySelector("header small")?.textContent,
+        rows: [...group.querySelectorAll(".rep-account-row strong")].map(
+          (node) => node.textContent,
+        ),
+      }),
     );
-    expect(button("Save role").disabled).toBe(false);
-    await act(async () => button("Save role").click());
+    expect(groups).toEqual([
+      { head: "2 accounts", rows: ["Alpha", "Charlie"] },
+      { head: "1 account", rows: ["Bravo"] },
+    ]);
+    expect(
+      document.querySelector(".rep-accounts-group header")?.textContent,
+    ).toContain("Ruggie");
+    expect(
+      document.querySelectorAll(".rep-accounts-group")[1].textContent,
+    ).toContain("Not linked");
+    expect(document.querySelector(".rep-account-note")?.textContent).toBe(
+      "REP for Edrag Rush/420",
+    );
+    expect(
+      api.mock.calls.filter((call) =>
+        String(call[0]).startsWith("/staff-signup-members"),
+      ),
+    ).toEqual([["/staff-signup-members?ids=111111111111111111"]]);
+    expect(writes()).toHaveLength(0);
+  });
+  it("adds an account by tag with a note and the draw revision it loaded", async () => {
+    await open();
+    const add = button("Add account");
+    expect(add.disabled).toBe(true);
+    await type(
+      document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!,
+      " #V2Y ",
+    );
+    await type(
+      document.querySelector<HTMLInputElement>('input[name="rep-note"]')!,
+      "REP for Edrag Rush ",
+    );
+    expect(onDirty).toHaveBeenLastCalledWith(true);
+    await act(async () => add.click());
     expect(writes()).toEqual([
       [
-        "/seasons/1/bonus-raffle/lazy-settings",
-        "PATCH",
-        { representative_role_id: "111111111111111111", revision: 7 },
+        "/seasons/1/bonus-raffle/rep-accounts",
+        "POST",
+        { tag: "#V2Y", note: "REP for Edrag Rush", revision: 7 },
       ],
     ]);
     expect(onSaved).toHaveBeenCalledExactlyOnceWith({ kind: "odds" });
-    expect(button("Save role").disabled).toBe(true);
+    expect(
+      document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!.value,
+    ).toBe("");
+    expect(document.body.textContent).toContain("No FWA Rep accounts");
+    expect(onDirty).toHaveBeenLastCalledWith(false);
+  });
+  it("edits a note and removes an account only after confirmation", async () => {
+    await open();
+    await act(async () => button("Edit note").click());
+    const input = document.querySelector<HTMLInputElement>(
+      'input[name="rep-edit-note"]',
+    )!;
+    expect(input.value).toBe("REP for Edrag Rush/420");
+    expect(button("Save note").disabled).toBe(true);
+    await type(input, "REP for Edrag Rush");
+    await act(async () => button("Save note").click());
+    expect(writes()).toEqual([
+      [
+        "/seasons/1/bonus-raffle/rep-accounts",
+        "PATCH",
+        {
+          tag: "#P2Y",
+          note: "REP for Edrag Rush",
+          rep_revision: 1,
+          revision: 7,
+        },
+      ],
+    ]);
+    api.mockClear();
+    await act(async () => root.render(<></>));
+    await open();
+    await act(async () => button("Remove").click());
+    const dialog = document.querySelector(".confirm-dialog")!;
+    expect(dialog.textContent).toContain("Remove Alpha (#P2Y)?");
+    await act(async () => button("Cancel", dialog).click());
+    expect(writes()).toHaveLength(0);
+    await act(async () => button("Remove").click());
+    await act(async () =>
+      button(
+        "Remove account",
+        document.querySelector(".confirm-dialog")!,
+      ).click(),
+    );
+    expect(writes()).toEqual([
+      [
+        "/seasons/1/bonus-raffle/rep-accounts",
+        "DELETE",
+        { tag: "#P2Y", rep_revision: 1, revision: 7 },
+      ],
+    ]);
+  });
+  it("shows a list conflict, reloads the list and keeps the typed tag", async () => {
+    await open();
+    await type(
+      document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!,
+      "#V2Y",
+    );
+    api.mockImplementation(async (route: string, method?: string) => {
+      if (method === "POST")
+        throw new ApiError("This account is already an FWA Rep account", 409);
+      return route.endsWith("/bonus-raffle")
+        ? raffle
+        : route.startsWith("/staff")
+          ? members
+          : participation;
+    });
+    await act(async () => button("Add account").click());
+    await settle();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "already an FWA Rep account",
+    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[name="rep-tag"]')!.value,
+    ).toBe("#V2Y");
+    expect(writes()).toHaveLength(1);
+    expect(onSaved).not.toHaveBeenCalled();
   });
   it("blocks a second save while one is running", async () => {
     await open();
@@ -206,10 +326,10 @@ describe("Settings sheet", () => {
   it("shows a revision conflict, reloads and writes nothing more", async () => {
     await open();
     await type(month(), "2026-12");
-    api.mockImplementation(async (route: string, method?: string) => {
+    api.mockImplementation(async (_route: string, method?: string) => {
       if (method === "POST")
         throw new ApiError("Settings changed elsewhere. Refresh.", 409);
-      return route === "/announcement-roles" ? roles : participation;
+      return participation;
     });
     await act(async () => button("Save capture settings").click());
     await settle();
@@ -276,7 +396,8 @@ describe("Settings sheet", () => {
   it("is read only for an archived season", async () => {
     await open({ archived: true });
     expect(month().disabled).toBe(true);
-    expect(button("Save role").disabled).toBe(true);
+    expect(button("Add account").disabled).toBe(true);
+    expect(button("Remove").disabled).toBe(true);
     expect(document.body.textContent).toContain("Read only");
   });
 });

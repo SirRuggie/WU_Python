@@ -1429,7 +1429,7 @@ Prompt 229. Owner decisions D1-D10, accepted one at a time in the thread
   No clan: overview. Clan selected: the five steps. `/cwl/results` and
   `/cwl/bonuses` open this page; canonical path is `/cwl/results`.
 - D8: Page ⋯ menu: Check Clash now, Refresh, Settings. The Settings sheet holds
-  CWL capture and Lazy draw odds (FWA Rep role). Both saved histories moved to
+  CWL capture and FWA Rep accounts (was the FWA Rep role; see below). Both saved histories moved to
   Exports. A missing CWL month blocks step 1 with a link to Settings.
 - D9: One name per thing: Meets rule, Check Clash now, Refresh, Players,
   In the draw / Excluded.
@@ -1453,7 +1453,6 @@ Accepted deviations:
 - Bonus-only users keep a Results panel (blockers and Check Clash now).
 - A clan plus an outcome in the address opens the list. A clan plus a step, or
   a clan card or filter, opens the steps.
-- `roleDirty` in `bonusRaffle.ts` is always false from the page.
 - No auto-selected clan: with no clan, the page shows cards only.
 - First player card `top` at 360x800 was not measured in a browser.
 
@@ -1466,6 +1465,16 @@ plain text without it). Backend: the three-month Lazy sit-out counts earlier
 Lazy bonuses only; a Main bonus does not count. Phone order: Season, status,
 Main/Lazy tabs, Hosting clan, search and Sort, list or steps. The overview
 now uses the roster-ui focus ring (3px) like the steps view.
+
+Follow-up (2026-11-12): FWA Rep accounts replace the FWA Rep role for the x2
+Lazy draw odds. Decisions walked with Ruggie one at a time: D1 remove the role
+rule and its Discord check; D2 one family-wide list, not saved per season,
+approved draws keep their odds; D3 add by tag (official API check), Remove per
+row, audit log, rows grouped by Discord user like Build roster; D4 Bonuses grant
+edits, plus an optional 40-character note per row; D5 Lazy only; D6 the list
+starts empty. Settings section "FWA Rep accounts" in `BonusRepAccounts.tsx`;
+the "Discord roles unavailable" blocker is removed. Details:
+`docs/cwl-lazy-bonuses.md`.
 
 Later:
 

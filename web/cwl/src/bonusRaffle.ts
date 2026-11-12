@@ -45,10 +45,15 @@ export type SavedDraw = {
     pages: { page: number; status: string; message_id: string | null }[];
   };
 }
+/** One family-wide FWA Rep account: 2 chances in Lazy draws. */
+export type RepAccount = {
+  tag: string; player_name: string; town_hall: number | null; user_id: string | null;
+  note: string; revision: number;
+}
 export type RaffleData = Omit<BonusData, 'accounts'> & {
   season_status: string; historical_accounts_count: number; sync: {enabled: boolean; last_checked_at: string | null; warning: string | null; status?: string; cycle?: string | null}; roster_source: string; policies: Record<Pool, number | null>;
   draws: SavedDraw[]; accounts: RaffleAccount[]; allowances?: Record<string, BonusAllowance>;
-  lazy_settings?: { representative_role_id: string };
+  rep_accounts?: RepAccount[];
   bonus_reviews?: Record<string, BonusReview>;
   lazy_hosts?: BonusClan[];
 }
@@ -100,7 +105,6 @@ export type BonusReviewGuard = {
   candidateOpen: boolean;
   countReady: boolean;
   needsMinimum: boolean;
-  rolesUnavailable: boolean;
   /** Every player lacks results and no staff reason covers them. */
   resultsMissing: boolean;
   /** Players still without a result or a covering staff reason. */
@@ -112,7 +116,7 @@ export type BonusReviewGuard = {
 }
 export type BonusBlockerId =
   | 'access' | 'archived' | 'minimum-dirty' | 'open-review'
-  | 'count' | 'minimum' | 'roles' | 'results' | 'partial' | 'cycle' | 'inactive'
+  | 'count' | 'minimum' | 'results' | 'partial' | 'cycle' | 'inactive'
 
 export type BonusBlockerLine = {
   id: BonusBlockerId; text: string;
@@ -146,7 +150,6 @@ export function bonusStepBlockers(guard: BonusReviewGuard): Record<BonusStep, Bo
       line(!guard.countReady, 'count', 'Enter the bonus count', true),
       line(guard.needsMinimum && !guard.policyDirty, 'minimum', 'Set the Main minimum', true),
       line(guard.hostInactive, 'inactive', 'Hosting clan is not an active Lazy clan this season', false, true),
-      line(guard.rolesUnavailable, 'roles', 'Discord roles unavailable · Retry', false),
     ]),
     draw,
     approve: pick([access, archived]),

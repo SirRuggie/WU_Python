@@ -28,7 +28,7 @@ const account = (tag: string, name: string, clan: string, patch = {}) => ({
   stars: 9,
   source_status: "complete",
   source_complete: true,
-  representative_status: "verified",
+  representative_status: "not_listed",
   ...patch,
 });
 const base = {
@@ -483,7 +483,6 @@ describe("Step blockers", () => {
     candidateOpen: false,
     countReady: true,
     needsMinimum: false,
-    rolesUnavailable: false,
     resultsMissing: false,
     uncheckedCount: 0,
     canReviewUnchecked: true,
@@ -523,7 +522,6 @@ describe("Step blockers", () => {
       candidateOpen: true,
       countReady: true,
       needsMinimum: true,
-      rolesUnavailable: false,
       resultsMissing: false,
       uncheckedCount: false,
       cycleMissing: false,
@@ -537,7 +535,6 @@ describe("Step blockers", () => {
       candidateOpen: "Save the open review",
       countReady: "Enter the bonus count",
       needsMinimum: "Set the Main minimum",
-      rolesUnavailable: "Discord roles unavailable · Retry",
       resultsMissing: "Results not captured",
       uncheckedCount: "3 not checked · Review",
       cycleMissing: "CWL month not set",
@@ -595,12 +592,11 @@ describe("Step blockers", () => {
     expect(writes()).toHaveLength(0);
     expect(previews()).toHaveLength(0);
   });
-  it("shows Results, Discord and open-review blockers once, each with its fix", async () => {
+  it("shows Results and open-review blockers once, each with its fix", async () => {
     await mount({
       ...base,
       accounts: [
         account("#P1", "Alpha", "#2YQ", {
-          representative_status: "unavailable",
           attacks: null,
           source_complete: false,
         }),
@@ -616,17 +612,10 @@ describe("Step blockers", () => {
       (host.textContent || "").split("Results not captured").length - 1,
     ).toBe(2);
     await act(async () => stepLink("rules").click());
-    // The count line sits with the count box, after the other lines.
-    expect(blockerText()).toEqual([
-      "Discord roles unavailable · Retry",
-      "Enter the bonus count",
-    ]);
-    // The Discord notice shows once on the page.
-    expect(
-      (host.textContent || "").split("Discord roles unavailable").length - 1,
-    ).toBe(1);
+    // Odds come from the FWA Rep list: no Discord line.
+    expect(blockerText()).toEqual(["Enter the bonus count"]);
     await typeCount("5");
-    expect(blockerText()).toEqual(["Discord roles unavailable · Retry"]);
+    expect(blockerText()).toEqual([]);
     expect(writes()).toHaveLength(0);
     await act(async () => button("Add player by tag").click());
     expect(blockerText()).toContain("Save the open review");
@@ -1164,7 +1153,7 @@ describe("phone layout", () => {
       ...base,
       accounts: [
         account("#P1", "Alpha", "#2YQ", {
-          representative_status: "unavailable",
+          representative_status: "listed",
         }),
       ],
     });
@@ -1174,10 +1163,11 @@ describe("phone layout", () => {
       [...host.querySelectorAll("summary")].find(
         (item) => item.textContent === text,
       )!;
+    // FWA Rep odds need no Discord check, so the count line is the only line.
+    expect(flow.querySelectorAll(".bonus-blockers")).toHaveLength(1);
     const sequence = [
-      flow.querySelector(".bonus-blockers")!,
       flow.querySelector(".bonus-stats")!,
-      [...flow.querySelectorAll(".bonus-blockers")][1],
+      flow.querySelector(".bonus-blockers")!,
       flow.querySelector(".bonus-rules-line")!,
       flow.querySelector(".bonus-candidates-heading h3")!,
       flow.querySelector(".bonus-account-list")!,
@@ -1191,9 +1181,7 @@ describe("phone layout", () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
         String(index),
       ).toBeTruthy();
-    expect(flow.querySelector(".bonus-blockers")?.textContent).toBe(
-      "Discord roles unavailable · Retry",
-    );
+    expect(host.textContent).not.toContain("Discord roles unavailable");
     expect(flow.querySelector(".bonus-rules-line")?.textContent).toContain(
       "4+ attacks, or 3 attacks and 8+ stars",
     );
@@ -1341,7 +1329,7 @@ describe("Results & bonuses page: clan steps half", () => {
       [...document.querySelectorAll(".results-settings-section h3")].map(
         (node) => node.textContent,
       ),
-    ).toEqual(["CWL capture", "Lazy draw odds"]);
+    ).toEqual(["CWL capture", "FWA Rep accounts"]);
     expect(writes()).toHaveLength(0);
   });
   it("without Results access the month blocker is plain text and Settings holds the odds only", async () => {
