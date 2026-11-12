@@ -1084,6 +1084,10 @@ export default function BonusWorkspace({
                 "rules",
                 <BonusRulesStep
                   pool={pool}
+                  sitOutMonths={
+                    data.sit_out_settings?.find((row) => row.tag === clanTag)
+                      ?.months ?? 3
+                  }
                   lines={stepLines("rules")}
                   fix={blockerFix}
                   locked={locked}

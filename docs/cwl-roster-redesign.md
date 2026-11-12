@@ -1488,3 +1488,53 @@ Later:
 - (a) Winners count on the clan card ("3 winners · Approved"). Needs an additive
   bonus-status field.
 - (b) "Awarded in Clash" tick. Needs a saved field.
+
+
+## Exports & history D2–D5 (2026-11-12)
+
+Prompt 230 implements the approved history prerequisites before 231/232:
+- D2: one-time import creates missing archived YYYY-MM history seasons with
+  closed signups, existing participation month binding, and only that month's
+  TSV Lazy hosting clans. Existing clans keep their names; new directory clans
+  are archived. Member season, signups, rosters and publications are unchanged.
+- D3: additive `bonus_imported_winners`, unique by month/player tag, retains
+  repeat wins across months and official API names. The dry-run-first import
+  tool validates all inputs before one Store transaction. Mongo checkpoint and
+  online backup cover winners and settings. No production import is authorized.
+- D4: neutral shared Prior winner chip uses the latest non-voided Lazy win from
+  either source, only during exclusion, on Results list/clan steps/Details.
+  Details names the first eligible month. Staff reasons still override sit-out;
+  Build roster has no chip.
+- D5: per-season Lazy hosting-clan sit-out None/1–6 months, default 3, copied
+  with lineup rules. Bonuses grant, archived fence and bonus revision protect
+  Settings saves; changed values are audited. The new draw clan decides the
+  length. Main is unaffected. Lazy v4 snapshots retain the length and revalidate
+  before approval; pending v3 keeps its earlier confirmation-only rule.
+
+Status: implementation prepared for independent refutation and native browser
+fixture review. No production data import, code release or Discord message was
+performed. Later: Exports & history 231 and 232 remain separate batches.
+
+
+Prompt230 rework (Shaka1014): only seasons newly created by the importer receive
+`seasons.history_only=1` (additive boolean, existing seasons default0). Reused
+months are never marked. Normal new-season copies retain MAX-season ordering
+among unmarked seasons, so importing August/September/October after November
+does not replace November as December's source. The marker survives the same
+whole-database checkpoint/backup as winners and sit-out settings. Repeat imports
+filter already imported month/tag rows inside the transaction and make no
+changes, including to hosting clans/rules removed or edited by staff. New import
+rows preserve an existing Lazy season-clan rule and its other settings. Rules & count names the selected
+clan's actual saved sit-out in CWL months, or “No sit-out after a win” for None.
+
+
+Shaka1015 (reused-month pool conflicts): for NEW imported month/tag rows, an
+existing non-Lazy `lineup_rule` blocks the entire import. Dry run lists every
+conflicting month, clan name/tag and existing pool (including an unset pool).
+Apply refuses all such conflicts and rechecks within its single transaction,
+so a staff edit after asynchronous API preflight cannot slip through. Nothing
+in any table changes on rejection. Staff must set the existing rule to Lazy and
+rerun; the importer never rewrites it. Already imported rows remain strict
+no-ops regardless of later edits. Player-provider awaits occur outside database
+transactions. Production dry run/apply remain unapproved; state this conflict
+rule and the `history_only` marker in READY.

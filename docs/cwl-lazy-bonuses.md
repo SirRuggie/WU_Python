@@ -30,14 +30,21 @@ saved"). After the clan's draw is saved, approved or sent, and in archived
 seasons, the flags are read only. Main has no Infractions. The clan steps cards
 show one chip per set flag and "Staff reason"; the overview cards show none.
 
-A Clash account confirmed for a Lazy bonus in any of the three preceding
-calendar CWL months sits out the current month. Earlier Lazy bonuses only; a
-Main bonus does not count. Example: a bonus in January makes the
-account ineligible for February, March and April; it can enter the May lottery.
-This uses non-voided dashboard confirmations across dashboard seasons, not
-inferred in-game medal history. Earlier unrecorded awards cannot be inferred.
-The three Lazy bonus rules: follow the Lazy CWL rules; play 60% of the event (4+
-attacks, or 3 attacks with 8+ stars); no bonus in the previous three seasons.
+A Lazy win from either a non-voided dashboard confirmation or the imported
+winner history starts a sit-out. Each season's Lazy hosting clan has a saved
+**Sit-out after a win** length: None, or 1–6 calendar CWL months, default 3.
+The account's hosting clan in the new draw decides the length; the old winning
+clan does not matter. Main never has a sit-out. An October win with length 2
+sits out November and December; with length 3 it also sits out January, and
+can enter in February. New seasons copy each hosting clan's length with its
+season rules. Settings requires Bonuses access, a non-archived season and the
+current bonus revision; every changed length records actor and before/after
+values in `bonus_audit`.
+
+Results & bonuses Lazy list, clan-step cards and Details show the shared neutral
+**Prior winner · Oct 2026** chip only while the sit-out excludes the account.
+Details also shows **Eligible again: February 2027** for the current hosting
+clan's length. A staff exception removes the chip. Build roster has no chip.
 
 A reason can override participation, infractions, or this sit-out. For an
 account whose results were never captured ("Not checked"), a reason also covers
@@ -107,8 +114,8 @@ eligibility, identities and each account's FWA Rep odds. Approval revalidates th
 saved draw; it never silently rerolls. Same-month account uniqueness and the
 existing per-clan draw constraint prevent duplicate awards. Old Main snapshots
 retain their approval behavior; pending old Lazy snapshots must be cancelled and
-reviewed under the new rules. Lazy snapshots now carry `rules_version` 3; a
-pending version 2 draw (role rule) must be cancelled and drawn again. Approval
+reviewed under the new rules. Lazy snapshots now carry `rules_version` 4 and their hosting clan's sit-out length; a
+pending version 2 draw (role rule) must be cancelled and drawn again. Pending version 3 draws retain their original three-month, non-voided confirmation-only rule. Version 4 approval blocks with “Rules changed · draw again” when a length or imported win changes sit-out eligibility; it never rerolls. Approval
 fails when a listed account's odds changed since the draw. Approved historical snapshots remain readable.
 
 Approval and announcement remain separate. Delivery retains durable receipts;
@@ -130,3 +137,61 @@ The staff flow has five steps: Results, Rules & count, Draw, Approve, and
 Announce & award. The draw preview loads when Draw opens. The FWA Rep accounts
 and the capture settings are in the page ⋯ Settings. Saved histories are in
 Exports. The rules above do not change.
+
+## Imported history (Exports & history D2–D5, 2026-11-12)
+
+`bonus_imported_winners`, owned by `utils/cwl_bonus_raffle_store.py`, stores
+season/month, Lazy pool, verified player tag and official API name, old clan
+tag/name, source `import`, actor and timestamp. `(cycle, player_tag)` is unique;
+repeat wins in different months remain separate. No fake batch or publication
+is made. The complete Mongo checkpoint and SQLite online backup include this
+table and `lineup_rules.sit_out_months`. The additive column defaults to 3;
+existing rules and data remain intact. No production history is imported by a
+code release.
+
+`tools/import_prior_lazy_winners.py FILE.tsv --database PATH` defaults to a
+read-only dry run, using only the public official Clash player provider. It
+prints month, clan, tag, pasted name, API name and status. Tags decide identity;
+pasted names never match accounts. Invalid TSV/tag input, unavailable API data
+and mismatched player identities stop the operation. A genuine not-found tag
+stops apply unless `--skip-missing`; each skipped month/tag is listed.
+
+`--apply --actor ACTOR` creates missing archived history months with closed
+signups, no signups, roster or publication, and only the TSV's Lazy hosting
+clans. New directory clans are archived; existing names are never changed.
+Existing same-label months are reused and a conflicting existing month binding
+aborts the entire transaction. Month binding uses participation sync settings;
+no member-season selection changes. Reapply inserts zero duplicate winners.
+All history/clan/month/winner writes share one Store transaction. There is no
+Discord call and no UI import action.
+
+For fixtures, `--fixture-players JSON` uses an explicit isolated tag/name map.
+Without it, apply obtains the existing database lock and Mongo checkpoint lease,
+restores authoritative state and publishes through the Store transaction. It
+requires separately authorized maintenance coordination with the dashboard
+writer. Do not run either production dry run or apply without Ruggie's own
+words authorizing it and a verified DB backup; prompt 230 grants neither.
+
+
+Prompt230 rework (Shaka1014): only seasons newly created by the importer receive
+`seasons.history_only=1` (additive boolean, existing seasons default0). Reused
+months are never marked. Normal new-season copies retain MAX-season ordering
+among unmarked seasons, so importing August/September/October after November
+does not replace November as December's source. The marker survives the same
+whole-database checkpoint/backup as winners and sit-out settings. Repeat imports
+filter already imported month/tag rows inside the transaction and make no
+changes, including to hosting clans/rules removed or edited by staff. New import
+rows preserve an existing Lazy season-clan rule and its other settings. Rules & count names the selected
+clan's actual saved sit-out in CWL months, or “No sit-out after a win” for None.
+
+
+Shaka1015 (reused-month pool conflicts): for NEW imported month/tag rows, an
+existing non-Lazy `lineup_rule` blocks the entire import. Dry run lists every
+conflicting month, clan name/tag and existing pool (including an unset pool).
+Apply refuses all such conflicts and rechecks within its single transaction,
+so a staff edit after asynchronous API preflight cannot slip through. Nothing
+in any table changes on rejection. Staff must set the existing rule to Lazy and
+rerun; the importer never rewrites it. Already imported rows remain strict
+no-ops regardless of later edits. Player-provider awaits occur outside database
+transactions. Production dry run/apply remain unapproved; state this conflict
+rule and the `history_only` marker in READY.

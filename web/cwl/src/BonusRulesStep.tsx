@@ -10,6 +10,8 @@ import type { Pool } from "./api";
 
 type Props = {
   pool: Pool;
+  /** Current selected Lazy hosting clan, saved per season. */
+  sitOutMonths: number;
   lines: BonusBlockerLine[];
   fix: (line: BonusBlockerLine) => ReactNode;
   /** Fields are read-only without access, on an archived season, or while busy. */
@@ -47,6 +49,7 @@ const COUNT_HINT = "Number in Clash · 1–50";
 /** Step 2: Main minimum, bonus count and source, the players, and Add player by tag. */
 export default function BonusRulesStep({
   pool,
+  sitOutMonths,
   lines,
   fix,
   locked,
@@ -158,8 +161,10 @@ export default function BonusRulesStep({
       <BonusBlockers lines={here(["count"])} fix={fix} />
       {pool === "lazy" && (
         <p className="bonus-rules-line">
-          Lazy rules · 4+ attacks, or 3 attacks and 8+ stars · No bonus in the
-          last 3 seasons
+          Lazy rules · 4+ attacks, or 3 attacks and 8+ stars ·{" "}
+          {sitOutMonths === 0
+            ? "No sit-out after a win"
+            : `No bonus in the previous ${sitOutMonths} CWL month${sitOutMonths === 1 ? "" : "s"}`}
         </p>
       )}
       <div className="bonus-candidates-heading">

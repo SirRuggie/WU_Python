@@ -119,6 +119,20 @@ async def policy(request):
     from .app import _require, _sid, _store, _json, _fail
     actor = _require(request, 'editor')['user_id']
     body = await _json(request)
+    if set(body) == {'clan_tag', 'sit_out_months', 'revision'}:
+        if not isinstance(body['clan_tag'], str) or type(body['sit_out_months']) is not int or not 0 <= body['sit_out_months'] <= 6:
+            _fail(400, 'Select a Lazy clan and a sit-out length of 0–6 months')
+        sid = _sid(request)
+        try:
+            with _store(request).tx() as db:
+                _require_draft(db, sid, _fail)
+                _cas(db, sid, _validate_revision(body, _fail), _fail)
+                RaffleStore(db, sid).save_sit_out(body['clan_tag'], body['sit_out_months'], actor)
+                _bump(db, sid, actor)
+                result = _state(db, sid)
+        except RaffleConflict as exc:
+            _fail(409, str(exc))
+        return participation_json_response(request, result)
     if set(body) != {'pool', 'minimum', 'revision'} or body['pool'] not in ('main', 'lazy') or type(body['minimum']) is not int or not 0 <= body['minimum'] <= 7:
         _fail(400, "Select a CWL pool and a minimum of 0–7 attacks")
     if body['pool'] == 'lazy':

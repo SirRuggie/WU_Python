@@ -367,7 +367,7 @@ class LazyBonusApiTests(RaffleTests):
     async def test_lazy_confirmation_uses_weighted_rule_wording(self):
         await self.ready_lazy()
         preview = await self.review_preview()
-        self.assertEqual(preview['rules_version'], 3)
+        self.assertEqual(preview['rules_version'], 4)
         self.assertIn('4+ attacks OR 3+ attacks and 8+ stars', preview['qualification_rule'])
         response = await self.call('POST', self.base + '/draw', self.owner,
             json={'pool': 'lazy', 'clan_tag': '#C2Y', 'slots': 2, 'fingerprint': preview['fingerprint']})
@@ -414,7 +414,7 @@ class LazyBonusApiTests(RaffleTests):
                      'Prior award', '[]', '505227988229554179', cycle))
         preview = await self.review_preview()
         excluded = next(a for a in preview['excluded'] if a['tag'] == '#P2Y')
-        self.assertIn('Received a Lazy bonus in one of the previous three CWL months', excluded['exclusion'])
+        self.assertIn('Prior winner (Sep 2026)', excluded['exclusion'])
         state = await self.get_state()
         response = await self.call('PATCH', self.base + '/account-review', self.owner, json={
             'tag': '#P2Y', 'flags': [], 'override_reason': 'Staff approved cooldown exception',
@@ -501,3 +501,140 @@ class LazyBonusApiTests(RaffleTests):
         response = await self.call('POST', self.base + '/manual-candidates', self.owner,
             json={'tag': '#Q2Y', 'clan_tag': '#C2Y', 'reason': '  ', 'revision': state['revision']})
         self.assertEqual(response.status, 400)
+
+
+class PriorWinnerSettingsTests(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp = RaffleTests.asyncSetUp
+    asyncTearDown = RaffleTests.asyncTearDown
+    auth = RaffleTests.auth
+    call = RaffleTests.call
+    revision = RaffleTests.revision
+    signup = RaffleTests.signup
+    setup_published = RaffleTests.setup_published
+    ready = RaffleTests.ready
+    get_state = RaffleTests.get_state
+    base = RaffleTests.base
+    ready_lazy = LazyBonusApiTests.ready_lazy
+    add_rep = LazyBonusApiTests.add_rep
+    review_preview = LazyBonusApiTests.review_preview
+    status = LazyBonusApiTests.status
+    status_url = LazyBonusApiTests.status_url
+
+    async def save_length(self, months, revision=None, user=None):
+        state = await self.get_state()
+        return await self.call('PATCH', self.base + '/policy', user or self.owner, json={
+            'clan_tag': '#C2Y', 'sit_out_months': months,
+            'revision': state['revision'] if revision is None else revision})
+
+    async def test_sit_out_setting_revision_archive_grant_audit_and_copy(self):
+        state = await self.ready_lazy()
+        self.assertEqual(state['sit_out_settings'], [{'tag': '#C2Y', 'name': 'Host #C2Y', 'months': 3}])
+        response = await self.save_length(2)
+        self.assertEqual(response.status, 200, await response.text())
+        revision = (await response.json())['revision']
+        response = await self.save_length(6, revision - 1)
+        self.assertEqual(response.status, 409)
+        self.assertEqual((await self.save_length(6, user=self.member)).status, 403)
+        for bad in (True, -1, 7, '2'):
+            self.assertEqual((await self.save_length(bad)).status, 400)
+        with self.app['store'].tx() as db:
+            row = db.execute("SELECT * FROM bonus_audit WHERE action='sit_out'").fetchone()
+            import json
+            self.assertEqual(json.loads(row['before_json'])['months'], 3)
+            self.assertEqual(json.loads(row['after_json'])['months'], 2)
+            self.assertEqual(row['actor_id'], '505227988229554179')
+        response = await self.call('POST', '/seasons', self.owner, json={'label': 'Next fixture month', 'signup_open': False})
+        self.assertEqual(response.status, 201, await response.text())
+        next_sid = (await response.json())['id']
+        self.assertEqual(self.app['store'].one('SELECT sit_out_months FROM lineup_rules WHERE season_id=?', (next_sid,))['sit_out_months'], 2)
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE seasons SET status='archived' WHERE id=?", (self.sid,))
+        self.assertEqual((await self.save_length(6)).status, 423)
+
+    async def test_imported_win_draw_host_length_main_ignored_status_and_override(self):
+        await self.ready_lazy()
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO bonus_imported_winners VALUES (?,'2026-09','lazy','#P2Y','Official','#OLD','Old host','import','staff','now')", (self.sid,))
+        response = await self.save_length(1)
+        self.assertEqual(response.status, 200)
+        state = await self.get_state()
+        account = next(a for a in state['accounts'] if a['tag'] == '#P2Y')
+        self.assertEqual(account['prior_winner_label'], 'Sep 2026')
+        self.assertEqual(account['eligible_again'], '2026-11')
+        self.assertEqual(account['exclusion'], 'Prior winner (Sep 2026)')
+        self.assertEqual((await self.status())['pools']['lazy'][0]['meets_rule'], 0)
+        participation = await self.call('GET', f'/seasons/{self.sid}/participation', self.owner)
+        self.assertTrue((await participation.json())['accounts'][0]['sit_out_excluded'])
+        response = await self.call('PATCH', self.base + '/account-review', self.owner, json={
+            'tag': '#P2Y', 'flags': [], 'override_reason': 'Staff approves', 'revision': state['revision']})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertFalse((await response.json())['accounts'][0]['sit_out_excluded'])
+        self.assertEqual((await self.status())['pools']['lazy'][0]['meets_rule'], 1)
+        await self.save_length(0)
+        self.assertIsNone((await self.get_state())['accounts'][0]['exclusion'])
+
+    async def saved_lazy_draw(self):
+        preview = await self.review_preview()
+        response = await self.call('POST', self.base + '/draw', self.owner, json={
+            'pool': 'lazy', 'clan_tag': '#C2Y', 'slots': 2, 'fingerprint': preview['fingerprint']})
+        self.assertEqual(response.status, 200, await response.text())
+        return (await response.json())['draws'][0]
+
+    async def test_length_or_new_import_blocks_v4_approval_without_reroll(self):
+        await self.ready_lazy()
+        draw = await self.saved_lazy_draw()
+        self.assertEqual(draw['snapshot']['rules_version'], 4)
+        self.assertEqual(draw['snapshot']['sit_out_months'], 3)
+        await self.save_length(2)
+        response = await self.call('POST', self.base + f"/{draw['id']}/approve", self.owner, json={})
+        self.assertEqual(response.status, 409)
+        self.assertIn('Rules changed · draw again', (await response.json())['error'])
+        self.assertEqual((await self.get_state())['draws'][0]['snapshot'], draw['snapshot'])
+        await self.save_length(3)
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO bonus_imported_winners VALUES (?,'2026-09','lazy','#P2Y','Official','#OLD','Old host','import','staff','now')", (self.sid,))
+        response = await self.call('POST', self.base + f"/{draw['id']}/approve", self.owner, json={})
+        self.assertEqual(response.status, 409)
+        self.assertIn('Rules changed · draw again', (await response.json())['error'])
+
+    async def test_v3_pending_draw_retains_confirmation_only_three_month_rule(self):
+        import json
+        await self.ready_lazy()
+        draw = await self.saved_lazy_draw()
+        snapshot = draw['snapshot']
+        snapshot['rules_version'] = 3
+        snapshot.pop('sit_out_months')
+        for account in snapshot['eligible'] + snapshot['excluded']:
+            for key in ('prior_winner_cycle', 'prior_winner_label', 'sit_out_months', 'eligible_again', 'sit_out_excluded'):
+                account.pop(key, None)
+        with self.app['store'].tx() as db:
+            db.execute('UPDATE bonus_raffle_draws SET snapshot_json=? WHERE id=?', (json.dumps(snapshot), draw['id']))
+            db.execute("INSERT INTO bonus_imported_winners VALUES (?,'2026-09','lazy','#P2Y','Official','#OLD','Old host','import','staff','now')", (self.sid,))
+        await self.save_length(6)
+        response = await self.call('POST', self.base + f"/{draw['id']}/approve", self.owner, json={})
+        self.assertEqual(response.status, 200, await response.text())
+
+    async def test_imported_history_does_not_replace_normal_season_copy_source(self):
+        from pathlib import Path
+        from tools.import_prior_lazy_winners import read_rows, check_rows, apply_checked
+        from test_cwl_prior_winners import Players
+        await self.ready_lazy()
+        await self.save_length(2)
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE seasons SET label='November fixture' WHERE id=?", (self.sid,))
+            db.execute("UPDATE participation_sync_settings SET cycle='2026-11' WHERE season_id=?", (self.sid,))
+            db.execute("UPDATE lineup_rules SET pool='lazy',capacity=30,min_weight=150000,max_weight=180000 WHERE season_id=?", (self.sid,))
+            rows = read_rows(Path(__file__).parent / 'fixtures/prior_lazy_winners_230.tsv')
+        import sqlite3
+        with sqlite3.connect(Path(self.app['store'].path).resolve().as_uri() + '?mode=ro', uri=True, isolation_level=None) as db:
+            db.row_factory = sqlite3.Row
+            checked_rows = await check_rows(db, rows, Players(rows))
+        apply_checked(self.app['store'], checked_rows, 'fixture')
+        response = await self.call('POST', '/seasons', self.owner, json={'label': 'December fixture', 'signup_open': False})
+        self.assertEqual(response.status, 201, await response.text())
+        sid = (await response.json())['id']
+        with self.app['store'].tx() as db:
+            self.assertEqual([r[0] for r in db.execute('SELECT tag FROM lineup WHERE season_id=?', (sid,))], ['#C2Y'])
+            self.assertEqual(dict(db.execute('SELECT pool,capacity,min_weight,max_weight,sit_out_months FROM lineup_rules WHERE season_id=?', (sid,)).fetchone()),
+                             {'pool': 'lazy', 'capacity': 30, 'min_weight': 150000, 'max_weight': 180000, 'sit_out_months': 2})
+            self.assertEqual(db.execute('SELECT history_only FROM seasons WHERE id=?', (sid,)).fetchone()[0], 0)

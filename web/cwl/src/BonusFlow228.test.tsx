@@ -1414,7 +1414,7 @@ describe("Results & bonuses page: clan steps half", () => {
       [...document.querySelectorAll(".results-settings-section h3")].map(
         (node) => node.textContent,
       ),
-    ).toEqual(["CWL capture", "FWA Rep accounts"]);
+    ).toEqual(["CWL capture", "Sit-out after a win", "FWA Rep accounts"]);
     expect(writes()).toHaveLength(0);
   });
   it("without Results access the month blocker is plain text and Settings holds the odds only", async () => {
@@ -1567,3 +1567,25 @@ describe("Results & bonuses page: rework round", () => {
     expect(host.textContent).not.toContain("Saved bonus history");
   });
 });
+
+it.each([2, 3, 0])(
+  "wires the selected hosting clan's %i-month setting into Rules & count",
+  async (months) => {
+    await mount(
+      {
+        ...base,
+        sit_out_settings: [
+          { tag: "#2YQ", name: "Lazy One", months },
+          { tag: "#8QQ", name: "Lazy Two", months: 6 },
+        ],
+      },
+      "pool=lazy&clan=%232YQ&step=rules",
+    );
+    expect(host.textContent).toContain(
+      months === 0
+        ? "No sit-out after a win"
+        : `No bonus in the previous ${months} CWL months`,
+    );
+    expect(host.textContent).not.toContain("previous 6 CWL months");
+  },
+);

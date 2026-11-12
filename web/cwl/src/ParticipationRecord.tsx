@@ -1,3 +1,4 @@
+import PriorWinner from "./PriorWinner";
 import AccountCard from "./AccountCard";
 import CardTally from "./CardTally";
 import useConfirmDialog from "./useConfirmDialog";
@@ -367,6 +368,7 @@ export default function ParticipationRecord({
             : undefined
       }
       flags={[
+        <PriorWinner account={account} />,
         hasOverride && !account.roster_changed ? "Staff correction" : null,
       ]}
       values={
@@ -472,6 +474,7 @@ export default function ParticipationRecord({
             )}
           </div>
         )}
+        <PriorWinner account={account} details />
         <div className="participation-dialog-summary">
           <div>
             <strong>{account.attacks ?? "—"}</strong>

@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS roster_test_messages (
 );
 CREATE TABLE IF NOT EXISTS seasons (
  id INTEGER PRIMARY KEY, label TEXT NOT NULL UNIQUE, signup_open INTEGER NOT NULL DEFAULT 1,
- status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','archived'))
+ status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','archived')),
+ history_only INTEGER NOT NULL DEFAULT 0 CHECK(history_only IN (0,1))
 );
 CREATE TABLE IF NOT EXISTS member_season (
  id INTEGER PRIMARY KEY CHECK(id=1), season_id INTEGER REFERENCES seasons(id),
@@ -61,6 +62,7 @@ CREATE TABLE IF NOT EXISTS lineup_rules (
  season_id INTEGER NOT NULL, tag TEXT NOT NULL,
  pool TEXT CHECK(pool IN ('main','lazy')), capacity INTEGER CHECK(capacity IN (15,30)),
  min_weight INTEGER, max_weight INTEGER,
+ sit_out_months INTEGER NOT NULL DEFAULT 3 CHECK(sit_out_months BETWEEN 0 AND 6),
  -- unused since 2026-10-27; safe to drop later
  lower_league INTEGER CHECK(lower_league IN (0,1)),
  PRIMARY KEY(season_id,tag),
@@ -397,6 +399,12 @@ class Store:
                 db.execute(
                     "ALTER TABLE bonus_batches ADD COLUMN snapshot_json TEXT NOT NULL DEFAULT '{}' "
                 )
+
+            if "history_only" not in {row["name"] for row in db.execute("PRAGMA table_info(seasons)")}:
+                db.execute("ALTER TABLE seasons ADD COLUMN history_only INTEGER NOT NULL DEFAULT 0 CHECK(history_only IN (0,1))")
+
+            if "sit_out_months" not in {row["name"] for row in db.execute("PRAGMA table_info(lineup_rules)")}:
+                db.execute("ALTER TABLE lineup_rules ADD COLUMN sit_out_months INTEGER NOT NULL DEFAULT 3 CHECK(sit_out_months BETWEEN 0 AND 6)")
 
             from utils.cwl_bonus_raffle_store import SCHEMA as RAFFLE_SCHEMA
 

@@ -1,3 +1,4 @@
+import PriorWinner from "./PriorWinner";
 import ActionPanel from "./ActionPanel";
 import DiscordIdentity from "./DiscordIdentity";
 import { useEffect } from "react";
@@ -83,15 +84,7 @@ export default function BonusCandidateReview({
             <strong>Current exclusion:</strong> {account.exclusion}
           </p>
         )}
-        {account.three_cycle_cooldown && (
-          <p>
-            <strong>Sit-out:</strong> Bonus in the last 3 CWL seasons
-            {account.cooldown_cycles?.length
-              ? ` (${account.cooldown_cycles.join(", ")})`
-              : ""}
-            .
-          </p>
-        )}
+        <PriorWinner account={account} details />
         {account.manual_candidate_reason && (
           <p>
             <strong>Added by staff:</strong> {account.manual_candidate_reason}

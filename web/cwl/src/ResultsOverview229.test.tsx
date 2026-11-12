@@ -364,7 +364,7 @@ describe("page menu", () => {
       [...document.querySelectorAll(".results-settings-section h3")].map(
         (node) => node.textContent,
       ),
-    ).toEqual(["CWL capture", "FWA Rep accounts"]);
+    ).toEqual(["CWL capture", "Sit-out after a win", "FWA Rep accounts"]);
   });
   it("Settings shows only CWL capture without bonus access", async () => {
     await mount(false);

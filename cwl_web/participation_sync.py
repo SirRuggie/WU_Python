@@ -1193,6 +1193,33 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
         return {"sync": result, "updated_accounts": updated, "failures": failure_details}
 
 
+def history_season_for_cycle(db, cycle):
+    """Resolve existing months with the same settings precedence as Results."""
+    matches = [row['id'] for row in db.execute('SELECT id,label FROM seasons')
+               if row['label'] == cycle or settings_view(db, row['id'])['cycle'] == cycle]
+    if len(matches) > 1:
+        raise ValueError('Multiple existing seasons match this CWL month; reconcile before import')
+    return matches[0] if matches else None
+
+
+def bind_history_month(db, season_id, cycle, actor):
+    """Bind an imported history month through the existing sync settings owner.
+
+    Existing bindings must agree; importing history must never move live results.
+    No capture worker is enabled for a newly created history month.
+    """
+    if not isinstance(cycle, str) or not _CYCLE.fullmatch(cycle):
+        raise ValueError('Cycle must be YYYY-MM')
+    prior = settings_view(db, season_id)
+    if prior['cycle'] and prior['cycle'] != cycle:
+        raise ValueError('Existing season has a different CWL month')
+    if prior['cycle']:
+        return
+    db.execute(
+        "INSERT INTO participation_sync_settings(season_id,cycle,enabled,status,updated_by,updated_at) "
+        "VALUES (?,?,0,'never',?,?)", (season_id, cycle, actor, now()))
+
+
 async def sync_settings(request):
     from .app import _fail, _json, _require, _season, _sid, _store
 
