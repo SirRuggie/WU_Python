@@ -81,7 +81,7 @@ status/revision safeguards.
 Both messages have durable bindings in the console's MongoDB state. Creation,
 approval, denial, and flag changes refresh the shared panels automatically.
 Interrupted publishing and missing messages are repaired without creating another
-console. Private detail panels remain snapshots; reopen View Details to see the
+console. Private detail panels remain snapshots; select the ticket again in Ticket Command to see the
 latest state.
 
 ## Staff-created tickets
@@ -299,7 +299,7 @@ mechanism Find already uses. From there, the three selects
 each re-render the panel in place and reset to page 1; Prev/Next re-render
 one page over, clamped at the ends. Choosing a ticket from the **Open a
 ticket** select opens the same ticket detail panel Search's View buttons and
-the shared console’s View Details buttons open (`_ticket_detail_panel`).
+the Ticket Command dropdowns open (`_ticket_detail_panel`).
 
 Each row: `{TYPE} #{number} · {mention} · {status emoji + word} · <t:created:R>`,
 one page per Text block (not a Section per row — Browse has no per-row

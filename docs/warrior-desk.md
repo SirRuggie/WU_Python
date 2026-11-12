@@ -35,9 +35,14 @@ phase rejects. `main` / `fwa` routing is unchanged. `configure_rollout` with
 
 ## Permissions
 
-- `perms.can_handle(member, mongo, ticket_type)`: Administrator in the target
-  guild, or the role for that exact type.
-- `perms.is_recruiter` is console access only and also accepts the desk roles.
+- `perms.is_recruiter` is unchanged: the Main or FWA recruiter role, or
+  Administrator. Staff-create, flag writes by ID and every recruit action keep it.
+- `perms.is_ticket_staff`: `is_recruiter` or the account/staff role. It is used
+  only for console access (Ticket Command, Find, Browse, Member History) and as the
+  first gate before `can_handle`.
+- `perms.can_handle(member, mongo, ticket_type)`: for `main` and `fwa`,
+  `is_recruiter` (either recruit role, as before); for `account` and `staff`,
+  Administrator or that type's role.
 - Every state change checks `can_handle` with the ticket's own type: approve,
   deny, overturn (`resolve`), close / Done / reopen (`lifecycle`), console detail
   views and confirm panels, flag manager (`console._latest_flag_ticket`),
@@ -90,4 +95,8 @@ staff ticket refreshes the console the same way as main/fwa
 
 - Pilot and test windows, staff-created tickets and legacy tickets stay
   `main` / `fwa`.
-- Some deep error messages in `handle_create_ticket` still say "ticket".
+- Desk-reachable member messages in `handle_create_ticket` say "request";
+  only the unknown-type fallback still says "ticket".
+- A Ticket Command dropdown keeps one custom id, so Discord may keep the last
+  choice shown; selecting the same ticket again may need Refresh first (not
+  verified in a live client).
