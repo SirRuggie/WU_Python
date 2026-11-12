@@ -56,6 +56,41 @@ approved NO WAR corrections or restore databases for a code rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 
+## FWA Rep accounts for Lazy x2 odds — 2026-11-12 (backend and frontend)
+
+- PR [#304](https://github.com/SirRuggie/WU_Python/pull/304), merge commit
+  `eccff03812d9e94580cfc23ea3283a7846f87e03`, local tag `fwa-rep-304-1`.
+  Built and released by Shaka (Claude) on Ruggie's "Merge and release".
+  Refuter ACCEPT on `9f03c9b8`.
+- Changes: Lazy x2 raffle odds come from one family-wide FWA Rep account list
+  (Settings sheet), not the Discord role. New additive tables
+  `bonus_raffle_rep_accounts` and `bonus_raffle_rep_account_audit`; the old role
+  tables stay unread. Lazy draws use `rules_version` 3. The list starts empty;
+  no data was written.
+- Backend: `release.conf` `backend/ab2e217b…` → `backend/eccff038…`; PID
+  3574547 → 3619459, cwd verified, active, local and public config 200,
+  anonymous seasons, bonus-status and rep-accounts 401, no tracebacks. Other
+  drop-ins byte-identical. The bot imports neither changed module, so it was
+  not restarted.
+- Frontend `current`: `ab2e217b…` → `eccff038…` (clean tagged clone, `npm ci`,
+  2337 tests in 344 files passed before staging). Entry `index-CBlehv8O.js`,
+  SHA-256 `c3a9fe428a132291ffc77d9303bdf7bb4ed802f1671341aec505cf1880983373`;
+  served `index.html` SHA-256
+  `de1d95b9bcf8d030ca970945caf5c2155d47c52c6d0a46f99ad4dc9345a5d90b` equals the
+  release file; all 149 manifest assets match the public site.
+- Backup `.local/fwa-rep-304-release-20261112T011449Z/dashboard.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `39ea13dfd603d6673d5f4f36343f1e69a5e5580635210f4761aa28396b28db52`. All 73
+  existing table counts identical after; 2 new tables, both empty.
+- Signed-out smoke at 360 px on `/cwl/results`, `/cwl/bonuses`,
+  `/cwl/exports`: new entry, only the expected 401, no overflow, app requests
+  GET only. Signed-in smoke SKIPPED.
+- Rollback: backend `release.conf` back to
+  `backend/ab2e217b9e5ac6ece40cb6bb5e233625a178331a`, then daemon-reload and
+  restart `wu-cwl-demo-web`; frontend `switch-release.py
+  ab2e217b9e5ac6ece40cb6bb5e233625a178331a`. The new tables stay; never restore
+  the database for a code rollback.
+
 ## Clan dropdown and Lazy-only sit-out — 2026-11-11 (backend and frontend)
 
 - PR [#302](https://github.com/SirRuggie/WU_Python/pull/302), merge commit
