@@ -959,9 +959,3 @@ Short lists (dropdown rollout PR 2):
   ("Draw saved · read only"), in archived seasons and without the manage grant.
 
 Results & bonuses has one 44px “How bonuses work” header CircleHelp button opening the shared side ActionPanel with Close only, five read-only rule explanations and trigger-focus restoration; the season control stays unchanged (prompt234).
-
-Results & bonuses Settings uses closed disclosures with saved-value summaries
-and Unsaved draft indicators, one open on phones (≤680px). FWA Rep accounts
-puts Add account above the list and row actions in ⋯. An ActionMenu inside an
-ActionPanel must portal into its native dialog; outside menus keep their default
-portal behavior (prompt235).

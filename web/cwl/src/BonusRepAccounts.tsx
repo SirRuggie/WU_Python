@@ -1,13 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { Plus } from "lucide-react";
-import ActionMenu from "./rosterUi/ActionMenu";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import BonusClanRepFinder from "./BonusClanRepFinder";
 import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
@@ -57,22 +48,6 @@ export default function BonusRepAccounts({
   onConfirm,
   onMutate,
 }: Props) {
-  const [adding, setAdding] = useState(false);
-  const [byTag, setByTag] = useState(false);
-  const [finderKey, setFinderKey] = useState(0);
-  const addId = useId();
-  const addButton = useRef<HTMLButtonElement>(null);
-  const rowElements = useRef(new Map<string, HTMLLIElement>());
-  const openByTag = useCallback(() => setByTag(true), []);
-  const focusMenu = (tag?: string) =>
-    requestAnimationFrame(() => {
-      const button = tag
-        ? rowElements.current
-            .get(tag)
-            ?.querySelector<HTMLButtonElement>(".roster-action-trigger")
-        : null;
-      (button || addButton.current)?.focus({ preventScroll: true });
-    });
   const [tag, setTag] = useState("");
   const [note, setNote] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
@@ -97,8 +72,8 @@ export default function BonusRepAccounts({
   const editRow = accounts.find((row) => row.tag === editing);
   const dirty =
     finderDirty ||
-    !!tag ||
-    !!note ||
+    !!tag.trim() ||
+    !!note.trim() ||
     (!!editRow && editNote.trim() !== editRow.note);
   useEffect(() => {
     onDirty(dirty);
@@ -148,10 +123,8 @@ export default function BonusRepAccounts({
         { tag: row.tag, note: editNote.trim(), rep_revision: row.revision },
         "Note saved.",
       )
-    ) {
+    )
       setEditing(null);
-      focusMenu(row.tag);
-    }
   };
   const remove = async (row: RepAccount) => {
     if (
@@ -162,120 +135,73 @@ export default function BonusRepAccounts({
       ))
     )
       return;
-    const order = groups.flatMap(([, items]) => items.map((item) => item.tag));
-    const index = order.indexOf(row.tag);
-    const target = order[index + 1] || order[index - 1];
     if (
-      await onMutate(
+      (await onMutate(
         "DELETE",
         { tag: row.tag, rep_revision: row.revision },
         "FWA Rep account removed. Check the draw again before saving.",
-      )
-    ) {
-      if (editing === row.tag) setEditing(null);
-      focusMenu(target);
-    }
-  };
-  const cancelAdd = () => {
-    setAdding(false);
-    setTag("");
-    setNote("");
-    setByTag(false);
-    setFinderDirty(false);
-    setFinderKey((value) => value + 1);
-    // Cancelling the add form must not clear a different dirty note editor.
-    onDirty(!!editRow && editNote.trim() !== editRow.note);
-    requestAnimationFrame(() =>
-      addButton.current?.focus({ preventScroll: true }),
-    );
+      )) &&
+      editing === row.tag
+    )
+      setEditing(null);
   };
 
   return (
-    <div className="rep-accounts roster-ui">
+    <section
+      className="results-settings-section rep-accounts"
+      aria-label="FWA Rep accounts"
+    >
+      <h3>FWA Rep accounts</h3>
       <p>Only these accounts get 2 chances in Lazy draws, in every season.</p>
-      <button
-        ref={addButton}
-        type="button"
-        className="roster-ui-button is-primary"
+      <BonusClanRepFinder
+        seasonId={seasonId}
+        listed={listed}
+        noteMax={REP_NOTE_MAX}
         disabled={disabled}
-        aria-expanded={adding}
-        aria-controls={addId}
-        onClick={() => setAdding(true)}
+        onDirty={setFinderDirty}
+        onAdd={(value, text) =>
+          onMutate(
+            "POST",
+            { tag: value, note: text },
+            "FWA Rep account added. Check the draw again before saving.",
+          )
+        }
+      />
+      <h4 className="rep-accounts-subhead">Or add by player tag</h4>
+      <form
+        className="rep-accounts-add"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void add();
+        }}
       >
-        <Plus size={18} aria-hidden="true" /> Add account
-      </button>
-      <div id={addId} hidden={!adding}>
-        {adding && (
-          <div className="rep-add-area">
-            <BonusClanRepFinder
-              key={finderKey}
-              autoFocus
-              onNoLinkedAccounts={openByTag}
-              seasonId={seasonId}
-              listed={listed}
-              noteMax={REP_NOTE_MAX}
-              disabled={disabled}
-              onDirty={setFinderDirty}
-              onAdd={(value, text) =>
-                onMutate(
-                  "POST",
-                  { tag: value, note: text },
-                  "FWA Rep account added. Check the draw again before saving.",
-                )
-              }
-            />
-            <details
-              className="rep-add-by-tag"
-              open={byTag}
-              onToggle={(event) => setByTag(event.currentTarget.open)}
-            >
-              <summary>
-                Add by player tag
-                {tag || note ? (
-                  <span className="results-settings-unsaved"> · Unsaved</span>
-                ) : null}
-              </summary>
-              <form
-                className="rep-accounts-add"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void add();
-                }}
-              >
-                <label>
-                  Player tag
-                  <input
-                    name="rep-tag"
-                    autoComplete="off"
-                    spellCheck={false}
-                    maxLength={20}
-                    value={tag}
-                    disabled={disabled}
-                    onChange={(event) => setTag(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Note (optional)
-                  <input
-                    name="rep-note"
-                    autoComplete="off"
-                    maxLength={REP_NOTE_MAX}
-                    value={note}
-                    disabled={disabled}
-                    onChange={(event) => setNote(event.target.value)}
-                  />
-                </label>
-                <button type="submit" disabled={disabled || !tag.trim()}>
-                  Add tag
-                </button>
-              </form>
-            </details>
-            <button type="button" disabled={disabled} onClick={cancelAdd}>
-              Cancel
-            </button>
-          </div>
-        )}
-      </div>
+        <label>
+          Player tag
+          <input
+            name="rep-tag"
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={20}
+            value={tag}
+            disabled={disabled}
+            onChange={(event) => setTag(event.target.value)}
+          />
+        </label>
+        <label>
+          Note (optional)
+          <input
+            name="rep-note"
+            autoComplete="off"
+            maxLength={REP_NOTE_MAX}
+            value={note}
+            disabled={disabled}
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </label>
+        <button type="submit" disabled={disabled || !tag.trim()}>
+          Add account
+        </button>
+      </form>
       {accounts.length === 0 ? (
         <p className="rep-accounts-empty">
           No FWA Rep accounts. Every Lazy account has 1 chance.
@@ -302,14 +228,7 @@ export default function BonusRepAccounts({
               </header>
               <ul>
                 {rows.map((row) => (
-                  <li
-                    key={row.tag}
-                    className="rep-account-row"
-                    ref={(node) => {
-                      if (node) rowElements.current.set(row.tag, node);
-                      else rowElements.current.delete(row.tag);
-                    }}
-                  >
+                  <li key={row.tag} className="rep-account-row">
                     <TownHallIcon level={row.town_hall} />
                     <div className="rep-account-main">
                       <strong>{row.player_name}</strong>
@@ -332,6 +251,7 @@ export default function BonusRepAccounts({
                               maxLength={REP_NOTE_MAX}
                               value={editNote}
                               disabled={disabled}
+                              autoFocus
                               onChange={(event) =>
                                 setEditNote(event.target.value)
                               }
@@ -349,10 +269,7 @@ export default function BonusRepAccounts({
                             <button
                               type="button"
                               disabled={disabled}
-                              onClick={() => {
-                                setEditing(null);
-                                focusMenu(row.tag);
-                              }}
+                              onClick={() => setEditing(null)}
                             >
                               Cancel
                             </button>
@@ -364,36 +281,29 @@ export default function BonusRepAccounts({
                         )
                       )}
                     </div>
-                    <ActionMenu
-                      name={row.player_name}
-                      disabled={disabled}
-                      items={[
-                        {
-                          id: "edit",
-                          label: "Edit note",
-                          disabled: !!editing && dirty,
-                          onAction: () => {
+                    {editing !== row.tag && (
+                      <div className="rep-account-actions">
+                        <button
+                          type="button"
+                          disabled={disabled || (!!editing && dirty)}
+                          aria-label={`Edit note for ${row.player_name}`}
+                          onClick={() => {
                             setEditing(row.tag);
                             setEditNote(row.note);
-                            requestAnimationFrame(() =>
-                              rowElements.current
-                                .get(row.tag)
-                                ?.querySelector<HTMLInputElement>(
-                                  'input[name="rep-edit-note"]',
-                                )
-                                ?.focus({ preventScroll: true }),
-                            );
-                          },
-                        },
-                        {
-                          id: "remove",
-                          label: "Remove",
-                          danger: true,
-                          separatorBefore: true,
-                          onAction: () => void remove(row),
-                        },
-                      ]}
-                    />
+                          }}
+                        >
+                          Edit note
+                        </button>
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          aria-label={`Remove ${row.player_name}`}
+                          onClick={() => void remove(row)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -401,6 +311,6 @@ export default function BonusRepAccounts({
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }

@@ -44,48 +44,6 @@ const errorText = (cause: unknown) =>
     ? cause.message
     : "Settings could not be saved. Refresh to check their saved status.";
 
-function SettingsSummary({
-  title,
-  value,
-  dirty,
-}: {
-  title: string;
-  value: string;
-  dirty: boolean;
-}) {
-  return (
-    <summary>
-      <span className="results-settings-title">{title}</span>
-      <span className="results-settings-value"> · {value}</span>
-      {dirty && <span className="results-settings-unsaved"> · Unsaved</span>}
-    </summary>
-  );
-}
-
-function captureMonth(value: string | null | undefined) {
-  if (!value) return "Month not set";
-  return validCwlCycle(value)
-    ? new Intl.DateTimeFormat("en-GB", {
-        month: "short",
-        year: "numeric",
-        timeZone: "UTC",
-      }).format(new Date(`${value}-01T00:00:00Z`))
-    : value;
-}
-
-function sitOutValue(rows: NonNullable<RaffleData["sit_out_settings"]>) {
-  if (!rows.length) return "No Lazy clans";
-  const min = Math.min(...rows.map((row) => row.months));
-  const max = Math.max(...rows.map((row) => row.months));
-  const length =
-    min !== max
-      ? `${min}–${max} months`
-      : max === 0
-        ? "None"
-        : `${max} month${max === 1 ? "" : "s"}`;
-  return `${rows.length} clan${rows.length === 1 ? "" : "s"} · ${length}`;
-}
-
 /** CWL capture and FWA Rep accounts in one sheet, off the results and bonus flow. */
 export default function ResultsSettingsSheet({
   seasonId,
@@ -102,18 +60,6 @@ export default function ResultsSettingsSheet({
   const sid = useRef(seasonId);
   sid.current = seasonId;
   const base = `/seasons/${encodeURIComponent(seasonId)}`;
-  const [phone, setPhone] = useState(
-    () => window.matchMedia("(max-width: 680px)").matches,
-  );
-  useEffect(() => {
-    const media = window.matchMedia("(max-width: 680px)");
-    const change = () => setPhone(media.matches);
-    change();
-    media.addEventListener("change", change);
-    return () => media.removeEventListener("change", change);
-  }, []);
-  const disclosureName = phone ? "results-settings" : undefined;
-
   const [sync, setSync] = useState<ParticipationSync | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [captureDirty, setCaptureDirty] = useState(false);
@@ -261,10 +207,7 @@ export default function ResultsSettingsSheet({
         { ...body, revision },
       );
       if (sid.current !== season) return false;
-      setRevision(result.revision);
-      setRepAccounts(result.rep_accounts || []);
-      setSitOut(result.sit_out_settings || []);
-      // A successful add/note/remove does not discard another section's draft.
+      takeOdds(result);
       setNotice(message);
       await onSaved({ kind: "odds" });
       return true;
@@ -347,7 +290,12 @@ export default function ResultsSettingsSheet({
         {archived && <p className="notice">Archived season · Read only</p>}
         {notice && <p role="status">{notice}</p>}
         {canCapture && (
-          <>
+          <section
+            className="results-settings-section"
+            aria-label="CWL capture"
+          >
+            <h3>CWL capture{captureDirty ? " · Unsaved" : ""}</h3>
+            {captureLoading && <p role="status">Loading capture settings…</p>}
             {captureError && (
               <p role="alert">
                 {captureError}{" "}
@@ -360,42 +308,6 @@ export default function ResultsSettingsSheet({
                 </button>
               </p>
             )}
-          </>
-        )}
-        {canOdds && (
-          <>
-            {oddsError && (
-              <p role="alert">
-                {oddsError}{" "}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void loadOdds()}
-                >
-                  Refresh
-                </button>
-              </p>
-            )}
-          </>
-        )}
-        {canCapture && (
-          <details
-            className="results-settings-section"
-            name={disclosureName}
-            aria-label="CWL capture"
-          >
-            <SettingsSummary
-              title="CWL capture"
-              value={
-                captureLoading
-                  ? "Loading…"
-                  : captureError
-                    ? "Not loaded"
-                    : `${sync?.enabled ? "On" : "Off"} · ${captureMonth(sync?.cycle)}`
-              }
-              dirty={captureDirty}
-            />
-            {captureLoading && <p role="status">Loading capture settings…</p>}
             {draft && (
               <>
                 <div className="results-settings-fields">
@@ -470,95 +382,81 @@ export default function ResultsSettingsSheet({
                 )}
               </>
             )}
-          </details>
+          </section>
         )}
         {canOdds && (
           <>
             {oddsLoading && <p role="status">Loading FWA Rep accounts…</p>}
-            <details
-              className="results-settings-section"
-              name={disclosureName}
-              aria-label="Sit-out after a win"
-            >
-              <SettingsSummary
-                title="Sit-out after a win"
-                value={
-                  oddsLoading
-                    ? "Loading…"
-                    : oddsError
-                      ? "Not loaded"
-                      : sitOutValue(sitOut)
-                }
-                dirty={sitOutDirty}
-              />
-              <p>Lazy CWL · Months to sit out in this hosting clan.</p>
-              {sitOut.map((row) => {
-                const months = sitOutDraft[row.tag] ?? row.months;
-                return (
-                  <div className="results-sit-out-row" key={row.tag}>
-                    <label>
-                      {row.name}
-                      <select
-                        name={`sit-out-${row.tag}`}
-                        value={months}
-                        disabled={archived || busy || oddsLoading}
-                        onChange={(event) =>
-                          setSitOutDraft((current) => ({
-                            ...current,
-                            [row.tag]: Number(event.target.value),
-                          }))
-                        }
-                      >
-                        {[0, 1, 2, 3, 4, 5, 6].map((value) => (
-                          <option key={value} value={value}>
-                            {value === 0
-                              ? "None"
-                              : `${value} month${value === 1 ? "" : "s"}`}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {months !== row.months && (
-                      <button
-                        type="button"
-                        disabled={archived || busy}
-                        onClick={() => void saveSitOut(row.tag, months)}
-                      >
-                        Save {row.name}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              {!sitOut.length && <p>No Lazy hosting clans in this season.</p>}
-            </details>
-            <details
-              className="results-settings-section"
-              name={disclosureName}
-              aria-label="FWA Rep accounts"
-            >
-              <SettingsSummary
-                title="FWA Rep accounts"
-                value={
-                  oddsLoading
-                    ? "Loading…"
-                    : oddsError
-                      ? "Not loaded"
-                      : repAccounts.length
-                        ? `${repAccounts.length} account${repAccounts.length === 1 ? "" : "s"}`
-                        : "None"
-                }
-                dirty={repDirty}
-              />
+            {oddsError && (
+              <p role="alert">
+                {oddsError}{" "}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void loadOdds()}
+                >
+                  Refresh
+                </button>
+              </p>
+            )}
+            {revision !== null && !oddsLoading && (
+              <section
+                className="results-settings-section"
+                aria-label="Sit-out after a win"
+              >
+                <h3>Sit-out after a win{sitOutDirty ? " · Unsaved" : ""}</h3>
+                <p>Lazy CWL · Months to sit out in this hosting clan.</p>
+                {sitOut.map((row) => {
+                  const months = sitOutDraft[row.tag] ?? row.months;
+                  return (
+                    <div className="results-sit-out-row" key={row.tag}>
+                      <label>
+                        {row.name}
+                        <select
+                          name={`sit-out-${row.tag}`}
+                          value={months}
+                          disabled={archived || busy || oddsLoading}
+                          onChange={(event) =>
+                            setSitOutDraft((current) => ({
+                              ...current,
+                              [row.tag]: Number(event.target.value),
+                            }))
+                          }
+                        >
+                          {[0, 1, 2, 3, 4, 5, 6].map((value) => (
+                            <option key={value} value={value}>
+                              {value === 0
+                                ? "None"
+                                : `${value} month${value === 1 ? "" : "s"}`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {months !== row.months && (
+                        <button
+                          type="button"
+                          disabled={archived || busy}
+                          onClick={() => void saveSitOut(row.tag, months)}
+                        >
+                          Save {row.name}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                {!sitOut.length && <p>No Lazy hosting clans in this season.</p>}
+              </section>
+            )}
+            {revision !== null && (
               <BonusRepAccounts
                 seasonId={seasonId}
                 accounts={repAccounts}
-                disabled={busy || archived || oddsLoading || revision === null}
+                disabled={busy || archived}
                 onDirty={setRepDirty}
                 onConfirm={confirm}
                 onMutate={mutateRep}
               />
-            </details>
+            )}
           </>
         )}
       </ActionPanel>

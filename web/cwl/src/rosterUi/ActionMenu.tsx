@@ -1,12 +1,5 @@
 import { useInteractOutside } from "react-aria";
-import {
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-  useSyncExternalStore,
-} from "react";
-import { ActionPanelPortalContext } from "../actionPanelPortal";
+import { useEffect, useId, useRef, useSyncExternalStore } from "react";
 import {
   Button as AriaButton,
   Menu,
@@ -44,7 +37,6 @@ export default function ActionMenu({
   items: ActionMenuItem[];
   disabled?: boolean;
 }) {
-  const portalContainer = useContext(ActionPanelPortalContext);
   const id = useId(),
     trigger = useRef<HTMLButtonElement>(null),
     sheet = useRef<HTMLDivElement>(null);
@@ -103,7 +95,6 @@ export default function ActionMenu({
           {label && <span>{label}</span>}
         </AriaButton>
         <Popover
-          UNSTABLE_portalContainer={portalContainer}
           ref={sheet}
           className="roster-action-popover roster-ui"
           placement="bottom end"
@@ -115,14 +106,7 @@ export default function ActionMenu({
             className="roster-action-list"
           >
             {items.flatMap((item) => [
-              ...(item.separatorBefore
-                ? [
-                    <Separator
-                      key={`${item.id}-separator`}
-                      className="roster-action-separator"
-                    />,
-                  ]
-                : []),
+              ...(item.separatorBefore ? [<Separator key={`${item.id}-separator`} className="roster-action-separator" />] : []),
               <RosterMenuItem
                 key={item.id}
                 id={item.id}
