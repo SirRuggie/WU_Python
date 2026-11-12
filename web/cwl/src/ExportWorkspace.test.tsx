@@ -10,6 +10,9 @@ const { api, fetchCsv } = vi.hoisted(() => ({
   fetchCsv: vi.fn(),
 }));
 vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
+vi.mock("./DashboardPermissions", () => ({
+  useDashboardPermission: () => true,
+}));
 vi.mock("./readRetry", () => ({ fetchReadWithRetry: fetchCsv }));
 const seasons = [
   { id: 1, label: "2026-11", status: "draft", signup_open: true },
@@ -74,6 +77,13 @@ const select = (label: string) =>
     .find((x) => x.textContent?.trim().startsWith(label))!
     .querySelector("select")!;
 const change = async (label: string, value: string) => {
+  if (label === "Roster version") {
+    await act(async () =>
+      button(value === "current" ? "Working" : "Published").click(),
+    );
+    await settle();
+    return;
+  }
   await act(async () => {
     const input = select(label);
     input.value = value;
@@ -110,18 +120,20 @@ afterEach(async () => {
 
 it("uses the four plain dataset names and formats only preview values", async () => {
   await render();
-  expect(host.querySelector("h1")?.textContent).toBe("Exports");
-  expect([...select("Data").options].map((x) => x.text)).toEqual([
+  expect(host.querySelector("h1")?.textContent).toBe("Exports & history");
+  expect([...select("Show").options].map((x) => x.text)).toEqual([
     "Roster",
     "Signups",
     "Results history",
-    "Saved bonus history",
+    "Bonus winners",
   ]);
   expect(host.querySelector(".roster-menu-current")?.textContent).toBe(
     "November 2026",
   );
   expect(host.textContent).toContain("179k");
   expect(host.textContent).toContain("November 2026");
+  expect(host.textContent).not.toContain("Some results are blank");
+  await change("Show", "participation");
   expect(host.textContent).toContain(
     "Some results are blank (different clan). See Results history.",
   );
@@ -131,12 +143,10 @@ it("uses the four plain dataset names and formats only preview values", async ()
   expect(host.textContent).not.toContain("Saved working placements use");
 });
 
-it("keeps the published version label stable while its preview is loading", async () => {
+it("defaults Published and keeps working rows hidden until a requested published read completes", async () => {
   await render();
-  expect(select("Roster version").options[0].text).toBe("Working roster");
-  expect(select("Roster version").options[1].text).toBe(
-    "Published roster (v6)",
-  );
+  expect(button("Published").getAttribute("aria-pressed")).toBe("true");
+  expect(host.textContent).not.toContain("Roster version");
   let finish: (value: unknown) => void = () => {};
   api.mockImplementationOnce(
     () =>
@@ -144,35 +154,39 @@ it("keeps the published version label stable while its preview is loading", asyn
         finish = resolve;
       }),
   );
-  await change("Roster version", "published");
-  expect(select("Roster version").options[1].text).toBe(
-    "Published roster (v6)",
-  );
-  await act(async () => finish(sample("accounts", "published")));
+  await change("Roster version", "current");
+  expect(host.querySelector(".export-record")).toBeNull();
+  await act(async () => finish(sample()));
   expect(api).toHaveBeenLastCalledWith(
-    "/seasons/1/export-preview?kind=accounts&basis=published",
+    "/seasons/1/export-preview?kind=accounts&basis=current",
   );
 });
 
 it("explains disabled publication and prevents downloading zero rows", async () => {
   api.mockResolvedValue(sample("accounts", "current", 0, false));
   await render();
-  expect(select("Roster version").options[1].disabled).toBe(true);
-  expect(select("Roster version").options[1].text).toContain(
-    "not published yet",
-  );
+  expect(button("Published").disabled).toBe(true);
+  expect(button("Working").getAttribute("aria-pressed")).toBe("true");
+  expect(host.textContent).toContain("Not published yet");
   expect(button("Download CSV").disabled).toBe(true);
   await act(async () => button("Download CSV").click());
   expect(fetchCsv).not.toHaveBeenCalled();
 });
 
-it("search does not disable an export that still has saved rows", async () => {
+it("renders all grouped accounts without search or paging", async () => {
+  const data = sample();
+  data.rows = Array.from({ length: 26 }, (_, i) => ({
+    ...data.rows[0],
+    tag: `#P${i}`,
+  }));
+  data.counts.rows = 26;
+  api.mockResolvedValue(data);
   await render();
-  const search = host.querySelector<HTMLInputElement>("input[type=search]")!;
-  await act(async () => {
-    search.value = "not in fixture";
-    search.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  expect(host.querySelectorAll(".export-record")).toHaveLength(26);
+  expect(host.querySelector('input[type="search"]')).toBeNull();
+  expect(
+    host.querySelector('nav[aria-label="Export preview pages"]'),
+  ).toBeNull();
   expect(button("Download CSV").disabled).toBe(false);
 });
 
@@ -194,9 +208,8 @@ it("passes the CSV body unchanged and preserves all five UI request variants", a
     ["participation-history", "current"],
     ["bonus-history", "current"],
   ]) {
-    if (select("Data").value !== kind) await change("Data", kind);
-    if (kind === "accounts" && select("Roster version").value !== basis)
-      await change("Roster version", basis);
+    if (select("Show").value !== kind) await change("Show", kind);
+    if (kind === "accounts") await change("Roster version", basis);
     await act(async () => button("Download CSV").click());
     await settle();
     expect(fetchCsv).toHaveBeenLastCalledWith(
@@ -287,7 +300,7 @@ it("ignores stale previews across a season change", async () => {
   await render();
   await render("2");
   expect(api).toHaveBeenLastCalledWith(
-    "/seasons/2/export-preview?kind=accounts&basis=current",
+    "/seasons/2/export-preview?kind=accounts&basis=published",
   );
   await act(async () =>
     finish({ ...sample(), rows: [{ player_name: "Stale private row" }] }),
@@ -296,3 +309,68 @@ it("ignores stale previews across a season change", async () => {
   expect(host.textContent).not.toContain("Stale private row");
   expect(host.textContent).toContain("<script> @everyone");
 });
+
+it("drops a late published response after changing the season", async () => {
+  let finish: (value: unknown) => void = () => {};
+  api.mockImplementation((path: string) =>
+    path === "/seasons/1/export-preview?kind=accounts&basis=published"
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : Promise.resolve(sample()),
+  );
+  await render();
+  expect(host.querySelector(".export-record")).toBeNull();
+  await render("2");
+  expect(host.querySelector(".export-record")).not.toBeNull();
+  await act(async () =>
+    finish({ ...sample(), rows: [{ player_name: "Old publication" }] }),
+  );
+  expect(host.textContent).not.toContain("Old publication");
+});
+
+it("aborts an in-flight CSV when changing season and does not offer its stale Blob", async () => {
+  let finish: (value: unknown) => void = () => {};
+  fetchCsv.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  await act(async () => button("Download CSV").click());
+  const signal = fetchCsv.mock.calls[0][1].signal as AbortSignal;
+  await render("2");
+  expect(signal.aborted).toBe(true);
+  await act(async () =>
+    finish({
+      ok: true,
+      headers: { get: () => "text/csv" },
+      blob: async () => new Blob(["old"]),
+    }),
+  );
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+});
+
+it.each([
+  { published: true, mode: "Published" },
+  { published: true, mode: "Working" },
+  { published: false, mode: "Working" },
+])(
+  "reactivating selected $mode (published=$published) preserves records without a read",
+  async ({ published, mode }) => {
+    api.mockResolvedValue(sample("accounts", "current", 1, published));
+    await render();
+    if (published && mode === "Working") {
+      await act(async () => button("Working").click());
+      await settle();
+    }
+    expect(button(mode).getAttribute("aria-pressed")).toBe("true");
+    const before = api.mock.calls.length;
+    const records = host.querySelector(".export-record")?.textContent;
+    await act(async () => button(mode).click());
+    await settle();
+    expect(host.querySelector(".export-record")?.textContent).toBe(records);
+    expect(api).toHaveBeenCalledTimes(before);
+  },
+);

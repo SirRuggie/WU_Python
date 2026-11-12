@@ -73,16 +73,17 @@ it.each([
       expect(
         host.querySelector('[data-testid="export-season"]')?.textContent,
       ).toContain(expected);
-      expect(host.querySelector(".topbar strong")?.textContent).toBe("Exports");
+      expect(host.querySelector(".topbar strong")?.textContent).toBe(
+        "Exports & history",
+      );
       expect(
         [...host.querySelectorAll(".sidebar button")].some(
-          (b) => b.textContent?.trim() === "Exports",
+          (b) => b.textContent?.trim() === "Exports & history",
         ),
       ).toBe(true);
-      expect(
-        host.querySelector(".roster-flow-tabs")?.textContent ||
-          host.textContent,
-      ).not.toContain("Exports & history");
+      expect(host.querySelector(".cwl-result-nav")?.textContent).toContain(
+        "Exports & history",
+      );
     } finally {
       await act(async () => root.unmount());
       host.remove();

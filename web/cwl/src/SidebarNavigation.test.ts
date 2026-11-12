@@ -94,7 +94,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
     "Declaration check",
     "Return reminders",
     "Results & bonuses",
-    "Exports",
+    "Exports & history",
   ]);
   expect(
     sections

@@ -378,6 +378,13 @@ class RaffleStore:
         # Compatibility for callers testing the former default rule.
         return self.sit_out(tag, cycle, 3)['three_cycle_cooldown']
 
+    def imported_winner_history(self):
+        """Read import records without inventing batches or confirmation receipts."""
+        return [{**dict(row), 'tag': row['player_tag'], 'source': 'import',
+                 'record_type': 'imported_winner'} for row in self.db.execute(
+            'SELECT * FROM bonus_imported_winners WHERE season_id=? ORDER BY cycle DESC,clan_tag,player_tag',
+            (self.sid,))]
+
     def import_pool_conflicts(self, rows, seasons):
         """Return every distinct NEW-row conflict; never reinterpret a saved staff rule."""
         conflicts = {}

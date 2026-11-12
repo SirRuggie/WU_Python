@@ -1,170 +1,171 @@
 // @vitest-environment happy-dom
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const { api, grants } = vi.hoisted(() => ({
   api: vi.fn(),
   grants: new Set<string>(),
 }));
 vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
 vi.mock("./DashboardPermissions", () => ({
-  useDashboardPermission: (scope: string) => grants.has(scope),
+  useDashboardPermission: (key: string) => grants.has(key),
 }));
 import ExportWorkspace from "./ExportWorkspace";
-
-const preview = {
-  kind: "accounts",
-  basis: "current",
+let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
+const seasons = [
+  { id: 1, label: "2026-11", status: "draft", signup_open: true },
+  { id: 2, label: "2026-08", status: "archived", signup_open: false },
+];
+const payload = (published = true, status = "draft") => ({
   summary: {
-    season_label: "November 2026",
-    season_status: "draft",
+    season_label: "2026-11",
+    season_status: status,
+    published_available: published,
+    published_version: published ? 1 : null,
+    published_at: null,
     cwl_month: "2026-11",
-    published_version: 1,
-    published_at: "2026-11-01T12:00:00Z",
-    published_available: true,
   },
-  columns: ["player_name"],
-  rows: [],
-  counts: { rows: 0 },
-};
-const results = {
-  accounts: [
+  rows: [
     {
-      tag: "#P1",
-      player_name: "Old player",
-      pool: "main",
-      assigned_clan_name: "Family",
-      attacks: 4,
-      stars: 9,
-      notes: "Kept note",
+      tag: "#P2Y",
+      pool: "lazy",
+      player_name: "Fixture",
+      assigned_clan_name: "Lazy",
+      clan_name: "Lazy",
+      source: "import",
     },
   ],
-  publication_version: 1,
-};
-const raffle = {
-  season_status: "draft",
-  revision: 1,
-  draws: [],
-  history: [
-    {
-      id: 5,
-      tag: "#P2",
-      player_name: "Medal player",
-      clan_name: "Lazy One",
-      clan_tag: "#2YQ",
-      cycle: "2026-10",
-      confirmed_at: "2026-10-31T12:00:00Z",
-      voided_at: null,
-    },
-  ],
-};
-let host: HTMLDivElement;
-let root: Root;
-const reads = (needle: string) =>
-  api.mock.calls.filter((call) => String(call[0]).includes(needle));
-const settle = async () =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-const disclosure = (text: string) =>
-  [...host.querySelectorAll<HTMLDetailsElement>("details")].find((node) =>
-    node.querySelector("summary")?.textContent?.startsWith(text),
-  )!;
-const toggle = async (node: HTMLDetailsElement) => {
-  await act(async () => {
-    node.open = true;
-    node.dispatchEvent(new Event("toggle"));
-  });
-  await settle();
-};
-beforeEach(async () => {
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  grants.clear();
-  grants.add("cwl_results");
-  grants.add("cwl_bonuses");
-  api
-    .mockReset()
-    .mockImplementation(async (route: string) =>
-      route.includes("export-preview")
-        ? preview
-        : route.includes("bonus-raffle")
-          ? raffle
-          : results,
-    );
-  host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
-  await act(async () =>
+  counts: { rows: 1 },
+});
+const render = (sid = "1") =>
+  act(async () =>
     root.render(
       <ExportWorkspace
-        seasonId="1"
-        seasons={[
-          { id: 1, label: "November", status: "draft", signup_open: true },
-        ]}
+        seasonId={sid}
+        seasons={seasons}
         onSeasonChange={() => {}}
       />,
     ),
   );
-  await settle();
+beforeEach(() => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  grants.clear();
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  api.mockReset().mockResolvedValue(payload());
 });
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-
-describe("saved histories on Exports", () => {
-  it("lists both as closed, read only disclosures and fetches neither", () => {
-    expect(disclosure("Saved results history")).toBeTruthy();
-    expect(disclosure("Saved bonus history")).toBeTruthy();
-    expect(disclosure("Saved results history").open).toBe(false);
-    expect(reads("source=history")).toHaveLength(0);
-    expect(reads("/bonus-raffle")).toHaveLength(0);
-  });
-  it("loads results history only when opened", async () => {
-    await toggle(disclosure("Saved results history"));
-    expect(reads("/participation?source=history")).toHaveLength(1);
-    expect(disclosure("Saved results history").textContent).toContain(
-      "Old player",
-    );
-    expect(disclosure("Saved results history").textContent).toContain(
-      "Kept note",
-    );
-    expect(reads("/bonus-raffle")).toHaveLength(0);
-  });
-  it("loads bonus history only when opened", async () => {
-    await toggle(disclosure("Saved bonus history"));
-    expect(reads("/bonus-raffle")).toHaveLength(1);
-    expect(disclosure("Saved bonus history").textContent).toContain(
-      "Medal player",
-    );
-    expect(disclosure("Saved bonus history").textContent).toContain(
-      "not proof medals were awarded",
-    );
-    expect(reads("source=history")).toHaveLength(0);
-  });
-  it("writes nothing", async () => {
-    await toggle(disclosure("Saved results history"));
-    await toggle(disclosure("Saved bonus history"));
+it.each(["cwl_bonuses", "cwl_send", ""])(
+  "Bonus winners follows the existing OR grant: %s",
+  async (grant) => {
+    if (grant) grants.add(grant);
+    await render();
+    const show = host.querySelector("select")!;
     expect(
-      api.mock.calls.filter((call) => call[1] && call[1] !== "GET"),
-    ).toHaveLength(0);
-  });
-  it("hides bonus history from staff without a bonus grant", async () => {
-    await act(async () => root.render(<></>));
-    grants.delete("cwl_bonuses");
-    await act(async () =>
-      root.render(
-        <ExportWorkspace
-          seasonId="1"
-          seasons={[
-            { id: 1, label: "November", status: "draft", signup_open: true },
-          ]}
-          onSeasonChange={() => {}}
-        />,
+      [...show.options].some((option) => option.value === "bonus-history"),
+    ).toBe(Boolean(grant));
+    expect(host.querySelector(".participation-history")).toBeNull();
+    expect(host.querySelector(".bonus-history")).toBeNull();
+    expect(
+      api.mock.calls.every((call) =>
+        String(call[0]).includes("export-preview"),
       ),
+    ).toBe(true);
+    if (grant) {
+      await act(async () => {
+        show.value = "bonus-history";
+        show.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(host.textContent).toContain("Imported");
+    }
+    expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
+      true,
     );
-    await settle();
-    expect(disclosure("Saved results history")).toBeTruthy();
-    expect(disclosure("Saved bonus history")).toBeUndefined();
+  },
+);
+it("archived months have no switch and no working fallback when unpublished", async () => {
+  api.mockResolvedValue(payload(false, "archived"));
+  await render("2");
+  expect(host.querySelector('[aria-label="Roster basis"]')).toBeNull();
+  expect(host.textContent).toContain("No roster saved for this month.");
+  expect(host.textContent).not.toContain("Fixture");
+});
+it("clears winner data when the grant is revoked", async () => {
+  grants.add("cwl_send");
+  await render();
+  const show = host.querySelector("select")!;
+  await act(async () => {
+    show.value = "bonus-history";
+    show.dispatchEvent(new Event("change", { bubbles: true }));
   });
+  expect(host.textContent).toContain("Imported");
+  grants.clear();
+  await render();
+  expect(host.textContent).not.toContain("Imported");
+  expect(host.textContent).toContain("You do not have access");
+});
+it("orders month-name seasons newest first without archive suffix", async () => {
+  const { monthSeasons } = await import("./exportHistory");
+  expect(
+    monthSeasons([
+      { ...seasons[1] },
+      { ...seasons[0] },
+      { id: 3, label: "October 2026", status: "archived", signup_open: false },
+    ]).map((s) => s.id),
+  ).toEqual([1, 2, 3]);
+  await render();
+  expect(host.textContent).not.toContain("· Archived");
+});
+
+it("uses the bound month before a free label, ISO fallback, then untouched free labels last", async () => {
+  const { monthSeasons, seasonMonthLabel } = await import("./exportHistory");
+  const rows = [
+    {
+      id: 1,
+      label: "September staff history",
+      cwl_month: "2026-09",
+      status: "archived",
+      signup_open: false,
+    },
+    {
+      id: 2,
+      label: "2026-08",
+      cwl_month: null,
+      status: "archived",
+      signup_open: false,
+    },
+    {
+      id: 9,
+      label: "Unbound newest",
+      cwl_month: null,
+      status: "draft",
+      signup_open: false,
+    },
+    {
+      id: 3,
+      label: "Unbound older",
+      cwl_month: null,
+      status: "draft",
+      signup_open: false,
+    },
+  ];
+  expect(monthSeasons(rows).map((row) => row.id)).toEqual([1, 2, 9, 3]);
+  expect(rows.map((row) => seasonMonthLabel(row))).toEqual([
+    "September 2026",
+    "August 2026",
+    "Unbound newest",
+    "Unbound older",
+  ]);
+  await act(async () =>
+    root.render(
+      <ExportWorkspace seasonId="1" seasons={rows} onSeasonChange={() => {}} />,
+    ),
+  );
+  expect(host.querySelector(".roster-menu-current")?.textContent).toBe(
+    "September 2026",
+  );
 });

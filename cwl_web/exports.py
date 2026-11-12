@@ -69,7 +69,9 @@ def _export_snapshot(db, season_id: int, kind: str, basis: str, stamp: str) -> d
             "warnings", "confirmed_by", "confirmed_at", "voided_by",
             "voided_at", "void_reason", "record_type",
         ]
-        rows = [{**meta, **row} for row in bonus["history"]]
+        from utils.cwl_bonus_raffle_store import RaffleStore
+        rows = [{**meta, **row, "source": "dashboard"} for row in bonus["history"]]
+        rows.extend({**meta, **row} for row in RaffleStore(db, season_id).imported_winner_history())
         output_basis = "history"
     elif kind in {"participation", "participation-history"}:
         output_basis = "saved_history" if kind == "participation-history" else basis
@@ -241,12 +243,23 @@ def _query(request):
     return kind, basis
 
 
+def _require_bonus_history(request, kind, session):
+    """1016: enforce the existing UI grant on both winner reads only."""
+    if kind != 'bonus-history':
+        return
+    from .app import _owner, _fail
+    from .access_control import request_scopes
+    if not _owner(session) and not {'cwl_bonuses', 'cwl_send'} & request_scopes(request, session['user_id']):
+        _fail(403, 'You do not have permission for this CWL action.')
+
+
 async def export_preview(request):
     from .app import _require, _sid, _store
 
-    _require(request, "editor")
+    session = _require(request, "editor")
     season_id = _sid(request)
     kind, basis = _query(request)
+    _require_bonus_history(request, kind, session)
     with _store(request).tx() as db:
         result = _export_snapshot(db, season_id, kind, basis, datetime.now(timezone.utc).isoformat())
         result = decorate_export_snapshot(db, season_id, result)
@@ -256,9 +269,10 @@ async def export_preview(request):
 async def export_csv(request):
     from .app import _require, _sid, _store
 
-    _require(request, "editor")
+    session = _require(request, "editor")
     season_id = _sid(request)
     kind, basis = _query(request)
+    _require_bonus_history(request, kind, session)
     with _store(request).tx() as db:
         snapshot = _export_snapshot(db, season_id, kind, basis, datetime.now(timezone.utc).isoformat())
         snapshot = decorate_export_snapshot(db, season_id, snapshot)

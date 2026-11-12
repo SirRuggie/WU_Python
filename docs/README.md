@@ -172,3 +172,6 @@ before changing durable documentation.
 
 - [band-ical-feeds.md](band-ical-feeds.md) — the per-calendar iCal feeds, why
   they are treated as credentials, and why the BAND Open API was not usable.
+
+- [exports-history.md](exports-history.md) — Exports & history231: grouped rosters,
+  imported winners, publication/working behavior and read-only safeguards.

@@ -192,7 +192,7 @@ const sections: Section[] = [
       {
         view: "exports",
         permissions: ["cwl_results"],
-        label: "Exports",
+        label: "Exports & history",
         icon: "download",
       },
     ],

@@ -3,16 +3,16 @@ import RosterMenu from "./rosterUi/Menu";
 import { fetchReadWithRetry } from "./readRetry";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Season } from "./api";
-import ExportRecordCard, { type ExportKind } from "./ExportRecordCard";
-import ParticipationHistory from "./ParticipationHistory";
-import BonusHistory from "./BonusHistory";
+import ExportRosterView from "./ExportRosterView";
+import ExportWinnersView from "./ExportWinnersView";
+import {
+  monthSeasons,
+  seasonMonthLabel,
+  type ExportKind,
+} from "./exportHistory";
 import { useDashboardPermission } from "./DashboardPermissions";
 import "./ExportWorkspace.css";
-import {
-  exportDateText as dateText,
-  matchesExportSearch,
-  exportMonthLabel,
-} from "./exportPreview";
+import { exportDateText as dateText } from "./exportPreview";
 
 type Kind = ExportKind;
 type Basis = "current" | "published";
@@ -43,7 +43,7 @@ const choices: { kind: Kind; label: string; description: string }[] = [
   {
     kind: "accounts",
     label: "Roster",
-    description: "Roster accounts, weights and results.",
+    description: "Saved accounts and hosting clans.",
   },
   {
     kind: "participation",
@@ -57,14 +57,12 @@ const choices: { kind: Kind; label: string; description: string }[] = [
   },
   {
     kind: "bonus-history",
-    label: "Saved bonus history",
+    label: "Bonus winners",
     description: "Saved selections, not confirmed game awards.",
   },
 ];
-const rowLimit = 20;
-const tagOf = (row: PreviewRow) => String(row.tag ?? "");
 const errorText = (cause: unknown) =>
-  cause instanceof Error ? cause.message : "Could not load the export preview.";
+  cause instanceof Error ? cause.message : "Could not load exports & history.";
 
 export default function ExportWorkspace({
   seasonId,
@@ -72,13 +70,12 @@ export default function ExportWorkspace({
   onSeasonChange,
 }: Props) {
   const [kind, setKind] = useState<Kind>("accounts");
-  const [basis, setBasis] = useState<Basis>("current");
+  const [basis, setBasis] = useState<Basis>("published");
   const [preview, setPreview] = useState<ExportPreview | null>(null);
   const [previewFor, setPreviewFor] = useState("");
   const [publication, setPublication] = useState<{
     season: string;
     available: boolean;
-    version: number | null;
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
@@ -87,8 +84,6 @@ export default function ExportWorkspace({
   const [downloadError, setDownloadError] = useState("");
   const [downloadDenied, setDownloadDenied] = useState(false);
   const [notice, setNotice] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(0);
   const [attempt, setAttempt] = useState(0);
   const canBonuses = useDashboardPermission("cwl_bonuses");
   const canSend = useDashboardPermission("cwl_send");
@@ -107,6 +102,7 @@ export default function ExportWorkspace({
   }, []);
   useEffect(() => {
     setPublication(null);
+    setBasis("published");
   }, [seasonId]);
   useEffect(() => {
     downloadController.current?.abort();
@@ -114,9 +110,7 @@ export default function ExportWorkspace({
     setDownloadError("");
     setDownloadDenied(false);
     setNotice("");
-    setSearch("");
-    setPage(0);
-  }, [seasonId, kind, basis]);
+  }, [seasonId, kind, basis, canBonusHistory]);
   useEffect(() => {
     const request = ++previewRequest.current;
     setPreview(null);
@@ -128,21 +122,39 @@ export default function ExportWorkspace({
       return;
     }
     setPreviewLoading(true);
-    const params = new URLSearchParams({
-      kind,
-      basis: kind === "accounts" ? basis : "current",
-    });
-    api<ExportPreview>(
-      `/seasons/${encodeURIComponent(seasonId)}/export-preview?${params}`,
-    )
-      .then((result) => {
+    if (kind === "bonus-history" && !canBonusHistory) {
+      setPreviewLoading(false);
+      setPreviewDenied(true);
+      setPreviewError("You do not have access to this export.");
+      return;
+    }
+    const read = (requested: Basis) =>
+      api<ExportPreview>(
+        `/seasons/${encodeURIComponent(seasonId)}/export-preview?${new URLSearchParams({ kind, basis: requested })}`,
+      );
+    // The existing current read supplies publication availability. Never render
+    // working rows while a requested published snapshot is still being read.
+    read("current")
+      .then(async (current) => {
         if (request !== previewRequest.current) return;
-        setPreview(result);
+        const available = current.summary.published_available;
+        const archived = current.summary.season_status === "archived";
+        const result =
+          kind === "accounts" &&
+          (basis === "published" || archived) &&
+          available
+            ? await read("published")
+            : current;
+        if (request !== previewRequest.current) return;
         setPublication({
           season: seasonId,
-          available: result.summary.published_available,
-          version: result.summary.published_version,
+          available,
         });
+        setPreview(
+          kind === "accounts" && archived && !available
+            ? { ...result, rows: [], counts: { rows: 0 } }
+            : result,
+        );
         setPreviewFor(
           `${seasonId}|${kind}|${kind === "accounts" ? basis : "current"}`,
         );
@@ -166,26 +178,27 @@ export default function ExportWorkspace({
     return () => {
       previewRequest.current += 1;
     };
-  }, [seasonId, kind, basis, attempt]);
+  }, [seasonId, kind, basis, attempt, canBonusHistory]);
 
   const changeSeason = (id: string) => {
     downloadController.current?.abort();
     setPreview(null);
     setPublication(null);
-    setBasis("current");
+    setBasis("published");
     onSeasonChange(id);
   };
   const changeKind = (next: Kind) => {
     downloadController.current?.abort();
     setPreview(null);
     setKind(next);
-    setBasis("current");
+    setBasis("published");
   };
   const download = async () => {
     if (
       !seasonId ||
+      (kind === "bonus-history" && !canBonusHistory) ||
       !displayedPreview ||
-      displayedPreview.counts.rows === 0 ||
+      rows.length === 0 ||
       previewLoading ||
       downloadBusy ||
       downloadController.current
@@ -197,7 +210,12 @@ export default function ExportWorkspace({
     setDownloadError("");
     setDownloadDenied(false);
     setNotice("");
-    const chosenBasis = kind === "accounts" ? basis : "current";
+    const chosenBasis =
+      kind === "accounts" && displayedPreview.summary.published_available
+        ? displayedPreview.summary.season_status === "archived"
+          ? "published"
+          : basis
+        : "current";
     try {
       const params = new URLSearchParams({ kind, basis: chosenBasis });
       const response = await fetchReadWithRetry(
@@ -252,33 +270,23 @@ export default function ExportWorkspace({
 
   const context = `${seasonId}|${kind}|${kind === "accounts" ? basis : "current"}`;
   const displayedPreview = previewFor === context ? preview : null;
-  const query = search.trim().toLocaleLowerCase();
-  const rows = (displayedPreview?.rows || []).filter((row) =>
-    matchesExportSearch(row, query, kind),
-  );
-  const lastPage = Math.max(0, Math.ceil(rows.length / rowLimit) - 1);
-  const currentPage = Math.min(page, lastPage);
-  const shown = rows.slice(
-    currentPage * rowLimit,
-    (currentPage + 1) * rowLimit,
-  );
   const currentPublication =
     publication?.season === seasonId ? publication : null;
   const publishedAvailable = currentPublication?.available === true;
-  const publishedLabel = publishedAvailable
-    ? `Published roster (v${currentPublication.version})`
-    : currentPublication?.available === false
-      ? "Published roster (not published yet)"
-      : previewLoading
-        ? "Published roster (checking…)"
-        : "Published roster (status unavailable)";
+  const rows = (displayedPreview?.rows || []).filter(
+    (row) => kind !== "bonus-history" || !row.voided_at,
+  );
+  const effectiveBasis = publishedAvailable ? basis : "current";
   const selectedSeason = seasons.find(
     (season) => String(season.id) === seasonId,
   );
 
   return (
     <div className="export-workspace">
-      <CwlPageHeader className="export-page-head" title={<h1>Exports</h1>}>
+      <CwlPageHeader
+        className="export-page-head"
+        title={<h1>Exports &amp; history</h1>}
+      >
         <RosterMenu
           label="Season"
           value={seasonId}
@@ -286,9 +294,9 @@ export default function ExportWorkspace({
           onValueChange={changeSeason}
           options={[
             { value: "", label: "Select a season" },
-            ...seasons.map((season) => ({
+            ...monthSeasons(seasons).map((season) => ({
               value: String(season.id),
-              label: `${exportMonthLabel(season.label)}${season.status === "archived" ? " · Archived" : ""}`,
+              label: seasonMonthLabel(season),
             })),
           ]}
         />
@@ -298,64 +306,59 @@ export default function ExportWorkspace({
       )}
       {seasonId && (
         <>
-          <div className="export-season-status" role="status">
-            <span>
-              {selectedSeason?.status === "archived"
-                ? "Archived season"
-                : "Working season"}
-            </span>
-            <span>
-              {displayedPreview
-                ? displayedPreview.summary.published_version
-                  ? `Published roster v${displayedPreview.summary.published_version} · ${dateText(displayedPreview.summary.published_at)}`
-                  : "No roster published yet"
-                : previewLoading
-                  ? "Checking publication…"
-                  : "Publication status unavailable"}
-            </span>
-            {displayedPreview?.summary.cwl_month && (
-              <span>
-                CWL month {exportMonthLabel(displayedPreview.summary.cwl_month)}
-              </span>
-            )}
-          </div>
           <div className="export-controls">
             <label>
-              Data
+              Show
               <select
+                name="export-show"
                 value={kind}
                 disabled={downloadBusy}
                 onChange={(event) => changeKind(event.target.value as Kind)}
               >
-                {choices.map((choice) => (
-                  <option key={choice.kind} value={choice.kind}>
-                    {choice.label}
-                  </option>
-                ))}
+                {choices
+                  .filter(
+                    (choice) =>
+                      choice.kind !== "bonus-history" || canBonusHistory,
+                  )
+                  .map((choice) => (
+                    <option key={choice.kind} value={choice.kind}>
+                      {choice.label}
+                    </option>
+                  ))}
               </select>
             </label>
-            {kind === "accounts" && (
-              <label>
-                Roster version
-                <select
-                  value={basis}
-                  disabled={downloadBusy || previewLoading}
-                  onChange={(event) => {
-                    setPreview(null);
-                    setBasis(event.target.value as Basis);
-                    setPage(0);
-                  }}
+            {kind === "accounts" &&
+              selectedSeason?.status !== "archived" &&
+              currentPublication && (
+                <div
+                  className="export-roster-switch"
+                  role="group"
+                  aria-label="Roster basis"
                 >
-                  <option value="current">Working roster</option>
-                  <option value="published" disabled={!publishedAvailable}>
-                    {publishedLabel}
-                  </option>
-                </select>
-              </label>
-            )}
+                  {(["published", "current"] as const).map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={effectiveBasis === value}
+                      disabled={
+                        downloadBusy ||
+                        previewLoading ||
+                        (value === "published" && !publishedAvailable)
+                      }
+                      onClick={() => {
+                        if (value === effectiveBasis) return;
+                        setPreview(null);
+                        setBasis(value);
+                      }}
+                    >
+                      {value === "published" ? "Published" : "Working"}
+                    </button>
+                  ))}
+                </div>
+              )}
             <p>{choices.find((choice) => choice.kind === kind)?.description}</p>
           </div>
-          {previewLoading && <p role="status">Loading export preview…</p>}
+          {previewLoading && <p role="status">Loading exports & history…</p>}
           {previewError && (
             <div className="notice error" role="alert">
               {previewError}
@@ -393,89 +396,56 @@ export default function ExportWorkspace({
               <div className="export-ready">
                 <div>
                   <strong>
-                    {displayedPreview.counts.rows}{" "}
-                    {displayedPreview.counts.rows === 1 ? "row" : "rows"} ready
+                    {rows.length} {rows.length === 1 ? "account" : "accounts"}
                   </strong>
                   <span>
-                    CSV includes all saved rows, regardless of search.
+                    {kind === "accounts" &&
+                    displayedPreview.summary.published_available &&
+                    basis === "published"
+                      ? `Published ${dateText(displayedPreview.summary.published_at)}`
+                      : "Saved data for this month"}
                   </span>
                 </div>
                 <button
                   type="button"
                   className="primary"
-                  disabled={downloadBusy || displayedPreview.counts.rows === 0}
+                  disabled={downloadBusy || rows.length === 0}
                   onClick={() => void download()}
                 >
                   {downloadBusy ? "Preparing CSV…" : "Download CSV"}
                 </button>
               </div>
-              {rows.some((row) =>
-                kind === "accounts"
-                  ? row.participation_matches_roster === false
-                  : kind === "participation" && row.matches_roster === false,
+              {rows.some(
+                (row) =>
+                  kind === "participation" && row.matches_roster === false,
               ) && (
                 <p className="export-mismatch-note">
                   Some results are blank (different clan). See Results history.
                 </p>
               )}
-              <div className="export-list-head">
-                <strong>Preview</strong>
-                <span>
-                  {rows.length} matching · {displayedPreview.counts.rows} total
-                </span>
-              </div>
-              <label className="export-search">
-                Find a player or clan
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    setPage(0);
-                  }}
-                  placeholder="Player, tag, clan or reason"
-                />
-              </label>
-              {!rows.length ? (
+              {kind === "accounts" && !publishedAvailable && (
                 <p className="export-empty">
-                  {query
-                    ? "No rows match this search."
-                    : "No saved rows for this export."}
+                  {selectedSeason?.status === "archived"
+                    ? "No roster saved for this month."
+                    : "Not published yet"}
                 </p>
+              )}
+              {rows.length ? (
+                kind === "bonus-history" ? (
+                  <ExportWinnersView rows={rows} />
+                ) : (
+                  <ExportRosterView rows={rows} kind={kind} />
+                )
               ) : (
-                <>
-                  <ul className="export-records">
-                    {shown.map((row, index) => (
-                      <li key={`${kind}:${currentPage}:${index}:${tagOf(row)}`}>
-                        <ExportRecordCard kind={kind} row={row} />
-                      </li>
-                    ))}
-                  </ul>
-                  {lastPage > 0 && (
-                    <nav
-                      className="roster-pagination"
-                      aria-label="Export preview pages"
-                    >
-                      <button
-                        type="button"
-                        disabled={currentPage === 0}
-                        onClick={() => setPage(currentPage - 1)}
-                      >
-                        Previous
-                      </button>
-                      <span>
-                        Page {currentPage + 1} of {lastPage + 1}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={currentPage === lastPage}
-                        onClick={() => setPage(currentPage + 1)}
-                      >
-                        Next
-                      </button>
-                    </nav>
-                  )}
-                </>
+                !(
+                  kind === "accounts" &&
+                  selectedSeason?.status === "archived" &&
+                  !publishedAvailable
+                ) && (
+                  <p className="export-empty">
+                    No saved accounts for this month.
+                  </p>
+                )
               )}
               <details className="export-about">
                 <summary>CSV format &amp; data</summary>
@@ -487,17 +457,6 @@ export default function ExportWorkspace({
                 </p>
               </details>
             </>
-          )}
-          <ParticipationHistory
-            key={`results:${seasonId}`}
-            seasonId={seasonId}
-            onAccessDenied={(cause) => {
-              setPreviewDenied(true);
-              setPreviewError(errorText(cause));
-            }}
-          />
-          {canBonusHistory && (
-            <BonusHistory key={`bonus:${seasonId}`} seasonId={seasonId} />
           )}
         </>
       )}

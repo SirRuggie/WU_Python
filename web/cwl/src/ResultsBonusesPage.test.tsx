@@ -151,7 +151,7 @@ describe("one page for two addresses", () => {
     const tabs = [...host.querySelectorAll(".cwl-result-nav button")].map(
       (node) => node.textContent,
     );
-    expect(tabs).toEqual(["Results & bonuses", "Exports"]);
+    expect(tabs).toEqual(["Results & bonuses", "Exports & history"]);
     const sidebar = [...host.querySelectorAll(".sidebar button")].map((node) =>
       node.textContent?.trim(),
     );
@@ -206,7 +206,9 @@ describe("one page for two addresses", () => {
   it("guards leaving the page while the list has unsaved work", async () => {
     const { button, settle } = await mount("/cwl/results?season=1", both);
     await act(async () => button("Hold list edit")!.click());
-    await act(async () => button("Exports", ".sidebar button")!.click());
+    await act(async () =>
+      button("Exports & history", ".sidebar button")!.click(),
+    );
     await settle();
     expect(document.querySelectorAll(".confirm-dialog")).toHaveLength(1);
     expect(location.pathname).toBe("/cwl/results");

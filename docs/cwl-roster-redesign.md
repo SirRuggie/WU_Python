@@ -1538,3 +1538,27 @@ rerun; the importer never rewrites it. Already imported rows remain strict
 no-ops regardless of later edits. Player-provider awaits occur outside database
 transactions. Production dry run/apply remain unapproved; state this conflict
 rule and the `history_only` marker in READY.
+
+## Exports & history D1 (2026-11-12, prompt231)
+
+Exports becomes Exports & history on the existing route. Month-name seasons
+sort newest first. Show offers Roster, Signups, Results history and Bonus winners
+with unchanged API kinds. Clan groups show Main before Lazy; roster rows show
+player/tag/TH/weight. Current non-archived seasons default Published and expose
+Working; unpublished current seasons show Working/Not published yet. Archived
+months without publication show no saved roster, never their working data.
+Bonus winners includes230 imports, labels Imported and hides voided rows.
+Search, paging, version select and duplicate histories are removed; CSV remains
+until232. Loading/denied/retry/cancellation and existing OR grant behavior stay.
+Status: implementation in isolated fixture review; no production action. Later:
+232 Excel workbook remains a separate batch; merge231 only after230 integration.
+
+Shaka1016: Bonus winners preview/CSV now enforce the existing Bonuses OR Send
+grant on the server (owner allowed; missing both403). This is an explicit
+permission tightening; other export kinds retain their checks.
+
+Shaka1020: existing seasons JSON adds nullable cwl_month through the Results
+settings owner, resolved in one query for the list. Exports names/sorts by bound
+month, then an exact YYYY-MM label, else original free label unchanged. Months
+sort newest first; unparsed labels last by descending season id. No invented
+month. Selected Published/Working reactivation preserves records without reads.
