@@ -56,6 +56,38 @@ approved NO WAR corrections or restore databases for a code rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 
+## Clan Rep picker for FWA Rep accounts — 2026-11-12 (backend and frontend)
+
+- PR [#306](https://github.com/SirRuggie/WU_Python/pull/306), merge commit
+  `ea46425a44eeb3327e12efe7748da7e649fad7a1`, local tag
+  `clan-rep-picker-306-1`. Built and released by Shaka (Claude) on Ruggie's
+  "merge and release". Refuter ACCEPT; its 2 should-fixes applied in `14e6930d`.
+- Changes: read-only `GET .../bonus-raffle/clan-rep-members` (FWA Clan Rep role
+  `769130325460254740`, editor access); "Find Clan Rep (x2 odds)" picker in FWA
+  Rep accounts with "Add for x2". No schema change.
+- Backend: `release.conf` `backend/eccff038…` → `backend/ea46425a…`; PID
+  3619459 → 3671110, cwd verified, active, ready after 8 s, public config 200,
+  anonymous seasons and clan-rep-members 401, no tracebacks; other drop-ins
+  byte-identical. Bot not restarted (does not import the changed modules).
+- Frontend `current`: `eccff038…` → `ea46425a…` (clean tagged clone, `npm ci`,
+  2338 tests passed before staging). Entry `index-BdiAtLud.js`, SHA-256
+  `f5a84cd711efe2daf06774735395296df4e05654cb13fefed49111cef2508c2d`; served
+  `index.html` SHA-256
+  `bef986e9271d2377718a16b28866f6b2b8f3c20cc11ddce264875e0ccd436aea` equals the
+  release file; all 149 manifest assets match the public site.
+- Backup `.local/clan-rep-306-release-20261112T023546Z/dashboard.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `105f22d92b48873ef7dfffbe717200519092e19812f2c968354e2c13b00c88b9`. All 75
+  table counts identical before and after.
+- Signed-out smoke at 360 px on `/cwl/results`, `/cwl/bonuses`,
+  `/cwl/exports`: new entry, only the expected 401, no overflow, GET only.
+  Signed-in smoke SKIPPED.
+- Rollback: backend `release.conf` back to
+  `backend/eccff03812d9e94580cfc23ea3283a7846f87e03`, daemon-reload, restart
+  `wu-cwl-demo-web`; frontend `switch-release.py
+  eccff03812d9e94580cfc23ea3283a7846f87e03`. Never restore the database for a
+  code rollback.
+
 ## FWA Rep accounts for Lazy x2 odds — 2026-11-12 (backend and frontend)
 
 - PR [#304](https://github.com/SirRuggie/WU_Python/pull/304), merge commit
