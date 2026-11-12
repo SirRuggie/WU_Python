@@ -62,3 +62,12 @@ Shaka1027: a season without a bound CWL month or exact YYYY-MM label fails400
 for its Excel download. The message names the season and asks staff to set its
 CWL month first; preview labels remain unchanged. No month or winner scope is
 invented. The error stays next to the download control.
+
+Season picker labels/order are shared across the dashboard in seasonLabels.ts
+(233): bound cwl_month, then exact YYYY-MM label, else original free text. Month
+seasons display Month YYYY, newest first, with higher id first for same-month
+ties; unparsed labels remain unchanged after all months. The helper copies the
+array and preserves ids/objects. This display order does not change initial
+selection, Back, member season defaults, stored labels or endpoint/URL values.
+Range From and To also list newest first, while preserving their latest-To and
+earliest-From-within-twelve-month defaults and explicit user choices.

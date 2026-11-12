@@ -1,3 +1,4 @@
+import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader"
 import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
@@ -719,7 +720,7 @@ function App() {
     const submittedSeason = seasonId
     const submittedPool = pool
     const submittedAccounts = selected.map(item => ({ ...item }))
-    const summary: Completion = { seasonId: submittedSeason, seasonLabel: season.label, pool: submittedPool, accounts: submittedSummary(accounts, submittedAccounts), refreshWarning: false }
+    const summary: Completion = { seasonId: submittedSeason, seasonLabel: seasonMonthLabel(season), pool: submittedPool, accounts: submittedSummary(accounts, submittedAccounts), refreshWarning: false }
     setPending(true)
     setNotice(null)
     try {
@@ -1034,7 +1035,7 @@ function App() {
           </nav>
         )}
         {notice && !(view === 'signup' && review) && <div className={`notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}<button aria-label="Dismiss message" onClick={() => setNotice(null)}>×</button></div>}
-        {view === 'staff-overview' && <StaffOverview onNavigate={(next,season)=>{if(season)setSeasonId(season);changeView(next)}} />}
+        {view === 'staff-overview' && <StaffOverview seasons={seasons} onNavigate={(next,season)=>{if(season)setSeasonId(season);changeView(next)}} />}
         {view === 'image-gallery' && <ImageGallery onDirty={setManageDirty} />}
         {view === 'bases' && <BaseBank key={session.user.id} />}
         {view === 'tickets' && <TicketBrowser />}
@@ -1107,7 +1108,7 @@ function App() {
         {isManagementArea(view) && view !== 'members-settings' && <ServerManagement key={view} area={view} onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {(view === 'members-settings' || view === 'member-timezones') && <MembersPage onDirty={setManageDirty} initialMember={entryAccount} onInitialConsumed={() => setEntryAccount(null)} />}
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
-        {view === 'reminders' && session.can_edit && <><CwlPageHeader title={<h1>Signup reminders</h1>}><RosterMenu label="Season" value={seasonId} onValueChange={async next => { if (!reminderDirty || await confirmCwl('Discard unsaved reminder edits and change season?', 'Discard and change season')) setSeasonId(next) }} options={[{value: '', label: 'Select season'}, ...seasons.map(item => ({value: String(item.id), label: item.label}))]} /></CwlPageHeader>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Select a season to manage its reminders.</p>}{seasonId && <CwlNextLink label="Build roster" onNext={allowedView("roster") === "roster" ? () => navigateSidebar("roster") : undefined} disabled={rosterBusy} />}</>}
+        {view === 'reminders' && session.can_edit && <><CwlPageHeader title={<h1>Signup reminders</h1>}><RosterMenu label="Season" value={seasonId} onValueChange={async next => { if (!reminderDirty || await confirmCwl('Discard unsaved reminder edits and change season?', 'Discard and change season')) setSeasonId(next) }} options={[{value: '', label: 'Select season'}, ...monthSeasons(seasons).map(item => ({value: String(item.id), label: seasonMonthLabel(item)}))]} /></CwlPageHeader>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Select a season to manage its reminders.</p>}{seasonId && <CwlNextLink label="Build roster" onNext={allowedView("roster") === "roster" ? () => navigateSidebar("roster") : undefined} disabled={rosterBusy} />}</>}
         {view === 'search' && <DashboardSearch key={session.user.id} session={session} includeFamily={session.can_edit} query={searchQuery} onQuery={value => { setSearchQuery(value); setSearchPage(0) }} kind={searchKind} onKind={value => { setSearchKind(value); setSearchPage(0) }} page={searchPage} onPage={setSearchPage} onTasks={tag => changeView('todo', tag)} />}
         {view === 'todo' && <TodoWorkspace key={`${session.user.id}:${activitySearch}:${activityKind || "default"}`} userId={session.user.id} initialSearch={activitySearch} initialTab={activityKind} onWars={kind => changeView('wars', '', kind)} />}
         {view === 'wars' && <WarsWorkspace key={`${session.user.id}:${activityVisit}:${activityKind || "default"}`} userId={session.user.id} visit={activityVisit} initialType={activityKind === 'cwl' ? 'cwl' : 'regular'} canEdit={session.can_edit} onTasks={(tag,kind) => changeView('todo', tag,kind)} />}
@@ -1196,7 +1197,7 @@ function App() {
             <>
               <CwlPageHeader className="declaration-page-head" title={<h1>Declaration check</h1>}>
                 <RosterMenu label="Season" value={seasonId}
-                  options={seasons.map(item => ({value: String(item.id), label: item.label}))}
+                  options={monthSeasons(seasons).map(item => ({value: String(item.id), label: seasonMonthLabel(item)}))}
                   onValueChange={id => {
                     const proceed = () => {
                       if (id !== seasonId) navigation.current?.write({view: "declaration", season: id}, false);

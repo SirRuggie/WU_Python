@@ -1,19 +1,6 @@
-import type { Season } from "./api";
-import { exportMonthLabel } from "./exportPreview";
 import type { ExportRow } from "./exportPreview";
 export type ExportKind =
   "accounts" | "participation" | "participation-history" | "bonus-history";
-const validMonth = (value: string | null | undefined) =>
-  value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) ? value : "";
-export const seasonCycle = (season: Season) =>
-  validMonth(season.cwl_month) || validMonth(season.label);
-export const seasonMonthLabel = (season: Season) =>
-  exportMonthLabel(seasonCycle(season) || season.label);
-export function monthSeasons(seasons: Season[]): Season[] {
-  return [...seasons].sort(
-    (a, b) => seasonCycle(b).localeCompare(seasonCycle(a)) || b.id - a.id,
-  );
-}
 export function exportGroups(rows: ExportRow[], winners = false) {
   const groups = new Map<
     string,

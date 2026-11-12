@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, type Season } from "./api";
 import { fetchReadWithRetry } from "./readRetry";
 import { exportMonthLabel } from "./exportPreview";
-import { seasonCycle, seasonMonthLabel } from "./exportHistory";
+import { seasonCycle, seasonMonthLabel } from "./seasonLabels";
 
 const MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -41,11 +41,15 @@ export default function ExportDownloads({
   canDownload,
   onDenied,
 }: Props) {
-  const options = [...new Set(seasons.map(seasonCycle).filter(Boolean))].sort();
-  const latest = options.at(-1) || "";
+  const options = [...new Set(seasons.map(seasonCycle).filter(Boolean))]
+    .sort()
+    .reverse();
+  const latest = options[0] || "";
   const optionKey = options.join(",");
   const [from, setFrom] = useState(
-    options.find((month) => monthsBetween(month, latest) <= 12) || latest,
+    [...options]
+      .reverse()
+      .find((month) => monthsBetween(month, latest) <= 12) || latest,
   );
   const [to, setTo] = useState(latest);
   const [open, setOpen] = useState(false);
@@ -62,11 +66,13 @@ export default function ExportDownloads({
   const mounted = useRef(true);
   useEffect(() => {
     const available = optionKey ? optionKey.split(",") : [];
-    const last = available.at(-1) || "";
+    const last = available[0] || "";
     setFrom((previous) =>
       available.includes(previous)
         ? previous
-        : available.find((month) => monthsBetween(month, last) <= 12) || last,
+        : [...available]
+            .reverse()
+            .find((month) => monthsBetween(month, last) <= 12) || last,
     );
     setTo((previous) => (available.includes(previous) ? previous : last));
   }, [optionKey]);

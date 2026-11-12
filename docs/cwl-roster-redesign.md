@@ -1590,3 +1590,19 @@ Shaka1027: a season without a bound CWL month or exact YYYY-MM label fails400
 for its Excel download. The message names the season and asks staff to set its
 CWL month first; preview labels remain unchanged. No month or winner scope is
 invented. The error stays next to the download control.
+
+## Shared season month labels (2026-11-12, prompt233)
+
+Every listed season picker now shares seasonLabels.ts with Exports: resolved
+cwl_month first, exact YYYY-MM label next, otherwise the original free label.
+Months display Month YYYY and sort newest first; ties use higher season id;
+free labels follow month seasons by descending id. No Archived suffix is added.
+Roster selected-label accessibility text, staff overview, member season line and
+signup completion use the same display helper. Range From/To options now run
+newest first while retaining To=latest and From=earliest within twelve months.
+No source array, stored label, selected id, URL, member default or write contract
+changes. Exports-specific grouping remains in exportHistory.ts.
+
+Status: isolated frontend implementation and before/after fixture review; no
+backend, schema, endpoint or production action. Later: other nonpicker
+confirmation/server-supplied season strings are outside233.

@@ -46,7 +46,10 @@ it("review Change links retain eligible accounts and clear the removal notice af
       else if (path === "/seasons")
         data = {
           seasons: [
-            { id: 1, label: "November", status: "draft", signup_open: true },
+            { id: 4, label: "2026-10", status: "archived", signup_open: false },
+            { id: 3, label: "2026-09", status: "archived", signup_open: false },
+            { id: 2, label: "2026-08", status: "archived", signup_open: false },
+            { id: 1, label: "2026-11", status: "draft", signup_open: true },
           ],
           member_season: { season_id: 1, revision: 0 },
         };
@@ -171,6 +174,12 @@ it("review Change links retain eligible accounts and clear the removal notice af
     expect(signupPosts).toEqual(["/seasons/1/signups"]);
     expect(host.querySelector(".completion-card")?.textContent).toContain(
       "Normal fixture",
+    );
+    expect(host.querySelector(".completion-card")?.textContent).toContain(
+      "in November 2026.",
+    );
+    expect(host.querySelector(".completion-card")?.textContent).not.toContain(
+      "2026-",
     );
     await click(".completion-actions button:last-child");
     expect(host.querySelector(".pool-choice-grid")).not.toBeNull();

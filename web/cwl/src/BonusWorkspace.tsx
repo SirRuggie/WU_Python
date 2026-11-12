@@ -1,3 +1,4 @@
+import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import { participationSummary } from "./participation";
 import "./rosterUi/tokens.css";
 import CwlPageHeader from "./CwlPageHeader";
@@ -895,9 +896,9 @@ export default function BonusWorkspace({
             }}
           >
             <option value="">Select a season</option>
-            {seasons.map((season) => (
+            {monthSeasons(seasons).map((season) => (
               <option key={season.id} value={String(season.id)}>
-                {season.label}
+                {seasonMonthLabel(season)}
               </option>
             ))}
           </select>

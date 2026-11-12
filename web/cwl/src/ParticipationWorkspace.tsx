@@ -1,3 +1,4 @@
+import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
 import useConfirmDialog from "./useConfirmDialog";
 import { exportMonthLabel } from "./exportPreview";
@@ -531,9 +532,9 @@ export default function ParticipationWorkspace({
             onChange={(event) => void changeSeason(event.target.value)}
           >
             <option value="">Select a season</option>
-            {seasons.map((season) => (
+            {monthSeasons(seasons).map((season) => (
               <option key={season.id} value={String(season.id)}>
-                {season.label}
+                {seasonMonthLabel(season)}
               </option>
             ))}
           </select>
