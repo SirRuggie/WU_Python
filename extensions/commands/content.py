@@ -75,6 +75,7 @@ MEDIA_SLOTS = {
 }
 # Panels bound to one live post owned by the ticket rollout (no posting channel).
 _BOUND_PANELS = frozenset({"apply", "warrior_desk"})
+BOUND_PANELS = _BOUND_PANELS  # public name for the web content/publish adapters
 _baselines: dict[str, list] = {}
 _DESTINATION_TYPES = frozenset((hikari.ChannelType.GUILD_TEXT, hikari.ChannelType.GUILD_NEWS))
 

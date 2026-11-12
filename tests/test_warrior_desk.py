@@ -733,3 +733,29 @@ def test_repair_desk_entry_reports_failed_cleanup(monkeypatch, capsys):
     with pytest.raises(ValueError, match="could not be removed"):
         asyncio.run(settings.repair_desk_entry(ctx, mongo, bot))
     assert "desk_panel_cleanup_failed" in capsys.readouterr().out
+
+
+def test_warrior_desk_has_no_generic_posting_channel_record():
+    from cwl_web import manage_content
+
+    ids = {item["id"] for item in manage_content.catalog()}
+    assert "gauntlet--warrior_desk" in ids
+    assert "destination--warrior_desk" not in ids
+    assert "destination--apply" not in ids
+
+
+def test_generic_publish_cannot_send_a_new_warrior_desk_post():
+    from cwl_web import manage_delivery
+
+    row = {"_id": "r1", "action": "send", "user_id": "1", "values": {
+        "document": "warrior_desk", "template_revision": 1,
+        "template": manage_delivery.fingerprint({"sections": ["x"], "media": {}}),
+        "destination": 456, "target": None, "post": None}}
+    bot = NS(rest=NS(create_message=AsyncMock()))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(content, "template_for", AsyncMock(return_value=(["x"], {}, 1)))
+        patch.setattr(content, "destination_for", AsyncMock(return_value=456))
+        patch.setattr(content, "published_for", AsyncMock(return_value=None))
+        with pytest.raises(ValueError, match="Warrior Desk posts are created in Ticket settings"):
+            asyncio.run(manage_delivery.publish(bot, NS(), row, NS()))
+    bot.rest.create_message.assert_not_awaited()
