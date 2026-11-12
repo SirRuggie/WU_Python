@@ -953,6 +953,7 @@ Short lists (dropdown rollout PR 2):
 - Infractions (2026-11-12): the player Details sheet holds an "Infractions"
   section for Lazy players (`InfractionsSection.tsx`, shared fields in
   `InfractionFields.tsx`); the steps open the same fields in an `ActionPanel`
-  ("Infractions for {name}"). The ⋯ item reads "Infractions". Cards show a
-  neutral `Chip` per set flag and "Staff reason". Read only after the draw
+  ("Infractions for {name}"). The ⋯ item reads "Infractions". Step cards show a
+  neutral `Chip` per set flag and "Staff reason"; overview cards show none.
+  Details has one footer Cancel and Save. Read only after the draw
   ("Draw saved · read only"), in archived seasons and without the manage grant.

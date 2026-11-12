@@ -287,11 +287,6 @@
   margin: 0 0 var(--wu-space-1);
   font-size: var(--wu-text-base, 1rem);
 }
-.participation-infractions-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--wu-space-2);
-}
 .participation-infractions button {
   min-height: 44px;
 }

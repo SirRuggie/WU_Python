@@ -187,7 +187,7 @@ it("Save sends notes only", async () => {
     notes.dispatchEvent(new Event("input", { bubbles: true }));
   });
   const button = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent === "Save notes",
+    (item) => item.textContent === "Save",
   )!;
   await act(async () => button.click());
   expect(save).toHaveBeenCalledWith(

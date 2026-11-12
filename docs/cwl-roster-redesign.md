@@ -1478,8 +1478,9 @@ the "Discord roles unavailable" blocker is removed. Details:
 
 Follow-up (2026-11-12): Lazy infractions (flags and staff reason) move into the
 player Details sheet and the steps "Infractions" panel; ⋯ "Review" is renamed
-"Infractions"; cards show flag chips. Frontend only, no new endpoint: Details
-reads the existing `bonus-raffle` data when it opens. Read only after the draw.
+"Infractions"; step cards show flag chips (overview cards do not). Frontend
+only, no new endpoint: Details reads the existing `bonus-raffle` data when it
+opens and has one Save for notes and infractions. Read only after the draw.
 Details: `docs/cwl-lazy-bonuses.md`.
 
 Later:

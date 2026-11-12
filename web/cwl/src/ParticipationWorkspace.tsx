@@ -115,6 +115,9 @@ export default function ParticipationWorkspace({
     useDashboardPermission("cwl_bonuses"),
     !!archived,
     status,
+    () => {
+      if (statusEnabled.current) void loadStatus(seasonId);
+    },
   );
   const editing = activeEditorTag !== null;
   const controlsLocked = editing || syncBusy || loading;

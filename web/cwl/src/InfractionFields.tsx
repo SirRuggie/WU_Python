@@ -43,11 +43,7 @@ export function useInfractionDraft(review: BonusReview | null | undefined) {
   const dirty =
     flags.slice().sort().join("|") !== savedFlags.slice().sort().join("|") ||
     reason !== savedReason;
-  const reset = () => {
-    setFlags(savedFlags);
-    setReason(savedReason);
-  };
-  return { flags, setFlags, reason, setReason, dirty, reset };
+  return { flags, setFlags, reason, setReason, dirty };
 }
 
 type Props = {

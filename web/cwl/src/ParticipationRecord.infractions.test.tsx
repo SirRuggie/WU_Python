@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ParticipationRecord from "./ParticipationRecord";
+import { ApiError } from "./api";
 import type { ParticipationAccount } from "./participation";
 import type { Infractions } from "./useInfractions";
 vi.mock("./useDiscordIdentities", () => ({
@@ -86,6 +87,7 @@ beforeEach(() => {
   root = createRoot(host);
   load.mockReset();
   saveInfractions.mockReset().mockResolvedValue(undefined);
+  saveNotes.mockReset();
   onDirty.mockReset();
 });
 afterEach(async () => {
@@ -139,7 +141,7 @@ it("saves the selected flags and the reason, then says what changed", async () =
       .click(),
   );
   expect(onDirty).toHaveBeenLastCalledWith("#PYY", true);
-  await act(async () => named("Save infractions").click());
+  await act(async () => named("Save").click());
   expect(saveInfractions).toHaveBeenCalledWith("#PYY", ["left_family"], "");
   expect(section()?.textContent).toContain(
     "Infractions saved · Family eligibility updated.",
@@ -150,6 +152,8 @@ it("is read only once the draw is saved", async () => {
   await render({ infractions: infractions({ lock: () => "draw" }) });
   expect(section()?.textContent).toContain("Draw saved · read only");
   expect(named("Save infractions")).toBeUndefined();
+  expect(section()?.querySelector("button")).toBeNull();
+  expect(named("Save").disabled).toBe(true);
   expect(section()?.querySelector("fieldset")?.disabled).toBe(true);
 });
 
@@ -160,17 +164,14 @@ it("is read only for an archived season or without the manage grant", async () =
   expect(section()?.querySelector("textarea")?.disabled).toBe(true);
 });
 
-it("puts a chip on the card for each set flag and the staff reason", async () => {
+it("puts no infraction chips on the overview card", async () => {
   await render({
     open: false,
     infractions: infractions({
       data: raffle({ flags: ["lingering"], override_reason: "Played" }),
     }),
   });
-  const chips = [...host.querySelectorAll(".roster-ui-chip")].map(
-    (chip) => chip.textContent,
-  );
-  expect(chips).toEqual(["Lingering", "Staff reason"]);
+  expect(host.querySelectorAll(".roster-ui-chip")).toHaveLength(0);
 });
 
 it("closing with unsaved infractions asks before discarding", async () => {
@@ -189,4 +190,151 @@ it("closing with unsaved infractions asks before discarding", async () => {
     "Discard unsaved changes for Fixture?",
   );
   expect(saveInfractions).not.toHaveBeenCalled();
+});
+
+const tick = (index: number) =>
+  act(async () =>
+    section()!
+      .querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+      [index].click(),
+  );
+const typeNotes = (value: string) =>
+  act(async () => {
+    const notes = host.querySelector<HTMLTextAreaElement>(
+      "textarea[name='notes']",
+    )!;
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!.call(notes, value);
+    notes.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+const footer = () => host.querySelector(".participation-dialog-actions")!;
+const saveNotes = vi.fn();
+const withNotes = () =>
+  saveNotes.mockImplementation(async (...args: unknown[]) => ({
+    ...account,
+    notes: args[4] as string,
+    revision: 2,
+  }));
+
+it("the footer has one Cancel and one Save, and the section has none", async () => {
+  await render();
+  expect(
+    [...footer().querySelectorAll("button")].map(
+      (button) => button.textContent,
+    ),
+  ).toEqual(["Cancel", "Save"]);
+  expect(section()?.querySelector("button")).toBeNull();
+  expect(named("Save").disabled).toBe(true);
+});
+
+it("Save writes notes only when only notes changed", async () => {
+  withNotes();
+  await render({ onSave: saveNotes });
+  await typeNotes("Hello");
+  await act(async () => named("Save").click());
+  expect(saveNotes).toHaveBeenCalledTimes(1);
+  expect(saveInfractions).not.toHaveBeenCalled();
+});
+
+it("Save writes infractions only when only infractions changed", async () => {
+  await render({ onSave: saveNotes });
+  await tick(1);
+  await act(async () => named("Save").click());
+  expect(saveNotes).not.toHaveBeenCalled();
+  expect(saveInfractions).toHaveBeenCalledWith("#PYY", ["lingering"], "");
+});
+
+it("Save writes notes then infractions when both changed", async () => {
+  withNotes();
+  const order: string[] = [];
+  saveNotes.mockImplementationOnce(async (...args: unknown[]) => {
+    order.push("notes");
+    return { ...account, notes: args[4] as string, revision: 2 };
+  });
+  saveInfractions.mockImplementationOnce(async () => {
+    order.push("infractions");
+  });
+  await render({ onSave: saveNotes });
+  await typeNotes("Hello");
+  await tick(0);
+  await act(async () => named("Save").click());
+  expect(order).toEqual(["notes", "infractions"]);
+});
+
+it("a failed infractions part keeps the sheet open and dirty, and says so", async () => {
+  withNotes();
+  saveInfractions.mockRejectedValueOnce(new Error("Revision changed."));
+  const close = vi.fn();
+  await render({ onSave: saveNotes, onClose: close });
+  await typeNotes("Hello");
+  await tick(0);
+  await act(async () => named("Save").click());
+  expect(saveNotes).toHaveBeenCalledTimes(1);
+  expect(section()?.textContent).toContain(
+    "Infractions not saved · Revision changed.",
+  );
+  expect(section()?.textContent).not.toContain("Infractions saved");
+  expect(close).not.toHaveBeenCalled();
+  expect(
+    section()!.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .checked,
+  ).toBe(true);
+  expect(named("Save").disabled).toBe(false);
+});
+
+it("a failed notes part still saves infractions and says what failed", async () => {
+  saveNotes.mockRejectedValueOnce(new Error("Changed by someone else."));
+  const close = vi.fn();
+  await render({ onSave: saveNotes, onClose: close });
+  await typeNotes("Hello");
+  await tick(0);
+  await act(async () => named("Save").click());
+  expect(host.textContent).toContain(
+    "Notes not saved · Changed by someone else.",
+  );
+  expect(saveInfractions).toHaveBeenCalledTimes(1);
+  expect(section()?.textContent).toContain("Infractions saved");
+  expect(close).not.toHaveBeenCalled();
+  expect(
+    host.querySelector<HTMLTextAreaElement>("textarea[name='notes']")!.value,
+  ).toBe("Hello");
+});
+
+it("a conflict shows the error, keeps the draft, and replaces it only after the reload", async () => {
+  saveInfractions.mockRejectedValueOnce(new ApiError("Data moved on.", 409));
+  await render();
+  await tick(2);
+  await act(async () => named("Save").click());
+  expect(section()?.textContent).toContain(
+    "Infractions not saved · Data moved on.",
+  );
+  expect(section()?.textContent).not.toContain("Infractions saved");
+  const boxes = () =>
+    [
+      ...section()!.querySelectorAll<HTMLInputElement>(
+        'input[type="checkbox"]',
+      ),
+    ].map((box) => box.checked);
+  expect(boxes()).toEqual([false, false, true]);
+  await render({
+    infractions: infractions({
+      data: raffle({
+        flags: ["missed_sync"],
+        override_reason: "",
+        revision: 5,
+        updated_at: "2026-11-12T10:00:00Z",
+      }),
+    }),
+  });
+  expect(boxes()).toEqual([true, false, false]);
+});
+
+it("unsaved infractions alone mark the player dirty, and clearing them clears it", async () => {
+  await render();
+  await tick(0);
+  expect(onDirty).toHaveBeenLastCalledWith("#PYY", true);
+  await tick(0);
+  expect(onDirty).toHaveBeenLastCalledWith("#PYY", false);
 });

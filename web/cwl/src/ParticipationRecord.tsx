@@ -8,8 +8,10 @@ import useDiscordIdentities from "./useDiscordIdentities";
 import { StatusPill } from "./rosterUi/primitives";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import { discordMessageItem } from "./RosterAccountMenu";
-import InfractionsSection from "./InfractionsSection";
-import { infractionChips } from "./InfractionFields";
+import InfractionsSection, {
+  noInfractionsDraft,
+  type InfractionsDraft,
+} from "./InfractionsSection";
 import type { Infractions } from "./useInfractions";
 import {
   countText,
@@ -124,23 +126,32 @@ export default function ParticipationRecord({
   const pending = useRef(false);
   const [error, setError] = useState("");
   const changed = draft !== base.notes;
-  // Infractions have their own editor and save; the close guard covers both.
+  // Infractions have their own editor; the footer Save and the close guard cover both.
   const showInfractions =
     !!infractions && account.pool === "lazy" && !!account.assigned_clan_tag;
-  const [infractionsState, setInfractionsState] = useState({
-    dirty: false,
-    busy: false,
-  });
+  const [infractionsDraft, setInfractionsDraft] = useState(noInfractionsDraft);
+  const [infractionsError, setInfractionsError] = useState("");
+  const [infractionsNotice, setInfractionsNotice] = useState("");
   const [infractionsEpoch, setInfractionsEpoch] = useState(0);
-  const onInfractionsState = useCallback(
-    (dirty: boolean, busy: boolean) =>
-      setInfractionsState((current) =>
-        current.dirty === dirty && current.busy === busy
+  const onInfractionsDraft = useCallback(
+    (next: InfractionsDraft) =>
+      setInfractionsDraft((current) =>
+        current.dirty === next.dirty &&
+        current.flags === next.flags &&
+        current.reason === next.reason
           ? current
-          : { dirty, busy },
+          : next,
       ),
     [],
   );
+  const infractionsLocked = showInfractions
+    ? infractions?.lock(account.assigned_clan_tag)
+    : null;
+  const canSaveInfractions =
+    showInfractions &&
+    !infractionsLocked &&
+    infractionsDraft.dirty &&
+    !(infractionsDraft.reason && !infractionsDraft.reason.trim());
   const infractionsData = infractions?.data;
   const infractionsLoad = infractions?.state;
   useEffect(() => {
@@ -184,12 +195,9 @@ export default function ParticipationRecord({
     setBase(latestBase(account));
   }, [account, publicationVersion, changed, stale]);
   useEffect(() => {
-    onDirty(
-      account.tag,
-      changed || busy || infractionsState.dirty || infractionsState.busy,
-    );
+    onDirty(account.tag, changed || busy || infractionsDraft.dirty);
     return () => onDirty(account.tag, false);
-  }, [account.tag, changed, busy, infractionsState, onDirty]);
+  }, [account.tag, changed, busy, infractionsDraft.dirty, onDirty]);
   useEffect(() => {
     if (open && !dialog.current?.open) dialog.current?.showModal();
     else if (!open && dialog.current?.open) dialog.current.close();
@@ -201,56 +209,84 @@ export default function ParticipationRecord({
     setError("");
   };
   const closeEditor = async () => {
-    if (busy || infractionsState.busy) return;
-    const unsaved = changed || infractionsState.dirty;
+    if (busy) return;
+    const unsaved = changed || infractionsDraft.dirty;
     if (
       unsaved &&
       !(await confirm(
-        changed && !infractionsState.dirty
+        changed && !infractionsDraft.dirty
           ? `Discard unsaved notes for ${account.player_name}?`
           : `Discard unsaved changes for ${account.player_name}?`,
-        changed && !infractionsState.dirty
+        changed && !infractionsDraft.dirty
           ? "Discard notes"
           : "Discard changes",
       ))
     )
       return;
     if (changed) useLatest();
-    if (infractionsState.dirty) setInfractionsEpoch((value) => value + 1);
+    if (infractionsDraft.dirty) setInfractionsEpoch((value) => value + 1);
+    setInfractionsError("");
+    setInfractionsNotice("");
     dialog.current?.close();
   };
+  const canSaveNotes =
+    !readonly &&
+    !locked &&
+    !!changed &&
+    !stale &&
+    !account.roster_changed &&
+    draft.length <= 2000;
+  // One Save writes what changed: notes first, then infractions.
   const save = async () => {
-    if (
-      readonly ||
-      locked ||
-      busy ||
-      pending.current ||
-      !changed ||
-      stale ||
-      draft.length > 2000
-    )
+    if (busy || pending.current || !(canSaveNotes || canSaveInfractions))
       return;
     pending.current = true;
     setBusy(true);
     setError("");
-    try {
-      const saved = await onSave(
-        { ...account, roster_token: base.rosterToken },
-        base.revision,
-        base.publicationVersion,
-        base.sourceCheckedAt,
-        draft,
-      );
-      setDraft(saved.notes);
-      setBase(latestBase(saved));
-      // Unsaved infractions keep the sheet open for their own save.
-      if (!infractionsState.dirty) dialog.current?.close();
-    } catch (cause) {
-      setError(errorText(cause));
-    } finally {
-      pending.current = false;
-      setBusy(false);
+    setInfractionsError("");
+    setInfractionsNotice("");
+    let failed = false;
+    if (canSaveNotes) {
+      try {
+        const saved = await onSave(
+          { ...account, roster_token: base.rosterToken },
+          base.revision,
+          base.publicationVersion,
+          base.sourceCheckedAt,
+          draft,
+        );
+        setDraft(saved.notes);
+        setBase(latestBase(saved));
+      } catch (cause) {
+        failed = true;
+        setError(errorText(cause));
+      }
     }
+    let infractionsSaved = false;
+    if (canSaveInfractions && infractions) {
+      try {
+        await infractions.save(
+          account.tag,
+          infractionsDraft.flags,
+          infractionsDraft.reason.trim(),
+        );
+        infractionsSaved = true;
+        setInfractionsNotice(
+          `Infractions saved · ${account.assigned_clan_name || account.assigned_clan_tag} eligibility updated.`,
+        );
+      } catch (cause) {
+        failed = true;
+        setInfractionsError(
+          cause instanceof Error
+            ? cause.message
+            : "Infractions could not be saved. Try again.",
+        );
+      }
+    }
+    pending.current = false;
+    setBusy(false);
+    // A saved infractions change keeps the sheet open to show what changed.
+    if (!failed && !infractionsSaved) dialog.current?.close();
   };
   const reset = async () => {
     if (
@@ -332,12 +368,6 @@ export default function ParticipationRecord({
       }
       flags={[
         hasOverride && !account.roster_changed ? "Staff correction" : null,
-        ...(showInfractions
-          ? infractionChips(
-              infractionsData?.accounts.find((item) => item.tag === account.tag)
-                ?.bonus_review,
-            )
-          : []),
       ]}
       values={
         <CardTally
@@ -510,11 +540,13 @@ export default function ParticipationRecord({
         {showInfractions && infractions && (
           <InfractionsSection
             tag={account.tag}
-            clanName={account.assigned_clan_name || account.assigned_clan_tag!}
             clanTag={account.assigned_clan_tag!}
             infractions={infractions}
             resetKey={infractionsEpoch}
-            onState={onInfractionsState}
+            busy={busy}
+            error={infractionsError}
+            notice={infractionsNotice}
+            onDraft={onInfractionsDraft}
           />
         )}
         {stale && changed && (
@@ -528,7 +560,7 @@ export default function ParticipationRecord({
         )}
         {error && (
           <p role="alert" className="participation-error">
-            {error}
+            Notes not saved · {error}
           </p>
         )}
         {account.updated_at && (
@@ -549,27 +581,16 @@ export default function ParticipationRecord({
           </p>
         )}
         <div className="participation-dialog-actions">
-          <button
-            type="button"
-            disabled={busy || infractionsState.busy}
-            onClick={closeEditor}
-          >
+          <button type="button" disabled={busy} onClick={closeEditor}>
             Cancel
           </button>
           <button
             type="button"
             className="primary"
-            disabled={
-              readonly ||
-              locked ||
-              busy ||
-              !!account.roster_changed ||
-              !changed ||
-              stale
-            }
+            disabled={busy || !(canSaveNotes || canSaveInfractions)}
             onClick={() => void save()}
           >
-            {busy ? "Saving…" : "Save notes"}
+            {busy ? "Saving…" : "Save"}
           </button>
         </div>
       </dialog>

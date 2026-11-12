@@ -20,12 +20,14 @@ function Probe(props: {
   canManage?: boolean;
   archived?: boolean;
   status?: BonusStatus | null;
+  onSaved?: () => void;
 }) {
   current = useInfractions(
     "1",
     props.canManage ?? true,
     props.archived ?? false,
     props.status ?? null,
+    props.onSaved,
   );
   return null;
 }
@@ -76,6 +78,19 @@ it("saves with the same PATCH and revision, then keeps the fresh data", async ()
     },
   );
   expect(current.data?.revision).toBe(5);
+});
+
+it("tells the page after a save, and not after a failed one", async () => {
+  const onSaved = vi.fn();
+  await mount({ onSaved });
+  await act(async () => current.load());
+  api.mockRejectedValueOnce(new Error("no"));
+  await act(async () => {
+    await current.save("#P1", [], "").catch(() => {});
+  });
+  expect(onSaved).not.toHaveBeenCalled();
+  await act(async () => current.save("#P1", ["lingering"], ""));
+  expect(onSaved).toHaveBeenCalledTimes(1);
 });
 
 it("locks after a draw, for archived seasons and without the manage grant", async () => {

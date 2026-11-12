@@ -25,9 +25,13 @@ export default function useInfractions(
   canManage: boolean,
   archived: boolean,
   status: BonusStatus | null,
+  /** Runs after a save, so the list can read the new eligibility counts. */
+  onSaved?: () => void,
 ): Infractions {
   const [data, setData] = useState<RaffleData | null>(null);
   const [state, setState] = useState<Infractions["state"]>("idle");
+  const saved = useRef(onSaved);
+  saved.current = onSaved;
   const request = useRef(0);
   const current = useRef(seasonId);
   current.current = seasonId;
@@ -73,6 +77,7 @@ export default function useInfractions(
         request.current += 1;
         setData(result);
         setState("idle");
+        saved.current?.();
       } catch (cause) {
         // A conflict means the data moved on; read the latest revision.
         if (cause instanceof ApiError && cause.status === 409) void load();
