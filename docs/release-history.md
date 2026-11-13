@@ -1,5 +1,43 @@
 # Release and rollback history
 
+## Log channels category marker — 2026-11-13 (frontend only)
+
+- PR [#332](https://github.com/SirRuggie/WU_Python/pull/332), merge commit
+  `10aca95021d01461b9e787d99c67119482ae8140`, local tag
+  `log-channels-marker-332-1`. Released by Shaka (Claude) on Ruggie's
+  "release 332" (2026-11-13 15:37 UTC).
+- Scope: `git diff f3021d21..10aca950` touches only
+  `web/cwl/src/ModerationSettings.css` and `docs/release-history.md`. CSS
+  only: the Log channels category marker sits inline with its name. No
+  Python, route, schema, data, config or systemd change.
+- Backend not changed or restarted: `backend/7a4abbe6…`, PID 434692 before
+  and after. Bot not changed or restarted.
+- Build: clean clone at the tag, `npm ci`, `tsc -b` passed, vitest 2510 tests
+  in 364 files passed, checkout clean after; staged with `stage-release.py`
+  (181 files).
+- Frontend `current`: `f3021d21…` → `10aca950…` at 2026-11-13 15:40:05 UTC
+  (`switch-history.jsonl`). Entry `index-DW1S6W9E.js`, SHA-256
+  `f8d766adc5b33c0be311e45e3a6055b3b914162c3273158b5bf7886e4aa5c912`; feature
+  CSS `ModerationWorkspace-Dvj2w83Z.css`, SHA-256
+  `53edc05afce0f9f33096f4276c39ef69353b0c1e74be5d006a91493eca2caf87`, served
+  with the new marker rule. Served `index.html` (SHA-256
+  `4bd63746a2e86deb95be2a9443d144e382a86dc5063282ce6e21425b72659f98`) equals
+  the release file on `/`, `/cwl/results`, `/cwl/moderation`; all 147
+  manifest assets match the public site.
+- Smoke (read only): config 200 twice, anonymous seasons 401. Signed-in
+  smoke SKIPPED. No Save, Send or other write; no Discord post.
+- Backup
+  `.local/log-channels-marker-332-release-20261113T153757Z/before.sqlite3`
+  (SQLite backup API): integrity ok, SHA-256
+  `4d5f50a26aa88eda27cee20d552d265c287626b06b5dc57473eac84b95e48ac5`; a
+  separate read of the backup equals the live snapshot. All 76 table counts,
+  Main 23/23/23 and Lazy 147/146/131 (signups/assigned/locks), publication max
+  version 6 (6 rows, 4 active) and the lineup-rules digest identical before
+  and after.
+- Rollback: frontend `switch-release.py
+  f3021d21bb54cc218d47fb2db750b8a730aa0e8e`, then verify public hashes. Never
+  restore the database for a code rollback.
+
 ## Lazy announcement compact row — 2026-11-13 (frontend only)
 
 - PR [#330](https://github.com/SirRuggie/WU_Python/pull/330), merge commit
