@@ -87,11 +87,22 @@ export default function StrikesWorkspace({
   );
   const [accessLost, setAccessLost] = useState(false);
   const [trackingSlot, setTrackingSlot] = useState<HTMLDivElement | null>(null);
+  // A tab the viewer cannot see falls back to the first visible tab.
+  const initialTab = () => {
+    const wanted = parsePageParam("strikes", "tab", window.location.search);
+    return (
+      visibleTabs.some((item) => item.id === wanted)
+        ? wanted
+        : visibleTabs[0].id
+    ) as Tab;
+  };
   const [tab, setTab] = useState<Tab>(
     initialImport.current.job || initialImport.current.preview
       ? "settings"
-      : (parsePageParam("strikes", "tab", window.location.search) as Tab),
+      : initialTab(),
   );
+  // Forced tab changes (a missing permission, an opened account) correct the address too.
+  useEffect(() => replacePageParam("strikes", "tab", tab), [tab]);
   const [importOpen, setImportOpen] = useState(
     !!(initialImport.current.job || initialImport.current.preview),
   );

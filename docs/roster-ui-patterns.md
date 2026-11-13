@@ -994,7 +994,7 @@ not establish a real phone touch result.
 - **`useOpeningPressGuard`.** The press that opens a menu must not choose an item
   that appears under the pointer. Spread `rootProps` around the trigger and
   `popoverProps` on the popover; call `release` when the menu closes. Used by
-  `ActionMenu` and `RosterMenu`.
+  `ActionMenu` and `AccountMenu`.
 - **44 px rule.** Every control meant for touch is at least 44 px high and wide.
   Inline reference links in running text are the one exception and may not be
   counted as controls.

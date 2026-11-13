@@ -22,7 +22,9 @@ export default function ModerationWorkspace({
     () =>
       parsePageParam("moderation", "tab", window.location.search) as Section,
   );
-  const [openedSettings, setOpenedSettings] = useState(false);
+  const [openedSettings, setOpenedSettings] = useState(
+    () => section !== "history",
+  );
   const timeline = !!memberId && section === "history";
 
   // Invites and Log channels share one settings load and draft; each tab

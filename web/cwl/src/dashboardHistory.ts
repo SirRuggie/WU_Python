@@ -234,15 +234,15 @@ export class DashboardHistory {
       typeof window === "undefined"
         ? null
         : dashboardTarget(window.location.search, window.location.pathname);
-    const samePage =
-      !push && current?.view === route.view && current?.season === route.season;
+    const sameView = !push && current?.view === route.view;
+    const samePage = sameView && current?.season === route.season;
     const url = new URL(dashboardPath(route), "https://dashboard.invalid");
     const account = samePage
       ? new URLSearchParams(window.location.search).get("account")
       : null;
     if (account) url.searchParams.set("account", account);
-    // A season change on the same page keeps the selected tab and filters.
-    if (samePage && !route.pageState)
+    // Page tabs and filters belong to the view, so a season change keeps them.
+    if (sameView && !route.pageState)
       new URLSearchParams(
         pageParamQuery(route.view, window.location.search),
       ).forEach((value, key) => url.searchParams.set(key, value));
