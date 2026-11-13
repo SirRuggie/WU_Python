@@ -84,7 +84,7 @@ const render = async (props = {}) => {
   return { onChange, onRemaining };
 };
 const click = async (text: string) => {
-  const button = [...host.querySelectorAll("button")].find(
+  const button = [...host.querySelectorAll<HTMLElement>("button, a")].find(
     (b) => b.textContent === text,
   )!;
   expect(button).toBeTruthy();
@@ -228,7 +228,7 @@ it("sidebar is ordered, expanded initially and remembers collapse even on a memb
   const stored = JSON.parse(localStorage.getItem("wu-navigation-v3:member")!);
   expect(stored.clans).toBe(true);
   expect(stored["my-cwl"]).toBeUndefined();
-  expect([...nav.querySelectorAll("button")].map((b) => b.textContent)).toEqual(
+  expect([...nav.querySelectorAll("a")].map((b) => b.textContent)).toEqual(
     ["Sign up", "My signups", "My clan assignments"],
   );
   await click("My signups");

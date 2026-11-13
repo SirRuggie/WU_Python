@@ -34,15 +34,6 @@
 .bonus-context > .roster-player-menu {
   flex: 0 0 auto;
 }
-.cwl-page-header > .bonus-season {
-  display: grid;
-  flex: 0 1 200px;
-  min-width: 0;
-  font-size: var(--wu-text-xs);
-}
-.bonus-season select {
-  width: 100%;
-}
 .bonus-inline-action {
   display: inline-flex;
   align-items: center;

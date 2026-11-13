@@ -1,5 +1,6 @@
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
+import { Check, X } from "lucide-react";
 import SectionTabs from "./SectionTabs";
 import "./ChoiceGroupLayout.css";
 import {
@@ -577,7 +578,12 @@ export default function ClanManagement({
                           });
                         }}
                       >
-                        {complete ? "✓" : "✗"} {label}
+                        {complete ? (
+                          <Check size={16} aria-hidden="true" />
+                        ) : (
+                          <X size={16} aria-hidden="true" />
+                        )}
+                        {label} <small>{complete ? "Done" : "To do"}</small>
                       </button>
                     ))}
                   </nav>

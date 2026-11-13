@@ -918,6 +918,7 @@ export default function ManageBridgeWorkspace({
         ) && (
           <CwlNextLink
             label="Declaration check"
+            route={{ view: "declaration", season: seasonId }}
             disabled={busy}
             onNext={onDeclaration}
           />

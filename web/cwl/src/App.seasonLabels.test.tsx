@@ -219,7 +219,7 @@ it.each(["reminders", "declaration"])(
 
 const staffPicker = () =>
   host.querySelector<HTMLSelectElement>(
-    'select[aria-label="Season"], .participation-season select, .roster-header-season select',
+    'select[aria-label="Season"], .participation-page-head select, .roster-header-season select',
   )!;
 const getOnly = () =>
   expect(

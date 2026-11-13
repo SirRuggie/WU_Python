@@ -113,7 +113,7 @@ async function mount(path: string, permissions: string[]) {
   };
   await act(async () => root.render(<App />));
   await settle();
-  const button = (label: string, selector = "button") =>
+  const button = (label: string, selector = "button, a") =>
     [...host.querySelectorAll<HTMLButtonElement>(selector)].find(
       (node) => node.textContent?.trim() === label,
     );
@@ -153,7 +153,7 @@ describe("one page for two addresses", () => {
     expect(next?.textContent).toBe("Next: Exports & history ›");
     await act(async () => next!.click());
     expect(location.pathname).toBe("/cwl/exports");
-    const sidebar = [...host.querySelectorAll(".sidebar button")].map((node) =>
+    const sidebar = [...host.querySelectorAll(".sidebar a")].map((node) =>
       node.textContent?.trim(),
     );
     expect(sidebar).toContain("Results & bonuses");
@@ -207,9 +207,7 @@ describe("one page for two addresses", () => {
   it("guards leaving the page while the list has unsaved work", async () => {
     const { button, settle } = await mount("/cwl/results?season=1", both);
     await act(async () => button("Hold list edit")!.click());
-    await act(async () =>
-      button("Exports & history", ".sidebar button")!.click(),
-    );
+    await act(async () => button("Exports & history", ".sidebar a")!.click());
     await settle();
     expect(document.querySelectorAll(".confirm-dialog")).toHaveLength(1);
     expect(location.pathname).toBe("/cwl/results");
@@ -234,7 +232,7 @@ describe("grants", () => {
     expect(host.textContent).toContain("No list");
     expect(host.querySelector('[data-testid="list"]')).toBeNull();
     expect(
-      [...host.querySelectorAll(".sidebar button")].map((node) =>
+      [...host.querySelectorAll(".sidebar a")].map((node) =>
         node.textContent?.trim(),
       ),
     ).toContain("Results & bonuses");
@@ -257,7 +255,7 @@ describe("grants", () => {
     expect(host.querySelector('[data-testid="list"]')).toBeNull();
     expect(host.querySelector('[data-testid="steps"]')).toBeNull();
     expect(
-      [...host.querySelectorAll(".sidebar button")].map((node) =>
+      [...host.querySelectorAll(".sidebar a")].map((node) =>
         node.textContent?.trim(),
       ),
     ).not.toContain("Results & bonuses");

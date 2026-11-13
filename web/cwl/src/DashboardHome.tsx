@@ -12,6 +12,9 @@ import { weightText } from "./roster";
 import AccountLinkHelp from "./AccountLinkHelp";
 import AttentionSummary, { type AttentionItem } from "./AttentionSummary";
 import DashboardIcon from "./DashboardIcon";
+import DashboardLink from "./DashboardLink";
+import { dashboardPath } from "./dashboardHistory";
+import { ArrowRight } from "lucide-react";
 import { readSnapshot, writeSnapshot } from "./snapshotCache";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -131,6 +134,9 @@ export function homeNextStep(
 type Props = {
   session: Session;
   seasonId: string;
+  /** Season and step the staff-tool links open with. */
+  staffSeasonId?: string;
+  publicationStep?: "review" | "announce";
   seasons: Season[];
   seasonsKnown?: boolean;
   seasonError?: string;
@@ -178,6 +184,8 @@ export default function DashboardHome(props: Props) {
   const {
     session,
     seasonId,
+    staffSeasonId = "",
+    publicationStep = "review",
     seasons,
     seasonsKnown = true,
     seasonError = "",
@@ -969,15 +977,27 @@ export default function DashboardHome(props: Props) {
           <section className="hub-staff">
             <h3>Staff tools</h3>
             <div>
-              <button onClick={() => onNavigate("roster")}>
-                Build roster →
-              </button>
-              <button onClick={() => onNavigate("publication")}>
-                Finalize roster →
-              </button>
-              <button onClick={() => onNavigate("staff")}>
-                Seasons →
-              </button>
+              {(
+                [
+                  ["roster", "Build roster"],
+                  ["publication", "Finalize roster"],
+                  ["staff", "Seasons"],
+                ] as const
+              ).map(([view, label]) => (
+                <DashboardLink
+                  key={view}
+                  className="button"
+                  href={dashboardPath({
+                    view,
+                    season: staffSeasonId,
+                    step: view === "publication" ? publicationStep : undefined,
+                  })}
+                  onNavigate={() => onNavigate(view)}
+                >
+                  {label}
+                  <ArrowRight aria-hidden="true" size={16} />
+                </DashboardLink>
+              ))}
             </div>
           </section>
         )}

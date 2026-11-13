@@ -69,7 +69,7 @@ it("keeps a family-clan draft guarded when Discard history replay receives no po
       });
   };
   const button = (name: string) =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    [...document.querySelectorAll<HTMLButtonElement>("button, a")].find(
       (item) => item.textContent?.trim() === name,
     )!;
   try {

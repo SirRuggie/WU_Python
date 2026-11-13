@@ -1,4 +1,6 @@
 import DashboardIcon, { type DashboardIconName } from "./DashboardIcon";
+import DashboardLink from "./DashboardLink";
+import { dashboardPath } from "./dashboardHistory";
 import { useEffect, useRef, useState } from "react";
 
 export const dashboardViews = [
@@ -421,6 +423,7 @@ export default function SidebarNavigation({
   signupPanel = "register",
   onSignup,
   tourExpanded = false,
+  season = "",
 }: {
   userId: string;
   view: DashboardView;
@@ -433,6 +436,8 @@ export default function SidebarNavigation({
   signupPanel?: "register" | "saved";
   onSignup?: (panel: "register" | "saved") => void;
   tourExpanded?: boolean;
+  /** Staff season the destination links open with. */
+  season?: string;
 }) {
   const key = `wu-navigation-v3:${userId}`;
   const cwlToggled = useRef(false);
@@ -506,11 +511,19 @@ export default function SidebarNavigation({
     (!item.step || item.step === publicationStep) &&
     (!item.signupPanel || item.signupPanel === signupPanel);
   const itemButton = (item: Item) => (
-    <button
+    <DashboardLink
       data-tour-target={item.signupPanel || item.view}
       key={`${item.view}:${item.step || item.signupPanel || ""}`}
+      href={dashboardPath({
+        view: item.view,
+        season,
+        step:
+          item.step ??
+          (item.view === "publication" ? publicationStep : undefined),
+        signupPanel: item.signupPanel,
+      })}
       aria-current={itemActive(item) ? "page" : undefined}
-      onClick={() =>
+      onNavigate={() =>
         item.signupPanel && onSignup
           ? onSignup(item.signupPanel)
           : item.step && onPublication
@@ -522,7 +535,7 @@ export default function SidebarNavigation({
         <DashboardIcon name={item.icon} />
       </span>
       <span>{item.label}</span>
-    </button>
+    </DashboardLink>
   );
   const visible = visibleNavigationSections(canEdit, isOwner, permissions);
   const memberSections = visible.filter((section) =>

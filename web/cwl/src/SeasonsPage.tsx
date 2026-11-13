@@ -261,6 +261,7 @@ export default function SeasonsPage({
       <CwlPoolRoles onBusy={setRoleBusy} onDirty={setRoleDirty} />
       <CwlNextLink
         label="Build roster"
+        route={{ view: "roster", season: seasonId }}
         onNext={onClans}
         disabled={working || !seasonId}
       />

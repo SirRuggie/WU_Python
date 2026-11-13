@@ -302,8 +302,8 @@ it("unsaved instructions disable the persisted Next cue until restored", async (
         </DashboardPermissions.Provider>,
       ),
     );
-    const next = host.querySelector<HTMLButtonElement>(".cwl-next-cue")!;
-    expect(next.disabled).toBe(false);
+    const next = host.querySelector<HTMLAnchorElement>(".cwl-next-cue")!;
+    expect(next.getAttribute("aria-disabled")).toBeNull();
     const input = host.querySelector<HTMLTextAreaElement>("textarea")!;
     const change = async (value: string) =>
       act(async () => {
@@ -315,10 +315,10 @@ it("unsaved instructions disable the persisted Next cue until restored", async (
       });
     await change("Changed instructions");
     expect(onDirty).toHaveBeenLastCalledWith(true);
-    expect(next.disabled).toBe(true);
+    expect(next.getAttribute("aria-disabled")).toBe("true");
     await change("Saved instructions");
     expect(onDirty).toHaveBeenLastCalledWith(false);
-    expect(next.disabled).toBe(false);
+    expect(next.getAttribute("aria-disabled")).toBeNull();
   } finally {
     await act(async () => root.unmount());
     host.remove();

@@ -91,7 +91,7 @@ async function render(
   );
 }
 function button(label: string, node: ParentNode = host) {
-  return [...node.querySelectorAll<HTMLButtonElement>("button")].find(
+  return [...node.querySelectorAll<HTMLButtonElement>("button, a")].find(
     (e) => e.textContent === label,
   )!;
 }

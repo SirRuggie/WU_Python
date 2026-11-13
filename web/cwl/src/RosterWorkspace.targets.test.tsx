@@ -91,7 +91,7 @@ it("Build Next cue calls Finalize and is hidden without publish permission", asy
     );
   try {
     await act(async () => render(["cwl_roster", "cwl_publish"]));
-    const button = [...host.querySelectorAll("button")].find(
+    const button = [...host.querySelectorAll("a")].find(
       (b) => b.textContent?.trim() === "Next: Finalize roster ›",
     )!;
     expect(button).toBeDefined();

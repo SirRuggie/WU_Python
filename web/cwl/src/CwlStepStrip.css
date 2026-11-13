@@ -3,17 +3,22 @@
   gap: var(--wu-space-2);
   margin-bottom: var(--wu-space-3);
 }
-.shell .cwl-step-strip > button {
+.shell .cwl-step-strip > :is(button, a) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 1 1 0;
   min-width: 0;
   min-height: 44px;
+  text-decoration: none;
   padding: var(--wu-space-1) var(--wu-space-2);
   font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-medium);
   border-radius: var(--wu-radius-pill);
   border: 4px solid transparent;
   background-clip: padding-box;
 }
-.shell .member-step-strip > button {
+.shell .member-step-strip > :is(button, a) {
   background-color: transparent;
   border-radius: 0;
   color: var(--wu-text-muted);
@@ -24,12 +29,12 @@
 @media (hover: hover) and (pointer: fine) {
   .shell
     .member-step-strip
-    > button:not([aria-current="step"]):hover:not(:disabled) {
+    > :is(button, a):not([aria-current="step"]):hover:not(:disabled) {
     color: var(--wu-text);
     background-color: transparent;
   }
 }
-.shell .cwl-step-strip > button[aria-current="step"] {
+.shell .cwl-step-strip > :is(button, a)[aria-current="step"] {
   position: relative;
   background-color: transparent;
   color: var(--wu-accent);
@@ -40,7 +45,8 @@
   -webkit-text-fill-color: currentColor;
 }
 .shell .cwl-next-cue {
-  display: block;
+  display: flex;
+  width: fit-content;
   margin-top: var(--wu-space-4);
   min-height: 44px;
   font-size: var(--wu-text-sm);
@@ -50,7 +56,7 @@
   .shell .cwl-step-strip {
     width: fit-content;
   }
-  .shell .cwl-step-strip > button {
+  .shell .cwl-step-strip > :is(button, a) {
     flex: 0 0 auto;
     padding-inline: var(--wu-space-3);
   }
@@ -58,10 +64,10 @@
 
 /* Keep the existing one-line step labels at narrow widths. */
 @media (max-width: 480px) {
-  .shell .cwl-step-strip > button {
+  .shell .cwl-step-strip > :is(button, a) {
     font-size: var(--wu-text-xs);
   }
-  .shell .member-step-strip > button {
+  .shell .member-step-strip > :is(button, a) {
     font-size: var(--wu-text-sm);
   }
 }
@@ -69,7 +75,7 @@
 /* The existing transparent border reserves the selected underline's space. */
 .shell
   .cwl-step-strip:where(:not(.section-tabs))
-  > button[aria-current="step"]::after {
+  > :is(button, a)[aria-current="step"]::after {
   content: "";
   position: absolute;
   left: -4px;
@@ -80,7 +86,9 @@
   pointer-events: none;
 }
 @media (hover: hover) and (pointer: fine) {
-  .shell .cwl-step-strip > button[aria-current="step"]:hover:not(:disabled) {
+  .shell
+    .cwl-step-strip
+    > :is(button, a)[aria-current="step"]:hover:not(:disabled) {
     background-color: transparent;
     color: var(--wu-accent-hover);
   }
