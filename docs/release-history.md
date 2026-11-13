@@ -1,5 +1,40 @@
 # Release and rollback history
 
+## Non-members can sign in, Base bank members-only — 2026-11-13 (backend and frontend)
+
+- PR [#339](https://github.com/SirRuggie/WU_Python/pull/339), merge commit
+  `523cc293c823a7fb9ff9e4dd0dc881976708e8e0`, local tag
+  `non-member-sign-in-339-1`. Prompt 238, built and released by Shaka (Claude)
+  on Ruggie's "you build and release fully". Independent refuter: REWORK for 2
+  missing tests, both added; Base bank gate added on Ruggie's "next".
+- Changes: sign-in no longer needs the server; CWL signup save and Base bank
+  check membership live (`cwl_web/server_membership.py`); `/auth/me` adds
+  `server_member`. No schema change, no data write. See
+  `docs/dashboard-sign-in.md`.
+- Checks on the merged commit: backend 8168 passed (branch head), frontend 2516
+  passed in 365 files and `tsc` in the clean release clone.
+- Backend: `release.conf` `backend/22abb00b…` → `backend/523cc293…`; PID
+  741607 → 830330, cwd verified, active, ready after 5 s, no journal errors,
+  anonymous `/auth/me` and `/bases` 401; other drop-ins byte-identical. Bot not
+  changed or restarted.
+- Frontend `current`: `22abb00b…` → `523cc293…` (stage-release from the clean
+  tagged clone). Entry `index-XXoQk8bM.js`, SHA-256
+  `f67142247646c98b366795c75e8e93d9ed0f2709b1105432794028c006b10443`; served
+  `index.html` equals the release file on `/`, `/signup`, `/bases`; all 147
+  manifest assets match the public site.
+- Backup `.local/non-member-sign-in-339-release-20261113T171411Z/before.sqlite3`: integrity ok, equal to live,
+  SHA-256 `9c26c4be69ba5afd87edfcd1a68492921ea2f7e1158b13d5ed70345d69676628`.
+  All 76 table counts, Main 23/23/23 and Lazy 147/146/131
+  (signups/assigned/locks), publication max version 6 and the lineup-rules
+  digest identical before and after.
+- Signed-in read-only smoke (Ruggie's session): `/auth/me` `server_member`
+  true from the live Discord check, no join line on Sign up, `/bases` 200 with
+  13 bases. Non-member sign-in on production: SKIPPED (no non-member account).
+- Rollback: frontend `switch-release.py
+  22abb00bfd4f8106cffbf517a6d0beeb377ad8e7`; backend `release.conf`
+  `WorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/22abb00bfd4f8106cffbf517a6d0beeb377ad8e7`,
+  daemon-reload, restart. Never restore the database for a code rollback.
+
 ## Lazy announcement compact row — 2026-11-13 (frontend only)
 
 - PR [#330](https://github.com/SirRuggie/WU_Python/pull/330), merge commit

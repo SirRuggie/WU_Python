@@ -250,8 +250,12 @@ the former last-month list). Each column shows "Month · count", then the Clash
 name (bold, shortened with … to fit) and the tag below it, sorted by name, from
 non-voided Lazy confirmations and imported winners of that month (family-wide).
 DejaVu Sans from `assets/fonts` draws it; NFKC turns styled letters into plain
-ones, and characters outside DejaVu (for example CJK) show as boxes, with the tag
-below. The alt text gives the seasons and counts only. Past winners carry no
+ones. Names use a per-character font fallback (2026-11-13, after the release smoke
+of PR 335 found 2 names drawn as empty boxes): DejaVu, then Noto Sans Symbols 2,
+Symbols, Math, Emoji (monochrome), Javanese (꧁ ꧂), Arabic, Thai and Egyptian
+Hieroglyphs (U+131A9/U+131AA brackets), then GNU Unifont for the rest of the Basic
+Multilingual Plane (CJK, Hangul). Runs of the same font draw together, so Arabic
+stays shaped. A character no font has still draws a box. The alt text gives the seasons and counts only. Past winners carry no
 mention. Rule 3 follows the included clans' sit-out lengths ("last N
 seasons"; none omits it; mixed lengths show each clan's sit-out). Then one
 container per clan: name, tag, bonus medal count (the approved draw's slots) and

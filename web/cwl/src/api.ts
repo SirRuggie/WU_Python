@@ -16,6 +16,8 @@ export type Session = {
   is_owner: boolean;
   can_edit: boolean;
   csrf_token: string;
+  /** Warriors United server member; null when Discord could not answer. */
+  server_member?: boolean | null;
 };
 export type Season = {
   history_only?: boolean | number;

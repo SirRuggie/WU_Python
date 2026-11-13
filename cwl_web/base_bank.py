@@ -9,8 +9,14 @@ from .server_management import mongo
 
 async def read(request):
     from .app import _require
+    from .server_membership import BASE_BANK_JOIN, CHECK_UNAVAILABLE, server_member_status
 
-    _require(request)
+    session = _require(request)
+    member = await server_member_status(request, session["user_id"])
+    if member is False:
+        raise web.HTTPForbidden(text=BASE_BANK_JOIN)
+    if member is None:
+        raise web.HTTPServiceUnavailable(text=CHECK_UNAVAILABLE)
     level = request.query.get("level")
     if set(request.query) - {"level"} or (
         level is not None and level not in FWA_TH_LEVELS
