@@ -1,0 +1,144 @@
+/* Lazy bonus announcement: entry card on the Lazy tab and its send sheet. */
+.lazy-announce-card {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--roster-space-3);
+  margin: var(--wu-space-4) 0;
+  border: 1px solid var(--roster-border-subtle);
+  border-radius: var(--roster-radius-card);
+  background: var(--roster-surface-raised);
+  padding: var(--roster-space-3) var(--roster-space-4);
+}
+.lazy-announce-card > div {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.lazy-announce-card h2 {
+  margin: 0;
+  color: var(--roster-gold);
+  font-size: var(--wu-text-md);
+}
+.lazy-announce-card p {
+  margin: var(--roster-space-1) 0 0;
+  color: var(--roster-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.lazy-announce-card button {
+  min-height: var(--roster-height-control);
+  margin-left: auto;
+}
+
+.lazy-announce-scope {
+  margin: 0 0 var(--wu-space-4);
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.lazy-announce-scope legend {
+  margin-bottom: var(--roster-space-2);
+  padding: 0;
+  font-weight: 600;
+}
+.lazy-announce-segments {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--roster-space-1);
+  border: 1px solid var(--roster-border);
+  border-radius: var(--roster-radius-control);
+  background: var(--roster-surface);
+  padding: var(--roster-space-1);
+}
+.lazy-announce-segments label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--roster-height-control) - 2 * var(--roster-space-1));
+  border-radius: calc(var(--roster-radius-control) - var(--roster-space-1));
+  color: var(--roster-text-muted);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+.lazy-announce-segments input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.lazy-announce-segments label.selected {
+  background: var(--roster-surface-raised);
+  box-shadow: inset 0 -2px 0 var(--roster-gold);
+  color: var(--roster-gold);
+}
+.lazy-announce-segments label:has(input:focus-visible) {
+  outline: 2px solid var(--roster-gold);
+  outline-offset: 2px;
+}
+.lazy-announce-scope:disabled .lazy-announce-segments label {
+  cursor: default;
+  opacity: 0.6;
+}
+.lazy-announce-field {
+  display: grid;
+  gap: var(--roster-space-1);
+  margin-top: var(--roster-space-3);
+}
+.lazy-announce-field select {
+  min-height: var(--roster-height-control);
+}
+
+.lazy-announce-summary {
+  margin: 0 0 var(--roster-space-2);
+  color: var(--roster-text-muted);
+}
+.lazy-announce-summary strong {
+  color: var(--roster-gold);
+}
+.lazy-announce-blockers ul {
+  margin: 0;
+  padding-left: var(--wu-space-4);
+}
+.lazy-announce-note {
+  color: var(--roster-text-muted);
+}
+.lazy-announce-preview {
+  margin: var(--roster-space-3) 0;
+}
+.lazy-announce-preview > summary {
+  min-height: var(--roster-height-control);
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lazy-announce-preview .discord-preview {
+  margin: 0 0 var(--roster-space-3);
+}
+.lazy-announce-send {
+  display: grid;
+  gap: var(--roster-space-2);
+  border-top: 1px solid var(--roster-border-subtle);
+  padding-top: var(--wu-space-4);
+}
+.lazy-announce-footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--roster-space-2);
+}
+.lazy-announce-footer button {
+  min-height: var(--roster-height-control);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.lazy-announce .notice {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  overflow-wrap: anywhere;
+}
+.lazy-announce-status {
+  display: block;
+}

@@ -1,5 +1,6 @@
 """Discord REST transport shared by explicit staff announcement workflows."""
 import asyncio
+import json
 import os
 import re
 import aiohttp
@@ -90,14 +91,29 @@ class DiscordTransport:
         return _channel(data)
 
     async def send(self, channel_id, content, nonce):
-        headers = self._headers()
         payload = {"content": content, "nonce": nonce, "enforce_nonce": True,
                    "allowed_mentions": {"parse": []}, "tts": False}
+        return await self._post_message(channel_id, nonce, json=payload)
+
+    async def send_components(self, channel_id, payload, nonce, files=()):
+        """Send a Components V2 payload. files: (filename, bytes) pairs for attachment:// media."""
+        payload = {**payload, "nonce": nonce, "enforce_nonce": True}
+        if not files:
+            return await self._post_message(channel_id, nonce, json=payload)
+        payload["attachments"] = [{"id": i, "filename": name} for i, (name, _) in enumerate(files)]
+        form = aiohttp.FormData()
+        form.add_field("payload_json", json.dumps(payload), content_type="application/json")
+        for i, (name, data) in enumerate(files):
+            form.add_field(f"files[{i}]", data, filename=name, content_type="image/png")
+        return await self._post_message(channel_id, nonce, data=form)
+
+    async def _post_message(self, channel_id, nonce, **body):
+        headers = self._headers()
         try:
             timeout = aiohttp.ClientTimeout(total=15)
             async with aiohttp.ClientSession(timeout=timeout) as client:
                 async with client.post(DISCORD_API + f"/channels/{channel_id}/messages",
-                                       headers=headers, json=payload) as response:
+                                       headers=headers, **body) as response:
                     if response.status in (400, 401, 403, 404, 429):
                         raise AnnouncementRejected("Discord rejected the message or bot permissions")
                     if response.status not in (200, 201):

@@ -197,3 +197,37 @@ transactions. Production dry run/apply remain unapproved; state this conflict
 rule and the `history_only` marker in READY.
 
 Results & bonuses has a “How bonuses work” help sheet; update its text whenever rules in `utils/cwl_bonus_raffle.py` or the sit-out store change (prompt234).
+
+## Lazy bonus announcement (2026-11-13)
+
+The Lazy tab on Results & bonuses shows a "Bonus announcement" card with
+"x of y clans approved" and "Open announcement". It needs the Send CWL
+announcements grant (`cwl_send`) and at least one approved Lazy clan. The sheet
+has Clans (All Lazy clans or One clan), a preview, Channel, "Ping the Lazy CWL
+role" (off by default), and a review check before "Send to #channel".
+
+`GET /api/cwl/seasons/{id}/bonus-raffle/lazy-announcement?scope=all|one&clan_tag=&ping=0|1`
+is read only. It uses approved draws, non-voided confirmations and imported
+winners; it makes no Discord or Clash call. All Lazy clans blocks until every
+Lazy clan with results has approved winners; a voided winner also blocks.
+Preview mentions show cached Discord nicknames, never raw IDs.
+
+`POST` with `scope, clan_tag, ping, channel_id, request_id, fingerprint`
+re-renders, rejects a changed announcement (fingerprint) and archived seasons,
+checks the channel is a text or announcement channel in this server, and writes
+a `bonus_audit` row (`lazy_bonus_announcement`, status `sending`) before Discord
+sees anything. A second row records `sent`, `failed` or `uncertain` with the
+message links. The same `request_id` returns the first result and never posts
+twice; an unresolved request answers 409. Nothing is retried automatically. No
+schema change: the receipts use the existing `bonus_audit` table.
+
+Format (`utils/cwl_bonus_announcement.py`): Components V2, WU_GOLD `#F2B62A` on
+every container. Container 1: "<:CWL:1399013745598009375> Lazy CWL Bonus Medals",
+the intro, three rules, then last month's Lazy winners as `#TAG · @user` (no
+clan names). Rule 3 follows the included clans' sit-out lengths ("last N
+seasons"; none omits it; mixed lengths show each clan's sit-out). Then one
+container per clan: name, tag, bonus medal count (the approved draw's slots) and
+numbered winners. The gold footer image is attached to the last container. The
+optional Lazy CWL role mention (`1080521665584308286`) comes last and is the only
+allowed mention; player mentions never notify. Messages split at 38 components
+or 3,800 text characters (Discord limits 40 and 4,000).

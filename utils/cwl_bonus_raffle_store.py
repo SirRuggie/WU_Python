@@ -378,6 +378,29 @@ class RaffleStore:
         # Compatibility for callers testing the former default rule.
         return self.sit_out(tag, cycle, 3)['three_cycle_cooldown']
 
+    def lazy_winners(self, cycle):
+        """Non-voided Lazy confirmations plus imported winners for one CWL month, one row per tag."""
+        rows = {}
+        for row in self.db.execute(
+                "SELECT player_tag AS tag,player_name,clan_tag,clan_name FROM bonus_imported_winners WHERE cycle=? "
+                "UNION ALL SELECT tag,player_name,clan_tag,clan_name FROM bonus_confirmations "
+                "WHERE cycle=? AND pool='lazy' AND voided_at IS NULL", (cycle, cycle)):
+            rows[row['tag']] = dict(row)
+        return list(rows.values())
+
+    def discord_users(self, tags):
+        """Linked Discord user per player tag from stored signups and candidate lists; no Discord call."""
+        found = {}
+        for tag in set(tags):
+            row = self.db.execute(
+                "SELECT user_id FROM (SELECT user_id,updated_at AS at FROM signups WHERE tag=? "
+                "UNION ALL SELECT user_id,updated_at FROM bonus_raffle_manual_candidates WHERE tag=? AND user_id IS NOT NULL "
+                "UNION ALL SELECT user_id,updated_at FROM bonus_raffle_rep_accounts WHERE tag=? AND user_id IS NOT NULL) "
+                "ORDER BY at DESC LIMIT 1", (tag, tag, tag)).fetchone()
+            if row and row['user_id']:
+                found[tag] = str(row['user_id'])
+        return found
+
     def imported_winner_history(self):
         """Read import records without inventing batches or confirmation receipts."""
         return [{**dict(row), 'tag': row['player_tag'], 'source': 'import',
