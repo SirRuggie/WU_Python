@@ -160,6 +160,17 @@ async function input(node: HTMLInputElement, text: string) {
     node.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+it("opens weight help in the shared help sheet", async () => {
+  await render();
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('[aria-label="How weights are used"]')!
+      .click(),
+  );
+  expect(
+    document.querySelector("dialog.page-help-panel")?.textContent,
+  ).toContain("Clan weights and roster Details share the same saved weight.");
+});
 it("opens with progress list, collapsed help and no member fanout", async () => {
   await render();
   await openClanPicker();

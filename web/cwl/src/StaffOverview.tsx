@@ -119,6 +119,7 @@ export default function StaffOverview({
         message={error}
         note={data ? "Showing the last successful update." : undefined}
         onRetry={() => setRefresh((v) => v + 1)}
+        busy={busy}
       />
       {data && (
         <>

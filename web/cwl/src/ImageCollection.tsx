@@ -96,6 +96,8 @@ export default function ImageCollection({
     [destination, setDestination] = useState(""),
     [copied, setCopied] = useState("");
   const [failed, setFailed] = useState<string[]>([]);
+  // Only a failed gallery load offers Try again; action errors do not.
+  const [loadFailed, setLoadFailed] = useState(false);
   const alive = useRef(true),
     operation = useRef(false),
     sequence = useRef(0);
@@ -161,10 +163,13 @@ export default function ImageCollection({
       if (alive.current && turn === sequence.current) {
         setImages(result.images);
         setFailed([]);
+        setLoadFailed(false);
       }
     } catch (e) {
-      if (alive.current && turn === sequence.current)
+      if (alive.current && turn === sequence.current) {
         failure(e, "Could not load images.");
+        setLoadFailed(true);
+      }
     } finally {
       if (alive.current && turn === sequence.current) setLoading(false);
     }
@@ -185,6 +190,7 @@ export default function ImageCollection({
     setLoading(false);
     setBusy(true);
     setError("");
+    setLoadFailed(false);
     setNotice("");
     try {
       await action();
@@ -376,7 +382,7 @@ export default function ImageCollection({
       </div>
       <LoadError
         message={error}
-        onRetry={() => void refreshGallery()}
+        onRetry={loadFailed ? () => void refreshGallery() : undefined}
         busy={loading}
         disabled={busy}
       />
@@ -583,6 +589,7 @@ export default function ImageCollection({
                           await navigator.clipboard.writeText(item.url);
                           setCopied(item.url);
                         } catch {
+                          setLoadFailed(false);
                           setError("Open the image and copy its address.");
                         }
                       }}

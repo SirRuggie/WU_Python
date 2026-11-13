@@ -129,10 +129,6 @@
   border-color: #bb6575;
   color: #ffe4e9;
 }
-.manage-error p {
-  margin-top: 0;
-  text-wrap: pretty;
-}
 .manage-preview,
 .manage-action {
   padding: var(--wu-space-4);
