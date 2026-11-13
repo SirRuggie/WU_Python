@@ -46,7 +46,7 @@
   font-weight: var(--wu-weight-bold);
 }
 .reminders-workspace details details {
-  border-bottom: 1px solid #444;
+  border-bottom: 1px solid var(--wu-border);
 }
 .reminder-status,
 .reminder-save {
@@ -65,8 +65,8 @@
 }
 .reminder-locked-link {
   padding: var(--wu-space-3);
-  border: 1px solid #444;
-  border-radius: 8px;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-sm);
   margin: var(--wu-space-2) 0;
 }
 .reminder-locked-link span {
@@ -81,8 +81,8 @@
   z-index: 2;
   padding: var(--wu-space-4);
   background: var(--wu-surface);
-  border: 1px solid #515968;
-  border-radius: 12px;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
 }
 .reminder-save > span {
   margin-right: auto;
@@ -213,15 +213,15 @@ navigation uses the shared rail. */
   padding: var(--wu-space-3) var(--wu-space-4);
   background: var(--wu-surface);
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
 }
 .reminder-control-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0;
   margin-left: auto;
-  border: 1px solid #46433a;
-  border-radius: 9px;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-sm);
   overflow: hidden;
 }
 .reminders-workspace .reminder-control-actions > button {
@@ -231,12 +231,12 @@ navigation uses the shared rail. */
   min-height: 44px;
 }
 .reminders-workspace .reminder-control-actions > button + button {
-  border-left: 1px solid #46433a;
+  border-left: 1px solid var(--wu-border);
 }
 .reminder-disclosure {
   min-width: 0;
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   padding: 0 var(--wu-space-4);
   align-self: start;
 }
@@ -300,7 +300,7 @@ only editing opens the long forms. */
   flex: 0 0 auto;
 }
 .reminder-overview-list {
-  border-top: 1px solid #ffffff28;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 .reminder-visually-hidden {
   position: absolute;
@@ -319,17 +319,17 @@ only editing opens the long forms. */
   font-size: var(--wu-text-sm);
 }
 .reminder-lookup-warning {
-  color: #f0c994;
+  color: var(--wu-warning);
 }
 .reminders-workspace .workflow-tabs {
   margin: 0;
-  border-bottom: 1px solid #ffffff24;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 .reminders-workspace .reminder-status {
   display: flex;
   gap: var(--wu-space-1) var(--wu-space-4);
   padding: var(--wu-space-2) var(--wu-space-3);
-  border-radius: 9px;
+  border-radius: var(--wu-radius-sm);
 }
 .reminders-workspace .reminder-status > span {
   font-size: var(--wu-text-xs);
@@ -337,7 +337,7 @@ only editing opens the long forms. */
 .reminders-workspace .reminder-status .badge {
   background: transparent;
   padding: 0;
-  color: #f0d37e;
+  color: var(--wu-warning);
 }
 @media (max-width: 650px) {
   .shell .reminders-workspace .workflow-tabs:where(:not(.section-tabs--flow)) {
@@ -379,7 +379,7 @@ only editing opens the long forms. */
 }
 .signup-reminder-row {
   padding: var(--wu-space-3) 0;
-  border-bottom: 1px solid #ffffff28;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 .signup-reminder-row h3 {
   grid-column: 1 / -1;
@@ -439,7 +439,7 @@ only editing opens the long forms. */
 }
 .signup-reminder-row h3 {
   font-size: var(--wu-text-md);
-  font-weight: bold;
+  font-weight: var(--wu-weight-bold);
   line-height: normal;
   text-wrap: wrap;
 }

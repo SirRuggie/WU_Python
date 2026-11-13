@@ -10,7 +10,7 @@
 .activity-card {
   padding: var(--wu-space-5);
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 18px;
+  border-radius: var(--wu-radius-lg);
   background: var(--wu-surface);
   min-width: 0;
 }
@@ -38,17 +38,17 @@
 }
 .activity-card p {
   line-height: 1.55;
-  color: #c3bfb6;
+  color: var(--wu-text-muted);
   text-wrap: pretty;
 }
 .activity-card small {
-  color: #b8b3a9;
+  color: var(--wu-text-muted);
 }
 .activity-state {
   padding: var(--wu-space-1) var(--wu-space-3);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   font-size: var(--wu-text-xs);
-  color: #ded8ca;
+  color: var(--wu-text);
   background: var(--wu-surface-raised);
   flex: none;
 }
@@ -81,7 +81,7 @@
   width: 40px;
   height: 40px;
   flex: 0 0 40px;
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   background: transparent;
   color: var(--wu-accent);
   box-shadow: inset 0 0 0 1px var(--wu-accent);
@@ -109,27 +109,27 @@
   width: 100%;
   height: 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--wu-radius-sm);
   overflow: hidden;
   margin: var(--wu-space-3) 0 var(--wu-space-4);
   background: var(--wu-surface-soft);
-  accent-color: #e7b338;
+  accent-color: var(--wu-accent);
 }
 .activity-card progress::-webkit-progress-bar {
   background: var(--wu-surface-soft);
 }
 .activity-card progress::-webkit-progress-value {
-  background: #e7b338;
+  background: var(--wu-accent);
 }
 .activity-card progress::-moz-progress-bar {
-  background: #e7b338;
+  background: var(--wu-accent);
 }
 .activity-dates {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--wu-space-4);
   padding-top: var(--wu-space-4);
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 .activity-dates div {
   display: grid;
@@ -174,7 +174,7 @@
 .calendar-sources {
   margin: var(--wu-space-4) 0 var(--wu-space-6);
   font-size: var(--wu-text-sm);
-  color: #b8b3a9;
+  color: var(--wu-text-muted);
 }
 .calendar-sources summary {
   cursor: pointer;
@@ -199,7 +199,7 @@
   justify-content: space-between;
   gap: var(--wu-space-3);
   margin: var(--wu-space-4) 0;
-  color: #b8b3a9;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-md);
 }
 .raid-totals {
@@ -210,7 +210,7 @@
 }
 .raid-totals dt {
   font-size: var(--wu-text-xs);
-  color: #b8b3a9;
+  color: var(--wu-text-muted);
   font-variant-numeric: tabular-nums;
 }
 .raid-totals dd {
@@ -219,7 +219,7 @@
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
-@media (max-width: 850px) {
+@media (max-width: 900px) {
   .activity-card-grid {
     grid-template-columns: 1fr;
   }
@@ -263,7 +263,7 @@
   flex-wrap: wrap;
   gap: var(--wu-space-2);
   margin-bottom: var(--wu-space-4);
-  color: #c3bfb6;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
 }
 .war-card-kind {
@@ -330,11 +330,11 @@
   gap: var(--wu-space-3);
   margin: var(--wu-space-4) 0;
   font-size: var(--wu-text-sm);
-  color: #c3bfb6;
+  color: var(--wu-text-muted);
   font-variant-numeric: tabular-nums;
 }
 .war-personal {
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--wu-border-subtle);
   padding-top: var(--wu-space-3);
 }
 .war-personal h3 {
@@ -399,7 +399,7 @@
   display: flex;
   align-items: center;
   gap: var(--wu-space-2);
-  color: #c3bfb6;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
 }
 .war-details > summary::before,
@@ -471,12 +471,12 @@
   gap: var(--wu-space-3);
 }
 .events-workspace .calendar-games .calendar-event-icon {
-  background: #20362d;
-  color: #aee4c8;
+  background: var(--wu-success-surface);
+  color: var(--wu-success);
 }
 .events-workspace .calendar-raid .calendar-event-icon {
-  background: #282d40;
-  color: #c2cbf2;
+  background: var(--wu-info-surface);
+  color: var(--wu-info);
 }
 .events-workspace .calendar-countdown {
   display: grid;
@@ -487,7 +487,7 @@
 }
 .events-workspace .calendar-countdown > span {
   font-size: var(--wu-text-sm);
-  color: #c3bfb6;
+  color: var(--wu-text-muted);
   font-variant-numeric: tabular-nums;
 }
 .events-workspace .calendar-countdown > strong {
@@ -500,7 +500,7 @@
   margin: 0 0 var(--wu-space-4);
   font-size: var(--wu-text-sm);
   line-height: 1.5;
-  color: #c3bfb6;
+  color: var(--wu-text-muted);
 }
 .events-workspace .calendar-card progress {
   margin: 0 0 var(--wu-space-4);
@@ -510,12 +510,12 @@
   gap: var(--wu-space-4);
 }
 .events-workspace .calendar-card .activity-dates small {
-  color: #aaa69d;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
 }
 .events-workspace .calendar-card .activity-dates time {
   line-height: 1.5;
-  color: #c3bfb6;
+  color: var(--wu-text-muted);
 }
 .events-workspace .clan-event-status {
   margin-top: var(--wu-space-5);
@@ -544,11 +544,11 @@
 .war-detail-panel {
   margin-top: var(--wu-space-4);
   padding-top: var(--wu-space-4);
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--wu-border-subtle);
   min-width: 0;
 }
 .war-detail-freshness {
-  color: #b8b3a9;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
   margin: 0 0 var(--wu-space-3);
 }
@@ -567,7 +567,7 @@
 }
 .war-detail-view button[aria-pressed="true"],
 .war-detail-side button[aria-pressed="true"] {
-  border-color: #dcae38;
+  border-color: var(--wu-accent);
   color: var(--wu-accent);
 }
 .war-detail-panel h3 {
@@ -578,7 +578,7 @@
   text-wrap: balance;
 }
 .war-detail-panel h3 small {
-  color: #b8b3a9;
+  color: var(--wu-text-muted);
   font-weight: var(--wu-weight-regular);
 }
 .war-detail-lineup-list,
@@ -592,7 +592,7 @@
   display: grid;
   gap: var(--wu-space-1);
   padding: var(--wu-space-2) 0;
-  border-top: 1px solid #303030;
+  border-top: 1px solid var(--wu-border-subtle);
   font-size: var(--wu-text-sm);
   min-width: 0;
 }
@@ -604,21 +604,21 @@
 }
 .war-detail-member-title small,
 .war-detail-attack-list small {
-  color: #aaa69d;
+  color: var(--wu-text-muted);
   margin-left: var(--wu-space-1);
 }
 .war-detail-member-meta,
 .war-detail-attack-list strong {
-  color: #c3bfb6;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
 }
 .war-detail-linked {
   display: inline-flex;
   margin-left: var(--wu-space-2);
   padding: var(--wu-space-1) var(--wu-space-2);
-  border: 1px solid #566b50;
-  border-radius: 12px;
-  color: #b9dfa8;
+  border: 1px solid var(--wu-success-border);
+  border-radius: var(--wu-radius-md);
+  color: var(--wu-success);
   font-size: var(--wu-text-xs);
   white-space: nowrap;
 }
@@ -631,7 +631,7 @@
   font-variant-numeric: tabular-nums;
 }
 .war-detail-attacks > header > span {
-  color: #b8b3a9;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
   font-variant-numeric: tabular-nums;
 }
@@ -652,7 +652,7 @@
   margin: var(--wu-space-3) 0;
 }
 .war-detail-pages span {
-  color: #c3bfb6;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
 }
 .war-detail-error {
@@ -689,7 +689,7 @@
   }
 }
 .war-detail-attack-side {
-  color: #b8b3a9;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
   margin-right: var(--wu-space-2);
 }

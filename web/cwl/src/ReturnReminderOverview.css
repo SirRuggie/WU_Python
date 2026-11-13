@@ -4,7 +4,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--wu-space-3);
   padding: var(--wu-space-3) 0;
-  border-block: 1px solid #ffffff24;
+  border-block: 1px solid var(--wu-border-subtle);
   font-size: var(--wu-text-sm);
 }
 .return-context > span {
@@ -18,7 +18,7 @@
   margin-bottom: var(--wu-space-1);
 }
 .return-overview .return-destination-warning {
-  color: #efcd96;
+  color: var(--wu-warning);
   font-size: var(--wu-text-sm);
   margin: var(--wu-space-2) 0;
 }
@@ -32,7 +32,7 @@
 
 .return-overview .return-clan-list {
   border: 0;
-  border-top: 1px solid #ffffff26;
+  border-top: 1px solid var(--wu-border-subtle);
   border-radius: 0;
 }
 .return-overview .return-clan-row {
@@ -40,7 +40,7 @@
   padding: var(--wu-space-2) var(--wu-space-1);
 }
 .return-overview .return-clan-row + .return-clan-row {
-  border-color: #ffffff1b;
+  border-color: var(--wu-border-subtle);
 }
 .return-overview .return-clan-row small {
   margin-top: var(--wu-space-1);
@@ -61,7 +61,7 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .return-row-actions button:hover {
-    background: #ffffff10;
+    background: #ffffff10; /* keep: translucent hover overlay */
   }
 }
 .return-overview .return-health-note {
@@ -89,7 +89,7 @@
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
-@media (max-width: 700px) {
+@media (max-width: 650px) {
   .return-about-panel .return-context {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--wu-space-2);
@@ -111,7 +111,7 @@
   }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 650px) {
   .return-overview .return-row-actions {
     flex-direction: column;
     max-width: 105px;

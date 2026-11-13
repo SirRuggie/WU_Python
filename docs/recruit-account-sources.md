@@ -79,3 +79,22 @@ remain in place. The exact accounts explicitly confirmed in this review also sat
 account re-review, avoiding a redundant prompt. Unrelated newly discovered
 accounts still require their own review. No path approves automatically merely because a review
 reason was supplied. Staff see the saved reason alongside player information.
+
+## Linking an account from a ticket (ClashPerk)
+
+The staff Applicant context card and Linked Player Information show **Link
+account** (decisions by Ruggie, 2026-11-13). It links a Clash account to the
+applicant in ClashPerk through `utils/clashperk_link_writes.create_link`, the
+same helper as `/fwa weight` and `/manage-links link`.
+
+- Who: recruiters who also hold the dashboard permission "Save weights from
+  Discord" (`discord_weights`). The permission is checked when the control
+  opens and again just before the write.
+- Flow: select a tag the applicant typed in the ticket (valid, not yet linked)
+  or enter a player tag, then confirm with **Link**. After the link, the
+  ticket's account list refreshes like Refresh Player Info.
+- A tag linked to a different Discord user is never moved. Staff see that
+  user's ClashPerk name and "Nothing was changed"; the applicant must unlink it.
+- No in-game API token is ever requested. Tickets have no remove-link control.
+- New links are unverified. One write per select; an uncertain write is never
+  retried (see `docs/manage-links.md`).

@@ -1,5 +1,5 @@
 .saved-signup-toolbar {
-  border-block: 1px solid #45413a;
+  border-block: 1px solid var(--wu-border-subtle);
   padding: var(--wu-space-3) 0;
   margin-bottom: var(--wu-space-4);
 }
@@ -50,9 +50,9 @@
   gap: var(--wu-space-3);
   padding: var(--wu-space-4);
   margin-top: var(--wu-space-4);
-  background: #232019;
-  border: 1px solid #977b36;
-  border-radius: 12px;
+  background: var(--wu-surface);
+  border: 1px solid var(--wu-warning-border);
+  border-radius: var(--wu-radius-md);
   z-index: 2;
 }
 .saved-signup-savebar span {
@@ -78,18 +78,18 @@
 }
 .saved-signup-card.pool-change-pending,
 .account-card.pool-change-pending {
-  border-color: #e5b742;
+  border-color: var(--wu-accent);
   background: var(--wu-warning-surface);
-  box-shadow: inset 3px 0 #e5b742;
+  box-shadow: inset 3px 0 var(--wu-accent);
 }
 .pending-switch,
 .pool-change-pending .inline-reason {
-  background: #443719;
-  color: #ffe3a0;
-  border: 1px solid #876b2b;
+  background: var(--wu-warning-surface);
+  color: var(--wu-warning);
+  border: 1px solid var(--wu-warning-border);
 }
 .pending-switch small {
-  color: #f2d99a;
+  color: var(--wu-warning);
 }
 .registered-card.saved-signup-card {
   flex-direction: column;

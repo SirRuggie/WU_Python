@@ -8,11 +8,11 @@
   gap: var(--wu-space-2);
   min-height: 44px;
   padding: var(--wu-space-3) var(--wu-space-4);
-  border: 1px solid #d8b65a;
-  border-radius: 999px;
+  border: 1px solid var(--wu-accent);
+  border-radius: var(--wu-radius-pill);
   background: var(--wu-surface-raised);
-  color: #f6df9b;
-  box-shadow: 0 4px 16px #0006;
+  color: var(--wu-accent-hover);
+  box-shadow: 0 4px 16px #0006; /* keep: black shadow */
   font-size: var(--wu-text-sm);
   font-weight: var(--wu-weight-medium);
 }

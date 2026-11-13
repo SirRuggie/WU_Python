@@ -22,7 +22,7 @@
 .rep-accounts-list {
   display: grid;
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
   overflow: hidden;
 }
 /* Same group header as Build roster; repeated here so the sheet does not
@@ -30,7 +30,7 @@
 .rep-accounts .roster-member-heading {
   padding: 10px 14px;
   background: var(--wu-surface);
-  border-block: 1px solid #ffffff20;
+  border-block: 1px solid var(--wu-border-subtle);
 }
 .rep-accounts-group:first-child .roster-member-heading {
   border-top: 0;
@@ -108,7 +108,7 @@
   gap: var(--wu-space-3);
   padding: var(--wu-space-3);
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
   background: var(--wu-surface);
 }
 .rep-finder-note {

@@ -1,6 +1,6 @@
 .member-season-settings {
   padding: var(--wu-space-4) 0;
-  border-bottom: 1px solid var(--border, #303035);
+  border-bottom: 1px solid var(--border, var(--wu-border-subtle));
 }
 .member-season-actions {
   display: flex;
@@ -33,8 +33,11 @@
   }
 }
 .member-signup-link a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
   color: var(--wu-text);
-  margin: var(--wu-space-2) 0;
+  margin: 0;
   text-decoration: underline;
 }
 

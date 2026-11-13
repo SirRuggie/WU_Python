@@ -45,7 +45,7 @@
   overflow: hidden;
   border: 1px solid var(--wu-border-subtle);
   border-top: 0;
-  border-radius: 0 0 12px 12px;
+  border-radius: 0 0 var(--wu-radius-md) var(--wu-radius-md);
   background: var(--wu-surface);
 }
 
@@ -75,7 +75,7 @@
 .roster-member-heading {
   padding: 10px 14px;
   background: var(--wu-surface);
-  border-block: 1px solid #ffffff20;
+  border-block: 1px solid var(--wu-border-subtle);
 }
 
 .roster-member-heading .roster-discord-identity {

@@ -38,7 +38,7 @@
 }
 .application-setting-list {
   border: 1px solid var(--border, var(--wu-border-subtle));
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   overflow: hidden;
   margin: 0 0 var(--wu-space-4);
 }

@@ -53,7 +53,7 @@
   padding: var(--wu-space-1) var(--wu-space-2);
   border-width: 1px;
   border-style: solid;
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   white-space: nowrap;
 }
 
@@ -86,7 +86,7 @@
   .section-tabs::-webkit-scrollbar-thumb,
   .filter-chips::-webkit-scrollbar-thumb {
     background: var(--wu-text-muted);
-    border-radius: 4px;
+    border-radius: var(--wu-radius-xs);
   }
 }
 @media (max-width: 680px) {
@@ -137,7 +137,7 @@
       .base-bank-levels
     )::-webkit-scrollbar-thumb {
     background: var(--wu-text-muted);
-    border-radius: 4px;
+    border-radius: var(--wu-radius-xs);
   }
 }
 

@@ -292,3 +292,13 @@ it("integration status shows every value as readable status rather than disabled
   expect(html).not.toContain("Message or setting to edit");
   expect(html).not.toContain("Save changes");
 });
+it("shows a status notice once", () => {
+  renderDraft();
+  hooks.index = 0;
+  hooks.effects = [];
+  hooks.values[8] = "Saved.";
+  const html = renderToStaticMarkup(
+    <ServerManagement area="applications-settings" />,
+  );
+  expect(html.split('role="status">Saved.</p>').length - 1).toBe(1);
+});

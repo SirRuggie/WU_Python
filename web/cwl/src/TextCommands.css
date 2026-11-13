@@ -146,7 +146,7 @@
 }
 .command-block {
   border: 1px solid var(--wu-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
   min-width: 0;
 }
@@ -221,7 +221,7 @@
   margin-top: var(--wu-space-3);
   padding: var(--wu-space-3);
   border: 1px solid var(--wu-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
 }
 .mention-picker > div {
   display: grid;
@@ -270,7 +270,7 @@
 .markdown-help {
   margin-top: var(--wu-space-3);
   border: 1px solid var(--wu-border);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
   padding: var(--wu-space-3);
 }
 .markdown-help summary {
@@ -299,7 +299,7 @@
 .mention-text {
   min-width: 0;
 }
-@media (max-width: 500px) {
+@media (max-width: 480px) {
   .markdown-help dl {
     grid-template-columns: 1fr;
   }
@@ -319,8 +319,8 @@
 }
 
 .command-option {
-  border: 1px solid #414149;
-  border-radius: 8px;
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: var(--wu-radius-sm);
   padding: var(--wu-space-3);
 }
 .command-option > label {
@@ -360,7 +360,7 @@
   margin: var(--wu-space-3) 0;
   padding: var(--wu-space-3);
   border: 1px solid var(--wu-border);
-  border-radius: 9px;
+  border-radius: var(--wu-radius-sm);
 }
 .command-add-menu > summary {
   color: var(--wu-text-muted);
@@ -382,7 +382,7 @@
 .command-activity {
   margin-top: var(--wu-space-4);
   border: 1px solid var(--wu-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   padding: var(--wu-space-3);
 }
 .command-activity summary {
@@ -506,8 +506,8 @@
 .command-recipient-settings {
   padding: var(--wu-space-4);
   margin: var(--wu-space-4) 0;
-  border: 1px solid #52657c;
-  border-radius: 10px;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
 }
 .command-recipient-settings small {
@@ -615,7 +615,7 @@
 }
 
 .text-command-editor fieldset > details {
-  border-bottom: 1px solid #ffffff26;
+  border-bottom: 1px solid #ffffff26; /* keep: translucent divider */
   padding: var(--wu-space-2) 0;
 }
 .text-commands summary {

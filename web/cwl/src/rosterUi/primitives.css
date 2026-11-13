@@ -24,7 +24,7 @@
   background: var(--roster-surface-raised);
   color: var(--roster-text);
   font: inherit;
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
   cursor: pointer;
 }
 @media (hover: hover) and (pointer: fine) {
@@ -47,9 +47,9 @@
   }
 }
 .roster-ui-button.is-danger {
-  border-color: #8e4545;
-  background: #3a2022;
-  color: #ffdcdc;
+  border-color: var(--wu-danger-border);
+  background: var(--wu-danger-surface);
+  color: var(--wu-danger);
 }
 .roster-ui-button.is-icon {
   border-radius: 50%;
@@ -73,8 +73,8 @@
   border-radius: var(--roster-radius-pill);
   background: var(--roster-surface-raised);
   color: var(--roster-text-muted);
-  font-size: 0.8rem;
-  font-weight: 650;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
   line-height: 1.25;
 }
 .roster-ui-status.is-success,
@@ -95,7 +95,7 @@
 .roster-ui-chip.is-danger {
   border-color: var(--wu-brand-red);
   background: var(--wu-brand-red);
-  color: #fff;
+  color: var(--wu-text);
   -webkit-text-fill-color: currentColor;
 }
 .roster-ui-status.is-info,
@@ -117,7 +117,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 1.2rem;
+  font-size: var(--wu-text-lg);
   cursor: pointer;
 }
 .roster-ui-progress {
@@ -144,8 +144,8 @@
 }
 .roster-ui-input label {
   color: var(--roster-text-muted);
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
 }
 .roster-ui-input-control {
   position: relative;
@@ -215,11 +215,11 @@
 }
 .roster-menu-label {
   color: var(--roster-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--wu-text-xs);
 }
 .roster-menu-current {
   overflow-wrap: anywhere;
-  font-weight: 650;
+  font-weight: var(--wu-weight-medium);
 }
 .roster-menu-chevron {
   color: var(--wu-text-muted);
@@ -388,8 +388,8 @@
 
 .roster-menu-item-description {
   display: block;
-  font-size: 12px;
-  font-weight: 400;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-regular);
   line-height: 1.4;
   color: var(--roster-text-muted);
   -webkit-text-fill-color: currentColor;
@@ -410,8 +410,8 @@
   align-self: center;
 }
 .roster-menu-status-dot.is-success {
-  background: #83d99b;
+  background: var(--wu-success);
 }
 .roster-menu-status-dot.is-warning {
-  background: #f3ca56;
+  background: var(--wu-warning);
 }

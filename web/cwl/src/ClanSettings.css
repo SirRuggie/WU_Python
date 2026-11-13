@@ -31,8 +31,8 @@
 }
 .clan-settings-row .roster-clan-chip-top strong,
 .clan-settings-row .roster-clan-chip-count {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-bold);
   font-variant-numeric: tabular-nums;
 }
 .clan-settings-row .roster-clan-chip-top strong {

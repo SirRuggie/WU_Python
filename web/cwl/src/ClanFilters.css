@@ -6,7 +6,7 @@
   margin: var(--wu-space-3) 0;
   padding: var(--wu-space-3);
   border: 1px solid var(--roster-border);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   background: var(--roster-surface);
 }
 .clan-filter-bar > small {
@@ -18,7 +18,7 @@
   min-width: 170px;
   max-width: 320px;
   border: 1px solid var(--roster-border);
-  border-radius: 9px;
+  border-radius: var(--wu-radius-sm);
   background: var(--roster-surface-raised);
 }
 .filter-picker summary {
@@ -55,7 +55,7 @@
 .clan-filter-bar button {
   min-height: 44px;
 }
-@media (max-width: 600px) {
+@media (max-width: 650px) {
   .clan-filter-bar {
     gap: var(--wu-space-2);
   }

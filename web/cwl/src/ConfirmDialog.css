@@ -4,13 +4,13 @@
   overflow: auto;
   padding: var(--wu-space-5);
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface-raised);
   color: var(--wu-text);
   overflow-wrap: anywhere;
 }
 .confirm-dialog::backdrop {
-  background: rgb(0 0 0 / 70%);
+  background: rgb(0 0 0 / 70%); /* keep: scrim black */
 }
 .confirm-dialog h2 {
   margin-top: 0;
@@ -27,8 +27,8 @@
 
 .confirm-dialog-actions .confirm-danger {
   border: 1px solid var(--wu-danger);
-  background: #452626;
-  color: #ffe0e0;
+  background: var(--wu-danger-surface);
+  color: var(--wu-danger);
   -webkit-text-fill-color: currentColor;
 }
 

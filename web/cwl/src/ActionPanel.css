@@ -16,10 +16,10 @@
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
   color: var(--wu-text);
-  box-shadow: 0 12px 42px #0008;
+  box-shadow: 0 12px 42px #0008; /* keep: shadow black */
   transform: translate(-50%, -50%);
   opacity: 1;
   transition:
@@ -43,7 +43,7 @@
 }
 
 .action-panel::backdrop {
-  background: rgb(0 0 0 / 46%);
+  background: rgb(0 0 0 / 46%); /* keep: scrim black */
   opacity: 1;
   transition: opacity 180ms ease-out;
 }
@@ -123,13 +123,13 @@
     width: 100%;
     height: auto;
     max-height: 78dvh;
-    border-radius: 18px 18px 0 0;
+    border-radius: var(--wu-radius-lg) var(--wu-radius-lg) 0 0;
     border-bottom: 0;
     transform: translateY(0);
     transition:
       transform 240ms cubic-bezier(0.32, 0.72, 0, 1),
       opacity 240ms cubic-bezier(0.32, 0.72, 0, 1);
-    box-shadow: 0 -18px 48px #0008;
+    box-shadow: 0 -18px 48px #0008; /* keep: shadow black */
   }
   @starting-style {
     .action-panel[open],

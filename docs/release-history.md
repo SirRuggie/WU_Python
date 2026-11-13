@@ -1,5 +1,106 @@
 # Release and rollback history
 
+## UI audit Phases 5 and 6 — 2026-11-13 (frontend only)
+
+- PRs [#338](https://github.com/SirRuggie/WU_Python/pull/338) (Phase 5, merge
+  `8077764dd115a8f04654a31694a604e2b7723991`) and
+  [#337](https://github.com/SirRuggie/WU_Python/pull/337) (Phase 6, merge
+  `a1b8df6e46d6b3cd09048b2f09ab99c0c003aae8`), local tag `ui-audit-5-6-1`.
+  Released by Shaka (Claude) on Ruggie's "merge and release 338 337"
+  (2026-11-13 17:43 UTC).
+- Changes: shared CSS tokens for colors, type, corners and breakpoints
+  (Phase 5); the four largest screens split into smaller files (Phase 6).
+  Only `web/cwl/` and docs changed since the bot release `32d9c56f`. No Python,
+  route, schema or data change.
+- Backend not changed or restarted: `backend/523cc293…`, PID 830330, active.
+  Bot not changed or restarted (`32d9c56f…`, PID 871536).
+- Frontend `current`: `523cc293…` → `a1b8df6e…` (clean tagged clone, `npm ci`,
+  `tsc -b` and 2517 tests in 365 files passed before staging). Entry
+  `index-u6269ilZ.js`, SHA-256
+  `c9f659984de22ca414c735df479801f0e7de5aa71a3120b32b67261094402976`. Served
+  `index.html` equals the release file on `/`, `/signup`, `/strikes`,
+  `/server/members`, `/settings/integrations`; all 181 manifest files match the
+  public site (`/index.html` first returned a stale edge copy; the cache-busted
+  and repeat fetches matched).
+- Backup `.local/ui-audit-5-6-release-20261113T175329Z/before.sqlite3`
+  (SQLite backup API): integrity ok, equal to live, SHA-256
+  `05f7a1003e0ff2b59426705bce883f1ab4439c939769b7902900b92ef9894604`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131 (signups/assigned/locks),
+  publication max version 6 (6 rows, 4 active) and the lineup-rules digest
+  identical before and after.
+- Smoke: signed-out HTTP only; anonymous `/api/cwl/auth/me` 401. Browser and
+  signed-in smoke SKIPPED. No app writes, no Discord post.
+- Rollback: frontend `switch-release.py
+  523cc293c823a7fb9ff9e4dd0dc881976708e8e0`. No backend change to roll back.
+  Never restore the database for a code rollback.
+
+## Ticket "Link account" control — 2026-11-13 (bot only)
+
+- PR [#340](https://github.com/SirRuggie/WU_Python/pull/340), merge commit
+  `32d9c56f3e3fc84b486a4603125f9bfac1a13e8d`, local tag
+  `ticket-link-account-340-1`. Merged and released by Shaka (Claude) on
+  Ruggie's "you build and deploy the changes" (2026-11-13 16:45 UTC).
+- Changes: staff "Link account" control on ticket cards writes ClashPerk links
+  (`extensions/commands/tickets/link_account.py`, `player_info.py`,
+  `console.py`, `utils/clashperk_link_writes.py`). No schema change, no data
+  write. The control was not run live; no Discord post, no ClashPerk write.
+- Checks: main merged into the branch (`1dc4d223`, tree equal to the merge
+  commit); backend suite 8186 passed, 134 skipped, in a network-isolated
+  namespace.
+- Bot: `/home/botrunner/wu-bot` `0a061726…` → `32d9c56f…` (detached, clean,
+  fast-forward; requirements unchanged). Other bot-side files since `0a061726`
+  are not imported by the bot. Import check as botrunner passed. PID 385930 →
+  871536, InvocationID `c5aa5b2fdb9341aeb14e6887dd34b986`, NRestarts 0; 60
+  extensions loaded (same as before), `extensions.commands.tickets` loaded,
+  `[Tickets] thread_runtime_ready configured_fields=6/6 index_errors=0`, no
+  tracebacks or errors in the journal.
+- Backend not changed or restarted (`backend/523cc293…`, PID 830330; it does
+  not import the changed modules). Frontend not changed.
+- Backup `.local/ticket-link-account-340-release-20261113T172008Z/before.sqlite3`
+  (SQLite backup API): integrity ok, equal to live, SHA-256
+  `b1e6389a7d056aa4f437d9e925a7669d84a34090151d27001921c488884080b9`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131 (signups/assigned/locks),
+  publication max version 6 and the lineup-rules digest identical before and
+  after. Mongo counts not compared (the live bot writes continuously).
+- Rollback: `sudo -n -u botrunner git -C /home/botrunner/wu-bot checkout
+  --detach 0a06172621a542bae2ee0864b5ecf251b298614a`, then `sudo -n systemctl
+  restart wu-bot.service`. Never restore the database for a code rollback.
+
+## Non-members can sign in, Base bank members-only — 2026-11-13 (backend and frontend)
+
+- PR [#339](https://github.com/SirRuggie/WU_Python/pull/339), merge commit
+  `523cc293c823a7fb9ff9e4dd0dc881976708e8e0`, local tag
+  `non-member-sign-in-339-1`. Prompt 238, built and released by Shaka (Claude)
+  on Ruggie's "you build and release fully". Independent refuter: REWORK for 2
+  missing tests, both added; Base bank gate added on Ruggie's "next".
+- Changes: sign-in no longer needs the server; CWL signup save and Base bank
+  check membership live (`cwl_web/server_membership.py`); `/auth/me` adds
+  `server_member`. No schema change, no data write. See
+  `docs/dashboard-sign-in.md`.
+- Checks on the merged commit: backend 8168 passed (branch head), frontend 2516
+  passed in 365 files and `tsc` in the clean release clone.
+- Backend: `release.conf` `backend/22abb00b…` → `backend/523cc293…`; PID
+  741607 → 830330, cwd verified, active, ready after 5 s, no journal errors,
+  anonymous `/auth/me` and `/bases` 401; other drop-ins byte-identical. Bot not
+  changed or restarted.
+- Frontend `current`: `22abb00b…` → `523cc293…` (stage-release from the clean
+  tagged clone). Entry `index-XXoQk8bM.js`, SHA-256
+  `f67142247646c98b366795c75e8e93d9ed0f2709b1105432794028c006b10443`; served
+  `index.html` equals the release file on `/`, `/signup`, `/bases`; all 147
+  manifest assets match the public site.
+- Backup `.local/non-member-sign-in-339-release-20261113T171411Z/before.sqlite3`: integrity ok, equal to live,
+  SHA-256 `9c26c4be69ba5afd87edfcd1a68492921ea2f7e1158b13d5ed70345d69676628`.
+  All 76 table counts, Main 23/23/23 and Lazy 147/146/131
+  (signups/assigned/locks), publication max version 6 and the lineup-rules
+  digest identical before and after.
+- Signed-in read-only smoke (Ruggie's session): `/auth/me` `server_member`
+  true from the live Discord check, no join line on Sign up, `/bases` 200 with
+  13 bases. Non-member sign-in on production: SKIPPED (no non-member account).
+- Rollback: frontend `switch-release.py
+  22abb00bfd4f8106cffbf517a6d0beeb377ad8e7`; backend `release.conf`
+  `WorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/22abb00bfd4f8106cffbf517a6d0beeb377ad8e7`,
+  daemon-reload, restart. Never restore the database for a code rollback.
+
 ## Log channels category marker — 2026-11-13 (frontend only)
 
 - PR [#332](https://github.com/SirRuggie/WU_Python/pull/332), merge commit

@@ -1,6 +1,6 @@
 .visitor-summary {
   border: 1px solid var(--wu-border);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   padding: var(--wu-space-4);
   margin-bottom: var(--wu-space-4);
 }
@@ -30,7 +30,7 @@
   width: 100%;
   max-width: 600px;
   height: 100px;
-  color: #8fcbff;
+  color: var(--wu-info);
 }
 .visitor-summary summary,
 .visitor-summary button {

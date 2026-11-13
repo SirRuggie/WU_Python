@@ -88,7 +88,7 @@
   flex-wrap: wrap;
 }
 .roster-player-dialog .player-card-meta {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
 }
 .roster-player-dialog .player-clan-status {
   display: block;

@@ -9,7 +9,7 @@
   padding: 0 10px;
   border: 1px solid var(--wu-warning-border);
   border-left: 4px solid var(--wu-text-muted);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--roster-card);
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
@@ -47,7 +47,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: #f5d27b;
+  color: var(--wu-accent-hover);
   white-space: nowrap;
   cursor: pointer;
 }

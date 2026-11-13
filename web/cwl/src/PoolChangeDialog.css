@@ -21,7 +21,7 @@
   max-height: 26dvh;
   object-fit: contain;
   margin: 0 auto;
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
 }
 .pool-change-summary {
   color: var(--roster-text);
