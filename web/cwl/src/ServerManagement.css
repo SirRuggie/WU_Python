@@ -102,8 +102,8 @@
   gap: var(--wu-space-4);
   background: var(--wu-surface);
   border: 1px solid var(--wu-border);
-  border-radius: 12px;
-  box-shadow: 0 6px 24px #0006;
+  border-radius: var(--wu-radius-md);
+  box-shadow: 0 6px 24px #0006; /* keep: shadow */
 }
 .manage-save > div {
   display: flex;
@@ -112,29 +112,29 @@
 .manage-save .primary {
   color: var(--wu-accent-ink);
   background: var(--wu-accent);
-  border: 1px solid #f8dc8e;
+  border: 1px solid var(--wu-accent);
   -webkit-text-fill-color: var(--wu-accent-ink);
 }
 .manage-error,
 .manage-notice {
   padding: var(--wu-space-4);
-  border: 1px solid #a98231;
-  border-radius: 10px;
-  background: #302819;
+  border: 1px solid var(--wu-warning-border);
+  border-radius: var(--wu-radius-md);
+  background: var(--wu-warning-surface);
   line-height: 1.6;
   margin: var(--wu-space-4) 0;
 }
 .manage-error {
-  background: #381f25;
-  border-color: #bb6575;
-  color: #ffe4e9;
+  background: var(--wu-danger-surface);
+  border-color: var(--wu-danger-border);
+  color: var(--wu-danger);
 }
 .manage-preview,
 .manage-action {
   padding: var(--wu-space-4);
   border: 1px solid var(--wu-info-border);
   background: var(--wu-surface);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   margin-top: var(--wu-space-4);
 }
 .manage-preview p {
@@ -198,7 +198,7 @@
   max-height: 220px;
   overflow: auto;
   border: 1px solid var(--wu-info-border);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
   padding: var(--wu-space-2);
 }
 .manage-option-checks label {
@@ -220,7 +220,7 @@
   padding: var(--wu-space-4);
   background: var(--wu-success-surface);
   border: 1px solid var(--wu-success-border);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   margin: var(--wu-space-4) 0;
 }
 .manage-result-details {
@@ -238,11 +238,11 @@
   flex-wrap: wrap;
   gap: var(--wu-space-2);
   padding: var(--wu-space-3) 0;
-  border-top: 1px solid #40564e;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 .manage-result li small {
   flex-basis: 100%;
-  color: #c2d5cd;
+  color: var(--wu-text-muted);
 }
 .manage-result a {
   display: inline-block;

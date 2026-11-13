@@ -4,7 +4,7 @@
   flex-wrap: wrap;
   gap: var(--wu-space-2);
   margin: var(--wu-space-2) 0;
-  color: #c5c4c1;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-md);
 }
 

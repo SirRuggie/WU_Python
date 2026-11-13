@@ -48,7 +48,7 @@
   overflow: auto;
   margin-top: var(--wu-space-3);
   border: 1px solid var(--wu-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   padding: var(--wu-space-2);
 }
 .push-accounts > label {
@@ -91,7 +91,7 @@
   min-height: 44px;
   padding-top: var(--wu-space-4);
 }
-@media (max-width: 600px) {
+@media (max-width: 650px) {
   .push-actions button {
     width: 100%;
   }
@@ -118,7 +118,7 @@
   padding: var(--wu-space-3);
   background: var(--wu-surface-soft);
   border: 1px solid var(--wu-border);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
 }
 .push-time-row label {
   flex: 1;
@@ -165,7 +165,7 @@
   min-height: 44px;
   margin: var(--wu-space-2) var(--wu-space-2) 0 0;
 }
-@media (max-width: 360px) {
+@media (max-width: 480px) {
   .push-time-row {
     display: grid;
     grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1fr);

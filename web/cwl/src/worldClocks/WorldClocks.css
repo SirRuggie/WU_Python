@@ -52,7 +52,7 @@
   margin: 0 0 var(--wu-space-3);
   padding: var(--wu-space-2) var(--wu-space-3);
   border: 1px solid;
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   font-size: var(--wu-text-sm);
 }
 
@@ -115,7 +115,7 @@
 .world-clock-empty {
   padding: var(--wu-space-4);
   border: 1px dashed var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
 }
 
 .world-clock-empty p {
@@ -126,7 +126,7 @@
 
 .world-clock-row {
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
 }
 
@@ -207,7 +207,7 @@
   width: 44px;
   height: 26px;
   border: 1px solid var(--wu-border);
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   background: var(--wu-surface-soft);
 }
 
@@ -278,7 +278,7 @@
   min-height: 48px;
   padding: 0 var(--wu-space-3);
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-bg);
   color: var(--wu-text);
   font: inherit;
@@ -320,7 +320,7 @@
   display: grid;
   gap: var(--wu-space-1);
   padding: var(--wu-space-2) var(--wu-space-3);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface-raised);
   font-size: var(--wu-text-sm);
 }
@@ -359,7 +359,7 @@
 
 .world-clock-discord {
   padding: var(--wu-space-3) var(--wu-space-2);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface-raised);
 }
 
@@ -415,7 +415,7 @@
 .world-clock-phone-preview {
   padding: 0 var(--wu-space-3);
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
 }
 
@@ -454,7 +454,7 @@
 .world-clock-setting {
   padding: var(--wu-space-3);
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
 }
 
@@ -493,7 +493,7 @@
   gap: var(--wu-space-3);
   padding: var(--wu-space-3);
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-bg);
   cursor: pointer;
 }
