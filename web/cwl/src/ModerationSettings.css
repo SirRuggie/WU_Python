@@ -538,6 +538,21 @@
 /* Routing disclosures keep status visible while occasional controls stay closed. */
 .moderation-category-summary {
   cursor: pointer;
+  list-style: none;
+}
+/* The summary holds a block heading, so the native marker would sit on its
+   own line. Draw it inline before the category name instead. */
+.moderation-category-summary::-webkit-details-marker {
+  display: none;
+}
+.moderation-category-name::before {
+  content: "▸";
+  display: inline-block;
+  width: 1.1em;
+  color: var(--wu-text-muted);
+}
+.moderation-category-card[open] .moderation-category-name::before {
+  content: "▾";
 }
 .moderation-category-summary > .moderation-category-head {
   display: grid;
