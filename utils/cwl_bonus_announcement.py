@@ -1,12 +1,14 @@
 """Components V2 rendering for the Lazy CWL bonus announcement.
 
-One rules container (with last month's winners) and one container per Lazy
-clan. Pure functions: callers supply stored data; nothing here reads Discord.
+One rules container (with an image of the winners from the last seasons) and
+one container per Lazy clan. Pure functions: callers supply stored data; nothing
+here reads Discord.
 """
 import hashlib
 import json
 import re
 
+from utils import cwl_bonus_history_image as history_image
 from utils.cwl_bonus_raffle import safe_text
 
 CWL_EMOJI = '<:CWL:1399013745598009375>'
@@ -58,14 +60,15 @@ def _seasons(months):
 def sit_out_rule(lengths):
     """Return (rule line or None, winners note) for the included clans' sit-out lengths."""
     values = sorted(set(lengths))
+    shown = 'These players got a bonus in the last 3 seasons.'
     if not values or values == [0]:
-        return None, 'The players below got a bonus last month.'
+        return None, shown
     if len(values) == 1:
         rule = f'Not get a bonus in the {_seasons(values[0])}.'
-        return rule, (f'The players below got a bonus last month. '
-                      f'Players with a bonus in the {_seasons(values[0])} are not eligible.')
+        # Rule 3 already says it when the sit-out matches the 3 seasons shown.
+        return rule, shown if values == [3] else f'{shown} Players with a bonus in the {_seasons(values[0])} are not eligible.'
     return ("Not get a bonus during your clan's sit-out. Each clan below shows its sit-out.",
-            "The players below got a bonus last month. Players in their clan's sit-out are not eligible.")
+            f"{shown} Players in their clan's sit-out are not eligible.")
 
 
 def _text(content):
@@ -109,12 +112,8 @@ def sections(data, names=None, preview=False):
         rules.append(f'3. {rule3}')
     header = [_text(f'## {CWL_EMOJI} Lazy CWL Bonus Medals'), _text(INTRO), _separator(),
               _text('**To be eligible, you must:**\n' + '\n'.join(rules)), _separator()]
-    label = data.get('last_month_label') or 'last month'
-    # Same line as the clan winners: name, tag, Discord. Sorted by the visible name.
-    winners = sorted(data['last_month'], key=lambda row: (str(row.get('player_name') or '').casefold(), row['tag']))
-    lines = [_winner_line(row, names, preview, with_name=True) for row in winners] or ['No bonus winners recorded.']
-    blocks = _chunks(f'**Last month\'s bonus winners · {safe_text(label)}**\n-# {note}', lines)
-    header.extend(_text(block) for block in blocks)
+    # One image with a column per season keeps the history short (2026-11-13 decision).
+    header.extend([_text(f'**Past bonus winners**\n-# {note}'), _history(data['history'])])
     result = [('Lazy CWL Bonus Medals', header)]
     mixed = len({clan['sit_out_months'] for clan in data['clans']}) > 1
     for clan in data['clans']:
@@ -138,6 +137,27 @@ def _units(component):
 def _text_total(component):
     return (_length(component.get('content', '')) if component.get('type') == 10 else 0) + sum(
         _text_total(child) for child in component.get('components', ()))
+
+
+def _history(history):
+    return {'type': 12, 'items': [{'media': {'url': f'attachment://{history_image.FILE_NAME}'},
+                                   'description': history_image.alt_text(history)}]}
+
+
+def attachments(payload):
+    """File names that a payload references with attachment://, in order."""
+    found = []
+
+    def walk(component):
+        for item in component.get('items', ()):
+            url = item['media']['url']
+            if url.startswith('attachment://') and url[13:] not in found:
+                found.append(url[13:])
+        for child in component.get('components', ()):
+            walk(child)
+    for component in payload['components']:
+        walk(component)
+    return found
 
 
 def _footer():
@@ -205,8 +225,11 @@ def messages(data, names=None, preview=False, ping=False):
     return result
 
 
-def preview_parts(payload):
-    """Map one Components V2 payload to the dashboard DiscordPreview parts."""
+def preview_parts(payload, history_url=None):
+    """Map one Components V2 payload to the dashboard DiscordPreview parts.
+
+    history_url: same-origin dashboard URL of the history image, shown in place of the attachment.
+    """
     def convert(component):
         kind = component['type']
         if kind == 17:
@@ -215,9 +238,15 @@ def preview_parts(payload):
         if kind == 14:
             return {'type': 'separator', 'divider': component.get('divider', True), 'spacing': component.get('spacing', 1)}
         if kind == 12:
-            # The footer file is attached at send time; the preview shows a labeled placeholder.
-            return {'type': 'media', 'items': [{'url': None, 'description': 'Gold footer image'}
-                                               for _ in component['items']]}
+            # Files are attached at send time. The history image has a preview URL;
+            # the footer shows a labeled placeholder.
+            items = []
+            for item in component['items']:
+                if item['media']['url'] == f'attachment://{history_image.FILE_NAME}':
+                    items.append({'url': history_url, 'description': item.get('description')})
+                else:
+                    items.append({'url': None, 'description': 'Gold footer image'})
+            return {'type': 'media', 'items': items}
         return {'type': 'text', 'text': component.get('content', '')}
     return [convert(component) for component in payload['components']]
 
