@@ -200,7 +200,8 @@ Results & bonuses has a “How bonuses work” help sheet; update its text whene
 
 ## Lazy bonus announcement (2026-11-13)
 
-The Lazy tab on Results & bonuses shows a "Bonus announcement" card with
+The Lazy tab on Results & bonuses shows a "Bonus announcement" card under the
+Hosting clan dropdown, in both the All clans list and a clan's steps, with
 "x of y clans approved" and "Open announcement". It needs the Send CWL
 announcements grant (`cwl_send`) and at least one approved Lazy clan. The sheet
 has Clans (All Lazy clans or One clan), a preview, Channel, "Ping the Lazy CWL
@@ -223,11 +224,11 @@ schema change: the receipts use the existing `bonus_audit` table.
 
 Format (`utils/cwl_bonus_announcement.py`): Components V2, WU_GOLD `#F2B62A` on
 every container. Container 1: "<:CWL:1399013745598009375> Lazy CWL Bonus Medals",
-the intro, three rules, then last month's Lazy winners as `#TAG · @user` (no
+the intro, three rules, then last month's Lazy winners as `Name · #TAG · @user` (no
 clan names). Rule 3 follows the included clans' sit-out lengths ("last N
 seasons"; none omits it; mixed lengths show each clan's sit-out). Then one
 container per clan: name, tag, bonus medal count (the approved draw's slots) and
 numbered winners. The gold footer image is attached to the last container. The
-optional Lazy CWL role mention (`1080521665584308286`) comes last and is the only
+optional Lazy CWL role mention (`1080521665584308286`) opens message 1 and is the only
 allowed mention; player mentions never notify. Messages split at 38 components
 or 3,800 text characters (Discord limits 40 and 4,000).

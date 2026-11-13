@@ -108,9 +108,9 @@ def sections(data, names=None, preview=False):
     header = [_text(f'## {CWL_EMOJI} Lazy CWL Bonus Medals'), _text(INTRO), _separator(),
               _text('**To be eligible, you must:**\n' + '\n'.join(rules)), _separator()]
     label = data.get('last_month_label') or 'last month'
-    # Ruggie asked for tag and Discord only here, so the order follows the visible tag.
-    winners = sorted(data['last_month'], key=lambda row: row['tag'])
-    lines = [_winner_line(row, names, preview, with_name=False) for row in winners] or ['No bonus winners recorded.']
+    # Same line as the clan winners: name, tag, Discord. Sorted by the visible name.
+    winners = sorted(data['last_month'], key=lambda row: (str(row.get('player_name') or '').casefold(), row['tag']))
+    lines = [_winner_line(row, names, preview, with_name=True) for row in winners] or ['No bonus winners recorded.']
     blocks = _chunks(f'**Last month\'s bonus winners · {safe_text(label)}**\n-# {note}', lines)
     header.extend(_text(block) for block in blocks)
     result = [('Lazy CWL Bonus Medals', header)]
@@ -173,12 +173,14 @@ def messages(data, names=None, preview=False, ping=False):
     pages.append(current)
     pages[-1][-1]['components'].append(_footer())
     if role:
-        pages[-1].append(role)
+        # The role ping opens message 1, so the notification lands at the start.
+        pages[0].insert(0, role)
     result = []
-    for components in pages:
+    for index, components in enumerate(pages):
         payload = {'flags': COMPONENTS_V2, 'components': components,
                    # Only the Lazy CWL role may ping; player mentions never notify anyone.
-                   'allowed_mentions': {'parse': [], 'users': [], 'roles': [LAZY_CWL_ROLE_ID] if ping else []}}
+                   'allowed_mentions': {'parse': [], 'users': [],
+                                        'roles': [LAZY_CWL_ROLE_ID] if ping and index == 0 else []}}
         result.append(payload)
     for payload in result:
         if sum(map(_units, payload['components'])) > 40 or sum(map(_text_total, payload['components'])) > 4000:
