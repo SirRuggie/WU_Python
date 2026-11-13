@@ -160,6 +160,20 @@ class NonMemberSignInTests(unittest.IsolatedAsyncioTestCase):
         accounts = await (await self.call("GET", "/linked-accounts", self.outsider)).json()
         self.assertEqual([item["tag"] for item in accounts["accounts"]], ["#G2Y"])
 
+    async def test_non_member_keeps_tasks_and_dashboard_accounts(self):
+        async def snapshot(app, user_id, state):
+            state.update(snapshot={"user": user_id}, updating=False)
+            return {"user": user_id}
+
+        with patch("cwl_web.todo._snapshot", snapshot):
+            response = await self.call("GET", "/todo", self.outsider)
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())["user"], NON_MEMBER)
+        self.providers.weights = AsyncMock(return_value={})
+        response = await self.call("GET", "/dashboard/accounts", self.outsider)
+        self.assertEqual(response.status, 200)
+        self.assertNotIn(NON_MEMBER, self.membership.calls[1:])
+
     async def test_non_member_stays_out_of_staff_routes(self):
         sid = await self.season()
         for method, path in (("GET", f"/seasons/{sid}/roster"), ("GET", "/staff-signup-members"),
@@ -221,6 +235,27 @@ class NonMemberSignInTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call("DELETE", f"/seasons/{sid}/signups/%23G2Y", self.outsider)
         self.assertEqual(response.status, 200)
         self.assertEqual(self.counts()["signups"], 0)
+
+
+def test_tasks_show_a_war_in_a_clan_outside_the_family(monkeypatch):
+    """Tasks have no family filter: any current clan's war shows (D2)."""
+    import asyncio
+    from test_todo_clan_history import _Member, _War, _account
+    from utils import todo_data
+
+    war = _War("#HOME", "Not Family", [_Member("#PLAYER", attacks=1)], 2)
+
+    async def fake_war(_client, clan_tag):
+        return ("war", war) if clan_tag == "#HOME" else ("none", None)
+
+    async def no_cwl(_client, _clan_tag):
+        return "none", None
+
+    monkeypatch.setattr(todo_data, "_get_war", fake_war)
+    monkeypatch.setattr(todo_data, "_get_cwl_round", no_cwl)
+    todo_data._cache.clear()
+    view = asyncio.run(todo_data.build_war_view(object(), [_account()]))
+    assert [(row.clan_tag, row.used, row.limit) for row in view.rows] == [("#HOME", 1, 2)]
 
 
 class ProductionWiringTests(unittest.TestCase):
