@@ -41,12 +41,21 @@ it("leaves out the eyebrow when asked and omits an empty description", () => {
   expect(html).not.toContain("cwl-page-header-description");
 });
 
+it("stacks the title above its actions at 650px and narrower", () => {
+  const css = readFileSync("src/CwlPageHeader.css", "utf8");
+  const phone = css.slice(
+    css.indexOf("@media (max-width: 650px)"),
+    css.indexOf("@media (max-width: 480px)"),
+  );
+  expect(phone).toMatch(
+    /\.page-head\.cwl-page-header\s*\{[^}]*flex-wrap:\s*wrap/,
+  );
+  expect(phone).toMatch(/\.cwl-page-header-title\s*\{[^}]*flex:\s*1 0 100%/);
+});
+
 it("moves a season picker to its own row at 480px and narrower", () => {
   const css = readFileSync("src/CwlPageHeader.css", "utf8");
   const narrow = css.slice(css.indexOf("@media (max-width: 480px)"));
-  expect(narrow).toMatch(
-    /\.page-head\.cwl-page-header\s*\{[^}]*flex-wrap:\s*wrap/,
-  );
   for (const picker of [
     ".participation-season",
     ".bonus-season",

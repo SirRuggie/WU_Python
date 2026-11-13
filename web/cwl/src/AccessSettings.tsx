@@ -591,9 +591,7 @@ export default function AccessSettings({
                       </a>
                     )}
                     <p>
-                      CWL includes Main and Lazy. Clan permissions apply to all
-                      clans. A person gets the access given to the person and
-                      the access given to their roles.
+                      CWL includes Main and Lazy. Clan permissions apply to all clans. A person gets the access given to the person and the access given to their roles.
                     </p>
                     {dirty && (
                       <div className="access-change-summary" role="status">
@@ -631,8 +629,7 @@ export default function AccessSettings({
                       onChange={setSelected}
                     />
                     <p className="small">
-                      Only owners can manage access. The controls in this
-                      section give only the actions listed here.
+                      Only owners can manage access. The controls in this section give only the actions listed here.
                     </p>
                     {current && (
                       <button

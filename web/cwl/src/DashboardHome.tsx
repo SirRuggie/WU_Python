@@ -363,13 +363,9 @@ export default function DashboardHome(props: Props) {
       }
     };
     void load();
-    const tick = () => {
-      if (!paused) return load();
-    };
+    const tick = () => { if (!paused) return load(); };
     const stopRefresh = visibleRefresh(tick, 30000);
-    const online = () => {
-      if (!document.hidden) void tick();
-    };
+    const online = () => { if (!document.hidden) void tick(); };
     window.addEventListener("online", online);
     return () => {
       cancelled = true;
@@ -968,7 +964,9 @@ export default function DashboardHome(props: Props) {
         <details className="hub-help" id="home-account-help">
           <summary>Link an account</summary>
           <AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} />
-          <p>To move or withdraw a signup, go to My signups.</p>
+          <p>
+            To move or withdraw a signup, go to My signups.
+          </p>
           <button onClick={() => onNavigate("saved")}>Open My signups →</button>
         </details>
         {session.can_edit && (
@@ -981,7 +979,9 @@ export default function DashboardHome(props: Props) {
               <button onClick={() => onNavigate("publication")}>
                 Finalize roster →
               </button>
-              <button onClick={() => onNavigate("staff")}>Seasons →</button>
+              <button onClick={() => onNavigate("staff")}>
+                Seasons →
+              </button>
             </div>
           </section>
         )}

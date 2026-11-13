@@ -38,7 +38,9 @@
 .cwl-page-header-description {
   flex: 0 0 100%;
   max-width: 700px;
-  margin: var(--roster-space-1) 0 0;
+  /* Clears the red title mark under the heading. */
+  margin: var(--roster-space-3) 0 0;
+  color: var(--wu-text-muted);
   text-wrap: pretty;
 }
 .cwl-page-header > button,
@@ -100,8 +102,13 @@
   margin: 0 0 var(--roster-space-4);
 }
 @media (max-width: 650px) {
+  /* Title row first; buttons and pickers wrap onto their own row below. */
   .shell .page-head.cwl-page-header {
+    flex-wrap: wrap;
     gap: var(--roster-space-2);
+  }
+  .cwl-page-header > .cwl-page-header-title {
+    flex: 1 0 100%;
   }
   .shell .cwl-page-header .cwl-page-header-title > h1 {
     font-size: var(--wu-text-2xl);
@@ -118,10 +125,7 @@
   }
 }
 @media (max-width: 480px) {
-  /* A season picker takes its own row so the title keeps the full width. */
-  .shell .page-head.cwl-page-header {
-    flex-wrap: wrap;
-  }
+  /* A season picker takes the full row below the title. */
   .shell .cwl-page-header > .roster-menu,
   .shell .cwl-page-header > .roster-header-season,
   .shell .cwl-page-header > .cwl-page-header-season,
