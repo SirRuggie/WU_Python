@@ -22,7 +22,7 @@ div.shell {
   display: flex;
   align-items: center;
   padding: var(--wu-space-3) var(--wu-space-4);
-  border-bottom: 1px solid #303035;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 
 .shell .sidebar .brand {
@@ -56,8 +56,8 @@ div.shell {
 }
 .shell .sidebar > nav::-webkit-scrollbar-thumb {
   background: var(--wu-text-muted);
-  border: 2px solid #151517;
-  border-radius: 8px;
+  border: 2px solid var(--wu-bg);
+  border-radius: var(--wu-radius-sm);
 }
 
 .shell .sidebar .navigation-section {
@@ -95,7 +95,7 @@ div.shell {
   padding: var(--wu-space-2) var(--wu-space-2);
   gap: var(--wu-space-2);
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--wu-radius-sm);
   background: transparent;
   color: var(--wu-text);
   font-size: var(--wu-text-md);
@@ -176,7 +176,7 @@ div.shell {
   margin: 0;
   padding: var(--wu-space-3) var(--wu-space-3)
     max(var(--wu-space-3), env(safe-area-inset-bottom, 0));
-  border-top: 1px solid #303035;
+  border-top: 1px solid var(--wu-border-subtle);
   background: var(--wu-surface);
 }
 .shell .sidebar-account {
@@ -269,7 +269,7 @@ div.shell {
     position: sticky;
     top: 0;
     z-index: 3;
-    box-shadow: 0 2px 8px #0005;
+    box-shadow: 0 2px 8px #0005; /* keep: shadow black */
   }
   .shell .topbar .user-pill {
     display: inline-flex;
@@ -322,7 +322,7 @@ div.shell {
   }
 }
 
-@media (max-width: 370px) {
+@media (max-width: 480px) {
   .shell .topbar {
     padding-inline: var(--wu-space-3);
     gap: var(--wu-space-2);

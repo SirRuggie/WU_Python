@@ -35,7 +35,7 @@
   }
   .roster-filters-toolbar > .roster-ui-button {
     padding: 6px 8px;
-    font-size: 12px;
+    font-size: var(--wu-text-xs);
   }
   .roster-filters-toolbar > .roster-sort-trigger {
     max-width: 100%;

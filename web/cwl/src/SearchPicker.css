@@ -29,7 +29,7 @@
   min-height: 48px;
   padding: var(--wu-space-1) var(--wu-space-3);
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-bg);
   color: var(--wu-text);
   font: inherit;
@@ -69,7 +69,7 @@
   padding: 0;
   justify-content: center;
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-bg);
 }
 
@@ -103,7 +103,7 @@
   min-width: 0;
   padding: var(--wu-space-2);
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
 }
 
@@ -127,7 +127,7 @@
   margin: 0;
   padding: 0 var(--wu-space-3) 0 40px;
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-bg);
   color: var(--wu-text);
   font: inherit;
@@ -157,7 +157,7 @@
   min-height: 48px;
   padding: var(--wu-space-1) var(--wu-space-3);
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface-raised);
   color: var(--wu-text);
   font-size: var(--wu-text-sm);
@@ -220,7 +220,7 @@
 }
 
 .search-picker-sheet::backdrop {
-  background: rgb(0 0 0 / 60%);
+  background: rgb(0 0 0 / 60%); /* keep: scrim black */
 }
 
 .search-picker-sheet-head {

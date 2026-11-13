@@ -59,7 +59,7 @@
 .staff-section-content .staff-row > button {
   flex: none;
 }
-@media (max-width: 700px) {
+@media (max-width: 650px) {
   .staff-section-tools {
     display: grid;
     grid-template-columns: 1fr;
@@ -90,7 +90,7 @@
 .staff-section-content .inline-form {
   margin: var(--wu-space-4) 0;
 }
-@media (max-width: 700px) {
+@media (max-width: 650px) {
   .staff-section-tools {
     grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
     gap: var(--wu-space-3);
