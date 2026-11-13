@@ -1,5 +1,40 @@
 # Release and rollback history
 
+## Lazy announcement compact row — 2026-11-13 (frontend only)
+
+- PR [#330](https://github.com/SirRuggie/WU_Python/pull/330), merge commit
+  `f3021d21bb54cc218d47fb2db750b8a730aa0e8e`, local tag
+  `lazy-announcement-330-1`. Released by Shaka (Claude) on Ruggie's "merge and
+  release 330" (2026-11-13 14:49 UTC).
+- Changes: the Lazy announcement entry is one compact row
+  (`LazyAnnouncementCard.tsx`, `LazyAnnouncement.css`). No Python, route,
+  schema or data change.
+- Backend not changed or restarted: `backend/7a4abbe6…`, PID 434692, active.
+  Bot not changed or restarted.
+- Frontend `current`: `7a4abbe6…` → `f3021d21…` (clean tagged clone, `npm ci`,
+  `tsc -b` and 2510 tests in 364 files passed before staging). Entry
+  `index-u0CibkhF.js`, SHA-256
+  `8dba029ed5b4ce42fea3dde713e1a7f38d7a52ef956d761776df72ed8f9def55`; feature
+  `LazyAnnouncementCard-DCj-doV3.js`, SHA-256
+  `cb3f0bbf8abf42c2df84c660a7655bcf592d0b5172e867a550e7fd19c10e8b39`. Served
+  `index.html` (SHA-256
+  `ffac0f3d3b9f2d0cc4d38998093e7d3736a633a1a0f080fed739f3a85175cb7a`) equals
+  the release file on `/`, `/cwl/results`, `/cwl/bonuses`, `/cwl/exports`; all
+  147 manifest assets match the public site.
+- Backup `.local/lazy-announcement-330-release-20261113T145019Z/before.sqlite3`
+  (SQLite backup API): integrity ok, equal to live, SHA-256
+  `c64a639531302490c05ec18678d5b7b913c82ab3973e383041816b2c6730632e`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131 (signups/assigned/locks),
+  publication max version 6 (6 rows, 4 active) and the lineup-rules digest
+  identical before and after.
+- Signed-out smoke at 360 px on `/cwl/results`, `/cwl/bonuses`,
+  `/cwl/exports`: new entry, no horizontal overflow, only the expected 401 on
+  `/api/cwl/auth/me`, no app writes (only Cloudflare RUM beacons). Signed-in
+  smoke SKIPPED. Send was not selected; no Discord post.
+- Rollback: frontend `switch-release.py
+  7a4abbe66ad87909544c22f9165fe26cc62936e6`. No backend change to roll back.
+  Never restore the database for a code rollback.
+
 ## FWA Rep 1 per member, no Lazy sit-out — 2026-11-13 (backend and frontend)
 
 - PR [#327](https://github.com/SirRuggie/WU_Python/pull/327), merge commit
