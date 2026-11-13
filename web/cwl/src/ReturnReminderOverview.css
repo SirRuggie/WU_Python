@@ -17,19 +17,6 @@
   font-size: var(--wu-text-xs);
   margin-bottom: var(--wu-space-1);
 }
-.return-overview .return-destination-warning {
-  color: var(--wu-warning);
-  font-size: var(--wu-text-sm);
-  margin: var(--wu-space-2) 0;
-}
-.return-destination-warning button {
-  border: 0;
-  background: transparent;
-  color: var(--wu-text);
-  text-decoration: underline;
-  min-height: 44px;
-}
-
 .return-overview .return-clan-list {
   border: 0;
   border-top: 1px solid var(--wu-border-subtle);

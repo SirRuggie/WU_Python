@@ -173,3 +173,63 @@ it("reports a real pool-role draft as dirty without saving it", async () => {
     host.remove();
   }
 });
+
+it("offers Try again that reloads the season list when the refresh fails", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const season = {
+    id: 1,
+    label: "November 2026",
+    signup_open: false,
+    status: "draft",
+  } as Season;
+  api.mockResolvedValue({
+    seasons: [season],
+    member_season: { season_id: 1, revision: 1 },
+  });
+  const onRefresh = vi
+    .fn<() => Promise<void>>()
+    .mockRejectedValueOnce(new Error("down"))
+    .mockResolvedValue(undefined);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+          <SeasonsPage
+            seasonId="1"
+            seasons={[season]}
+            memberSeason={{ season_id: 1, revision: 1 }}
+            onSeasonChange={() => {}}
+            onRefresh={onRefresh}
+            onBusy={() => {}}
+          />
+        </DashboardPermissions.Provider>,
+      ),
+    );
+    const hide = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Hide member season",
+    )!;
+    await act(async () => hide.click());
+    const confirm = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "Hide season",
+    )!;
+    await act(async () => confirm.click());
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(host.querySelector(".load-error")?.textContent).toContain(
+      "The season list could not refresh.",
+    );
+    const retry = [
+      ...host.querySelectorAll<HTMLButtonElement>(".load-error button"),
+    ].find((button) => button.textContent === "Try again")!;
+    await act(async () => retry.click());
+    expect(onRefresh).toHaveBeenCalledTimes(2);
+    expect(host.querySelector(".load-error")).toBeNull();
+    // The retry only reloads; it never writes again.
+    expect(api.mock.calls.filter((call) => call[1] === "PUT")).toHaveLength(1);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

@@ -201,7 +201,7 @@ describe("LazyInfractionsSheet", () => {
     expect(button(/Send/)!.disabled).toBe(true);
   });
 
-  it("a changed list (409) offers Refresh list and keeps the same request ID", async () => {
+  it("a changed list (409) offers Try again and keeps the same request ID", async () => {
     await render();
     api.mockImplementation(async (path: string, method = "GET") => {
       if (path === "/announcement-channels")
@@ -223,6 +223,6 @@ describe("LazyInfractionsSheet", () => {
     act(() => button(/Send/)!.click());
     await flush();
     expect(document.body.textContent).toContain("The infractions changed");
-    expect(button(/Refresh list/)).toBeDefined();
+    expect(button(/Try again/)).toBeDefined();
   });
 });

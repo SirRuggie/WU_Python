@@ -1,8 +1,13 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { showIssueNotice, ISSUE_NOTICE_ID } from "./issueNotice";
 
+const dismissButton = () =>
+  [
+    ...document.getElementById(ISSUE_NOTICE_ID)!.querySelectorAll("button"),
+  ].find((button) => button.textContent === "Dismiss")!;
 afterEach(() => {
+  document.getElementById(`${ISSUE_NOTICE_ID}-status`)?.remove();
   document.getElementById(ISSUE_NOTICE_ID)?.remove();
 });
 describe("issue notice", () => {
@@ -13,8 +18,30 @@ describe("issue notice", () => {
     expect(notice.textContent).toContain(
       "Tell staff this reference: 477da595ac01",
     );
-    expect(notice.querySelector("button")!.textContent).toBe("Dismiss");
-    expect(notice.querySelector("button")!.type).toBe("button");
+    expect(dismissButton().textContent).toBe("Dismiss");
+    expect(dismissButton().type).toBe("button");
+  });
+  it("copies the reference and announces it outside the alert", async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: write },
+      configurable: true,
+    });
+    showIssueNotice("477da595ac01");
+    const notice = document.getElementById(ISSUE_NOTICE_ID)!;
+    const copy = notice.querySelector("button")!;
+    expect(copy.textContent).toBe("Copy");
+    copy.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(write).toHaveBeenCalledWith("477da595ac01");
+    expect(copy.textContent).toBe("Copied");
+    const status = document.getElementById(`${ISSUE_NOTICE_ID}-status`)!;
+    expect(status.getAttribute("role")).toBe("status");
+    expect(status.textContent).toBe("Reference copied");
+    expect(notice.contains(status)).toBe(false);
+    dismissButton().click();
+    expect(document.getElementById(`${ISSUE_NOTICE_ID}-status`)).toBeNull();
   });
   it("updates one notice instead of stacking", () => {
     showIssueNotice("aaa");
@@ -29,7 +56,7 @@ describe("issue notice", () => {
   });
   it("Dismiss removes the notice and a later report shows it again", () => {
     showIssueNotice("aaa");
-    document.getElementById(ISSUE_NOTICE_ID)!.querySelector("button")!.click();
+    dismissButton().click();
     expect(document.getElementById(ISSUE_NOTICE_ID)).toBeNull();
     showIssueNotice("ccc");
     expect(document.getElementById(ISSUE_NOTICE_ID)!.textContent).toContain(

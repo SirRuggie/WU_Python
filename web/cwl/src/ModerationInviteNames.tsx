@@ -7,6 +7,7 @@ import {
   type FocusEvent,
 } from "react";
 import { api } from "./api";
+import LoadError from "./LoadError";
 import { Button } from "./rosterUi/primitives";
 import {
   inviteNameError,
@@ -232,9 +233,12 @@ export default function ModerationInviteNames({
         </Button>
       </div>
       {loading && <small role="status">Loading invites…</small>}
-      {error && (
-        <small role="alert">{error} Settings can still be saved.</small>
-      )}
+      <LoadError
+        message={error}
+        note="Settings can still be saved."
+        disabled={loading}
+        onRetry={() => void load()}
+      />
       {!loading && !error && invites?.length === 0 && (
         <small>No invites recorded yet.</small>
       )}

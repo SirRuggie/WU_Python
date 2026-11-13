@@ -82,3 +82,19 @@ it("copies the reference and reports a failed copy", async () => {
   await act(async () => copy.click());
   expect(host.textContent).toContain("Could not copy");
 });
+
+it("announces the copy result outside the alert", async () => {
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    configurable: true,
+  });
+  const host = await render(<LoadError message="Failed. Reference: R-9" />);
+  const alert = host.querySelector('[role="alert"]')!;
+  await act(async () => alert.querySelector("button")!.click());
+  const status = host.querySelector('[role="status"]')!;
+  expect(status.textContent).toBe("Reference copied");
+  expect(alert.contains(status)).toBe(false);
+  expect(
+    alert.querySelector(".load-error-reference")!.getAttribute("aria-live"),
+  ).toBe("off");
+});

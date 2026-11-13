@@ -1,4 +1,4 @@
-import LoadError from "./LoadError";
+import LoadError, { CopyStatus, useReferenceCopy } from "./LoadError";
 import PageEyebrow from "./PageEyebrow";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./api";
@@ -59,6 +59,8 @@ export default function DashboardIssues() {
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("");
   const [limit, setLimit] = useState(25);
+  const { copied, copy } = useReferenceCopy();
+  const [copiedId, setCopiedId] = useState("");
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -158,6 +160,7 @@ export default function DashboardIssues() {
             : "No recorded issues in the current history."}
         </p>
       )}
+      <CopyStatus copied={copied} />
       <div className="issues-list" aria-busy={loading}>
         {matching.slice(0, limit).map((item) => (
           <article className="issue-row" key={item.id}>
@@ -174,6 +177,21 @@ export default function DashboardIssues() {
               </time>
               <span className="issue-reference">
                 Reference <code>{item.id}</code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCopiedId(item.id);
+                    void copy(item.id);
+                  }}
+                >
+                  {copiedId !== item.id
+                    ? "Copy"
+                    : copied === "done"
+                      ? "Copied"
+                      : copied === "failed"
+                        ? "Could not copy"
+                        : "Copy"}
+                </button>
               </span>
             </div>
             <div className="issue-member">

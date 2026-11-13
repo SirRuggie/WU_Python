@@ -3,6 +3,7 @@ import CwlPageHeader from "./CwlPageHeader";
 import CwlNextLink from "./CwlNextLink";
 import StaffSignupControls from "./StaffSignupControls";
 import { useEffect, useRef, useState } from "react";
+import LoadError from "./LoadError";
 import { Plus } from "lucide-react";
 import "./SeasonsPage.css";
 import { api, type Season } from "./api";
@@ -47,6 +48,7 @@ export default function SeasonsPage({
   const [visibility, setVisibility] = useState<"show" | "hide" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const [notice, setNotice] = useState("");
   const pending = useRef(false);
   const [roleBusy, setRoleBusy] = useState(false);
@@ -67,6 +69,7 @@ export default function SeasonsPage({
     pending.current = true;
     setBusy(true);
     setError("");
+    setRefreshFailed(false);
     const chosen = createLabel;
     setCreateLabel(null);
     try {
@@ -81,7 +84,8 @@ export default function SeasonsPage({
         await onRefresh();
         onSeasonChange(String(result.id));
       } catch {
-        setError("Season created. Refresh to see the latest season list.");
+        setError("Season created. The season list could not refresh.");
+        setRefreshFailed(true);
       }
     } catch (cause) {
       setError(
@@ -99,6 +103,7 @@ export default function SeasonsPage({
     pending.current = true;
     setBusy(true);
     setError("");
+    setRefreshFailed(false);
     setVisibility(null);
     try {
       await api("/member-season", "PUT", {
@@ -116,8 +121,27 @@ export default function SeasonsPage({
       try {
         await onRefresh();
       } catch {
-        setError((current) => `${current} Refresh the season list.`);
+        setError((current) =>
+          `${current} The season list could not refresh.`.trim(),
+        );
+        setRefreshFailed(true);
       }
+      pending.current = false;
+      setBusy(false);
+    }
+  }
+  async function retryRefresh() {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    setRefreshFailed(false);
+    try {
+      await onRefresh();
+    } catch {
+      setError("The season list could not refresh.");
+      setRefreshFailed(true);
+    } finally {
       pending.current = false;
       setBusy(false);
     }
@@ -136,11 +160,11 @@ export default function SeasonsPage({
           onValueChange={onSeasonChange}
         />
       </CwlPageHeader>
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-        </p>
-      )}
+      <LoadError
+        message={error}
+        disabled={working}
+        onRetry={refreshFailed ? () => void retryRefresh() : undefined}
+      />
       {notice && (
         <p className="notice success" role="status">
           {notice}

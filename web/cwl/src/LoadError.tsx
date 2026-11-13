@@ -9,6 +9,33 @@ export function splitReference(message: string) {
     : { text: message, reference: "" };
 }
 
+/** Copy state for an issue reference; the status is announced outside any alert. */
+export function useReferenceCopy() {
+  const [copied, setCopied] = useState<"" | "done" | "failed">("");
+  async function copy(reference: string) {
+    try {
+      await navigator.clipboard.writeText(reference);
+      setCopied("done");
+    } catch {
+      setCopied("failed");
+    }
+  }
+  return { copied, copy };
+}
+
+/** Visually hidden copy result; render it outside any role="alert". */
+export function CopyStatus({ copied }: { copied: "" | "done" | "failed" }) {
+  return (
+    <span className="load-error-status" role="status">
+      {copied === "done"
+        ? "Reference copied"
+        : copied === "failed"
+          ? "Could not copy. Select the reference to copy it."
+          : ""}
+    </span>
+  );
+}
+
 /**
  * The one block for "this section could not load": the message, an optional
  * note, a copyable issue reference, and Try again.
@@ -31,48 +58,44 @@ export default function LoadError({
   retryLabel?: string;
   className?: string;
 }) {
-  const [copied, setCopied] = useState<"" | "done" | "failed">("");
+  const { copied, copy } = useReferenceCopy();
   if (!message) return null;
   const { text, reference } = splitReference(message);
   return (
-    <div className={`notice error load-error ${className}`.trim()} role="alert">
-      <div className="load-error-text">
-        <p>
-          {text}
-          {note ? ` ${note}` : ""}
-        </p>
-        {reference && (
-          <p className="load-error-reference">
-            Reference: <code>{reference}</code>
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(reference);
-                  setCopied("done");
-                } catch {
-                  setCopied("failed");
-                }
-              }}
-            >
-              {copied === "done" ? "Copied" : "Copy"}
-            </button>
-            {copied === "failed" && (
-              <span> Could not copy. Select the reference to copy it.</span>
-            )}
+    <>
+      <div
+        className={`notice error load-error ${className}`.trim()}
+        role="alert"
+      >
+        <div className="load-error-text">
+          <p>
+            {text}
+            {note ? ` ${note}` : ""}
           </p>
+          {reference && (
+            <p className="load-error-reference" aria-live="off">
+              Reference: <code>{reference}</code>
+              <button type="button" onClick={() => copy(reference)}>
+                {copied === "done" ? "Copied" : "Copy"}
+              </button>
+              {copied === "failed" && (
+                <span> Could not copy. Select the reference to copy it.</span>
+              )}
+            </p>
+          )}
+        </div>
+        {onRetry && (
+          <button
+            type="button"
+            disabled={busy || disabled}
+            aria-busy={busy || undefined}
+            onClick={onRetry}
+          >
+            {busy ? "Checking…" : retryLabel}
+          </button>
         )}
       </div>
-      {onRetry && (
-        <button
-          type="button"
-          disabled={busy || disabled}
-          aria-busy={busy || undefined}
-          onClick={onRetry}
-        >
-          {busy ? "Checking…" : retryLabel}
-        </button>
-      )}
-    </div>
+      <CopyStatus copied={copied} />
+    </>
   );
 }

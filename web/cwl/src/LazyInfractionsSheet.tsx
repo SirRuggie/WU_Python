@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import ActionPanel from "./ActionPanel";
 import AccountCard from "./AccountCard";
 import ChannelCombobox from "./ChannelCombobox";
+import LoadError from "./LoadError";
 import { api, ApiError } from "./api";
 import type { AnnouncementChannel } from "./announcements";
 import { newRequestId } from "./lazyAnnouncement";
@@ -230,14 +231,10 @@ export default function LazyInfractionsSheet({
       ) : (
         <>
           {loading && <p role="status">Loading infractions…</p>}
-          {previewError && (
-            <p role="alert" className="notice error">
-              {previewError}{" "}
-              <button type="button" onClick={() => setPreviewTry((n) => n + 1)}>
-                Retry
-              </button>
-            </p>
-          )}
+          <LoadError
+            message={previewError}
+            onRetry={() => setPreviewTry((n) => n + 1)}
+          />
           {preview && (
             <div
               className="lazy-announce-body"
@@ -334,17 +331,10 @@ export default function LazyInfractionsSheet({
                   setReviewed(false);
                 }}
               />
-              {channelsError && (
-                <p role="alert" className="notice error">
-                  {channelsError}{" "}
-                  <button
-                    type="button"
-                    onClick={() => setChannelsTry((n) => n + 1)}
-                  >
-                    Retry channels
-                  </button>
-                </p>
-              )}
+              <LoadError
+                message={channelsError}
+                onRetry={() => setChannelsTry((n) => n + 1)}
+              />
               <label className="bonus-check">
                 <input
                   type="checkbox"
@@ -354,22 +344,10 @@ export default function LazyInfractionsSheet({
                 />
                 <span>I reviewed the players and the channel.</span>
               </label>
-              {sendError && (
-                <p role="alert" className="notice error">
-                  {sendError}
-                  {stale && (
-                    <>
-                      {" "}
-                      <button
-                        type="button"
-                        onClick={() => setPreviewTry((n) => n + 1)}
-                      >
-                        Refresh list
-                      </button>
-                    </>
-                  )}
-                </p>
-              )}
+              <LoadError
+                message={sendError}
+                onRetry={stale ? () => setPreviewTry((n) => n + 1) : undefined}
+              />
             </div>
           )}
         </>

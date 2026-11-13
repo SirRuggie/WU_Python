@@ -1,4 +1,5 @@
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
+import LoadError from "./LoadError";
 import { participationSummary } from "./participation";
 import "./rosterUi/tokens.css";
 import CwlPageHeader from "./CwlPageHeader";
@@ -115,6 +116,7 @@ export default function BonusWorkspace({
   const [landing, setLanding] = useState<BonusStep | undefined>();
   const [status, setStatus] = useState<BonusStatus | null>(null);
   const [statusFailed, setStatusFailed] = useState(false);
+  const [statusError, setStatusError] = useState("");
   const statusRequest = useRef(0);
   const emitted = useRef(urlState);
   const loadedSeason = useRef<string | null>(null);
@@ -507,14 +509,16 @@ export default function BonusWorkspace({
     const id = ++statusRequest.current;
     const sid = seasonId;
     setStatusFailed(false);
+    setStatusError("");
     try {
       const result = await loadBonusStatus(sid);
       if (id !== statusRequest.current || activeSeason.current !== sid) return;
       setStatus(result);
-    } catch {
+    } catch (cause) {
       if (id !== statusRequest.current || activeSeason.current !== sid) return;
       setStatus(null);
       setStatusFailed(true);
+      setStatusError(cause instanceof Error ? cause.message : "");
     }
   }, [seasonId]);
   const load = useCallback(async () => {
@@ -1040,6 +1044,12 @@ export default function BonusWorkspace({
               archived={!!archived}
               disabled={busy || lookingUp}
               onSent={() => void loadStatus()}
+            />
+          )}
+          {pool === "lazy" && statusFailed && (
+            <LoadError
+              message={statusError || "Lazy announcement could not load."}
+              onRetry={() => void loadStatus()}
             />
           )}
           {archived && <p className="notice">Archived season · Read only</p>}

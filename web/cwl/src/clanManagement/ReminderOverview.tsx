@@ -1,4 +1,5 @@
 import FilterChips from "../FilterChips";
+import LoadError from "../LoadError";
 import ClanCategories, { clanCategory } from "./ClanCategories";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
@@ -139,21 +140,20 @@ export default function ReminderOverview({
           {loading ? "Refreshing…" : "Refresh overview"}
         </button>
       </div>
-      {error && (
-        <p className="notice error" role="alert">
-          {error} {data ? "Showing the last loaded overview." : ""}{" "}
-          <button disabled={loading} onClick={() => void load()}>
-            Retry overview
-          </button>
-        </p>
-      )}
-      {choicesError && (
-        <p className="notice error" role="alert">
-          Channel names could not be refreshed. Saved channel IDs are shown
-          where needed.{" "}
-          <button onClick={onRetryChoices}>Retry channel names</button>
-        </p>
-      )}
+      <LoadError
+        message={error}
+        note={data ? "Showing the last loaded overview." : undefined}
+        disabled={loading}
+        onRetry={() => void load()}
+      />
+      <LoadError
+        message={
+          choicesError
+            ? "Channel names could not be refreshed. Saved channel IDs are shown where needed."
+            : ""
+        }
+        onRetry={onRetryChoices}
+      />
       {data && (
         <ClanCategories
           clans={rows.map((row) => row.clan)}
@@ -164,7 +164,7 @@ export default function ReminderOverview({
       {!data ? (
         <p role="status">
           {error
-            ? "Overview unavailable. Retry to load your clans."
+            ? "Overview unavailable. Select Try again to load your clans."
             : "Loading family reminders…"}
         </p>
       ) : (

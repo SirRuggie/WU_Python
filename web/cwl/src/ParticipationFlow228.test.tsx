@@ -186,7 +186,7 @@ it("a status read failure keeps the list and shows one muted retry line", async 
   expect(names()).toEqual(["Alpha", "Bravo"]);
   expect(host.querySelectorAll(".bonus-step-unavailable")).toHaveLength(1);
   expect(host.querySelector(".bonus-step-unavailable")?.textContent).toBe(
-    "Status unavailable · Retry",
+    "Status unavailable · Try again",
   );
   const before = api.mock.calls.length;
   await act(async () =>
@@ -194,6 +194,22 @@ it("a status read failure keeps the list and shows one muted retry line", async 
       .querySelector<HTMLButtonElement>(".bonus-step-unavailable button")!
       .click(),
   );
+  expect(api.mock.calls.slice(before).map((call) => call[0])).toEqual([
+    "/seasons/1/bonus-status",
+  ]);
+});
+
+it("a status read failure on the All clans view shows Try again where the Lazy card would be", async () => {
+  await mount("pool=lazy");
+  await act(async () => partC.reject(new Error("down. Reference: R7")));
+  const alert = host.querySelector(".load-error")!;
+  expect(alert.textContent).toContain("down.");
+  expect(alert.textContent).toContain("R7");
+  const retry = [...alert.querySelectorAll("button")].find(
+    (button) => button.textContent === "Try again",
+  )!;
+  const before = api.mock.calls.length;
+  await act(async () => retry.click());
   expect(api.mock.calls.slice(before).map((call) => call[0])).toEqual([
     "/seasons/1/bonus-status",
   ]);

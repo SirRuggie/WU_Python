@@ -1,4 +1,5 @@
 import { useDashboardPermission } from './DashboardPermissions'
+import LoadError from './LoadError'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { api } from './api'
 const DiscordPreview = lazy(() => import('./DiscordPreview'))
@@ -44,7 +45,7 @@ export default function BonusAnnouncement({ draw, disabled, onSend }: Props) {
       <ChannelCombobox label="Announcement channel" channels={channels} value={channel}
         disabled={!canManage || disabled || loading} onChange={value => { setChannel(value); setReviewed(false) }} />
       {loading && <p role="status">Loading channels…</p>}
-      {error && <p role="alert">{error} <button disabled={loading || disabled} onClick={() => setRetry(n => n + 1)}>Retry channels</button></p>}
+      <LoadError message={error} disabled={loading || disabled} onRetry={() => setRetry(n => n + 1)} />
       <details className="bonus-secondary" onToggle={event => setPreviewOpen(event.currentTarget.open)}>
         <summary>Preview announcement ({draw.messages.length} message{draw.messages.length === 1 ? '' : 's'})</summary>
         {previewOpen && <div className="bonus-message-preview" aria-label="Announcement preview">

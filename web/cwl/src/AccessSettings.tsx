@@ -1,4 +1,5 @@
 import useConfirmDialog from "./useConfirmDialog";
+import LoadError from "./LoadError";
 import PageEyebrow from "./PageEyebrow";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
@@ -240,6 +241,14 @@ export default function AccessSettings({
     data?.groups.flatMap((g) => g.permissions.map((p) => [p.id, p.label])) ||
       [],
   );
+  function refreshAccess() {
+    leave(() => {
+      setEditing(false);
+      setSelected([]);
+      setId("");
+      void load();
+    });
+  }
   return (
     <div className={`access-workspace ${editing ? "access-editing" : ""}`}>
       {confirmation}
@@ -256,25 +265,16 @@ export default function AccessSettings({
             ? `${data.grants.length} access entries · ${data.owners.length} protected owners`
             : "Staff permissions"}
         </span>
-        <button
-          disabled={busy || loading}
-          onClick={() => {
-            leave(() => {
-              setEditing(false);
-              setSelected([]);
-              setId("");
-              void load();
-            });
-          }}
-        >
+        <button disabled={busy || loading} onClick={refreshAccess}>
           Refresh access
         </button>
       </div>
-      {error && (
-        <div className="notice error" role="alert">
-          {error} Use Refresh access to check saved permissions.
-        </div>
-      )}
+      <LoadError
+        message={error}
+        note="Try again to check saved permissions."
+        disabled={busy || loading}
+        onRetry={refreshAccess}
+      />
       {notice && (
         <div className="notice success" role="status">
           {notice}
@@ -594,7 +594,9 @@ export default function AccessSettings({
                       </a>
                     )}
                     <p>
-                      CWL includes Main and Lazy. Clan permissions apply to all clans. A person gets the access given to the person and the access given to their roles.
+                      CWL includes Main and Lazy. Clan permissions apply to all
+                      clans. A person gets the access given to the person and
+                      the access given to their roles.
                     </p>
                     {dirty && (
                       <div className="access-change-summary" role="status">
@@ -632,7 +634,8 @@ export default function AccessSettings({
                       onChange={setSelected}
                     />
                     <p className="small">
-                      Only owners can manage access. The controls in this section give only the actions listed here.
+                      Only owners can manage access. The controls in this
+                      section give only the actions listed here.
                     </p>
                     {current && (
                       <button

@@ -1,4 +1,5 @@
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
+import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
 import BonusHelpPanel from "./BonusHelpPanel";
 import useConfirmDialog from "./useConfirmDialog";
@@ -101,6 +102,7 @@ export default function ParticipationWorkspace({
   const [sort, setSort] = useState<ResultsSort>(initial.current.sort || "name");
   const [status, setStatus] = useState<BonusStatus | null>(null);
   const [statusFailed, setStatusFailed] = useState(false);
+  const [statusError, setStatusError] = useState("");
   const statusRequest = useRef(0);
   const statusEnabled = useRef(!!onBonus);
   statusEnabled.current = !!onBonus;
@@ -187,14 +189,16 @@ export default function ParticipationWorkspace({
   const loadStatus = useCallback(async (sid: string) => {
     const id = ++statusRequest.current;
     setStatusFailed(false);
+    setStatusError("");
     try {
       const result = await loadBonusStatus(sid);
       if (id !== statusRequest.current || currentSeason.current !== sid) return;
       setStatus(result);
-    } catch {
+    } catch (cause) {
       if (id !== statusRequest.current || currentSeason.current !== sid) return;
       setStatus(null);
       setStatusFailed(true);
+      setStatusError(cause instanceof Error ? cause.message : "");
     }
   }, []);
   const load = useCallback(async () => {
@@ -708,6 +712,12 @@ export default function ParticipationWorkspace({
               archived={!!archived}
               disabled={controlsLocked}
               onSent={() => void loadStatus(seasonId)}
+            />
+          )}
+          {pool === "lazy" && onBonus && statusFailed && (
+            <LoadError
+              message={statusError || "Lazy announcement could not load."}
+              onRetry={() => void loadStatus(seasonId)}
             />
           )}
           <div className="participation-toolbar">
