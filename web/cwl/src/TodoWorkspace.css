@@ -114,7 +114,7 @@
   border-radius: var(--wu-radius-pill);
   background-color: transparent;
   color: var(--wu-text);
-  font-size: var(--wu-text-sm);
+  font-size: var(--wu-text-md);
   font-weight: var(--wu-weight-medium);
 }
 .todo-search-row {
@@ -243,8 +243,9 @@
   text-wrap: pretty;
 }
 .shell .todo-note-link {
-  display: inline;
-  min-height: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 0;
   border: 0;
   background: transparent;

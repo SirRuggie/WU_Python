@@ -551,9 +551,8 @@ export default function DashboardHome(props: Props) {
           <button
             disabled={refreshing}
             onClick={refreshDashboard}
-            aria-label="Refresh dashboard"
           >
-            ↻ Refresh
+            <span aria-hidden="true">↻</span> Refresh
           </button>
         </div>
       </div>

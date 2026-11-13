@@ -6,6 +6,7 @@ import type { RoleChoice } from "./CommandExtras";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { Button } from "./rosterUi/primitives";
 import "./CwlPoolRoles.css";
+import { countLabel } from "./countLabel";
 
 type Pool = "main" | "lazy";
 type Setting = {
@@ -372,7 +373,7 @@ export default function CwlPoolRoles({
           heading={title(confirmation.row.pool) + " CWL role"}
           text={
             confirmation.role
-              ? `Adds role to ${confirmation.row.member_count} members`
+              ? `Adds role to ${countLabel(confirmation.row.member_count, "member")}`
               : "Turn off this role? Existing roles stay."
           }
           confirmLabel={confirmation.role ? "Save role" : "Turn off role"}

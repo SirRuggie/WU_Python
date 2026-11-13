@@ -4,6 +4,7 @@ import TicketConversation from "./TicketConversation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import "./TicketBrowser.css";
+import { countLabel } from "./countLabel";
 export type Ticket = {
   id: string;
   number: number;
@@ -227,7 +228,7 @@ export default function TicketBrowser() {
             ? "Loading…"
             : error
               ? "Tickets unavailable"
-              : `${tickets.length} tickets on this page`}
+              : `${countLabel(tickets.length, "ticket")} on this page`}
         </span>
         {(search ||
           status !== "open" ||

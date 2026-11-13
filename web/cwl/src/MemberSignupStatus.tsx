@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import type { Season } from "./api";
 import "./MemberSignupStatus.css";
+import { countLabel } from "./countLabel";
 
 type Signed = {
   tag: string;
@@ -55,10 +56,10 @@ export function memberDateLines(
 }
 export function signupHeading(signed: number, total: number | null) {
   if (total === null)
-    return `✓ You are signed up · ${signed} account${signed === 1 ? "" : "s"}`;
+    return `✓ You are signed up · ${countLabel(signed, "account")}`;
   return signed === total
-    ? `✓ You are signed up · all ${total} account${total === 1 ? "" : "s"}`
-    : `✓ You are signed up · ${signed} of ${total} accounts`;
+    ? `✓ You are signed up · all ${countLabel(total, "account")}`
+    : `✓ You are signed up · ${signed} of ${countLabel(total, "account")}`;
 }
 export default function MemberSignupStatus({
   signups,

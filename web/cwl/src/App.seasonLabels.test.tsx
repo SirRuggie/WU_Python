@@ -190,6 +190,8 @@ it.each(["reminders", "declaration"])(
       "September 2026",
       "August 2026",
     ]);
+    if (view === "reminders")
+      expect(picker.options[0].text).toBe("Select a season");
     expect(picker.value).toBe("4");
     expect(location.search).toBe("?season=4");
     await act(async () => {

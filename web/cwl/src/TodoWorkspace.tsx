@@ -28,6 +28,7 @@ import {
 } from "./todo";
 import "./TodoWorkspace.css";
 import { readTodoPreferences, saveTodoPreferences } from "./todoPreferences";
+import { countLabel } from "./countLabel";
 function Badge({ url }: { url?: string | null }) {
   const [failed, setFailed] = useState("");
   return url && failed !== url ? (
@@ -380,7 +381,7 @@ export default function TodoWorkspace({
                   accounts.length < data.linked_account_count
                   ? `${accounts.length} of ${data.linked_account_count} accounts`
                   : "All accounts"
-                : `${selectedCount} account${selectedCount === 1 ? "" : "s"}`}
+                : countLabel(selectedCount, "account")}
               <ChevronDown aria-hidden="true" size={16} />
             </button>
             {canFilter && (

@@ -78,13 +78,13 @@ button:disabled {
 }
 /* keep: base primary gold is pinned by App.welcomeColors.test.tsx. */
 .primary {
-  background: #d9a628;
-  border-color: #d9a628;
+  background: var(--wu-accent);
+  border-color: var(--wu-accent);
   color: var(--wu-accent-ink);
 }
 @media (hover: hover) and (pointer: fine) {
   .primary:hover {
-    background: #e7b73f;
+    background: var(--wu-accent-hover);
   }
 }
 .danger-link {
@@ -2306,6 +2306,8 @@ summary.target-summary-44 {
   color: var(--wu-accent);
   font-weight: var(--wu-weight-medium);
 }
-.server-join-notice a:hover {
-  color: var(--wu-accent-hover);
+@media (hover: hover) {
+  .server-join-notice a:hover {
+    color: var(--wu-accent-hover);
+  }
 }

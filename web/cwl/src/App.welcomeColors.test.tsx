@@ -83,10 +83,10 @@ it("separately preserves the base primary gold declarations, not the welcome CTA
   const base = css.match(/(?:^|\n)\.primary\s*\{([^}]+)\}/)?.[1];
   const hover = css.match(/(?:^|\n)\s*\.primary:hover\s*\{([^}]+)\}/)?.[1];
   expect(base).toBeTruthy();
-  expect(base).toMatch(/background:\s*#d9a628\s*;/i);
-  expect(base).toMatch(/border-color:\s*#d9a628\s*;/i);
+  expect(base).toMatch(/background:\s*var\(--wu-accent\)\s*;/i);
+  expect(base).toMatch(/border-color:\s*var\(--wu-accent\)\s*;/i);
   expect(base).toMatch(/color:\s*var\(--wu-accent-ink\)\s*;/i);
   const tokens = readFileSync("src/tokens.css", "utf8");
   expect(tokens).toMatch(/--wu-accent-ink:\s*#241b08\s*;/i);
-  expect(hover).toMatch(/background:\s*#e7b73f\s*;/i);
+  expect(hover).toMatch(/background:\s*var\(--wu-accent-hover\)\s*;/i);
 });

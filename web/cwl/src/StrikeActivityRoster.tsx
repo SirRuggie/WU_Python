@@ -45,6 +45,7 @@ import {
   type ActivityFilters,
 } from "./strikeActivityFilters";
 import "./StrikeActivityRoster.css";
+import { countLabel } from "./countLabel";
 
 type Response = {
   accounts: ActivityAccount[];
@@ -179,7 +180,7 @@ export default function StrikeActivityRoster({
     try {
       await navigator.clipboard.writeText(copyActivityList(visible));
       if (copyIdentity.current !== current) return;
-      setCopied(`Copied ${visible.length} accounts`);
+      setCopied(`Copied ${countLabel(visible.length, "account")}`);
     } catch {
       if (copyIdentity.current !== current) return;
       setCopied("Copy failed. Your browser did not allow clipboard access.");

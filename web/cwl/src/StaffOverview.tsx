@@ -165,7 +165,7 @@ export default function StaffOverview({
                 <p>Open tickets in the current Discord ticket system.</p>
                 {data.tickets.url ? (
                   <a
-                    className="button primary"
+                    className="button"
                     href={data.tickets.url}
                     target="_blank"
                     rel="noreferrer"
