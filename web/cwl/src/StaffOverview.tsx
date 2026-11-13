@@ -1,4 +1,5 @@
 import LoadError from "./LoadError";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import PageEyebrow from "./PageEyebrow";
 import { seasonMonthLabel } from "./seasonLabels";
 import VisitorSummary from "./VisitorSummary";
@@ -147,7 +148,7 @@ export default function StaffOverview({
                       <button
                         onClick={() => onNavigate("roster", String(season.id))}
                       >
-                        Open roster →
+                        Open roster <ArrowRight size={16} aria-hidden="true" />
                       </button>
                     </div>
                   ))
@@ -170,7 +171,8 @@ export default function StaffOverview({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Open ticket console ↗
+                    Open ticket console{" "}
+                    <ArrowUpRight size={16} aria-hidden="true" />
                   </a>
                 ) : (
                   <p>
@@ -206,7 +208,8 @@ export default function StaffOverview({
                           </p>
                         </div>
                         <button onClick={() => onNavigate(f.destination)}>
-                          Review area →
+                          Review area{" "}
+                          <ArrowRight size={16} aria-hidden="true" />
                         </button>
                       </div>
                     ))}

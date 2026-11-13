@@ -2,7 +2,7 @@
   max-width: 1320px;
   margin: auto;
 }
-/* Title and Check now share one row at every width. */
+/* Title and Refresh share one row at every width. */
 .todo-workspace .page-head.todo-head {
   display: flex;
   align-items: center;

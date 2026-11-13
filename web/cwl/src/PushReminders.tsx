@@ -1,4 +1,5 @@
 import DashboardIcon from "./DashboardIcon";
+import { ArrowUpRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type Account } from "./api";
 import {
@@ -544,7 +545,8 @@ export default function PushReminders({
                 .then(() => setInstall(null))
             }
           >
-            Install Warriors United app ↗
+            Install Warriors United app{" "}
+            <ArrowUpRight size={16} aria-hidden="true" />
           </button>
         )}
         <p className="small">

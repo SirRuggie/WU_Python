@@ -1,4 +1,5 @@
 import PageEyebrow from "../PageEyebrow";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import SectionTabs from "../SectionTabs";
 import { useJourneyState, useJourneyPosition } from "../journeyState";
 import { useState } from "react";
@@ -226,7 +227,7 @@ export function WarCard({
             target="_blank"
             rel="noopener noreferrer"
           >
-            Open clan ↗
+            Open clan <ArrowUpRight size={16} aria-hidden="true" />
           </a>
           {scope === "mine" && (
             <button
@@ -235,7 +236,7 @@ export function WarCard({
                 onTasks(clan.tag, type === "regular" ? "war" : "cwl")
               }
             >
-              View my tasks →
+              View my tasks <ArrowRight size={16} aria-hidden="true" />
             </button>
           )}
         </footer>

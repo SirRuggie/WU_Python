@@ -1,4 +1,5 @@
 import LoadError from "../LoadError";
+import { Ban } from "lucide-react";
 import PageEyebrow from "../PageEyebrow";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
@@ -188,7 +189,7 @@ export default function WorldClocksWorkspace({
         {problems.length > 0 && (
           <div className="world-clock-alert" role="alert">
             <p>
-              <span aria-hidden="true">⛔ </span>
+              <Ban size={16} aria-hidden="true" />{" "}
               {problems.length === 1
                 ? `${problems[0].name_now?.split(" · ")[0] || problems[0].zone}: ${problemText(problems[0])}`
                 : `${problems.length} clocks have a problem.`}

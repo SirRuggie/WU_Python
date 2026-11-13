@@ -1,4 +1,5 @@
 import SectionTabs from "./SectionTabs";
+import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import DiscordIdentity from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -102,7 +103,9 @@ export default function TicketConversation({
   if (denied)
     return (
       <section className="ticket-browser">
-        <button onClick={onBack}>← Back to tickets</button>
+        <button onClick={onBack}>
+          <ArrowLeft size={16} aria-hidden="true" /> Back to tickets
+        </button>
         <h1>Ticket unavailable</h1>
         <p className="notice error" role="alert">
           {error || "Checking access…"}
@@ -126,7 +129,9 @@ export default function TicketConversation({
     ) || [];
   return (
     <section className="ticket-browser">
-      <button onClick={onBack}>← Back to tickets</button>
+      <button onClick={onBack}>
+        <ArrowLeft size={16} aria-hidden="true" /> Back to tickets
+      </button>
       <div className="page-head ticket-heading">
         <div>
           <p className="eyebrow">
@@ -193,7 +198,8 @@ export default function TicketConversation({
             target="_blank"
             rel="noreferrer"
           >
-            Open conversation in Discord ↗
+            Open conversation in Discord{" "}
+            <ArrowUpRight size={16} aria-hidden="true" />
           </a>
         )}
       </div>

@@ -514,7 +514,7 @@ export default function ArrivalCheck({
             {pingAttention && (
               <p className="declaration-ping-attention" role="status">
                 <span>Declaration pings: {pingAttention.message}</span>
-                <Button onClick={pingAttention.reveal}>View error ›</Button>
+                <Button onClick={pingAttention.reveal}>View error</Button>
               </p>
             )}
             <div className="declaration-toolbar">

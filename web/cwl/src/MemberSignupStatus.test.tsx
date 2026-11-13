@@ -29,14 +29,14 @@ it("rounds relative days without pluralizing one day", () => {
 });
 it("keeps signup navigation when empty and account links are unavailable", async () => {
   await render({ signups: [], accounts: null });
-  expect(host.textContent).toContain("Sign up for CWL ›");
+  expect(host.textContent).toContain("Sign up for CWL");
   await render({
     signups: [],
     accounts: null,
     season: { ...season, signup_open: false },
   });
   expect(host.textContent).toContain("Signups are closed.");
-  expect(host.textContent).not.toContain("Sign up for CWL ›");
+  expect(host.textContent).not.toContain("Sign up for CWL");
 });
 const signups = accounts.slice(0, 2).map((a, i) => ({
   tag: a.tag,
@@ -105,7 +105,10 @@ it("shows a red action card without remaining account names only while signups a
   expect(card.textContent).not.toContain("Reserve");
   expect(card.querySelector("svg[aria-hidden=true]")).not.toBeNull();
   expect(card.querySelector(".member-signup-date")).toBeNull();
-  expect(host.querySelector(".member-signup-success .member-signup-date")?.textContent).toContain("Signups close");
+  expect(
+    host.querySelector(".member-signup-success .member-signup-date")
+      ?.textContent,
+  ).toContain("Signups close");
   expect(host.textContent?.match(/Signups close /g)).toHaveLength(1);
   await click("Sign up 44 more accounts ›");
   expect(callbacks.onRemaining).toHaveBeenCalledOnce();
@@ -128,7 +131,7 @@ it("reassures two of five and offers the remaining accounts in a separate card",
   ).not.toContain("Birch");
   expect(host.querySelector("[role=alert]")).toBeNull();
   expect(callbacks.onChange).not.toHaveBeenCalled();
-  await click("Change signups ›");
+  await click("Change signups");
   expect(callbacks.onChange).toHaveBeenCalledOnce();
   await click("Sign up 3 more accounts ›");
   expect(callbacks.onRemaining).toHaveBeenCalledOnce();
@@ -160,11 +163,13 @@ it("closed and hidden remain reassuring, all signed counts correctly, empty neve
   expect(host.textContent).toContain("all 1 account");
   expect(host.querySelector(".member-signup-remaining")).toBeNull();
   await render({ signups: [], accounts: accounts.slice(0, 3) });
-  expect(host.textContent).toContain("You have not signed up any accounts yet.");
+  expect(host.textContent).toContain(
+    "You have not signed up any accounts yet.",
+  );
   expect(host.querySelector(".member-signup-success")).toBeNull();
   expect(host.querySelector(".member-signup-remaining")).toBeNull();
   expect(host.querySelector(".member-signup-empty")?.textContent).toContain(
-    "Sign up for CWL ›",
+    "Sign up for CWL",
   );
 });
 it("partly placed lists only waiting names and does not invent totals when links are unavailable", async () => {
@@ -279,9 +284,9 @@ it("zero signups uses only the grey signup action, and hides it when closed", as
   const callbacks = await render({ signups: [] });
   expect(host.querySelector(".member-signup-remaining")).toBeNull();
   expect(host.querySelector(".member-signup-empty button")?.textContent).toBe(
-    "Sign up for CWL ›",
+    "Sign up for CWL",
   );
-  await click("Sign up for CWL ›");
+  await click("Sign up for CWL");
   expect(callbacks.onRemaining).toHaveBeenCalledOnce();
   expect(callbacks.onChange).not.toHaveBeenCalled();
   await render({ signups: [], season: { ...season, signup_open: false } });

@@ -42,7 +42,7 @@ export default function TodoActivityStatus({
       <p>
         {hasRows
           ? "Showing the results we could check. Check in-game for the rest."
-          : "Clash data is unavailable. Check in-game for now, or try Check now again later."}
+          : "Clash data is unavailable. Check in-game for now, or try Refresh again later."}
       </p>
       <details>
         <summary className="target-summary-44">Check details</summary>

@@ -7,7 +7,7 @@ import { announcementPoolLabel as poolLabel } from "./announcementPoolLabel";
 import AnnouncementPoolCard from "./AnnouncementPoolCard";
 import AnnouncementEditor from "./AnnouncementEditor";
 import { Button } from "./rosterUi/primitives";
-import { RefreshCw, Send } from "lucide-react";
+import { ArrowUpRight, RefreshCw, Send } from "lucide-react";
 import AnnouncementMonth from "./AnnouncementMonth";
 import { announcementMonth } from "./announcementMonth";
 import ConfirmDialog from "./ConfirmDialog";
@@ -853,7 +853,8 @@ export default function ManageBridgeWorkspace({
                               target="_blank"
                               rel="noopener noreferrer"
                             >
-                              View in Discord ↗
+                              View in Discord{" "}
+                              <ArrowUpRight size={16} aria-hidden="true" />
                             </a>
                           )}
                         </>

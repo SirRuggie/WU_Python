@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ArrowUpRight } from "lucide-react";
 import { api, ApiError } from "./api";
 import ChannelCombobox from "./ChannelCombobox";
 import type { AnnouncementChannel } from "./announcements";
@@ -202,7 +203,7 @@ export default function CommandTest({
         <p role="status">
           Test sent.{" "}
           <a href={url} target="_blank" rel="noreferrer">
-            Open in Discord ↗
+            Open in Discord <ArrowUpRight size={16} aria-hidden="true" />
           </a>
         </p>
       )}

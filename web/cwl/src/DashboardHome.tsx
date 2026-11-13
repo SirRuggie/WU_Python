@@ -1,4 +1,5 @@
 import { visibleRefresh } from "./visibleRefresh";
+import { ArrowRight } from "lucide-react";
 import { memberSignupsOpen } from "./memberSeason";
 import MemberSignupStatus, { signupHeading } from "./MemberSignupStatus";
 import { useJourneyState, useJourneyPosition } from "./journeyState";
@@ -362,9 +363,13 @@ export default function DashboardHome(props: Props) {
       }
     };
     void load();
-    const tick = () => { if (!paused) return load(); };
+    const tick = () => {
+      if (!paused) return load();
+    };
     const stopRefresh = visibleRefresh(tick, 30000);
-    const online = () => { if (!document.hidden) void tick(); };
+    const online = () => {
+      if (!document.hidden) void tick();
+    };
     window.addEventListener("online", online);
     return () => {
       cancelled = true;
@@ -618,7 +623,9 @@ export default function DashboardHome(props: Props) {
             accounts.
           </p>
         </div>
-        <button onClick={() => onNavigate("todo")}>Open tasks →</button>
+        <button onClick={() => onNavigate("todo")}>
+          Open tasks <ArrowRight size={16} aria-hidden="true" />
+        </button>
       </section>
       <div className="home-quick-links">
         <button
@@ -956,9 +963,7 @@ export default function DashboardHome(props: Props) {
         <details className="hub-help" id="home-account-help">
           <summary>Link an account</summary>
           <AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} />
-          <p>
-            To move or withdraw a signup, go to My signups.
-          </p>
+          <p>To move or withdraw a signup, go to My signups.</p>
           <button onClick={() => onNavigate("saved")}>Open My signups →</button>
         </details>
         {session.can_edit && (
@@ -971,9 +976,7 @@ export default function DashboardHome(props: Props) {
               <button onClick={() => onNavigate("publication")}>
                 Finalize roster →
               </button>
-              <button onClick={() => onNavigate("staff")}>
-                Seasons →
-              </button>
+              <button onClick={() => onNavigate("staff")}>Seasons →</button>
             </div>
           </section>
         )}
