@@ -235,7 +235,7 @@ export default function AccessSettings({
       <div className="page-head">
         <div>
           <p className="eyebrow">Owner controls</p>
-          <h1>Dashboard access</h1>
+          <h1>Staff access</h1>
           <p>Select a person or role, select what they can do, then save.</p>
         </div>
       </div>

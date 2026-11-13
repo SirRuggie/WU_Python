@@ -969,10 +969,10 @@ export default function DashboardHome(props: Props) {
                 Build roster →
               </button>
               <button onClick={() => onNavigate("publication")}>
-                Publish roster →
+                Finalize roster →
               </button>
               <button onClick={() => onNavigate("staff")}>
-                Seasons & clans →
+                Seasons →
               </button>
             </div>
           </section>
