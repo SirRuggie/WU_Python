@@ -17,8 +17,8 @@ const steps = [
     description: 'Messages used when reviewing an application.',
   },
   {
-    id: 'Channels & access',
-    title: 'Channels, access & timing',
+    id: 'Channels & roles',
+    title: 'Channels, roles & timing',
     description: 'Ticket destinations, staff visibility and waiting periods.',
   },
   {

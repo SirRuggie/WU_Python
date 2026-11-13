@@ -441,7 +441,7 @@ export default function ReminderWorkspace({
                       if (!dirty) void act(load);
                       else
                         setConfirmation({
-                          text: "Discard unsaved reminder edits and refresh from Manage?",
+                          text: "Discard unsaved reminder edits and reload the saved reminders?",
                           action: () => void act(load),
                         });
                     }}
@@ -1097,7 +1097,7 @@ export default function ReminderWorkspace({
                                 await load();
                                 setNotice(
                                   result.warning ||
-                                    "Saved to Manage. Signup links are unchanged. The existing bot will check the scheduled sends.",
+                                    "Saved. Signup links are unchanged. Scheduled sends are checked automatically.",
                                 );
                               }),
                           });

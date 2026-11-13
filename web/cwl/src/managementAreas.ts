@@ -7,7 +7,7 @@ export const managementAreas = {
   "applications-settings": {
     title: "Ticket settings",
     description:
-      "Set up tickets and staff tools. Review live conversations in Tickets.",
+      "Set up ticket channels, roles, questions and messages. Review live conversations in Tickets.",
   },
   "fwa-settings": {
     title: "FWA tools",
@@ -59,7 +59,7 @@ export function areaSections(
             ? "Testing"
             : section.id === "ticket_settings" ||
                 section.id.startsWith("destination--")
-              ? "Channels & access"
+              ? "Channels & roles"
               : section.id.startsWith("question--")
                 ? "Questions"
                 : section.id.startsWith("staff--")

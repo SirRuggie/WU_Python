@@ -710,7 +710,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
             {document?.description ||
               selected?.description ||
               areaInfo?.description ||
-              "Settings also update Discord /manage."}
+              "Bot settings for this server."}
           </p>
         </div>
         {selected && (

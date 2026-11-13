@@ -188,6 +188,7 @@ h1 {
   .ticket-browser > h1,
   .dashboard-issues > h1,
   .image-gallery > h1,
+  .manage-heading > div > h1,
   main:not(.center-screen) > h1
 ) {
   position: relative;
@@ -200,6 +201,7 @@ h1 {
   .ticket-browser > h1,
   .dashboard-issues > h1,
   .image-gallery > h1,
+  .manage-heading > div > h1,
   main:not(.center-screen) > h1
 )::after {
   content: "";

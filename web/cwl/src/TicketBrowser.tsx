@@ -96,7 +96,7 @@ export default function TicketBrowser() {
   const clearFilters = () => {
     setSearch("");
     setQuery("");
-    setStatus("all");
+    setStatus("open");
     setKind("all");
     setFlag("all");
     setFrom("");
@@ -151,11 +151,11 @@ export default function TicketBrowser() {
               setPage(1);
             }}
           >
-            <option value="closed">Closed tickets</option>
             <option value="open">Open tickets</option>
             <option value="all">All tickets</option>
             <option value="approved">Approved</option>
             <option value="denied">Denied</option>
+            <option value="closed">Closed tickets</option>
           </select>
         </label>
         <label>

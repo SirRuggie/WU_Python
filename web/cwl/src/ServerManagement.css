@@ -20,10 +20,6 @@
   text-wrap: balance;
 }
 
-.manage-heading h1 {
-  color: inherit;
-}
-
 @media (max-width: 480px) {
   .manage-heading h1,
   .manage-heading h2 {

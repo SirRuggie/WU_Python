@@ -451,7 +451,7 @@ export default function ClanManagement({
         {(
           [
             ["clans", "Clans"],
-            ["overview", "Reminders"],
+            ["overview", "War reminders"],
             ["history", "History"],
           ] as const
         ).map(([key, label]) => (

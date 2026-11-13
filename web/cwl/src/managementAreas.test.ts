@@ -17,7 +17,7 @@ it("uses the ticket setup page title", () => {
     "Ticket settings",
   );
   expect(managementAreas["applications-settings"].description).toBe(
-    "Set up tickets and staff tools. Review live conversations in Tickets.",
+    "Set up ticket channels, roles, questions and messages. Review live conversations in Tickets.",
   );
 });
 it("keeps application messages, channels and testing in clear groups", () => {
@@ -40,8 +40,8 @@ it("keeps application messages, channels and testing in clear groups", () => {
     "Messages",
     "Questions",
     "Staff messages",
-    "Channels & access",
-    "Channels & access",
+    "Channels & roles",
+    "Channels & roles",
     "Testing",
   ]);
 });

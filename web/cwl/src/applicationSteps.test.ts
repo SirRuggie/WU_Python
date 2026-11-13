@@ -29,7 +29,7 @@ it('keeps the applicant journey in order and testing last without unrelated or d
     'Application entry',
     'Applicant questions',
     'Staff responses',
-    'Channels, access & timing',
+    'Channels, roles & timing',
     'Testing',
   ])
   expect(
