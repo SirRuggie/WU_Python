@@ -37,7 +37,6 @@ export default function LazyAnnouncementCard({
         <h2>Bonus announcement</h2>
         <p>
           {ready} of {clans.length} clans approved
-          {ready === clans.length ? " · Ready for all clans" : ""}
         </p>
       </div>
       <button

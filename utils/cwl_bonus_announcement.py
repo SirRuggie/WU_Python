@@ -108,7 +108,8 @@ def sections(data, names=None, preview=False):
     header = [_text(f'## {CWL_EMOJI} Lazy CWL Bonus Medals'), _text(INTRO), _separator(),
               _text('**To be eligible, you must:**\n' + '\n'.join(rules)), _separator()]
     label = data.get('last_month_label') or 'last month'
-    winners = sorted(data['last_month'], key=lambda row: (str(row.get('player_name') or '').casefold(), row['tag']))
+    # Ruggie asked for tag and Discord only here, so the order follows the visible tag.
+    winners = sorted(data['last_month'], key=lambda row: row['tag'])
     lines = [_winner_line(row, names, preview, with_name=False) for row in winners] or ['No bonus winners recorded.']
     blocks = _chunks(f'**Last month\'s bonus winners · {safe_text(label)}**\n-# {note}', lines)
     header.extend(_text(block) for block in blocks)

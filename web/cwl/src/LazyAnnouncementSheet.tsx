@@ -185,7 +185,7 @@ export default function LazyAnnouncementSheet({
   return (
     <ActionPanel
       title="Lazy bonus announcement"
-      className="lazy-announce"
+      className="lazy-announce roster-ui"
       trigger={trigger}
       busy={sending}
       onClose={() => {
@@ -198,7 +198,7 @@ export default function LazyAnnouncementSheet({
       {result ? (
         <section className="lazy-announce-result" aria-live="polite">
           <p
-            className={`lazy-announce-status lazy-announce-status-${result.status}`}
+            className={`notice lazy-announce-status${result.status === "sent" ? " success" : result.status === "failed" ? " error" : ""}`}
             role={result.status === "sent" ? "status" : "alert"}
           >
             <strong>
@@ -274,15 +274,21 @@ export default function LazyAnnouncementSheet({
               </button>
             </p>
           )}
-          {preview && !loading && (
-            <>
+          {preview && (
+            <div
+              className="lazy-announce-body"
+              aria-busy={loading}
+              style={{ opacity: loading ? 0.5 : 1 }}
+            >
               {summary}
               {preview.blockers.length > 0 && (
-                <ul className="lazy-announce-blockers" role="alert">
-                  {preview.blockers.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
+                <div className="notice lazy-announce-blockers" role="alert">
+                  <ul>
+                    {preview.blockers.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
               )}
               {preview.unlinked_count > 0 && (
                 <p className="small lazy-announce-note">
@@ -310,7 +316,7 @@ export default function LazyAnnouncementSheet({
                   ))}
                 </details>
               )}
-            </>
+            </div>
           )}
 
           <div className="lazy-announce-send">
@@ -325,7 +331,7 @@ export default function LazyAnnouncementSheet({
               }}
             />
             {channelsError && (
-              <p role="alert">
+              <p role="alert" className="notice error">
                 {channelsError}{" "}
                 <button
                   type="button"

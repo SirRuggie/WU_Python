@@ -6,7 +6,6 @@
   gap: var(--roster-space-3);
   margin: var(--wu-space-4) 0;
   border: 1px solid var(--roster-border-subtle);
-  border-left: 3px solid var(--roster-gold);
   border-radius: var(--roster-radius-card);
   background: var(--roster-surface-raised);
   padding: var(--roster-space-3) var(--roster-space-4);
@@ -55,8 +54,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
-  border-radius: 8px;
+  min-height: calc(var(--roster-height-control) - 2 * var(--roster-space-1));
+  border-radius: calc(var(--roster-radius-control) - var(--roster-space-1));
   color: var(--roster-text-muted);
   font-weight: 600;
   text-align: center;
@@ -72,7 +71,7 @@
 .lazy-announce-segments label.selected {
   background: var(--roster-surface-raised);
   box-shadow: inset 0 -2px 0 var(--roster-gold);
-  color: var(--roster-text);
+  color: var(--roster-gold);
 }
 .lazy-announce-segments label:has(input:focus-visible) {
   outline: 2px solid var(--roster-gold);
@@ -98,14 +97,9 @@
 .lazy-announce-summary strong {
   color: var(--roster-gold);
 }
-.lazy-announce-blockers {
-  margin: 0 0 var(--roster-space-3);
-  border-left: 3px solid var(--roster-card-edge-danger);
-  background: var(--roster-card-danger);
-  border-radius: 4px;
-  padding: var(--roster-space-2) var(--roster-space-3) var(--roster-space-2)
-    var(--wu-space-6, 28px);
-  color: var(--roster-text);
+.lazy-announce-blockers ul {
+  margin: 0;
+  padding-left: var(--wu-space-4);
 }
 .lazy-announce-note {
   color: var(--roster-text-muted);
@@ -137,21 +131,14 @@
 }
 .lazy-announce-footer button {
   min-height: var(--roster-height-control);
-}
-.lazy-announce-status {
-  margin: 0 0 var(--roster-space-2);
-  border-left: 3px solid var(--roster-border);
-  border-radius: 4px;
-  background: var(--roster-surface-raised);
-  padding: var(--roster-space-3);
+  max-width: 100%;
   overflow-wrap: anywhere;
 }
-.lazy-announce-status-sent {
-  border-left-color: var(--roster-card-edge-success);
-  background: var(--roster-card-success);
+.lazy-announce .notice {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  overflow-wrap: anywhere;
 }
-.lazy-announce-status-failed,
-.lazy-announce-status-uncertain {
-  border-left-color: var(--roster-card-edge-danger);
-  background: var(--roster-card-danger);
+.lazy-announce-status {
+  display: block;
 }
