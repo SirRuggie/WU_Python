@@ -1,5 +1,37 @@
 # Release and rollback history
 
+## Ticket "Link account" control — 2026-11-13 (bot only)
+
+- PR [#340](https://github.com/SirRuggie/WU_Python/pull/340), merge commit
+  `32d9c56f3e3fc84b486a4603125f9bfac1a13e8d`, local tag
+  `ticket-link-account-340-1`. Merged and released by Shaka (Claude) on
+  Ruggie's "you build and deploy the changes" (2026-11-13 16:45 UTC).
+- Changes: staff "Link account" control on ticket cards writes ClashPerk links
+  (`extensions/commands/tickets/link_account.py`, `player_info.py`,
+  `console.py`, `utils/clashperk_link_writes.py`). No schema change, no data
+  write. The control was not run live; no Discord post, no ClashPerk write.
+- Checks: main merged into the branch (`1dc4d223`, tree equal to the merge
+  commit); backend suite 8186 passed, 134 skipped, in a network-isolated
+  namespace.
+- Bot: `/home/botrunner/wu-bot` `0a061726…` → `32d9c56f…` (detached, clean,
+  fast-forward; requirements unchanged). Other bot-side files since `0a061726`
+  are not imported by the bot. Import check as botrunner passed. PID 385930 →
+  871536, InvocationID `c5aa5b2fdb9341aeb14e6887dd34b986`, NRestarts 0; 60
+  extensions loaded (same as before), `extensions.commands.tickets` loaded,
+  `[Tickets] thread_runtime_ready configured_fields=6/6 index_errors=0`, no
+  tracebacks or errors in the journal.
+- Backend not changed or restarted (`backend/523cc293…`, PID 830330; it does
+  not import the changed modules). Frontend not changed.
+- Backup `.local/ticket-link-account-340-release-20261113T172008Z/before.sqlite3`
+  (SQLite backup API): integrity ok, equal to live, SHA-256
+  `b1e6389a7d056aa4f437d9e925a7669d84a34090151d27001921c488884080b9`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131 (signups/assigned/locks),
+  publication max version 6 and the lineup-rules digest identical before and
+  after. Mongo counts not compared (the live bot writes continuously).
+- Rollback: `sudo -n -u botrunner git -C /home/botrunner/wu-bot checkout
+  --detach 0a06172621a542bae2ee0864b5ecf251b298614a`, then `sudo -n systemctl
+  restart wu-bot.service`. Never restore the database for a code rollback.
+
 ## Non-members can sign in, Base bank members-only — 2026-11-13 (backend and frontend)
 
 - PR [#339](https://github.com/SirRuggie/WU_Python/pull/339), merge commit
