@@ -19,6 +19,9 @@ def test_cached_weights_returns_immediately_and_singleflights(monkeypatch):
     monkeypatch.setattr(strikes, '_manual_weights', lambda: {})
     monkeypatch.setattr(strikes, '_weight_cache', {})
     monkeypatch.setattr(strikes, '_weight_cache_at', 0.0)
+    # time.monotonic() counts from boot, so a cache time of 0.0 is not stale on a host
+    # up for less than the TTL. An empty tag set always asks for a refresh.
+    monkeypatch.setattr(strikes, '_weight_cached_tags', set())
     monkeypatch.setattr(strikes, '_weight_retry_at', 0.0)
     monkeypatch.setattr(strikes, '_weight_refresh_task', None)
 
@@ -48,6 +51,9 @@ def test_failed_refresh_keeps_old_weights_and_cools_down(monkeypatch):
     monkeypatch.setattr(strikes, '_manual_weights', lambda: {'#P2Y': 150000})
     monkeypatch.setattr(strikes, '_weight_cache', {'#P2Y': 149000})
     monkeypatch.setattr(strikes, '_weight_cache_at', 0.0)
+    # time.monotonic() counts from boot, so a cache time of 0.0 is not stale on a host
+    # up for less than the TTL. An empty tag set always asks for a refresh.
+    monkeypatch.setattr(strikes, '_weight_cached_tags', set())
     monkeypatch.setattr(strikes, '_weight_retry_at', 0.0)
     monkeypatch.setattr(strikes, '_weight_refresh_task', None)
 
