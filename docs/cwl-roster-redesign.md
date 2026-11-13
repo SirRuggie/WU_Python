@@ -1627,3 +1627,17 @@ Shaka1044: the native Settings modal makes the one header trigger inert; open
 help before or after Settings. No second trigger or shared-panel change. The
 programmatic draft-retention regression does not claim native reachability. Later: rule changes
 must update the help text; no backend, permissions or rule behavior change.
+
+## Staff season default (236, 2026-11-12)
+
+Staff season default (236): newest non-history month; selection not stored across
+reopen; URL `?season=` wins. This replaces the233 API-order fallback. One shared
+helper follows monthSeasons order, excluding history_only true/numeric1 while a
+normal season exists; an unresolved normal label still wins over history months.
+All-history lists use the first sorted season; empty lists use no season. Valid
+current selections survive list reloads; unknown URL seasons keep the existing
+notice before falling back. Member season, Back/navigation, labels/ids/API order
+and Exports range defaults remain unchanged.
+
+Status: frontend implementation prepared for isolated native and independent
+review. No backend, persistence, permission or data change.

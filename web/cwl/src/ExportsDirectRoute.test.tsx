@@ -14,7 +14,7 @@ vi.mock("./ExportWorkspace", () => ({
     onSeasonChange: (v: string) => void;
   }) => (
     <div data-testid="export-season">
-      {seasonId}
+      <output data-testid="selected-export-season">{seasonId}</output>
       <button onClick={() => onSeasonChange("2")}>
         Choose October fixture
       </button>
@@ -46,12 +46,14 @@ it.each([
             {
               id: 1,
               label: "November 2026",
+              cwl_month: "2026-11",
               status: "draft",
               signup_open: true,
             },
             {
               id: 2,
               label: "October 2026",
+              cwl_month: "2026-10",
               status: "archived",
               signup_open: false,
             },
@@ -71,8 +73,9 @@ it.each([
           await new Promise((r) => setTimeout(r, 10));
         });
       expect(
-        host.querySelector('[data-testid="export-season"]')?.textContent,
-      ).toContain(expected);
+        host.querySelector('[data-testid="selected-export-season"]')
+          ?.textContent,
+      ).toBe(expected);
       expect(host.querySelector(".topbar strong")?.textContent).toBe(
         "Exports & history",
       );
