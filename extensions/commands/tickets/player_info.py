@@ -52,7 +52,8 @@ def panel(ticket, page=1):
     page = min(pages, max(1, page))
     content = '\n\n'.join(account_line(a) for a in accounts[(page-1)*8:page*8]) or 'No linked accounts found.'
     ticket_id = str(ticket['_id'])
-    controls = [Button(style=hikari.ButtonStyle.SECONDARY, label='Refresh Player Info', custom_id=f'ticket_player_refresh:{ticket_id}')]
+    controls = [Button(style=hikari.ButtonStyle.SECONDARY, label='Refresh Player Info', custom_id=f'ticket_player_refresh:{ticket_id}'),
+                Button(style=hikari.ButtonStyle.SECONDARY, label='Link account', custom_id=f'ticket_link:{ticket_id}')]
     for label, target, disabled in [('Previous', page-1, page==1), ('Next',page+1,page==pages)]:
         controls.append(Button(style=hikari.ButtonStyle.SECONDARY,label=label,custom_id=f'ticket_player_info:{ticket_id}|{target}',is_disabled=disabled))
     return [Container(accent_color=WU_GOLD,components=[
@@ -81,6 +82,35 @@ async def show(ctx, action_id: str, mongo: MongoClient=lightbulb.di.INJECTED, **
     await ctx.interaction.edit_initial_response(components=panel(ticket,int(page) if page.isdigit() else 1),user_mentions=False,role_mentions=False,mentions_everyone=False)
 
 
+class RefreshBusy(Exception):
+    """A refresh for this ticket is already running."""
+
+
+async def refresh_accounts(bot, mongo, ticket_id):
+    """Run one account sync and staff-context update. Return (ticket, delivered).
+
+    ticket is None when the ticket no longer exists. Raises RefreshBusy when a
+    refresh already runs, and LookupError when the player service is not ready.
+    """
+    client = account_sync.configured_coc_client()
+    if client is None:
+        raise LookupError('The player service is starting. Try again soon.')
+    lock = _refresh_locks.setdefault(ticket_id,asyncio.Lock())
+    if lock.locked():
+        raise RefreshBusy('A player refresh is already running for this ticket.')
+    try:
+        async with lock:
+            result = await account_sync.sync_ticket_accounts(mongo,client,ticket_id,source=account_sync.SOURCE_RECRUITER_REFRESH)
+            if result.ticket is None:
+                return None, False
+            from extensions.commands.tickets.resolve import _queue_and_deliver_latest_staff_context
+            delivered = await _queue_and_deliver_latest_staff_context(bot,mongo,result.ticket,result.snapshot)
+            return result.ticket, delivered
+    finally:
+        if not lock.locked():
+            _refresh_locks.pop(ticket_id,None)
+
+
 @register_action('ticket_player_refresh', opens_modal=True, preload_state=False, no_return=True)
 @lightbulb.di.with_di
 async def refresh(ctx, action_id: str, mongo: MongoClient=lightbulb.di.INJECTED, bot: hikari.GatewayBot=lightbulb.di.INJECTED, **_):
@@ -89,23 +119,12 @@ async def refresh(ctx, action_id: str, mongo: MongoClient=lightbulb.di.INJECTED,
     if ticket is None:
         await ctx.interaction.edit_initial_response(content='You must be a recruiter, and the ticket must exist.')
         return
-    client = account_sync.configured_coc_client()
-    if client is None:
-        await ctx.interaction.edit_initial_response(content='The player service is starting. Try again soon.')
-        return
-    lock = _refresh_locks.setdefault(action_id,asyncio.Lock())
-    if lock.locked():
-        await ctx.interaction.edit_initial_response(content='A player refresh is already running for this ticket.')
-        return
     try:
-        async with lock:
-            result = await account_sync.sync_ticket_accounts(mongo,client,action_id,source=account_sync.SOURCE_RECRUITER_REFRESH)
-            if result.ticket is None:
-                await ctx.interaction.edit_initial_response(content='Ticket no longer exists.')
-                return
-            from extensions.commands.tickets.resolve import _queue_and_deliver_latest_staff_context
-            delivered = await _queue_and_deliver_latest_staff_context(bot,mongo,result.ticket,result.snapshot)
-            await ctx.interaction.edit_initial_response(components=panel(result.ticket),content=None if delivered else 'The staff summary update is waiting. The saved account lookup is below.',user_mentions=False,role_mentions=False,mentions_everyone=False)
-    finally:
-        if not lock.locked():
-            _refresh_locks.pop(action_id,None)
+        ticket, delivered = await refresh_accounts(bot,mongo,action_id)
+    except (LookupError, RefreshBusy) as exc:
+        await ctx.interaction.edit_initial_response(content=str(exc))
+        return
+    if ticket is None:
+        await ctx.interaction.edit_initial_response(content='Ticket no longer exists.')
+        return
+    await ctx.interaction.edit_initial_response(components=panel(ticket),content=None if delivered else 'The staff summary update is waiting. The saved account lookup is below.',user_mentions=False,role_mentions=False,mentions_everyone=False)

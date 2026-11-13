@@ -2,7 +2,7 @@
   max-width: 1100px;
   min-width: 0;
   margin: 0 auto;
-  color: #e8edf4;
+  color: var(--wu-text);
 }
 
 .moderation-settings-heading,
@@ -26,13 +26,13 @@
 .moderation-settings-heading p,
 .moderation-main-route p {
   margin: 6px 0 0;
-  color: #c7d1de;
+  color: var(--wu-text-muted);
   line-height: 1.5;
 }
 
 .moderation-settings-heading .moderation-other-tab-dirty {
   color: var(--wu-accent);
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
 }
 
 .moderation-settings button,
@@ -51,7 +51,7 @@
 }
 
 .moderation-settings :focus-visible {
-  outline: 3px solid #a6c8ff;
+  outline: 3px solid var(--wu-focus);
   outline-offset: 3px;
 }
 
@@ -61,9 +61,9 @@
 .moderation-not-logged {
   min-width: 0;
   padding: 16px;
-  border: 1px solid #536173;
-  border-radius: 12px;
-  background: #1c2028;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
+  background: var(--wu-surface);
 }
 
 .moderation-main-route,
@@ -77,7 +77,7 @@
 
 .moderation-ignored-bots p {
   margin: 6px 0 10px;
-  color: #c7d1de;
+  color: var(--wu-text-muted);
   line-height: 1.5;
 }
 
@@ -93,7 +93,7 @@
   flex: none;
   align-items: center;
   gap: 8px;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   cursor: pointer;
 }
 
@@ -112,9 +112,9 @@
   width: 34px;
   height: 20px;
   flex: none;
-  border: 1px solid #9ba9ba;
-  border-radius: 999px;
-  background: #394454;
+  border: 1px solid var(--wu-text-muted);
+  border-radius: var(--wu-radius-pill);
+  background: var(--wu-surface-soft);
 }
 
 .moderation-category-track::after,
@@ -126,26 +126,26 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #e8edf4;
+  background: var(--wu-text);
   transition: transform 150ms ease;
 }
 
 .moderation-category-switch input:checked + .moderation-category-track,
 .moderation-event-pill input:checked + .moderation-event-pill-track {
-  border-color: #f0ce6a;
-  background: #a88224;
+  border-color: var(--wu-accent);
+  background: var(--wu-accent);
 }
 
 .moderation-category-switch input:checked + .moderation-category-track::after,
 .moderation-event-pill input:checked + .moderation-event-pill-track::after {
   transform: translateX(14px);
-  background: #fff5d6;
+  background: var(--wu-accent-ink);
 }
 
 .moderation-category-switch:focus-within {
-  outline: 3px solid #a6c8ff;
+  outline: 3px solid var(--wu-focus);
   outline-offset: 3px;
-  border-radius: 6px;
+  border-radius: var(--wu-radius-sm);
 }
 
 .moderation-category-routing {
@@ -158,8 +158,8 @@
   display: grid;
   max-width: 620px;
   gap: 6px;
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
 }
 
 .moderation-category-routing select {
@@ -177,15 +177,15 @@
 .moderation-destination-help,
 .moderation-category-routing small {
   margin: 0;
-  color: #c7d1de;
-  font-size: 12px;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
 }
 
 .moderation-forum-tag {
   display: grid;
   gap: 6px;
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-medium);
 }
 
 .moderation-forum-tag select {
@@ -193,8 +193,8 @@
 }
 
 .moderation-forum-tag small {
-  color: #f5d995;
-  font-size: 12px;
+  color: var(--wu-warning);
+  font-size: var(--wu-text-xs);
 }
 
 .moderation-event-list {
@@ -209,9 +209,9 @@
   align-content: start;
   gap: 8px;
   padding: 12px;
-  border: 1px solid #495563;
-  border-radius: 10px;
-  background: #252b35;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
+  background: var(--wu-surface-raised);
 }
 
 .moderation-event-pill {
@@ -223,21 +223,21 @@
   align-items: center;
   gap: 7px;
   padding: 0 10px;
-  border: 1px solid #69798d;
-  border-radius: 999px;
-  background: #303a48;
-  font-size: 13px;
-  font-weight: 700;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-pill);
+  background: var(--wu-surface-soft);
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-bold);
   cursor: pointer;
 }
 
 .moderation-event-pill:has(input:checked) {
-  border-color: #e8bf4b;
-  background: #493b1e;
+  border-color: var(--wu-accent);
+  background: var(--wu-warning-surface);
 }
 
 .moderation-event-pill:focus-within {
-  outline: 3px solid #a6c8ff;
+  outline: 3px solid var(--wu-focus);
   outline-offset: 3px;
 }
 
@@ -252,17 +252,17 @@
 .moderation-override-options button {
   min-height: 44px;
   padding: 0 8px;
-  border: 1px solid #6b7889;
-  border-radius: 7px;
-  background: #303a48;
-  color: #e8edf4;
-  font-size: 12px;
-  font-weight: 650;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-sm);
+  background: var(--wu-surface-soft);
+  color: var(--wu-text);
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-medium);
 }
 
 .moderation-override-options button[aria-pressed="true"] {
-  border-color: #e8bf4b;
-  background: #493b1e;
+  border-color: var(--wu-accent);
+  background: var(--wu-warning-surface);
 }
 
 .moderation-event-override,
@@ -271,11 +271,11 @@
   min-width: 0;
   gap: 8px;
   padding-top: 8px;
-  border-top: 1px solid #536173;
+  border-top: 1px solid var(--wu-border);
 }
 
 .moderation-event-preview h4 {
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
 }
 
 .moderation-destination-warning,
@@ -284,17 +284,17 @@
 .moderation-settings-error {
   margin: 12px 0 0;
   padding: 12px 14px;
-  border: 1px solid #9b7131;
-  border-radius: 9px;
-  background: #302819;
-  color: #f5d995;
+  border: 1px solid var(--wu-warning-border);
+  border-radius: var(--wu-radius-sm);
+  background: var(--wu-warning-surface);
+  color: var(--wu-warning);
   line-height: 1.5;
 }
 
 .moderation-settings-error {
-  border-color: #9b5965;
-  background: #381f25;
-  color: #ffe4e9;
+  border-color: var(--wu-danger-border);
+  background: var(--wu-danger-surface);
+  color: var(--wu-danger);
 }
 
 .moderation-settings-error p {
@@ -302,18 +302,18 @@
 }
 
 .moderation-settings-notice {
-  border-color: #547c60;
-  background: #1d3025;
-  color: #c9f1d1;
+  border-color: var(--wu-success-border);
+  background: var(--wu-success-surface);
+  color: var(--wu-success);
 }
 
 .moderation-settings-save {
   align-items: center;
   margin: 16px 0;
   padding: 4px 12px;
-  border: 1px solid #536173;
-  border-radius: 10px;
-  background: #192331;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
+  background: var(--wu-surface);
 }
 
 .moderation-settings-save p,
@@ -330,11 +330,11 @@
   height: 9px;
   flex: none;
   border-radius: 50%;
-  background: #e8bf4b;
+  background: var(--wu-accent);
 }
 
 .moderation-clean-dot {
-  background: #69bf86;
+  background: var(--wu-success);
 }
 
 .moderation-settings-save .primary:not(:disabled) {
@@ -357,7 +357,7 @@
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 650px) {
   .moderation-settings-heading,
   .moderation-settings-save {
     flex-direction: column;
@@ -404,9 +404,9 @@
   gap: 10px;
   margin-top: 0;
   padding: 12px;
-  border: 1px solid #495563;
-  border-radius: 10px;
-  background: #252b35;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
+  background: var(--wu-surface-raised);
 }
 
 .moderation-ignore-group {
@@ -420,8 +420,8 @@
   display: grid;
   gap: 4px;
   min-width: 0;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-bold);
 }
 
 .moderation-ignore-group input:not([role="combobox"]),
@@ -456,10 +456,10 @@
   align-items: center;
   gap: 4px;
   padding-left: 10px;
-  border: 1px solid #69798d;
-  border-radius: 999px;
-  background: #303a48;
-  font-size: 12px;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-pill);
+  background: var(--wu-surface-soft);
+  font-size: var(--wu-text-xs);
 }
 
 .moderation-ignore-chips li span {
@@ -496,7 +496,7 @@
   min-width: 0;
   gap: 4px;
   padding: 8px 0;
-  border-top: 1px solid #3b4553;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 
 .moderation-invite-list small,
@@ -507,7 +507,7 @@
 .moderation-ignore-note {
   display: block;
   margin-top: 10px;
-  color: #c2cbd7;
+  color: var(--wu-text-muted);
 }
 
 .moderation-health {
@@ -524,15 +524,15 @@
   align-items: flex-start;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid #8a6a2c;
-  border-radius: 10px;
-  background: #2d2616;
+  border: 1px solid var(--wu-warning-border);
+  border-radius: var(--wu-radius-md);
+  background: var(--wu-warning-surface);
   overflow-wrap: anywhere;
 }
 
 .moderation-health li.is-error {
-  border-color: #a8384b;
-  background: #301a1f;
+  border-color: var(--wu-danger-border);
+  background: var(--wu-danger-surface);
 }
 
 /* Routing disclosures keep status visible while occasional controls stay closed. */
@@ -566,9 +566,9 @@
 .moderation-category-title small {
   display: block;
   margin-top: 6px;
-  color: #c7d1de;
-  font-size: 12px;
-  font-weight: 400;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-regular);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -591,8 +591,8 @@
 }
 .moderation-event-status {
   margin: 0;
-  color: #c7d1de;
-  font-size: 12px;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -602,9 +602,9 @@
 }
 .moderation-switch-feedback {
   display: block;
-  color: #c7d1de;
-  font-size: 12px;
-  font-weight: 400;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-regular);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -623,8 +623,8 @@
   min-width: 0;
 }
 .moderation-event-editor > small {
-  color: #c7d1de;
-  font-size: 12px;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-xs);
 }
 .moderation-not-logged {
   display: grid;
@@ -657,7 +657,7 @@
   cursor: pointer;
 }
 .moderation-invite-unsaved {
-  color: #f5d995;
+  color: var(--wu-warning);
 }
 .moderation-settings-save {
   position: sticky;
@@ -677,7 +677,7 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
   line-height: 1.3;
 }
 .moderation-settings-save > p:not(.moderation-destination-warning) {

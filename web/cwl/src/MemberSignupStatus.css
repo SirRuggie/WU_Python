@@ -5,9 +5,9 @@
 .member-signup-empty,
 .member-signup-remaining {
   padding: var(--wu-space-4);
-  border: 1px solid #3a7962;
-  border-radius: 14px;
-  background: #162c23;
+  border: 1px solid var(--wu-success-border);
+  border-radius: var(--wu-radius-md);
+  background: var(--wu-success-surface);
   color: var(--wu-text);
   font-variant-numeric: tabular-nums;
 }
@@ -19,7 +19,7 @@
   margin-top: var(--wu-space-3);
   background: var(--roster-card-danger, var(--wu-danger-surface));
   border-color: var(--roster-card-edge-danger, var(--wu-danger-border));
-  color: #fbe7e9;
+  color: var(--wu-text);
   font-variant-numeric: tabular-nums;
 }
 .member-signup-remaining h2 {
@@ -51,10 +51,10 @@
   padding-left: var(--wu-space-4);
 }
 .member-signup-summary .member-signup-date {
-  color: #bdc7c2;
+  color: var(--wu-text-muted);
 }
 .member-signup-remaining .member-signup-date {
-  color: #f1d5d8;
+  color: var(--wu-text);
   font-variant-numeric: tabular-nums;
 }
 .member-signup-summary button {
@@ -64,13 +64,13 @@
   display: block;
   background: none;
   border: none;
-  color: #bdc7c2;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-md);
   text-decoration: underline;
 }
 
 .member-signup-summary a {
-  color: #f2d892;
+  color: var(--wu-warning);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -98,7 +98,7 @@
   border-color: var(--wu-border);
   color: var(--wu-text);
 }
-@media (max-width: 600px) {
+@media (max-width: 650px) {
   .saved-view-summary > section > h2 {
     min-block-size: 2.7em;
   }

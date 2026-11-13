@@ -148,7 +148,7 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .account-card-open:not(:disabled):hover::after {
-    background: #ffffff08;
+    background: #ffffff08; /* keep: 3% white hover wash, no token */
   }
 }
 .shared-account-card:has(.account-card-open) .account-card-action {

@@ -50,7 +50,7 @@
   align-items: center;
   padding: var(--wu-space-1) var(--wu-space-2);
   border: 1px solid var(--roster-attention-border);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
   color: var(--wu-text);
   text-decoration: underline;
   font-size: var(--wu-text-sm);
@@ -282,7 +282,7 @@
     var(--roster-surface) 80%
   );
   border-bottom: 1px solid var(--roster-border);
-  border-radius: 16px 16px 0 0;
+  border-radius: var(--wu-radius-lg) var(--wu-radius-lg) 0 0;
 }
 .member-assignments .member-clan-head a.member-open-clan {
   display: inline-flex;
@@ -295,7 +295,7 @@
   margin: 0;
   padding: var(--wu-space-2) var(--wu-space-4);
   border: 2px solid var(--wu-accent);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-accent);
   color: var(--wu-accent-ink);
   -webkit-text-fill-color: var(--wu-accent-ink);

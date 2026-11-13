@@ -246,8 +246,8 @@
 .finalize-review .publication-hide .roster-ui-button.is-danger:not(:disabled) {
   background: var(--wu-brand-red);
   border-color: var(--wu-brand-red);
-  color: #ffffff;
-  -webkit-text-fill-color: #ffffff;
+  color: var(--wu-text);
+  -webkit-text-fill-color: var(--wu-text);
 }
 @media (hover: hover) and (pointer: fine) {
   .finalize-review
@@ -255,8 +255,8 @@
     .roster-ui-button.is-danger:hover:not(:disabled) {
     background: var(--wu-brand-red);
     border-color: var(--wu-brand-red);
-    color: #ffffff;
-    -webkit-text-fill-color: #ffffff;
+    color: var(--wu-text);
+    -webkit-text-fill-color: var(--wu-text);
   }
 }
 .publication-visually-hidden {
@@ -297,7 +297,7 @@
 .finalize-review .publication-group summary .publication-full {
   color: var(--roster-warning);
 }
-@media (max-width: 700px) {
+@media (max-width: 650px) {
   .finalize-review .publication-summary strong {
     flex: 1 1 100%;
   }
@@ -315,7 +315,7 @@
 .finalize-review .publication-group summary .publication-clan-meta {
   color: var(--roster-text-muted);
 }
-@media (max-width: 700px) {
+@media (max-width: 650px) {
   .publication-steps {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -364,14 +364,14 @@
   width: min(980px, calc(100vw - 32px));
   max-height: 90dvh;
   padding: 0;
-  border: 1px solid #6e5d31;
-  border-radius: 16px;
+  border: 1px solid var(--wu-warning-border);
+  border-radius: var(--wu-radius-lg);
   background: var(--wu-surface);
   color: var(--wu-text);
   overflow: auto;
 }
 .announcement-preview-dialog::backdrop {
-  background: #000b;
+  background: #000b; /* keep: black overlay */
 }
 .announcement-preview-dialog > header {
   position: sticky;
@@ -383,7 +383,7 @@
   justify-content: space-between;
   gap: var(--wu-space-4);
   padding: var(--wu-space-4) var(--wu-space-5);
-  border-bottom: 1px solid #4b4433;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 .announcement-preview-dialog h2 {
   margin: 0;
@@ -399,7 +399,7 @@
 body:has(.announcement-preview-dialog[open]) {
   overflow: hidden;
 }
-@media (max-width: 600px) {
+@media (max-width: 650px) {
   .announcement-preview-dialog {
     width: calc(100vw - 16px);
     max-height: 95dvh;

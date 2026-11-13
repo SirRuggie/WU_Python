@@ -20,6 +20,8 @@ describe('Discord preview content safety',()=>{
  it('blocks executable and private URLs while preserving approved artwork paths',()=>{
   for(const value of ['javascript:alert(1)','data:image/svg+xml,<svg onload=alert(1)>','http://example.com/a.png','https://user:pass@example.com/a','https://127.0.0.1/a','https://10.1.2.3/a','https://172.20.1.1/a','https://192.168.2.1/a','https://[::1]/a','https://host.internal/a','https://foo.local./a','https://0.0.0.0/a','https://100.64.0.1/a','https://8.8.8.8/a','//evil.test/a','/api/cwl/manage/content/recruit/artwork/../private'])expect(previewUrl(value),value).toBeUndefined()
   expect(previewUrl('/api/cwl/manage/content/recruit/artwork/ab1234')).toBe('/api/cwl/manage/content/recruit/artwork/ab1234')
+  expect(previewUrl('/api/cwl/seasons/7/bonus-raffle/lazy-announcement/history.png?v=0123456789abcdef')).toBe('/api/cwl/seasons/7/bonus-raffle/lazy-announcement/history.png?v=0123456789abcdef')
+  for(const value of ['/api/cwl/seasons/7/bonus-raffle/lazy-announcement/history.png','/api/cwl/seasons/x/bonus-raffle/lazy-announcement/history.png?v=0123456789abcdef','/api/cwl/seasons/7/bonus-raffle/lazy-announcement/history.png?v=0123456789abcdef&x=1'])expect(previewUrl(value),value).toBeUndefined()
  })
  it('replaces unsafe images with placeholders and suppresses referrers on safe images',()=>{
   const html=renderToStaticMarkup(<DiscordPreview parts={[{type:'media',items:[{url:'javascript:alert(1)',description:'Blocked image'},{url:'https://cdn.discordapp.com/attachments/123/456/a.png',description:'Clan logo'}]}]}/>)

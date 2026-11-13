@@ -8,7 +8,7 @@
   margin: 0;
   padding: var(--wu-space-3) var(--wu-space-3);
   border-color: transparent;
-  border-radius: 9px;
+  border-radius: var(--wu-radius-sm);
   background: transparent;
   color: var(--wu-text);
   font-size: var(--wu-text-sm);
@@ -48,7 +48,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: #fff3d6;
+  color: var(--wu-text);
   overflow: hidden;
 }
 .member-tour::backdrop {
@@ -57,7 +57,7 @@
 .tour-dim {
   position: fixed;
   inset: 0;
-  background: #000a;
+  background: #000a; /* keep: overlay scrim, no token */
 }
 .tour-card {
   --art-height: 160px;
@@ -68,10 +68,10 @@
   box-sizing: border-box;
   padding: var(--wu-space-5) var(--wu-space-4) var(--wu-space-3)
     calc(var(--art-width) + var(--wu-space-4));
-  border: 2px solid #ef9f27;
-  border-radius: 16px;
+  border: 2px solid var(--wu-accent);
+  border-radius: var(--wu-radius-lg);
   background: var(--wu-surface);
-  box-shadow: 0 16px 50px #0008;
+  box-shadow: 0 16px 50px #0008; /* keep: shadow black, no token */
   animation: tour-enter 220ms ease-out;
 }
 .centered .tour-card {
@@ -92,7 +92,7 @@
   animation: tour-hop 300ms ease-out;
 }
 .tour-card h2 {
-  color: #fff3d6;
+  color: var(--wu-text);
   font-size: var(--wu-text-xl);
   line-height: 1.2;
   font-weight: var(--wu-weight-bold);
@@ -103,7 +103,7 @@
   outline: none;
 }
 .tour-card p {
-  color: #d4cebf;
+  color: var(--wu-text);
   font-size: var(--wu-text-sm);
   line-height: 1.55;
   margin: var(--wu-space-2) 0;
@@ -114,13 +114,13 @@
   align-items: center;
   gap: var(--wu-space-2);
   font-size: var(--wu-text-sm);
-  color: #fac775;
+  color: var(--wu-accent);
 }
 .member-tour button {
   cursor: pointer;
   font: inherit;
   min-height: 44px;
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   padding: var(--wu-space-2) var(--wu-space-3);
   border: 1px solid var(--wu-accent);
   background: transparent;
@@ -165,19 +165,19 @@
 .tour-progress i {
   height: 5px;
   width: 7px;
-  background: #7c7669;
-  border-radius: 9px;
+  background: var(--wu-border);
+  border-radius: var(--wu-radius-sm);
 }
 .tour-progress .done {
-  background: #ef9f27;
+  background: var(--wu-accent);
 }
 .tour-progress .current {
   width: 16px;
-  background: #fac775;
+  background: var(--wu-accent);
 }
 .member-tour .tour-next {
-  background: #fac775;
-  color: #30220b;
+  background: var(--wu-accent);
+  color: var(--wu-accent-ink);
   font-weight: var(--wu-weight-bold);
   border-color: transparent;
   white-space: nowrap;
@@ -197,24 +197,24 @@
   min-height: 44px;
   gap: var(--wu-space-2);
   font-size: var(--wu-text-sm);
-  color: #d4cebf;
+  color: var(--wu-text);
 }
 .tour-remember input {
   width: 20px;
   height: 20px;
-  accent-color: #fac775;
+  accent-color: var(--wu-accent);
 }
 .member-tour .tour-spotlight {
   position: fixed;
   z-index: 3;
   padding: 0;
   min-height: 0;
-  border: 3px solid #ef9f27;
-  border-radius: 12px;
+  border: 3px solid var(--wu-accent);
+  border-radius: var(--wu-radius-md);
   background: transparent;
   box-shadow:
     0 0 0 9999px #000a,
-    0 0 22px #ef9f2780;
+    /* keep: overlay scrim, no token */ 0 0 22px #ef9f2780; /* keep: gold glow alpha, no token */
   animation: tour-pulse 1.6s ease-in-out 2;
 }
 .tour-glove {
@@ -237,7 +237,7 @@
   top: 0;
   width: 14px;
   height: 14px;
-  border: 2px solid #fac775;
+  border: 2px solid var(--wu-accent);
   border-radius: 50%;
   animation: tour-ripple 1.6s infinite;
 }
@@ -283,7 +283,7 @@
 }
 @keyframes tour-pulse {
   50% {
-    border-color: #fac775;
+    border-color: var(--wu-accent);
   }
 }
 @keyframes tour-tap {

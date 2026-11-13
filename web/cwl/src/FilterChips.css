@@ -32,7 +32,7 @@
 
 .filter-chips--pill button,
 .shell .filter-chips--pill button {
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   background: var(--wu-surface-soft);
   border-color: color-mix(in srgb, var(--wu-border) 50%, var(--wu-text-muted));
   box-shadow: none;

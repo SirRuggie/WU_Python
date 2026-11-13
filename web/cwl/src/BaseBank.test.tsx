@@ -256,3 +256,18 @@ it("never exposes an unvalidated upstream copy link", async () => {
   expect(host.querySelector("a")).toBeNull();
   expect(host.textContent).toContain("Base link not available yet");
 });
+it("a non-member sees the join line and no bases", async () => {
+  const { BASE_BANK_JOIN_TEXT, SERVER_INVITE_URL } =
+    await import("./ServerJoinNotice");
+  mock.api
+    .mockReset()
+    .mockRejectedValue(new ApiError(BASE_BANK_JOIN_TEXT, 403));
+  await mount();
+  const notice = host.querySelector(".server-join-notice")!;
+  expect(notice.textContent).toBe(`${BASE_BANK_JOIN_TEXT} Join server`);
+  expect(notice.querySelector("a")?.getAttribute("href")).toBe(
+    SERVER_INVITE_URL,
+  );
+  expect(host.querySelector("article")).toBeNull();
+  expect(host.textContent).not.toContain("Sign in again");
+});

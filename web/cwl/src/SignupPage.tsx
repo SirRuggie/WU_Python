@@ -7,6 +7,7 @@ import MemberSeasonLine from "./MemberSeasonLine";
 import SavedSignupStatus from "./SavedSignupStatus";
 import SavedSignups from "./SavedSignups";
 import SignupReviewHeading from "./SignupReviewHeading";
+import ServerJoinNotice from "./ServerJoinNotice";
 import SignupWalkthrough from "./SignupWalkthrough";
 import TownHallIcon from "./TownHallIcon";
 import type { DashboardView } from "./SidebarNavigation";
@@ -90,6 +91,7 @@ type SignupPageProps = {
   submit: () => Promise<void>;
   visibleAccounts: Account[];
   withdraw: (rows: Signup[]) => Promise<void>;
+  joinRequired: boolean;
 };
 
 export default function SignupPage({
@@ -149,6 +151,7 @@ export default function SignupPage({
   submit,
   visibleAccounts,
   withdraw,
+  joinRequired,
 }: SignupPageProps) {
   return (
     <>
@@ -337,6 +340,7 @@ export default function SignupPage({
               )}
               {signupPanel === "register" && memberSignupsOpen(season) && (
                 <div className="signup-flow">
+                  {joinRequired && <ServerJoinNotice />}
                   {accountsReady &&
                     !loadingData &&
                     !accountError &&
@@ -362,7 +366,8 @@ export default function SignupPage({
                       selected.length > 0 &&
                       !loadingData &&
                       !dataError &&
-                      !accountError
+                      !accountError &&
+                      !joinRequired
                     }
                     headingRef={stepHeadingRef}
                     onNavigate={(stage) => {
@@ -372,7 +377,8 @@ export default function SignupPage({
                         (!selected.length ||
                           loadingData ||
                           dataError ||
-                          accountError)
+                          accountError ||
+                          joinRequired)
                       )
                         return;
                       setReturnToReview(review && stage === 1);
@@ -680,7 +686,8 @@ export default function SignupPage({
                                       pending ||
                                       loadingData ||
                                       !!dataError ||
-                                      !!accountError
+                                      !!accountError ||
+                                      joinRequired
                                     }
                                     onClick={() => setReview(true)}
                                   >
@@ -767,7 +774,8 @@ export default function SignupPage({
                             loadingData ||
                             !memberSignupsOpen(season) ||
                             !!dataError ||
-                            !!accountError
+                            !!accountError ||
+                            joinRequired
                           }
                           onClick={submit}
                         >

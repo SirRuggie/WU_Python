@@ -15,15 +15,15 @@
   gap: var(--wu-space-3);
   align-items: center;
   padding: var(--wu-space-1) var(--wu-space-2);
-  border-bottom: 1px solid #303035;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 .weight-trial-columns {
   font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
 }
 .weight-trial-row.is-edited {
-  background: #f3ca5610;
-  box-shadow: inset 3px 0 #e1b635;
+  background: #f3ca5610; /* keep: translucent gold row tint */
+  box-shadow: inset 3px 0 var(--wu-accent);
 }
 .weight-trial-player {
   display: flex;
@@ -53,7 +53,7 @@
   min-height: 44px;
 }
 .weight-trial-row input[aria-invalid="true"] {
-  border-color: #ef8c85;
+  border-color: var(--wu-danger-border);
 }
 .weight-trial-save {
   position: sticky;
@@ -64,7 +64,7 @@
   gap: var(--wu-space-3);
   padding: var(--wu-space-3);
   background: var(--wu-surface);
-  border-top: 1px solid #56504a;
+  border-top: 1px solid var(--wu-border-subtle);
   z-index: 1;
 }
 .weight-trial-save small {
@@ -76,7 +76,7 @@
 .weight-trial-export button {
   margin: var(--wu-space-1) var(--wu-space-2) var(--wu-space-1) 0;
 }
-@media (max-width: 700px) {
+@media (max-width: 650px) {
   .weight-trial-toolbar {
     align-items: start;
     flex-wrap: wrap;
@@ -106,23 +106,23 @@
 }
 .weight-trial-row-error {
   grid-column: 1 / -1;
-  color: #ffb5ae;
+  color: var(--wu-danger);
 }
 .weight-trial-row input {
   scroll-margin-block: 120px 190px;
 }
 .weight-trial-row-warning {
   grid-column: 1 / -1;
-  color: #ffb5ae;
-  border-left: 3px solid #ef7770;
+  color: var(--wu-danger);
+  border-left: 3px solid var(--wu-danger-border);
   padding: var(--wu-space-1) var(--wu-space-2);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
 .weight-trial-row.has-weight-issue {
-  background: #d94c4524;
-  box-shadow: inset 3px 0 #ef7770;
+  background: #d94c4524; /* keep: translucent danger row tint */
+  box-shadow: inset 3px 0 var(--wu-danger-border);
 }
 
 .weight-saved-search {
@@ -164,8 +164,8 @@
   margin: 0 var(--wu-space-1) var(--wu-space-1) 0;
 }
 .weight-trial-filters button[aria-pressed="true"] {
-  border-color: #f3ca56;
-  color: #f3ca56;
+  border-color: var(--wu-accent);
+  color: var(--wu-accent);
 }
 .weight-trial-save .weight-keyboard-hint {
   display: none;

@@ -1,7 +1,7 @@
 .change-history {
   margin-top: var(--wu-space-4);
   border: 1px solid var(--border, var(--wu-border-subtle));
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   padding: var(--wu-space-4);
   background: var(--surface, var(--wu-surface));
 }
@@ -52,7 +52,7 @@
   flex-wrap: wrap;
   margin: var(--wu-space-4) 0;
 }
-@media (max-width: 600px) {
+@media (max-width: 650px) {
   .history-values section > div {
     grid-template-columns: 1fr;
   }

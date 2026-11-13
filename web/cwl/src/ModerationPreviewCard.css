@@ -1,20 +1,20 @@
 .moderation-preview-card {
   min-width: 0;
   padding: 12px;
-  border: 1px solid #4b5664;
-  border-radius: 10px;
-  background: #13171e;
-  color: #e8edf4;
-  font-size: 13px;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
+  background: var(--wu-surface);
+  color: var(--wu-text);
+  font-size: var(--wu-text-sm);
   line-height: 1.45;
 }
 
 .moderation-preview-container {
   min-width: 0;
   padding: 12px;
-  border-left: 4px solid var(--moderation-accent, #a9b5c3);
-  border-radius: 8px;
-  background: #222833;
+  border-left: 4px solid var(--moderation-accent, var(--wu-text-muted));
+  border-radius: var(--wu-radius-sm);
+  background: var(--wu-surface-raised);
 }
 
 .moderation-preview-section {
@@ -35,7 +35,7 @@
   height: 40px;
   place-items: center;
   border-radius: 50%;
-  background: #465366;
+  background: var(--wu-surface-soft);
 }
 
 .moderation-preview-text,
@@ -46,16 +46,16 @@
 
 .moderation-preview-title {
   display: block;
-  font-weight: 750;
+  font-weight: var(--wu-weight-bold);
 }
 
 .moderation-preview-mention {
-  color: #b7d7ff;
+  color: var(--wu-info);
 }
 
 .moderation-preview-container hr {
   border: 0;
-  border-top: 1px solid #536071;
+  border-top: 1px solid var(--wu-border);
 }
 
 .moderation-preview-actions {
@@ -69,14 +69,14 @@
   min-height: 44px;
   align-items: center;
   padding: 0 12px;
-  border: 1px solid #69798d;
-  border-radius: 8px;
-  color: #d4e6ff;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-sm);
+  color: var(--wu-info);
   text-decoration: none;
 }
 
 .moderation-preview-card > small {
   display: block;
   margin-top: 8px;
-  color: #c0cbd8;
+  color: var(--wu-text-muted);
 }

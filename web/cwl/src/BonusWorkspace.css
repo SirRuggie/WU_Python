@@ -240,7 +240,7 @@
   padding: var(--wu-space-4);
   background: var(--roster-surface-raised);
   border: 1px solid var(--roster-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
 }
 .bonus-review-tag {
   margin: 0;
@@ -285,7 +285,7 @@
 }
 .participation-infractions h3 {
   margin: 0 0 var(--wu-space-1);
-  font-size: var(--wu-text-base, 1rem);
+  font-size: var(--wu-text-md);
 }
 .participation-infractions button {
   min-height: 44px;
@@ -407,7 +407,7 @@
   border-left: 3px solid var(--wu-text-muted);
   background: var(--roster-surface-raised);
   padding: var(--wu-space-4);
-  border-radius: 4px;
+  border-radius: var(--wu-radius-xs);
 }
 .bonus-message-preview .discord-preview {
   margin: 0;
@@ -444,7 +444,7 @@
     width: 100%;
   }
 }
-@media (max-width: 700px) {
+@media (max-width: 650px) {
   /* The count field takes its own full-width row: label above, hint below. */
   .bonus-stats {
     margin: var(--wu-space-2) 0;

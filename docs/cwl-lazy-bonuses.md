@@ -218,14 +218,18 @@ dropdown (2026-11-13: Ruggie found the first card too big), in both the All
 clans list and a clan's steps: "Announcement · x of y approved" and an "Open"
 button, at most as wide as the dropdown. It needs the Send CWL
 announcements grant (`cwl_send`) and at least one approved Lazy clan. The sheet
-has Clans (All Lazy clans or One clan), a preview, Channel, "Ping the Lazy CWL
-role" (off by default), and a review check before "Send to #channel".
+has Clans (All Lazy clans or One clan), a preview, Channel, "Ping this month's
+winners (N)" (on by default; 2026-11-13 replaced the Lazy CWL role ping), and a
+review check before "Send to #channel".
 
 `GET /api/cwl/seasons/{id}/bonus-raffle/lazy-announcement?scope=all|one&clan_tag=&ping=0|1`
 is read only. It uses approved draws, non-voided confirmations and imported
 winners; it makes no Discord or Clash call. All Lazy clans blocks until every
 Lazy clan with results has approved winners; a voided winner also blocks.
 Preview mentions show cached Discord nicknames, never raw IDs.
+`GET .../lazy-announcement/history.png` (staff, read only) returns the past
+winners image for the preview; the preview links it with `?v=` plus the first 16
+characters of the fingerprint, and `previewUrl` allows only that exact path.
 
 `POST` with `scope, clan_tag, ping, channel_id, request_id, fingerprint`
 re-renders, rejects a changed announcement (fingerprint) and archived seasons,
@@ -238,11 +242,29 @@ schema change: the receipts use the existing `bonus_audit` table.
 
 Format (`utils/cwl_bonus_announcement.py`): Components V2, WU_GOLD `#F2B62A` on
 every container. Container 1: "<:CWL:1399013745598009375> Lazy CWL Bonus Medals",
-the intro, three rules, then last month's Lazy winners as `Name · #TAG · @user` (no
-clan names). Rule 3 follows the included clans' sit-out lengths ("last N
+the intro, three rules, then "Past bonus winners" with one note line and an image
+(`utils/cwl_bonus_history_image.py`, attached as `Lazy_Bonus_History.png`). The
+image has one column for each of the 3 seasons before this one (Ruggie,
+2026-11-13: decision 1 image, decision 2 the mockup style, decision 3 the place of
+the former last-month list). Each column shows "Month · count", then the Clash
+name (bold, shortened with … to fit) and the tag below it, sorted by name, from
+non-voided Lazy confirmations and imported winners of that month (family-wide).
+DejaVu Sans from `assets/fonts` draws it; NFKC turns styled letters into plain
+ones. Names use a per-character font fallback (2026-11-13, after the release smoke
+of PR 335 found 2 names drawn as empty boxes): DejaVu, then Noto Sans Symbols 2,
+Symbols, Math, Emoji (monochrome), Javanese (꧁ ꧂), Arabic, Thai and Egyptian
+Hieroglyphs (U+131A9/U+131AA brackets), then GNU Unifont for the rest of the Basic
+Multilingual Plane (CJK, Hangul). Runs of the same font draw together, so Arabic
+stays shaped. A character no font has still draws a box. The alt text gives the seasons and counts only. Past winners carry no
+mention. Rule 3 follows the included clans' sit-out lengths ("last N
 seasons"; none omits it; mixed lengths show each clan's sit-out). Then one
 container per clan: name, tag, bonus medal count (the approved draw's slots) and
-numbered winners. The gold footer image is attached to the last container. The
-optional Lazy CWL role mention (`1080521665584308286`) opens message 1 and is the only
-allowed mention; player mentions never notify. Messages split at 38 components
-or 3,800 text characters (Discord limits 40 and 4,000).
+numbered winners. The gold footer image is attached to the last container. No
+role is mentioned (Ruggie, 2026-11-13: the Lazy CWL role ping is removed). With
+the ping on, each message's `allowed_mentions.users` lists only this month's
+winners mentioned in that message; `parse` and `roles` stay empty. Past winners
+are in the image, so they are never mentioned or pinged. Each message attaches
+only the files it references (`attachments()`): the history image with
+container 1 and the gold footer with the last message. Messages split at 38
+components, 3,800 text characters or 100 pinged users (Discord limits 40, 4,000
+and 100).

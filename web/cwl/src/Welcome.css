@@ -37,14 +37,14 @@
   padding: var(--wu-space-3);
   border-left: 3px solid var(--wu-info-border);
   background: var(--wu-info-surface);
-  border-radius: 6px;
+  border-radius: var(--wu-radius-sm);
   color: var(--wu-info);
 }
 .welcome-screen .primary {
   background: var(--wu-accent);
   border-color: var(--wu-accent);
   color: var(--wu-accent-ink);
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   min-height: 48px;
 }
 .page-link-row {
@@ -61,7 +61,7 @@
 }
 .page-link-row span {
   font-size: var(--wu-text-sm);
-  color: #a4dfc4;
+  color: var(--wu-success);
 }
 
 @media (hover: hover) and (pointer: fine) {

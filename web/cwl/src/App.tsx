@@ -47,6 +47,7 @@ import LoadError from './LoadError'
 import { lazy, Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react'
 import OwnerPrankBoundary from './ownerPrank/OwnerPrankBoundary'
 import ConfirmDialog from './ConfirmDialog'
+import { isJoinRequiredError } from './ServerJoinNotice'
 import { findReplacementState, memberAccountsState } from './strikeActivityFilters'
 import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
@@ -112,6 +113,8 @@ function App() {
   const [memberSeason, setMemberSeason] = useState<{season_id: number | null; revision: number}>({season_id: null, revision: 0})
   const seasonId = seasonViews.has(view) ? staffSeasonId : String(memberSeason.season_id || '')
   const [fwaBlocked, setFwaBlocked] = useState(false)
+  const [joinRefused, setJoinRefused] = useState(false)
+  const joinRequired = session?.server_member === false || (joinRefused && session?.server_member !== true)
   const [pool, setPool] = useState<Pool | null>(null)
   const [signupSearch, setSignupSearch] = useState('')
   const [signupPage, setSignupPage] = useState(0)
@@ -713,7 +716,7 @@ function App() {
   }
   const submit = async () => {
     if (isTourReadOnly()) return
-    if (!seasonId || !season || !pool || !selected.length || pending || signupBusy.current || loadingData || dataError || accountError || !memberSignupsOpen(season)) return
+    if (!seasonId || !season || !pool || !selected.length || pending || signupBusy.current || loadingData || dataError || accountError || joinRequired || !memberSignupsOpen(season)) return
     signupBusy.current = true
     const submittedSeason = seasonId
     const submittedPool = pool
@@ -725,6 +728,13 @@ function App() {
       await api<{ ok: boolean; count: number }>(`/seasons/${encodeURIComponent(submittedSeason)}/signups`, 'POST', { pool: submittedPool, accounts: submittedAccounts })
     } catch (error) {
       if (message(error).includes('FWA accounts can only')) setFwaBlocked(true)
+      if (isJoinRequiredError(error)) {
+        setJoinRefused(true)
+        setReview(false)
+        signupBusy.current = false
+        setPending(false)
+        return
+      }
       setNotice({ kind: 'error', text: message(error) })
       signupBusy.current = false
       setPending(false)
@@ -1093,7 +1103,7 @@ function App() {
           setDrafts({ main: {}, lazy: {}, [nextPool]: Object.fromEntries(tags.filter(tag => freshAccounts.some(account => account.tag === tag) && !freshSignups.some(signup => signup.tag === tag)).map(tag => [tag, false])) })
           setPool(nextPool); setSignupPanel('register'); setSignupStep(2); setReview(false); setCompletion(null); changeView('signup')
         }} />}
-        {view === 'signup' && <SignupPage accountError={accountError} accounts={accounts} accountsReady={accountsReady} activeCompletion={activeCompletion} available={available} changeReviewStep={changeReviewStep} changeSignupPanel={changeSignupPanel} changeView={changeView} choosePool={choosePool} completionHeadingRef={completionHeadingRef} currentSignupPage={currentSignupPage} dataError={dataError} draft={draft} existing={existing} lastSignupPage={lastSignupPage} loadSeasons={loadSeasons} loadSignup={loadSignup} loadingData={loadingData} matchingAccounts={matchingAccounts} notice={notice} pageAccounts={pageAccounts} pending={pending} pool={pool} poolRemoved={poolRemoved} registeredHeadingRef={registeredHeadingRef} retrySignupRead={retrySignupRead} review={review} saveSavedSignups={saveSavedSignups} savedSignupsLoaded={savedSignupsLoaded} season={season} seasonError={seasonError} seasonId={seasonId} seasonsKnown={seasonsKnown} seasonsLoading={seasonsLoading} selected={selected} selectionHeadingRef={selectionHeadingRef} setCompletion={setCompletion} setDraft={setDraft} setFwaBlocked={setFwaBlocked} setPool={setPool} setPoolRemoved={setPoolRemoved} setReturnToReview={setReturnToReview} setReview={setReview} setSavedSignupDirty={setSavedSignupDirty} setSignupPage={setSignupPage} setSignupPanel={setSignupPanel} setSignupSearch={setSignupSearch} setSignupStep={setSignupStep} showSavedSignups={showSavedSignups} signupPanel={signupPanel} signupSearch={signupSearch} signupStep={signupStep} stepHeadingRef={stepHeadingRef} submit={submit} visibleAccounts={visibleAccounts} withdraw={withdraw} />}
+        {view === 'signup' && <SignupPage accountError={accountError} accounts={accounts} accountsReady={accountsReady} activeCompletion={activeCompletion} available={available} changeReviewStep={changeReviewStep} changeSignupPanel={changeSignupPanel} changeView={changeView} choosePool={choosePool} completionHeadingRef={completionHeadingRef} currentSignupPage={currentSignupPage} dataError={dataError} draft={draft} existing={existing} lastSignupPage={lastSignupPage} loadSeasons={loadSeasons} loadSignup={loadSignup} loadingData={loadingData} matchingAccounts={matchingAccounts} notice={notice} pageAccounts={pageAccounts} pending={pending} pool={pool} poolRemoved={poolRemoved} registeredHeadingRef={registeredHeadingRef} retrySignupRead={retrySignupRead} review={review} saveSavedSignups={saveSavedSignups} savedSignupsLoaded={savedSignupsLoaded} season={season} seasonError={seasonError} seasonId={seasonId} seasonsKnown={seasonsKnown} seasonsLoading={seasonsLoading} selected={selected} selectionHeadingRef={selectionHeadingRef} setCompletion={setCompletion} setDraft={setDraft} setFwaBlocked={setFwaBlocked} setPool={setPool} setPoolRemoved={setPoolRemoved} setReturnToReview={setReturnToReview} setReview={setReview} setSavedSignupDirty={setSavedSignupDirty} setSignupPage={setSignupPage} setSignupPanel={setSignupPanel} setSignupSearch={setSignupSearch} setSignupStep={setSignupStep} showSavedSignups={showSavedSignups} signupPanel={signupPanel} signupSearch={signupSearch} signupStep={signupStep} stepHeadingRef={stepHeadingRef} submit={submit} visibleAccounts={visibleAccounts} withdraw={withdraw} joinRequired={joinRequired} />}
         {view === 'assignments' && !seasonsKnown && <p role="status">{seasonError ? 'CWL seasons could not be checked.' : 'Loading seasons…'}</p>}
         {view === 'assignments' && seasonsKnown && <MemberAssignments onChange={() => changeView('signup', '', undefined, 'saved')} onSignup={() => { setSignupStep(1); setPool(null); setCompletion(null); changeView('signup', '', undefined, 'register') }} seasonId={seasonId} seasons={seasons} />}
         {view === 'exports' && session.can_edit && <ExportWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}

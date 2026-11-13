@@ -9,7 +9,7 @@
   padding: var(--wu-space-4);
   background: var(--wu-surface);
   border: 1px solid var(--wu-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   margin: var(--wu-space-4) 0;
 }
 .war-intro h3 {
@@ -32,12 +32,12 @@
   width: 20px;
   height: 20px;
   flex-shrink: 0;
-  accent-color: #e6a640;
+  accent-color: var(--wu-accent);
 }
 .war-schedule {
   padding: var(--wu-space-4);
   border: 1px solid var(--wu-border);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
 }
 .war-schedule h4 {
   margin: 0 0 var(--wu-space-4);
@@ -86,8 +86,8 @@
 }
 .war-discord-preview {
   padding: var(--wu-space-4);
-  background: #313338;
-  border-radius: 12px;
+  background: #313338; /* keep: Discord preview mimicry */
+  border-radius: var(--wu-radius-md);
   margin: var(--wu-space-4) 0;
   overflow-wrap: anywhere;
 }
@@ -98,14 +98,14 @@
   font-weight: var(--wu-weight-bold);
 }
 .war-bot-name span {
-  background: #5865f2;
+  background: #5865f2; /* keep: Discord blurple */
   font-size: var(--wu-text-xs);
   padding: var(--wu-space-1) var(--wu-space-1);
-  border-radius: 3px;
+  border-radius: 3px; /* keep: Discord badge shape */
 }
 .war-bot-name small {
   font-weight: var(--wu-weight-regular);
-  color: #b5bac1;
+  color: #b5bac1; /* keep: Discord preview mimicry */
 }
 .war-history article {
   display: flex;
@@ -126,7 +126,7 @@
   margin: 0;
   text-wrap: pretty;
 }
-@media (max-width: 600px) {
+@media (max-width: 650px) {
   .war-intro {
     align-items: start;
     flex-direction: column;
@@ -148,11 +148,11 @@
 .war-preview-message + .war-preview-message {
   margin-top: var(--wu-space-4);
   padding-top: var(--wu-space-4);
-  border-top: 1px solid #606572;
+  border-top: 1px solid var(--wu-border);
 }
 .war-preview-part {
   display: block;
-  color: #c3c8d3;
+  color: var(--wu-text-muted);
   margin: var(--wu-space-2) 0;
 }
 
@@ -194,7 +194,7 @@
 }
 
 .war-delivery-link {
-  color: var(--accent, #e5bc60);
+  color: var(--accent, var(--wu-accent));
   text-decoration: underline;
   text-underline-offset: 3px;
   min-height: 44px;

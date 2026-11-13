@@ -43,6 +43,9 @@ before changing durable documentation.
 
 ## Features
 
+- [dashboard-sign-in.md](dashboard-sign-in.md) — who can sign in to the
+  dashboard; only a CWL signup save needs the Warriors United server.
+
 - [legacy-clan-commands.md](legacy-clan-commands.md) — disabled legacy clan info
   and list commands, including their old message controls.
 

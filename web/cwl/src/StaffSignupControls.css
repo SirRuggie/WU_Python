@@ -91,7 +91,7 @@
   min-width: 0;
   padding: 9px;
   border: 1px solid var(--wu-border);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
 }
 .staff-signup-account > label {
   display: flex;
@@ -130,7 +130,7 @@
     flex-wrap: wrap;
   }
 }
-@media (max-width: 450px) {
+@media (max-width: 480px) {
   .staff-signup-bar {
     align-items: center;
   }
@@ -143,5 +143,5 @@
 .staff-signup-bar > .roster-ui-status {
   max-width: 100%;
   white-space: normal;
-  border-radius: var(--roster-radius-card, 14px);
+  border-radius: var(--roster-radius-card, var(--wu-radius-md));
 }

@@ -34,14 +34,18 @@ const preview = (patch = {}) => ({
   cycle: "2026-10",
   scope: "one",
   clan_tag: "#2YQ",
-  ping: false,
+  ping: true,
+  ping_count: 2,
   clans: [
     { tag: "#2YQ", name: "Lazy One", draw_state: "approved", ready: true },
   ],
   blockers: [],
   pages: [[{ type: "text", text: "x" }]],
-  last_month_label: "Sep 2026",
-  last_month_count: 3,
+  history: [
+    { label: "July", count: 2 },
+    { label: "August", count: 1 },
+    { label: "September", count: 3 },
+  ],
   winner_count: 2,
   clan_count: 1,
   unlinked_count: 0,
@@ -110,7 +114,7 @@ describe("LazyAnnouncementSheet", () => {
   it("needs a channel and the review check before Send, and sends once", async () => {
     await render();
     expect(api.mock.calls[1][0]).toContain("scope=one");
-    expect(api.mock.calls[1][0]).toContain("ping=0");
+    expect(api.mock.calls[1][0]).toContain("ping=1");
     const send = () => button(/Send/);
     expect(send().disabled).toBe(true);
     change(
@@ -136,7 +140,7 @@ describe("LazyAnnouncementSheet", () => {
     expect(posts[0][2]).toMatchObject({
       scope: "one",
       clan_tag: "#2YQ",
-      ping: false,
+      ping: true,
       channel_id: "123456789012345678",
     });
     expect(posts[0][2].request_id).toMatch(/^[a-f0-9]{24}$/);

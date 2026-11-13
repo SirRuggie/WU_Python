@@ -16,7 +16,7 @@
   border-radius: var(--roster-radius-card);
   background: var(--roster-surface-raised);
   color: var(--roster-text);
-  box-shadow: 0 12px 30px #0008;
+  box-shadow: 0 12px 30px #0008; /* keep: black shadow */
 }
 .roster-selection-dock[aria-hidden="true"] {
   visibility: hidden;
