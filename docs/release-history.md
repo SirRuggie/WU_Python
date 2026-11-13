@@ -1,5 +1,39 @@
 # Release and rollback history
 
+## UI audit Phases 5 and 6 — 2026-11-13 (frontend only)
+
+- PRs [#338](https://github.com/SirRuggie/WU_Python/pull/338) (Phase 5, merge
+  `8077764dd115a8f04654a31694a604e2b7723991`) and
+  [#337](https://github.com/SirRuggie/WU_Python/pull/337) (Phase 6, merge
+  `a1b8df6e46d6b3cd09048b2f09ab99c0c003aae8`), local tag `ui-audit-5-6-1`.
+  Released by Shaka (Claude) on Ruggie's "merge and release 338 337"
+  (2026-11-13 17:43 UTC).
+- Changes: shared CSS tokens for colors, type, corners and breakpoints
+  (Phase 5); the four largest screens split into smaller files (Phase 6).
+  Only `web/cwl/` and docs changed since the bot release `32d9c56f`. No Python,
+  route, schema or data change.
+- Backend not changed or restarted: `backend/523cc293…`, PID 830330, active.
+  Bot not changed or restarted (`32d9c56f…`, PID 871536).
+- Frontend `current`: `523cc293…` → `a1b8df6e…` (clean tagged clone, `npm ci`,
+  `tsc -b` and 2517 tests in 365 files passed before staging). Entry
+  `index-u6269ilZ.js`, SHA-256
+  `c9f659984de22ca414c735df479801f0e7de5aa71a3120b32b67261094402976`. Served
+  `index.html` equals the release file on `/`, `/signup`, `/strikes`,
+  `/server/members`, `/settings/integrations`; all 181 manifest files match the
+  public site (`/index.html` first returned a stale edge copy; the cache-busted
+  and repeat fetches matched).
+- Backup `.local/ui-audit-5-6-release-20261113T175329Z/before.sqlite3`
+  (SQLite backup API): integrity ok, equal to live, SHA-256
+  `05f7a1003e0ff2b59426705bce883f1ab4439c939769b7902900b92ef9894604`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131 (signups/assigned/locks),
+  publication max version 6 (6 rows, 4 active) and the lineup-rules digest
+  identical before and after.
+- Smoke: signed-out HTTP only; anonymous `/api/cwl/auth/me` 401. Browser and
+  signed-in smoke SKIPPED. No app writes, no Discord post.
+- Rollback: frontend `switch-release.py
+  523cc293c823a7fb9ff9e4dd0dc881976708e8e0`. No backend change to roll back.
+  Never restore the database for a code rollback.
+
 ## Ticket "Link account" control — 2026-11-13 (bot only)
 
 - PR [#340](https://github.com/SirRuggie/WU_Python/pull/340), merge commit
