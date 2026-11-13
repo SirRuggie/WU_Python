@@ -45,6 +45,17 @@ describe("network issue reports", () => {
     ).rejects.toMatchObject({ status: 0 });
     expect(reportCalls(fetch)).toHaveLength(0);
   });
+  it("does not report a view cancel with a custom abort reason", async () => {
+    const controller = new AbortController();
+    const timeout = new DOMException("Timed out", "TimeoutError");
+    controller.abort(timeout);
+    const fetch = vi.fn().mockRejectedValue(timeout);
+    vi.stubGlobal("fetch", fetch);
+    await expect(
+      api("/x", "POST", {}, { signal: controller.signal }),
+    ).rejects.toMatchObject({ status: 0 });
+    expect(reportCalls(fetch)).toHaveLength(0);
+  });
   it("does not report an AbortError without a signal", async () => {
     const fetch = vi
       .fn()
