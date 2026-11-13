@@ -1,3 +1,4 @@
+import HelpButton from "../HelpButton";
 import CwlPageHeader from "../CwlPageHeader";
 import RosterMenu from "../rosterUi/Menu";
 import DiscordIdentity from "../DiscordIdentity";
@@ -411,7 +412,24 @@ export default function WeightTrial({
           }}
         />
       )}
-      <CwlPageHeader className="weight-trial-header" title={<h1>Clan weights</h1>}>
+      <CwlPageHeader
+        className="weight-trial-header"
+        title={<h1>Clan weights</h1>}
+        help={
+          <HelpButton title="How weights are used" className="weight-help-panel">
+            <p>Clan weights and roster Details share the same saved weight.</p>
+            <p>
+              Weights follow each player across clans. Save explicitly in either
+              place. The newest saved weight wins; a saved blank means Not
+              Available.
+            </p>
+            <p>
+              Member counts use the last check. Open a clan and refresh members
+              to check again.
+            </p>
+          </HelpButton>
+        }
+      >
         {!accessDenied && <RosterMenu
           label="Clan"
           aria-label={selected && clans.find(clan => clan.tag === selected) ? `Clan: ${clans.find(clan => clan.tag === selected)!.name}` : "Select a clan"}
@@ -432,19 +450,6 @@ export default function WeightTrial({
         />}
       </CwlPageHeader>
       <p>Type each player's loot. Full weight = loot × storages.</p>
-      <details className="weight-trial-note">
-        <summary>How weights are used ›</summary>
-        <p>Clan weights and roster Details share the same saved weight.</p>
-        <p>
-          Weights follow each player across clans. Save explicitly in either
-          place. The newest saved weight wins; a saved blank means Not
-          Available.
-        </p>
-        <p>
-          Member counts use the last check. Open a clan and refresh members to
-          check again.
-        </p>
-      </details>
       {!!outside && (
         <p>
           {outside} CWL signups outside FWA clans need a weight ·{" "}

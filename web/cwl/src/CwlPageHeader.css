@@ -14,6 +14,22 @@
 .cwl-page-header-title {
   flex: 1;
   min-width: 0;
+  /* Eyebrow on its own line; the title and its ? help stay on one line. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--roster-space-1);
+}
+.cwl-page-header-title > .page-eyebrow {
+  flex: 0 0 100%;
+  margin: 0 0 var(--roster-space-1);
+}
+.cwl-page-header-title > h1 {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.cwl-page-header-title > h1:not(:last-child) {
+  max-width: calc(100% - 48px);
 }
 .cwl-page-header .cwl-page-header-title > h1,
 .shell .cwl-page-header .cwl-page-header-title > h1 {

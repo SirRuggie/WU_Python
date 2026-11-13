@@ -1,3 +1,4 @@
+import PageEyebrow from "./PageEyebrow";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import useDiscordIdentities from "./useDiscordIdentities";
 import StrikeReviewResolution from "./StrikeReviewResolution";
@@ -893,9 +894,12 @@ export default function StrikesWorkspace({
       className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : !selectedWar ? " strikes-activity-overview" : ""}`}
     >
       <div className="page-head">
-        <div className="strikes-title">
-          <h1>Strikes &amp; replacements</h1>
-          <StrikeHelp icon limit={settings?.strike_limit} />
+        <div>
+          <PageEyebrow />
+          <div className="strikes-title">
+            <h1>Strikes &amp; replacements</h1>
+            <StrikeHelp limit={settings?.strike_limit} />
+          </div>
         </div>
       </div>
       <div className="strikes-navigation">

@@ -1,3 +1,4 @@
+import PageEyebrow from "./PageEyebrow";
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import ImageCollection from "./ImageCollection";
@@ -8,7 +9,7 @@ export function ImageGallery({
 }) {
   return (
     <section className="image-gallery">
-      <p className="eyebrow">Bot</p>
+      <PageEyebrow />
       <h1>Image gallery</h1>
       <p>Find and organize images for commands and server messages.</p>
       <ImageCollection onDirty={onDirty} />

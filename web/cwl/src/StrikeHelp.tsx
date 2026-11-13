@@ -1,5 +1,4 @@
-import { useState } from "react";
-import ActionPanel from "./ActionPanel";
+import HelpButton from "./HelpButton";
 import { DEFAULT_STRIKE_LIMIT, strikeHelpLines } from "./strikeHelp";
 import "./StrikeHelp.css";
 
@@ -25,37 +24,15 @@ export function StrikeHelpText({
   );
 }
 
+/** The page's "?" help; opens the shared help side sheet. */
 export default function StrikeHelp({
   limit = DEFAULT_STRIKE_LIMIT,
-  compact = false,
-  icon = false,
 }: {
   limit?: number;
-  compact?: boolean;
-  /** A small "?" for next to a page title. */
-  icon?: boolean;
 }) {
-  const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null);
   return (
-    <>
-      <button
-        type="button"
-        className={`strike-help-trigger${icon ? " strike-help-icon" : ""}`}
-        aria-label="How strikes work"
-        onClick={(event) => setTrigger(event.currentTarget)}
-      >
-        {icon ? "?" : compact ? "Help" : "How strikes work"}
-      </button>
-      {trigger && (
-        <ActionPanel
-          title="How strikes work"
-          className="strike-help-panel"
-          trigger={trigger}
-          onClose={() => setTrigger(null)}
-        >
-          <StrikeHelpText limit={limit} />
-        </ActionPanel>
-      )}
-    </>
+    <HelpButton title="How strikes work" className="strike-help-panel">
+      <StrikeHelpText limit={limit} />
+    </HelpButton>
   );
 }

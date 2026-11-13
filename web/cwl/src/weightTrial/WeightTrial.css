@@ -1,7 +1,3 @@
-.weight-trial-note {
-  color: var(--wu-text-muted);
-  font-size: var(--wu-text-sm);
-}
 .weight-trial-members {
   min-width: 0;
 }

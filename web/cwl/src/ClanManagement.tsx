@@ -1,3 +1,4 @@
+import PageEyebrow from "./PageEyebrow";
 import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
 import "./ChoiceGroupLayout.css";
@@ -417,7 +418,7 @@ export default function ClanManagement({
     <section className="clan-management">
       <div className="page-head">
         <div>
-          <p className="eyebrow">Clan management</p>
+          <PageEyebrow />
           <h1>Family clans</h1>
           <p>Set up each clan and its war reminders.</p>
         </div>

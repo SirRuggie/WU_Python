@@ -883,12 +883,8 @@ export default function BonusWorkspace({
       {confirmation}
       <CwlPageHeader
         className="bonus-page-head"
-        title={
-          <>
-            <h1>Results &amp; bonuses</h1>
-            <BonusHelpPanel />
-          </>
-        }
+        title={<h1>Results &amp; bonuses</h1>}
+        help={<BonusHelpPanel />}
       >
         <label className="bonus-season">
           Season

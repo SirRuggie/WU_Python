@@ -4,6 +4,7 @@ import {
   seasonMonthLabel,
 } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader"
+import DeclarationHelp from "./DeclarationHelp"
 import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
 import "./ChoiceGroupLayout.css";
@@ -50,6 +51,8 @@ import { AccountIdentity } from './AccountIdentity'
 import { useMobileNavigation } from './useMobileNavigation'
 import { stopPushOnSignout } from './webPush'
 import RouteLoadBoundary from './RouteLoadBoundary'
+import { PageGroupContext, pageGroup } from './PageEyebrow'
+import LoadError from './LoadError'
 import { lazy, Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react'
 import OwnerPrankBoundary from './ownerPrank/OwnerPrankBoundary'
 import ConfirmDialog from './ConfirmDialog'
@@ -995,6 +998,7 @@ function App() {
     <div className="workspace" inert={mobile && menuOpen}>
       <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><img className="topbar-logo" src="/brand/wu-helmet-39.png" srcSet="/brand/wu-helmet-39.png 1x, /brand/wu-helmet-78.png 2x, /brand/wu-helmet-117.png 3x" alt="" aria-hidden="true" width={26} height={32} /><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'member-timezones' ? 'Members' : view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image gallery' : view === 'world-clocks' ? 'World clocks' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : (view === 'strikes' || view === 'replacements') ? 'Strikes & replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Home' : view === 'bases' ? 'Base bank' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? signupPanel === 'saved' ? 'My signups' : 'Sign up' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Signup reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & bonuses' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div>{mobile ? <AccountMenu user={session.user} onSignOut={signOut} variant="avatar" disabled={pending} replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} /> : <AccountIdentity user={session.user} />}</header>
       <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view, publicationStep)}>
+        <PageGroupContext.Provider value={pageGroup(navigationSection(view), navigationLabel(view, publicationStep))}>
         {(session.is_owner || session.can_edit || !!session.dashboard_permissions?.length) && <DashboardStorageStatus />}
         {["roster", "publication", "declaration"].includes(view) && (
           <StaffDetailsHost
@@ -1006,7 +1010,7 @@ function App() {
         )}
         <RouteLoadBoundary resetKey={`${view}:${seasonId}`}>
         {seasonError && seasonsKnown && view !== 'home' && <div className="member-refresh-note" role="status"><span>Could not refresh. Showing last update.</span><button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry</button></div>}
-        {seasonError && !seasonsKnown && view !== 'signup' && view !== 'home' && <div className="notice error" role="alert">Could not load CWL seasons.<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
+        {seasonError && !seasonsKnown && view !== 'signup' && view !== 'home' && <LoadError message="Could not load CWL seasons." busy={seasonsLoading} onRetry={() => void loadSeasons()} />}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
         {(view === 'signup' || view === 'assignments') && <MemberStepStrip step={view === 'assignments' ? 'assignments' : signupPanel} onNavigate={step => step === 'assignments' ? changeView('assignments') : changeView('signup', '', undefined, step)} />}
         {session.can_edit && ['roster', 'publication'].includes(view) && <CwlStepStrip
@@ -1203,7 +1207,7 @@ function App() {
         {
           view === "declaration" && session.can_edit && (
             <>
-              <CwlPageHeader className="declaration-page-head" title={<h1>Declaration check</h1>}>
+              <CwlPageHeader className="declaration-page-head" title={<h1>Declaration check</h1>} help={<DeclarationHelp />}>
                 <RosterMenu label="Season" value={seasonId}
                   options={monthSeasons(seasons).map(item => ({value: String(item.id), label: seasonMonthLabel(item)}))}
                   onValueChange={id => {
@@ -1313,6 +1317,7 @@ function App() {
         {view === 'issues' && session.is_owner && <DashboardIssues />}
         {view === 'access' && session.is_owner && <AccessSettings onDirty={setCwlDirty} />}
         </RouteLoadBoundary>
+        </PageGroupContext.Provider>
       </main>
     </div>
 

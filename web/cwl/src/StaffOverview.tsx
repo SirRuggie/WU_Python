@@ -1,3 +1,5 @@
+import LoadError from "./LoadError";
+import PageEyebrow from "./PageEyebrow";
 import { seasonMonthLabel } from "./seasonLabels";
 import VisitorSummary from "./VisitorSummary";
 import DashboardIcon from "./DashboardIcon";
@@ -82,7 +84,7 @@ export default function StaffOverview({
     <section className="staff-overview">
       <header className="page-head">
         <div>
-          <p className="eyebrow">Staff tools</p>
+          <PageEyebrow />
           <h1>Staff overview</h1>
           <p>What needs attention across your areas.</p>
         </div>
@@ -113,12 +115,12 @@ export default function StaffOverview({
           Pause
         </label>
       </div>
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-          {data ? " Showing the last successful update." : ""}
-        </p>
-      )}
+      <LoadError
+        message={error}
+        note={data ? "Showing the last successful update." : undefined}
+        onRetry={() => setRefresh((v) => v + 1)}
+        busy={busy}
+      />
       {data && (
         <>
           <div className="staff-overview-cards">

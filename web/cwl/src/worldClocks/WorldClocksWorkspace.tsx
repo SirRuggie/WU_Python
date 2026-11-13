@@ -1,3 +1,5 @@
+import LoadError from "../LoadError";
+import PageEyebrow from "../PageEyebrow";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import SectionTabs from "../SectionTabs";
@@ -128,10 +130,7 @@ export default function WorldClocksWorkspace({
       <section className="world-clocks" aria-labelledby="world-clocks-title">
         <Header />
         {loadError ? (
-          <div className="world-clock-error" role="alert">
-            <p>{loadError}</p>
-            <Button onClick={() => void load()}>Try again</Button>
-          </div>
+          <LoadError message={loadError} onRetry={() => void load()} />
         ) : (
           <p className="world-clock-help" role="status">
             Loading clocks…
@@ -322,7 +321,7 @@ export default function WorldClocksWorkspace({
 function Header() {
   return (
     <header className="world-clocks-heading">
-      <p className="eyebrow">Bot</p>
+      <PageEyebrow />
       <h1 id="world-clocks-title">World clocks</h1>
       <p>Voice channel names that show local times.</p>
     </header>

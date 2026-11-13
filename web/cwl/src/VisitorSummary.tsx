@@ -1,3 +1,4 @@
+import LoadError from "./LoadError";
 import { useContext, useEffect, useState } from "react";
 import { api } from "./api";
 import { DashboardPermissions } from "./DashboardPermissions";
@@ -32,7 +33,7 @@ export default function VisitorSummary({ refresh = 0 }: { refresh?: number }) {
   return (
     <section className="visitor-summary" aria-labelledby="visitor-title">
       <h2 id="visitor-title">Visitors</h2>
-      {error ? <p role="alert">{error} <button onClick={() => setRetry((n) => n + 1)}>Try again</button></p> : null}
+      <LoadError message={error} onRetry={() => setRetry((n) => n + 1)} />
       {!data && !error ? <p role="status">Loading visitor counts…</p> : null}
       {data ? <>
         <dl className="visitor-counts">

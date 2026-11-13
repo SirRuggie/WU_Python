@@ -1,3 +1,5 @@
+import LoadError from "./LoadError";
+import PageEyebrow from "./PageEyebrow";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 import type { MemberOption } from "./MemberPicker";
@@ -84,7 +86,7 @@ export default function DashboardIssues() {
   );
   return (
     <section className="dashboard-issues" aria-labelledby="issues-title">
-      <p className="eyebrow">Owners only</p>
+      <PageEyebrow />
       <h1 id="issues-title">Dashboard issues</h1>
       <p className="issues-intro">
         See what failed and who was affected. Newest reports first.
@@ -128,12 +130,16 @@ export default function DashboardIssues() {
           {loading ? "Checking…" : "Refresh"}
         </button>
       </div>
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-          {history.items.length > 0 && " Showing previously loaded reports."}
-        </p>
-      )}
+      <LoadError
+        message={error}
+        note={
+          history.items.length > 0
+            ? "Showing previously loaded reports."
+            : undefined
+        }
+        onRetry={() => setRefresh((value) => value + 1)}
+        busy={loading}
+      />
       {history.profiles_available === false && (
         <p className="issues-hint" role="status">
           Discord profiles could not load. Saved user IDs are shown. Refresh to

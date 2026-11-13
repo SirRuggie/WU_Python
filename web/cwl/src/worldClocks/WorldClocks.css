@@ -83,8 +83,7 @@
   gap: var(--wu-space-2);
 }
 
-.world-clock-alert p,
-.world-clock-error p {
+.world-clock-alert p {
   margin: 0;
 }
 

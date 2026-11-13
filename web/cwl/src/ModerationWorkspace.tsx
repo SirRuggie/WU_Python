@@ -1,3 +1,4 @@
+import PageEyebrow from "./PageEyebrow";
 import { useState } from "react";
 import MemberActivityHistory from "./MemberActivityHistory";
 import MemberTimeline from "./MemberTimeline";
@@ -36,7 +37,7 @@ export default function ModerationWorkspace({
     >
       <header className="moderation-workspace-heading">
         <div>
-          <p className="eyebrow">Server tools</p>
+          <PageEyebrow />
           <h1 id="moderation-title">Moderation</h1>
           <p>Review member events and configure where notices are posted.</p>
         </div>

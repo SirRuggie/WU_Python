@@ -1,3 +1,4 @@
+import PageEyebrow from "./PageEyebrow";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import MemberPicker, { type MemberOption } from "./MemberPicker";
@@ -234,7 +235,7 @@ export default function AccessSettings({
     <div className={`access-workspace ${editing ? "access-editing" : ""}`}>
       <div className="page-head">
         <div>
-          <p className="eyebrow">Owner controls</p>
+          <PageEyebrow />
           <h1>Staff access</h1>
           <p>Select a person or role, select what they can do, then save.</p>
         </div>

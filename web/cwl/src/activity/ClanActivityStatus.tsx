@@ -1,3 +1,5 @@
+import LoadError from "../LoadError";
+
 export default function ClanActivityStatus({
   error,
   busy,
@@ -26,11 +28,7 @@ export default function ClanActivityStatus({
           {busy ? "Checking…" : "Refresh"}
         </button>
       </div>
-      {error && (
-        <p role="alert" className="notice error">
-          {error}
-        </p>
-      )}
+      <LoadError message={error} onRetry={refresh} busy={busy} />
       {warnings.map((note) => (
         <p className="notice" role="status" key={note}>
           {note}
