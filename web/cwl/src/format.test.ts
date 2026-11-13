@@ -7,6 +7,9 @@ import {
   formatTime,
 } from "./format";
 
+const pinned = { locale: "en-US", timeZone: "UTC" };
+const value = "2026-03-04T15:30:45Z";
+
 describe("format helpers", () => {
   it("groups numbers with en-US regardless of viewer locale", () => {
     expect(formatNumber(35800)).toBe("35,800");
@@ -15,21 +18,26 @@ describe("format helpers", () => {
   });
 
   it("formats dates and times with explicit options", () => {
-    const value = "2026-03-04T15:30:00Z";
-    const date = new Date(value);
-    expect(formatDateTime(value)).toBe(
-      new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(date),
+    expect(formatDateTime(value, pinned)).toBe("Mar 4, 2026, 3:30 PM");
+    expect(formatDateTime(value, { ...pinned, seconds: true })).toBe(
+      "Mar 4, 2026, 3:30:45 PM",
     );
-    expect(formatDate(date)).toBe(
-      new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date),
-    );
-    expect(formatTime(date.getTime())).toBe(
-      new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(date),
+    expect(formatDate(new Date(value), pinned)).toBe("Mar 4, 2026");
+    expect(formatTime(Date.parse(value), pinned)).toBe("3:30 PM");
+    expect(formatDateTime(value, { locale: "en-GB", timeZone: "UTC" })).toBe(
+      "4 Mar 2026, 15:30",
     );
   });
+
+  it.each([null, undefined, "", "not a date", Number.NaN, new Date("x")])(
+    "returns a dash for unreadable input %p without throwing",
+    (input) => {
+      expect(formatDateTime(input)).toBe("—");
+      expect(formatDateTime(input, { seconds: true })).toBe("—");
+      expect(formatDate(input)).toBe("—");
+      expect(formatTime(input)).toBe("—");
+    },
+  );
 
   it("reads cycle months in UTC", () => {
     expect(formatCycleMonth("2026-04")).toMatch(/Apr/);

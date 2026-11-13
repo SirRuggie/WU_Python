@@ -175,7 +175,7 @@ export default function ChangeHistory({
               >
                 {entries.map((row) => (
                   <option value={row.id} key={row.id}>
-                    {formatDateTime(new Date(row.at))} ·{" "}
+                    {formatDateTime(new Date(row.at), { seconds: true })} ·{" "}
                     {discordIdentityName(row.actor_id, null, row.actor_name) ||
                       "Discord member unavailable"}{" "}
                     ·{" "}

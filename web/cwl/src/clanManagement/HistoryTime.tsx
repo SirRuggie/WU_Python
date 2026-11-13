@@ -1,3 +1,5 @@
+import { formatDateTime } from "../format";
+
 /** Relative time with an explicit, keyboard-accessible exact-time disclosure. */
 export default function HistoryTime({ at }: { at: string | null }) {
   if (!at || !Number.isFinite(Date.parse(at)))
@@ -18,8 +20,7 @@ export default function HistoryTime({ at }: { at: string | null }) {
   return (
     <details className="history-time">
       <summary aria-label={`${relative}; show exact time`}>{relative}</summary>
-      <time dateTime={at}>{formatDateTime(date)}</time>
+      <time dateTime={at}>{formatDateTime(date, { seconds: true })}</time>
     </details>
   );
 }
-import { formatDateTime } from "../format";

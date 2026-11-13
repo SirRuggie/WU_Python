@@ -298,7 +298,7 @@ export default function ReturnBatch({
                           )
                         : "Checked when saved"}
                       {clan.return_status?.starts_at &&
-                        ` · Current window ends ${formatDateTime(new Date(clan.return_status.expires_at!))}`}
+                        ` · Current window ends ${formatDateTime(clan.return_status.expires_at)}`}
                     </p>
                   ))}
                 </details>
@@ -324,9 +324,9 @@ export default function ReturnBatch({
             )}
             {action === "save" && (
               <p>
-                Save the list of the members who are now in the home clan,
-                before they leave for CWL. This does not send reminders. Your
-                clan selection is kept for the next step.
+                Save the list of the members who are now in the home clan, before they leave for CWL.
+                This does not send reminders. Your clan selection is kept for
+                the next step.
               </p>
             )}
             {action === "send" && (
@@ -353,8 +353,7 @@ export default function ReturnBatch({
             )}
             {action === "clear" && (
               <p>
-                This closes the selected member lists and stops their reminders.
-                The history stays.
+                This closes the selected member lists and stops their reminders. The history stays.
               </p>
             )}
             <button

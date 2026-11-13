@@ -73,7 +73,11 @@ export default function ComparePlayerCard({
             <span className="player-card-inline-th" aria-hidden="true">
               <TownHallIcon level={account.town_hall} />
             </span>
-            <span className="player-card-name-text" dir="auto">
+            <span
+              className="player-card-name-text"
+              dir="auto"
+              title={account.player_name}
+            >
               {account.player_name}
             </span>
           </strong>

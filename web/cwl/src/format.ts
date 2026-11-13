@@ -8,26 +8,48 @@ export function formatNumber(
   return value.toLocaleString(NUMBER_LOCALE, options);
 }
 
-type DateInput = Date | string | number;
+type DateInput = Date | string | number | null | undefined;
 
-const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
-const timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+/** Locale and zone default to the viewer's; tests pin both. */
+type DateOptions = { locale?: string; timeZone?: string };
+
+/** Shown when a date is missing or cannot be read. Helpers never throw. */
+export const DATE_FALLBACK = "—";
+
+function readDate(value: DateInput): Date | null {
+  if (value === null || value === undefined) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatWith(
+  value: DateInput,
+  style: Intl.DateTimeFormatOptions,
+  { locale, timeZone }: DateOptions,
+): string {
+  const date = readDate(value);
+  if (!date) return DATE_FALLBACK;
+  return new Intl.DateTimeFormat(locale, { ...style, timeZone }).format(date);
+}
 
 /** Dates and times follow the viewer's locale with fixed, explicit options. */
-export function formatDateTime(value: DateInput): string {
-  return dateTimeFormat.format(new Date(value));
+export function formatDateTime(
+  value: DateInput,
+  options: DateOptions & { seconds?: boolean } = {},
+): string {
+  return formatWith(
+    value,
+    { dateStyle: "medium", timeStyle: options.seconds ? "medium" : "short" },
+    options,
+  );
 }
 
-export function formatDate(value: DateInput): string {
-  return dateFormat.format(new Date(value));
+export function formatDate(value: DateInput, options: DateOptions = {}) {
+  return formatWith(value, { dateStyle: "medium" }, options);
 }
 
-export function formatTime(value: DateInput): string {
-  return timeFormat.format(new Date(value));
+export function formatTime(value: DateInput, options: DateOptions = {}) {
+  return formatWith(value, { timeStyle: "short" }, options);
 }
 
 /** Month label for a `YYYY-MM` cycle, always read in UTC. */
