@@ -29,7 +29,7 @@ const names: Partial<Record<DashboardView, string>> = {
   "applications-settings": "Ticket settings",
   "members-settings": "Members",
   "fwa-settings": "FWA tools",
-  "connections-settings": "Integrations",
+  "connections-settings": "Band monitor",
 };
 export default function StaffOverview({
   onNavigate,

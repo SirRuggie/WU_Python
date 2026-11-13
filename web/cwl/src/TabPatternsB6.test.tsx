@@ -22,7 +22,7 @@ vi.mock("./MemberActivityHistory", () => ({
 }));
 vi.mock("./MemberTimeline", () => ({ default: () => <p>Timeline panel</p> }));
 vi.mock("./ModerationSettings", () => ({
-  default: () => <p>Settings panel</p>,
+  default: ({ view }: { view: string }) => <p>Settings panel {view}</p>,
 }));
 
 const warMessage = {
@@ -120,9 +120,16 @@ it("uses the shared underline tabs for Moderation and keeps both section actions
   await act(async () => buttonNamed("Activity history").click());
   expect(route).toHaveBeenCalledWith("");
   route.mockClear();
-  await act(async () => buttonNamed("Log settings").click());
-  expect(buttonNamed("Log settings").getAttribute("aria-pressed")).toBe("true");
-  expect(host.textContent).toContain("Settings panel");
+  expect(
+    [...group.querySelectorAll("button")].map((node) => node.textContent),
+  ).toEqual(["Activity history", "Invites", "Log channels"]);
+  await act(async () => buttonNamed("Invites").click());
+  expect(buttonNamed("Invites").getAttribute("aria-pressed")).toBe("true");
+  expect(host.textContent).toContain("Settings panel invites");
+  await act(async () => buttonNamed("Log channels").click());
+  expect(buttonNamed("Log channels").getAttribute("aria-pressed")).toBe("true");
+  expect(host.textContent).toContain("Settings panel channels");
+  expect(host.querySelectorAll("p").length).toBeGreaterThan(0);
   await act(async () => buttonNamed("Activity history").click());
   expect(buttonNamed("Activity history").getAttribute("aria-pressed")).toBe(
     "true",

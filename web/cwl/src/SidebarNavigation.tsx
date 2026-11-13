@@ -67,7 +67,6 @@ const sections: Section[] = [
     items: [
       { view: "home", label: "Home", icon: "home" },
       { view: "search", label: "Search", icon: "search" },
-      { view: "bases", label: "Base bank", icon: "baseBank" },
     ],
   },
   {
@@ -78,6 +77,7 @@ const sections: Section[] = [
     items: [
       { view: "todo", label: "Tasks", icon: "tasks" },
       { view: "wars", label: "Wars", icon: "war" },
+      { view: "bases", label: "Base bank", icon: "baseBank" },
       { view: "events", label: "Events", icon: "calendar" },
     ],
   },
@@ -198,20 +198,6 @@ const sections: Section[] = [
     ],
   },
   {
-    id: "moderation",
-    label: "Moderation",
-    icon: "moderation",
-    direct: true,
-    items: [
-      {
-        view: "moderation",
-        label: "Moderation",
-        icon: "moderation",
-        permissions: ["member_roles"],
-      },
-    ],
-  },
-  {
     id: "clans",
     label: "Clans",
     icon: "shield",
@@ -243,15 +229,20 @@ const sections: Section[] = [
     ],
   },
   {
-    id: "members",
-    label: "Members",
+    id: "members-moderation",
+    label: "Members & moderation",
     icon: "users",
-    direct: true,
     items: [
       {
         view: "members-settings",
         label: "Members",
         icon: "memberRoles",
+        permissions: ["member_roles"],
+      },
+      {
+        view: "moderation",
+        label: "Moderation",
+        icon: "moderation",
         permissions: ["member_roles"],
       },
     ],
@@ -298,25 +289,25 @@ const sections: Section[] = [
         icon: "worldClock",
         permissions: ["server_tools"],
       },
-      {
-        view: "connections-settings",
-        label: "Integrations",
-        icon: "connect",
-        permissions: ["server_tools"],
-      },
     ],
   },
   {
     id: "admin",
     label: "Admin",
     icon: "admin",
-    access: "owner",
+    // Each item sets its own access: Band monitor follows server_tools.
     items: [
       {
         view: "access",
         label: "Staff access",
         icon: "staffAccess",
         access: "owner",
+      },
+      {
+        view: "connections-settings",
+        label: "Band monitor",
+        icon: "connect",
+        permissions: ["server_tools"],
       },
       {
         view: "issues",
@@ -385,7 +376,8 @@ export function navigationLabel(
   );
 }
 export function navigationSection(view: DashboardView) {
-  if (view === "staff-overview" || view === "moderation") return "Staff tools";
+  // The sidebar shows Staff overview under its "Staff tools" heading.
+  if (view === "staff-overview") return "Staff tools";
   if (view === "member-activity") return navigationSection("moderation");
   return sections.find((section) =>
     section.items.some(
@@ -400,6 +392,7 @@ const preferenceIds = new Set([
   "my-cwl",
   "cwl",
   "clans",
+  "members-moderation",
   "bot",
   "admin",
 ]);

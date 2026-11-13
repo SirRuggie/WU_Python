@@ -714,7 +714,13 @@ it("saves link ignores with the draft and flags them as unsaved", async () => {
     ignores: { channel_ids: ["other"], role_ids: ["100000000000000002"] },
   });
 });
+// Re-render the same instance on another tab; the draft is shared.
+const showView = async (view: "channels" | "invites") => {
+  await act(async () => root.render(<ModerationSettings view={view} />));
+  await settle();
+};
 it("lists invites with uses and saves edited names; clearing removes", async () => {
+  await showView("invites");
   expect(host.textContent).toContain("3 / 10 uses");
   expect(host.textContent).toContain("40 uses");
   expect(
@@ -756,7 +762,7 @@ it("lists stale saved names, removes them from the draft only, and validates nam
   });
   await act(async () => root.unmount());
   root = createRoot(host);
-  await act(async () => root.render(<ModerationSettings />));
+  await act(async () => root.render(<ModerationSettings view="invites" />));
   await settle();
   expect(host.textContent).toContain("No longer active");
   const before = transport.mock.calls.filter((call) => call[1] === "PUT");
@@ -786,10 +792,12 @@ it("lists stale saved names, removes them from the draft only, and validates nam
   ).toEqual({ abc123: "👨\u200d👩\u200d👧 fam" });
 });
 it("shows invite load failure without blocking the settings form", async () => {
+  await showView("invites");
   invites.mockRejectedValue(new Error("Invite list down"));
   await act(async () => button("Refresh invites").click());
   await settle();
   expect(host.textContent).toContain("Invite list down");
+  await showView("channels");
   const join = host.querySelector<HTMLInputElement>(
     '[aria-label="Joins logging"]',
   )!;
@@ -801,10 +809,42 @@ it("shows invite load failure without blocking the settings form", async () => {
   expect(join.checked).toBe(false);
 });
 it("shows the empty invite state", async () => {
+  await showView("invites");
   invites.mockResolvedValue({ invites: [], updated_at: null });
   await act(async () => button("Refresh invites").click());
   await settle();
   expect(host.textContent).toContain("No invites recorded yet.");
+});
+it("saves only the open tab's fields and keeps the other tab's edits in the draft", async () => {
+  await openEvent("join");
+  await change(
+    host.querySelector('[aria-label="Joins channel override"]')!,
+    "other",
+  );
+  await showView("invites");
+  // The channel edit is not this tab's change.
+  expect(host.textContent).not.toContain("Unsaved changes");
+  await openInvite("abc123");
+  await change(
+    host.querySelector<HTMLInputElement>('[aria-label="Name for abc123"]')!,
+    "Reddit",
+  );
+  await act(async () => button("Save changes").click());
+  const first = transport.mock.calls.filter((call) => call[1] === "PUT");
+  expect(first).toHaveLength(1);
+  expect(first[0][2].invite_names).toEqual({ abc123: "Reddit" });
+  expect(first[0][2].events.join.channel_id).toBe(
+    fixture.events.join.channel_id,
+  );
+  await showView("channels");
+  expect(host.textContent).toContain("Unsaved changes");
+  await act(async () => button("Save changes").click());
+  const writes = transport.mock.calls.filter((call) => call[1] === "PUT");
+  expect(writes).toHaveLength(2);
+  expect(writes[1][2].events.join.channel_id).toBe("other");
+  expect(writes[1][2].invite_names).toEqual({ abc123: "Reddit" });
+  expect(writes[1][2].revision).toBe(first[0][2].revision + 1);
+  expect(host.textContent).not.toContain("Unsaved changes");
 });
 it("loads an old response that lacks the new keys", async () => {
   const old = structuredClone(fixture) as Partial<SettingsResponse>;
@@ -1037,6 +1077,9 @@ it("starts valid groups closed and hides destination, preview and test controls"
   expect(host.querySelector(".moderation-event-editor")).toBeNull();
   expect(button("Preview")).toBeUndefined();
   expect(button("Send test")).toBeUndefined();
+});
+it("starts the other-invites group closed on the Invites tab", async () => {
+  await showView("invites");
   expect(
     host.querySelector(".moderation-other-invites")?.hasAttribute("open"),
   ).toBe(false);
@@ -1164,6 +1207,7 @@ it.each([
       if (path.endsWith("/health")) return health();
       throw Error(`Unexpected ${path}`);
     });
+    if (scenario === "invite-name") await showView("invites");
     await act(async () => button("Refresh settings").click());
     await settle();
     const expected = baselineWire(settings);
