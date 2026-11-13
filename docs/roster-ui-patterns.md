@@ -930,7 +930,7 @@ Short lists (dropdown rollout PR 2):
   keys. Phones (700 px or less) show one line, "Step 2 of 5 · Rules & count",
   with dots that expand to the full bar. It reads the light `bonus-status`
   endpoint after the list; a failure shows one muted "Status unavailable ·
-  Retry" and never blocks the list.
+  Try again" and never blocks the list.
 - Blockers come from `bonusStepBlockers` in `bonusRaffle.ts`, the one source for
   the step lines, the bar reasons and every disabled action. Draw, Approve and
   Announce wait for the steps before them. The Draw preview loads by itself
@@ -970,3 +970,55 @@ select an item through a retargeted release or compatibility click; selection
 requires a new item press. Keyboard and assistive virtual activation stay available. Physical
 touch remains unverified by native tooling (Shaka1055); unit touch sequences do
 not establish a real phone touch result.
+
+## Shared UI rules from UI audit 2 (2026-11-13)
+
+- **One page header.** Every page uses `CwlPageHeader` (title, optional help,
+  optional description, actions, pickers). At 650 px or less the title takes its
+  own row and buttons and pickers wrap below it; at 480 px or less a season or
+  pool picker takes the full row.
+- **LoadError.** One block for "this section could not load": message, optional
+  note, copyable `Reference:` and "Try again". It takes several messages from one
+  failure (each keeps its own reference). Show it for a failed read. Keep the muted
+  one-line status note (for example the step bar's "Status unavailable · Try
+  again") only when the failed read is secondary and must never block the page
+  content.
+- **DashboardLink.** In-app navigation is a real `<a href>`. A plain primary
+  click uses the History API router; Ctrl, Cmd, Shift, Alt and middle clicks keep
+  the browser behavior. A disabled link has no `href`, `aria-disabled` and cannot
+  navigate.
+- **`format.ts`.** Numbers always use `en-US` (`formatNumber`). Dates and times
+  follow the viewer's locale (`formatDate`, `formatTime`, `formatDateTime`;
+  `seconds: true` adds seconds). A missing or unreadable date shows "—" and the
+  helpers never throw. Tests pin locale and time zone.
+- **`useOpeningPressGuard`.** The press that opens a menu must not choose an item
+  that appears under the pointer. Spread `rootProps` around the trigger and
+  `popoverProps` on the popover; call `release` when the menu closes. Used by
+  `ActionMenu` and `AccountMenu`.
+- **44 px rule.** Every control meant for touch is at least 44 px high and wide.
+  Inline reference links in running text are the one exception and may not be
+  counted as controls.
+- **URL state.** Page tabs and main filters live in the address and change with
+  `history.replaceState`, so Back leaves the page and not the tab. Keys: `tab`
+  (Moderation, Strikes, Tasks), `status` and `type` (Tickets), `pool` (Results &
+  bonuses), and the clan path for Family clans. Defaults stay out of the URL and
+  unknown values fall back to the default (`pageUrlState.ts`).
+- **Breakpoints in use** (max-width unless noted; counts are `@media` rules in
+  `web/cwl/src`). Nothing was changed; each stays because components already
+  tune their layout to it.
+  - 650 px (106): phone layout of the shared header, roster and page controls.
+    The main phone breakpoint.
+  - 480 px (33): narrow phones; pickers take a full row.
+  - 900 px (15) and 901 px (min, 3): sidebar and two-column page layouts.
+  - 760 px (11), 767 px (10) and 768 px (min, 1): tablet cut-offs of older
+    pages that predate 650 px.
+  - 800 px (8), 801 px (min, 2): activity and moderation tables.
+  - 700 px (6), 701 px (min, 2): step bars and Results & bonuses.
+  - 680 px (6), 720 px (5): single-page layouts (Declaration, Members).
+  - 1100 px (min, 5; max, 3), 1000 px (min, 4), 900 px (min, 2), 1200 px (3),
+    1279 px, 1050 px: wide layouts with side panels.
+  - 320 px (5), 350 px, 360 px (2), 370 px (3), 380 px (2), 390 px (2),
+    400 px: fixes for very small phones.
+  - Height 600 px (7), 500 px (5), 540 px (1): short landscape phones.
+  Merging near-equal values (for example 760/767/768) is a CSS change and is
+  recorded as a later task, not done here.

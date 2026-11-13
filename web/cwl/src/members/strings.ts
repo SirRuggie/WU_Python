@@ -1,3 +1,5 @@
+import { formatNumber } from "../format";
+
 /** All text owned by the unified Members page. Shared editors keep their own text. */
 export const membersText = {
   refusedPeople: "People who cannot be changed",
@@ -45,7 +47,7 @@ export const membersText = {
     "Import stopped early. No nicknames changed. Press Fix nicknames again.",
   refresh: "Refresh members",
   refreshProgress: "Refresh progress",
-  timeZoneFlag: "Time zone and flag",
+  timeZoneFlag: "Nickname time zone",
   nickname: "Nickname",
   linkedAccounts: "Linked accounts",
   moderationHistory: "Moderation history",
@@ -96,7 +98,7 @@ export const membersText = {
   selected: (count: number, hidden: number) =>
     `${count} selected${hidden ? ` · ${hidden} hidden` : ""}`,
   showing: (first: number, last: number, total: number) =>
-    `Showing ${first}-${last} of ${total.toLocaleString()}`,
+    `Showing ${first}-${last} of ${formatNumber(total)}`,
   showSelected: "Show selected people",
   addRole: "Add role",
   removeRole: "Remove role",

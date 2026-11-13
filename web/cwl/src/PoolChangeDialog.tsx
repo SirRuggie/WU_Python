@@ -3,6 +3,7 @@ import type { Pool, Signup } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
 import animation from "./assets/confirm-pool-change.gif";
 import "./PoolChangeDialog.css";
+import { countLabel } from "./countLabel";
 
 export default function PoolChangeDialog({
   rows,
@@ -22,7 +23,7 @@ export default function PoolChangeDialog({
   const subject =
     rows.length === 1
       ? rows[0].player_name || rows[0].tag
-      : `${rows.length} accounts`;
+      : countLabel(rows.length, "account");
   return (
     <ConfirmDialog
       heading="Change CWL pool?"

@@ -1,4 +1,5 @@
-import PageEyebrow from "../PageEyebrow";
+import CwlPageHeader from "../CwlPageHeader";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import SectionTabs from "../SectionTabs";
 import { useJourneyState, useJourneyPosition } from "../journeyState";
 import { useState } from "react";
@@ -226,7 +227,7 @@ export function WarCard({
             target="_blank"
             rel="noopener noreferrer"
           >
-            Open clan ↗
+            Open clan <ArrowUpRight size={16} aria-hidden="true" />
           </a>
           {scope === "mine" && (
             <button
@@ -235,7 +236,7 @@ export function WarCard({
                 onTasks(clan.tag, type === "regular" ? "war" : "cwl")
               }
             >
-              View my tasks →
+              View my tasks <ArrowRight size={16} aria-hidden="true" />
             </button>
           )}
         </footer>
@@ -300,17 +301,14 @@ export default function WarsWorkspace({
   );
   return (
     <section className="clan-activity-workspace wars-workspace">
-      <header className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Wars</h1>
-          <p>
-            {scope === "mine"
-              ? "Your clans’ wars, scores, and your accounts’ remaining attacks."
-              : "All family clans · war scores and battle times."}
-          </p>
-        </div>
-      </header>
+      <CwlPageHeader
+        title={<h1>Wars</h1>}
+        description={
+          scope === "mine"
+            ? "Your clans’ wars, scores, and your accounts’ remaining attacks."
+            : "All family clans · war scores and battle times."
+        }
+      />
       <SectionTabs
         className="workflow-tabs section-tabs--flow"
         label="War type"

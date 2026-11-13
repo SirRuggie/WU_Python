@@ -54,7 +54,7 @@ it.each(["sent", "pending"])(
           </DashboardPermissions.Provider>,
         ),
       );
-      const button = [...host.querySelectorAll("button")].find(
+      const button = [...host.querySelectorAll("a")].find(
         (b) => b.textContent === "Next: Declaration check ›",
       );
       expect(!!button).toBe(status === "sent");

@@ -2,6 +2,7 @@
   width: min(34rem, calc(100% - 1.5rem));
   max-height: calc(100dvh - 1.5rem);
   overflow: auto;
+  overscroll-behavior: contain;
   padding: var(--wu-space-4);
   border: 1px solid var(--wu-border);
   border-radius: var(--wu-radius-md);

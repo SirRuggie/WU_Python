@@ -3,9 +3,6 @@
   max-width: 1100px;
   margin: 0 auto var(--wu-space-7);
 }
-.strikes-workspace .page-head {
-  margin-bottom: var(--wu-space-5);
-}
 .strikes-tabs {
   display: flex;
   gap: 0;
@@ -1100,7 +1097,7 @@
   max-width: 100%;
 }
 @media (max-width: 760px) {
-  .strikes-player-detail .page-head,
+  .shell .strikes-player-detail .cwl-page-header,
   .strikes-player-detail .strikes-toolbar {
     margin-bottom: var(--wu-space-1);
   }
@@ -1109,10 +1106,6 @@
   .strikes-player-detail .strikes-detail-context {
     margin-top: 0;
     line-height: 1.4;
-  }
-  .strikes-player-detail .page-head > div > p:not(.eyebrow) {
-    display: none;
-    text-wrap: pretty;
   }
 }
 .strike-review-resolution {
@@ -1137,17 +1130,6 @@
 }
 
 /* Keep the family overview immediately below its routine controls. */
-.strikes-activity-overview .page-head {
-  margin-bottom: var(--wu-space-5);
-}
-.strikes-activity-overview .page-head h1 {
-  margin: 0;
-  font-size: var(--wu-text-2xl);
-  font-weight: var(--wu-weight-bold);
-  line-height: 1.15;
-  text-wrap: balance;
-  letter-spacing: -0.02em;
-}
 .strikes-navigation {
   display: flex;
   align-items: start;
@@ -1213,10 +1195,8 @@
   .strikes-activity-overview > :not(.page-head):not(.strikes-navigation) {
     grid-column: 1 / -1;
   }
-  .strikes-activity-overview .page-head {
+  .shell .strikes-activity-overview .cwl-page-header {
     align-self: center;
-    margin: 0;
-    margin-bottom: var(--wu-space-5);
   }
   .strikes-activity-overview .strikes-navigation {
     margin: 0;
@@ -1226,16 +1206,4 @@
   .strikes-activity-overview {
     row-gap: 0;
   }
-}
-@media (max-width: 480px) {
-  .strikes-activity-overview .page-head h1 {
-    font-size: var(--wu-text-xl);
-  }
-}
-
-.strikes-title {
-  display: flex;
-  align-items: center;
-  gap: var(--wu-space-2);
-  min-width: 0;
 }

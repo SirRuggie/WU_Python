@@ -72,19 +72,25 @@ button:where(
     background: var(--wu-surface-soft);
   }
 }
-button:disabled {
+button:disabled,
+a[aria-disabled="true"] {
   opacity: 0.48;
   cursor: not-allowed;
 }
+@media (hover: hover) and (pointer: fine) {
+  .button[aria-disabled="true"]:hover {
+    background: var(--wu-surface);
+  }
+}
 /* keep: base primary gold is pinned by App.welcomeColors.test.tsx. */
 .primary {
-  background: #d9a628;
-  border-color: #d9a628;
+  background: var(--wu-accent);
+  border-color: var(--wu-accent);
   color: var(--wu-accent-ink);
 }
 @media (hover: hover) and (pointer: fine) {
   .primary:hover {
-    background: #e7b73f;
+    background: var(--wu-accent-hover);
   }
 }
 .danger-link {
@@ -187,30 +193,10 @@ h1 {
   text-wrap: balance;
 }
 /* Page titles share the helmet bar; card/dialog H1s retain only the gold ink. */
-:where(
-  .page-head h1,
-  .members-workspace > header > h1,
-  .base-bank > header > h1,
-  .dashboard-home > h1,
-  .ticket-browser > h1,
-  .dashboard-issues > h1,
-  .image-gallery > h1,
-  .manage-heading > div > h1,
-  main:not(.center-screen) > h1
-) {
+:where(.page-head h1, main:not(.center-screen) > h1) {
   position: relative;
 }
-:where(
-  .page-head h1,
-  .members-workspace > header > h1,
-  .base-bank > header > h1,
-  .dashboard-home > h1,
-  .ticket-browser > h1,
-  .dashboard-issues > h1,
-  .image-gallery > h1,
-  .manage-heading > div > h1,
-  main:not(.center-screen) > h1
-)::after {
+:where(.page-head h1, main:not(.center-screen) > h1)::after {
   content: "";
   position: absolute;
   left: 0;
@@ -441,10 +427,6 @@ small {
   margin-bottom: 0;
   text-wrap: pretty;
 }
-.season-choice {
-  width: min(260px, 100%);
-  flex: none;
-}
 .season-banner {
   display: flex;
   justify-content: space-between;
@@ -530,6 +512,7 @@ small {
 .check-label {
   display: flex;
   align-items: center;
+  min-height: 44px;
   gap: var(--wu-space-2);
   font-size: var(--wu-text-sm);
   color: var(--wu-text);
@@ -743,6 +726,14 @@ small {
   overflow-wrap: anywhere;
   margin: var(--wu-space-3);
 }
+#dashboard-issue-reference-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .staff-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -917,10 +908,6 @@ small {
   .page-head {
     display: block;
     margin-bottom: var(--wu-space-5);
-  }
-  .page-head .season-choice {
-    width: 100%;
-    margin-top: var(--wu-space-4);
   }
   .account-list,
   .registered-grid {
@@ -2306,6 +2293,8 @@ summary.target-summary-44 {
   color: var(--wu-accent);
   font-weight: var(--wu-weight-medium);
 }
-.server-join-notice a:hover {
-  color: var(--wu-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .server-join-notice a:hover {
+    color: var(--wu-accent-hover);
+  }
 }

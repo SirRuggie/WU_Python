@@ -50,3 +50,24 @@ it("Clear filters returns to the default Open status", async () => {
   expect(statusSelect().value).toBe("open");
   expect(String(api.mock.calls.at(-1)?.[0])).toContain("status=open");
 });
+
+it("uses the singular for one ticket on the page", async () => {
+  api.mockResolvedValue({
+    tickets: [
+      {
+        id: "1",
+        number: 1,
+        name: "ticket-0001",
+        user_id: "1",
+        kind: "join",
+        status: "open",
+        created_at: null,
+        flags: [],
+      },
+    ],
+    has_more: false,
+  });
+  await act(async () => root.render(<TicketBrowser />));
+  expect(host.textContent).toContain("1 ticket on this page");
+  expect(host.textContent).not.toContain("1 tickets");
+});

@@ -3,6 +3,7 @@ import { api } from "./api";
 import type { ManagementOption, ManagementValue } from "./serverManagement";
 import DiscordIdentity from "./DiscordIdentity";
 import "./MemberPicker.css";
+import { countLabel } from "./countLabel";
 export type MemberOption = ManagementOption & {
   id: string;
   display_name: string;
@@ -297,7 +298,7 @@ export default function MemberPicker({
                 ? ""
                 : !rows.length
                   ? "No members found."
-                  : `${rows.length} members shown`}
+                  : `${countLabel(rows.length, "member")} shown`}
           </span>
           {next && !search.trim() && (
             <button

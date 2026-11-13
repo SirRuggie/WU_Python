@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { formatNumber } from "./format";
 import type { PostCopy } from "./announcementPostUpdate";
 export default function AnnouncementPostCopyEditor({
   value,
@@ -41,7 +42,7 @@ export default function AnnouncementPostCopyEditor({
         onChange={(e) => onChange({ ...value, body: e.target.value })}
       />
       <p>
-        {(value.title.length + value.body.length).toLocaleString()} / 4,000 text
+        {formatNumber(value.title.length + value.body.length)} / 4,000 text
         characters. Discord formatting and existing images are preserved.
       </p>
       <fieldset disabled={disabled}>

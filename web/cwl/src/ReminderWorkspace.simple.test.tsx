@@ -139,9 +139,10 @@ it("does not call intentionally inactive schedules pending", async () => {
       ),
     );
     expect(host.textContent).not.toContain("Waiting for changes to load");
-    expect(host.querySelector(".reminder-status .badge")?.textContent).toBe(
-      "Off",
-    );
+    expect(
+      host.querySelector(".reminder-status .roster-ui-status")?.textContent,
+    ).toBe("Off");
+    expect(host.querySelector(".reminder-status .badge")).toBeNull();
   } finally {
     await act(async () => root.unmount());
     host.remove();

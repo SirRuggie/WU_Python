@@ -1,3 +1,5 @@
+import { formatDate } from "./format";
+import { ArrowRight } from "lucide-react";
 import "./ClanWeightSource.css";
 import { useDashboardPermission } from "./DashboardPermissions";
 
@@ -38,7 +40,7 @@ export default function ClanWeightSource({
           {!compact && (
             <span>
               {account?.clan_weight_saved_at
-                ? `Saved in ${account.clan_weight_clan_name || account.clan_weight_clan_tag} · ${new Date(account.clan_weight_saved_at).toLocaleDateString()}`
+                ? `Saved in ${account.clan_weight_clan_name || account.clan_weight_clan_tag} · ${formatDate(new Date(account.clan_weight_saved_at))}`
                 : clanTag && !account?.clan_weight_managed
                   ? account?.weight_lineup_clan_tag &&
                     !account.current_fwa_clan_tag
@@ -64,11 +66,16 @@ export default function ClanWeightSource({
               }
             }}
           >
-            {compact
-              ? "Also on Clan weights ›"
-              : clanTag && !account?.clan_weight_managed
-                ? "Set in Clan weights ›"
-                : "Open Clan weights →"}
+            {compact ? (
+              "Also on Clan weights ›"
+            ) : clanTag && !account?.clan_weight_managed ? (
+              "Set in Clan weights ›"
+            ) : (
+              <>
+                Open Clan weights
+                <ArrowRight size={16} aria-hidden="true" />
+              </>
+            )}
           </a>
         </>
       ) : compact ? (

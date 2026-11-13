@@ -1,4 +1,5 @@
 import type { Pool } from "./api";
+import { formatCycleMonth } from "./format";
 
 export type ParticipationDisplayStatus = {
   code: string;
@@ -257,10 +258,7 @@ export function syncStatusLabel(
 ): string {
   if (value === "waiting") {
     if (!cycle || !validCwlCycle(cycle)) return "Waiting for Clash CWL";
-    const month = new Date(`${cycle}-01T00:00:00Z`).toLocaleString("en-US", {
-      month: "long",
-      timeZone: "UTC",
-    });
+    const month = formatCycleMonth(cycle);
     return `${month} CWL has not started in Clash yet`;
   }
   const labels: Record<string, string> = {

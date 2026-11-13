@@ -8,20 +8,6 @@
   padding-bottom: var(--wu-space-7);
 }
 
-.world-clocks-heading {
-  margin-bottom: var(--wu-space-3);
-}
-
-.world-clocks-heading h1 {
-  margin: var(--wu-space-1) 0 var(--wu-space-2);
-}
-
-.world-clocks-heading p:last-child {
-  margin: 0;
-  color: var(--wu-text-muted);
-  font-size: var(--wu-text-sm);
-}
-
 .world-clock-sections {
   margin-bottom: var(--wu-space-4);
 }
@@ -170,6 +156,11 @@
   margin: 2px 0 0;
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
+}
+
+.world-clock-sub-icon {
+  margin-right: var(--wu-space-1);
+  vertical-align: -0.125em;
 }
 
 .world-clock-sub.is-error,

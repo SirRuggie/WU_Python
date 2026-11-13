@@ -48,6 +48,6 @@ it("keeps readiness help closed until selected, then returns focus to the ?", as
 it("puts readiness help in the Declaration check page header", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   expect(app).toMatch(
-    /title=\{<h1>Declaration check<\/h1>\} help=\{<DeclarationHelp \/>\}/,
+    /title=\{<h1>Declaration check<\/h1>\}\s+help=\{<DeclarationHelp \/>\}/,
   );
 });

@@ -54,6 +54,34 @@ it("uses menu icons and labels for roster and ticket destinations", async () => 
   }
 });
 
+it("styles the external ticket console link as a secondary button", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  vi.mocked(api).mockResolvedValue({
+    checked_at: 1,
+    seasons: [],
+    tickets: { open: 2, url: "https://tickets.example.test/" },
+    failures_count: 0,
+    failures: [],
+    warnings: [],
+    areas: [],
+  });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<StaffOverview onNavigate={vi.fn()} />));
+    const link = host.querySelector<HTMLAnchorElement>(
+      'a[href="https://tickets.example.test/"]',
+    )!;
+    expect(link.className).toBe("button");
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toBe("noreferrer");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
 it("marks only the pending refresh and blocks a second native click", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const snapshot = {

@@ -32,7 +32,8 @@ import "../memberTimezones/MemberTimezones.css";
 import "./Members.css";
 import ActionMenu from "../rosterUi/ActionMenu";
 import LoadError from "../LoadError";
-import ActionPanel from "../ActionPanel";
+import CwlPageHeader from "../CwlPageHeader";
+import HelpButton from "../HelpButton";
 
 type RoleAction = {
   ids: readonly string[];
@@ -66,7 +67,6 @@ export default function MembersPage({
     [nameOpen, setNameOpen] = useState(false),
     [fixTrigger, setFixTrigger] = useState(0),
     [historyTrigger, setHistoryTrigger] = useState(0),
-    [helpTrigger, setHelpTrigger] = useState<HTMLElement | null>(null),
     [fixIds, setFixIds] = useState<readonly string[] | undefined>(),
     [action, setAction] = useState<RoleAction | null>(null),
     [actionError, setActionError] = useState(""),
@@ -223,18 +223,14 @@ export default function MembersPage({
       tabIndex={-1}
       className={`roster-ui members-workspace${person ? " has-panel" : ""}`}
     >
-      <header>
-        <h1>{t.title}</h1>
-      </header>
-      {helpTrigger && (
-        <ActionPanel
-          title={t.nicknameHelp}
-          trigger={helpTrigger}
-          onClose={() => setHelpTrigger(null)}
-        >
-          <p>{t.nicknameExplanation}</p>
-        </ActionPanel>
-      )}
+      <CwlPageHeader
+        title={<h1>{t.title}</h1>}
+        help={
+          <HelpButton title={t.nicknameHelp}>
+            <p>{t.nicknameExplanation}</p>
+          </HelpButton>
+        }
+      />
       <LoadError
         message={directory.error}
         onRetry={!data ? () => void directory.load() : undefined}
@@ -276,11 +272,6 @@ export default function MembersPage({
                       setPersonId(null);
                       setHistoryTrigger((value) => value + 1);
                     },
-                  },
-                  {
-                    id: "about",
-                    label: t.nicknameHelp,
-                    onAction: setHelpTrigger,
                   },
                 ]}
               />

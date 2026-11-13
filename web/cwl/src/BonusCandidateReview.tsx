@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import PriorWinner from "./PriorWinner";
 import ActionPanel from "./ActionPanel";
 import DiscordIdentity from "./DiscordIdentity";
@@ -93,7 +94,7 @@ export default function BonusCandidateReview({
         {account.bonus_review?.updated_at && (
           <p className="bonus-review-attribution">
             Last review saved{" "}
-            {new Date(account.bonus_review.updated_at).toLocaleString()}
+            {formatDateTime(new Date(account.bonus_review.updated_at))}
             {account.bonus_review.updated_by && (
               <>
                 {" "}

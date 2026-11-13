@@ -1,7 +1,10 @@
+import { formatDateTime, formatTime } from "./format";
 import FilterChips from "./FilterChips";
+import LoadError from "./LoadError";
 import SelectionActionBar from "./SelectionActionBar";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
-import ActionPanel from "./ActionPanel";
+import { createPortal } from "react-dom";
+import HelpButton from "./HelpButton";
 import "./members/Members.css";
 import ReturnBatch from "./returns/ReturnBatch";
 import {
@@ -37,12 +40,12 @@ export function ReturnStatusSummary({ status }: { status: ReturnStatus }) {
         <small>
           Last recorded send:{" "}
           {status.last_sent_at
-            ? new Date(status.last_sent_at).toLocaleString()
+            ? formatDateTime(new Date(status.last_sent_at))
             : "None recorded"}
         </small>
         {status.expires_at && (
           <small>
-            Window ends: {new Date(status.expires_at).toLocaleString()}
+            Window ends: {formatDateTime(new Date(status.expires_at))}
           </small>
         )}
       </article>
@@ -53,13 +56,15 @@ export function ReturnStatusSummary({ status }: { status: ReturnStatus }) {
 export default function ReturnReminderOverview({
   onOpen,
   onDirty,
+  helpSlot,
   active = true,
 }: {
   active?: boolean;
+  /** Where the page header shows the ? help; its content needs this page's state. */
+  helpSlot?: HTMLElement | null;
   onOpen: (section: ManagementSection) => void;
   onDirty?: (dirty: boolean) => void;
 }) {
-  const [aboutTrigger, setAboutTrigger] = useState<HTMLElement | null>(null);
   const [records, setRecords] = useState<ReturnClan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -144,7 +149,7 @@ export default function ReturnReminderOverview({
       const result = await api<ManagementDocument>("/manage/return-reminders");
       if (id !== request.current) return;
       setRecords(result.documents || []);
-      setLoadedAt(new Date().toLocaleTimeString());
+      setLoadedAt(formatTime(new Date()));
       setSelected((current) =>
         current.filter((id) => result.documents?.some((row) => row.id === id)),
       );
@@ -267,54 +272,39 @@ export default function ReturnReminderOverview({
           revealSelection
         />
       </div>
-      {aboutTrigger && (
-        <ActionPanel
-          className="return-about-panel"
-          title="About this page"
-          trigger={aboutTrigger}
-          onClose={() => setAboutTrigger(null)}
-        >
-          <div className="return-context">
-            <span>
-              <strong>Purpose</strong>Bring saved members back to their home
-              clans after CWL.
-            </span>
-            <span>
-              <strong>Destination</strong>
-              {destinationName}
-            </span>
-            <span>
-              <strong>Timing</strong>
-              {section === "FWA"
-                ? "Automatic after start; stops at cutoff"
-                : "Manual send only"}
-            </span>
-          </div>
-        </ActionPanel>
-      )}
-      {destinationError && (
-        <p className="return-destination-warning" role="status">
-          {destinationError}{" "}
-          <button type="button" onClick={() => void loadDestinations()}>
-            Retry destination
-          </button>
-        </p>
-      )}
-      {error && (
-        <div className="notice error" role="alert">
-          {error}
-          {loadedAt && " Showing the last loaded overview."}
-          <button
-            disabled={loading}
-            onClick={() => {
-              void load();
-              void loadDestinations();
-            }}
-          >
-            Retry
-          </button>
-        </div>
-      )}
+      {helpSlot &&
+        createPortal(
+          <HelpButton title="About this page" className="return-about-panel">
+            <div className="return-context">
+              <span>
+                <strong>Purpose</strong>Bring saved members back to their home
+                clans after CWL.
+              </span>
+              <span>
+                <strong>Destination</strong>
+                {destinationName}
+              </span>
+              <span>
+                <strong>Timing</strong>
+                {section === "FWA"
+                  ? "Automatic after start; stops at cutoff"
+                  : "Manual send only"}
+              </span>
+            </div>
+          </HelpButton>,
+          helpSlot,
+        )}
+      <LoadError
+        message={[destinationError, error]}
+        note={
+          error && loadedAt ? "Showing the last loaded overview." : undefined
+        }
+        disabled={loading}
+        onRetry={() => {
+          if (error) void load();
+          void loadDestinations();
+        }}
+      />
       {loading && <p role="status">Loading return lists…</p>}
       {batch && (
         <ReturnBatch
@@ -413,11 +403,6 @@ export default function ReturnReminderOverview({
                 label: "Return channels",
                 disabled: loading,
                 onAction: () => utility("return-channels"),
-              },
-              {
-                id: "about",
-                label: "About this page",
-                onAction: setAboutTrigger,
               },
             ]}
           />

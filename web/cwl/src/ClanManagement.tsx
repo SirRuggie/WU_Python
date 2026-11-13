@@ -1,4 +1,6 @@
-import PageEyebrow from "./PageEyebrow";
+import LoadError from "./LoadError";
+import CwlPageHeader from "./CwlPageHeader";
+import { Check, X } from "lucide-react";
 import SectionTabs from "./SectionTabs";
 import "./ChoiceGroupLayout.css";
 import {
@@ -414,12 +416,10 @@ export default function ClanManagement({
   }
   return (
     <section className="clan-management">
-      <div className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Family clans</h1>
-          <p>Set up each clan and its war reminders.</p>
-        </div>
+      <CwlPageHeader
+        title={<h1>Family clans</h1>}
+        description="Set up each clan and its war reminders."
+      >
         <button
           disabled={disabled}
           onClick={async () => {
@@ -440,7 +440,7 @@ export default function ClanManagement({
         >
           + Add clan
         </button>
-      </div>
+      </CwlPageHeader>
       <SectionTabs
         className="clan-tabs section-tabs--flow"
         label="Clan management views"
@@ -473,19 +473,16 @@ export default function ClanManagement({
         <ClanHistory onRestored={() => void load()} />
       ) : (
         <>
-          {error && (
-            <p className="notice error" role="alert">
-              {error}
-            </p>
-          )}
-          {choicesError && (
-            <p className="notice error" role="alert">
-              Roles and channels could not be loaded: {choicesError}{" "}
-              <button disabled={disabled} onClick={() => void loadChoices()}>
-                Retry roles and channels
-              </button>
-            </p>
-          )}
+          <LoadError message={error} />
+          <LoadError
+            message={
+              choicesError && !directoryError
+                ? `Roles and channels could not be loaded: ${choicesError}`
+                : ""
+            }
+            disabled={disabled}
+            onRetry={() => void loadChoices()}
+          />
           {notice && (
             <p className="notice" role="status">
               {notice}
@@ -540,6 +537,7 @@ export default function ClanManagement({
               onRetry={() => {
                 setDirectoryLoading(true);
                 void load();
+                if (choicesError) void loadChoices();
               }}
               onSelect={select}
             />
@@ -580,7 +578,12 @@ export default function ClanManagement({
                           });
                         }}
                       >
-                        {complete ? "✓" : "✗"} {label}
+                        {complete ? (
+                          <Check size={16} aria-hidden="true" />
+                        ) : (
+                          <X size={16} aria-hidden="true" />
+                        )}
+                        {label} <small>{complete ? "Done" : "To do"}</small>
                       </button>
                     ))}
                   </nav>

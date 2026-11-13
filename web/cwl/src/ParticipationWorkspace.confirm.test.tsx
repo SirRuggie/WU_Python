@@ -130,14 +130,25 @@ it("Refresh Cancel retains the unsaved result edit, confirmed refresh reads once
   expect(writes()).toHaveLength(0);
 });
 it("season change cancellation and double confirmation preserve callback value and zero writes", async () => {
-  // The season field is the short-list native select (prompt 228).
   async function select() {
-    const field = host.querySelector<HTMLSelectElement>(
-      '.cwl-page-header select[name="season"]',
-    )!;
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>(
+          ".cwl-page-header .roster-menu-trigger",
+        )!
+        .click(),
+    );
+    const item = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].find((e) => e.textContent?.includes("December"))!;
     await act(async () => {
-      field.value = "2";
-      field.dispatchEvent(new Event("change", { bubbles: true }));
+      item.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, button: 0 }),
+      );
+      item.dispatchEvent(
+        new MouseEvent("mouseup", { bubbles: true, button: 0 }),
+      );
+      item.click();
     });
   }
   await select();

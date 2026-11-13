@@ -68,7 +68,7 @@ it("asks in the app's own dialog, never a browser pop-up, before leaving unsaved
       });
   };
   const button = (name: string) =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    [...document.querySelectorAll<HTMLButtonElement>("button, a")].find(
       (item) => item.textContent?.trim() === name,
     )!;
   try {

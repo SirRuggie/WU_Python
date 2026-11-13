@@ -138,3 +138,37 @@ it("disables the account trigger and sign-out action while pending", async () =>
   expect(document.querySelector('[role="menu"]')).toBeNull();
   expect(signOut).not.toHaveBeenCalled();
 });
+
+it("ignores the press that opened the menu landing on an item", async () => {
+  const trigger = host.querySelector(".account-menu-profile-trigger")!;
+  await act(async () => {
+    trigger.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        pointerType: "mouse",
+        pointerId: 7,
+        button: 0,
+      }),
+    );
+    trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  });
+  const item = document.querySelector<HTMLElement>('[role="menuitem"]')!;
+  await act(async () => {
+    item.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        pointerType: "mouse",
+        pointerId: 7,
+        button: 0,
+      }),
+    );
+    item.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    item.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }),
+    );
+  });
+  expect(signOut).not.toHaveBeenCalled();
+  expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  await click(item);
+  expect(signOut).toHaveBeenCalledTimes(1);
+});

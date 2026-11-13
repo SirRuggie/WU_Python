@@ -2,7 +2,6 @@
   max-width: 1120px;
   margin-inline: auto;
 }
-.issues-intro,
 .issues-count,
 .issues-hint {
   color: var(--wu-text-muted);
@@ -79,6 +78,11 @@
   font-size: var(--wu-text-xs);
   color: var(--wu-text-muted);
   line-height: 1.7;
+}
+.issue-reference button {
+  min-height: 44px;
+  margin-left: var(--wu-space-2);
+  font-size: var(--wu-text-sm);
 }
 .issue-member {
   min-width: 0;

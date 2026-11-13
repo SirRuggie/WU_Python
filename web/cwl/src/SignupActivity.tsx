@@ -1,5 +1,6 @@
+import { formatDateTime } from "./format";
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, ChevronRight, TriangleAlert } from "lucide-react";
 import ActionPanel from "./ActionPanel";
 import ConfirmDialog from "./ConfirmDialog";
 import DiscordContact from "./DiscordContact";
@@ -118,7 +119,7 @@ export default function SignupActivity({
                 </strong>
                 <time
                   dateTime={item.created_at}
-                  title={new Date(item.created_at).toLocaleString()}
+                  title={formatDateTime(new Date(item.created_at))}
                 >
                   {publicationDate(item.created_at)}
                 </time>
@@ -141,7 +142,12 @@ export default function SignupActivity({
                 </Button>
                 <DiscordContact
                   userId={item.user_id}
-                  label="Message ↗"
+                  label={
+                    <>
+                      Message
+                      <ArrowUpRight size={16} aria-hidden="true" />
+                    </>
+                  }
                   className="roster-ui roster-ui-button is-secondary"
                 />
                 <Button

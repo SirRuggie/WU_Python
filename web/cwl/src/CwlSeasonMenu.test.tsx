@@ -75,23 +75,6 @@ it.each(["Results", "Bonus", "Exports"])(
           <Component seasonId="1" seasons={seasons} onSeasonChange={change} />,
         ),
       );
-      // Results and Bonus medals use the short-list native select (prompt 228).
-      const select = host.querySelector<HTMLSelectElement>(
-        '.cwl-page-header select[name="season"]',
-      );
-      if (kind !== "Exports") {
-        expect(select!.selectedOptions[0].textContent).toBe("November 2026");
-        for (const value of ["1", "2"])
-          await act(async () => {
-            select!.value = value;
-            select!.dispatchEvent(new Event("change", { bubbles: true }));
-          });
-        expect(change).toHaveBeenCalledExactlyOnceWith("2");
-        expect(
-          api.mock.calls.every((call) => !call[1] || call[1] === "GET"),
-        ).toBe(true);
-        return;
-      }
       const trigger = host.querySelector<HTMLButtonElement>(
         ".cwl-page-header .roster-menu-trigger",
       )!;

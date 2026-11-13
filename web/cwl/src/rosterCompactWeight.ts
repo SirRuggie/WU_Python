@@ -1,4 +1,6 @@
-const compactWeightFormat = new Intl.NumberFormat("en-US", {
+import { NUMBER_LOCALE } from "./format";
+
+const compactWeightFormat = new Intl.NumberFormat(NUMBER_LOCALE, {
   useGrouping: false,
   maximumFractionDigits: 1,
 });

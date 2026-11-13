@@ -1,5 +1,6 @@
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import { useState } from "react";
+import { parsePageParam, replacePageParam } from "./pageUrlState";
 import MemberActivityHistory from "./MemberActivityHistory";
 import MemberTimeline from "./MemberTimeline";
 import ModerationSettings from "./ModerationSettings";
@@ -17,8 +18,13 @@ export default function ModerationWorkspace({
   memberId?: string;
   onMemberRoute?: (userId: string) => void;
 }) {
-  const [section, setSection] = useState<Section>("history");
-  const [openedSettings, setOpenedSettings] = useState(false);
+  const [section, setSection] = useState<Section>(
+    () =>
+      parsePageParam("moderation", "tab", window.location.search) as Section,
+  );
+  const [openedSettings, setOpenedSettings] = useState(
+    () => section !== "history",
+  );
   const timeline = !!memberId && section === "history";
 
   // Invites and Log channels share one settings load and draft; each tab
@@ -26,9 +32,11 @@ export default function ModerationWorkspace({
   const showSettings = (next: "invites" | "channels") => {
     setOpenedSettings(true);
     setSection(next);
+    replacePageParam("moderation", "tab", next);
   };
   const showHistory = () => {
     setSection("history");
+    replacePageParam("moderation", "tab", "history");
     if (memberId) onMemberRoute?.("");
   };
 
@@ -37,13 +45,10 @@ export default function ModerationWorkspace({
       className="moderation-workspace"
       aria-labelledby="moderation-title"
     >
-      <header className="moderation-workspace-heading">
-        <div>
-          <PageEyebrow />
-          <h1 id="moderation-title">Moderation</h1>
-          <p>Review member events and configure where notices are posted.</p>
-        </div>
-      </header>
+      <CwlPageHeader
+        title={<h1 id="moderation-title">Moderation</h1>}
+        description="Review member events and configure where notices are posted."
+      />
       <SectionTabs
         className="moderation-sections section-tabs--flow"
         label="Moderation sections"

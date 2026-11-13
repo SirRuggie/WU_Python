@@ -1,9 +1,11 @@
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
+import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
 import BonusHelpPanel from "./BonusHelpPanel";
 import useConfirmDialog from "./useConfirmDialog";
 import { exportMonthLabel } from "./exportPreview";
 import ActionMenu from "./rosterUi/ActionMenu";
+import RosterMenu from "./rosterUi/Menu";
 import "./ParticipationWorkspace.css";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import FilterChips from "./FilterChips";
@@ -101,6 +103,7 @@ export default function ParticipationWorkspace({
   const [sort, setSort] = useState<ResultsSort>(initial.current.sort || "name");
   const [status, setStatus] = useState<BonusStatus | null>(null);
   const [statusFailed, setStatusFailed] = useState(false);
+  const [statusError, setStatusError] = useState("");
   const statusRequest = useRef(0);
   const statusEnabled = useRef(!!onBonus);
   statusEnabled.current = !!onBonus;
@@ -187,14 +190,16 @@ export default function ParticipationWorkspace({
   const loadStatus = useCallback(async (sid: string) => {
     const id = ++statusRequest.current;
     setStatusFailed(false);
+    setStatusError("");
     try {
       const result = await loadBonusStatus(sid);
       if (id !== statusRequest.current || currentSeason.current !== sid) return;
       setStatus(result);
-    } catch {
+    } catch (cause) {
       if (id !== statusRequest.current || currentSeason.current !== sid) return;
       setStatus(null);
       setStatusFailed(true);
+      setStatusError(cause instanceof Error ? cause.message : "");
     }
   }, []);
   const load = useCallback(async () => {
@@ -525,23 +530,19 @@ export default function ParticipationWorkspace({
         title={<h1>Results &amp; bonuses</h1>}
         help={<BonusHelpPanel />}
       >
-        <label className="participation-season">
-          Season
-          <select
-            name="season"
-            autoComplete="off"
-            value={seasonId}
-            disabled={controlsLocked}
-            onChange={(event) => void changeSeason(event.target.value)}
-          >
-            <option value="">Select a season</option>
-            {monthSeasons(seasons).map((season) => (
-              <option key={season.id} value={String(season.id)}>
-                {seasonMonthLabel(season)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <RosterMenu
+          label="Season"
+          value={seasonId}
+          disabled={controlsLocked}
+          onValueChange={(next) => void changeSeason(next)}
+          options={[
+            { value: "", label: "Select a season" },
+            ...monthSeasons(seasons).map((season) => ({
+              value: String(season.id),
+              label: seasonMonthLabel(season),
+            })),
+          ]}
+        />
       </CwlPageHeader>
       {/* The step bar tracks one hosting clan; with all clans it has no state. */}
       {seasonId && onBonus && clan !== "all" && (
@@ -708,6 +709,12 @@ export default function ParticipationWorkspace({
               archived={!!archived}
               disabled={controlsLocked}
               onSent={() => void loadStatus(seasonId)}
+            />
+          )}
+          {pool === "lazy" && onBonus && clan === "all" && statusFailed && (
+            <LoadError
+              message={statusError || "Lazy announcement could not load."}
+              onRetry={() => void loadStatus(seasonId)}
             />
           )}
           <div className="participation-toolbar">

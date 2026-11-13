@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import DashboardIcon from "./DashboardIcon";
 import SidebarNavigation, {
+  dashboardViews,
+  type DashboardView,
   navigationLabel,
   navigationSection,
   visibleNavigationSections,
@@ -205,6 +207,51 @@ it("uses the approved labels for menu and page naming", () => {
   expect(navigationSection("bases")).toBe("Activity");
   expect(navigationSection("connections-settings")).toBe("Admin");
   expect(navigationLabel("connections-settings")).toBe("Band monitor");
+});
+
+it("gives every view the top-bar title it had before the label map", () => {
+  const titles: Record<DashboardView, string> = {
+    "weight-trial": "Clan weights",
+    search: "Search",
+    bases: "Base bank",
+    wars: "Wars",
+    events: "Events",
+    declaration: "Declaration check",
+    "image-gallery": "Image gallery",
+    "world-clocks": "World clocks",
+    tickets: "Tickets",
+    "staff-overview": "Staff overview",
+    "clan-management": "Family clans",
+    strikes: "Strikes & replacements",
+    replacements: "Strikes & replacements",
+    "members-settings": "Members",
+    "member-timezones": "Members",
+    "member-activity": "Moderation",
+    moderation: "Moderation",
+    "applications-settings": "Ticket settings",
+    "fwa-settings": "FWA tools",
+    "connections-settings": "Band monitor",
+    "cwl-returns": "Return reminders",
+    "text-commands": "Command triggers",
+    manage: "Server management",
+    reminders: "Signup reminders",
+    todo: "Tasks",
+    home: "Home",
+    exports: "Exports & history",
+    signup: "Sign up",
+    assignments: "My clan assignments",
+    roster: "Build roster",
+    publication: "Finalize roster",
+    participation: "Results & bonuses",
+    staff: "Seasons",
+    access: "Staff access",
+    issues: "Dashboard issues",
+  };
+  expect(Object.keys(titles).sort()).toEqual([...dashboardViews].sort());
+  for (const view of dashboardViews)
+    expect(navigationLabel(view), view).toBe(titles[view]);
+  expect(navigationLabel("signup", "review", "saved")).toBe("My signups");
+  expect(navigationLabel("publication", "announce")).toBe("Announcements");
 });
 
 it("renders a unique semantic icon beside every member and staff label", () => {

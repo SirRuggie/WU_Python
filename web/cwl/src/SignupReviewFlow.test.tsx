@@ -339,7 +339,7 @@ it.each([false, true, "confirm"] as const)(
           await new Promise((resolve) => setTimeout(resolve, 10));
         });
       const button = (text: string) =>
-        [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        [...document.querySelectorAll<HTMLButtonElement>("button, a")].find(
           (b) => b.textContent?.trim() === text,
         )!;
       if (refuse) {

@@ -13,6 +13,7 @@ import type { SignupChange } from "./signupActivityModel";
 import PublicationAwarenessBanner from "./PublicationAwarenessBanner";
 import { useHorizontalFades } from "./useHorizontalFades";
 import "./horizontalFades.css";
+import { countLabel } from "./countLabel";
 
 type StatusFilter = "all" | "unassigned" | "missing_weight";
 
@@ -350,7 +351,7 @@ export default function RosterHeader({
             ⚠{" "}
             {missingCapacityClans.length === 1
               ? `${missingCapacityClans[0].name} has`
-              : `${missingCapacityClans.length} clans have`}{" "}
+              : `${countLabel(missingCapacityClans.length, "clan")} have`}{" "}
             no clan size set
           </span>
           {onCapacitySettings && (

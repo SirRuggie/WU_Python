@@ -1,4 +1,4 @@
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import useDiscordIdentities from "./useDiscordIdentities";
 import StrikeReviewResolution from "./StrikeReviewResolution";
 import { parseActivityFilters } from "./strikeActivityFilters";
@@ -19,6 +19,7 @@ import StrikeHelp from "./StrikeHelp";
 import { type StrikeStreakState } from "./StrikeStreak";
 import { detailQuery } from "./strikeHistoryView";
 import SectionTabs from "./SectionTabs";
+import { parsePageParam, replacePageParam } from "./pageUrlState";
 import StrikesDetail from "./strikes/StrikesDetail";
 import StrikesFindWar from "./strikes/StrikesFindWar";
 import StrikesImportPanel from "./strikes/StrikesImportPanel";
@@ -86,11 +87,22 @@ export default function StrikesWorkspace({
   );
   const [accessLost, setAccessLost] = useState(false);
   const [trackingSlot, setTrackingSlot] = useState<HTMLDivElement | null>(null);
+  // A tab the viewer cannot see falls back to the first visible tab.
+  const initialTab = () => {
+    const wanted = parsePageParam("strikes", "tab", window.location.search);
+    return (
+      visibleTabs.some((item) => item.id === wanted)
+        ? wanted
+        : visibleTabs[0].id
+    ) as Tab;
+  };
   const [tab, setTab] = useState<Tab>(
     initialImport.current.job || initialImport.current.preview
       ? "settings"
-      : "history",
+      : initialTab(),
   );
+  // Forced tab changes (a missing permission, an opened account) correct the address too.
+  useEffect(() => replacePageParam("strikes", "tab", tab), [tab]);
   const [importOpen, setImportOpen] = useState(
     !!(initialImport.current.job || initialImport.current.preview),
   );
@@ -461,15 +473,10 @@ export default function StrikesWorkspace({
     <section
       className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : !selectedWar ? " strikes-activity-overview" : ""}`}
     >
-      <div className="page-head">
-        <div>
-          <PageEyebrow />
-          <div className="strikes-title">
-            <h1>Strikes &amp; replacements</h1>
-            <StrikeHelp limit={settings?.strike_limit} />
-          </div>
-        </div>
-      </div>
+      <CwlPageHeader
+        title={<h1>Strikes &amp; replacements</h1>}
+        help={<StrikeHelp limit={settings?.strike_limit} />}
+      />
       <div className="strikes-navigation">
         <SectionTabs
           className="strikes-tabs"
@@ -489,6 +496,7 @@ export default function StrikesWorkspace({
               setLeaveConflict(false);
               setResumeDate("");
               setTab(nextTab);
+              replacePageParam("strikes", "tab", nextTab);
               setError("");
               setNotice("");
             })
@@ -508,7 +516,6 @@ export default function StrikesWorkspace({
         noticeRef={noticeRef}
         busy={busy}
         showLeaveRefresh={tab === "leave" && leaveConflict}
-        showRecordsRefresh={tab === "history"}
         onLeaveRefresh={() =>
           leaveDraft(() => {
             setResumeDate("");
@@ -526,10 +533,23 @@ export default function StrikesWorkspace({
             if (selectedMember) void chooseMember(selectedMember);
           })
         }
-        onRecordsRefresh={() =>
-          void (selectedAccount || selectedWar
-            ? refreshHistory()
-            : refreshAccounts())
+        onRetry={
+          tab === "history"
+            ? () =>
+                void (selectedAccount || selectedWar
+                  ? refreshHistory()
+                  : refreshAccounts())
+            : (tab === "settings" || tab === "leave") &&
+                access.manage &&
+                !settings &&
+                !leaveConflict
+              ? () => {
+                  setError("");
+                  void updateSettings().catch((cause) =>
+                    setError(errorText(cause)),
+                  );
+                }
+              : undefined
         }
       />
 
@@ -732,9 +752,6 @@ export default function StrikesWorkspace({
           onSaved={setSettings}
           onDirty={setSettingsDirty}
           onBusy={setBusy}
-          onRetry={() =>
-            void updateSettings().catch((cause) => setError(errorText(cause)))
-          }
         />
       )}
 

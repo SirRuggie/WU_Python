@@ -168,7 +168,7 @@ it("pages 560 compact members and keeps occasional actions above the directory",
   await renderPage();
   expect(host.querySelectorAll(".members-person-open")).toHaveLength(25);
   expect(document.body.textContent).toContain("Showing 1-25 of 560");
-  const actions = host.querySelector(".members-workspace > header")!,
+  const actions = host.querySelector(".members-workspace > .cwl-page-header")!,
     list = host.querySelector(".members-list")!;
   expect(
     actions.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -472,4 +472,28 @@ it("replaces the member list and search with review and restores them on Back", 
   await click("Back to members");
   expect(host.querySelector(".members-list")).not.toBeNull();
   expect(document.body.textContent).toContain("Find a person");
+});
+it("opens the nickname help from the header and not from the ⋯ menu", async () => {
+  transport.mockResolvedValue(directory);
+  await renderPage();
+  const help = host.querySelector<HTMLButtonElement>(
+    ".members-workspace > .cwl-page-header .page-help-trigger",
+  )!;
+  expect(help.getAttribute("aria-label")).toBe("About nickname changes");
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="Actions for Members"]',
+      )!
+      .click(),
+  );
+  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
+    (node) => node.textContent,
+  );
+  expect(items).toContain("Past nickname changes");
+  expect(items).not.toContain("About nickname changes");
+  await act(async () => help.click());
+  expect(document.body.textContent).toContain(
+    "Nobody is renamed until you confirm.",
+  );
 });

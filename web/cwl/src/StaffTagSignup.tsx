@@ -118,6 +118,10 @@ export default function StaffTagSignup({
           value={tag}
           disabled={busy}
           placeholder="#ABC123"
+          spellCheck={false}
+          autoComplete="off"
+          autoCapitalize="characters"
+          inputMode="text"
           maxLength={20}
           onChange={(event) => {
             setTag(event.target.value);
@@ -203,6 +207,8 @@ export default function StaffTagSignup({
                   <Input
                     label="Discord ID"
                     inputMode="numeric"
+                    spellCheck={false}
+                    autoComplete="off"
                     placeholder="Enter Discord user ID"
                     value={uid}
                     onChange={(event) => setUid(event.target.value)}

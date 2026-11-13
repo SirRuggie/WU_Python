@@ -7,7 +7,7 @@ import { announcementPoolLabel as poolLabel } from "./announcementPoolLabel";
 import AnnouncementPoolCard from "./AnnouncementPoolCard";
 import AnnouncementEditor from "./AnnouncementEditor";
 import { Button } from "./rosterUi/primitives";
-import { RefreshCw, Send } from "lucide-react";
+import { ArrowUpRight, RefreshCw, Send } from "lucide-react";
 import AnnouncementMonth from "./AnnouncementMonth";
 import { announcementMonth } from "./announcementMonth";
 import ConfirmDialog from "./ConfirmDialog";
@@ -28,6 +28,7 @@ import AnnouncementPreviewDialog from "./AnnouncementPreviewDialog";
 import DiscordPreview, { type PreviewPart } from "./DiscordMessagePreview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type Pool } from "./api";
+import LoadError from "./LoadError";
 import { type AnnouncementChannel } from "./announcements";
 import {
   canQueueAnnouncement,
@@ -623,12 +624,11 @@ export default function ManageBridgeWorkspace({
         </div>
       )}
       {channelsError && (
-        <div className="notice error" role="alert">
-          <span>Discord channels are unavailable. Sending is disabled.</span>
-          <button disabled={busy} onClick={() => void loadChannels()}>
-            Retry channels
-          </button>
-        </div>
+        <LoadError
+          message="Discord channels are unavailable. Sending is disabled."
+          disabled={busy}
+          onRetry={() => void loadChannels()}
+        />
       )}
       {loading && (
         <div role="status">
@@ -853,7 +853,8 @@ export default function ManageBridgeWorkspace({
                               target="_blank"
                               rel="noopener noreferrer"
                             >
-                              View in Discord ↗
+                              View in Discord{" "}
+                              <ArrowUpRight size={16} aria-hidden="true" />
                             </a>
                           )}
                         </>
@@ -918,6 +919,7 @@ export default function ManageBridgeWorkspace({
         ) && (
           <CwlNextLink
             label="Declaration check"
+            route={{ view: "declaration", season: seasonId }}
             disabled={busy}
             onNext={onDeclaration}
           />

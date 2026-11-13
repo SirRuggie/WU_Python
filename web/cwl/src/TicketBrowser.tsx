@@ -1,9 +1,14 @@
-import PageEyebrow from "./PageEyebrow";
+import { formatDateTime } from "./format";
+import LoadError from "./LoadError";
+import CwlPageHeader from "./CwlPageHeader";
+import { ArrowRight } from "lucide-react";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import TicketConversation from "./TicketConversation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import "./TicketBrowser.css";
+import { countLabel } from "./countLabel";
+import { parsePageParam, replacePageParam } from "./pageUrlState";
 export type Ticket = {
   id: string;
   number: number;
@@ -19,10 +24,14 @@ const statusName = (value: string) =>
     value
   ] || value;
 const when = (value: string | null) =>
-  value ? new Date(value).toLocaleString() : "Date unavailable";
+  value ? formatDateTime(new Date(value)) : "Date unavailable";
 export default function TicketBrowser() {
-  const [status, setStatus] = useState("open"),
-    [kind, setKind] = useState("all"),
+  const [status, setStatus] = useState(() =>
+      parsePageParam("tickets", "status", window.location.search),
+    ),
+    [kind, setKind] = useState(() =>
+      parsePageParam("tickets", "type", window.location.search),
+    ),
     [flag, setFlag] = useState("all"),
     [search, setSearch] = useState(""),
     [query, setQuery] = useState(""),
@@ -99,6 +108,8 @@ export default function TicketBrowser() {
     setQuery("");
     setStatus("open");
     setKind("all");
+    replacePageParam("tickets", "status", "open");
+    replacePageParam("tickets", "type", "all");
     setFlag("all");
     setFrom("");
     setTo("");
@@ -117,21 +128,18 @@ export default function TicketBrowser() {
     );
   return (
     <section className="ticket-browser">
-      <div className="page-head">
-        <div>
-          <PageEyebrow />
+      <CwlPageHeader
+        title={
           <h1 ref={heading} tabIndex={-1}>
             Tickets
           </h1>
-          <p>
-            Review applications and conversations. Reply or make decisions in
-            Discord.
-          </p>
-        </div>
+        }
+        description="Review applications and conversations. Reply or make decisions in Discord."
+      >
         <button disabled={busy} onClick={() => setReload((n) => n + 1)}>
           Refresh
         </button>
-      </div>
+      </CwlPageHeader>
       <div className="ticket-filters">
         <label>
           Find a ticket
@@ -149,6 +157,7 @@ export default function TicketBrowser() {
             value={status}
             onChange={(e) => {
               setStatus(e.target.value);
+              replacePageParam("tickets", "status", e.target.value);
               setPage(1);
             }}
           >
@@ -165,6 +174,7 @@ export default function TicketBrowser() {
             value={kind}
             onChange={(e) => {
               setKind(e.target.value);
+              replacePageParam("tickets", "type", e.target.value);
               setPage(1);
             }}
           >
@@ -226,8 +236,8 @@ export default function TicketBrowser() {
           {busy
             ? "Loading…"
             : error
-              ? "Tickets unavailable"
-              : `${tickets.length} tickets on this page`}
+              ? ""
+              : `${countLabel(tickets.length, "ticket")} on this page`}
         </span>
         {(search ||
           status !== "open" ||
@@ -236,14 +246,11 @@ export default function TicketBrowser() {
           <button onClick={clearFilters}>Clear filters</button>
         )}
       </div>
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-          <button onClick={() => setReload((n) => n + 1)}>
-            Retry loading tickets
-          </button>
-        </p>
-      )}
+      <LoadError
+        message={error}
+        onRetry={() => setReload((n) => n + 1)}
+        busy={busy}
+      />
       {busy ? (
         <p role="status">Loading tickets…</p>
       ) : !error && !tickets.length ? (
@@ -288,7 +295,7 @@ export default function TicketBrowser() {
                   setSelected(t);
                 }}
               >
-                Read →
+                Read <ArrowRight size={16} aria-hidden="true" />
               </button>
             </article>
           ))}

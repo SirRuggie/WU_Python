@@ -173,7 +173,7 @@ export default function StaffSignupControls({
       return;
     if (
       !(await confirm(
-        `Add ${selected.length} accounts to ${pool === "main" ? "Main" : "Lazy"} CWL for the selected member?`,
+        `Add ${countLabel(selected.length, "account")} to ${pool === "main" ? "Main" : "Lazy"} CWL for the selected member?`,
         "Add accounts",
       ))
     )

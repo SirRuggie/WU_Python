@@ -1,4 +1,6 @@
+import { formatDateTime } from "./format";
 import DashboardIcon from "./DashboardIcon";
+import { ArrowUpRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type Account } from "./api";
 import {
@@ -544,7 +546,8 @@ export default function PushReminders({
                 .then(() => setInstall(null))
             }
           >
-            Install Warriors United app ↗
+            Install Warriors United app{" "}
+            <ArrowUpRight size={16} aria-hidden="true" />
           </button>
         )}
         <p className="small">
@@ -568,7 +571,7 @@ export default function PushReminders({
                     Device {index + 1} · {item.enabled ? "On" : "Off"}
                     <small>
                       {item.updated_at
-                        ? `Updated ${new Date(item.updated_at * 1000).toLocaleString()}`
+                        ? `Updated ${formatDateTime(new Date(item.updated_at * 1000))}`
                         : ""}
                     </small>
                   </span>

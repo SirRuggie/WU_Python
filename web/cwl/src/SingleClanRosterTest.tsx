@@ -2,7 +2,7 @@ import useAnnouncementTestChannel from "./useAnnouncementTestChannel";
 import TestChannelDefault from "./TestChannelDefault";
 import ConfirmDialog from "./ConfirmDialog";
 import { Button } from "./rosterUi/primitives";
-import { RefreshCw, Send } from "lucide-react";
+import { ArrowUpRight, RefreshCw, Send } from "lucide-react";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
@@ -204,7 +204,8 @@ export default function SingleClanRosterTest({
                 <p role="status">
                   Test sent.{" "}
                   <a href={url} target="_blank" rel="noopener noreferrer">
-                    View in Discord ↗
+                    View in Discord{" "}
+                    <ArrowUpRight size={16} aria-hidden="true" />
                   </a>
                 </p>
               )}

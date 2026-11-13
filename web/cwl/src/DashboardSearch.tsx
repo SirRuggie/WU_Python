@@ -1,4 +1,4 @@
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import FilterChips from "./FilterChips";
 import { loadAccountDisplay } from "./accountDisplay";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -170,16 +170,15 @@ export default function DashboardSearch({
   const currentPage = Math.min(page, lastPage);
   return (
     <section className="dashboard-search-workspace">
-      <header className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Search</h1>
-          <p>
+      <CwlPageHeader
+        title={<h1>Search</h1>}
+        description={
+          <>
             Find your linked players and their clans
             {includeFamily ? ", plus the family clan directory" : ""}.
-          </p>
-        </div>
-      </header>
+          </>
+        }
+      />
       <label className="global-search-field" htmlFor="dashboard-search">
         <DashboardIcon name="search" />
         <span className="sr-only">Find a player or clan</span>
@@ -297,13 +296,13 @@ export default function DashboardSearch({
                 accounts.some(
                   (account) => account.current_clan_tag === item.tag,
                 )) && (
-                <button onClick={() => onTasks(item.tag)}>View tasks</button>
+                <button onClick={() => onTasks(item.tag)}>Open tasks</button>
               )}
               <button
                 onClick={() => setDetail({ kind: item.kind, tag: item.tag })}
-                aria-label={`Details for ${item.name}`}
+                aria-label={`${item.kind === "player" ? "Account" : "Clan"} details for ${item.name}`}
               >
-                Details
+                {item.kind === "player" ? "Account" : "Clan"} details
               </button>
             </div>
           </article>

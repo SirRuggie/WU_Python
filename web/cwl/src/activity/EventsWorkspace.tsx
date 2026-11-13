@@ -1,7 +1,9 @@
-import PageEyebrow from "../PageEyebrow";
+import CwlPageHeader from "../CwlPageHeader";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import DashboardIcon from "../DashboardIcon";
 import { clanDeepLink } from "../publication";
+import { formatNumber } from "../format";
 import { gameCalendar, countdown, localTime } from "./calendar";
 import { useClock } from "./useClock";
 import { useClanActivity } from "./useClanActivity";
@@ -26,12 +28,12 @@ export default function EventsWorkspace({
     : Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
     <section className="clan-activity-workspace events-workspace">
-      <header className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Events</h1>
-          <p>What’s live and what’s next. Times shown in {zoneName}.</p>
-        </div>
+      <CwlPageHeader
+        title={<h1>Events</h1>}
+        description={
+          <>What’s live and what’s next. Times shown in {zoneName}.</>
+        }
+      >
         <label className="activity-timezone">
           <input
             type="checkbox"
@@ -40,7 +42,7 @@ export default function EventsWorkspace({
           />
           Show UTC
         </label>
-      </header>
+      </CwlPageHeader>
       <div className="activity-card-grid">
         {gameCalendar(now).map((event) => {
           const live = now >= event.start && now < event.end;
@@ -105,7 +107,8 @@ export default function EventsWorkspace({
               </div>
               {signup && (
                 <button className="calendar-link" onClick={onWars}>
-                  View clan battle schedules →
+                  View clan battle schedules{" "}
+                  <ArrowRight size={16} aria-hidden="true" />
                 </button>
               )}
             </article>
@@ -127,7 +130,8 @@ export default function EventsWorkspace({
             target="_blank"
             rel="noopener noreferrer"
           >
-            Clash Ninja schedule reference ↗
+            Clash Ninja schedule reference{" "}
+            <ArrowUpRight size={16} aria-hidden="true" />
           </a>{" "}
           ·{" "}
           <a
@@ -135,7 +139,8 @@ export default function EventsWorkspace({
             target="_blank"
             rel="noopener noreferrer"
           >
-            Official event announcements ↗
+            Official event announcements{" "}
+            <ArrowUpRight size={16} aria-hidden="true" />
           </a>
         </p>
       </details>
@@ -212,7 +217,9 @@ export default function EventsWorkspace({
                       </div>
                       <div>
                         <dt>Capital Gold</dt>
-                        <dd>{raid.loot?.toLocaleString() ?? "—"}</dd>
+                        <dd>
+                          {raid.loot == null ? "—" : formatNumber(raid.loot)}
+                        </dd>
                       </div>
                     </dl>
                     <div className="activity-dates">
@@ -249,7 +256,7 @@ export default function EventsWorkspace({
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Open clan ↗
+                    Open clan <ArrowUpRight size={16} aria-hidden="true" />
                   </a>
                 </footer>
               </article>

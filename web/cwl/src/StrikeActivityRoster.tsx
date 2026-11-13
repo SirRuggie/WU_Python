@@ -1,5 +1,6 @@
 import { Search, X } from "lucide-react";
 import FilterChips from "./FilterChips";
+import LoadError from "./LoadError";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import StrikeActivityRows from "./StrikeActivityRows";
 import FindSlots from "./FindSlots";
@@ -45,6 +46,7 @@ import {
   type ActivityFilters,
 } from "./strikeActivityFilters";
 import "./StrikeActivityRoster.css";
+import { countLabel } from "./countLabel";
 
 type Response = {
   accounts: ActivityAccount[];
@@ -179,7 +181,7 @@ export default function StrikeActivityRoster({
     try {
       await navigator.clipboard.writeText(copyActivityList(visible));
       if (copyIdentity.current !== current) return;
-      setCopied(`Copied ${visible.length} accounts`);
+      setCopied(`Copied ${countLabel(visible.length, "account")}`);
     } catch {
       if (copyIdentity.current !== current) return;
       setCopied("Copy failed. Your browser did not allow clipboard access.");
@@ -734,12 +736,14 @@ export default function StrikeActivityRoster({
           {copied}
         </div>
       )}
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-          {data.accounts.length ? " Showing the last loaded activity." : ""}
-        </p>
-      )}
+      <LoadError
+        message={error}
+        note={
+          data.accounts.length ? "Showing the last loaded activity." : undefined
+        }
+        disabled={loading}
+        onRetry={() => void read()}
+      />
       {data.history_warning && (
         <p className="notice error">{data.history_warning}</p>
       )}

@@ -1,4 +1,5 @@
 import { useId, type Ref } from "react";
+import { formatNumber } from "./format";
 import { type ManualWeightDraft } from "./manualWeight";
 import { editDraft, validateDraft } from "./weightTrial/model";
 import { Button } from "./rosterUi/primitives";
@@ -99,7 +100,7 @@ export default function CompactWeightField({
       >
         {message ||
           (state.weight !== null &&
-            `= ${state.weight.toLocaleString("en-US")}${value.unit === "loot" ? " full weight" : ""} · saved for future seasons`)}
+            `= ${formatNumber(state.weight)}${value.unit === "loot" ? " full weight" : ""} · saved for future seasons`)}
       </div>
     </div>
   );

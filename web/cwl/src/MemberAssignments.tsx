@@ -1,3 +1,4 @@
+import LoadError from "./LoadError";
 import { visibleRefresh } from "./visibleRefresh";
 import CwlPageHeader from "./CwlPageHeader";
 import "./rosterUi/tokens.css";
@@ -123,14 +124,13 @@ export default function MemberAssignments({
           <p>Staff will make your CWL season available here.</p>
         </div>
       )}
-      {error && (
-        <div
-          className={data ? "member-refresh-note" : "notice error"}
-          role={data ? "status" : "alert"}
-        >
-          {data ? "Could not refresh. Showing last update." : error}
-          <button onClick={() => void load()}>Retry</button>
+      {error && data ? (
+        <div className="member-refresh-note" role="status">
+          Could not refresh. Showing last update.
+          <button onClick={() => void load()}>Try again</button>
         </div>
+      ) : (
+        <LoadError message={error} onRetry={() => void load()} />
       )}
       {loading && <p role="status">Loading current assignments…</p>}
       {data && (

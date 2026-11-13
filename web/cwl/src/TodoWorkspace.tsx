@@ -1,4 +1,5 @@
-import PageEyebrow from "./PageEyebrow";
+import LoadError from "./LoadError";
+import CwlPageHeader from "./CwlPageHeader";
 import SectionTabs from "./SectionTabs";
 import "./rosterUi/tokens.css";
 import { useJourneyState, useJourneyPosition } from "./journeyState";
@@ -13,7 +14,17 @@ import { useClock } from "./activity/useClock";
 import PushReminders from "./PushReminders";
 import { readSnapshot, writeSnapshot } from "./snapshotCache";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Pause, Play, RefreshCw, Search, X } from "lucide-react";
+import { parsePageParam, replacePageParam } from "./pageUrlState";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  ChevronDown,
+  Pause,
+  Play,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 import { ApiError } from "./api";
 import { clanDeepLink } from "./publication";
 import TownHallIcon from "./TownHallIcon";
@@ -28,6 +39,7 @@ import {
 } from "./todo";
 import "./TodoWorkspace.css";
 import { readTodoPreferences, saveTodoPreferences } from "./todoPreferences";
+import { countLabel } from "./countLabel";
 function Badge({ url }: { url?: string | null }) {
   const [failed, setFailed] = useState("");
   return url && failed !== url ? (
@@ -95,8 +107,11 @@ export default function TodoWorkspace({
   const [refresh, setRefresh] = useState(0);
   const [tab, setTab] = useJourneyState<TodoKind>(
     `${journeyKey}:tab`,
-    initialTab || preferences.tab,
+    initialTab ||
+      (parsePageParam("todo", "tab", window.location.search) as TodoKind) ||
+      preferences.tab,
   );
+  useEffect(() => replacePageParam("todo", "tab", tab), [tab]);
   const [selected, setSelected] = useJourneyState<string[] | null>(
     `${journeyKey}:selected`,
     initialSearch ? null : preferences.selected,
@@ -245,11 +260,7 @@ export default function TodoWorkspace({
   );
   return (
     <div className="todo-workspace roster-ui">
-      <div className="page-head todo-head">
-        <div>
-          <PageEyebrow />
-          <h1>Tasks</h1>
-        </div>
+      <CwlPageHeader title={<h1>Tasks</h1>}>
         <button
           className="todo-check"
           aria-busy={loading || undefined}
@@ -257,9 +268,9 @@ export default function TodoWorkspace({
           disabled={loading}
         >
           <RefreshCw aria-hidden="true" size={16} />
-          {loading ? "Checking…" : "Check now"}
+          {loading ? "Checking…" : "Refresh"}
         </button>
-      </div>
+      </CwlPageHeader>
       <div className="todo-refresh">
         <span role="status" className="todo-status">
           <span
@@ -297,23 +308,17 @@ export default function TodoWorkspace({
             className="todo-wars-link"
             onClick={() => onWars(tab === "cwl" ? "cwl" : "war")}
           >
-            War scores →
+            War scores <ArrowRight size={16} aria-hidden="true" />
           </button>
         )}
       </div>
-      {error && (
-        <div className="notice error" role="alert">
-          <div>
-            {error}
-            {data && (
-              <small>Showing your last update. It may be out of date.</small>
-            )}
-          </div>
-          <button onClick={() => setRefresh((value) => value + 1)}>
-            Retry
-          </button>
-        </div>
-      )}
+      <LoadError
+        message={error}
+        note={
+          data ? "Showing your last update. It may be out of date." : undefined
+        }
+        onRetry={() => setRefresh((value) => value + 1)}
+      />
       {!data && !error && (
         <div className="card todo-loading" role="status">
           <strong>Loading your tasks…</strong>
@@ -380,7 +385,7 @@ export default function TodoWorkspace({
                   accounts.length < data.linked_account_count
                   ? `${accounts.length} of ${data.linked_account_count} accounts`
                   : "All accounts"
-                : `${selectedCount} account${selectedCount === 1 ? "" : "s"}`}
+                : countLabel(selectedCount, "account")}
               <ChevronDown aria-hidden="true" size={16} />
             </button>
             {canFilter && (
@@ -579,7 +584,7 @@ export default function TodoWorkspace({
                             rel="noopener noreferrer"
                             aria-label={`Open ${clanLabel(members[0])} in Clash of Clans`}
                           >
-                            Open ↗
+                            Open <ArrowUpRight size={16} aria-hidden="true" />
                           </a>
                         )}
                       </header>
@@ -610,7 +615,7 @@ export default function TodoWorkspace({
                     disabled={currentPage === lastPage}
                     onClick={() => setPage(currentPage + 1)}
                   >
-                    Next →
+                    Next <ArrowRight size={16} aria-hidden="true" />
                   </button>
                 </nav>
               )}

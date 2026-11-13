@@ -7,6 +7,7 @@ import { compactWeight, parseWeights, weightsText } from "./replacementView";
 import { memberName } from "./strikeActivityFilters";
 import type { ActivityAccount } from "./strikeActivityView";
 import type { Priority } from "./replacementTypes";
+import { countLabel } from "./countLabel";
 
 export type SlotSearch = {
   slotWeights: number[];
@@ -149,7 +150,7 @@ export default function FindSlots({
       ? "All FWA clans"
       : picked.length === 1
         ? fwa.find((clan) => clan.tag === picked[0])?.name || "1 clan"
-        : `${picked.length} clans`;
+        : countLabel(picked.length, "clan");
   const name = members.find((option) => option.id === member)?.name;
   return (
     <>

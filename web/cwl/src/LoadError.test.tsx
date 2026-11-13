@@ -82,3 +82,41 @@ it("copies the reference and reports a failed copy", async () => {
   await act(async () => copy.click());
   expect(host.textContent).toContain("Could not copy");
 });
+
+it("announces the copy result outside the alert", async () => {
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    configurable: true,
+  });
+  const host = await render(<LoadError message="Failed. Reference: R-9" />);
+  const alert = host.querySelector('[role="alert"]')!;
+  await act(async () => alert.querySelector("button")!.click());
+  const status = host.querySelector('[role="status"]')!;
+  expect(status.textContent).toBe("Reference copied");
+  expect(alert.contains(status)).toBe(false);
+  expect(
+    alert.querySelector(".load-error-reference")!.getAttribute("aria-live"),
+  ).toBe("off");
+});
+
+it("keeps every Reference copyable when several messages share one block", async () => {
+  const host = await render(
+    <LoadError
+      message={[
+        "First failed. Reference: A-1",
+        "Second failed. Reference: B-2",
+      ]}
+      onRetry={() => {}}
+    />,
+  );
+  expect([...host.querySelectorAll("code")].map((c) => c.textContent)).toEqual([
+    "A-1",
+    "B-2",
+  ]);
+  expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  expect(
+    [...host.querySelectorAll("button")].filter(
+      (b) => b.textContent === "Try again",
+    ),
+  ).toHaveLength(1);
+});

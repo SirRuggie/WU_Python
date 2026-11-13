@@ -21,6 +21,7 @@ import {
   subscribeRosterActionMenus,
 } from "./actionMenuState";
 import { RosterMenuItem } from "./Menu";
+import useOpeningPressGuard from "./useOpeningPressGuard";
 import "./ActionMenu.css";
 export type ActionMenuItem = {
   id: string;
@@ -48,7 +49,7 @@ export default function ActionMenu({
   const id = useId(),
     trigger = useRef<HTMLButtonElement>(null),
     sheet = useRef<HTMLDivElement>(null);
-  const openingPointer = useRef<number | null>(null);
+  const guard = useOpeningPressGuard(trigger, disabled, () => close());
   const active = useSyncExternalStore(
     subscribeRosterActionMenus,
     activeRosterActionMenu,
@@ -56,7 +57,7 @@ export default function ActionMenu({
   );
   const open = active === id && !disabled;
   const close = () => {
-    openingPointer.current = null;
+    guard.release();
     if (activeRosterActionMenu() === id) setRosterActionMenu(null);
   };
   // Non-modal menus permit switching directly to another card trigger.
@@ -70,7 +71,7 @@ export default function ActionMenu({
   });
   useEffect(
     () => () => {
-      openingPointer.current = null;
+      guard.release();
       if (activeRosterActionMenu() === id) setRosterActionMenu(null);
     },
     [id],
@@ -79,7 +80,7 @@ export default function ActionMenu({
     if (disabled) close();
   }, [disabled]);
   useEffect(() => {
-    if (!open) openingPointer.current = null;
+    if (!open) guard.release();
   }, [open]);
   useEffect(() => {
     if (!open) return;
@@ -94,20 +95,7 @@ export default function ActionMenu({
     return () => window.removeEventListener("scroll", scroll, true);
   }, [open]);
   return (
-    <div
-      className="roster-player-menu"
-      onPointerDownCapture={(event) => {
-        if (
-          !disabled &&
-          event.button === 0 &&
-          trigger.current?.contains(event.target as Node)
-        )
-          openingPointer.current = event.pointerId;
-      }}
-      onPointerCancelCapture={(event) => {
-        if (openingPointer.current === event.pointerId) close();
-      }}
-    >
+    <div className="roster-player-menu" {...guard.rootProps}>
       <MenuTrigger
         isOpen={open}
         onOpenChange={(value) => (value ? setRosterActionMenu(id) : close())}
@@ -123,41 +111,7 @@ export default function ActionMenu({
         </AriaButton>
         <Popover
           UNSTABLE_portalContainer={portalContainer}
-          onPointerDownCapture={(event) => {
-            if (
-              event.button === 0 &&
-              (event.target as Element).closest?.('[role="menuitem"]')
-            )
-              openingPointer.current = null;
-          }}
-          onPointerUpCapture={(event) => {
-            // RAC supports trigger-down → item-up selection. An opening press
-            // must never choose an item that appeared beneath the pointer, in
-            // or outside an ActionPanel.
-            if (
-              openingPointer.current !== null &&
-              (event.target as Element).closest?.('[role="menuitem"]')
-            ) {
-              event.preventDefault();
-              event.stopPropagation();
-            }
-          }}
-          onClickCapture={(event) => {
-            const native = event.nativeEvent as MouseEvent & {
-              pointerType?: string;
-            };
-            const pointerClick =
-              event.detail > 0 ||
-              ["mouse", "touch", "pen"].includes(native.pointerType || "");
-            if (
-              openingPointer.current !== null &&
-              pointerClick &&
-              (event.target as Element).closest?.('[role="menuitem"]')
-            ) {
-              event.preventDefault();
-              event.stopPropagation();
-            }
-          }}
+          {...guard.popoverProps}
           ref={sheet}
           className="roster-action-popover roster-ui"
           placement="bottom end"

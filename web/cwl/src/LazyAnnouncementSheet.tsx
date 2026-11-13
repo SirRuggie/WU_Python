@@ -4,6 +4,7 @@ import ChannelCombobox from "./ChannelCombobox";
 import { api, ApiError } from "./api";
 import type { AnnouncementChannel } from "./announcements";
 import { exportMonthLabel } from "./exportPreview";
+import LoadError from "./LoadError";
 import {
   loadLazyAnnouncement,
   newRequestId,
@@ -331,15 +332,10 @@ export default function LazyAnnouncementSheet({
               }}
             />
             {channelsError && (
-              <p role="alert" className="notice error">
-                {channelsError}{" "}
-                <button
-                  type="button"
-                  onClick={() => setChannelsTry((n) => n + 1)}
-                >
-                  Retry channels
-                </button>
-              </p>
+              <LoadError
+                message={channelsError}
+                onRetry={() => setChannelsTry((n) => n + 1)}
+              />
             )}
             <label className="bonus-check">
               <input

@@ -104,7 +104,13 @@ export default function AccountCard(props: Props | StructuralProps) {
                   <span className="player-card-inline-th" aria-hidden="true">
                     <TownHallIcon level={thLevel} />
                   </span>
-                  <span className="player-card-name-text">{name}</span>
+                  <span
+                    className="player-card-name-text"
+                    dir="auto"
+                    title={typeof name === "string" ? name : undefined}
+                  >
+                    {name}
+                  </span>
                 </strong>
               </div>
               {detail && <div className="account-card-detail">{detail}</div>}

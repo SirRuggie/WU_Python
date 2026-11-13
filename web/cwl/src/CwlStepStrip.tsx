@@ -1,5 +1,7 @@
 import { useDashboardPermission } from "./DashboardPermissions";
 import type { PublicationDraft } from "./publication";
+import DashboardLink from "./DashboardLink";
+import { dashboardPath } from "./dashboardHistory";
 import "./CwlStepStrip.css";
 import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
@@ -24,14 +26,19 @@ export function MemberStepStrip({
           ["assignments", "My clan"],
         ] as const
       ).map(([value, label]) => (
-        <button
+        <DashboardLink
           key={value}
+          href={dashboardPath(
+            value === "assignments"
+              ? { view: "assignments", season: "" }
+              : { view: "signup", season: "", signupPanel: value },
+          )}
           aria-label={value === "assignments" ? "My clan assignments" : label}
           aria-current={step === value ? "step" : undefined}
-          onClick={() => onNavigate(value)}
+          onNavigate={() => onNavigate(value)}
         >
           {label}
-        </button>
+        </DashboardLink>
       ))}
     </nav>
   );
@@ -40,12 +47,14 @@ export function MemberStepStrip({
 export default function CwlStepStrip({
   step,
   draft,
+  season = "",
   onBuild,
   onFinalize,
   onAnnounce,
 }: {
   step: "build" | "review" | "announce";
   draft: PublicationDraft | null;
+  season?: string;
   onBuild: () => void;
   onFinalize: () => void;
   onAnnounce: () => void;
@@ -70,19 +79,21 @@ export default function CwlStepStrip({
       aria-label="CWL workflow"
     >
       {(roster || signups) && (
-        <button
+        <DashboardLink
+          href={dashboardPath({ view: "roster", season })}
           aria-label="Build roster"
           aria-current={step === "build" ? "step" : undefined}
-          onClick={onBuild}
+          onNavigate={onBuild}
         >
           1 Build
-        </button>
+        </DashboardLink>
       )}
       {publish && (
-        <button
+        <DashboardLink
+          href={dashboardPath({ view: "publication", season, step: "review" })}
           aria-label={`Finalize roster${publicationStatus ? ` · ${publicationStatus}` : ""}`}
           aria-current={step === "review" ? "step" : undefined}
-          onClick={onFinalize}
+          onNavigate={onFinalize}
         >
           2 Finalize
           {draft?.draft_changed ||
@@ -94,16 +105,21 @@ export default function CwlStepStrip({
           ) : draft?.published ? (
             <span aria-label="Published and current"> ✓</span>
           ) : null}
-        </button>
+        </DashboardLink>
       )}
       {send && (
-        <button
+        <DashboardLink
+          href={dashboardPath({
+            view: "publication",
+            season,
+            step: "announce",
+          })}
           aria-label="Announcements"
           aria-current={step === "announce" ? "step" : undefined}
-          onClick={onAnnounce}
+          onNavigate={onAnnounce}
         >
           3 Announce
-        </button>
+        </DashboardLink>
       )}
     </nav>
   );

@@ -1,5 +1,5 @@
 import LoadError, { splitReference } from "./LoadError";
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import FilterChips from "./FilterChips";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
@@ -105,11 +105,10 @@ export default function BaseBank({
   }, [selected]);
   return (
     <section className="base-bank" aria-labelledby="base-bank-heading">
-      <header>
-        <PageEyebrow />
-        <h1 id="base-bank-heading">Base bank</h1>
-        <p>Select your Town Hall. Then copy a FWA base.</p>
-      </header>
+      <CwlPageHeader
+        title={<h1 id="base-bank-heading">Base bank</h1>}
+        description="Select your Town Hall. Then copy a FWA base."
+      />
       {joinRequired ? (
         <ServerJoinNotice text={BASE_BANK_JOIN_TEXT} />
       ) : error ? (

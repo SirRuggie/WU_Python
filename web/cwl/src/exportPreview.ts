@@ -1,10 +1,11 @@
+import { formatDateTime } from "./format";
 import { compactRosterWeight } from "./rosterCompactWeight";
 import { announcementMonthLabel } from "./announcementMonth";
 
 export type ExportRow = Record<string, unknown>;
 
 export const exportDateText = (value: string | null) =>
-  value ? new Date(value).toLocaleString() : "Never";
+  value ? formatDateTime(new Date(value)) : "Never";
 
 export function rosterResultSummary(row: ExportRow, prefix = ""): string {
   const match = row[`${prefix}matches_roster`];

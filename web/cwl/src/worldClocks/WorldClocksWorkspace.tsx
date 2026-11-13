@@ -1,5 +1,6 @@
 import LoadError from "../LoadError";
-import PageEyebrow from "../PageEyebrow";
+import CwlPageHeader from "../CwlPageHeader";
+import { Ban } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import SectionTabs from "../SectionTabs";
@@ -188,7 +189,7 @@ export default function WorldClocksWorkspace({
         {problems.length > 0 && (
           <div className="world-clock-alert" role="alert">
             <p>
-              <span aria-hidden="true">⛔ </span>
+              <Ban size={16} aria-hidden="true" />{" "}
               {problems.length === 1
                 ? `${problems[0].name_now?.split(" · ")[0] || problems[0].zone}: ${problemText(problems[0])}`
                 : `${problems.length} clocks have a problem.`}
@@ -320,10 +321,9 @@ export default function WorldClocksWorkspace({
 
 function Header() {
   return (
-    <header className="world-clocks-heading">
-      <PageEyebrow />
-      <h1 id="world-clocks-title">World clocks</h1>
-      <p>Voice channel names that show local times.</p>
-    </header>
+    <CwlPageHeader
+      title={<h1 id="world-clocks-title">World clocks</h1>}
+      description="Voice channel names that show local times."
+    />
   );
 }

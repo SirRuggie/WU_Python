@@ -1,3 +1,5 @@
+import { formatDateTime, formatNumber } from "../format";
+
 export type Member = {
   saved_name?: string | null;
   saved_town_hall?: number | null;
@@ -153,13 +155,13 @@ export function whole(text: string, max: number): number {
   const value = exact ? Number(digits) : NaN;
   if (!Number.isSafeInteger(value) || value < 1 || value > max)
     throw new Error(
-      `Enter a whole number from 1 to ${max.toLocaleString()}, such as 35,800 or 35.8k.`,
+      `Enter a whole number from 1 to ${formatNumber(max)}, such as 35,800 or 35.8k.`,
     );
   return value;
 }
 export function formatFull(value: string) {
   try {
-    return `${(whole(value, 9999999) / 1000).toLocaleString("en-US", { maximumFractionDigits: 3 })}k`;
+    return `${formatNumber(whole(value, 9999999) / 1000, { maximumFractionDigits: 3 })}k`;
   } catch {
     return value.trim() ? "—" : "N/A";
   }
@@ -307,9 +309,7 @@ export function orderLabel(roster: Roster): string {
     return "Clan order · War lineup unavailable. Positions are not war placements.";
   if (roster.war_source?.cached) {
     const captured = roster.war_source.captured_at;
-    const date = captured
-      ? new Date(captured).toLocaleString()
-      : "unknown time";
+    const date = captured ? formatDateTime(captured) : "unknown time";
     return `Saved war lineup · Captured ${date}. Check this matches the spreadsheet before copying.`;
   }
   const state = roster.war_source?.state;

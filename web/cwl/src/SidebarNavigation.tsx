@@ -1,4 +1,6 @@
 import DashboardIcon, { type DashboardIconName } from "./DashboardIcon";
+import DashboardLink from "./DashboardLink";
+import { dashboardPath } from "./dashboardHistory";
 import { useEffect, useRef, useState } from "react";
 
 export const dashboardViews = [
@@ -360,19 +362,31 @@ export function resultsPageAccess(
     bonuses: has(["cwl_bonuses", "cwl_send"]),
   };
 }
+// Views the sidebar does not list under their own name.
+const hiddenViewLabels: Partial<Record<DashboardView, string>> = {
+  "member-timezones": "Members",
+  "member-activity": "Moderation",
+  manage: "Server management",
+};
+/** The page title: top bar, tab title and eyebrow comparison all read this. */
 export function navigationLabel(
   view: DashboardView,
   step: "review" | "announce" = "review",
+  signupPanel: "register" | "saved" = "register",
 ): string {
   if (view === "publication")
     return step === "announce" ? "Announcements" : "Finalize roster";
-  if (view === "member-activity") return "Moderation";
+  const hidden = hiddenViewLabels[view];
+  if (hidden) return hidden;
+  const target = view === "replacements" ? "strikes" : view;
   return (
     sections
       .flatMap((section) => section.items)
       .find(
-        (item) => item.view === (view === "replacements" ? "strikes" : view),
-      )?.label || (view === "manage" ? "Server management" : "Dashboard")
+        (item) =>
+          item.view === target &&
+          (target !== "signup" || item.signupPanel === signupPanel),
+      )?.label || "Dashboard"
   );
 }
 export function navigationSection(view: DashboardView) {
@@ -409,6 +423,7 @@ export default function SidebarNavigation({
   signupPanel = "register",
   onSignup,
   tourExpanded = false,
+  season = "",
 }: {
   userId: string;
   view: DashboardView;
@@ -421,6 +436,8 @@ export default function SidebarNavigation({
   signupPanel?: "register" | "saved";
   onSignup?: (panel: "register" | "saved") => void;
   tourExpanded?: boolean;
+  /** Staff season the destination links open with. */
+  season?: string;
 }) {
   const key = `wu-navigation-v3:${userId}`;
   const cwlToggled = useRef(false);
@@ -494,11 +511,19 @@ export default function SidebarNavigation({
     (!item.step || item.step === publicationStep) &&
     (!item.signupPanel || item.signupPanel === signupPanel);
   const itemButton = (item: Item) => (
-    <button
+    <DashboardLink
       data-tour-target={item.signupPanel || item.view}
       key={`${item.view}:${item.step || item.signupPanel || ""}`}
+      href={dashboardPath({
+        view: item.view,
+        season,
+        step:
+          item.step ??
+          (item.view === "publication" ? publicationStep : undefined),
+        signupPanel: item.signupPanel,
+      })}
       aria-current={itemActive(item) ? "page" : undefined}
-      onClick={() =>
+      onNavigate={() =>
         item.signupPanel && onSignup
           ? onSignup(item.signupPanel)
           : item.step && onPublication
@@ -510,7 +535,7 @@ export default function SidebarNavigation({
         <DashboardIcon name={item.icon} />
       </span>
       <span>{item.label}</span>
-    </button>
+    </DashboardLink>
   );
   const visible = visibleNavigationSections(canEdit, isOwner, permissions);
   const memberSections = visible.filter((section) =>

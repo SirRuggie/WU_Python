@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import LoadError from "../LoadError";
 
 export default function UsageLinks({
   tag,
@@ -30,12 +31,10 @@ export default function UsageLinks({
   }, [tag, revision, attempt]);
   if (error)
     return (
-      <p role="status">
-        Could not load clan links.{" "}
-        <button onClick={() => setAttempt((value) => value + 1)}>
-          Retry clan links
-        </button>
-      </p>
+      <LoadError
+        message="Could not load clan links."
+        onRetry={() => setAttempt((value) => value + 1)}
+      />
     );
   if (!links.length) return null;
   return (

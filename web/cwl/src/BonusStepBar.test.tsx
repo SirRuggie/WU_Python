@@ -238,7 +238,7 @@ describe("bonus step bar", () => {
     const failed = await render({ status: null, failed: true });
     expect(
       failed.host.querySelector(".bonus-step-unavailable")?.textContent,
-    ).toBe("Status unavailable · Retry");
+    ).toBe("Status unavailable · Try again");
     expect(
       failed.host.querySelector(
         ".bonus-step.is-blocked, .bonus-step.is-done, .bonus-step.is-current",

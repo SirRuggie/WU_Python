@@ -1,4 +1,6 @@
+import { ArrowUpRight } from 'lucide-react'
 import TownHallIcon from './TownHallIcon'
+import { formatNumber } from './format'
 import { todoTime, type TodoKind, type TodoRow } from './todo'
 
 export default function TodoTaskCard({ row, kind, now }: { row: TodoRow; kind: TodoKind; now: number }) {
@@ -9,14 +11,14 @@ export default function TodoTaskCard({ row, kind, now }: { row: TodoRow; kind: T
   const measurable = row.used !== null && row.total !== null && row.total > 0 && !privateRow && !games
   const timestamp = preparation ? row.starts_at : row.ends_at
   const status = privateRow ? (row.detail === 'private' ? 'Private war log' : 'Unable to check')
-    : games ? (row.state === 'upcoming' ? (gamesAwaitingRefresh ? 'Waiting for update' : 'Not started') : row.used === null ? 'Not available' : `${row.used.toLocaleString()} points earned`)
+    : games ? (row.state === 'upcoming' ? (gamesAwaitingRefresh ? 'Waiting for update' : 'Not started') : row.used === null ? 'Not available' : `${formatNumber(row.used)} points earned`)
     : preparation ? 'Preparation day' : `${row.remaining ?? '—'} attack${row.remaining === 1 ? '' : 's'} left`
   return <article className="todo-task">
     <div className="todo-task-name">
       <TownHallIcon level={row.town_hall}/>
       <div><strong>{row.name}</strong><small>{row.tag}</small></div>
       <a href={`https://link.clashofclans.com/en?action=OpenPlayerProfile&tag=${encodeURIComponent(row.tag)}`}
-        target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.name} in Clash of Clans`}>↗</a>
+        target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.name} in Clash of Clans`}><ArrowUpRight size={16} aria-hidden="true"/></a>
     </div>
     <div className="todo-task-progress">
       <span className={`todo-state ${preparation || row.state === 'upcoming' ? 'prep' : privateRow || (games && row.used === null) ? 'blocked' : ''}`}>{status}</span>

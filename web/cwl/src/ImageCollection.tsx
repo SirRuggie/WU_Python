@@ -478,7 +478,7 @@ export default function ImageCollection({
           </select>
         </label>
         <label>
-          Show
+          Status
           <select
             disabled={busy}
             value={filter}

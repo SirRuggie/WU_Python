@@ -5,6 +5,7 @@ import {
   type ClipboardEvent,
 } from "react";
 import TownHallIcon from "../TownHallIcon";
+import { formatNumber } from "../format";
 import {
   editDraft,
   formatFull,
@@ -53,7 +54,7 @@ export default function WeightRow({
     try {
       return field === "full"
         ? formatFull(draft.full)
-        : whole(draft[field], 999999).toLocaleString("en-US");
+        : formatNumber(whole(draft[field], 999999));
     } catch {
       return draft[field];
     }

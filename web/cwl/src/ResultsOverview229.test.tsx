@@ -174,7 +174,9 @@ describe("season overview", () => {
       ),
     ).toEqual(["Alpha", "Bravo"]);
     // One pool row, one season field.
-    expect(host.querySelectorAll('select[name="season"]')).toHaveLength(1);
+    expect(
+      host.querySelectorAll(".cwl-page-header .roster-menu-trigger"),
+    ).toHaveLength(1);
     expect(host.querySelectorAll(".cwl-pool-tabs").length).toBeLessThanOrEqual(
       1,
     );

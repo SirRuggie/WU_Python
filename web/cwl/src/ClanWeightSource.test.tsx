@@ -74,7 +74,7 @@ it.each(["queue", "details"])(
       'a[href^="/clan-weights"]',
     )!;
     expect(link.textContent).toBe(
-      surface === "details" ? "Also on Clan weights ›" : "Open Clan weights →",
+      surface === "details" ? "Also on Clan weights ›" : "Open Clan weights",
     );
     const click = new MouseEvent("click", {
       bubbles: true,

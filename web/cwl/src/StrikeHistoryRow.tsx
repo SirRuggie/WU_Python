@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
 import { useState, type ReactNode } from "react";
 import {
@@ -88,7 +89,7 @@ export default function StrikeHistoryRow({
             {statusText(item)}
           </span>
           {item.status === "active" && item.kind === "strike" && (
-            <span title={validExpiry?.toLocaleString()}>
+            <span title={validExpiry ? formatDateTime(validExpiry) : undefined}>
               {" · "}
               {days === null
                 ? "Expiry unavailable"
@@ -117,14 +118,14 @@ export default function StrikeHistoryRow({
           <p>
             Recorded:{" "}
             {item.war_end
-              ? new Date(item.war_end).toLocaleString()
+              ? formatDateTime(new Date(item.war_end))
               : "Unavailable"}
           </p>
           {validExpiry && (
             <p>
               Expires:{" "}
               <time dateTime={item.expires_at!}>
-                {validExpiry.toLocaleString()}
+                {formatDateTime(validExpiry)}
               </time>
             </p>
           )}

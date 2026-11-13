@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import LoadError from "../LoadError";
 import { warMatchup, warSummary } from "../strikeHistoryView";
 import { dateText } from "./format";
 import type { War } from "./types";
@@ -45,10 +46,7 @@ export default function StrikesFindWar({
       {warLoading ? (
         <p role="status">Finding wars…</p>
       ) : warError ? (
-        <p role="alert">
-          {warError}
-          <button onClick={onRetry}>Retry war search</button>
-        </p>
+        <LoadError message={warError} onRetry={onRetry} />
       ) : wars.length === 0 ? (
         <p>No saved wars found.</p>
       ) : (

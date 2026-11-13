@@ -119,3 +119,13 @@ it("omits empty flags and joins real parts without losing a zero value", () => {
     "Staff correction",
   );
 });
+it("marks the player name as auto direction and exposes the full name", () => {
+  act(() =>
+    root.render(
+      <AccountCard thLevel={18} name="مرحبا Warrior" meta={["TH 18"]} />,
+    ),
+  );
+  const name = host.querySelector(".player-card-name-text");
+  expect(name?.getAttribute("dir")).toBe("auto");
+  expect(name?.getAttribute("title")).toBe("مرحبا Warrior");
+});

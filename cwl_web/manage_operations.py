@@ -12,7 +12,7 @@ from . import server_management as shared
 from utils.manage_operations_runtime import revision, runtime_snapshot, refresh_base_image_cache, public_band_error
 
 API = shared.API + '/operations'
-LABELS = {'fwa_points':'FWA points','fwa_sync':'FWA sync reminders','fwa_weight':'War weights','fwa_blacklist':'Clan blacklist','fwa_bases':'FWA bases','band_monitor':'BAND monitor'}
+LABELS = {'fwa_points':'FWA points','fwa_sync':'FWA sync reminders','fwa_weight':'TH weight ranges','fwa_blacklist':'Clan blacklist','fwa_bases':'FWA bases','band_monitor':'BAND monitor'}
 BASE_FIELDS = {'fwa_base_links':'Base link','base_information':'Base instructions','base_upgrade_notes':'Upgrade notes','war_base_images':'War base image URL','active_base_images':'Active base image URL'}
 
 def field(key,label,value,kind='text',**kw):

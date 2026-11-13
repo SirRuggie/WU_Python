@@ -1,4 +1,6 @@
+import CwlPageHeader from "./CwlPageHeader";
 import { visibleRefresh } from "./visibleRefresh";
+import { ArrowRight } from "lucide-react";
 import { memberSignupsOpen } from "./memberSeason";
 import MemberSignupStatus, { signupHeading } from "./MemberSignupStatus";
 import { useJourneyState, useJourneyPosition } from "./journeyState";
@@ -11,6 +13,8 @@ import { weightText } from "./roster";
 import AccountLinkHelp from "./AccountLinkHelp";
 import AttentionSummary, { type AttentionItem } from "./AttentionSummary";
 import DashboardIcon from "./DashboardIcon";
+import DashboardLink from "./DashboardLink";
+import { dashboardPath } from "./dashboardHistory";
 import { readSnapshot, writeSnapshot } from "./snapshotCache";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -130,6 +134,9 @@ export function homeNextStep(
 type Props = {
   session: Session;
   seasonId: string;
+  /** Season and step the staff-tool links open with. */
+  staffSeasonId?: string;
+  publicationStep?: "review" | "announce";
   seasons: Season[];
   seasonsKnown?: boolean;
   seasonError?: string;
@@ -177,6 +184,8 @@ export default function DashboardHome(props: Props) {
   const {
     session,
     seasonId,
+    staffSeasonId = "",
+    publicationStep = "review",
     seasons,
     seasonsKnown = true,
     seasonError = "",
@@ -362,9 +371,13 @@ export default function DashboardHome(props: Props) {
       }
     };
     void load();
-    const tick = () => { if (!paused) return load(); };
+    const tick = () => {
+      if (!paused) return load();
+    };
     const stopRefresh = visibleRefresh(tick, 30000);
-    const online = () => { if (!document.hidden) void tick(); };
+    const online = () => {
+      if (!document.hidden) void tick();
+    };
     window.addEventListener("online", online);
     return () => {
       cancelled = true;
@@ -494,7 +507,12 @@ export default function DashboardHome(props: Props) {
   if (!seasonsKnown)
     return (
       <div className="dashboard-home">
-        <h1>Hey, {session.user.display_name || session.user.username}</h1>
+        <CwlPageHeader
+          eyebrow={false}
+          title={
+            <h1>Hey, {session.user.display_name || session.user.username}</h1>
+          }
+        />
         <p role="status">
           {seasonError
             ? "CWL seasons could not be checked."
@@ -505,16 +523,18 @@ export default function DashboardHome(props: Props) {
     );
   return (
     <div className="dashboard-home">
-      <div className="page-head">
-        <div>
+      <CwlPageHeader
+        eyebrow={false}
+        title={
           <h1>Hey, {session.user.display_name || session.user.username}</h1>
-          <p>Your accounts, your clans, and what to do next.</p>
-        </div>
-        <p className="season-choice">
+        }
+        description="Your accounts, your clans, and what to do next."
+      >
+        <p className="cwl-page-header-season">
           {seasons.find((item) => String(item.id) === seasonId)?.label ||
             (seasonError ? "Season unavailable" : "No CWL season available")}
         </p>
-      </div>
+      </CwlPageHeader>
       <div className="hub-sync">
         <span role="status">
           <span
@@ -548,12 +568,8 @@ export default function DashboardHome(props: Props) {
               </button>
             </>
           )}
-          <button
-            disabled={refreshing}
-            onClick={refreshDashboard}
-            aria-label="Refresh dashboard"
-          >
-            ↻ Refresh
+          <button disabled={refreshing} onClick={refreshDashboard}>
+            <span aria-hidden="true">↻</span> Refresh
           </button>
         </div>
       </div>
@@ -618,7 +634,9 @@ export default function DashboardHome(props: Props) {
             accounts.
           </p>
         </div>
-        <button onClick={() => onNavigate("todo")}>Open tasks →</button>
+        <button onClick={() => onNavigate("todo")}>
+          Open tasks <ArrowRight size={16} aria-hidden="true" />
+        </button>
       </section>
       <div className="home-quick-links">
         <button
@@ -965,15 +983,27 @@ export default function DashboardHome(props: Props) {
           <section className="hub-staff">
             <h3>Staff tools</h3>
             <div>
-              <button onClick={() => onNavigate("roster")}>
-                Build roster →
-              </button>
-              <button onClick={() => onNavigate("publication")}>
-                Finalize roster →
-              </button>
-              <button onClick={() => onNavigate("staff")}>
-                Seasons →
-              </button>
+              {(
+                [
+                  ["roster", "Build roster"],
+                  ["publication", "Finalize roster"],
+                  ["staff", "Seasons"],
+                ] as const
+              ).map(([view, label]) => (
+                <DashboardLink
+                  key={view}
+                  className="button"
+                  href={dashboardPath({
+                    view,
+                    season: staffSeasonId,
+                    step: view === "publication" ? publicationStep : undefined,
+                  })}
+                  onNavigate={() => onNavigate(view)}
+                >
+                  {label}
+                  <ArrowRight aria-hidden="true" size={16} />
+                </DashboardLink>
+              ))}
             </div>
           </section>
         )}

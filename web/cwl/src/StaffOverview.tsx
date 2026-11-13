@@ -1,5 +1,7 @@
+import { formatDateTime, formatTime } from "./format";
 import LoadError from "./LoadError";
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { seasonMonthLabel } from "./seasonLabels";
 import VisitorSummary from "./VisitorSummary";
 import DashboardIcon from "./DashboardIcon";
@@ -82,12 +84,10 @@ export default function StaffOverview({
   }, [paused, refresh]);
   return (
     <section className="staff-overview">
-      <header className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Staff overview</h1>
-          <p>What needs attention across your areas.</p>
-        </div>
+      <CwlPageHeader
+        title={<h1>Staff overview</h1>}
+        description="What needs attention across your areas."
+      >
         <button
           aria-busy={busy || undefined}
           disabled={busy}
@@ -95,12 +95,12 @@ export default function StaffOverview({
         >
           {busy ? "Refreshing…" : "Refresh"}
         </button>
-      </header>
+      </CwlPageHeader>
       <VisitorSummary refresh={refresh} />
       <div className="staff-overview-status">
         <span>
           {data
-            ? `Updated ${new Date(data.checked_at * 1000).toLocaleTimeString()}`
+            ? `Updated ${formatTime(new Date(data.checked_at * 1000))}`
             : error
               ? "Not updated"
               : "Loading staff overview…"}{" "}
@@ -147,7 +147,7 @@ export default function StaffOverview({
                       <button
                         onClick={() => onNavigate("roster", String(season.id))}
                       >
-                        Open roster →
+                        Open roster <ArrowRight size={16} aria-hidden="true" />
                       </button>
                     </div>
                   ))
@@ -165,12 +165,13 @@ export default function StaffOverview({
                 <p>Open tickets in the current Discord ticket system.</p>
                 {data.tickets.url ? (
                   <a
-                    className="button primary"
+                    className="button"
                     href={data.tickets.url}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Open ticket console ↗
+                    Open ticket console{" "}
+                    <ArrowUpRight size={16} aria-hidden="true" />
                   </a>
                 ) : (
                   <p>
@@ -202,11 +203,12 @@ export default function StaffOverview({
                             {f.status === "uncertain"
                               ? "Unconfirmed — check Discord first"
                               : "Failed"}{" "}
-                            · {new Date(f.at * 1000).toLocaleString()}
+                            · {formatDateTime(new Date(f.at * 1000))}
                           </p>
                         </div>
                         <button onClick={() => onNavigate(f.destination)}>
-                          Review area →
+                          Review area{" "}
+                          <ArrowRight size={16} aria-hidden="true" />
                         </button>
                       </div>
                     ))}

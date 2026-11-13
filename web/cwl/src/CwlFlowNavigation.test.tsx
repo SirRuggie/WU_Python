@@ -62,7 +62,7 @@ it("sidebar Build resets to Accounts and topbar names follow each CWL destinatio
       });
   };
   const nav = (label: string) =>
-    [...host.querySelectorAll<HTMLButtonElement>(".sidebar button")].find(
+    [...host.querySelectorAll<HTMLButtonElement>(".sidebar a")].find(
       (b) => b.textContent?.trim() === label,
     )!;
   try {
@@ -87,7 +87,7 @@ it("sidebar Build resets to Accounts and topbar names follow each CWL destinatio
     await act(async () => nav("Finalize roster").click());
     await settle();
     const previousIndex = history.state.wuDashboardIndex;
-    const next = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    const next = [...host.querySelectorAll<HTMLElement>("button")].find(
       (button) => button.textContent === "Next: Announcements ›",
     )!;
     await act(async () => next.click());
@@ -95,7 +95,7 @@ it("sidebar Build resets to Accounts and topbar names follow each CWL destinatio
     expect(location.search).toContain("step=announce");
     expect(history.state.wuDashboardIndex).toBe(previousIndex + 1);
     expect(
-      [...host.querySelectorAll(".sidebar button")].some(
+      [...host.querySelectorAll(".sidebar a")].some(
         (button) => button.textContent?.trim() === "Results",
       ),
     ).toBe(false);

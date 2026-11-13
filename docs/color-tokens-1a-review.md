@@ -90,7 +90,7 @@ The JS verifier compares full ordered top-level CSS/JS import interleaving and m
 
 ## Preserved gold and1b inventory
 
-Owner decision 610 confirms all existing live old gold stays as rendered; retirement means no new uses. In particular the signed-out `.login-card > a.button.primary` stays fill/border `#d9a628`, ink `#211b10`, hover `#e7b73f`. The folded shell primary remains `#f4cd64`/`#241b08`. No blanket recoloring exception applies.
+Owner decision 610 confirms all existing live old gold stays as rendered; retirement means no new uses. Superseded 2026-11-13 by Ruggie's "one primary gold": the signed-out `.login-card > a.button.primary` (formerly `#d9a628`, ink `#211b10`, hover `#e7b73f`) now uses `--wu-accent`, `#F2B62A`. The folded shell primary remains `#f4cd64`/`#241b08`. No blanket recoloring exception applies.
 
 Owner decision 621 resolves four otherwise conflicting raw values: divider `#ffffff2b` is excluded alpha8; danger text `#ffaaa5` is 25.08 from danger; selected/hover foreground `#f5d66e` is 13.45 from accent and focus is the wrong role; `#f3ca56` is 14.4 from the matching gold tokens. All remain raw, with no alias/threshold exception. The following complete source inventory includes all remaining old gold and all four 621 values. Conditional controls are source-reachable but are not all exercised by the initial GET-only captures. Incumbent selectors with no exact TSX reference are identified explicitly; no assertion that every selector wins or renders is made. The required root focus definition is distinguished from retired/mismatched uses.
 

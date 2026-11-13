@@ -1,4 +1,5 @@
 import { rosterImageDimensions } from "./rosterImageDimensions";
+import { ArrowUpRight } from "lucide-react";
 import { DISCORD_GUILD_ID } from "./discordGuild";
 import { useEffect, useRef, useState } from "react";
 import { api, type Pool } from "./api";
@@ -305,7 +306,8 @@ export default function ClanRosterImages({
                               className="target-44"
                               href={`https://discord.com/channels/${DISCORD_GUILD_ID}/${post.channel_id}/${post.message_id}`}
                             >
-                              View in Discord ↗
+                              View in Discord{" "}
+                              <ArrowUpRight size={16} aria-hidden="true" />
                             </a>
                           )}
                           {canSend &&

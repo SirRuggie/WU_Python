@@ -1,5 +1,6 @@
-import LoadError from "./LoadError";
-import PageEyebrow from "./PageEyebrow";
+import { formatDateTime } from "./format";
+import LoadError, { CopyStatus, useReferenceCopy } from "./LoadError";
+import CwlPageHeader from "./CwlPageHeader";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 import type { MemberOption } from "./MemberPicker";
@@ -59,6 +60,7 @@ export default function DashboardIssues() {
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("");
   const [limit, setLimit] = useState(25);
+  const { copied, copiedRef, copy } = useReferenceCopy();
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -86,11 +88,10 @@ export default function DashboardIssues() {
   );
   return (
     <section className="dashboard-issues" aria-labelledby="issues-title">
-      <PageEyebrow />
-      <h1 id="issues-title">Dashboard issues</h1>
-      <p className="issues-intro">
-        See what failed and who was affected. Newest reports first.
-      </p>
+      <CwlPageHeader
+        title={<h1 id="issues-title">Dashboard issues</h1>}
+        description="See what failed and who was affected. Newest reports first."
+      />
       <div className="issues-toolbar">
         <label>
           Find an issue
@@ -158,6 +159,7 @@ export default function DashboardIssues() {
             : "No recorded issues in the current history."}
         </p>
       )}
+      <CopyStatus copied={copied} />
       <div className="issues-list" aria-busy={loading}>
         {matching.slice(0, limit).map((item) => (
           <article className="issue-row" key={item.id}>
@@ -170,10 +172,19 @@ export default function DashboardIssues() {
                 {issueLabels[item.kind] || "Dashboard issue"}
               </h2>
               <time dateTime={new Date(item.at * 1000).toISOString()}>
-                {new Date(item.at * 1000).toLocaleString()}
+                {formatDateTime(new Date(item.at * 1000))}
               </time>
               <span className="issue-reference">
                 Reference <code>{item.id}</code>
+                <button type="button" onClick={() => void copy(item.id)}>
+                  {copiedRef !== item.id
+                    ? "Copy"
+                    : copied === "done"
+                      ? "Copied"
+                      : copied === "failed"
+                        ? "Could not copy"
+                        : "Copy"}
+                </button>
               </span>
             </div>
             <div className="issue-member">
