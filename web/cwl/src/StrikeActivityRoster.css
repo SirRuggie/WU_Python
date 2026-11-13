@@ -275,9 +275,13 @@
 .strike-activity-toolbar > .roster-player-menu {
   align-self: end;
 }
+/* Match the toolbar's square buttons (Search, Sort, Filters). */
 .strike-activity-toolbar > .roster-player-menu .roster-action-trigger {
   width: 44px;
   height: 44px;
+  border-color: var(--wu-border-subtle);
+  border-radius: 10px;
+  background: var(--wu-surface);
 }
 .strike-activity-toolbar > button.strike-activity-search-button,
 .strike-activity-search > button.strike-activity-search-close {
