@@ -32,11 +32,15 @@ export default function CommandImageLibrary({
       ? document.activeElement
       : null,
   );
-  // The unsaved-edit check is async. Returning false keeps the panel's Back
-  // entry; the panel closes only after the check allows it.
+  // The unsaved-edit check is async. Returning false makes Back re-push the
+  // panel entry first; the check starts after that, so its own confirm entry
+  // sits on top and is removed when it settles. The panel closes only after
+  // the check allows it.
   function close() {
-    void guard.current().then((leave) => {
-      if (leave) onClose();
+    queueMicrotask(() => {
+      void guard.current().then((leave) => {
+        if (leave) onClose();
+      });
     });
     return false;
   }

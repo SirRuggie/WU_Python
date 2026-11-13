@@ -257,7 +257,7 @@ export default function MembersPage({
             </button>
             <button
               type="button"
-              disabled={busy || panelDirty || !data || unknown}
+              disabled={busy || panelDirty || unknown}
               onClick={() => fix(selected.size ? [...selected] : undefined)}
             >
               {t.fixNames}

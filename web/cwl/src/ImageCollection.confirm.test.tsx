@@ -181,23 +181,76 @@ it("image library close awaits the guard and Cancel leaves it open", async () =>
   expect(close).toHaveBeenCalledTimes(1);
 });
 
-it("Back on a dirty image library asks first and keeps the panel's Back entry", async () => {
-  const close = vi.fn();
-  await act(async () =>
-    root.render(<CommandImageLibrary onClose={close} onChoose={vi.fn()} />),
-  );
-  await dirty();
-  const push = vi.spyOn(history, "pushState");
-  history.replaceState({}, "");
-  await act(async () =>
-    window.dispatchEvent(new PopStateEvent("popstate", { state: {} })),
-  );
-  expect(document.querySelector(".confirm-dialog")).not.toBeNull();
-  expect(close).not.toHaveBeenCalled();
-  expect(push).toHaveBeenCalled();
-  await click("Cancel");
-  expect(close).not.toHaveBeenCalled();
-});
+// A small browser history: an entry stack, pushState, back() with popstate.
+function fakeHistory() {
+  const stack: unknown[] = [{}];
+  let index = 0;
+  vi.spyOn(history, "state", "get").mockImplementation(() => stack[index]);
+  vi.spyOn(history, "pushState").mockImplementation((state) => {
+    stack.splice(index + 1, stack.length, state);
+    index = stack.length - 1;
+  });
+  vi.spyOn(history, "replaceState").mockImplementation((state) => {
+    stack[index] = state;
+  });
+  const go = (delta: number) => {
+    index = Math.max(0, Math.min(stack.length - 1, index + delta));
+    window.dispatchEvent(
+      new PopStateEvent("popstate", { state: stack[index] }),
+    );
+  };
+  vi.spyOn(history, "back").mockImplementation(() => go(-1));
+  vi.spyOn(history, "go").mockImplementation((delta = 0) => go(delta));
+  // Entries behind and at the current one; forward entries do not matter.
+  const markers = () =>
+    stack.slice(0, index + 1).map((entry, at) => {
+      const marker =
+        (entry as { wuActionPanel?: string } | null)?.wuActionPanel || "route";
+      const name = marker.startsWith("image-confirm")
+        ? "confirm"
+        : marker.startsWith("action-panel")
+          ? "panel"
+          : "route";
+      return at === index ? `*${name}` : name;
+    });
+  return { back: () => go(-1), markers };
+}
+
+it.each([
+  ["Cancel", ["route", "*panel"]],
+  ["Discard changes", ["*route"]],
+])(
+  "Back on a dirty image library, then %s, leaves no extra history entries",
+  async (choice, expected) => {
+    const nav = fakeHistory();
+    const close = vi.fn();
+    const settle = async () => {
+      for (let i = 0; i < 3; i++)
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+    };
+    await act(async () =>
+      root.render(<CommandImageLibrary onClose={close} onChoose={vi.fn()} />),
+    );
+    expect(nav.markers()).toEqual(["route", "*panel"]);
+    await dirty();
+    await act(async () => nav.back());
+    await settle();
+    expect(document.querySelector(".confirm-dialog")).not.toBeNull();
+    expect(nav.markers()).toEqual(["route", "panel", "*confirm"]);
+    await click(choice);
+    await settle();
+    if (choice === "Cancel") {
+      expect(close).not.toHaveBeenCalled();
+    } else {
+      expect(close).toHaveBeenCalledTimes(1);
+      await act(async () => root.render(<></>));
+      await settle();
+    }
+    expect(nav.markers()).toEqual(expected);
+  },
+);
 
 it("closing the tab keeps the native beforeunload guard", async () => {
   await dirty();

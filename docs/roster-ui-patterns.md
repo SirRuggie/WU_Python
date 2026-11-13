@@ -964,9 +964,9 @@ Results & bonuses Settings uses closed disclosures with saved-value summaries
 and Unsaved draft indicators, one open on phones (≤680px). FWA Rep accounts
 puts Add account above the list and row actions in ⋯. An ActionMenu inside an
 ActionPanel must portal into its native dialog; outside menus keep their default
-portal behavior (prompt235). Inside an ActionPanel, the opening pointer gesture
-cannot select an item through a retargeted release or compatibility click;
-selection requires a new item press. Outside an ActionPanel, existing
-opening-drag selection stays unchanged. Keyboard and assistive virtual activation stay available. Physical
+portal behavior (prompt235). In every ⋯ menu, inside or outside an
+ActionPanel (UI audit D1, 2026-11-13), the opening pointer gesture cannot
+select an item through a retargeted release or compatibility click; selection
+requires a new item press. Keyboard and assistive virtual activation stay available. Physical
 touch remains unverified by native tooling (Shaka1055); unit touch sequences do
 not establish a real phone touch result.
