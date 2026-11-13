@@ -55,6 +55,7 @@ import LoadError from './LoadError'
 import { lazy, Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react'
 import OwnerPrankBoundary from './ownerPrank/OwnerPrankBoundary'
 import ConfirmDialog from './ConfirmDialog'
+import ServerJoinNotice, { isJoinRequiredError } from './ServerJoinNotice'
 import { findReplacementState, memberAccountsState } from './strikeActivityFilters'
 import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
@@ -123,6 +124,8 @@ function App() {
   const [memberSeason, setMemberSeason] = useState<{season_id: number | null; revision: number}>({season_id: null, revision: 0})
   const seasonId = seasonViews.has(view) ? staffSeasonId : String(memberSeason.season_id || '')
   const [fwaBlocked, setFwaBlocked] = useState(false)
+  const [joinRefused, setJoinRefused] = useState(false)
+  const joinRequired = session?.server_member === false || (joinRefused && session?.server_member !== true)
   const [pool, setPool] = useState<Pool | null>(null)
   const [signupSearch, setSignupSearch] = useState('')
   const [signupPage, setSignupPage] = useState(0)
@@ -724,7 +727,7 @@ function App() {
   }
   const submit = async () => {
     if (isTourReadOnly()) return
-    if (!seasonId || !season || !pool || !selected.length || pending || signupBusy.current || loadingData || dataError || accountError || !memberSignupsOpen(season)) return
+    if (!seasonId || !season || !pool || !selected.length || pending || signupBusy.current || loadingData || dataError || accountError || joinRequired || !memberSignupsOpen(season)) return
     signupBusy.current = true
     const submittedSeason = seasonId
     const submittedPool = pool
@@ -736,6 +739,13 @@ function App() {
       await api<{ ok: boolean; count: number }>(`/seasons/${encodeURIComponent(submittedSeason)}/signups`, 'POST', { pool: submittedPool, accounts: submittedAccounts })
     } catch (error) {
       if (message(error).includes('FWA accounts can only')) setFwaBlocked(true)
+      if (isJoinRequiredError(error)) {
+        setJoinRefused(true)
+        setReview(false)
+        signupBusy.current = false
+        setPending(false)
+        return
+      }
       setNotice({ kind: 'error', text: message(error) })
       signupBusy.current = false
       setPending(false)
@@ -1116,13 +1126,14 @@ function App() {
             {activeCompletion ? <section className="completion-card card" aria-labelledby="completion-title"><div className="completion-mark" aria-hidden="true">✓</div><h2 id="completion-title" ref={completionHeadingRef} tabIndex={-1}>You are signed up</h2><p><strong>{activeCompletion.accounts.length} {activeCompletion.accounts.length === 1 ? 'account is' : 'accounts are'} signed up</strong> for {poolName(activeCompletion.pool)} in {activeCompletion.seasonLabel}.</p><div className="completion-accounts">{activeCompletion.accounts.map(account => <div key={account.tag}><strong>{account.name}</strong><small>{account.tag}</small></div>)}</div><p>Your accounts are signed up. Staff will assign them to clans. You can close this page, or sign up more accounts below.</p>{activeCompletion.refreshWarning && <div className="notice error" role="alert">Your signup is saved. The account list did not refresh. Check your saved signups later.</div>}<div className="completion-actions"><button className="primary" disabled={pending} onClick={() => void showSavedSignups()}>View my signups</button><button disabled={pending} onClick={() => changeView('assignments')}>My clan assignments</button><button disabled={pending} onClick={() => { setPoolRemoved([]); setCompletion(null); setSignupPanel('register'); setSignupStep(1); setPool(null); setReview(false) }}>Sign up more accounts</button></div></section> : <>
             {signupPanel === 'register' && !memberSignupsOpen(season) && <section data-tour-target="signup-closed" className="signup-guide" aria-label="Signup walkthrough"><h2>Signups closed</h2><p>View your saved signups or check your CWL clan. To make a change, ask staff for help.</p><div className="signup-action-buttons"><button onClick={() => changeSignupPanel('saved')}>My signups</button><button onClick={() => changeView('assignments')}>My clan assignments</button></div></section>}
             {signupPanel === 'register' && memberSignupsOpen(season) && <div className="signup-flow">
+              {joinRequired && <ServerJoinNotice />}
               {accountsReady && !loadingData && !accountError && accounts.length === 0 && <section className="card" data-tour-target="signup-missing"><h2>Link an account</h2><AccountLinkHelp busy={loadingData || pending} onRefresh={() => void loadSignup()} /></section>}
               <SignupWalkthrough stage={review ? 3 : signupStep} pool={pool}
                 selectedCount={selected.length} busy={pending}
-                canReview={!!pool && selected.length > 0 && !loadingData && !dataError && !accountError}
+                canReview={!!pool && selected.length > 0 && !loadingData && !dataError && !accountError && !joinRequired}
                 headingRef={stepHeadingRef} onNavigate={stage => {
                   if (pending || (stage > 1 && !pool)) return
-                  if (stage === 3 && (!selected.length || loadingData || dataError || accountError)) return
+                  if (stage === 3 && (!selected.length || loadingData || dataError || accountError || joinRequired)) return
                   setReturnToReview(review && stage === 1)
                   setReview(stage === 3)
                   setSignupStep(stage === 1 ? 1 : 2)
@@ -1147,11 +1158,11 @@ function App() {
                 </article>
               })}</div>
               {lastSignupPage > 0 && <nav className="hub-pagination" aria-label="Signup account pages"><button disabled={currentSignupPage === 0} onClick={() => setSignupPage(currentSignupPage - 1)}>Previous accounts</button><span>Page {currentSignupPage + 1} of {lastSignupPage + 1}</span><button disabled={currentSignupPage === lastSignupPage} onClick={() => setSignupPage(currentSignupPage + 1)}>Next accounts</button></nav>}
-              {memberSignupsOpen(season) && visibleAccounts.length > 0 && <div className="submit-bar"><div><strong>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected</strong><small>Selections across all pages · Not saved yet.</small></div><div className="signup-action-buttons"><button disabled={pending} onClick={() => setSignupStep(1)}>← Back</button><button className="primary" disabled={!selected.length || pending || loadingData || !!dataError || !!accountError} onClick={() => setReview(true)}>Continue →</button></div></div>}
+              {memberSignupsOpen(season) && visibleAccounts.length > 0 && <div className="submit-bar"><div><strong>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected</strong><small>Selections across all pages · Not saved yet.</small></div><div className="signup-action-buttons"><button disabled={pending} onClick={() => setSignupStep(1)}>← Back</button><button className="primary" disabled={!selected.length || pending || loadingData || !!dataError || !!accountError || joinRequired} onClick={() => setReview(true)}>Continue →</button></div></div>}
             </>}
             </>}
             {signupStep === 2 && !review && (!accounts.length || accountError || !memberSignupsOpen(season)) && <button disabled={pending} onClick={() => setSignupStep(1)}>← Back to CWL choice</button>}
-            {review && pool && <section data-tour-target="signup-review" className="signup-review card" aria-label="Review selected accounts">{notice?.kind === 'error' && <div className="notice error" role="alert">{notice.text}</div>}<SignupReviewHeading poolLabel={poolName(pool)} count={selected.length} busy={pending} onChange={changeReviewStep} /><div className="review-list">{selected.map(item => { const account = accounts.find(candidate => candidate.tag === item.tag)!; return <div className="review-row" key={item.tag}><div><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag} · TH {account.town_hall ?? '—'} · {account.current_clan_name || 'No current clan'}</small></div>{account.current_clan_type === 'FWA' && pool === 'main' && <span className="transfer-review">FWA account · Lazy CWL only.</span>}</div> })}</div><div className="signup-actions submit-bar"><button disabled={pending} onClick={() => setReview(false)}>← Back</button><button data-tour-target="signup-confirm" className="primary" disabled={!selected.length || pending || loadingData || !memberSignupsOpen(season) || !!dataError || !!accountError} onClick={submit}>{pending ? 'Saving…' : `Sign up ${selected.length} ${selected.length === 1 ? 'account' : 'accounts'}`}</button></div></section>}
+            {review && pool && <section data-tour-target="signup-review" className="signup-review card" aria-label="Review selected accounts">{notice?.kind === 'error' && <div className="notice error" role="alert">{notice.text}</div>}<SignupReviewHeading poolLabel={poolName(pool)} count={selected.length} busy={pending} onChange={changeReviewStep} /><div className="review-list">{selected.map(item => { const account = accounts.find(candidate => candidate.tag === item.tag)!; return <div className="review-row" key={item.tag}><div><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag} · TH {account.town_hall ?? '—'} · {account.current_clan_name || 'No current clan'}</small></div>{account.current_clan_type === 'FWA' && pool === 'main' && <span className="transfer-review">FWA account · Lazy CWL only.</span>}</div> })}</div><div className="signup-actions submit-bar"><button disabled={pending} onClick={() => setReview(false)}>← Back</button><button data-tour-target="signup-confirm" className="primary" disabled={!selected.length || pending || loadingData || !memberSignupsOpen(season) || !!dataError || !!accountError || joinRequired} onClick={submit}>{pending ? 'Saving…' : `Sign up ${selected.length} ${selected.length === 1 ? 'account' : 'accounts'}`}</button></div></section>}
             </div>}
             {signupPanel === 'saved' && <section className="registered">
               {!savedSignupsLoaded && !dataError ? <p role="status">Loading saved signups…</p> : dataError ? null : <>
