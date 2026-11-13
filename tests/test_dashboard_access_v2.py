@@ -20,9 +20,15 @@ class DashboardAccessTests(unittest.IsolatedAsyncioTestCase):
         self.collection = AccessCollection()
         self.db = SimpleNamespace(bot_config=self.collection)
         self.member_roles = []
+        self.left_server = set()
+        self.member_lookups = 0
         async def discord(method, path, **kwargs):
+            from aiohttp import web
             if path.endswith('/roles'):
                 return [{'id': '777', 'name': 'CWL staff', 'managed': False}]
+            self.member_lookups += 1
+            if path.rsplit('/', 1)[-1] in self.left_server:
+                raise web.HTTPNotFound(text='This Discord member or item is no longer available.')
             return {'user': {'id': path.rsplit('/', 1)[-1], 'username': 'Staff <test>'}, 'roles': self.member_roles}
         self.app = create_app(db_path=str(Path(self.tmp.name)/'test.sqlite'), providers=FixtureProviders('100'), secure_cookies=False, live_access=True)
         self.app['server_management_mongo'] = self.db
@@ -155,6 +161,66 @@ class DashboardAccessTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(data['can_edit'])
         self.assertIn('could not be checked',data['access_warning'])
         self.assertEqual((await self.call('GET','/seasons/1/roster',self.member)).status,403)
+
+    async def test_direct_grant_is_suspended_while_member_is_out_of_server(self):
+        await self.save(['cwl_roster'])
+        self.assertNotEqual((await self.call('GET','/seasons/1/roster',self.member)).status,403)
+        self.left_server.add('100')
+        data=await (await self.call('GET','/auth/me',self.member)).json()
+        self.assertEqual(data['dashboard_permissions'],[])
+        self.assertFalse(data['can_edit'])
+        self.assertIsNone(data['access_warning'])
+        self.assertEqual((await self.call('GET','/seasons/1/roster',self.member)).status,403)
+        # The grant is kept, not deleted.
+        self.assertEqual(effective(await AccessRepository(self.collection).read(),'100'),{'cwl_roster'})
+        self.left_server.discard('100')
+        data=await (await self.call('GET','/auth/me',self.member)).json()
+        self.assertEqual(data['dashboard_permissions'],['cwl_roster'])
+        self.assertNotEqual((await self.call('GET','/seasons/1/roster',self.member)).status,403)
+
+    async def test_out_of_server_member_loses_role_and_direct_grants_together(self):
+        await self.save(['cwl_signups'],kind='role',subject='777')
+        await self.save(['clan_weights'])
+        self.member_roles=['777']
+        self.left_server.add('100')
+        data=await (await self.call('GET','/auth/me',self.member)).json()
+        self.assertEqual(data['dashboard_permissions'],[])
+
+    async def test_owners_keep_access_without_a_member_lookup(self):
+        await self.save(['cwl_roster'])
+        self.left_server.update(OWNER_IDS)
+        before=self.member_lookups
+        data=await (await self.call('GET','/auth/me',self.owner)).json()
+        self.assertTrue(data['is_owner'])
+        self.assertIn('cwl_roster',data['dashboard_permissions'])
+        self.assertEqual(self.member_lookups,before)
+
+    async def test_outage_keeps_direct_grant_for_member_lookup(self):
+        from aiohttp import web
+        await self.save(['cwl_roster'])
+        self.app['server_management_discord'] = AsyncMock(side_effect=web.HTTPServiceUnavailable(text='Discord unavailable'))
+        data=await (await self.call('GET','/auth/me',self.member)).json()
+        self.assertEqual(data['dashboard_permissions'],['cwl_roster'])
+        # No role grant is affected, so no role warning is shown.
+        self.assertIsNone(data['access_warning'])
+
+    async def test_no_grant_skips_member_lookup_and_ignores_legacy_rows(self):
+        await self.save(['cwl_roster'],subject='300')
+        with self.app['store'].tx() as db:
+            db.execute('INSERT INTO grants(user_id,granted_by,permissions) VALUES (?,?,?)',('100','owner',json.dumps(['cwl'])))
+        before=self.member_lookups
+        data=await (await self.call('GET','/auth/me',self.member)).json()
+        self.assertEqual(data['dashboard_permissions'],[])
+        self.assertEqual(self.member_lookups,before)
+
+    async def test_legacy_grant_is_suspended_while_member_is_out_of_server(self):
+        with self.app['store'].tx() as db:
+            db.execute('INSERT INTO grants(user_id,granted_by,permissions) VALUES (?,?,?)',('100','owner',json.dumps(['cwl'])))
+        self.assertTrue((await (await self.call('GET','/auth/me',self.member)).json())['can_edit'])
+        self.left_server.add('100')
+        data=await (await self.call('GET','/auth/me',self.member)).json()
+        self.assertFalse(data['can_edit'])
+        self.assertEqual(data['dashboard_permissions'],[])
 
     async def test_expired_session_cannot_block_a_fresh_login(self):
         with self.app['store'].tx() as db:

@@ -42,21 +42,35 @@ async def access_context(request, handler):
     # Isolated fixture apps use local legacy grants and never contact Discord.
     if request.app.get('dev_fixture') or not request.app.get('live_access'):
         return await handler(request)
+    uid = session['user_id']
     async with mongo(request) as db:
         document = await repository(db).read()
     if document is not None:
-        roles = []
-        if any(g['kind'] == 'role' for g in document['grants']):
-            try:
-                member = await discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{session["user_id"]}')
-                roles = member.get('roles', [])
-            except web.HTTPNotFound:
-                roles = []
-            except (web.HTTPServiceUnavailable, web.HTTPForbidden):
-                roles = []
-                request['access_warning'] = 'Discord roles could not be checked. Role-based staff access is unavailable; try again shortly.'
-            # No cached role membership is used on failure; direct grants remain valid.
-        request['dashboard_permissions'] = effective(document, session['user_id'], roles)
+        direct = any(g['kind'] == 'user' and g['id'] == uid for g in document['grants'])
+        lookup = direct or any(g['kind'] == 'role' for g in document['grants'])
+    else:
+        from .access_control import scopes
+        lookup = bool(scopes(request.app['store'], uid))
+    if not lookup:
+        # No grant applies, so membership cannot change access. Skip the Discord call.
+        if document is not None:
+            request['dashboard_permissions'] = set()
+        return await handler(request)
+    roles = []
+    try:
+        member = await discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{uid}')
+        roles = member.get('roles', [])
+    except web.HTTPNotFound:
+        # Confirmed not in the server: no staff access. Grants are kept, so
+        # rejoining restores access on the next request.
+        request['dashboard_permissions'] = set()
+        return await handler(request)
+    except (web.HTTPServiceUnavailable, web.HTTPForbidden):
+        if document is not None and any(g['kind'] == 'role' for g in document['grants']):
+            request['access_warning'] = 'Discord roles could not be checked. Role-based staff access is unavailable; try again shortly.'
+        # No cached role membership is used on failure; direct grants remain valid.
+    if document is not None:
+        request['dashboard_permissions'] = effective(document, uid, roles)
     return await handler(request)
 
 

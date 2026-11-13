@@ -20,8 +20,8 @@ dashboard").
   the "Join server" link.
 - Withdrawing an existing signup stays allowed for a non-member. It only removes
   their own entry.
-- Staff pages keep their permission checks. A non-member has no staff access
-  unless an owner grants it.
+- Staff pages keep their permission checks. A non-member has no staff access,
+  even with a grant; owners are the only exception.
 
 ## How it works
 
@@ -52,9 +52,9 @@ disabled. `null` shows nothing; the server decides on save.
 
 ## Known limits
 
-- A person with a direct staff grant who has left the server keeps staff access
-  while signed in. This was already true for existing 30-day sessions;
-  follow-up: remove staff access when someone leaves the server.
+- Fixed 2026-11-13: a person with a direct staff grant who leaves the server
+  loses staff access on the next request. The grant is kept for a rejoin. See
+  [Dashboard access](dashboard-access.md#enforcement-and-failure-handling).
 - A saved-signup pool change by a non-member is refused by the server, but the
   My signups page shows the refusal text without the "Join server" link.
 
