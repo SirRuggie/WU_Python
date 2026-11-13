@@ -167,18 +167,6 @@
   min-height: 44px;
 }
 
-.export-roster-switch {
-  display: flex;
-  gap: var(--wu-space-2);
-  flex-wrap: wrap;
-}
-.export-roster-switch button {
-  min-height: 44px;
-}
-.export-roster-switch button[aria-pressed="true"] {
-  color: var(--wu-accent);
-  border-color: var(--wu-accent);
-}
 .export-clans {
   display: grid;
   gap: var(--wu-space-5);

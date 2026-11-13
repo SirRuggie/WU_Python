@@ -20,6 +20,7 @@ export default function FilterChips<T extends string | number>({
     label: ReactNode;
     count?: number | string;
     ariaLabel?: string;
+    disabled?: boolean;
   }[];
   onChange: (value: T) => void;
   disabled?: boolean;
@@ -50,7 +51,7 @@ export default function FilterChips<T extends string | number>({
           key={option.value}
           aria-label={option.ariaLabel}
           aria-pressed={value === option.value}
-          disabled={disabled}
+          disabled={disabled || option.disabled}
           onClick={() => onChange(option.value)}
         >
           {option.label}

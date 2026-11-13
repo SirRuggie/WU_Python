@@ -271,7 +271,7 @@ it.each([401, 403])(
     expect(host.textContent).toContain(
       "You do not have access to this download.",
     );
-    expect(button("Retry")).toBeUndefined();
+    expect(button("Try again")).toBeUndefined();
     expect(host.querySelector(".export-record")).toBeNull();
     expect(changed).toHaveBeenCalledWith(
       expect.objectContaining({ type: "dashboard-access-changed" }),
@@ -282,7 +282,7 @@ it.each([401, 403])(
 it.each([401, 403])("hides Retry for denied preview %i", async (status) => {
   api.mockRejectedValue(new ApiError("Private denial", status));
   await render();
-  expect(button("Retry")).toBeUndefined();
+  expect(button("Try again")).toBeUndefined();
   expect(host.textContent).toContain("You do not have access to this export.");
 });
 

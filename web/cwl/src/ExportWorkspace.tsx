@@ -1,3 +1,5 @@
+import LoadError from "./LoadError";
+import FilterChips from "./FilterChips";
 import CwlPageHeader from "./CwlPageHeader";
 import RosterMenu from "./rosterUi/Menu";
 import { useEffect, useRef, useState } from "react";
@@ -235,47 +237,37 @@ export default function ExportWorkspace({
             {kind === "accounts" &&
               selectedSeason?.status !== "archived" &&
               currentPublication && (
-                <div
+                <FilterChips
                   className="export-roster-switch"
+                  label="Roster basis"
                   role="group"
-                  aria-label="Roster basis"
-                >
-                  {(["published", "current"] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={effectiveBasis === value}
-                      disabled={
-                        previewLoading ||
-                        (value === "published" && !publishedAvailable)
-                      }
-                      onClick={() => {
-                        if (value === effectiveBasis) return;
-                        setPreview(null);
-                        setBasis(value);
-                      }}
-                    >
-                      {value === "published" ? "Published" : "Working"}
-                    </button>
-                  ))}
-                </div>
+                  value={effectiveBasis}
+                  disabled={previewLoading}
+                  options={[
+                    {
+                      value: "published",
+                      label: "Published",
+                      disabled: !publishedAvailable,
+                    },
+                    { value: "current", label: "Working" },
+                  ]}
+                  onChange={(value) => {
+                    if (value === effectiveBasis) return;
+                    setPreview(null);
+                    setBasis(value);
+                  }}
+                />
               )}
             <p>{choices.find((choice) => choice.kind === kind)?.description}</p>
           </div>
           {previewLoading && <p role="status">Loading exports & history…</p>}
-          {previewError && (
-            <div className="notice error" role="alert">
-              {previewError}
-              {!previewDenied && (
-                <button
-                  type="button"
-                  onClick={() => setAttempt((value) => value + 1)}
-                >
-                  Retry
-                </button>
-              )}
-            </div>
-          )}
+          <LoadError
+            message={previewError}
+            busy={previewLoading}
+            onRetry={
+              previewDenied ? undefined : () => setAttempt((value) => value + 1)
+            }
+          />
           <ExportDownloads
             seasonId={seasonId}
             seasons={seasons}
