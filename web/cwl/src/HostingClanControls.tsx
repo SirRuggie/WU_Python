@@ -256,6 +256,10 @@ export default function HostingClanControls({
                   setError("");
                 }}
                 placeholder="#CLANTAG"
+                spellCheck={false}
+                autoComplete="off"
+                autoCapitalize="characters"
+                inputMode="text"
               />
               <Button
                 icon={Search}

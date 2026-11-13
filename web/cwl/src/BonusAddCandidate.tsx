@@ -78,6 +78,8 @@ export default function BonusAddCandidate({
                 name="player-tag"
                 autoComplete="off"
                 spellCheck={false}
+                autoCapitalize="characters"
+                inputMode="text"
                 value={tag}
                 maxLength={20}
                 disabled={busy || lookingUp}
