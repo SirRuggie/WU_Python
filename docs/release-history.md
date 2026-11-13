@@ -1,5 +1,39 @@
 # Release and rollback history
 
+## Browser problem banner: no cancel reports, Dismiss — 2026-11-13 (frontend only)
+
+- PR [#347](https://github.com/SirRuggie/WU_Python/pull/347), merge commit
+  `2ff645bbb4605ac76662142eaaa9ca964149f43d`, local tag `banner-dismiss-347-1`.
+  Built, merged and released by Shaka (Claude) on Ruggie's "build it fully with
+  shaka, merge and release". Independent refuter ACCEPT on head `4847d067`.
+- Cause: issue `477da595ac01` was `kind=network_error`. `api()` reported
+  requests that a view cancels on purpose and requests that a hidden page drops.
+  The banner had no close control.
+- Changes: `api.ts` `isExpectedCancel()` (no report for an aborted signal,
+  `AbortError` or a hidden page); `issueNotice.ts` banner with a Dismiss button.
+  Only `web/cwl/` changed since `7a221f96`. No Python, route, schema or data change.
+- Checks: vitest 2531 tests in 368 files (branch and clean tagged clone),
+  `tsc -b`, build; backend 8195 passed, 134 skipped (network-isolated namespace).
+- Backend not changed or restarted (PID 949466). Bot not changed (PID 871536).
+- Frontend `current`: `7a221f96…` → `2ff645bb…`. Entry `index-CsRHakeD.js`,
+  SHA-256 `202cec43b1e22f67c2d9b642b5fc73b1475223a4fae653c533be7b87da35d663`.
+  All 181 manifest files match on the origin (127.0.0.1:8766). Public
+  `cwl.ruggie.zone` serves the same entry on `/`, `/signup`, `/strikes`,
+  `/server/members`, `/settings/integrations`; 180 public assets match. Public
+  `index.html` differs only by the Cloudflare Web Analytics beacon script.
+- Backup `.local/banner-dismiss-347-release-20261113T194621Z/before.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `cb693c4865a61e9134f43590e0ea4b180a896920a4de4e6ab5155a8a20ca41d6`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131, publication max version 6
+  (6 rows, 4 active) and the lineup-rules digest identical before and after.
+  Note: `snap.py` always prints `backup_equal_live: false` because it compares
+  after it adds the backup keys; equality was checked separately.
+- Smoke: signed-out HTTP only; anonymous `/api/cwl/auth/me` 401. Signed-in
+  browser smoke SKIPPED. No app writes, no Discord post.
+- Rollback: frontend `switch-release.py
+  7a221f96fee18ec1f6057e4c9b7b73874ec47131`. Never restore the database for a
+  code rollback.
+
 ## UI audit Phases 5 and 6 — 2026-11-13 (frontend only)
 
 - PRs [#338](https://github.com/SirRuggie/WU_Python/pull/338) (Phase 5, merge
