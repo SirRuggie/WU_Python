@@ -2,7 +2,6 @@
   max-width: 1100px;
   margin-inline: auto;
 }
-.base-bank header p,
 .base-bank-muted {
   color: var(--muted, var(--wu-text-muted));
   text-wrap: pretty;

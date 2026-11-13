@@ -1,3 +1,4 @@
+import CwlPageHeader from "./CwlPageHeader";
 import { visibleRefresh } from "./visibleRefresh";
 import { memberSignupsOpen } from "./memberSeason";
 import MemberSignupStatus, { signupHeading } from "./MemberSignupStatus";
@@ -494,7 +495,12 @@ export default function DashboardHome(props: Props) {
   if (!seasonsKnown)
     return (
       <div className="dashboard-home">
-        <h1>Hey, {session.user.display_name || session.user.username}</h1>
+        <CwlPageHeader
+          eyebrow={false}
+          title={
+            <h1>Hey, {session.user.display_name || session.user.username}</h1>
+          }
+        />
         <p role="status">
           {seasonError
             ? "CWL seasons could not be checked."
@@ -505,16 +511,18 @@ export default function DashboardHome(props: Props) {
     );
   return (
     <div className="dashboard-home">
-      <div className="page-head">
-        <div>
+      <CwlPageHeader
+        eyebrow={false}
+        title={
           <h1>Hey, {session.user.display_name || session.user.username}</h1>
-          <p>Your accounts, your clans, and what to do next.</p>
-        </div>
-        <p className="season-choice">
+        }
+        description="Your accounts, your clans, and what to do next."
+      >
+        <p className="cwl-page-header-season">
           {seasons.find((item) => String(item.id) === seasonId)?.label ||
             (seasonError ? "Season unavailable" : "No CWL season available")}
         </p>
-      </div>
+      </CwlPageHeader>
       <div className="hub-sync">
         <span role="status">
           <span

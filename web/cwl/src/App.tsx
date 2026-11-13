@@ -29,7 +29,8 @@ import {withdrawInOrder, withdrawConfirmation} from './signupWithdrawal'
 import SignupPage, { type Completion, type Notice } from './SignupPage'
 import DashboardIcon from './DashboardIcon'
 import { strikePermissions } from './strikePermissions'
-import {isManagementArea, managementAreas} from './managementAreas'
+import {isManagementArea} from './managementAreas'
+import { Menu } from 'lucide-react'
 import SidebarNavigation, { navigationSection, navigationLabel, resultsPageAccess, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
 import { loginPath } from './memberLinks'
 import { DashboardHistory, dashboardTarget, seasonViews, activityContext } from './dashboardHistory'
@@ -121,7 +122,7 @@ function App() {
   useEffect(() => { setSignupPage(0) }, [signupSearch, pool, seasonId])
   const [signupPanel, setSignupPanel] = useState<'register' | 'saved'>(entryTarget.signupPanel || 'register')
   useEffect(() => {
-    document.title = `${view === 'signup' && signupPanel === 'saved' ? 'My signups' : navigationLabel(view, publicationStep)} · Warriors United`
+    document.title = `${navigationLabel(view, publicationStep, signupPanel)} · Warriors United`
   }, [view, publicationStep, signupPanel])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [accountsLoadedFor, setAccountsLoadedFor] = useState<string | null>(null)
@@ -990,12 +991,17 @@ function App() {
           replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} />
       </div>
     </aside>
-    {menuOpen && <button className="scrim" tabIndex={-1} aria-hidden="true" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
+    {menuOpen && <div className="scrim" aria-hidden="true" onClick={() => setMenuOpen(false)} />}
     {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
     <div className="workspace" inert={mobile && menuOpen}>
-      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><img className="topbar-logo" src="/brand/wu-helmet-39.png" srcSet="/brand/wu-helmet-39.png 1x, /brand/wu-helmet-78.png 2x, /brand/wu-helmet-117.png 3x" alt="" aria-hidden="true" width={26} height={32} /><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'member-timezones' ? 'Members' : view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image gallery' : view === 'world-clocks' ? 'World clocks' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : (view === 'strikes' || view === 'replacements') ? 'Strikes & replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Home' : view === 'bases' ? 'Base bank' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? signupPanel === 'saved' ? 'My signups' : 'Sign up' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Signup reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & bonuses' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div>{mobile ? <AccountMenu user={session.user} onSignOut={signOut} variant="avatar" disabled={pending} replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} /> : <AccountIdentity user={session.user} />}</header>
-      <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view, publicationStep)}>
-        <PageGroupContext.Provider value={pageGroup(navigationSection(view), navigationLabel(view, publicationStep))}>
+      <header className="topbar">
+        <button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Menu aria-hidden="true" size={20} /><span>Menu</span></button>
+        <img className="topbar-logo" src="/brand/wu-helmet-39.png" srcSet="/brand/wu-helmet-39.png 1x, /brand/wu-helmet-78.png 2x, /brand/wu-helmet-117.png 3x" alt="" aria-hidden="true" width={26} height={32} />
+        <div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{navigationLabel(view, publicationStep, signupPanel)}</strong></div>
+        {mobile ? <AccountMenu user={session.user} onSignOut={signOut} variant="avatar" disabled={pending} replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} /> : <AccountIdentity user={session.user} />}
+      </header>
+      <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view, publicationStep, signupPanel)}>
+        <PageGroupContext.Provider value={pageGroup(navigationSection(view), navigationLabel(view, publicationStep, signupPanel))}>
         {(session.is_owner || session.can_edit || !!session.dashboard_permissions?.length) && <DashboardStorageStatus />}
         {["roster", "publication", "declaration"].includes(view) && (
           <StaffDetailsHost

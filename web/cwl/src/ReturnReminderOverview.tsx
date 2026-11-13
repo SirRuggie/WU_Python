@@ -3,7 +3,8 @@ import FilterChips from "./FilterChips";
 import LoadError from "./LoadError";
 import SelectionActionBar from "./SelectionActionBar";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
-import ActionPanel from "./ActionPanel";
+import { createPortal } from "react-dom";
+import HelpButton from "./HelpButton";
 import "./members/Members.css";
 import ReturnBatch from "./returns/ReturnBatch";
 import {
@@ -55,13 +56,15 @@ export function ReturnStatusSummary({ status }: { status: ReturnStatus }) {
 export default function ReturnReminderOverview({
   onOpen,
   onDirty,
+  helpSlot,
   active = true,
 }: {
   active?: boolean;
+  /** Where the page header shows the ? help; its content needs this page's state. */
+  helpSlot?: HTMLElement | null;
   onOpen: (section: ManagementSection) => void;
   onDirty?: (dirty: boolean) => void;
 }) {
-  const [aboutTrigger, setAboutTrigger] = useState<HTMLElement | null>(null);
   const [records, setRecords] = useState<ReturnClan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -269,31 +272,28 @@ export default function ReturnReminderOverview({
           revealSelection
         />
       </div>
-      {aboutTrigger && (
-        <ActionPanel
-          className="return-about-panel"
-          title="About this page"
-          trigger={aboutTrigger}
-          onClose={() => setAboutTrigger(null)}
-        >
-          <div className="return-context">
-            <span>
-              <strong>Purpose</strong>Bring saved members back to their home
-              clans after CWL.
-            </span>
-            <span>
-              <strong>Destination</strong>
-              {destinationName}
-            </span>
-            <span>
-              <strong>Timing</strong>
-              {section === "FWA"
-                ? "Automatic after start; stops at cutoff"
-                : "Manual send only"}
-            </span>
-          </div>
-        </ActionPanel>
-      )}
+      {helpSlot &&
+        createPortal(
+          <HelpButton title="About this page" className="return-about-panel">
+            <div className="return-context">
+              <span>
+                <strong>Purpose</strong>Bring saved members back to their home
+                clans after CWL.
+              </span>
+              <span>
+                <strong>Destination</strong>
+                {destinationName}
+              </span>
+              <span>
+                <strong>Timing</strong>
+                {section === "FWA"
+                  ? "Automatic after start; stops at cutoff"
+                  : "Manual send only"}
+              </span>
+            </div>
+          </HelpButton>,
+          helpSlot,
+        )}
       <LoadError
         message={[destinationError, error]}
         note={
@@ -403,11 +403,6 @@ export default function ReturnReminderOverview({
                 label: "Return channels",
                 disabled: loading,
                 onAction: () => utility("return-channels"),
-              },
-              {
-                id: "about",
-                label: "About this page",
-                onAction: setAboutTrigger,
               },
             ]}
           />

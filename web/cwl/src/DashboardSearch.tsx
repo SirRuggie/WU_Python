@@ -1,4 +1,4 @@
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import FilterChips from "./FilterChips";
 import { loadAccountDisplay } from "./accountDisplay";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -170,16 +170,15 @@ export default function DashboardSearch({
   const currentPage = Math.min(page, lastPage);
   return (
     <section className="dashboard-search-workspace">
-      <header className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Search</h1>
-          <p>
+      <CwlPageHeader
+        title={<h1>Search</h1>}
+        description={
+          <>
             Find your linked players and their clans
             {includeFamily ? ", plus the family clan directory" : ""}.
-          </p>
-        </div>
-      </header>
+          </>
+        }
+      />
       <label className="global-search-field" htmlFor="dashboard-search">
         <DashboardIcon name="search" />
         <span className="sr-only">Find a player or clan</span>

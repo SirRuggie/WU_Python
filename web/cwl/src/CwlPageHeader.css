@@ -28,8 +28,31 @@
   flex: 0 1 auto;
   min-width: 0;
 }
-.cwl-page-header-title > h1:not(:last-child) {
+.cwl-page-header-title > h1:has(+ .page-help-trigger),
+.cwl-page-header-title > h1:has(+ .page-help-slot) {
   max-width: calc(100% - 48px);
+}
+.cwl-page-header-title > .page-help-slot {
+  display: contents;
+}
+.cwl-page-header-description {
+  flex: 0 0 100%;
+  max-width: 700px;
+  /* Clears the red title mark under the heading. */
+  margin: var(--roster-space-3) 0 0;
+  color: var(--wu-text-muted);
+  text-wrap: pretty;
+}
+.cwl-page-header > button,
+.cwl-page-header > .cwl-page-header-actions {
+  flex: none;
+}
+.cwl-page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--roster-space-2);
 }
 .cwl-page-header .cwl-page-header-title > h1,
 .shell .cwl-page-header .cwl-page-header-title > h1 {
@@ -79,8 +102,13 @@
   margin: 0 0 var(--roster-space-4);
 }
 @media (max-width: 650px) {
+  /* Title row first; buttons and pickers wrap onto their own row below. */
   .shell .page-head.cwl-page-header {
+    flex-wrap: wrap;
     gap: var(--roster-space-2);
+  }
+  .cwl-page-header > .cwl-page-header-title {
+    flex: 1 0 100%;
   }
   .shell .cwl-page-header .cwl-page-header-title > h1 {
     font-size: var(--wu-text-2xl);
@@ -97,6 +125,15 @@
   }
 }
 @media (max-width: 480px) {
+  /* A season picker takes the full row below the title. */
+  .shell .cwl-page-header > .roster-menu,
+  .shell .cwl-page-header > .roster-header-season,
+  .shell .cwl-page-header > .cwl-page-header-season,
+  .shell .cwl-page-header > .participation-season,
+  .shell .cwl-page-header > .bonus-season {
+    flex: 1 0 100%;
+    max-width: 100%;
+  }
   .cwl-page-header-title {
     padding-block: 8px;
   }

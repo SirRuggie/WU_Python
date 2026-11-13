@@ -2,18 +2,6 @@
   max-width: 1320px;
   margin: auto;
 }
-/* Title and Check now share one row at every width. */
-.todo-workspace .page-head.todo-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--wu-space-3);
-  margin-bottom: var(--wu-space-2);
-}
-.todo-head h1 {
-  margin-bottom: 0;
-  min-width: 0;
-}
 .todo-check {
   flex: none;
 }

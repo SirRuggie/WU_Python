@@ -1,5 +1,5 @@
 import LoadError from "../LoadError";
-import PageEyebrow from "../PageEyebrow";
+import CwlPageHeader from "../CwlPageHeader";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import SectionTabs from "../SectionTabs";
@@ -320,10 +320,9 @@ export default function WorldClocksWorkspace({
 
 function Header() {
   return (
-    <header className="world-clocks-heading">
-      <PageEyebrow />
-      <h1 id="world-clocks-title">World clocks</h1>
-      <p>Voice channel names that show local times.</p>
-    </header>
+    <CwlPageHeader
+      title={<h1 id="world-clocks-title">World clocks</h1>}
+      description="Voice channel names that show local times."
+    />
   );
 }

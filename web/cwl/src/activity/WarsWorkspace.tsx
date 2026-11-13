@@ -1,4 +1,4 @@
-import PageEyebrow from "../PageEyebrow";
+import CwlPageHeader from "../CwlPageHeader";
 import SectionTabs from "../SectionTabs";
 import { useJourneyState, useJourneyPosition } from "../journeyState";
 import { useState } from "react";
@@ -300,17 +300,14 @@ export default function WarsWorkspace({
   );
   return (
     <section className="clan-activity-workspace wars-workspace">
-      <header className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Wars</h1>
-          <p>
-            {scope === "mine"
-              ? "Your clans’ wars, scores, and your accounts’ remaining attacks."
-              : "All family clans · war scores and battle times."}
-          </p>
-        </div>
-      </header>
+      <CwlPageHeader
+        title={<h1>Wars</h1>}
+        description={
+          scope === "mine"
+            ? "Your clans’ wars, scores, and your accounts’ remaining attacks."
+            : "All family clans · war scores and battle times."
+        }
+      />
       <SectionTabs
         className="workflow-tabs section-tabs--flow"
         label="War type"

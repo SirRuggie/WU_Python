@@ -1,5 +1,5 @@
 import LoadError from "./LoadError";
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import SectionTabs from "./SectionTabs";
 import "./ChoiceGroupLayout.css";
 import {
@@ -415,12 +415,10 @@ export default function ClanManagement({
   }
   return (
     <section className="clan-management">
-      <div className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Family clans</h1>
-          <p>Set up each clan and its war reminders.</p>
-        </div>
+      <CwlPageHeader
+        title={<h1>Family clans</h1>}
+        description="Set up each clan and its war reminders."
+      >
         <button
           disabled={disabled}
           onClick={async () => {
@@ -441,7 +439,7 @@ export default function ClanManagement({
         >
           + Add clan
         </button>
-      </div>
+      </CwlPageHeader>
       <SectionTabs
         className="clan-tabs section-tabs--flow"
         label="Clan management views"

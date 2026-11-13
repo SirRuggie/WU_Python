@@ -360,19 +360,31 @@ export function resultsPageAccess(
     bonuses: has(["cwl_bonuses", "cwl_send"]),
   };
 }
+// Views the sidebar does not list under their own name.
+const hiddenViewLabels: Partial<Record<DashboardView, string>> = {
+  "member-timezones": "Members",
+  "member-activity": "Moderation",
+  manage: "Server management",
+};
+/** The page title: top bar, tab title and eyebrow comparison all read this. */
 export function navigationLabel(
   view: DashboardView,
   step: "review" | "announce" = "review",
+  signupPanel: "register" | "saved" = "register",
 ): string {
   if (view === "publication")
     return step === "announce" ? "Announcements" : "Finalize roster";
-  if (view === "member-activity") return "Moderation";
+  const hidden = hiddenViewLabels[view];
+  if (hidden) return hidden;
+  const target = view === "replacements" ? "strikes" : view;
   return (
     sections
       .flatMap((section) => section.items)
       .find(
-        (item) => item.view === (view === "replacements" ? "strikes" : view),
-      )?.label || (view === "manage" ? "Server management" : "Dashboard")
+        (item) =>
+          item.view === target &&
+          (target !== "signup" || item.signupPanel === signupPanel),
+      )?.label || "Dashboard"
   );
 }
 export function navigationSection(view: DashboardView) {

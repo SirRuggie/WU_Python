@@ -1,6 +1,6 @@
 import { formatDateTime } from "./format";
 import LoadError, { CopyStatus, useReferenceCopy } from "./LoadError";
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 import type { MemberOption } from "./MemberPicker";
@@ -88,11 +88,10 @@ export default function DashboardIssues() {
   );
   return (
     <section className="dashboard-issues" aria-labelledby="issues-title">
-      <PageEyebrow />
-      <h1 id="issues-title">Dashboard issues</h1>
-      <p className="issues-intro">
-        See what failed and who was affected. Newest reports first.
-      </p>
+      <CwlPageHeader
+        title={<h1 id="issues-title">Dashboard issues</h1>}
+        description="See what failed and who was affected. Newest reports first."
+      />
       <div className="issues-toolbar">
         <label>
           Find an issue

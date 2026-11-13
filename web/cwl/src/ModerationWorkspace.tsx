@@ -1,4 +1,4 @@
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import { useState } from "react";
 import MemberActivityHistory from "./MemberActivityHistory";
 import MemberTimeline from "./MemberTimeline";
@@ -37,13 +37,10 @@ export default function ModerationWorkspace({
       className="moderation-workspace"
       aria-labelledby="moderation-title"
     >
-      <header className="moderation-workspace-heading">
-        <div>
-          <PageEyebrow />
-          <h1 id="moderation-title">Moderation</h1>
-          <p>Review member events and configure where notices are posted.</p>
-        </div>
-      </header>
+      <CwlPageHeader
+        title={<h1 id="moderation-title">Moderation</h1>}
+        description="Review member events and configure where notices are posted."
+      />
       <SectionTabs
         className="moderation-sections section-tabs--flow"
         label="Moderation sections"

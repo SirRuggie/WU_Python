@@ -206,13 +206,6 @@
   margin-left: 0;
   width: auto;
 }
-.strikes-activity-overview .page-head {
-  margin-bottom: var(--wu-space-5);
-}
-.strikes-activity-overview .page-head p:not(.eyebrow) {
-  margin-bottom: var(--wu-space-2);
-  text-wrap: pretty;
-}
 @media (max-width: 650px) {
   .strike-activity-roster {
     gap: var(--wu-space-3);

@@ -118,9 +118,11 @@
   align-items: center;
 }
 @media (max-width: 767px) {
-  /* Same visually-hidden phone heading pattern as Members. Details keep theirs. */
+  /* Same visually-hidden phone heading pattern as Members; the ? help stays. */
   .server-management:has(> div:not([hidden]) > .return-overview)
-    > .manage-heading {
+    > .cwl-page-header
+    .cwl-page-header-title
+    > :not(.page-help-slot) {
     position: absolute;
     width: 1px;
     height: 1px;

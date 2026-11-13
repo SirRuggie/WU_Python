@@ -483,3 +483,34 @@ it.each(["frequency", "pause", "resume", "send", "away", "start", "replace", "cl
     expect(done).toHaveBeenCalledTimes(1);
   },
 );
+it("shows About this page from the header help slot, not the ⋯ menu", async () => {
+  vi.mocked(api).mockImplementation(
+    async (path) =>
+      ({
+        fields: [],
+        channels: [],
+        documents: path === "/manage/return-reminders" ? [row("A")] : [],
+      }) as never,
+  );
+  const slot = document.createElement("span");
+  document.body.append(slot);
+  await act(async () =>
+    root.render(<ReturnReminderOverview onOpen={vi.fn()} helpSlot={slot} />),
+  );
+  const help = slot.querySelector<HTMLButtonElement>(".page-help-trigger")!;
+  expect(help.getAttribute("aria-label")).toBe("About this page");
+  expect(host.contains(help)).toBe(false);
+  await press(
+    document.querySelector('[aria-label="Actions for Return reminders"]')!,
+  );
+  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
+    (node) => node.textContent?.trim(),
+  );
+  expect(items.length).toBeGreaterThan(0);
+  expect(items).not.toContain("About this page");
+  await act(async () => help.click());
+  const panel = document.querySelector(".return-about-panel")!;
+  expect(panel.textContent).toContain("Bring saved members back");
+  expect(panel.textContent).toContain("Timing");
+  slot.remove();
+});
