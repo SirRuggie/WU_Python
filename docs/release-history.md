@@ -1,5 +1,57 @@
 # Release and rollback history
 
+## Lazy announcement pings winners — 2026-11-13 (backend and frontend)
+
+- PR [#334](https://github.com/SirRuggie/WU_Python/pull/334), merge commit
+  `bc6eb4ca5c02994d3157faeccc749e4dc4b97499`, local tag
+  `lazy-ping-winners-334-1`. Released by Shaka (Claude) on Ruggie's "merge
+  and release 334" (2026-11-13 16:10 UTC).
+- Changes: the renderer (`utils/cwl_bonus_announcement.py`) has no role ping;
+  `allowed_mentions.users` is this month's winners per message
+  (`ping_users`). The preview (`cwl_web/bonus_announcement.py`) adds
+  `ping_count`; the sheet shows it (`LazyAnnouncementSheet.tsx`,
+  `lazyAnnouncement.ts`). No route, schema, migration or data change.
+- Pre-check: no other release in progress. Last switch was `10aca950` at
+  15:40:05 UTC (recorded in draft PR #333); no wu-dashboard file changed in
+  the 15 minutes before this release.
+- Backend: `release.conf` `backend/7a4abbe6…` → `backend/bc6eb4ca…` (clean
+  `git archive`; file list equals the commit tree; only the two changed
+  Python files differ from the previous backend; deployed
+  `cwl_bonus_announcement.py` has `ping_users` and no `LAZY_CWL_ROLE_ID`;
+  imports verified from the release folder). PID 434692 → 659048,
+  InvocationID `9e94f2bd60e0492287cee780401b813d`, cwd verified, config 200
+  three times, anonymous seasons 401, anonymous
+  `lazy-announcement?scope=all&ping=1` 401, unknown route 404, no tracebacks
+  from the new PID. `frontend-routing.conf` and `storage-guard.conf`
+  byte-identical. Bot (PID 385930) not changed or restarted.
+- Build: clean clone at the tag, `npm ci`, `tsc -b` passed, vitest 2510 tests
+  in 364 files passed; backend announcement/raffle/Lazy API tests 103 passed;
+  checkout clean after; staged with `stage-release.py` (181 files).
+- Frontend `current`: `10aca950…` → `bc6eb4ca…` at 2026-11-13 16:31:17 UTC
+  (`switch-history.jsonl`). Entry `index-CfePt4H5.js`, SHA-256
+  `f1981bd5dbb6adf572b9b66505ebd5f694d2d462191258e487fd743c751e4a35`; feature
+  `LazyAnnouncementCard-CfLJoAzi.js` (contains `ping_count`), SHA-256
+  `899b99e5cbaf39eadca41dddbc3218fd877f994c4a702b1a2c72aa73770ba165`. Served
+  `index.html` (SHA-256
+  `d9f95bf04a826febc1b508c1008fd1aa690b900504152c825b07df20e25c928c`) equals
+  the release file on `/`, `/cwl/results`, `/cwl/bonuses`, `/cwl/exports`;
+  all 147 manifest assets match the public site.
+- Backup
+  `.local/lazy-ping-winners-334-release-20261113T162719Z/before.sqlite3`
+  (SQLite backup API): integrity ok, SHA-256
+  `1091a8234588fca8ceff45ddc00eb4f2214478a950216c9f530e8aa744051cb2`; a
+  separate read of the backup equals the live snapshot (the script's own
+  `backup_equal_live` flag compares after it adds extra keys, so it always
+  reads false). All 76 table counts, Main 23/23/23 and Lazy 147/146/131
+  (signups/assigned/locks), publication max version 6 (6 rows, 4 active) and
+  the lineup-rules digest identical before and after.
+- Signed-in smoke SKIPPED. Send was not selected; no Discord post.
+- Rollback: backend `release.conf` back to
+  `backend/7a4abbe66ad87909544c22f9165fe26cc62936e6`, then daemon-reload and
+  restart `wu-cwl-demo-web`; frontend `switch-release.py
+  10aca95021d01461b9e787d99c67119482ae8140`. Never restore the database for a
+  code rollback.
+
 ## Lazy announcement compact row — 2026-11-13 (frontend only)
 
 - PR [#330](https://github.com/SirRuggie/WU_Python/pull/330), merge commit
