@@ -6,7 +6,7 @@
   margin: var(--wu-space-4) auto;
   max-width: 100%;
   height: auto;
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
 }
 .fwa-signup-slogan {
   color: var(--wu-text-muted);

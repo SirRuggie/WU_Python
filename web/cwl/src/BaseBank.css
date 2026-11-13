@@ -23,7 +23,7 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--wu-border);
-  border-radius: var(--roster-radius-card, 14px);
+  border-radius: var(--roster-radius-card, var(--wu-radius-md));
   background: var(--wu-surface);
 }
 .base-bank-image {
@@ -55,12 +55,12 @@
 }
 .base-bank-tags span {
   background: var(--wu-surface-soft);
-  border-radius: var(--roster-radius-pill, 999px);
+  border-radius: var(--roster-radius-pill, var(--wu-radius-pill));
   padding: var(--wu-space-2) var(--wu-space-3);
   font-size: var(--wu-text-sm);
 }
 .base-bank-copy {
-  border-radius: var(--roster-radius-pill, 999px);
+  border-radius: var(--roster-radius-pill, var(--wu-radius-pill));
   width: 100%;
   min-height: 48px;
   display: flex;

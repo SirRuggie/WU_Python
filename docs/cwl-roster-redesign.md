@@ -1721,3 +1721,82 @@ title, not the backend label. Permission is unchanged
 
 Status: frontend only, on a draft PR for review; no backend, schema, permission,
 data or release change.
+
+## Non-members can sign in (2026-11-13, prompt 238)
+
+Ruggie: "Lets make it where anyone can login, but if they're not in the server
+they can't sign up basically." D1–D3 accepted in thread "Let non-members sign in
+to dashboard".
+
+D1: sign-in no longer needs the Warriors United server. A CWL signup save checks
+membership live with Discord each time; `/auth/me` adds `server_member` with a
+60-second cache. Withdraw stays allowed.
+
+D2: non-members keep Home, Tasks (their clans and wars), their accounts,
+signups and assignments, push reminders and problem reports. Staff pages are
+unchanged.
+
+D3: the Signups register flow shows "Join the Warriors United Discord server to
+sign up." and a "Join server" link to the permanent invite. Continue and Sign up
+are disabled.
+
+D4 (from the independent review, accepted by Ruggie): Base bank stays
+members-only and shows the same kind of join line.
+
+Details: `docs/dashboard-sign-in.md`. Status: built by Shaka on Ruggie's
+instruction ("you build and release fully"); backend and frontend release, no
+schema change.
+
+## UI audit Phase 5: tokens and type (2026-11-13)
+
+Visual-only pass over every stylesheet in `web/cwl/src`, built by Shaka with
+six parallel workers. No markup, text, request or permission change.
+
+- Colors use `--wu-*` tokens by role. A hex value stays only with a
+  `/* keep: reason */` comment: shadows and scrims, Discord preview mimicry,
+  art gradients, the selection surface `--roster-selection-surface`, and two
+  values pinned by tests (`.primary` gold in `style.css`,
+  `--roster-card-text-danger`). Gold is normal emphasis, red only errors,
+  green only success; warning dots use `--wu-warning`.
+  Error red (owner decision 2026-11-13): `--wu-danger` #ff5c5c (text, 5.8:1
+  on the error surface), `--wu-danger-surface` #2a1215, `--wu-danger-border`
+  = brand red #e00010. Brand red is never used as text (3.5:1).
+  Roster card red text (`--roster-danger`) stays #f19999 so it still reaches
+  4.5:1 on the gold selection surface.
+- Font weights are only 400/600/700 (`--wu-weight-*`). Font sizes use the
+  12–32px scale (`--wu-text-*`), nearest value, ties round up, never below
+  12px. `DiscordPreview.css` keeps Discord's own sizes.
+- New radius tokens in `tokens.css`: `--wu-radius-xs/sm/md/lg/pill` =
+  4/8/12/16/999px. `--roster-radius-*` now point at them.
+- Breakpoints: a rule moves to 480/650/900 (max) or 481/651/901 (min) only
+  when the move is 60px or less. Larger moves (wide layouts at 1000–1200px,
+  tiny-phone rules at 320–400px, the 760px Strikes phone rules) keep their
+  width because moving them changed layouts at real widths. A rule tied to a
+  TSX `matchMedia` keeps that width (680, 720, 760, 767/768, 800, and the 700
+  rules beside SearchPicker); min 900 rules moved to 901 to line up with the
+  sidebar's `matchMedia` at 900.
+- Touch: `:where()` rules in `style.css` add `touch-action: manipulation` and
+  a transparent `-webkit-tap-highlight-color` to controls (zero specificity).
+  Nested `strong`/`b` stay at 700 (the browser's `bolder` gave 900 inside a
+  bold parent). 44px minimum height added to the Tasks sort
+  select, the Staff overview Pause label and the Seasons "Direct signup link".
+
+Status: frontend only, draft PR for review; no backend, schema, permission,
+data or release change.
+
+## UI audit Phase 6: code health (2026-11-13)
+
+Pure refactor, no rendered change (pixel comparison of 33 pages at 360 and
+1440 against main: only random error reference ids differ).
+
+- `App.tsx` signup view moved to `SignupPage.tsx` (rendering only).
+- `StrikesWorkspace.tsx` split into `web/cwl/src/strikes/` (types, format,
+  panels, tabs, and the hooks `useStrikeImport`, `useWarSearch`,
+  `useLeaveApproval`).
+- `ReminderWorkspace.tsx` split into `web/cwl/src/reminders/`.
+- `ServerManagement.tsx` split into `managementRequests.ts`,
+  `ManagementFieldInput.tsx`, `useManagementConfirmation.ts` and the
+  `Management*` panels; parent hook order is unchanged for the index-mocked
+  preview test. `activity/EventsWorkspace.tsx` reformatted.
+
+Status: frontend only, draft PR for review.

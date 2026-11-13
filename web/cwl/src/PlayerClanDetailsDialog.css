@@ -4,14 +4,14 @@
   overflow: auto;
   padding: var(--wu-space-4);
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface-raised);
   color: var(--wu-text);
   overflow-wrap: anywhere;
 }
 
 .player-clan-details::backdrop {
-  background: rgb(0 0 0 / 70%);
+  background: rgb(0 0 0 / 70%); /* keep: modal scrim */
 }
 .player-clan-details button,
 .player-clan-details summary {
@@ -33,7 +33,7 @@
   place-items: center;
   flex: 0 0 42px;
   height: 42px;
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface-raised);
 }
 
@@ -83,7 +83,7 @@
   min-width: 0;
   padding: var(--wu-space-2);
   border: 1px solid var(--wu-border);
-  border-radius: 9px;
+  border-radius: var(--wu-radius-sm);
 }
 .player-clan-details-facts dt {
   color: var(--wu-text-muted);
@@ -119,7 +119,7 @@
   display: flex;
   align-items: center;
   cursor: pointer;
-  color: #e8bf62;
+  color: var(--wu-accent);
   list-style: none;
 }
 .player-clan-details-section summary::-webkit-details-marker {
@@ -210,7 +210,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: #e8bf62;
+  color: var(--wu-accent);
 }
 .player-clan-details-footer a:focus-visible {
   outline: 2px solid var(--wu-focus);

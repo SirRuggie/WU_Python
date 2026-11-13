@@ -22,7 +22,7 @@
 }
 .announcement-workspace .announcement-pool-card {
   border: 1px solid var(--roster-border, var(--wu-border));
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   padding: var(--wu-space-5);
   background: var(--roster-surface, var(--wu-surface));
   min-width: 0;
@@ -126,9 +126,9 @@
   display: block;
   width: 100%;
   height: auto;
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
 }
-@media (max-width: 620px) {
+@media (max-width: 650px) {
   .announcement-pool-cards {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -139,14 +139,14 @@
   box-sizing: border-box;
   overflow: auto;
   padding: var(--wu-space-4);
-  border: 1px solid #596171;
-  border-radius: 12px;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
   color: var(--wu-text);
   overflow-wrap: anywhere;
 }
 .announcement-send-review::backdrop {
-  background: #000b;
+  background: #000b; /* keep: black overlay */
 }
 .announcement-send-review header {
   display: flex;
@@ -173,7 +173,7 @@
   text-wrap: pretty;
 }
 .announcement-send-review section {
-  border-top: 1px solid #ffffff24;
+  border-top: 1px solid var(--wu-border-subtle);
   padding-block: var(--wu-space-3);
 }
 .announcement-send-review section p {
@@ -191,7 +191,7 @@
 .announcement-send-review .discord-preview {
   max-width: 100%;
 }
-@media (max-width: 620px) {
+@media (max-width: 650px) {
   .announcement-audience {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--wu-space-3);

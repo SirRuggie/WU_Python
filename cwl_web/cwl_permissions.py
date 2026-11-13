@@ -13,7 +13,7 @@ MODULE_ACTIONS = {
     'staff_signup_changes': 'cwl_signups', 'staff_tag_signups': 'cwl_signups', 'signup_activity': 'cwl_signups',
     'manage_reminders': 'cwl_reminders', 'participation': 'cwl_results',
     'participation_sync': 'cwl_results', 'bonuses': 'cwl_bonuses',
-    'bonus_raffle': 'cwl_bonuses', 'bonus_announcement': 'cwl_send', 'manage_bridge': 'cwl_send',
+    'bonus_raffle': 'cwl_bonuses', 'bonus_announcement': 'cwl_send', 'lazy_infractions': 'cwl_send', 'manage_bridge': 'cwl_send',
     'roster_image_posts': 'cwl_send', 'roster_images': 'cwl_send', 'announcements': 'cwl_send',
 }
 

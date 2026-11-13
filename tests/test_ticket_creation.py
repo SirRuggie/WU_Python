@@ -4264,6 +4264,101 @@ def test_candidate_recruiter_ping_skips_existing_and_test_tickets():
     asyncio.run(thread_service._notify_candidate_recruiters(SimpleNamespace(), ticket, bot_id=7))
 
 
+class _PinRest:
+    """Candidate thread fake that records sends and pins."""
+
+    def __init__(self, messages=None, pin_error=None):
+        self.messages = list(messages or [])
+        self.sends = []
+        self.pins = []
+        self.pin_error = pin_error
+
+    def fetch_messages(self, channel_id):
+        async def collect():
+            return list(self.messages)
+        return SimpleNamespace(to_list=collect)
+
+    async def create_message(self, channel_id, **kwargs):
+        message = SimpleNamespace(
+            id=500 + len(self.messages), author=SimpleNamespace(id=7),
+            content=kwargs["content"], components=[], is_pinned=False,
+        )
+        self.sends.append((channel_id, kwargs))
+        self.messages.append(message)
+        return message
+
+    async def pin_message(self, channel_id, message):
+        self.pins.append((channel_id, getattr(message, "id", message)))
+        if self.pin_error is not None:
+            raise self.pin_error
+        message.is_pinned = True
+
+
+@pytest.mark.parametrize("ticket_type", ["main", "fwa"])
+def test_candidate_recruiter_ping_is_pinned_once(ticket_type):
+    ticket = _ticket()
+    ticket.update(
+        ticket_type=ticket_type, recruiter_role_id=40, candidate_recruiter_notification=True,
+    )
+    rest = _PinRest()
+    asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
+    asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
+    assert len(rest.sends) == 1
+    assert rest.pins == [(101, rest.messages[0].id)]
+    assert rest.messages[0].is_pinned is True
+
+
+def test_candidate_recruiter_ping_retry_pins_unpinned_existing_ping():
+    ticket = _ticket()
+    ticket.update(recruiter_role_id=40, candidate_recruiter_notification=True)
+    existing = SimpleNamespace(
+        id=900, author=SimpleNamespace(id=7), components=[], is_pinned=False,
+        content="<@&40> — a new applicant ticket is ready for your review.",
+    )
+    other = SimpleNamespace(
+        id=901, author=SimpleNamespace(id=55), components=[], is_pinned=False,
+        content="<@&40> — a new applicant ticket is ready for your review.",
+    )
+    rest = _PinRest([other, existing])
+    asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
+    assert rest.sends == []
+    assert rest.pins == [(101, 900)]
+    assert other.is_pinned is False
+
+
+def test_candidate_recruiter_ping_pin_failure_is_logged_and_not_raised(caplog):
+    ticket = _ticket()
+    ticket.update(recruiter_role_id=40, candidate_recruiter_notification=True)
+    rest = _PinRest(pin_error=RuntimeError("Missing Permissions"))
+    with caplog.at_level("WARNING", logger=thread_service.__name__):
+        asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
+    assert len(rest.sends) == 1
+    assert len(rest.pins) == 1
+    assert "Pin Messages" in caplog.text
+    # A later retry tries the pin again and does not send a second ping.
+    rest.pin_error = None
+    asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
+    assert len(rest.sends) == 1
+    assert len(rest.pins) == 2
+    assert rest.messages[0].is_pinned is True
+
+
+def test_candidate_recruiter_ping_pin_cancellation_propagates():
+    ticket = _ticket()
+    ticket.update(recruiter_role_id=40, candidate_recruiter_notification=True)
+    rest = _PinRest(pin_error=asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
+
+
+def test_test_ticket_gets_no_recruiter_ping_or_pin():
+    ticket = _ticket()
+    ticket.update(recruiter_role_id=40, candidate_recruiter_notification=True, mode="test")
+    rest = _PinRest()
+    asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
+    assert rest.sends == [] and rest.pins == []
+
+
 def test_committed_ticket_ready_callback_precedes_recovery_delivery(monkeypatch):
     events = []
 
@@ -4343,18 +4438,25 @@ def test_recruiter_ping_is_first_regular_message_and_recovery_does_not_repeat_it
             self.channels[channel_id].append(message)
             return message
 
+        async def pin_message(self, channel_id, message):
+            self.pins.append((channel_id, message.id))
+            message.is_pinned = True
+
     rest = Rest()
+    rest.pins = []
     ticket = _ticket()
     ticket.update(recruiter_role_id=40, candidate_recruiter_notification=True)
     asyncio.run(thread_service._deliver_opening_messages(rest, ticket, bot_id=7))
     candidate = rest.channels[101]
     assert len(candidate) == 3
     assert candidate[0].content == "<@&40> — a new applicant ticket is ready for your review."
+    assert rest.pins == [(101, candidate[0].id)]
     assert thread_service._is_candidate_welcome_card(candidate[1])
     assert "Clan Entry Ticket" in repr(candidate[2].components)
     counts = {key: len(messages) for key, messages in rest.channels.items()}
     asyncio.run(thread_service._deliver_opening_messages(rest, ticket, bot_id=7))
     assert {key: len(messages) for key, messages in rest.channels.items()} == counts
+    assert len(rest.pins) == 1
 
 
 def test_shared_staff_parent_accepts_other_configured_recruitment_role():

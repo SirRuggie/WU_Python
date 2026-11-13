@@ -7,7 +7,7 @@
   height: 44px;
   padding: 0;
   border: 0;
-  border-radius: var(--roster-radius-control, 10px);
+  border-radius: var(--roster-radius-control, var(--wu-radius-md));
   background: transparent;
   color: var(--wu-text-muted);
   cursor: pointer;

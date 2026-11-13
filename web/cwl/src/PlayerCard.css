@@ -22,7 +22,7 @@
   top: 7px;
   bottom: 7px;
   width: 5px;
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   background: var(--player-card-edge);
   pointer-events: none;
 }
@@ -44,8 +44,8 @@
     .compare-account,
     .declaration-player
   ):is(.is-assigned, .compare-account-arrived) {
-  --player-card-fill: #123d24;
-  --player-card-glow: rgb(0 214 89 / 10%);
+  --player-card-fill: var(--wu-success-surface);
+  --player-card-glow: color-mix(in srgb, var(--wu-success) 10%, transparent);
   --player-card-edge: var(--wu-success);
 }
 .roster-ui
@@ -54,8 +54,8 @@
     .compare-account,
     .declaration-player
   ).compare-account-missing {
-  --player-card-fill: #3a1014;
-  --player-card-glow: rgb(224 0 16 / 10%);
+  --player-card-fill: var(--wu-danger-surface);
+  --player-card-glow: color-mix(in srgb, var(--wu-brand-red) 10%, transparent);
   --player-card-edge: var(--wu-brand-red);
 }
 .roster-ui
@@ -95,8 +95,8 @@
   border-radius: var(--roster-radius-card);
   background: transparent;
   color: var(--roster-text-muted);
-  font-size: 12px;
-  font-weight: 400;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-regular);
   text-align: left;
   -webkit-text-fill-color: currentColor;
 }
@@ -110,9 +110,9 @@
 .player-card-top {
   display: contents;
   color: var(--roster-text);
-  font-size: 16px;
+  font-size: var(--wu-text-md);
   line-height: 20px;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
 }
 .player-card-inline-th {
   display: inline-flex;
@@ -129,7 +129,10 @@
   flex-basis: auto;
 }
 .player-card-top .town-hall-fallback {
-  font-size: 12px;
+  /* Fit the 20px name row; the default padded box overflowed the name. */
+  font-size: var(--wu-text-xs);
+  line-height: 16px;
+  padding: 1px var(--wu-space-1);
 }
 .player-card-top .player-card-name {
   display: flex;
@@ -142,8 +145,8 @@
   overflow: visible;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-bold);
 }
 .player-card-name-text {
   min-width: 0;
@@ -166,7 +169,7 @@
 .player-card-weight .roster-ui-chip {
   min-height: 18px;
   padding: 0 4px;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   line-height: 16px;
 }
 .player-card-meta {
@@ -177,9 +180,9 @@
   display: flex;
   align-items: center;
   gap: 3px;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   line-height: 16px;
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
   color: var(--roster-text-muted);
   min-width: 0;
   white-space: nowrap;
@@ -267,7 +270,7 @@
   display: flex;
   min-width: 0;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--wu-text-sm);
   line-height: 20px;
 }
 :is(.player-card, .roster-player-dialog) .roster-player-placement strong {
@@ -301,7 +304,7 @@
   .roster-player-placement.is-unassigned
   strong {
   color: var(--roster-text-muted);
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
 }
 :is(.player-card, .roster-player-dialog) .player-current-clan.is-elsewhere {
   color: var(--roster-card-text-danger);
@@ -336,10 +339,10 @@
   flex: 0 0 auto;
   margin-left: 4px;
   padding: 0 5px;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   line-height: 18px;
   border: 1px solid var(--roster-card-text-success);
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   color: var(--roster-card-text-success);
   background: var(--wu-success-surface);
 }
@@ -347,7 +350,7 @@
   :is(.roster-ui-chip.is-danger:not(:has(button)), .compare-tag.is-danger) {
   background: var(--wu-brand-red);
   border-color: var(--wu-brand-red);
-  color: #fff;
+  color: var(--wu-text);
   -webkit-text-fill-color: currentColor;
 }
 .compare-account .compare-tag.is-warning {

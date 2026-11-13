@@ -37,6 +37,7 @@ from .participation import routes as participation_routes
 from .bonuses import routes as bonus_routes
 from .bonus_raffle import routes as bonus_raffle_routes
 from .bonus_announcement import routes as bonus_announcement_routes
+from .lazy_infractions import routes as lazy_infractions_routes
 from .participation_sync import routes as participation_sync_routes, lifecycle as participation_sync_lifecycle
 from .todo import routes as todo_routes, lifecycle as todo_lifecycle
 from .push import routes as push_routes, lifecycle as push_lifecycle
@@ -228,6 +229,9 @@ async def me(request):
     owner = request.app["store"].durability
     if owner is not None:
         owner.check()
+    from .server_membership import server_member_status
+
+    server_member = await server_member_status(request, session["user_id"])
     return web.json_response(
         {
             "authenticated": True,
@@ -246,6 +250,7 @@ async def me(request):
                 else sorted(request_scopes(request, session["user_id"]))
             ),
             "csrf_token": session["csrf"],
+            "server_member": server_member,
         },
         headers={"X-Dashboard-Storage-State": "healthy"},
     )
@@ -434,9 +439,8 @@ async def auth_callback(request):
         raise web.HTTPServiceUnavailable(text="Discord unavailable") from exc
     if not isinstance(user, dict) or not str(user.get("id", "")).isdigit() or not isinstance(guilds, list):
         _fail(401, "Invalid Discord identity")
-    guild = next((g for g in guilds if isinstance(g, dict) and str(g.get("id")) == GUILD_ID), None)
-    if guild is None:
-        _fail(403, "Warriors United membership required")
+    # Sign-in does not need the server; a CWL signup save checks it live.
+    guild = next((g for g in guilds if isinstance(g, dict) and str(g.get("id")) == GUILD_ID), None) or {}
     raw = secrets.token_urlsafe(48)
     csrf = secrets.token_urlsafe(32)
     with _store(request).tx() as db:
@@ -867,10 +871,13 @@ async def signups(request):
 async def submit_signup(request):
     from utils.cwl_member_service import MemberError, submit
 
+    from .server_membership import require_server_member
+
     session = _require(request)
     body = await _json(request)
     sid = _sid(request)
     try:
+        await require_server_member(request, session["user_id"])
         result = await submit(
             _store(request), request.app["providers"], sid, session["user_id"],
             body.get("pool"), body.get("accounts"), verified_only=False,
@@ -2021,6 +2028,11 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app.cleanup_ctx.append(roster_sequence_lifecycle)
     app["store"] = Store(db_path, durability=durability)
     app["live_access"] = live_access
+    if providers is None and not dev_fixture:
+        # Production only: fixture and test apps have no Discord access.
+        from .discord_member import _guild_member
+        from .server_membership import CHECK_KEY
+        app[CHECK_KEY] = _guild_member
     if dev_fixture and providers is None:
         providers = FixtureProviders(dev_identity["id"])
         with app["store"].tx() as db:
@@ -2127,6 +2139,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     routes.extend(bonus_routes())
     routes.extend(bonus_raffle_routes())
     routes.extend(bonus_announcement_routes())
+    routes.extend(lazy_infractions_routes())
     routes.extend(todo_routes())
     from .strikes import routes as strike_routes
     routes.extend(strike_routes)

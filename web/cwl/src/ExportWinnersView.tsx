@@ -1,4 +1,5 @@
 import AccountCard from "./AccountCard";
+import CardTally from "./CardTally";
 import { Chip } from "./rosterUi/primitives";
 import { exportGroups, groupLabel } from "./exportHistory";
 import type { ExportRow } from "./exportPreview";
@@ -20,8 +21,23 @@ export default function ExportWinnersView({ rows }: { rows: ExportRow[] }) {
                     typeof row.town_hall === "number" ? row.town_hall : null
                   }
                   name={String(row.player_name || "—")}
-                  meta={[String(row.tag ?? "")]}
-                  flags={row.source === "import" ? [<Chip>Imported</Chip>] : []}
+                  meta={[
+                    row.town_hall != null ? `TH ${row.town_hall}` : null,
+                    String(row.tag ?? ""),
+                  ]}
+                  values={
+                    row.attacks != null || row.stars != null ? (
+                      <CardTally
+                        attacks={String(row.attacks ?? "—")}
+                        stars={String(row.stars ?? "—")}
+                      />
+                    ) : undefined
+                  }
+                  flags={
+                    row.source === "import"
+                      ? [<Chip key="import">Imported</Chip>]
+                      : []
+                  }
                 />
               </li>
             ))}

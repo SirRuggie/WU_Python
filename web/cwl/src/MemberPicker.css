@@ -10,14 +10,14 @@
   width: 100%;
   min-height: 44px;
   border-color: var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background-color: var(--wu-bg);
 }
 .member-picker .member-options {
   margin-top: var(--wu-space-3);
   padding: 0;
   border: 1px solid var(--wu-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   max-height: 320px;
   overflow: auto;
 }
@@ -81,7 +81,7 @@
   padding: var(--wu-space-3);
   background: transparent;
   border: 1px solid var(--wu-accent);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   color: var(--wu-text);
   -webkit-text-fill-color: var(--wu-text);
 }
@@ -118,8 +118,8 @@
   justify-content: space-between;
   gap: var(--wu-space-3);
   padding: var(--wu-space-3);
-  background: #3b2528;
-  border-radius: 8px;
+  background: var(--wu-danger-surface);
+  border-radius: var(--wu-radius-sm);
   margin-top: var(--wu-space-3);
 }
 .member-picker button {

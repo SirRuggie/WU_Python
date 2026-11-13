@@ -7,6 +7,7 @@ from extensions.cwl_discord_transport import AnnouncementRejected, AnnouncementU
 import test_cwl_lazy_bonus_api as lazy_api
 from test_cwl_web_announcements import MAIN_CHANNEL, FOREIGN_CHANNEL
 from utils import cwl_bonus_announcement as render
+from utils import cwl_bonus_history_image as history_image
 
 def components_sender(transport):
     async def send_components(channel_id, payload, nonce, files=()):
@@ -73,12 +74,14 @@ class LazyAnnouncementTests(unittest.IsolatedAsyncioTestCase):
             db.execute("INSERT INTO bonus_imported_winners VALUES (?,'2026-09','lazy','#Q2Y','Older <@1>','#OLD','Old host','import','staff','now')", (self.sid,))
         preview = await self.preview()
         self.assertEqual(preview['blockers'], [])
-        self.assertEqual(preview['last_month_label'], 'Sep 2026')
+        self.assertEqual(preview['history'][-1], {'label': 'September 2026', 'count': 1})
         text = json.dumps(preview['pages'])
         self.assertNotIn(USER, text)
         self.assertIn('Lazy CWL Bonus Medals', text)
         self.assertIn('last 3 seasons', text)
-        self.assertIn('Older', text)  # last month's winner shows the player name
+        # Past winners are in the image, not in the text.
+        self.assertNotIn('Older', text)
+        self.assertIn('/lazy-announcement/history.png?v=' + preview['fingerprint'][:16], text)
         result = await self.send_now(preview)
         self.assertEqual(result['status'], 'sent')
         self.assertEqual(len(result['urls']), 1)
@@ -89,7 +92,9 @@ class LazyAnnouncementTests(unittest.IsolatedAsyncioTestCase):
         containers = [c for c in payload['components'] if c['type'] == 17]
         self.assertTrue(all(c['accent_color'] == 0xF2B62A for c in containers))
         self.assertEqual(containers[-1]['components'][-1]['type'], 12)
-        self.assertEqual(files[0][0], 'Gold_Footer.png')
+        self.assertEqual([name for name, _ in files], ['Lazy_Bonus_History.png', 'Gold_Footer.png'])
+        self.assertTrue(files[0][1].startswith(b'\x89PNG'))
+        self.assertEqual(render.attachments(payload), ['Lazy_Bonus_History.png', 'Gold_Footer.png'])
         body = json.dumps(payload)
         self.assertIn(f'<@{USER}>', body)
         self.assertIn('<:CWL:1399013745598009375>', body)
@@ -98,6 +103,39 @@ class LazyAnnouncementTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('<@1>', body)
         self.assertEqual(len(nonce), 24)
         self.assertEqual(self.audit()[-1]['status'], 'sent')
+
+    async def test_history_shows_three_seasons_before_this_one(self):
+        await self.approved_lazy()
+        cycle = (await self.preview())['cycle']
+        from utils.cwl_bonus_raffle_store import RaffleStore
+        with self.app['store'].tx() as db:
+            for back, tag in ((4, '#FOURY'), (3, '#THREEY'), (2, '#TWOY'), (1, '#ONEY'), (0, '#NOWY')):
+                db.execute("INSERT INTO bonus_imported_winners VALUES (?,?,'lazy',?,'Player','#OLD','Old host','import','staff','now')",
+                           (self.sid, RaffleStore.shift_cycle(cycle, -back), tag))
+        preview = await self.preview()
+        self.assertEqual([h['count'] for h in preview['history']], [1, 1, 1])
+        from cwl_web.bonus_announcement import collect
+        with self.app['store'].tx() as db:
+            _, _, data = collect(db, self.sid, 'one', '#C2Y')
+        self.assertEqual([[w['tag'] for w in h['winners']] for h in data['history']], [['#THREEY'], ['#TWOY'], ['#ONEY']])
+        self.assertEqual([h['cycle'] for h in data['history']], [RaffleStore.shift_cycle(cycle, -n) for n in (3, 2, 1)])
+        # The preview fingerprint changes when the history changes.
+        with self.app['store'].tx() as db:
+            db.execute("DELETE FROM bonus_imported_winners WHERE player_tag='#TWOY'")
+        self.assertNotEqual((await self.preview())['fingerprint'], preview['fingerprint'])
+
+    async def test_history_image_route_is_staff_read_only_png(self):
+        await self.approved_lazy()
+        response = await self.call('GET', self.url + '/history.png', self.owner)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.content_type, 'image/png')
+        self.assertTrue((await response.read()).startswith(b'\x89PNG'))
+        response = await self.call('GET', self.url + '/history.png', self.member)
+        self.assertEqual(response.status, 403)
+        response = await self.call('POST', self.url + '/history.png', self.owner)
+        self.assertEqual(response.status, 405)
+        self.assertEqual(self.transport.calls, [])
+        self.assertEqual(self.audit(), [])
 
     async def test_ping_notifies_this_months_winners_and_no_role(self):
         await self.approved_lazy()
@@ -170,8 +208,10 @@ del Base
 
 class LazyAnnouncementRenderTests(unittest.TestCase):
     def data(self, clans=1, winners=3, last=27, months=(3,)):
-        return {'cycle': '2026-10', 'last_month_label': 'Sep 2026',
-                'last_month': [{'tag': f'#P{i:04d}Y', 'player_name': f'Player {i}', 'user_id': str(10**17 + i)} for i in range(last)],
+        return {'cycle': '2026-10',
+                'history': [{'cycle': f'2026-0{m}', 'label': label,
+                             'winners': [{'tag': f'#P{m}{i:03d}Y', 'player_name': f'Player {i}'} for i in range(last)]}
+                            for m, label in ((7, 'July'), (8, 'August'), (9, 'September'))],
                 'clans': [{'tag': f'#C{c:03d}Y', 'name': f'Clan {c}', 'bonus_count': 6,
                            'sit_out_months': months[c % len(months)],
                            'winners': [{'tag': f'#W{c:02d}{w:02d}Y', 'player_name': 'W' * 15, 'user_id': str(10**17 + w)}
@@ -184,8 +224,9 @@ class LazyAnnouncementRenderTests(unittest.TestCase):
         for payload in pages:
             self.assertLessEqual(sum(map(render._units, payload['components'])), 40)
             self.assertLessEqual(sum(map(render._text_total, payload['components'])), 4000)
-        footers = sum(1 for p in pages for c in p['components'] if c['type'] == 17 for x in c['components'] if x['type'] == 12)
-        self.assertEqual(footers, 1)
+        files = [name for p in pages for name in render.attachments(p)]
+        self.assertEqual(sorted(files), ['Gold_Footer.png', 'Lazy_Bonus_History.png'])
+        self.assertEqual(render.attachments(pages[-1])[-1], 'Gold_Footer.png')
         self.assertTrue(all(p['allowed_mentions']['roles'] == [] and p['allowed_mentions']['parse'] == [] for p in pages))
         self.assertFalse(any('<@&' in json.dumps(p) for p in pages))
         # Every winner is pinged in a message that mentions them, and only there.
@@ -195,15 +236,56 @@ class LazyAnnouncementRenderTests(unittest.TestCase):
             for user in payload['allowed_mentions']['users']:
                 self.assertIn(f'<@{user}>', json.dumps(payload))
 
-    def test_last_month_winners_are_never_pinged(self):
-        data = self.data(clans=1, winners=2, last=0)
-        data['last_month'] = [{'tag': '#OLD1Y', 'player_name': 'Old', 'user_id': '300000000000000001'},
-                              {'tag': '#OLD2Y', 'player_name': 'Again', 'user_id': str(10**17)}]
+    def test_history_is_one_image_in_the_rules_container(self):
+        data = self.data(clans=1, winners=2, last=27)
         [payload] = render.messages(data, ping=True)
-        self.assertIn('<@300000000000000001>', json.dumps(payload))
+        first = payload['components'][0]['components']
+        media = [c for c in first if c['type'] == 12]
+        self.assertEqual(media[0]['items'][0]['media']['url'], 'attachment://Lazy_Bonus_History.png')
+        self.assertEqual(media[0]['items'][0]['description'],
+                         'Lazy CWL bonus winners by season. July: 27, August: 27, September: 27.')
+        # 3 x 27 past winners add no text and never ping.
+        self.assertNotIn('Player 1', json.dumps(payload))
+        self.assertIn('-# These players got a bonus in the last 3 seasons."', json.dumps(payload))
         self.assertEqual(payload['allowed_mentions']['users'], sorted([str(10**17), str(10**17 + 1)]))
         [quiet] = render.messages(data, ping=False)
         self.assertEqual(quiet['allowed_mentions'], {'parse': [], 'users': [], 'roles': []})
+        parts = render.preview_parts(payload, '/api/cwl/seasons/1/bonus-raffle/lazy-announcement/history.png?v=' + '0' * 16)
+        items = [i for part in parts for c in part['children'] if c['type'] == 'media' for i in c['items']]
+        self.assertTrue(items[0]['url'].endswith('history.png?v=' + '0' * 16))
+        self.assertEqual(items[-1], {'url': None, 'description': 'Gold footer image'})
+
+    def test_typical_month_fits_one_message(self):
+        # About 27 winners per season and 4 Lazy clans x 7 winners (2026-11-13 estimate).
+        self.assertEqual(len(render.messages(self.data(clans=4, winners=7, last=27))), 1)
+
+    def test_history_image_names_use_font_fallback(self):
+        # Names seen in Clash; DejaVu alone draws every one of these as an empty box.
+        names = ['꧁Dragon꧂', '亗Legend亗', 'ツ Ninja', '김철수', 'محمد', 'สมชาย', '༒Warrior',
+                 '🔥Fire', '⚔️Blade', '𓆩Royal𓆪', '୨୧ cute', '♛Queen']
+        fonts = history_image._chain(True, 30)
+        for name in names:
+            for char in name:
+                if not history_image._joins(char):
+                    self.assertTrue(any(history_image._has(font, char) for font in fonts), (name, hex(ord(char))))
+        self.assertFalse(history_image._has(fonts[0], '亗'))
+        # Same-font characters stay in one run, so scripts such as Arabic keep their shaping.
+        self.assertEqual([part for part, _ in history_image.runs('محمد', fonts)], ['محمد'])
+        self.assertEqual(len(history_image.runs('亗Star亗', fonts)), 3)
+        history = [{'label': 'Aug', 'winners': [{'tag': f'#N{i:03d}Y', 'player_name': n} for i, n in enumerate(names)]}]
+        self.assertTrue(history_image.render(history).startswith(b'\x89PNG'))
+
+    def test_history_image_is_deterministic_and_handles_edge_rows(self):
+        history = [{'label': 'July', 'winners': []},
+                   {'label': 'August', 'winners': [{'tag': '#AAAY', 'player_name': 'W' * 15}, {'tag': '#BBBY', 'player_name': ''}]},
+                   {'label': 'September', 'winners': [{'tag': f'#S{i:03d}Y', 'player_name': f'ＦＵＬＬ{i}'} for i in range(60)]}]
+        first = history_image.render(history)
+        self.assertEqual(first, history_image.render(history))
+        from io import BytesIO
+        from PIL import Image
+        image = Image.open(BytesIO(first))
+        self.assertEqual(image.size, (1200, 205 + 60 * 64 + 40))
+        self.assertEqual(history_image.alt_text(history), 'Lazy CWL bonus winners by season. July: 0, August: 2, September: 60.')
 
     def test_more_than_100_pinged_users_split_messages(self):
         data = self.data(clans=6, winners=30, last=0)

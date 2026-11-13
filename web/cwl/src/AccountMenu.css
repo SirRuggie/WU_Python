@@ -11,7 +11,7 @@
   padding: var(--wu-space-1) var(--wu-space-2);
   gap: var(--wu-space-2);
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   background: transparent;
   color: var(--wu-text);
   text-align: left;
@@ -155,10 +155,10 @@
   width: min(260px, calc(100vw - 24px));
   padding: var(--wu-space-2);
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface-raised);
   color: var(--wu-text);
-  box-shadow: 0 12px 30px #0008;
+  box-shadow: 0 12px 30px #0008; /* keep: shadow black */
 }
 
 .account-menu-summary {
@@ -205,8 +205,8 @@
   min-height: 44px;
   padding: var(--wu-space-2) var(--wu-space-2);
   gap: var(--wu-space-2);
-  border-radius: 8px;
-  color: #f0c4c4;
+  border-radius: var(--wu-radius-sm);
+  color: var(--wu-danger);
   cursor: pointer;
   outline: none;
 }
@@ -214,7 +214,7 @@
 .account-menu-signout[data-focused],
 .account-menu-signout[data-hovered] {
   background: var(--wu-danger-surface);
-  color: #ffe0e0;
+  color: var(--wu-danger);
 }
 
 .shell .sidebar > .sidebar-foot:has(> .account-menu) {

@@ -99,7 +99,7 @@ Global colors live on `:root` in `web/cwl/src/tokens.css`, imported first by
 | `--wu-focus`                                                    | `#f5d66e`                         | Focus ring only; never selection            |
 | `--wu-success` / `--wu-success-surface` / `--wu-success-border` | `#00d659` / `#2b4b38` / `#00d659` | Success; brand green (bot `WU_GREEN`)       |
 | `--wu-warning` / `--wu-warning-surface` / `--wu-warning-border` | `#efc867` / `#30291c` / `#786435` | Warning; separate from accent               |
-| `--wu-danger` / `--wu-danger-surface` / `--wu-danger-border`    | `#f19999` / `#493235` / `#ff737d` | Errors, destructive actions                 |
+| `--wu-danger` / `--wu-danger-surface` / `--wu-danger-border`    | `#ff5c5c` / `#2a1215` / `#e00010` (brand red) | Errors, destructive actions                 |
 | `--wu-info` / `--wu-info-surface` / `--wu-info-border`          | `#b9d5ff` / `#1a212b` / `#495563` | Informational notices only; 1b applies this |
 
 Gold means action or selection only. Warning amber is a separate token. Blue is

@@ -213,11 +213,13 @@ Results & bonuses has a “How bonuses work” help sheet; update its text whene
 
 ## Lazy bonus announcement (2026-11-13)
 
-The Lazy tab on Results & bonuses shows one compact row under the Hosting clan
-dropdown (2026-11-13: Ruggie found the first card too big), in both the All
-clans list and a clan's steps: "Announcement · x of y approved" and an "Open"
-button, at most as wide as the dropdown. It needs the Send CWL
-announcements grant (`cwl_send`) and at least one approved Lazy clan. The sheet
+The Lazy tab on Results & bonuses shows an "Announcements" block under the
+Hosting clan dropdown (2026-11-13: Ruggie found the first card too big; later
+that day the block got a second row for infractions), in both the All clans
+list and a clan's steps, at most as wide as the dropdown. The "Bonus winners ·
+x of y approved" row and its "Open" button need the Send CWL announcements grant
+(`cwl_send`) and at least one approved Lazy clan. The "Infractions" row is
+described in "Lazy infractions post" below. The sheet
 has Clans (All Lazy clans or One clan), a preview, Channel, "Ping this month's
 winners (N)" (on by default; 2026-11-13 replaced the Lazy CWL role ping), and a
 review check before "Send to #channel".
@@ -227,6 +229,9 @@ is read only. It uses approved draws, non-voided confirmations and imported
 winners; it makes no Discord or Clash call. All Lazy clans blocks until every
 Lazy clan with results has approved winners; a voided winner also blocks.
 Preview mentions show cached Discord nicknames, never raw IDs.
+`GET .../lazy-announcement/history.png` (staff, read only) returns the past
+winners image for the preview; the preview links it with `?v=` plus the first 16
+characters of the fingerprint, and `previewUrl` allows only that exact path.
 
 `POST` with `scope, clan_tag, ping, channel_id, request_id, fingerprint`
 re-renders, rejects a changed announcement (fingerprint) and archived seasons,
@@ -239,14 +244,71 @@ schema change: the receipts use the existing `bonus_audit` table.
 
 Format (`utils/cwl_bonus_announcement.py`): Components V2, WU_GOLD `#F2B62A` on
 every container. Container 1: "<:CWL:1399013745598009375> Lazy CWL Bonus Medals",
-the intro, three rules, then last month's Lazy winners as `Name · #TAG · @user` (no
-clan names). Rule 3 follows the included clans' sit-out lengths ("last N
+the intro, three rules, then "Past bonus winners" with one note line and an image
+(`utils/cwl_bonus_history_image.py`, attached as `Lazy_Bonus_History.png`). The
+image has one column for each of the 3 seasons before this one (Ruggie,
+2026-11-13: decision 1 image, decision 2 the mockup style, decision 3 the place of
+the former last-month list). Each column shows the month and year ("August 2026"), then "N bonus winners" in
+small muted text (Ruggie, 2026-11-13; "No bonus winners" when empty), then the Clash
+name (bold, shortened with … to fit) and the tag below it, sorted by name, from
+non-voided Lazy confirmations and imported winners of that month (family-wide).
+DejaVu Sans from `assets/fonts` draws it; NFKC turns styled letters into plain
+ones. Names use a per-character font fallback (2026-11-13, after the release smoke
+of PR 335 found 2 names drawn as empty boxes): DejaVu, then Noto Sans Symbols 2,
+Symbols, Math, Emoji (monochrome), Javanese (꧁ ꧂), Arabic, Thai and Egyptian
+Hieroglyphs (U+131A9/U+131AA brackets), then GNU Unifont for the rest of the Basic
+Multilingual Plane (CJK, Hangul). Runs of the same font draw together, so Arabic
+stays shaped. A character no font has still draws a box. The alt text gives the seasons and counts only. Past winners carry no
+mention. Rule 3 follows the included clans' sit-out lengths ("last N
 seasons"; none omits it; mixed lengths show each clan's sit-out). Then one
 container per clan: name, tag, bonus medal count (the approved draw's slots) and
 numbered winners. The gold footer image is attached to the last container. No
 role is mentioned (Ruggie, 2026-11-13: the Lazy CWL role ping is removed). With
 the ping on, each message's `allowed_mentions.users` lists only this month's
-winners mentioned in that message; `parse` and `roles` stay empty. Last month's
-winners are never pinged unless they also won this month. Messages split at 38
+winners mentioned in that message; `parse` and `roles` stay empty. Past winners
+are in the image, so they are never mentioned or pinged. Each message attaches
+only the files it references (`attachments()`): the history image with
+container 1 and the gold footer with the last message. Messages split at 38
 components, 3,800 text characters or 100 pinged users (Discord limits 40, 4,000
 and 100).
+
+## Lazy infractions post (2026-11-13)
+
+Decisions (Ruggie, 2026-11-13): (1) the Announcements block on the Lazy tab gets
+an "Infractions" row next to "Bonus winners"; each row opens its own sheet and
+sends its own post. (2) An infraction is a saved review flag (Missed sync,
+Lingering, Left family) or "Did not join"; a player with a saved staff reason is
+listed under a closed "Staff exceptions" disclosure in the sheet and left out of
+the post. (3) The post pings nobody.
+
+The Infractions row shows for all bonus staff on the Lazy tab. Its sheet lists
+every Lazy account with an infraction, grouped by hosting clan (clans and players
+sorted by name), with the infractions as chips. Channel, review check and Send
+show only with `cwl_send`; without it the sheet is a read-only list and loads no
+channels. Nothing is fetched until the sheet opens.
+
+`GET /api/cwl/seasons/{id}/bonus-raffle/lazy-infractions` (staff, read only)
+returns `cycle, label, clans[{tag,name,players[{tag,player_name,town_hall,infractions}]}],
+exceptions, blockers, pages, player_count, clan_count, fingerprint`. It reads the
+same enriched bonus view as the bonus steps (saved reviews and stored results);
+it makes no Discord or Clash call. "Did not join" is the stored `source_no_show`
+fact (no data for an account whose CWL group ended). No month or no players
+blocks Send.
+
+`POST` with `channel_id, request_id, fingerprint` re-reads, rejects a changed list
+(fingerprint, 409) and archived seasons (423), checks the channel is in this
+server, and writes a `bonus_audit` row (`lazy_infractions_announcement`, status
+`sending`) before Discord sees anything; a second row records `sent`, `failed` or
+`uncertain` with the message links and the posted player tags. The same
+`request_id` returns the first result and never posts twice. Nothing is retried
+automatically. No schema change.
+
+Format (`utils/cwl_lazy_infractions.py`): Components V2, one container per message
+with WU_RED `#E00010` accent. Title "<:CWL:1399013745598009375> {Month Year}
+Infractions", one line "These accounts broke a Lazy CWL rule this season.", then per
+clan a divider, "### Clan · `#TAG`" and numbered rows "Name · `#TAG` · Missed sync,
+Lingering". `allowed_mentions` is empty, so no user or role is pinged; names pass
+through `safe_text`. The last message ends with `assets/Red_Footer.png` (attached
+as a file), the red version of the gold footer. Messages split at 38 components or
+3,800 text characters; a clan that does not fit continues in the next message
+under "### Clan · `#TAG` (continued)". One message holds about 50 to 75 players (fewer with long names and several infractions).

@@ -20,7 +20,7 @@
 .staff-tag-result {
   padding: var(--wu-space-3);
   border: 1px solid var(--wu-border);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
 }
 .staff-tag-player {
   display: flex;
@@ -56,7 +56,7 @@
 .staff-tag-result .roster-ui-button {
   justify-self: start;
 }
-@media (max-width: 450px) {
+@media (max-width: 480px) {
   .staff-tag-lookup {
     flex-wrap: wrap;
   }

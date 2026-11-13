@@ -31,7 +31,7 @@
   align-items: center;
   gap: var(--wu-space-3);
   padding: var(--wu-space-3) 0;
-  border-block: 1px solid #ffffff24;
+  border-block: 1px solid var(--wu-border-subtle);
 }
 .export-ready > div {
   min-width: 0;
@@ -96,7 +96,7 @@
 .export-downloads [role="alert"] button {
   margin-left: var(--wu-space-2);
 }
-@media (max-width: 620px) {
+@media (max-width: 650px) {
   .export-range-fields {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -118,7 +118,7 @@
   color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
 }
-@media (max-width: 620px) {
+@media (max-width: 650px) {
   .export-controls {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -134,9 +134,9 @@
 .export-mismatch-note {
   margin: 0 0 var(--wu-space-3);
   padding: var(--wu-space-2) var(--wu-space-3);
-  border-left: 3px solid #bd8a81;
-  background: #bd8a8110;
-  color: #e3c2bb;
+  border-left: 3px solid var(--wu-warning-border);
+  background: var(--wu-warning-surface);
+  color: var(--wu-warning);
   font-size: var(--wu-text-sm);
 }
 .export-record-details {
