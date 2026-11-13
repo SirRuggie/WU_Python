@@ -1,3 +1,11 @@
+.members-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+}
+.members-actions > button {
+  min-height: 44px;
+}
 .members-filters {
   display: grid;
   gap: var(--wu-space-3);

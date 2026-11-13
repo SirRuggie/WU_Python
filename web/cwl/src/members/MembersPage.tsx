@@ -31,6 +31,7 @@ import { membersText as t } from "./strings";
 import "../memberTimezones/MemberTimezones.css";
 import "./Members.css";
 import ActionMenu from "../rosterUi/ActionMenu";
+import LoadError from "../LoadError";
 import ActionPanel from "../ActionPanel";
 
 type RoleAction = {
@@ -234,35 +235,40 @@ export default function MembersPage({
           <p>{t.nicknameExplanation}</p>
         </ActionPanel>
       )}
-      {directory.error && <p role="alert">{directory.error}</p>}
-      {!data && directory.error && (
-        <button onClick={() => void directory.load()}>{t.refresh}</button>
-      )}
+      <LoadError
+        message={directory.error}
+        onRetry={!data ? () => void directory.load() : undefined}
+        busy={directory.loading}
+      />
       {!person && (actionError || roles.error) && (
         <p role="alert">{actionError || roles.error}</p>
       )}
       {directory.loading && !data && <p role="status">{t.loading}</p>}
       {data && (
         <>
+          <div className="members-actions">
+            <button
+              type="button"
+              disabled={busy || panelDirty || directory.loading}
+              aria-busy={directory.loading || undefined}
+              onClick={() => void directory.load()}
+            >
+              {t.refresh}
+            </button>
+            <button
+              type="button"
+              disabled={busy || panelDirty || !data || unknown}
+              onClick={() => fix(selected.size ? [...selected] : undefined)}
+            >
+              {t.fixNames}
+            </button>
+          </div>
           <MemberFilters
             actions={
               <ActionMenu
                 name={t.title}
                 disabled={busy || panelDirty}
                 items={[
-                  {
-                    id: "refresh",
-                    label: t.refresh,
-                    disabled: directory.loading,
-                    onAction: () => void directory.load(),
-                  },
-                  {
-                    id: "fix",
-                    label: t.fixNames,
-                    disabled: !data || unknown,
-                    onAction: () =>
-                      fix(selected.size ? [...selected] : undefined),
-                  },
                   {
                     id: "past",
                     label: t.pastNames,
