@@ -10,7 +10,6 @@ import re
 from utils.cwl_bonus_raffle import safe_text
 
 CWL_EMOJI = '<:CWL:1399013745598009375>'
-LAZY_CWL_ROLE_ID = '1080521665584308286'
 WU_GOLD = 0xF2B62A
 FOOTER_FILE = 'Gold_Footer.png'
 COMPONENTS_V2 = 1 << 15
@@ -18,6 +17,8 @@ COMPONENTS_V2 = 1 << 15
 # Keep a margin so a small count difference never rejects a send.
 MAX_COMPONENTS = 38
 MAX_TEXT = 3800
+# Discord accepts at most 100 user IDs in allowed_mentions.users.
+MAX_PINGS = 100
 TEXT_CHUNK = 1800
 
 INTRO = ('Each clan gets a set number of bonus medals. Each war win adds 1 more medal. '
@@ -27,6 +28,7 @@ RULE_ATTACKS = 'Do 4 or more attacks, OR do 3 attacks and get 8 or more stars.'
 
 _TAG = re.compile(r'#[0-9A-Z]{3,12}')
 _USER = re.compile(r'[0-9]{15,22}')
+_MENTION = re.compile(r'<@([0-9]{15,22})>')
 
 
 def _length(text):
@@ -146,44 +148,59 @@ def _container(children):
     return {'type': 17, 'accent_color': WU_GOLD, 'components': children}
 
 
+def ping_users(data):
+    """Discord IDs of this month's winners; only these users may be pinged."""
+    return {str(w['user_id']) for clan in data['clans'] for w in clan['winners'] if _USER.fullmatch(str(w.get('user_id') or ''))}
+
+
+def _mentioned(component, allowed):
+    found = set(_MENTION.findall(component.get('content', ''))) if component.get('type') == 10 else set()
+    for child in component.get('components', ()):
+        found |= _mentioned(child, allowed)
+    return found & allowed
+
+
 def messages(data, names=None, preview=False, ping=False):
-    """Pack the containers into as few Components V2 messages as the limits allow."""
-    role = _text(f'<@&{LAZY_CWL_ROLE_ID}>') if ping else None
-    reserve_units = _units(_footer()) + (_units(role) if role else 0)
-    reserve_text = _text_total(role) if role else 0
+    """Pack the containers into as few Components V2 messages as the limits allow.
+
+    With ping, each message pings only this month's winners mentioned in it.
+    Last month's winners are never pinged unless they also won this month.
+    """
+    allowed = ping_users(data) if ping else set()
+    reserve_units = _units(_footer())
+
+    def too_big(components):
+        return (sum(map(_units, components)) + reserve_units > MAX_COMPONENTS
+                or sum(map(_text_total, components)) > MAX_TEXT
+                or len(set().union(*(_mentioned(c, allowed) for c in components))) > MAX_PINGS)
+
     containers = []
     for _, children in sections(data, names, preview):
         # A container larger than one message is split at text blocks.
         part = []
         for child in children:
-            trial = _container(part + [child])
-            if part and (_units(trial) + reserve_units > MAX_COMPONENTS or _text_total(trial) + reserve_text > MAX_TEXT):
+            if part and too_big([_container(part + [child])]):
                 containers.append(_container(part))
                 part = []
             part.append(child)
         containers.append(_container(part))
     pages, current = [], []
     for container in containers:
-        trial = current + [container]
-        if current and (sum(map(_units, trial)) + reserve_units > MAX_COMPONENTS
-                        or sum(map(_text_total, trial)) + reserve_text > MAX_TEXT):
+        if current and too_big(current + [container]):
             pages.append(current)
             current = []
         current.append(container)
     pages.append(current)
     pages[-1][-1]['components'].append(_footer())
-    if role:
-        # The role ping opens message 1, so the notification lands at the start.
-        pages[0].insert(0, role)
     result = []
-    for index, components in enumerate(pages):
-        payload = {'flags': COMPONENTS_V2, 'components': components,
-                   # Only the Lazy CWL role may ping; player mentions never notify anyone.
-                   'allowed_mentions': {'parse': [], 'users': [],
-                                        'roles': [LAZY_CWL_ROLE_ID] if ping and index == 0 else []}}
-        result.append(payload)
+    for components in pages:
+        users = sorted(set().union(*(_mentioned(c, allowed) for c in components)))
+        # Only this month's winners shown in this message may ping; no roles, no @everyone.
+        result.append({'flags': COMPONENTS_V2, 'components': components,
+                       'allowed_mentions': {'parse': [], 'users': users, 'roles': []}})
     for payload in result:
-        if sum(map(_units, payload['components'])) > 40 or sum(map(_text_total, payload['components'])) > 4000:
+        if (sum(map(_units, payload['components'])) > 40 or sum(map(_text_total, payload['components'])) > 4000
+                or len(payload['allowed_mentions']['users']) > MAX_PINGS):
             raise ValueError('Announcement section is too large for one Discord message')
     return result
 

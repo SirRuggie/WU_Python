@@ -8,9 +8,6 @@ import test_cwl_lazy_bonus_api as lazy_api
 from test_cwl_web_announcements import MAIN_CHANNEL, FOREIGN_CHANNEL
 from utils import cwl_bonus_announcement as render
 
-ROLE = render.LAZY_CWL_ROLE_ID
-
-
 def components_sender(transport):
     async def send_components(channel_id, payload, nonce, files=()):
         transport.calls.append((channel_id, payload, nonce, list(files)))
@@ -96,20 +93,22 @@ class LazyAnnouncementTests(unittest.IsolatedAsyncioTestCase):
         body = json.dumps(payload)
         self.assertIn(f'<@{USER}>', body)
         self.assertIn('<:CWL:1399013745598009375>', body)
-        self.assertNotIn(f'<@&{ROLE}>', body)
+        self.assertNotIn('<@&', body)
         # External names cannot inject mentions.
         self.assertNotIn('<@1>', body)
         self.assertEqual(len(nonce), 24)
         self.assertEqual(self.audit()[-1]['status'], 'sent')
 
-    async def test_role_ping_only_when_selected(self):
+    async def test_ping_notifies_this_months_winners_and_no_role(self):
         await self.approved_lazy()
         preview = await self.preview(ping=True)
+        self.assertEqual(preview['ping_count'], 1)
         await self.send_now(preview)
         payload = self.transport.calls[0][1]
-        self.assertEqual(payload['allowed_mentions']['roles'], [ROLE])
-        self.assertEqual(payload['allowed_mentions']['users'], [])
-        self.assertEqual(payload['components'][0], {'type': 10, 'content': f'<@&{ROLE}>'})
+        self.assertEqual(payload['allowed_mentions'], {'parse': [], 'users': [USER], 'roles': []})
+        self.assertEqual(payload['components'][0]['type'], 17)
+        self.assertNotIn('<@&', json.dumps(payload))
+        self.assertEqual((await self.preview())['ping_count'], 0)
 
     async def test_duplicate_request_and_stale_preview_never_send_twice(self):
         await self.approved_lazy()
@@ -179,17 +178,41 @@ class LazyAnnouncementRenderTests(unittest.TestCase):
                                        for w in range(winners)]} for c in range(clans)]}
 
     def test_large_family_splits_within_limits_and_footer_once(self):
-        pages = render.messages(self.data(clans=14, winners=10, last=90), ping=True)
+        data = self.data(clans=14, winners=10, last=90)
+        pages = render.messages(data, ping=True)
         self.assertGreater(len(pages), 1)
         for payload in pages:
             self.assertLessEqual(sum(map(render._units, payload['components'])), 40)
             self.assertLessEqual(sum(map(render._text_total, payload['components'])), 4000)
         footers = sum(1 for p in pages for c in p['components'] if c['type'] == 17 for x in c['components'] if x['type'] == 12)
         self.assertEqual(footers, 1)
-        self.assertEqual(pages[0]['components'][0]['content'], f'<@&{ROLE}>')
-        self.assertEqual(pages[0]['allowed_mentions']['roles'], [ROLE])
-        self.assertTrue(all(p['allowed_mentions']['roles'] == [] for p in pages[1:]))
-        self.assertEqual(sum(json.dumps(p).count(f'<@&{ROLE}>') for p in pages), 1)
+        self.assertTrue(all(p['allowed_mentions']['roles'] == [] and p['allowed_mentions']['parse'] == [] for p in pages))
+        self.assertFalse(any('<@&' in json.dumps(p) for p in pages))
+        # Every winner is pinged in a message that mentions them, and only there.
+        pinged = set().union(*(p['allowed_mentions']['users'] for p in pages))
+        self.assertEqual(pinged, render.ping_users(data))
+        for payload in pages:
+            for user in payload['allowed_mentions']['users']:
+                self.assertIn(f'<@{user}>', json.dumps(payload))
+
+    def test_last_month_winners_are_never_pinged(self):
+        data = self.data(clans=1, winners=2, last=0)
+        data['last_month'] = [{'tag': '#OLD1Y', 'player_name': 'Old', 'user_id': '300000000000000001'},
+                              {'tag': '#OLD2Y', 'player_name': 'Again', 'user_id': str(10**17)}]
+        [payload] = render.messages(data, ping=True)
+        self.assertIn('<@300000000000000001>', json.dumps(payload))
+        self.assertEqual(payload['allowed_mentions']['users'], sorted([str(10**17), str(10**17 + 1)]))
+        [quiet] = render.messages(data, ping=False)
+        self.assertEqual(quiet['allowed_mentions'], {'parse': [], 'users': [], 'roles': []})
+
+    def test_more_than_100_pinged_users_split_messages(self):
+        data = self.data(clans=6, winners=30, last=0)
+        for c, clan in enumerate(data['clans']):
+            for w, winner in enumerate(clan['winners']):
+                winner['user_id'] = str(4 * 10**17 + c * 100 + w)
+        pages = render.messages(data, ping=True)
+        self.assertTrue(all(len(p['allowed_mentions']['users']) <= 100 for p in pages))
+        self.assertEqual(sum(len(p['allowed_mentions']['users']) for p in pages), 180)
 
     def test_sit_out_wording(self):
         self.assertEqual(render.sit_out_rule([3, 3])[0], 'Not get a bonus in the last 3 seasons.')

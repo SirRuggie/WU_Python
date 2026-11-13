@@ -46,7 +46,7 @@ export default function LazyAnnouncementSheet({
     initialClan ? "one" : "all",
   );
   const [clan, setClan] = useState(initialClan || clans[0]?.tag || "");
-  const [ping, setPing] = useState(false);
+  const [ping, setPing] = useState(true);
   const [channels, setChannels] = useState<AnnouncementChannel[]>([]);
   const [channelsError, setChannelsError] = useState("");
   const [channelsTry, setChannelsTry] = useState(0);
@@ -308,7 +308,7 @@ export default function LazyAnnouncementSheet({
                         parts={parts}
                         caption={
                           preview.ping
-                            ? "Pings the Lazy CWL role only. Player mentions do not notify."
+                            ? "Pings this month's winners only. Last month's winners do not get a ping."
                             : "No pings. Player mentions do not notify."
                         }
                       />
@@ -348,7 +348,10 @@ export default function LazyAnnouncementSheet({
                 disabled={locked || archived}
                 onChange={(event) => setPing(event.target.checked)}
               />
-              <span>Ping the Lazy CWL role</span>
+              <span>
+                Ping this month's winners
+                {preview?.ping && ` (${preview.ping_count})`}
+              </span>
             </label>
             <label className="bonus-check">
               <input
