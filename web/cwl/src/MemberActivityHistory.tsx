@@ -6,6 +6,7 @@ import {
   type FormEvent,
 } from "react";
 import { api, ApiError } from "./api";
+import LoadError from "./LoadError";
 import "./MemberActivityHistory.css";
 import MemberEventRow, { type MemberEvent } from "./MemberEventRow";
 
@@ -209,23 +210,12 @@ export default function MemberActivityHistory({
         <button type="submit">Apply filters</button>
       </form>
 
-      {error && (
-        <div className="member-activity-error" role="alert">
-          {error}
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => void load(null)}
-          >
-            Try again
-          </button>
-        </div>
-      )}
-      {error && rows.length > 0 && (
-        <p className="member-activity-loaded">
-          Showing the last loaded activity.
-        </p>
-      )}
+      <LoadError
+        message={error}
+        note={rows.length > 0 ? "Showing the last loaded activity." : undefined}
+        disabled={loading}
+        onRetry={() => void load(null)}
+      />
       {loadedAt && !error && (
         <p className="member-activity-loaded">
           Updated{" "}

@@ -429,10 +429,6 @@
   gap: var(--wu-space-4);
   margin: var(--wu-space-4) 0;
 }
-.todo-workspace .notice small {
-  display: block;
-  margin-top: var(--wu-space-1);
-}
 .todo-loading {
   margin: var(--wu-space-5) 0;
 }

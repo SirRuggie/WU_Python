@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import LoadError from "../LoadError";
 
 export default function StrikesNotices({
   error,
@@ -6,35 +7,24 @@ export default function StrikesNotices({
   noticeRef,
   busy,
   showLeaveRefresh,
-  showRecordsRefresh,
   onLeaveRefresh,
-  onRecordsRefresh,
+  onRetry,
 }: {
   error: string;
   notice: string;
   noticeRef: RefObject<HTMLDivElement | null>;
   busy: boolean;
   showLeaveRefresh: boolean;
-  showRecordsRefresh: boolean;
   onLeaveRefresh: () => void;
-  onRecordsRefresh: () => void;
+  onRetry?: () => void;
 }) {
   return (
     <>
-      {error && (
-        <div className="notice error" role="alert">
-          {error}
-          {showLeaveRefresh && (
-            <button disabled={busy} onClick={onLeaveRefresh}>
-              Refresh
-            </button>
-          )}
-          {showRecordsRefresh && (
-            <button disabled={busy} onClick={onRecordsRefresh}>
-              Refresh records
-            </button>
-          )}
-        </div>
+      <LoadError message={error} disabled={busy} onRetry={onRetry} />
+      {error && showLeaveRefresh && (
+        <button disabled={busy} onClick={onLeaveRefresh}>
+          Refresh
+        </button>
       )}
       {notice && (
         <div

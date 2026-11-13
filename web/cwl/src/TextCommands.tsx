@@ -1,3 +1,4 @@
+import LoadError from "./LoadError";
 import PageEyebrow from "./PageEyebrow";
 import { formatNumber } from "./format";
 import SectionTabs from "./SectionTabs";
@@ -229,7 +230,7 @@ export default function TextCommands({
       }
       setError(
         e instanceof ApiError && e.status === 409
-          ? "This command changed elsewhere. Your draft is kept. Refresh commands to review the saved version."
+          ? "This command changed elsewhere. Your draft is kept. Select Try again to review the saved version."
           : e instanceof Error
             ? e.message
             : "Could not save command.",
@@ -311,29 +312,23 @@ export default function TextCommands({
           + New command
         </button>
       </div>
-      {error && (
-        <div className="notice error" role="alert">
-          {error}
-          <button
-            disabled={busy}
-            onClick={async () => {
-              const reload = () => {
-                setDraft(null);
-                setSaved(null);
-                void load();
-              };
-              if (dirty)
-                setConfirmation({
-                  text: "Discard edits and reload commands?",
-                  action: reload,
-                });
-              else reload();
-            }}
-          >
-            Refresh commands
-          </button>
-        </div>
-      )}
+      <LoadError
+        message={error}
+        disabled={busy}
+        onRetry={() => {
+          const reload = () => {
+            setDraft(null);
+            setSaved(null);
+            void load();
+          };
+          if (dirty)
+            setConfirmation({
+              text: "Discard edits and reload commands?",
+              action: reload,
+            });
+          else reload();
+        }}
+      />
       {notice && (
         <p className="notice" role="status">
           {notice}
@@ -360,7 +355,7 @@ export default function TextCommands({
           {loading ? (
             <p role="status">Loading commands…</p>
           ) : error && rows.length === 0 ? (
-            <p>Commands could not be loaded. Use Refresh commands above.</p>
+            <p>Commands could not be loaded. Use Try again above.</p>
           ) : rows.length === 0 ? (
             <p>No commands yet. Select New command.</p>
           ) : (
@@ -510,12 +505,10 @@ export default function TextCommands({
                       Delete the trigger message
                     </label>
                     {scopeError ? (
-                      <p role="alert">
-                        {scopeError}{" "}
-                        <button type="button" onClick={() => void loadScope()}>
-                          Retry choices
-                        </button>
-                      </p>
+                      <LoadError
+                        message={scopeError}
+                        onRetry={() => void loadScope()}
+                      />
                     ) : (
                       <CommandScope
                         draft={draft}
@@ -552,14 +545,10 @@ export default function TextCommands({
                       onMention={rememberMention}
                     />
 
-                    {roleError && (
-                      <p role="status">
-                        {roleError}{" "}
-                        <button type="button" onClick={() => void loadRoles()}>
-                          Retry roles
-                        </button>
-                      </p>
-                    )}
+                    <LoadError
+                      message={roleError}
+                      onRetry={() => void loadRoles()}
+                    />
                     <CommandBuilder
                       roles={roles}
                       commands={rows

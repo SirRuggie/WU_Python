@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
+import LoadError from "./LoadError";
 import ModerationCategoryCard from "./ModerationCategoryCard";
 import ModerationDestinationPicker from "./ModerationDestinationPicker";
 import ModerationHealth from "./ModerationHealth";
@@ -515,28 +516,15 @@ export default function ModerationSettings({
 
       {view === "channels" && <ModerationHealth />}
 
-      {error && (
-        <div className="moderation-settings-error" role="alert">
-          <p>{error}</p>
-          {error.includes("changed since you loaded") && (
-            <button
-              type="button"
-              disabled={loading || busy}
-              onClick={reloadLatest}
-            >
-              Discard edits and reload latest
-            </button>
-          )}
-          {!saved && (
-            <button
-              type="button"
-              disabled={loading}
-              onClick={() => void load()}
-            >
-              Try again
-            </button>
-          )}
-        </div>
+      <LoadError
+        message={error}
+        disabled={loading}
+        onRetry={saved ? undefined : () => void load()}
+      />
+      {error.includes("changed since you loaded") && (
+        <button type="button" disabled={loading || busy} onClick={reloadLatest}>
+          Discard edits and reload latest
+        </button>
       )}
       {notice && (
         <p className="moderation-settings-notice" role="status">

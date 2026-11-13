@@ -1,3 +1,4 @@
+import LoadError from "./LoadError";
 import PageEyebrow from "./PageEyebrow";
 import SectionTabs from "./SectionTabs";
 import "./ChoiceGroupLayout.css";
@@ -473,19 +474,16 @@ export default function ClanManagement({
         <ClanHistory onRestored={() => void load()} />
       ) : (
         <>
-          {error && (
-            <p className="notice error" role="alert">
-              {error}
-            </p>
-          )}
-          {choicesError && (
-            <p className="notice error" role="alert">
-              Roles and channels could not be loaded: {choicesError}{" "}
-              <button disabled={disabled} onClick={() => void loadChoices()}>
-                Retry roles and channels
-              </button>
-            </p>
-          )}
+          <LoadError message={error} />
+          <LoadError
+            message={
+              choicesError && !directoryError
+                ? `Roles and channels could not be loaded: ${choicesError}`
+                : ""
+            }
+            disabled={disabled}
+            onRetry={() => void loadChoices()}
+          />
           {notice && (
             <p className="notice" role="status">
               {notice}
@@ -540,6 +538,7 @@ export default function ClanManagement({
               onRetry={() => {
                 setDirectoryLoading(true);
                 void load();
+                if (choicesError) void loadChoices();
               }}
               onSelect={select}
             />

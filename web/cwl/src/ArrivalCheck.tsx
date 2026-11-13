@@ -1,3 +1,4 @@
+import LoadError from "./LoadError";
 import FilterChips from "./FilterChips";
 import useConfirmDialog from "./useConfirmDialog";
 import CwlNextLink from "./CwlNextLink";
@@ -412,14 +413,10 @@ export default function ArrivalCheck({
           </ul>
         </section>
       )}
-      {error && (
-        <p role="alert">
-          {error}
-          {error === "Could not check locations" && (
-            <Button onClick={refresh}>Retry</Button>
-          )}
-        </p>
-      )}
+      <LoadError
+        message={error}
+        onRetry={error === "Could not check locations" ? refresh : undefined}
+      />
       {!data && !error && <p role="status">Checking published roster…</p>}
       {data && !published && (
         <p>

@@ -280,8 +280,7 @@
 
 .moderation-destination-warning,
 .moderation-settings-empty,
-.moderation-settings-notice,
-.moderation-settings-error {
+.moderation-settings-notice {
   margin: 12px 0 0;
   padding: 12px 14px;
   border: 1px solid var(--wu-warning-border);
@@ -289,16 +288,6 @@
   background: var(--wu-warning-surface);
   color: var(--wu-warning);
   line-height: 1.5;
-}
-
-.moderation-settings-error {
-  border-color: var(--wu-danger-border);
-  background: var(--wu-danger-surface);
-  color: var(--wu-danger);
-}
-
-.moderation-settings-error p {
-  margin: 0 0 8px;
 }
 
 .moderation-settings-notice {

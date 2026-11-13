@@ -508,7 +508,6 @@ export default function StrikesWorkspace({
         noticeRef={noticeRef}
         busy={busy}
         showLeaveRefresh={tab === "leave" && leaveConflict}
-        showRecordsRefresh={tab === "history"}
         onLeaveRefresh={() =>
           leaveDraft(() => {
             setResumeDate("");
@@ -526,10 +525,23 @@ export default function StrikesWorkspace({
             if (selectedMember) void chooseMember(selectedMember);
           })
         }
-        onRecordsRefresh={() =>
-          void (selectedAccount || selectedWar
-            ? refreshHistory()
-            : refreshAccounts())
+        onRetry={
+          tab === "history"
+            ? () =>
+                void (selectedAccount || selectedWar
+                  ? refreshHistory()
+                  : refreshAccounts())
+            : (tab === "settings" || tab === "leave") &&
+                access.manage &&
+                !settings &&
+                !leaveConflict
+              ? () => {
+                  setError("");
+                  void updateSettings().catch((cause) =>
+                    setError(errorText(cause)),
+                  );
+                }
+              : undefined
         }
       />
 
@@ -732,9 +744,6 @@ export default function StrikesWorkspace({
           onSaved={setSettings}
           onDirty={setSettingsDirty}
           onBusy={setBusy}
-          onRetry={() =>
-            void updateSettings().catch((cause) => setError(errorText(cause)))
-          }
         />
       )}
 

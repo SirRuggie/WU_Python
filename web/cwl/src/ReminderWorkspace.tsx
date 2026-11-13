@@ -1,3 +1,4 @@
+import LoadError from "./LoadError";
 import SectionTabs from "./SectionTabs";
 import { dashboardPath } from "./dashboardHistory";
 import SignupReminderOverview, {
@@ -223,16 +224,11 @@ export default function ReminderWorkspace({
   };
   return (
     <section className="reminders-workspace">
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-          {!state && (
-            <button onClick={() => void act(load)} disabled={busy}>
-              Retry loading reminders
-            </button>
-          )}
-        </p>
-      )}
+      <LoadError
+        message={error}
+        onRetry={state ? undefined : () => void act(load)}
+        disabled={busy}
+      />
       {notice && (
         <p className="notice success" role="status">
           {notice}

@@ -7,14 +7,12 @@ export default function StrikesSettingsTab({
   onSaved,
   onDirty,
   onBusy,
-  onRetry,
 }: {
   settings: Settings | null;
   error: string;
   onSaved: (settings: Settings) => void;
   onDirty: (dirty: boolean) => void;
   onBusy: (busy: boolean) => void;
-  onRetry: () => void;
 }) {
   return settings ? (
     <StrikeSettingsEditor
@@ -24,12 +22,6 @@ export default function StrikesSettingsTab({
       onBusy={onBusy}
     />
   ) : (
-    <p role="status">
-      {error ? (
-        <button onClick={onRetry}>Retry settings</button>
-      ) : (
-        "Loading settings…"
-      )}
-    </p>
+    !error && <p role="status">Loading settings…</p>
   );
 }

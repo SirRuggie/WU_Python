@@ -1,5 +1,6 @@
 import { formatDateTime, formatTime } from "./format";
 import FilterChips from "./FilterChips";
+import LoadError from "./LoadError";
 import SelectionActionBar from "./SelectionActionBar";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import ActionPanel from "./ActionPanel";
@@ -293,29 +294,17 @@ export default function ReturnReminderOverview({
           </div>
         </ActionPanel>
       )}
-      {destinationError && (
-        <p className="return-destination-warning" role="status">
-          {destinationError}{" "}
-          <button type="button" onClick={() => void loadDestinations()}>
-            Retry destination
-          </button>
-        </p>
-      )}
-      {error && (
-        <div className="notice error" role="alert">
-          {error}
-          {loadedAt && " Showing the last loaded overview."}
-          <button
-            disabled={loading}
-            onClick={() => {
-              void load();
-              void loadDestinations();
-            }}
-          >
-            Retry
-          </button>
-        </div>
-      )}
+      <LoadError
+        message={[destinationError, error]}
+        note={
+          error && loadedAt ? "Showing the last loaded overview." : undefined
+        }
+        disabled={loading}
+        onRetry={() => {
+          if (error) void load();
+          void loadDestinations();
+        }}
+      />
       {loading && <p role="status">Loading return lists…</p>}
       {batch && (
         <ReturnBatch

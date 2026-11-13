@@ -1,4 +1,5 @@
 import { formatDateTime } from "./format";
+import LoadError from "./LoadError";
 import PageEyebrow from "./PageEyebrow";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import TicketConversation from "./TicketConversation";
@@ -228,7 +229,7 @@ export default function TicketBrowser() {
           {busy
             ? "Loading…"
             : error
-              ? "Tickets unavailable"
+              ? ""
               : `${countLabel(tickets.length, "ticket")} on this page`}
         </span>
         {(search ||
@@ -238,14 +239,11 @@ export default function TicketBrowser() {
           <button onClick={clearFilters}>Clear filters</button>
         )}
       </div>
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-          <button onClick={() => setReload((n) => n + 1)}>
-            Retry loading tickets
-          </button>
-        </p>
-      )}
+      <LoadError
+        message={error}
+        onRetry={() => setReload((n) => n + 1)}
+        busy={busy}
+      />
       {busy ? (
         <p role="status">Loading tickets…</p>
       ) : !error && !tickets.length ? (

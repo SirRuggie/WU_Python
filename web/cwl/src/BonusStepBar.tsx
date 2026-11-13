@@ -180,7 +180,7 @@ export default function BonusStepBar({
         <p className="bonus-step-unavailable">
           Status unavailable ·{" "}
           <button type="button" onClick={onRetry}>
-            Retry
+            Try again
           </button>
         </p>
       )}

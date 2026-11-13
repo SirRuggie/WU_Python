@@ -1,3 +1,4 @@
+import LoadError from "./LoadError";
 import PageEyebrow from "./PageEyebrow";
 import SectionTabs from "./SectionTabs";
 import "./rosterUi/tokens.css";
@@ -302,19 +303,13 @@ export default function TodoWorkspace({
           </button>
         )}
       </div>
-      {error && (
-        <div className="notice error" role="alert">
-          <div>
-            {error}
-            {data && (
-              <small>Showing your last update. It may be out of date.</small>
-            )}
-          </div>
-          <button onClick={() => setRefresh((value) => value + 1)}>
-            Retry
-          </button>
-        </div>
-      )}
+      <LoadError
+        message={error}
+        note={
+          data ? "Showing your last update. It may be out of date." : undefined
+        }
+        onRetry={() => setRefresh((value) => value + 1)}
+      />
       {!data && !error && (
         <div className="card todo-loading" role="status">
           <strong>Loading your tasks…</strong>
