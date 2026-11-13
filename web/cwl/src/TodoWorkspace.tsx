@@ -14,6 +14,7 @@ import { useClock } from "./activity/useClock";
 import PushReminders from "./PushReminders";
 import { readSnapshot, writeSnapshot } from "./snapshotCache";
 import { useEffect, useRef, useState } from "react";
+import { parsePageParam, replacePageParam } from "./pageUrlState";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -106,8 +107,11 @@ export default function TodoWorkspace({
   const [refresh, setRefresh] = useState(0);
   const [tab, setTab] = useJourneyState<TodoKind>(
     `${journeyKey}:tab`,
-    initialTab || preferences.tab,
+    initialTab ||
+      (parsePageParam("todo", "tab", window.location.search) as TodoKind) ||
+      preferences.tab,
   );
+  useEffect(() => replacePageParam("todo", "tab", tab), [tab]);
   const [selected, setSelected] = useJourneyState<string[] | null>(
     `${journeyKey}:selected`,
     initialSearch ? null : preferences.selected,

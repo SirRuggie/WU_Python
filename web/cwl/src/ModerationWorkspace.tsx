@@ -1,5 +1,6 @@
 import CwlPageHeader from "./CwlPageHeader";
 import { useState } from "react";
+import { parsePageParam, replacePageParam } from "./pageUrlState";
 import MemberActivityHistory from "./MemberActivityHistory";
 import MemberTimeline from "./MemberTimeline";
 import ModerationSettings from "./ModerationSettings";
@@ -17,7 +18,10 @@ export default function ModerationWorkspace({
   memberId?: string;
   onMemberRoute?: (userId: string) => void;
 }) {
-  const [section, setSection] = useState<Section>("history");
+  const [section, setSection] = useState<Section>(
+    () =>
+      parsePageParam("moderation", "tab", window.location.search) as Section,
+  );
   const [openedSettings, setOpenedSettings] = useState(false);
   const timeline = !!memberId && section === "history";
 
@@ -26,9 +30,11 @@ export default function ModerationWorkspace({
   const showSettings = (next: "invites" | "channels") => {
     setOpenedSettings(true);
     setSection(next);
+    replacePageParam("moderation", "tab", next);
   };
   const showHistory = () => {
     setSection("history");
+    replacePageParam("moderation", "tab", "history");
     if (memberId) onMemberRoute?.("");
   };
 

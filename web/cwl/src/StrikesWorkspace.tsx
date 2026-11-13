@@ -19,6 +19,7 @@ import StrikeHelp from "./StrikeHelp";
 import { type StrikeStreakState } from "./StrikeStreak";
 import { detailQuery } from "./strikeHistoryView";
 import SectionTabs from "./SectionTabs";
+import { parsePageParam, replacePageParam } from "./pageUrlState";
 import StrikesDetail from "./strikes/StrikesDetail";
 import StrikesFindWar from "./strikes/StrikesFindWar";
 import StrikesImportPanel from "./strikes/StrikesImportPanel";
@@ -89,7 +90,7 @@ export default function StrikesWorkspace({
   const [tab, setTab] = useState<Tab>(
     initialImport.current.job || initialImport.current.preview
       ? "settings"
-      : "history",
+      : (parsePageParam("strikes", "tab", window.location.search) as Tab),
   );
   const [importOpen, setImportOpen] = useState(
     !!(initialImport.current.job || initialImport.current.preview),
@@ -484,6 +485,7 @@ export default function StrikesWorkspace({
               setLeaveConflict(false);
               setResumeDate("");
               setTab(nextTab);
+              replacePageParam("strikes", "tab", nextTab);
               setError("");
               setNotice("");
             })

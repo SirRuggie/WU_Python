@@ -5,6 +5,7 @@ import { dashboardViews, type DashboardView } from "./SidebarNavigation";
 import { cwlPaths } from "./staffLinks";
 import { managementPaths } from "./managementLinks";
 import { parseResultsState, resultsStateQuery } from "./resultsUrlState";
+import { pageParamQuery } from "./pageUrlState";
 const staffPaths: Record<string, string> = {
   ...cwlPaths,
   ...managementPaths,
@@ -29,6 +30,8 @@ export type DashboardRoute = {
   activityKind?: "war" | "cwl";
   /** Results & bonuses: pool, clan, outcome, sort and step keys. */
   resultsState?: string;
+  /** Page tab and filter keys (tab, status, type); see pageUrlState.ts. */
+  pageState?: string;
 };
 const resultsViews = ["participation"];
 export function dashboardTarget(
@@ -68,6 +71,9 @@ export function dashboardTarget(
           : requested === "bonuses"
             ? "participation"
             : requested;
+  const view: DashboardView = dashboardViews.includes(value as DashboardView)
+    ? (value as DashboardView)
+    : "home";
   return {
     ...(family && pathname !== "/clans" ? { familyClan: family } : {}),
     ...(value === "weight-trial"
@@ -99,9 +105,7 @@ export function dashboardTarget(
       : {}),
     ...(value === "moderation" && moderationMember ? { moderationMember } : {}),
     ...(saved ? { signupPanel: "saved" as const } : {}),
-    view: dashboardViews.includes(value as DashboardView)
-      ? (value as DashboardView)
-      : "home",
+    view,
     ...(value === "publication" &&
     ["review", "announce"].includes(params.get("step") || "")
       ? { step: params.get("step") as "review" | "announce" }
@@ -109,6 +113,9 @@ export function dashboardTarget(
     ...(resultsViews.includes(value || "") &&
     resultsStateQuery(parseResultsState(search))
       ? { resultsState: resultsStateQuery(parseResultsState(search)) }
+      : {}),
+    ...(pageParamQuery(view, search)
+      ? { pageState: pageParamQuery(view, search) }
       : {}),
     ...(value === "replacements" &&
     /^#[0289PYLQGRJCUV]{3,15}$/.test(params.get("clan") || "")
@@ -149,7 +156,10 @@ export function dashboardPath(route: DashboardRoute) {
     /^\d{17,20}$/.test(route.moderationMember || "")
   )
     return `/server/moderation/member/${route.moderationMember}`;
-  if (memberPaths[route.view]) return memberPaths[route.view];
+  if (memberPaths[route.view]) {
+    const query = pageParamQuery(route.view, route.pageState || "");
+    return `${memberPaths[route.view]}${query ? `?${query}` : ""}`;
+  }
   const path =
     route.view === "member-timezones"
       ? managementPaths["members-settings"]
@@ -184,6 +194,13 @@ export function dashboardPath(route: DashboardRoute) {
     for (const key of activityFilterKeys)
       for (const value of filters.getAll(key)) params.append(key, value);
   }
+  if (
+    route.pageState &&
+    !(route.view === "moderation" && route.moderationMember)
+  )
+    new URLSearchParams(pageParamQuery(route.view, route.pageState)).forEach(
+      (value, key) => params.set(key, value),
+    );
   if (route.season && seasonViews.has(route.view))
     params.set("season", route.season);
   if (resultsViews.includes(route.view) && route.resultsState)
@@ -224,6 +241,11 @@ export class DashboardHistory {
       ? new URLSearchParams(window.location.search).get("account")
       : null;
     if (account) url.searchParams.set("account", account);
+    // A season change on the same page keeps the selected tab and filters.
+    if (samePage && !route.pageState)
+      new URLSearchParams(
+        pageParamQuery(route.view, window.location.search),
+      ).forEach((value, key) => url.searchParams.set(key, value));
     const state = samePage ? { ...this.history.state } : {};
     this.history[push ? "pushState" : "replaceState"](
       {

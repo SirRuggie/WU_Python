@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import "./TicketBrowser.css";
 import { countLabel } from "./countLabel";
+import { parsePageParam, replacePageParam } from "./pageUrlState";
 export type Ticket = {
   id: string;
   number: number;
@@ -25,8 +26,12 @@ const statusName = (value: string) =>
 const when = (value: string | null) =>
   value ? formatDateTime(new Date(value)) : "Date unavailable";
 export default function TicketBrowser() {
-  const [status, setStatus] = useState("open"),
-    [kind, setKind] = useState("all"),
+  const [status, setStatus] = useState(() =>
+      parsePageParam("tickets", "status", window.location.search),
+    ),
+    [kind, setKind] = useState(() =>
+      parsePageParam("tickets", "type", window.location.search),
+    ),
     [flag, setFlag] = useState("all"),
     [search, setSearch] = useState(""),
     [query, setQuery] = useState(""),
@@ -103,6 +108,8 @@ export default function TicketBrowser() {
     setQuery("");
     setStatus("open");
     setKind("all");
+    replacePageParam("tickets", "status", "open");
+    replacePageParam("tickets", "type", "all");
     setFlag("all");
     setFrom("");
     setTo("");
@@ -150,6 +157,7 @@ export default function TicketBrowser() {
             value={status}
             onChange={(e) => {
               setStatus(e.target.value);
+              replacePageParam("tickets", "status", e.target.value);
               setPage(1);
             }}
           >
@@ -166,6 +174,7 @@ export default function TicketBrowser() {
             value={kind}
             onChange={(e) => {
               setKind(e.target.value);
+              replacePageParam("tickets", "type", e.target.value);
               setPage(1);
             }}
           >
