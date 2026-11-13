@@ -108,7 +108,7 @@ class LazyAnnouncementTests(unittest.IsolatedAsyncioTestCase):
         payload = self.transport.calls[0][1]
         self.assertEqual(payload['allowed_mentions']['roles'], [ROLE])
         self.assertEqual(payload['allowed_mentions']['users'], [])
-        self.assertEqual(payload['components'][-1], {'type': 10, 'content': f'<@&{ROLE}>'})
+        self.assertEqual(payload['components'][0], {'type': 10, 'content': f'<@&{ROLE}>'})
 
     async def test_duplicate_request_and_stale_preview_never_send_twice(self):
         await self.approved_lazy()
@@ -185,8 +185,10 @@ class LazyAnnouncementRenderTests(unittest.TestCase):
             self.assertLessEqual(sum(map(render._text_total, payload['components'])), 4000)
         footers = sum(1 for p in pages for c in p['components'] if c['type'] == 17 for x in c['components'] if x['type'] == 12)
         self.assertEqual(footers, 1)
-        self.assertEqual(pages[-1]['components'][-1]['content'], f'<@&{ROLE}>')
-        self.assertTrue(all(p['allowed_mentions']['roles'] == [ROLE] for p in pages))
+        self.assertEqual(pages[0]['components'][0]['content'], f'<@&{ROLE}>')
+        self.assertEqual(pages[0]['allowed_mentions']['roles'], [ROLE])
+        self.assertTrue(all(p['allowed_mentions']['roles'] == [] for p in pages[1:]))
+        self.assertEqual(sum(json.dumps(p).count(f'<@&{ROLE}>') for p in pages), 1)
 
     def test_sit_out_wording(self):
         self.assertEqual(render.sit_out_rule([3, 3])[0], 'Not get a bonus in the last 3 seasons.')

@@ -229,6 +229,6 @@ clan names). Rule 3 follows the included clans' sit-out lengths ("last N
 seasons"; none omits it; mixed lengths show each clan's sit-out). Then one
 container per clan: name, tag, bonus medal count (the approved draw's slots) and
 numbered winners. The gold footer image is attached to the last container. The
-optional Lazy CWL role mention (`1080521665584308286`) comes last and is the only
+optional Lazy CWL role mention (`1080521665584308286`) opens message 1 and is the only
 allowed mention; player mentions never notify. Messages split at 38 components
 or 3,800 text characters (Discord limits 40 and 4,000).

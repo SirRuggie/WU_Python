@@ -173,12 +173,14 @@ def messages(data, names=None, preview=False, ping=False):
     pages.append(current)
     pages[-1][-1]['components'].append(_footer())
     if role:
-        pages[-1].append(role)
+        # The role ping opens message 1, so the notification lands at the start.
+        pages[0].insert(0, role)
     result = []
-    for components in pages:
+    for index, components in enumerate(pages):
         payload = {'flags': COMPONENTS_V2, 'components': components,
                    # Only the Lazy CWL role may ping; player mentions never notify anyone.
-                   'allowed_mentions': {'parse': [], 'users': [], 'roles': [LAZY_CWL_ROLE_ID] if ping else []}}
+                   'allowed_mentions': {'parse': [], 'users': [],
+                                        'roles': [LAZY_CWL_ROLE_ID] if ping and index == 0 else []}}
         result.append(payload)
     for payload in result:
         if sum(map(_units, payload['components'])) > 40 or sum(map(_text_total, payload['components'])) > 4000:
