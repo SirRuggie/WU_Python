@@ -1722,6 +1722,31 @@ title, not the backend label. Permission is unchanged
 Status: frontend only, on a draft PR for review; no backend, schema, permission,
 data or release change.
 
+## Non-members can sign in (2026-11-13, prompt 238)
+
+Ruggie: "Lets make it where anyone can login, but if they're not in the server
+they can't sign up basically." D1–D3 accepted in thread "Let non-members sign in
+to dashboard".
+
+D1: sign-in no longer needs the Warriors United server. A CWL signup save checks
+membership live with Discord each time; `/auth/me` adds `server_member` with a
+60-second cache. Withdraw stays allowed.
+
+D2: non-members keep Home, Tasks (their clans and wars), their accounts,
+signups and assignments, push reminders and problem reports. Staff pages are
+unchanged.
+
+D3: the Signups register flow shows "Join the Warriors United Discord server to
+sign up." and a "Join server" link to the permanent invite. Continue and Sign up
+are disabled.
+
+D4 (from the independent review, accepted by Ruggie): Base bank stays
+members-only and shows the same kind of join line.
+
+Details: `docs/dashboard-sign-in.md`. Status: built by Shaka on Ruggie's
+instruction ("you build and release fully"); backend and frontend release, no
+schema change.
+
 ## UI audit Phase 5: tokens and type (2026-11-13)
 
 Visual-only pass over every stylesheet in `web/cwl/src`, built by Shaka with

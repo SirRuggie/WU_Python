@@ -38,6 +38,7 @@ class LinkResult:
     message: str
     verified: bool | None = None
     wrote: bool = False  # True when a POST was sent and may have changed ClashPerk.
+    owner: str | None = None  # ClashPerk username of the other owner (OTHER_OWNER only).
 
 
 def normalize_player_tag(value: str) -> str | None:
@@ -114,9 +115,11 @@ async def create_link(user_id: int, player_tag: str) -> LinkResult:
             if str(record.get("userId")) == str(int(user_id)):
                 return LinkResult(ALREADY_LINKED, tag, "This account is already linked to this user in ClashPerk.",
                                   verified=record.get("verified") is True)
+            owner = record.get("username")
             return LinkResult(OTHER_OWNER, tag,
                               "This account is linked to a different Discord user in ClashPerk. Nothing was changed.",
-                              verified=record.get("verified") is True)
+                              verified=record.get("verified") is True,
+                              owner=owner[:40] if isinstance(owner, str) and owner.strip() else None)
         try:
             async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
                 outcome, code = await _post(session, tag, user_id)
