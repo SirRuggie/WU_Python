@@ -33,7 +33,7 @@
 .lazy-announce-scope legend {
   margin-bottom: var(--roster-space-2);
   padding: 0;
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
 }
 .lazy-announce-segments {
   display: grid;
@@ -52,7 +52,7 @@
   min-height: calc(var(--roster-height-control) - 2 * var(--roster-space-1));
   border-radius: calc(var(--roster-radius-control) - var(--roster-space-1));
   color: var(--roster-text-muted);
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
   text-align: center;
   cursor: pointer;
 }
@@ -106,7 +106,7 @@
   min-height: var(--roster-height-control);
   display: flex;
   align-items: center;
-  font-weight: 600;
+  font-weight: var(--wu-weight-medium);
   cursor: pointer;
 }
 .lazy-announce-preview .discord-preview {

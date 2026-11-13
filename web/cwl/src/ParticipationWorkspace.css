@@ -22,7 +22,7 @@
   margin: 0 0 var(--wu-space-4);
   padding: var(--wu-space-3) var(--wu-space-4);
   border: 1px solid var(--wu-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
 }
 .participation-capture-main {
@@ -47,7 +47,7 @@
 }
 .participation-capture-warning {
   margin: var(--wu-space-3) 0 0;
-  color: #e6c78c;
+  color: var(--wu-warning);
   font-size: var(--wu-text-sm);
 }
 .participation-inline-action {
@@ -82,7 +82,7 @@
   justify-content: space-between;
   gap: var(--wu-space-2);
   padding: var(--wu-space-2) 0;
-  border-bottom: 1px solid #ffffff2b;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 .participation-list-heading strong {
   font-size: var(--wu-text-sm);
@@ -136,14 +136,14 @@
   scroll-padding-bottom: 96px;
   margin: auto;
   padding: var(--wu-space-5);
-  border: 1px solid #53575f;
-  border-radius: 14px;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
   color: var(--wu-text);
-  box-shadow: 0 20px 70px #000b;
+  box-shadow: 0 20px 70px #000b; /* keep: shadow */
 }
 .participation-dialog::backdrop {
-  background: #000a;
+  background: #000a; /* keep: modal scrim */
 }
 .participation-dialog-head {
   display: flex;
@@ -174,7 +174,7 @@
   gap: var(--wu-space-1) var(--wu-space-4);
   margin: var(--wu-space-3) 0;
   padding-block: var(--wu-space-2);
-  border-block: 1px solid #ffffff20;
+  border-block: 1px solid var(--wu-border-subtle);
 }
 .participation-dialog-summary div {
   min-width: 85px;
@@ -197,7 +197,7 @@
   text-wrap: pretty;
 }
 .participation-previous {
-  border-bottom: 1px solid #ffffff20;
+  border-bottom: 1px solid var(--wu-border-subtle);
 }
 .participation-previous summary {
   display: flex;
@@ -227,7 +227,7 @@
 }
 .participation-error {
   margin: var(--wu-space-3) 0;
-  color: #f2b2b2;
+  color: var(--wu-danger);
   font-size: var(--wu-text-sm);
   overflow-wrap: anywhere;
 }
@@ -245,13 +245,13 @@
   margin: var(--wu-space-4) calc(-1 * var(--wu-space-4))
     calc(-1 * var(--wu-space-4));
   padding: var(--wu-space-3) var(--wu-space-4);
-  border-top: 1px solid #ffffff24;
+  border-top: 1px solid var(--wu-border-subtle);
   background: var(--wu-surface);
 }
 .participation-dialog-actions button {
   min-height: 44px;
 }
-@media (max-width: 760px) {
+@media (max-width: 650px) {
   .participation-capture {
     padding: var(--wu-space-1) var(--wu-space-1) var(--wu-space-1)
       var(--wu-space-3);
@@ -261,7 +261,7 @@
     grid-template-columns: minmax(0, 1fr) minmax(120px, 44%);
   }
 }
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .participation-dialog {
     padding: var(--wu-space-5);
   }
