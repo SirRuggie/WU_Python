@@ -1,5 +1,46 @@
 # Release and rollback history
 
+## Lazy bonus announcement — 2026-11-13 (backend and frontend)
+
+- PR [#320](https://github.com/SirRuggie/WU_Python/pull/320), merge commit
+  `4ed8462be26c82f88e0a8930328166501136dd6a`, local tag
+  `lazy-announcement-320-1`. Released by Shaka (Claude) on Ruggie's "Merge and
+  release 320" (2026-11-13 04:06 UTC).
+- Changes: staff send the Lazy bonus announcement to a channel from Results &
+  bonuses (new `GET/POST /api/cwl/seasons/{id}/bonus-raffle/lazy-announcement`,
+  `DiscordTransport.send_components`). No schema change, no migration, no data
+  write during the release.
+- Backend: `release.conf` `backend/e6477bd9…` → `backend/4ed8462b…` (clean
+  `git archive`; imports verified from the release folder). PID 146074 →
+  324752, InvocationID `28f6864421f347418dde523992c0d4d7`, cwd verified,
+  config 200 three times, anonymous seasons 401, anonymous
+  `lazy-announcement?scope=all&ping=0` 401 (route exists; unknown route 404).
+  No tracebacks; Clash `accessDenied` lines also occur before the release.
+  `frontend-routing.conf` and `storage-guard.conf` byte-identical. Bot
+  (PID 3529055) not changed or restarted: it imports none of the changed
+  modules. Workspace fast-forwarded to `4ed8462b`.
+- Frontend `current`: `2e041c4d…` → `4ed8462b…` (clean tagged clone, `tsc -b`
+  and 2481 tests in 356 files passed before staging). Entry
+  `index-CeQw4APr.js`, SHA-256
+  `b538ff920ccc7e5b3b085cfc29e22b8844be90744079fb890fe53223e9f4aa86`; feature
+  `BonusWorkspace-CRtibwIa.js`, SHA-256
+  `04b8b60efd2f16a1a579e6e55d9571b9b793fc4140c80040a59e6eade7e66512`. Served
+  `index.html` (SHA-256
+  `a85b4d23057b662537f21b182c927f37911a030473a605ce46846ad604239d52`) equals
+  the release file; all 147 release asset files match the public site.
+- Backup `.local/lazy-announcement-320-release-20261113T040738Z/dashboard.sqlite3`
+  (SQLite backup API): integrity ok, equal to live, SHA-256
+  `e5132ec202bfbf2be39995dd222029ea8f7816ab384d22b9cb0a8bdd250ff5b2`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131 (signups/assigned/locks),
+  publication max version 6 (6 rows, 4 active) and the lineup-rules digest
+  identical before and after.
+- Signed-in smoke SKIPPED. Send was not selected; no Discord post.
+- Rollback: backend `release.conf` back to
+  `backend/e6477bd9b599461aa7499ecb9ce84fa9219bbe51`, then daemon-reload and
+  restart `wu-cwl-demo-web`; frontend `switch-release.py
+  2e041c4d7417d5e8f55854b66525e9e4b8f24752`. Never restore the database for a
+  code rollback.
+
 ## November 12, 2026 —232/233 completed (Shaka1041/1042)
 
 These dated records supersede the older current/standby labels below. Recorded
