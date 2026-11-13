@@ -16,3 +16,14 @@ export function monthSeasons<T extends SeasonLabel & { id: number }>(
     (a, b) => seasonCycle(b).localeCompare(seasonCycle(a)) || b.id - a.id,
   );
 }
+
+export function defaultStaffSeason(
+  seasons: readonly (SeasonLabel & Pick<Season, "id" | "history_only">)[],
+): string {
+  const ordered = monthSeasons(seasons);
+  const season =
+    ordered.find(
+      (row) => row.history_only !== true && row.history_only !== 1,
+    ) ?? ordered[0];
+  return String(season?.id ?? "");
+}

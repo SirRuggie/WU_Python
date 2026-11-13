@@ -18,6 +18,7 @@ export type Session = {
   csrf_token: string;
 };
 export type Season = {
+  history_only?: boolean | number;
   /** Resolved by the existing Results month settings owner. */
   cwl_month?: string | null;
   id: number;

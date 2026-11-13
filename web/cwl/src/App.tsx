@@ -1,4 +1,8 @@
-import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
+import {
+  defaultStaffSeason,
+  monthSeasons,
+  seasonMonthLabel,
+} from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader"
 import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
@@ -217,7 +221,11 @@ function App() {
       setSeasonsKnown(true)
       setMemberSeason(result.member_season)
       if (seasonViews.has(entryTarget.view) && entryTarget.season && !result.seasons.some(item => String(item.id) === entryTarget.season)) setNotice({kind:'error', text:'The season in this link is not available. Check the season shown before signing up.'})
-      setSeasonId(current => result.seasons.some(season => String(season.id) === current) ? current : String(result.seasons[0]?.id || ''))
+      setSeasonId((current) =>
+        result.seasons.some((season) => String(season.id) === current)
+          ? current
+          : defaultStaffSeason(result.seasons),
+      );
       setSeasonError('')
     } catch (error) {
       if (requestId === seasonRequest.current) {

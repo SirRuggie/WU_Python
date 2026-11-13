@@ -67,7 +67,12 @@ Season picker labels/order are shared across the dashboard in seasonLabels.ts
 (233): bound cwl_month, then exact YYYY-MM label, else original free text. Month
 seasons display Month YYYY, newest first, with higher id first for same-month
 ties; unparsed labels remain unchanged after all months. The helper copies the
-array and preserves ids/objects. This display order does not change initial
-selection, Back, member season defaults, stored labels or endpoint/URL values.
+array and preserves ids/objects. Staff season default (236): newest non-history
+month; selection not stored across reopen; URL `?season=` wins. This replaces
+233's API-order fallback. A valid current selection survives list reloads;
+unknown URL seasons retain the notice then fall back. Normal seasons (including
+unresolved labels) precede history-only defaults; all-history uses the first
+sorted season, and empty lists keep no season. Back, member season defaults,
+stored labels and endpoint/URL values remain unchanged.
 Range From and To also list newest first, while preserving their latest-To and
 earliest-From-within-twelve-month defaults and explicit user choices.
