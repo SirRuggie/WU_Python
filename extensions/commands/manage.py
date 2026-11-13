@@ -213,7 +213,7 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
 
 
 FWA_SECTIONS = (
-    ("War Weight", "fwa_weight", "Edit Town Hall weight ranges, emojis, and the lowest level displayed"),
+    ("TH weight ranges", "fwa_weight", "Edit Town Hall weight ranges, emojis, and the lowest level displayed"),
     ("Bases & Guidance", "fwa_bases", "Base links, artwork, Town Hall instructions, and upgrade notes"),
     ("War Message Templates", "fwa_war_messages", "Edit win, lose, mismatch, and blacklist announcements"),
     ("Blacklist", "fwa_blacklist", "Browse blacklisted clans; FWA Clan Reps can add or remove entries"),
