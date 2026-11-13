@@ -1736,6 +1736,8 @@ six parallel workers. No markup, text, request or permission change.
   Error red (owner decision 2026-11-13): `--wu-danger` #ff5c5c (text, 5.8:1
   on the error surface), `--wu-danger-surface` #2a1215, `--wu-danger-border`
   = brand red #e00010. Brand red is never used as text (3.5:1).
+  Roster card red text (`--roster-danger`) stays #f19999 so it still reaches
+  4.5:1 on the gold selection surface.
 - Font weights are only 400/600/700 (`--wu-weight-*`). Font sizes use the
   12–32px scale (`--wu-text-*`), nearest value, ties round up, never below
   12px. `DiscordPreview.css` keeps Discord's own sizes.
