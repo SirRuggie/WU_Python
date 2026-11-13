@@ -70,6 +70,25 @@ def _export_snapshot(db, season_id: int, kind: str, basis: str, stamp: str) -> d
         from utils.cwl_bonus_raffle_store import RaffleStore
         rows = [{**meta, **row, "source": "dashboard"} for row in bonus["history"]]
         rows.extend({**meta, **row} for row in RaffleStore(db, season_id).imported_winner_history())
+        # Display only: winner records do not store Town Hall. Read it from this
+        # season's published rosters, then its current signups (newest wins).
+        # Not an export column, so downloads are unchanged.
+        town_halls = {
+            tag: town_hall for tag, town_hall in db.execute(
+                "SELECT a.tag,a.town_hall FROM publication_accounts a "
+                "JOIN roster_publications p ON p.id=a.publication_id "
+                "WHERE p.season_id=? ORDER BY p.version",
+                (season_id,),
+            )
+        }
+        town_halls.update(
+            (tag, town_hall) for tag, town_hall in db.execute(
+                "SELECT tag,town_hall FROM signups "
+                "WHERE season_id=? AND town_hall IS NOT NULL", (season_id,),
+            )
+        )
+        for row in rows:
+            row["town_hall"] = town_halls.get(row["tag"])
         output_basis = "history"
     elif kind in {"participation", "participation-history"}:
         output_basis = "saved_history" if kind == "participation-history" else basis

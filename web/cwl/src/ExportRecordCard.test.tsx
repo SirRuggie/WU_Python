@@ -52,6 +52,9 @@ it("shows Imported and hides voided winners, with Main first", () => {
           clan_name: "Z main",
           player_name: "Main name",
           tag: "#Q2Y",
+          town_hall: 17,
+          attacks: 7,
+          stars: 15,
         },
         {
           pool: "main",
@@ -64,6 +67,11 @@ it("shows Imported and hides voided winners, with Main first", () => {
   );
   expect(html).toContain("Imported");
   expect(html).not.toContain("Voided name");
+  expect(html).toContain("TH 17 · #Q2Y");
+  expect(html).toContain("Attacks");
+  expect(html).toContain(">15<");
+  // Unknown Town Hall: no "TH —" text in the meta line.
+  expect(html).not.toContain("TH — ·");
   expect(html.indexOf("Z main")).toBeLessThan(html.indexOf("A lazy"));
 });
 it("preserves signup tally and capture status", () => {
