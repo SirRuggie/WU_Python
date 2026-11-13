@@ -1741,29 +1741,15 @@ six parallel workers. No markup, text, request or permission change.
 - Breakpoints: a rule moves to 480/650/900 (max) or 481/651/901 (min) only
   when the move is 60px or less. Larger moves (wide layouts at 1000–1200px,
   tiny-phone rules at 320–400px, the 760px Strikes phone rules) keep their
-  width because moving them changed layouts at real widths. A rule also keeps
-  its width when a TSX `matchMedia` uses the same width (680, 700, 720, 760,
-  767/768, 800, 899/900).
-- Touch: `:where()` rules in `style.css` add `touch-action: manipulation` to
-  controls (zero specificity). 44px minimum height added to the Tasks sort
+  width because moving them changed layouts at real widths. A rule tied to a
+  TSX `matchMedia` keeps that width (680, 720, 760, 767/768, 800, and the 700
+  rules beside SearchPicker); min 900 rules moved to 901 to line up with the
+  sidebar's `matchMedia` at 900.
+- Touch: `:where()` rules in `style.css` add `touch-action: manipulation` and
+  a transparent `-webkit-tap-highlight-color` to controls (zero specificity).
+  Nested `strong`/`b` stay at 700 (the browser's `bolder` gave 900 inside a
+  bold parent). 44px minimum height added to the Tasks sort
   select, the Staff overview Pause label and the Seasons "Direct signup link".
 
 Status: frontend only, draft PR for review; no backend, schema, permission,
 data or release change.
-
-## UI audit Phase 6: code health (2026-11-13)
-
-Pure refactor, no rendered change (pixel comparison of 33 pages at 360 and
-1440 against main: only random error reference ids differ).
-
-- `App.tsx` signup view moved to `SignupPage.tsx` (rendering only).
-- `StrikesWorkspace.tsx` split into `web/cwl/src/strikes/` (types, format,
-  panels, tabs, and the hooks `useStrikeImport`, `useWarSearch`,
-  `useLeaveApproval`).
-- `ReminderWorkspace.tsx` split into `web/cwl/src/reminders/`.
-- `ServerManagement.tsx` split into `managementRequests.ts`,
-  `ManagementFieldInput.tsx`, `useManagementConfirmation.ts` and the
-  `Management*` panels; parent hook order is unchanged for the index-mocked
-  preview test. `activity/EventsWorkspace.tsx` reformatted.
-
-Status: frontend only, draft PR for review.
