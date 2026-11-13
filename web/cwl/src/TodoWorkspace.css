@@ -44,7 +44,7 @@
   min-height: 44px;
   padding: 0;
   border: 1px solid var(--roster-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   background: var(--roster-surface);
 }
 .todo-freshness {
@@ -82,7 +82,7 @@
   min-width: 0;
   padding: 0 var(--wu-space-3);
   border: 1px solid var(--roster-border);
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   background: var(--roster-surface);
   color: var(--wu-text);
   font-size: var(--wu-text-sm);
@@ -106,12 +106,12 @@
   width: auto;
   min-width: 0;
   max-width: 100%;
-  min-height: 42px;
+  min-height: 44px;
   margin: 0;
   padding: 0 var(--wu-space-2) 0 var(--wu-space-3);
   text-overflow: ellipsis;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   background-color: transparent;
   color: var(--wu-text);
   font-size: var(--wu-text-sm);
@@ -141,7 +141,7 @@
 .todo-search > input {
   margin: 0;
   padding-left: calc(var(--wu-space-3) + 24px);
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
 }
 /* The close button clears the search; hide the browser's second clear icon. */
 .todo-search > input::-webkit-search-cancel-button {
@@ -156,7 +156,7 @@
 .todo-account-picker {
   border: 1px solid var(--roster-border);
   background: var(--roster-surface);
-  border-radius: 13px;
+  border-radius: var(--wu-radius-md);
   margin-bottom: var(--wu-space-4);
   padding: var(--wu-space-4);
 }
@@ -184,7 +184,7 @@
   padding: var(--wu-space-2);
   border: 1px solid var(--roster-border-subtle);
   background: var(--roster-surface-raised);
-  border-radius: 9px;
+  border-radius: var(--wu-radius-sm);
   min-width: 0;
   cursor: pointer;
 }
@@ -206,7 +206,7 @@
   background: var(--roster-attention-surface);
   border: 1px solid var(--roster-attention-border);
   border-left: 4px solid var(--roster-warning);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   color: var(--roster-warning);
   padding: var(--wu-space-4) var(--wu-space-4);
   margin: var(--wu-space-4) 0;
@@ -272,7 +272,7 @@
 }
 .todo-clan {
   border: 1px solid var(--roster-border);
-  border-radius: 15px;
+  border-radius: var(--wu-radius-lg);
   background: var(--roster-surface);
   overflow: hidden;
 }
@@ -370,7 +370,7 @@
   padding: var(--wu-space-2) var(--wu-space-3);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-bold);
-  border-radius: 6px;
+  border-radius: var(--wu-radius-sm);
   -webkit-text-fill-color: currentColor;
 }
 .todo-state.prep {
@@ -387,17 +387,17 @@
   width: 100%;
   height: 7px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--wu-radius-xs);
   accent-color: var(--roster-success);
   background: var(--roster-surface-soft);
 }
 .todo-task-progress progress::-webkit-progress-bar {
   background: var(--roster-surface-soft);
-  border-radius: 5px;
+  border-radius: var(--wu-radius-xs);
 }
 .todo-task-progress progress::-webkit-progress-value {
   background: var(--roster-success);
-  border-radius: 5px;
+  border-radius: var(--wu-radius-xs);
 }
 .todo-task-time > small,
 .todo-task-time > strong,
@@ -445,7 +445,7 @@
   gap: var(--wu-space-4);
   background: var(--roster-card-success);
   border: 1px solid var(--roster-success);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   margin: 0 0 var(--wu-space-4);
   padding: var(--wu-space-4) var(--wu-space-4);
 }
@@ -471,7 +471,7 @@
 .todo-home-link > button {
   flex: none;
 }
-@media (max-width: 1050px) {
+@media (max-width: 900px) {
   .todo-tabs {
   }
   .todo-picker-list {
@@ -543,7 +543,7 @@
 .todo-fwa strong {
   flex: none;
   padding: 2px var(--wu-space-2);
-  border-radius: 6px;
+  border-radius: var(--wu-radius-sm);
   background: var(--roster-surface-soft);
   color: var(--wu-text);
   font-size: var(--wu-text-xs);
@@ -557,7 +557,7 @@
 .todo-fwa.lose strong,
 .todo-fwa.blacklisted strong {
   background: var(--wu-brand-red);
-  color: #fff;
+  color: var(--wu-text);
 }
 .todo-fwa span {
   min-width: 0;
@@ -571,9 +571,9 @@
   gap: var(--wu-space-4);
   padding: var(--wu-space-4) var(--wu-space-4);
   margin: var(--wu-space-3) 0 var(--wu-space-4);
-  border: 1px solid #f8dc8e;
-  border-left: 5px solid #b57900;
-  border-radius: 10px;
+  border: 1px solid var(--wu-accent);
+  border-left: 5px solid var(--wu-warning-border);
+  border-radius: var(--wu-radius-md);
   background: var(--wu-accent);
   font-variant-numeric: tabular-nums;
 }
@@ -631,7 +631,7 @@
   text-decoration: underline;
 }
 
-@media (max-width: 320px) {
+@media (max-width: 480px) {
   .todo-clan > header {
     padding-left: var(--wu-space-2);
     padding-right: var(--wu-space-2);

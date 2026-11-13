@@ -9,12 +9,12 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: #fff3d6;
+  color: var(--wu-text);
   overflow: visible;
 }
 
 .owner-prank-dialog::backdrop {
-  background: #000b;
+  background: #000b; /* keep: overlay scrim, no token */
 }
 
 .owner-prank-card {
@@ -46,11 +46,15 @@
   animation: owner-prank-pop 180ms ease-out;
 }
 .owner-prank-card.farewell {
-  border-color: #f4b9d6;
-  background: linear-gradient(145deg, #38263b, var(--wu-surface-raised) 65%);
+  border-color: #f4b9d6; /* keep: owner prank art */
+  background: linear-gradient(
+    145deg,
+    #38263b,
+    var(--wu-surface-raised) 65%
+  ); /* keep: owner prank art */
   box-shadow:
     0 16px 60px #000a,
-    0 0 30px #f0a9ca40;
+    /* keep: overlay scrim, no token */ 0 0 30px #f0a9ca40; /* keep: owner prank art */
 }
 
 .owner-prank-card.has-art.farewell {
@@ -77,7 +81,7 @@
 
 .owner-prank-card h2 {
   margin: var(--wu-space-3) var(--wu-space-7) var(--wu-space-3) 0;
-  color: #fff3d6;
+  color: var(--wu-text);
   font-size: var(--wu-text-xl);
   line-height: 1.2;
   font-weight: var(--wu-weight-bold);
@@ -88,11 +92,11 @@
   text-wrap: pretty;
 }
 .owner-prank-card .owner-prank-reassurance {
-  color: #f9cf84;
+  color: var(--wu-warning);
   font-weight: var(--wu-weight-bold);
 }
 .owner-prank-card .owner-prank-error {
-  color: #ffb0ad;
+  color: var(--wu-danger);
 }
 .owner-prank-rickroll {
   display: block;
@@ -112,7 +116,7 @@
   min-width: 44px;
   min-height: 44px;
   border: 1px solid var(--wu-accent);
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   padding: var(--wu-space-2) var(--wu-space-3);
   background: transparent;
   color: var(--wu-accent);
@@ -121,9 +125,9 @@
   font-weight: var(--wu-weight-medium);
 }
 .owner-prank-card button.primary {
-  background: #fac775;
-  border-color: #fac775;
-  color: #30220b;
+  background: var(--wu-accent);
+  border-color: var(--wu-accent);
+  color: var(--wu-accent-ink);
   font-weight: var(--wu-weight-bold);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -205,7 +209,7 @@
   }
 }
 
-@media (max-width: 380px) {
+@media (max-width: 480px) {
   .owner-prank-card {
     padding-right: var(--wu-space-3);
   }
