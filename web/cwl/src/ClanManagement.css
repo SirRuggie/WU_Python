@@ -60,7 +60,7 @@
   background: var(--wu-surface);
   padding: var(--wu-space-3);
   border: 1px solid var(--wu-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   display: flex;
   justify-content: space-between;
   gap: var(--wu-space-2);
@@ -109,17 +109,17 @@
   display: none;
 }
 .clan-danger-zone {
-  border: 1px solid #e17878;
-  border-radius: 12px;
+  border: 1px solid var(--wu-danger-border);
+  border-radius: var(--wu-radius-md);
   padding: var(--wu-space-4);
   margin-top: var(--wu-space-5);
 }
 .clan-danger-zone h3 {
-  color: #ffb1b1;
+  color: var(--wu-danger);
   margin-top: 0;
 }
 .clan-danger-zone .danger-link {
-  color: #ffb1b1;
+  color: var(--wu-danger);
 }
 .clan-editor {
   min-width: 0;
@@ -141,7 +141,7 @@
   .clan-section-card {
     margin-top: var(--wu-space-3);
     border: 1px solid var(--wu-border);
-    border-radius: 10px;
+    border-radius: var(--wu-radius-md);
     overflow: hidden;
   }
   .clan-section-toggle {
@@ -209,7 +209,7 @@
 .clan-restore {
   border: 1px solid var(--wu-border);
   background: var(--wu-surface-soft);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   padding: var(--wu-space-4);
   margin-top: var(--wu-space-4);
 }
@@ -227,7 +227,7 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-@media (max-width: 600px) {
+@media (max-width: 650px) {
   .clan-history-filters,
   .clan-history-values {
     grid-template-columns: 1fr;
@@ -255,7 +255,7 @@
 }
 .clan-directory button {
   width: 100%;
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
 }
 .clan-directory strong {
   display: block;
@@ -272,8 +272,8 @@
   gap: var(--wu-space-3);
   flex-wrap: wrap;
   padding: var(--wu-space-3);
-  border: 1px solid #e6a640;
-  border-radius: 10px;
+  border: 1px solid var(--wu-accent);
+  border-radius: var(--wu-radius-md);
   margin: var(--wu-space-3) 0;
 }
 .clan-management [role="tabpanel"] {
