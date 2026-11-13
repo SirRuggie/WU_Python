@@ -742,7 +742,7 @@ it("defers a pending state read when signup becomes dirty", async () => {
 
 it("receives the signup draft dirty flag from App", () => {
   const app = readFileSync("src/App.tsx", "utf8");
-  const prank = app.slice(app.indexOf("<OwnerPrank view="));
+  const prank = app.slice(app.search(/<OwnerPrank\s+view=/));
   expect(prank).toMatch(/startBlocked=\{[^}]*signupDirty/);
 });
 
