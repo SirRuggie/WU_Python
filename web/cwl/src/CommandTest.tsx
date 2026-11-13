@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { api, ApiError } from "./api";
 import ChannelCombobox from "./ChannelCombobox";
+import LoadError from "./LoadError";
 import type { AnnouncementChannel } from "./announcements";
 import type { Command } from "./CommandBuilder";
 const requestId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
@@ -125,16 +126,11 @@ export default function CommandTest({
       </p>
       {loading && <p role="status">Loading channels…</p>}
       {readError && (
-        <p role="alert">
-          {readError}{" "}
-          <button
-            type="button"
-            disabled={loading || busy}
-            onClick={() => void load()}
-          >
-            Retry channels
-          </button>
-        </p>
+        <LoadError
+          message={readError}
+          disabled={loading || busy}
+          onRetry={() => void load()}
+        />
       )}
       {!loading && !readError && !channels.length && (
         <p>No available text channels.</p>
