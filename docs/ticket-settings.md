@@ -54,6 +54,11 @@ permit Ticket Settings access. Tests continue using isolated test storage.
   stale panels cannot silently overwrite newer admin changes.
 - Permissions are validated before a config write. Main/FWA validators include
   the other configured recruiter role when they share a staff parent.
+- The first message in a new Main or FWA candidate thread (the recruiter role
+  ping) is pinned. This needs Pin Messages for the bot in the candidate parent.
+  Pin Messages is not validated: a failed pin is logged as a warning, the
+  ticket still opens, and the next opening-message retry tries the pin again.
+  Test tickets send no ping, so they have no pin.
 - Entry repair preserves pilot bindings and intake mode, uses revision-guarded
   rebinding, and removes only a newly created replacement if that rebind fails.
 - No application decisions, role assignments, or source history are changed by

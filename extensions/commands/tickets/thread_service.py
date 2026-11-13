@@ -1230,6 +1230,18 @@ async def _message_marker_exists(
     callers that no longer post that line at all.
     """
 
+    return await _find_marker_message(rest, channel_id, marker, is_match=is_match) is not None
+
+
+async def _find_marker_message(
+    rest: hikari.api.RESTClient,
+    channel_id: int,
+    marker: str,
+    *,
+    is_match: Callable[[Any], bool] | None = None,
+) -> Any | None:
+    """Return the prior delivery for ``marker``, or None (see `_message_marker_exists`)."""
+
     messages = await _collect_rest_iterator(rest.fetch_messages(channel_id))
 
     def contains(component: Any) -> bool:
@@ -1239,12 +1251,12 @@ async def _message_marker_exists(
 
     for message in messages:
         if marker in (getattr(message, "content", "") or ""):
-            return True
+            return message
         if any(contains(component) for component in getattr(message, "components", ()) or ()):
-            return True
+            return message
         if is_match is not None and is_match(message):
-            return True
-    return False
+            return message
+    return None
 
 
 async def _send_once(
@@ -1568,7 +1580,11 @@ async def _questionnaire_exists(
 async def _notify_candidate_recruiters(
     rest: hikari.api.RESTClient, ticket: Mapping[str, Any], *, bot_id: int,
 ) -> None:
-    """Mention the recruiter role once; Discord handles thread subscriptions."""
+    """Mention the recruiter role once and pin that message.
+
+    Discord handles thread subscriptions. A retried delivery finds the
+    existing ping and pins it if an earlier attempt stopped before the pin.
+    """
     if testing_service.is_test_ticket(ticket) or not ticket.get("candidate_recruiter_notification"):
         return
     role_id = _as_int(ticket.get("recruiter_role_id"))
@@ -1578,12 +1594,34 @@ async def _notify_candidate_recruiters(
     marker = f"ticket-setup:{channel_id}:candidate-recruiters"
     content = f"<@&{role_id}> — a new applicant ticket is ready for your review."
     match = _bot_authored_content_match(bot_id, content)
-    if await _message_marker_exists(rest, channel_id, marker, is_match=match):
+    message = await _find_marker_message(rest, channel_id, marker, is_match=match)
+    if message is None:
+        message = await rest.create_message(
+            channel_id,
+            content=content,
+            mentions_everyone=False,
+            user_mentions=False,
+            role_mentions=[role_id],
+        )
+    await _pin_recruiter_ping(rest, channel_id, message)
+
+
+async def _pin_recruiter_ping(
+    rest: hikari.api.RESTClient, channel_id: int, message: Any,
+) -> None:
+    """Pin the recruiter ping; a failed pin never blocks the ticket."""
+    if bool(getattr(message, "is_pinned", False)):
         return
-    await _send_once(
-        rest, channel_id, marker, content, role_mentions=[role_id],
-        post_marker=False, is_match=match,
-    )
+    try:
+        await rest.pin_message(channel_id, message)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # The ping is delivered; the pin is optional.
+        _log.warning(
+            "Could not pin the recruiter ping %s in ticket thread %s "
+            "(the bot needs Pin Messages in the candidate parent): %s",
+            getattr(message, "id", None), channel_id, exc,
+        )
 
 
 async def _deliver_opening_messages(
