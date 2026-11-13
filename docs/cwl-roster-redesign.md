@@ -1687,7 +1687,8 @@ D2: sidebar groups. Home: Home, Search. Activity: Tasks, Wars, Base bank,
 Events (Base bank sits after Wars because members cannot see Clans). New group
 "Members & moderation": Members, Moderation. Admin: Staff access, Band monitor,
 Dashboard issues; each Admin item gates itself, so the group shows when any item
-is allowed. Saved open/closed state for the retired "members" and "moderation"
+is allowed (a non-owner with `server_tools` sees Admin with Band monitor
+only). Saved open/closed state for the retired "members" and "moderation"
 group ids is dropped; the new group starts closed unless its page is open. All
 old addresses keep working.
 
@@ -1695,7 +1696,11 @@ D3: Moderation tabs are Activity history, Invites and Log channels. Invites and
 Log channels share one settings load and draft, but each tab's Save sends only
 its own fields (invite names on Invites; routing, ignores and bots on Log
 channels) on top of the saved settings, and the other tab's unsaved edits stay
-in the draft. The Invites log switch stays in Log channels.
+in the draft; the heading says when the other tab has unsaved changes. Send
+test is blocked only by Log channels edits, because a test posts the saved log
+setup. The Invites log switch stays in Log channels. Known limit: an Invites
+save can still be refused for a broken saved log channel, which is fixed on
+Log channels.
 
 D5: the Results & bonuses / Exports & history in-page tab bar is removed; the
 sidebar has both. Results & bonuses ends with "Next: Exports & history" when the
@@ -1704,7 +1709,8 @@ viewer can open Exports.
 D6 (Replacements tab) is rejected: the owner removed that tab on purpose.
 
 D7: Integrations is renamed "Band monitor", moves to Admin and opens its one
-section directly (no Back to an index of one). Permission is unchanged
+section directly (no Back to an index of one); its heading uses the page
+title, not the backend label. Permission is unchanged
 (`server_tools`).
 
 Status: frontend only, on a draft PR for review; no backend, schema, permission,

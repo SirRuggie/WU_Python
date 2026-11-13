@@ -106,6 +106,12 @@ export default function ModerationSettings({
     !!saved &&
     !!draft &&
     changedSettings(saved, scopedDraft(saved, draft, view));
+  // Tests post the saved log setup, so only Log channels edits block them.
+  const channelsDirty =
+    !!saved &&
+    !!draft &&
+    changedSettings(saved, scopedDraft(saved, draft, "channels"));
+  const otherTabDirty = dirty && !viewDirty;
 
   useEffect(() => {
     onDirty?.(dirty);
@@ -433,7 +439,7 @@ export default function ModerationSettings({
   };
 
   const startTest = (kind: ModerationKind) => {
-    if (!saved || !draft || dirty || busy) return;
+    if (!saved || !draft || channelsDirty || busy) return;
     const destination = effectiveDestination(saved, kind);
     if (
       !saved.events[kind].enabled ||
@@ -446,7 +452,7 @@ export default function ModerationSettings({
   };
 
   const sendTest = async (kind: ModerationKind) => {
-    if (!saved || dirty || busy) return;
+    if (!saved || channelsDirty || busy) return;
     const id = ++request.current;
     const revision = saved.revision;
     setDialog(null);
@@ -495,6 +501,12 @@ export default function ModerationSettings({
               ? "Name invite links so join logs show where members came from."
               : "Select where member and moderation notices appear. History remains available when posting is off."}
           </p>
+          {otherTabDirty && (
+            <p className="moderation-other-tab-dirty" role="status">
+              {view === "invites" ? "Log channels" : "Invites"} has unsaved
+              changes.
+            </p>
+          )}
         </div>
         <button type="button" onClick={reloadLatest} disabled={loading || busy}>
           Refresh settings
@@ -584,7 +596,7 @@ export default function ModerationSettings({
                     channels={channels}
                     busy={busy}
                     inventoryAvailable={inventoryAvailable}
-                    dirty={dirty}
+                    dirty={channelsDirty}
                     switchFeedback={switchFeedback}
                     onSwitch={toggleSwitch}
                     onCategory={updateCategory}
@@ -698,7 +710,7 @@ export default function ModerationSettings({
           heading="Send test log"
           text={`Post a test log to ${destinationName(testDestination, saved.channels)}?`}
           confirmLabel="Send one test"
-          disabled={busy || dirty}
+          disabled={busy || channelsDirty}
           onCancel={() => setDialog(null)}
           onConfirm={() => void sendTest(dialog.event)}
         />

@@ -846,6 +846,65 @@ it("saves only the open tab's fields and keeps the other tab's edits in the draf
   expect(writes[1][2].revision).toBe(first[0][2].revision + 1);
   expect(host.textContent).not.toContain("Unsaved changes");
 });
+it("lets Log channels send a test while only invite names are unsaved, and says which tab has edits", async () => {
+  const dirtyStates: boolean[] = [];
+  await act(async () =>
+    root.render(
+      <ModerationSettings
+        view="invites"
+        onDirty={(value) => dirtyStates.push(value)}
+      />,
+    ),
+  );
+  await settle();
+  await openInvite("abc123");
+  await change(
+    host.querySelector<HTMLInputElement>('[aria-label="Name for abc123"]')!,
+    "Reddit",
+  );
+  // The leave guard sees edits made only on Invites.
+  expect(dirtyStates.at(-1)).toBe(true);
+  await act(async () =>
+    root.render(
+      <ModerationSettings
+        view="channels"
+        onDirty={(value) => dirtyStates.push(value)}
+      />,
+    ),
+  );
+  await settle();
+  expect(host.querySelector(".moderation-other-tab-dirty")?.textContent).toBe(
+    "Invites has unsaved changes.",
+  );
+  expect(host.textContent).not.toContain("Unsaved changes");
+  expect(host.textContent).not.toContain("Save changes first");
+  await openEvent("kick");
+  const kick = [...host.querySelectorAll(".moderation-event-row")].find((row) =>
+    row.textContent?.includes("Kicks"),
+  )!;
+  const send = [...kick.querySelectorAll("button")].find(
+    (item) => item.textContent === "Send test",
+  )!;
+  expect(send.disabled).toBe(false);
+  await act(async () => send.click());
+  await act(async () => button("Send one test").click());
+  expect(transport).toHaveBeenCalledWith("/manage/member-events/test", "POST", {
+    event_type: "kick",
+    revision: 4,
+  });
+  expect(transport.mock.calls.filter((call) => call[1] === "PUT")).toHaveLength(
+    0,
+  );
+  expect(dirtyStates.at(-1)).toBe(true);
+});
+it("keeps blocking a test while Log channels has its own unsaved edit", async () => {
+  await openEvent("join");
+  await change(
+    host.querySelector('[aria-label="Joins channel override"]')!,
+    "other",
+  );
+  expect(host.textContent).toContain("Save changes first");
+});
 it("loads an old response that lacks the new keys", async () => {
   const old = structuredClone(fixture) as Partial<SettingsResponse>;
   delete old.invite_names;

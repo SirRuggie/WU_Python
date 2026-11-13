@@ -714,7 +714,10 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         <div>
           <PageEyebrow />
           <h1 ref={editorHeading} tabIndex={-1}>
-            {selected?.label || areaInfo?.title || "Manage your server"}
+            {(selected?.id === directSection?.id && areaInfo?.title) ||
+              selected?.label ||
+              areaInfo?.title ||
+              "Manage your server"}
           </h1>
           <p>
             {document?.description ||

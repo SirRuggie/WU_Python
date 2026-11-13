@@ -13,7 +13,8 @@ import ServerManagement from "./ServerManagement";
 
 const section = {
   id: "band_monitor",
-  label: "Band monitor",
+  // The backend's own label; the page heading uses the area title.
+  label: "BAND monitor",
   description: "Band monitor connection",
   group: "Connections",
   endpoint: "/manage/band_monitor",
