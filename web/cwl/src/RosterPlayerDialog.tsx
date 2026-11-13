@@ -1,4 +1,5 @@
 import type { FillerMarkQueue } from "./fillerMarkQueue";
+import { formatNumber } from "./format";
 import { useFillerQueueVersion } from "./useFillerMarkQueue";
 import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import RosterFillerCheckbox from "./RosterFillerCheckbox";
@@ -66,7 +67,7 @@ const detailsWeightDraft = (account: RosterAccount): Draft =>
     storages: account.weight_storages ?? undefined,
   });
 const fullWeight = (value: number | null) =>
-  value === null ? "Missing weight" : value.toLocaleString();
+  value === null ? "Missing weight" : formatNumber(value);
 export const detailsDate = (value?: string | null) =>
   value && Number.isFinite(Date.parse(value))
     ? new Date(value).toLocaleString(undefined, {

@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import { useState } from "react";
 import { api } from "./api";
 type Entry = {
@@ -65,7 +66,7 @@ export default function CommandActivity({ command }: { command: string }) {
                 : row.status === "failed"
                   ? "Failed"
                   : "Unconfirmed"}{" "}
-              · {new Date(row.at).toLocaleString()}
+              · {formatDateTime(new Date(row.at))}
             </small>
           </article>
         ))}

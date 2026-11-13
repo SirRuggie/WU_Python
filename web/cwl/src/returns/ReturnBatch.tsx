@@ -1,3 +1,4 @@
+import { formatDateTime } from "../format";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import ConfirmDialog from "../ConfirmDialog";
@@ -292,12 +293,12 @@ export default function ReturnBatch({
                     <p key={clan.id}>
                       {clan.clan_name || clan.label}: list cutoff{" "}
                       {clan.return_status?.list_expires_at
-                        ? new Date(
-                            clan.return_status.list_expires_at,
-                          ).toLocaleString()
+                        ? formatDateTime(
+                            new Date(clan.return_status.list_expires_at),
+                          )
                         : "Checked when saved"}
                       {clan.return_status?.starts_at &&
-                        ` · Current window ends ${new Date(clan.return_status.expires_at!).toLocaleString()}`}
+                        ` · Current window ends ${formatDateTime(new Date(clan.return_status.expires_at!))}`}
                     </p>
                   ))}
                 </details>
@@ -323,9 +324,9 @@ export default function ReturnBatch({
             )}
             {action === "save" && (
               <p>
-                Save the list of the members who are now in the home clan, before they leave for CWL.
-                This does not send reminders. Your clan selection is kept for
-                the next step.
+                Save the list of the members who are now in the home clan,
+                before they leave for CWL. This does not send reminders. Your
+                clan selection is kept for the next step.
               </p>
             )}
             {action === "send" && (
@@ -337,9 +338,9 @@ export default function ReturnBatch({
                 .map((clan) => (
                   <p key={clan.id}>
                     {clan.clan_name || clan.label}: Last sent{" "}
-                    {new Date(
-                      clan.return_status!.last_sent_at!,
-                    ).toLocaleString()}
+                    {formatDateTime(
+                      new Date(clan.return_status!.last_sent_at!),
+                    )}
                     .
                   </p>
                 ))}
@@ -352,7 +353,8 @@ export default function ReturnBatch({
             )}
             {action === "clear" && (
               <p>
-                This closes the selected member lists and stops their reminders. The history stays.
+                This closes the selected member lists and stops their reminders.
+                The history stays.
               </p>
             )}
             <button
@@ -386,7 +388,7 @@ export default function ReturnBatch({
           confirmLabel={`${actionLabels[action]} for ${targets.length} ${targets.length === 1 ? "clan" : "clans"}`}
           onCancel={() => setReview(null)}
           onConfirm={() => void submit()}
-          text={`${actionLabels[action]} for ${targets.map((clan) => clan.clan_name || clan.label).join(", ")}?${skipped.length ? ` Skipped: ${skipped.map(({ clan, reason }) => `${clan.clan_name || clan.label}: ${reason}`).join("; ")}` : ""}${action === "schedule" ? ` Start ${new Date(String(review.schedule_start)).toLocaleString()}; stop ${new Date(String(review.schedule_end)).toLocaleString()}; ${returnFrequency(Number(minutes)).toLowerCase()}.` : ""}${action === "start" ? ` Capture current members for ${captureCount} clans without a list; keep all existing lists. Start now and repeat ${returnFrequency(Number(minutes)).toLowerCase()}. This can send Discord messages immediately and replaces any future start; existing earlier stop times remain.` : ""}${action === "frequency" ? ` ${returnFrequency(Number(minutes))}. The existing stop time stays unchanged.` : ""}${action === "send" ? " This sends Discord messages." : ""}${action === "schedule" || action === "start" || action === "resume" ? " Automatic reminders will be enabled." : ""}`}
+          text={`${actionLabels[action]} for ${targets.map((clan) => clan.clan_name || clan.label).join(", ")}?${skipped.length ? ` Skipped: ${skipped.map(({ clan, reason }) => `${clan.clan_name || clan.label}: ${reason}`).join("; ")}` : ""}${action === "schedule" ? ` Start ${formatDateTime(new Date(String(review.schedule_start)))}; stop ${formatDateTime(new Date(String(review.schedule_end)))}; ${returnFrequency(Number(minutes)).toLowerCase()}.` : ""}${action === "start" ? ` Capture current members for ${captureCount} clans without a list; keep all existing lists. Start now and repeat ${returnFrequency(Number(minutes)).toLowerCase()}. This can send Discord messages immediately and replaces any future start; existing earlier stop times remain.` : ""}${action === "frequency" ? ` ${returnFrequency(Number(minutes))}. The existing stop time stays unchanged.` : ""}${action === "send" ? " This sends Discord messages." : ""}${action === "schedule" || action === "start" || action === "resume" ? " Automatic reminders will be enabled." : ""}`}
         />
       )}
     </section>

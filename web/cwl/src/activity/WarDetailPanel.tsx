@@ -1,4 +1,5 @@
 import SectionTabs from "../SectionTabs";
+import { formatDateTime } from "../format";
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError } from '../api'
 import { clearSnapshots } from '../snapshotCache'
@@ -111,7 +112,7 @@ export default function WarDetailPanel({clanTag, type, scope, war, onAccessDenie
     {busy && <p role="status">Loading lineups and attacks…</p>}
     {error && <div className="war-detail-error" role="alert"><p>{error}</p>{errorStatus !== 409 && <button type="button" onClick={() => setRevision(value => value + 1)}>Retry details</button>}{errorStatus === 409 && <button type="button" onClick={onRefreshOverview}>Refresh war list</button>}</div>}
     {data && <>
-      <div className="war-detail-freshness">Checked {Number.isFinite(Date.parse(data.checked_at)) ? new Date(data.checked_at).toLocaleString() : data.checked_at}</div>
+      <div className="war-detail-freshness">Checked {Number.isFinite(Date.parse(data.checked_at)) ? formatDateTime(data.checked_at) : data.checked_at}</div>
       {data.warnings?.length ? <ul className="war-detail-partial" aria-label="War detail notes">{data.warnings.map((warning, index) => <li key={`${index}:${warning}`}>{warning}</li>)}</ul> : null}
       <SectionTabs
         className="war-detail-view section-tabs--flow"

@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef } from "react";
+import { formatNumber } from "./format";
 import JoiningInstructionsCard from "./JoiningInstructionsCard";
 export default function JoiningInstructionsEditor({
   value,
@@ -36,7 +37,7 @@ export default function JoiningInstructionsEditor({
       />
       {value.length >= 1800 && (
         <p aria-live="polite">
-          {value.length.toLocaleString("en-US")} / 2,000 characters
+          {formatNumber(value.length)} / 2,000 characters
         </p>
       )}
       {tooLong && (

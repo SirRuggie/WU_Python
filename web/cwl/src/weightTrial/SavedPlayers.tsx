@@ -1,3 +1,4 @@
+import { formatDate } from "../format";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import WeightRow from "./WeightRow";
@@ -176,7 +177,7 @@ export default function SavedPlayers({
         <div key={row.tag} className="weight-saved-player">
           <p>
             Last saved in {row.last_saved_clan_name || row.last_saved_clan_tag}{" "}
-            · {new Date(row.updated_at).toLocaleDateString()} ·{" "}
+            · {formatDate(new Date(row.updated_at))} ·{" "}
             {row.current_status !== "current"
               ? "Current clan unavailable"
               : row.current_is_family

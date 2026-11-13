@@ -1,5 +1,6 @@
 import { retainFwaMembership } from "./clanWeightPolicy";
 import type { Pool } from "./api";
+import { formatNumber } from "./format";
 export type RosterAccount = {
   roster_filler?: boolean;
   roster_filler_revision?: number;
@@ -130,7 +131,7 @@ export function sortRosterAccounts(
 export function weightText(weight: number | null): string {
   return weight === null
     ? "Missing weight"
-    : `${(weight / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })}k`;
+    : `${formatNumber(weight / 1000, { maximumFractionDigits: 3 })}k`;
 }
 export function weightInputText(weight: number | null): string {
   return weight === null ? "" : String(weight / 1000);

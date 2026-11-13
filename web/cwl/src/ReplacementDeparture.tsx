@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import { comparisonAge } from "./comparisonLocation";
 
 export default function ReplacementDeparture({
@@ -19,12 +20,12 @@ export default function ReplacementDeparture({
       </span>
       {validDate ? (
         <details>
-          <summary title={date.toLocaleString()}>
+          <summary title={formatDateTime(date)}>
             <time dateTime={date.toISOString()}>
               {comparisonAge(seenAt!, Date.now())}
             </time>
           </summary>
-          <small>{date.toLocaleString()}</small>
+          <small>{formatDateTime(date)}</small>
         </details>
       ) : (
         <small>Time unavailable</small>

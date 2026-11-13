@@ -18,7 +18,8 @@ export default function HistoryTime({ at }: { at: string | null }) {
   return (
     <details className="history-time">
       <summary aria-label={`${relative}; show exact time`}>{relative}</summary>
-      <time dateTime={at}>{date.toLocaleString()}</time>
+      <time dateTime={at}>{formatDateTime(date)}</time>
     </details>
   );
 }
+import { formatDateTime } from "../format";

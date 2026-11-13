@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import useConfirmDialog from "./useConfirmDialog";
 import PageEyebrow from "./PageEyebrow";
 import { useEffect, useRef, useState } from "react";
@@ -594,7 +595,9 @@ export default function AccessSettings({
                       </a>
                     )}
                     <p>
-                      CWL includes Main and Lazy. Clan permissions apply to all clans. A person gets the access given to the person and the access given to their roles.
+                      CWL includes Main and Lazy. Clan permissions apply to all
+                      clans. A person gets the access given to the person and
+                      the access given to their roles.
                     </p>
                     {dirty && (
                       <div className="access-change-summary" role="status">
@@ -632,7 +635,8 @@ export default function AccessSettings({
                       onChange={setSelected}
                     />
                     <p className="small">
-                      Only owners can manage access. The controls in this section give only the actions listed here.
+                      Only owners can manage access. The controls in this
+                      section give only the actions listed here.
                     </p>
                     {current && (
                       <button
@@ -726,7 +730,7 @@ export default function AccessSettings({
                 </strong>
                 <br />
                 <small>
-                  {new Date(row.at).toLocaleString()} · Owner{" "}
+                  {formatDateTime(new Date(row.at))} · Owner{" "}
                   <DiscordIdentity
                     userId={row.actor_id}
                     resolvedMember={

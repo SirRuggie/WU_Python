@@ -1,3 +1,4 @@
+import { formatDateTime } from "../format";
 import FilterChips from "../FilterChips";
 import ClanCategories, { clanCategory } from "./ClanCategories";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -368,12 +369,12 @@ export default function ReminderOverview({
                         </span>
                         {row.last_delivery && (
                           <small>
-                            {new Date(row.last_delivery.at).toLocaleString()}
+                            {formatDateTime(new Date(row.last_delivery.at))}
                           </small>
                         )}
                         <small>
                           {row.checked_at
-                            ? `Last checked ${new Date(row.checked_at).toLocaleString()}`
+                            ? `Last checked ${formatDateTime(new Date(row.checked_at))}`
                             : "Not checked yet"}
                         </small>
                       </td>

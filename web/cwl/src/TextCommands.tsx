@@ -1,4 +1,5 @@
 import PageEyebrow from "./PageEyebrow";
+import { formatNumber } from "./format";
 import SectionTabs from "./SectionTabs";
 import { relativeTime } from "./commandTime";
 import ConfirmDialog from "./ConfirmDialog";
@@ -532,13 +533,13 @@ export default function TextCommands({
                   <details key={draft.command + ":reply"}>
                     <summary>
                       Reply · {commandBlocks(draft).length} blocks ·{" "}
-                      {(
+                      {formatNumber(
                         draft.text.length +
-                        commandBlocks(draft).reduce(
-                          (sum, block) => sum + blockTextLength(block),
-                          0,
-                        )
-                      ).toLocaleString()}
+                          commandBlocks(draft).reduce(
+                            (sum, block) => sum + blockTextLength(block),
+                            0,
+                          ),
+                      )}
                       /4,000 characters
                     </summary>
                     <MentionText

@@ -1,3 +1,5 @@
+import { formatDateTime } from './format'
+
 export type Timing = { mode?: string; at?: string; day?: number; hour?: number; minute?: number; month_offset?: number; month_end_offset_days?: number; offset_minutes?: number; after?: string; [key: string]: unknown }
 export type Variant = { title: string; body: string; media_url: string; destination_channel_id: string; role_ids: string[]; enabled: boolean; buttons: { label: string; url: string; emoji?: string }[] }
 export type CampaignMessage = { enabled: boolean; label: string; schedule: Timing; variants: Record<'main' | 'lazy', Variant> }
@@ -33,7 +35,7 @@ export function campaignPatch(original: Campaign, edited: Campaign) {
 export function displayTime(value?: string | null) {
   if (!value) return 'Manual · no scheduled send'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+  return Number.isNaN(date.getTime()) ? value : formatDateTime(date)
 }
 
 /** The next unsent occurrence shown in the reminder overview. */

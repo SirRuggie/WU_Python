@@ -1,4 +1,6 @@
-const totalWeightFormat = new Intl.NumberFormat("en-US", {
+import { NUMBER_LOCALE } from "./format";
+
+const totalWeightFormat = new Intl.NumberFormat(NUMBER_LOCALE, {
   maximumFractionDigits: 1,
 });
 export function formattedRosterWeight(weight: number): string {

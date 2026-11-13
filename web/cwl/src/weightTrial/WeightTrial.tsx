@@ -1,3 +1,4 @@
+import { formatDateTime, formatTime } from "../format";
 import HelpButton from "../HelpButton";
 import CwlPageHeader from "../CwlPageHeader";
 import RosterMenu from "../rosterUi/Menu";
@@ -42,7 +43,7 @@ const clanProgress = (clan: Clan) =>
   `${clan.weighed_count == null || clan.members_count == null
     ? (clan.status === "loading" ? "Loading progress…" : "Progress unavailable")
     : `${clan.weighed_count}/${clan.members_count} weighed`}${clan.status === "stale"
-      ? clan.membership_checked_at ? ` · members checked ${new Date(clan.membership_checked_at).toLocaleString()}` : " · members need checking"
+      ? clan.membership_checked_at ? ` · members checked ${formatDateTime(new Date(clan.membership_checked_at))}` : " · members need checking"
       : ""}`;
 const rememberedClanKey = (viewerId: string) => `wu-clan-weights:last-clan:${viewerId}`;
 const message = (error: unknown) =>
@@ -501,7 +502,7 @@ export default function WeightTrial({
                         (row) => row.current_member !== false,
                       ).length}{" "}
                     current members · {members.length} weight rows · Checked{" "}
-                    {new Date(roster.checked_at).toLocaleTimeString()}
+                    {formatTime(new Date(roster.checked_at))}
                   </small>
                 )}
                 {roster && (
@@ -510,7 +511,7 @@ export default function WeightTrial({
                       <>
                         Weights last saved on{" "}
                         <time dateTime={roster.last_saved.at}>
-                          {new Date(roster.last_saved.at).toLocaleString()}
+                          {formatDateTime(new Date(roster.last_saved.at))}
                         </time>
                         {" by "}
                         <DiscordIdentity

@@ -1,3 +1,4 @@
+import { formatDateTime, formatTime } from "./format";
 import FilterChips from "./FilterChips";
 import SelectionActionBar from "./SelectionActionBar";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
@@ -37,12 +38,12 @@ export function ReturnStatusSummary({ status }: { status: ReturnStatus }) {
         <small>
           Last recorded send:{" "}
           {status.last_sent_at
-            ? new Date(status.last_sent_at).toLocaleString()
+            ? formatDateTime(new Date(status.last_sent_at))
             : "None recorded"}
         </small>
         {status.expires_at && (
           <small>
-            Window ends: {new Date(status.expires_at).toLocaleString()}
+            Window ends: {formatDateTime(new Date(status.expires_at))}
           </small>
         )}
       </article>
@@ -144,7 +145,7 @@ export default function ReturnReminderOverview({
       const result = await api<ManagementDocument>("/manage/return-reminders");
       if (id !== request.current) return;
       setRecords(result.documents || []);
-      setLoadedAt(new Date().toLocaleTimeString());
+      setLoadedAt(formatTime(new Date()));
       setSelected((current) =>
         current.filter((id) => result.documents?.some((row) => row.id === id)),
       );
@@ -207,7 +208,11 @@ export default function ReturnReminderOverview({
     const row = records.find((row) => row.id === id);
     if (row) onOpen(row);
   };
-  const pauseAction: ReturnAction = chosen.length > 0 && chosen.every(row => row.return_status?.state === "paused") ? "resume" : "pause";
+  const pauseAction: ReturnAction =
+    chosen.length > 0 &&
+    chosen.every((row) => row.return_status?.state === "paused")
+      ? "resume"
+      : "pause";
   const actions: ReturnAction[] =
     section === "FWA"
       ? [
@@ -216,13 +221,17 @@ export default function ReturnReminderOverview({
           "send",
           "away",
           "start",
-          ...(pauseAction === "pause" && chosen.some(row => row.return_status?.state === "paused") ? ["resume" as const] : []),
+          ...(pauseAction === "pause" &&
+          chosen.some((row) => row.return_status?.state === "paused")
+            ? ["resume" as const]
+            : []),
           "save",
           "replace",
           "clear",
         ]
       : ["save", "send", "away", "replace", "clear"];
-  const applicable = (action: ReturnAction) => visible.some(row => selected.includes(row.id) && canApply(row, action));
+  const applicable = (action: ReturnAction) =>
+    visible.some((row) => selected.includes(row.id) && canApply(row, action));
   const menuAction = (action: ReturnAction): ActionMenuItem => ({
     id: action,
     label: actionLabels[action],
@@ -230,10 +239,14 @@ export default function ReturnReminderOverview({
     onAction: () => openBatch(action),
     danger: action === "replace" || action === "clear",
   });
-  const primaryIds: ReturnAction[] = section === "FWA" ? ["frequency", pauseAction] : [];
-  const overflow = actions.filter(action => !primaryIds.includes(action) && applicable(action)).map(menuAction);
-  const firstDanger = overflow.findIndex(action => action.danger);
-  if (firstDanger >= 0) overflow[firstDanger] = { ...overflow[firstDanger], separatorBefore: true };
+  const primaryIds: ReturnAction[] =
+    section === "FWA" ? ["frequency", pauseAction] : [];
+  const overflow = actions
+    .filter((action) => !primaryIds.includes(action) && applicable(action))
+    .map(menuAction);
+  const firstDanger = overflow.findIndex((action) => action.danger);
+  if (firstDanger >= 0)
+    overflow[firstDanger] = { ...overflow[firstDanger], separatorBefore: true };
   return (
     <section
       className="return-overview"

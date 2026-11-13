@@ -2,6 +2,7 @@ import PageEyebrow from "../PageEyebrow";
 import { useState } from "react";
 import DashboardIcon from "../DashboardIcon";
 import { clanDeepLink } from "../publication";
+import { formatNumber } from "../format";
 import { gameCalendar, countdown, localTime } from "./calendar";
 import { useClock } from "./useClock";
 import { useClanActivity } from "./useClanActivity";
@@ -212,7 +213,9 @@ export default function EventsWorkspace({
                       </div>
                       <div>
                         <dt>Capital Gold</dt>
-                        <dd>{raid.loot?.toLocaleString() ?? "—"}</dd>
+                        <dd>
+                          {raid.loot == null ? "—" : formatNumber(raid.loot)}
+                        </dd>
                       </div>
                     </dl>
                     <div className="activity-dates">

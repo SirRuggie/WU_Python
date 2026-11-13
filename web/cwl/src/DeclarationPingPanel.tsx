@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import { visibleRefresh } from "./visibleRefresh";
 import DiscordIdentity from "./DiscordIdentity";
 import useDiscordIdentities from "./useDiscordIdentities";
@@ -280,7 +281,7 @@ export default function DeclarationPingPanel({
           {error
             ? "Ping settings unavailable"
             : last
-              ? `${last.test ? "Last no-ping test" : last.state === "done" ? "Last pinged" : `Last delivery ${last.state}`} ${new Date(last.created_at * 1000).toLocaleString()}`
+              ? `${last.test ? "Last no-ping test" : last.state === "done" ? "Last pinged" : `Last delivery ${last.state}`} ${formatDateTime(new Date(last.created_at * 1000))}`
               : state
                 ? "No pings yet"
                 : "Checking last ping…"}
@@ -454,9 +455,8 @@ export default function DeclarationPingPanel({
               resolving={senderProfiles.loading}
               variant="compact"
             />{" "}
-            at {new Date(last.created_at * 1000).toLocaleString()} ·{" "}
-            {last.count} players · {last.posted.length}/{last.chunks} messages
-            confirmed
+            at {formatDateTime(new Date(last.created_at * 1000))} · {last.count}{" "}
+            players · {last.posted.length}/{last.chunks} messages confirmed
             {last.attempting !== null
               ? ` · message ${last.attempting + 1} not confirmed`
               : ""}

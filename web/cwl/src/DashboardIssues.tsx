@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import LoadError from "./LoadError";
 import PageEyebrow from "./PageEyebrow";
 import { useEffect, useState } from "react";
@@ -170,7 +171,7 @@ export default function DashboardIssues() {
                 {issueLabels[item.kind] || "Dashboard issue"}
               </h2>
               <time dateTime={new Date(item.at * 1000).toISOString()}>
-                {new Date(item.at * 1000).toLocaleString()}
+                {formatDateTime(new Date(item.at * 1000))}
               </time>
               <span className="issue-reference">
                 Reference <code>{item.id}</code>

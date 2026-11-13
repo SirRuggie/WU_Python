@@ -1,10 +1,11 @@
+import { formatDate } from "./format";
 import SearchPicker from "./SearchPicker";
 import { maxIgnoredBots, type BotActor } from "./moderationSettingsModel";
 
 function lastSeen(value: string | null) {
   const date = value ? new Date(value) : null;
   return date && !Number.isNaN(date.getTime())
-    ? `Last seen ${date.toLocaleDateString()}`
+    ? `Last seen ${formatDate(date)}`
     : undefined;
 }
 

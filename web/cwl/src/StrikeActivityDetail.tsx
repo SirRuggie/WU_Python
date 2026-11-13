@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import type { ActivityAccount } from "./strikeActivityView";
 import {
   count,
@@ -6,7 +7,7 @@ import {
 } from "./strikeActivityFilters";
 const date = (value?: string | null) =>
   value && Number.isFinite(Date.parse(value))
-    ? new Date(value).toLocaleString()
+    ? formatDateTime(new Date(value))
     : "Unavailable";
 const sourceName = (value?: string | null) =>
   /clashking/i.test(value || "")

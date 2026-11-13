@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import { visibleRefresh } from "./visibleRefresh";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
@@ -174,7 +175,7 @@ export default function ChangeHistory({
               >
                 {entries.map((row) => (
                   <option value={row.id} key={row.id}>
-                    {new Date(row.at).toLocaleString()} ·{" "}
+                    {formatDateTime(new Date(row.at))} ·{" "}
                     {discordIdentityName(row.actor_id, null, row.actor_name) ||
                       "Discord member unavailable"}{" "}
                     ·{" "}
