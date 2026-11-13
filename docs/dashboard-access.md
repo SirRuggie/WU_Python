@@ -46,10 +46,21 @@ permissions.
 
 ## Enforcement and failure handling
 
-Production requests read the shared policy. Role membership is fetched from
-Discord when role grants exist; stale role membership is never used to authorize.
-If Discord role lookup is unavailable, direct grants continue to work, role grants
-fail closed, and the dashboard explains the missing role-based access. Public
+Production requests read the shared policy. The member is fetched from Discord
+when the person has a direct grant or any role grant exists; stale role membership
+is never used to authorize. If Discord role lookup is unavailable, direct grants
+continue to work, role grants fail closed, and the dashboard explains the missing
+role-based access.
+
+A person who is not in the Warriors United server has no staff access (Ruggie,
+2026-11-13). When Discord answers 404 for the member, the request gets no
+dashboard permissions, direct or role. Grants are not deleted: a person who
+rejoins has their access again on the next request. Open pages lose staff pages
+at the next access refresh (focus or the one-minute check). Owners are never
+checked, so they cannot be locked out. A person with no grant causes no member
+lookup unless role grants exist. Legacy SQLite grants (before the first owner
+save) follow the same rule. The `/fwa weight` bridge is unchanged: it runs from a
+slash command inside the server. Public
 login endpoints remain usable with an expired session cookie.
 
 The shared management worker rereads grants and current role membership before
