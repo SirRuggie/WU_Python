@@ -2284,3 +2284,10 @@ summary.target-summary-44 {
   min-height: 44px;
   align-content: center;
 }
+.server-join-notice a {
+  color: var(--wu-accent);
+  font-weight: var(--wu-weight-medium);
+}
+.server-join-notice a:hover {
+  color: var(--wu-accent-hover);
+}
