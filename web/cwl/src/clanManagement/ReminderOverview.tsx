@@ -141,18 +141,18 @@ export default function ReminderOverview({
         </button>
       </div>
       <LoadError
-        message={error}
-        note={data ? "Showing the last loaded overview." : undefined}
-        disabled={loading}
-        onRetry={() => void load()}
-      />
-      <LoadError
-        message={
+        message={[
           choicesError
             ? "Channel names could not be refreshed. Saved channel IDs are shown where needed."
-            : ""
-        }
-        onRetry={onRetryChoices}
+            : "",
+          error,
+        ]}
+        note={data && error ? "Showing the last loaded overview." : undefined}
+        disabled={loading}
+        onRetry={() => {
+          if (error) void load();
+          if (choicesError) onRetryChoices();
+        }}
       />
       {data && (
         <ClanCategories

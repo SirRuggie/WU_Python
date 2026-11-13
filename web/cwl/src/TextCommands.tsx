@@ -504,12 +504,10 @@ export default function TextCommands({
                       Delete the trigger message
                     </label>
                     {scopeError ? (
-                      <p role="alert">
-                        {scopeError}{" "}
-                        <button type="button" onClick={() => void loadScope()}>
-                          Retry choices
-                        </button>
-                      </p>
+                      <LoadError
+                        message={scopeError}
+                        onRetry={() => void loadScope()}
+                      />
                     ) : (
                       <CommandScope
                         draft={draft}
@@ -546,14 +544,10 @@ export default function TextCommands({
                       onMention={rememberMention}
                     />
 
-                    {roleError && (
-                      <p role="status">
-                        {roleError}{" "}
-                        <button type="button" onClick={() => void loadRoles()}>
-                          Retry roles
-                        </button>
-                      </p>
-                    )}
+                    <LoadError
+                      message={roleError}
+                      onRetry={() => void loadRoles()}
+                    />
                     <CommandBuilder
                       roles={roles}
                       commands={rows

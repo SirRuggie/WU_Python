@@ -1,4 +1,5 @@
 import ChannelCombobox from "../ChannelCombobox";
+import LoadError from "../LoadError";
 import DiscordPreview, { type PreviewPart } from "../DiscordMessagePreview";
 import SearchPicker from "../SearchPicker";
 import SectionTabs from "../SectionTabs";
@@ -141,14 +142,12 @@ export default function ReminderMessagesTab({
                 {channelLookup.loading && (
                   <p role="status">Loading channels…</p>
                 )}
-                {channelError && (
-                  <div role="alert">
-                    <p>Channels unavailable: {channelError}</p>
-                    <button type="button" onClick={channelLookup.retry}>
-                      Retry channels
-                    </button>
-                  </div>
-                )}
+                <LoadError
+                  message={
+                    channelError ? `Channels unavailable: ${channelError}` : ""
+                  }
+                  onRetry={channelLookup.retry}
+                />
                 <SearchPicker
                   label="Add a role"
                   value=""
@@ -170,14 +169,14 @@ export default function ReminderMessagesTab({
                   }}
                 />
                 {roleLookup.loading && <p role="status">Loading roles…</p>}
-                {roleLookup.error && (
-                  <div role="alert">
-                    <p>Roles unavailable: {roleLookup.error}</p>
-                    <button type="button" onClick={roleLookup.retry}>
-                      Retry roles
-                    </button>
-                  </div>
-                )}
+                <LoadError
+                  message={
+                    roleLookup.error
+                      ? `Roles unavailable: ${roleLookup.error}`
+                      : ""
+                  }
+                  onRetry={roleLookup.retry}
+                />
                 <div
                   className="reminder-selected-roles"
                   aria-label="Roles to notify"

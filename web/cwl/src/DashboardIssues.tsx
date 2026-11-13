@@ -59,8 +59,7 @@ export default function DashboardIssues() {
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("");
   const [limit, setLimit] = useState(25);
-  const { copied, copy } = useReferenceCopy();
-  const [copiedId, setCopiedId] = useState("");
+  const { copied, copiedRef, copy } = useReferenceCopy();
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -177,14 +176,8 @@ export default function DashboardIssues() {
               </time>
               <span className="issue-reference">
                 Reference <code>{item.id}</code>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCopiedId(item.id);
-                    void copy(item.id);
-                  }}
-                >
-                  {copiedId !== item.id
+                <button type="button" onClick={() => void copy(item.id)}>
+                  {copiedRef !== item.id
                     ? "Copy"
                     : copied === "done"
                       ? "Copied"

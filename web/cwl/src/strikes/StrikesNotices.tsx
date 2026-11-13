@@ -7,26 +7,20 @@ export default function StrikesNotices({
   noticeRef,
   busy,
   showLeaveRefresh,
-  showRecordsRefresh,
   onLeaveRefresh,
-  onRecordsRefresh,
+  onRetry,
 }: {
   error: string;
   notice: string;
   noticeRef: RefObject<HTMLDivElement | null>;
   busy: boolean;
   showLeaveRefresh: boolean;
-  showRecordsRefresh: boolean;
   onLeaveRefresh: () => void;
-  onRecordsRefresh: () => void;
+  onRetry?: () => void;
 }) {
   return (
     <>
-      <LoadError
-        message={error}
-        disabled={busy}
-        onRetry={showRecordsRefresh ? onRecordsRefresh : undefined}
-      />
+      <LoadError message={error} disabled={busy} onRetry={onRetry} />
       {error && showLeaveRefresh && (
         <button disabled={busy} onClick={onLeaveRefresh}>
           Refresh

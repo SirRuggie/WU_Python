@@ -20,6 +20,9 @@
   margin-top: var(--wu-space-1);
   font-size: var(--wu-text-sm);
 }
+.load-error-text .load-error-reference + p {
+  margin-top: var(--wu-space-2);
+}
 .load-error-reference code {
   user-select: all;
 }

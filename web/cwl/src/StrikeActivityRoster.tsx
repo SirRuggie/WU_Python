@@ -1,5 +1,6 @@
 import { Search, X } from "lucide-react";
 import FilterChips from "./FilterChips";
+import LoadError from "./LoadError";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import StrikeActivityRows from "./StrikeActivityRows";
 import FindSlots from "./FindSlots";
@@ -734,12 +735,14 @@ export default function StrikeActivityRoster({
           {copied}
         </div>
       )}
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-          {data.accounts.length ? " Showing the last loaded activity." : ""}
-        </p>
-      )}
+      <LoadError
+        message={error}
+        note={
+          data.accounts.length ? "Showing the last loaded activity." : undefined
+        }
+        disabled={loading}
+        onRetry={() => void read()}
+      />
       {data.history_warning && (
         <p className="notice error">{data.history_warning}</p>
       )}

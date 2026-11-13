@@ -185,6 +185,12 @@ it("a status read failure keeps the list and shows one muted retry line", async 
   await act(async () => partC.reject(new Error("down")));
   expect(names()).toEqual(["Alpha", "Bravo"]);
   expect(host.querySelectorAll(".bonus-step-unavailable")).toHaveLength(1);
+  expect(host.querySelector(".load-error")).toBeNull();
+  expect(
+    [...host.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Try again",
+    ),
+  ).toHaveLength(1);
   expect(host.querySelector(".bonus-step-unavailable")?.textContent).toBe(
     "Status unavailable · Try again",
   );

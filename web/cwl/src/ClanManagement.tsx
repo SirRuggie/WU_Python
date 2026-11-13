@@ -477,7 +477,7 @@ export default function ClanManagement({
           <LoadError message={error} />
           <LoadError
             message={
-              choicesError
+              choicesError && !directoryError
                 ? `Roles and channels could not be loaded: ${choicesError}`
                 : ""
             }
@@ -538,6 +538,7 @@ export default function ClanManagement({
               onRetry={() => {
                 setDirectoryLoading(true);
                 void load();
+                if (choicesError) void loadChoices();
               }}
               onSelect={select}
             />

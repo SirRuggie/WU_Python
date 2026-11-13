@@ -358,7 +358,7 @@ it("renders no health line and keeps the form when the health read fails", async
   await act(async () => root.render(<ModerationSettings />));
   await settle();
   expect(host.querySelector(".moderation-health")).toBeNull();
-  expect(host.querySelector(".moderation-settings-error")).toBeNull();
+  expect(host.querySelector(".load-error")).toBeNull();
   expect(host.textContent).toContain("Main log channel");
 });
 

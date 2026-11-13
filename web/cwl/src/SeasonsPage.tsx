@@ -51,6 +51,7 @@ export default function SeasonsPage({
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [notice, setNotice] = useState("");
   const pending = useRef(false);
+  const createdId = useRef("");
   const [roleBusy, setRoleBusy] = useState(false);
   const [signupBusy, setSignupBusy] = useState(false);
   const [roleDirty, setRoleDirty] = useState(false);
@@ -70,6 +71,7 @@ export default function SeasonsPage({
     setBusy(true);
     setError("");
     setRefreshFailed(false);
+    createdId.current = "";
     const chosen = createLabel;
     setCreateLabel(null);
     try {
@@ -84,6 +86,7 @@ export default function SeasonsPage({
         await onRefresh();
         onSeasonChange(String(result.id));
       } catch {
+        createdId.current = String(result.id);
         setError("Season created. The season list could not refresh.");
         setRefreshFailed(true);
       }
@@ -138,6 +141,11 @@ export default function SeasonsPage({
     setRefreshFailed(false);
     try {
       await onRefresh();
+      if (createdId.current) {
+        const created = createdId.current;
+        createdId.current = "";
+        onSeasonChange(created);
+      }
     } catch {
       setError("The season list could not refresh.");
       setRefreshFailed(true);

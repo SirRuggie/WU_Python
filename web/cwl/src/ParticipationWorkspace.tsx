@@ -714,7 +714,7 @@ export default function ParticipationWorkspace({
               onSent={() => void loadStatus(seasonId)}
             />
           )}
-          {pool === "lazy" && onBonus && statusFailed && (
+          {pool === "lazy" && onBonus && clan === "all" && statusFailed && (
             <LoadError
               message={statusError || "Lazy announcement could not load."}
               onRetry={() => void loadStatus(seasonId)}

@@ -1046,7 +1046,7 @@ export default function BonusWorkspace({
               onSent={() => void loadStatus()}
             />
           )}
-          {pool === "lazy" && statusFailed && (
+          {pool === "lazy" && !selectedClan && statusFailed && (
             <LoadError
               message={statusError || "Lazy announcement could not load."}
               onRetry={() => void loadStatus()}

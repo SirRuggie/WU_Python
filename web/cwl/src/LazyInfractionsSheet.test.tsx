@@ -224,5 +224,11 @@ describe("LazyInfractionsSheet", () => {
     await flush();
     expect(document.body.textContent).toContain("The infractions changed");
     expect(button(/Try again/)).toBeDefined();
+    const posts = () =>
+      api.mock.calls.filter((call) => call[1] === "POST").length;
+    const sent = posts();
+    act(() => button(/Try again/)!.click());
+    await flush();
+    expect(posts()).toBe(sent);
   });
 });

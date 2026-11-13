@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import "./LoadError.css";
 
 /** Splits "… Reference: ABC123" (added by api.ts) off the message. */
@@ -12,7 +12,9 @@ export function splitReference(message: string) {
 /** Copy state for an issue reference; the status is announced outside any alert. */
 export function useReferenceCopy() {
   const [copied, setCopied] = useState<"" | "done" | "failed">("");
+  const [copiedRef, setCopiedRef] = useState("");
   async function copy(reference: string) {
+    setCopiedRef(reference);
     try {
       await navigator.clipboard.writeText(reference);
       setCopied("done");
@@ -20,7 +22,7 @@ export function useReferenceCopy() {
       setCopied("failed");
     }
   }
-  return { copied, copy };
+  return { copied, copiedRef, copy };
 }
 
 /** Visually hidden copy result; render it outside any role="alert". */
@@ -49,7 +51,8 @@ export default function LoadError({
   retryLabel = "Try again",
   className = "",
 }: {
-  message: string;
+  /** Several messages from one failure share one block; each keeps its own Reference. */
+  message: string | string[];
   /** Extra context, e.g. "Showing the last update." */
   note?: string;
   onRetry?: () => void;
@@ -58,9 +61,11 @@ export default function LoadError({
   retryLabel?: string;
   className?: string;
 }) {
-  const { copied, copy } = useReferenceCopy();
-  if (!message) return null;
-  const { text, reference } = splitReference(message);
+  const { copied, copiedRef, copy } = useReferenceCopy();
+  const parts = (Array.isArray(message) ? message : [message])
+    .filter(Boolean)
+    .map(splitReference);
+  if (!parts.length) return null;
   return (
     <>
       <div
@@ -68,21 +73,30 @@ export default function LoadError({
         role="alert"
       >
         <div className="load-error-text">
-          <p>
-            {text}
-            {note ? ` ${note}` : ""}
-          </p>
-          {reference && (
-            <p className="load-error-reference" aria-live="off">
-              Reference: <code>{reference}</code>
-              <button type="button" onClick={() => copy(reference)}>
-                {copied === "done" ? "Copied" : "Copy"}
-              </button>
-              {copied === "failed" && (
-                <span> Could not copy. Select the reference to copy it.</span>
+          {parts.map(({ text, reference }, index) => (
+            <Fragment key={index}>
+              <p>
+                {text}
+                {note && index === parts.length - 1 ? ` ${note}` : ""}
+              </p>
+              {reference && (
+                <p className="load-error-reference" aria-live="off">
+                  Reference: <code>{reference}</code>
+                  <button type="button" onClick={() => copy(reference)}>
+                    {copiedRef === reference && copied === "done"
+                      ? "Copied"
+                      : "Copy"}
+                  </button>
+                  {copiedRef === reference && copied === "failed" && (
+                    <span>
+                      {" "}
+                      Could not copy. Select the reference to copy it.
+                    </span>
+                  )}
+                </p>
               )}
-            </p>
-          )}
+            </Fragment>
+          ))}
         </div>
         {onRetry && (
           <button

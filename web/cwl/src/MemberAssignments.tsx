@@ -124,12 +124,14 @@ export default function MemberAssignments({
           <p>Staff will make your CWL season available here.</p>
         </div>
       )}
-      <LoadError
-        message={
-          data && error ? "Could not refresh. Showing last update." : error
-        }
-        onRetry={() => void load()}
-      />
+      {error && data ? (
+        <div className="member-refresh-note" role="status">
+          Could not refresh. Showing last update.
+          <button onClick={() => void load()}>Try again</button>
+        </div>
+      ) : (
+        <LoadError message={error} onRetry={() => void load()} />
+      )}
       {loading && <p role="status">Loading current assignments…</p>}
       {data && (
         <>

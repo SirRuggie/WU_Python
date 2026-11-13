@@ -98,3 +98,25 @@ it("announces the copy result outside the alert", async () => {
     alert.querySelector(".load-error-reference")!.getAttribute("aria-live"),
   ).toBe("off");
 });
+
+it("keeps every Reference copyable when several messages share one block", async () => {
+  const host = await render(
+    <LoadError
+      message={[
+        "First failed. Reference: A-1",
+        "Second failed. Reference: B-2",
+      ]}
+      onRetry={() => {}}
+    />,
+  );
+  expect([...host.querySelectorAll("code")].map((c) => c.textContent)).toEqual([
+    "A-1",
+    "B-2",
+  ]);
+  expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  expect(
+    [...host.querySelectorAll("button")].filter(
+      (b) => b.textContent === "Try again",
+    ),
+  ).toHaveLength(1);
+});
