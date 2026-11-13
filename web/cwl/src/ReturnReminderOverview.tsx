@@ -1,3 +1,4 @@
+import { formatDateTime, formatTime } from "./format";
 import FilterChips from "./FilterChips";
 import SelectionActionBar from "./SelectionActionBar";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
@@ -37,12 +38,12 @@ export function ReturnStatusSummary({ status }: { status: ReturnStatus }) {
         <small>
           Last recorded send:{" "}
           {status.last_sent_at
-            ? new Date(status.last_sent_at).toLocaleString()
+            ? formatDateTime(new Date(status.last_sent_at))
             : "None recorded"}
         </small>
         {status.expires_at && (
           <small>
-            Window ends: {new Date(status.expires_at).toLocaleString()}
+            Window ends: {formatDateTime(new Date(status.expires_at))}
           </small>
         )}
       </article>
@@ -144,7 +145,7 @@ export default function ReturnReminderOverview({
       const result = await api<ManagementDocument>("/manage/return-reminders");
       if (id !== request.current) return;
       setRecords(result.documents || []);
-      setLoadedAt(new Date().toLocaleTimeString());
+      setLoadedAt(formatTime(new Date()));
       setSelected((current) =>
         current.filter((id) => result.documents?.some((row) => row.id === id)),
       );

@@ -1,3 +1,4 @@
+import { formatDateTime, formatTime } from "./format";
 import SectionTabs from "./SectionTabs";
 import DiscordIdentity from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
@@ -28,7 +29,7 @@ const statusName = (value: string) =>
     value
   ] || value;
 const when = (value: string | null) =>
-  value ? new Date(value).toLocaleString() : "Date unavailable";
+  value ? formatDateTime(new Date(value)) : "Date unavailable";
 export default function TicketConversation({
   ticket,
   onBack,
@@ -204,7 +205,7 @@ export default function TicketConversation({
             ? "Automatic refresh paused."
             : "New messages refresh every 30 seconds."}
         {data
-          ? ` Updated ${new Date(data.checked_at * 1000).toLocaleTimeString()}.`
+          ? ` Updated ${formatTime(new Date(data.checked_at * 1000))}.`
           : ""}
       </p>
       {error && (

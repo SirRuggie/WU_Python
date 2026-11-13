@@ -101,6 +101,10 @@ export default function AddClan({
           <input
             required
             placeholder="#CLANTAG"
+            spellCheck={false}
+            autoComplete="off"
+            autoCapitalize="characters"
+            inputMode="text"
             disabled={disabled || busy}
             value={tag}
             onChange={(e) => {

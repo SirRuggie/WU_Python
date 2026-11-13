@@ -1,4 +1,5 @@
 import { clanCapacity } from "./rosterCapacity";
+import { formatNumber } from "./format";
 import type { ReactNode } from "react";
 import type { RosterAccount, RosterClan } from "./roster";
 import { clanSummary } from "./compare";
@@ -58,7 +59,7 @@ export default function CompareClanHeader({
         {summary.averageTownHall !== null && (
           <small>
             Avg TH{" "}
-            {summary.averageTownHall.toLocaleString(undefined, {
+            {formatNumber(summary.averageTownHall, {
               maximumFractionDigits: 1,
             })}
             {summary.knownTownHalls < summary.count &&

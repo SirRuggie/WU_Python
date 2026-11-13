@@ -4,6 +4,7 @@ import BonusRepAccounts from "./BonusRepAccounts";
 import useConfirmDialog from "./useConfirmDialog";
 import { api, ApiError } from "./api";
 import { exportMonthLabel } from "./exportPreview";
+import { formatCycleMonth } from "./format";
 import { resultTimeText } from "./participationOutcome";
 import {
   validCwlCycle,
@@ -64,13 +65,7 @@ function SettingsSummary({
 
 function captureMonth(value: string | null | undefined) {
   if (!value) return "Month not set";
-  return validCwlCycle(value)
-    ? new Intl.DateTimeFormat("en-GB", {
-        month: "short",
-        year: "numeric",
-        timeZone: "UTC",
-      }).format(new Date(`${value}-01T00:00:00Z`))
-    : value;
+  return validCwlCycle(value) ? formatCycleMonth(value, "short") : value;
 }
 
 function sitOutValue(rows: NonNullable<RaffleData["sit_out_settings"]>) {

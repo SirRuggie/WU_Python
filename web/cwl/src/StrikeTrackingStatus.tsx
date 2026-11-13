@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, ApiError } from "./api";
@@ -15,7 +16,7 @@ import {
 const when = (value?: string | null) => {
   if (!value) return "Not yet";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Unavailable" : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? "Unavailable" : formatDateTime(date);
 };
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Could not load tracking status.";

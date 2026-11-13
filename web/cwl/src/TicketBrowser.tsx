@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import PageEyebrow from "./PageEyebrow";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import TicketConversation from "./TicketConversation";
@@ -20,7 +21,7 @@ const statusName = (value: string) =>
     value
   ] || value;
 const when = (value: string | null) =>
-  value ? new Date(value).toLocaleString() : "Date unavailable";
+  value ? formatDateTime(new Date(value)) : "Date unavailable";
 export default function TicketBrowser() {
   const [status, setStatus] = useState("open"),
     [kind, setKind] = useState("all"),

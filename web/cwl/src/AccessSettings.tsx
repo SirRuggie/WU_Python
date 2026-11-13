@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import useConfirmDialog from "./useConfirmDialog";
 import PageEyebrow from "./PageEyebrow";
 import { useEffect, useRef, useState } from "react";
@@ -726,7 +727,7 @@ export default function AccessSettings({
                 </strong>
                 <br />
                 <small>
-                  {new Date(row.at).toLocaleString()} · Owner{" "}
+                  {formatDateTime(new Date(row.at))} · Owner{" "}
                   <DiscordIdentity
                     userId={row.actor_id}
                     resolvedMember={

@@ -1,3 +1,5 @@
+import { formatDateTime } from './format'
+
 export type ActivitySummary = {
   state?: unknown
   my_accounts?: unknown
@@ -150,5 +152,5 @@ export function ownAttackText(summaryValue: ActivitySummary | null, tag: string)
 export function formatCheckedAt(value: string | null): string | null {
   if (!value) return null
   const date = new Date(value)
-  return Number.isFinite(date.getTime()) ? date.toLocaleString() : null
+  return Number.isFinite(date.getTime()) ? formatDateTime(date) : null
 }

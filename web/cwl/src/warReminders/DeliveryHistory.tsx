@@ -1,3 +1,4 @@
+import { formatDateTime } from "../format";
 import { timeLabel, type ReminderData } from "./types";
 
 const statuses: Record<string, string> = {
@@ -28,7 +29,7 @@ export default function DeliveryHistory({
       </p>
       {data.status?.checked_at && (
         <small>
-          Last checked {new Date(data.status.checked_at).toLocaleString()}
+          Last checked {formatDateTime(new Date(data.status.checked_at))}
         </small>
       )}
       <details className="war-disclosure">
@@ -49,7 +50,7 @@ export default function DeliveryHistory({
                       ? "War started"
                       : `${timeLabel(Number(receipt.event))} reminder`}
                   </strong>
-                  <small>{new Date(receipt.at).toLocaleString()}</small>
+                  <small>{formatDateTime(new Date(receipt.at))}</small>
                 </div>
                 <span>
                   {statuses[receipt.status] || "? Unknown delivery status"}

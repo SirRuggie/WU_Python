@@ -1,3 +1,4 @@
+import { formatTime } from "../format";
 import LoadError from "../LoadError";
 
 export default function ClanActivityStatus({
@@ -20,7 +21,7 @@ export default function ClanActivityStatus({
           {busy
             ? "Checking clan activity…"
             : checkedAt
-              ? `Checked ${new Date(checkedAt).toLocaleTimeString()}`
+              ? `Checked ${formatTime(new Date(checkedAt))}`
               : "Not checked yet"}
           {error && checkedAt ? " · Showing the last update" : ""}
         </span>

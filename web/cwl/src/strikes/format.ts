@@ -1,3 +1,4 @@
+import { formatDate } from "../format";
 import { strikeCountLabel } from "../strikeCountLabel";
 import type { ImportDraft, ImportResult, Tab } from "./types";
 
@@ -11,8 +12,8 @@ export const errorText = (error: unknown) =>
 export const dateText = (value?: string | null) =>
   value
     ? /^\d{4}-\d{2}-\d{2}$/.test(value)
-      ? new Date(`${value}T00:00:00`).toLocaleDateString()
-      : new Date(value).toLocaleDateString()
+      ? formatDate(new Date(`${value}T00:00:00`))
+      : formatDate(new Date(value))
     : "—";
 export const importStorageKey = (userId: string) =>
   `wu:strikes:import:${userId}`;

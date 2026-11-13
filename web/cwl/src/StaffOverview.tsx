@@ -1,3 +1,4 @@
+import { formatDateTime, formatTime } from "./format";
 import LoadError from "./LoadError";
 import PageEyebrow from "./PageEyebrow";
 import { seasonMonthLabel } from "./seasonLabels";
@@ -100,7 +101,7 @@ export default function StaffOverview({
       <div className="staff-overview-status">
         <span>
           {data
-            ? `Updated ${new Date(data.checked_at * 1000).toLocaleTimeString()}`
+            ? `Updated ${formatTime(new Date(data.checked_at * 1000))}`
             : error
               ? "Not updated"
               : "Loading staff overview…"}{" "}
@@ -202,7 +203,7 @@ export default function StaffOverview({
                             {f.status === "uncertain"
                               ? "Unconfirmed — check Discord first"
                               : "Failed"}{" "}
-                            · {new Date(f.at * 1000).toLocaleString()}
+                            · {formatDateTime(new Date(f.at * 1000))}
                           </p>
                         </div>
                         <button onClick={() => onNavigate(f.destination)}>
