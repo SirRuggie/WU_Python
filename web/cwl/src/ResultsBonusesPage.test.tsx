@@ -143,15 +143,16 @@ describe("one page for two addresses", () => {
     expect(text("steps-state")).toBe("pool=lazy&clan=%232YQ&step=draw");
     expect(host.querySelector('[data-testid="list"]')).toBeNull();
   });
-  it("shows one page tab for both halves, next to Exports", async () => {
+  it("has no in-page tab bar and ends with a Next link to Exports", async () => {
     const { host } = await mount("/cwl/results?season=1", [
       ...both,
       "cwl_send",
     ]);
-    const tabs = [...host.querySelectorAll(".cwl-result-nav button")].map(
-      (node) => node.textContent,
-    );
-    expect(tabs).toEqual(["Results & bonuses", "Exports & history"]);
+    expect(host.querySelector('[aria-label="Results sections"]')).toBeNull();
+    const next = host.querySelector<HTMLButtonElement>(".cwl-next-cue");
+    expect(next?.textContent).toBe("Next: Exports & history ›");
+    await act(async () => next!.click());
+    expect(location.pathname).toBe("/cwl/exports");
     const sidebar = [...host.querySelectorAll(".sidebar button")].map((node) =>
       node.textContent?.trim(),
     );

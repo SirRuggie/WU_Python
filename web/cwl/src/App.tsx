@@ -5,7 +5,6 @@ import {
 } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader"
 import DeclarationHelp from "./DeclarationHelp"
-import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
 import "./ChoiceGroupLayout.css";
 import useConfirmDialog from "./useConfirmDialog"
@@ -111,7 +110,6 @@ function App() {
   const [flowPublication, setFlowPublication] = useState<{season: string; draft: PublicationDraft} | null>(null)
   const [rosterReadiness, setRosterReadiness] = useState<ReadinessFilter>('all')
   const [view, setView] = useState<View>(entryTarget.view)
-  const resultsTabs = useChoiceRail<HTMLElement>(view);
   const [rosterBusy, setRosterBusy] = useState(false)
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -1020,32 +1018,6 @@ function App() {
           onFinalize={() => openPublication('review')}
           onAnnounce={() => openPublication('announce')}
         />}
-        {session.can_edit && ['participation','exports'].includes(view) &&
-          (['participation','exports'] as const).filter(target => allowedView(target) === target).length > 1 && (
-          <nav
-            {...resultsTabs.fadeProps}
-            ref={resultsTabs.ref}
-            className="cwl-result-nav section-tabs section-tabs--flow has-horizontal-fades"
-            aria-label="Results sections"
-          >
-            {(
-              [
-                ["participation", "Results & bonuses"],
-                ["exports", "Exports & history"],
-              ] as const
-            )
-              .filter(([target]) => allowedView(target) === target)
-              .map(([target, label]) => (
-                <button
-                  key={target}
-                  aria-current={view === target ? "page" : undefined}
-                  onClick={() => changeView(target)}
-                >
-                  {label}
-                </button>
-              ))}
-          </nav>
-        )}
         {notice && !(view === 'signup' && review) && <div className={`notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}<button aria-label="Dismiss message" onClick={() => setNotice(null)}>×</button></div>}
         {view === 'staff-overview' && <StaffOverview seasons={seasons} onNavigate={(next,season)=>{if(season)setSeasonId(season);changeView(next)}} />}
         {view === 'image-gallery' && <ImageGallery onDirty={setManageDirty} />}
@@ -1266,7 +1238,7 @@ function App() {
             />
           )
         }
-        {view === 'participation' && session.can_edit && <ResultsBonusesWorkspace grants={resultsPageAccess(session.is_owner, session.dashboard_permissions || [])} onAddStrike={strikePermissions(session.dashboard_permissions, session.is_owner).add ? openStrikePlayer : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'participation' && session.can_edit && <><ResultsBonusesWorkspace grants={resultsPageAccess(session.is_owner, session.dashboard_permissions || [])} onAddStrike={strikePermissions(session.dashboard_permissions, session.is_owner).add ? openStrikePlayer : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} /><CwlNextLink label="Exports & history" onNext={allowedView("exports") === "exports" ? () => navigateSidebar("exports") : undefined} /></>}
         {view === "roster" && session.can_edit && (
           <RosterWorkspace
             onPublication={draft => setFlowPublication({season: seasonId, draft})}

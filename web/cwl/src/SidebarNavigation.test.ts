@@ -37,9 +37,9 @@ it("includes Base bank for members and hides staff tools without grants", () => 
   ).toEqual([
     "home",
     "search",
-    "bases",
     "todo",
     "wars",
+    "bases",
     "events",
     "signup",
     "signup",
@@ -74,9 +74,8 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
     ...memberIds,
     "staff-overview",
     "cwl",
-    "moderation",
     "clans",
-    "members",
+    "members-moderation",
     "tickets",
     "bot",
     "admin",
@@ -108,9 +107,9 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
   ]);
   expect(
     sections
-      .find((section) => section.id === "members")
+      .find((section) => section.id === "members-moderation")
       ?.items.map((item) => item.label),
-  ).toEqual(["Members"]);
+  ).toEqual(["Members", "Moderation"]);
   expect(
     sections
       .find((section) => section.id === "tickets")
@@ -120,17 +119,12 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
     sections
       .find((section) => section.id === "bot")
       ?.items.map((item) => item.label),
-  ).toEqual([
-    "Command triggers",
-    "Image gallery",
-    "World clocks",
-    "Integrations",
-  ]);
+  ).toEqual(["Command triggers", "Image gallery", "World clocks"]);
   expect(
     sections
       .find((section) => section.id === "admin")
       ?.items.map((item) => item.label),
-  ).toEqual(["Staff access", "Dashboard issues"]);
+  ).toEqual(["Staff access", "Band monitor", "Dashboard issues"]);
   const destinations = sections.flatMap((section) =>
     section.items.map(
       (item) => `${item.view}:${item.step || item.signupPanel || ""}`,
@@ -142,8 +136,8 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
   expect(html.indexOf("Staff overview")).toBeLessThan(
     html.indexOf("navigation-cwl"),
   );
-  expect(html.indexOf("Moderation")).toBeLessThan(
-    html.indexOf("navigation-clans"),
+  expect(html.indexOf("navigation-clans")).toBeLessThan(
+    html.indexOf("navigation-members-moderation"),
   );
   expect(html).not.toContain("navigation-staff-tools");
   expect(html).not.toContain("cwl-results");
@@ -156,7 +150,7 @@ it("preserves each permission list and hides empty groups or unauthorized direct
     ["strikes", ["strikes"]],
     ["strikes_add", ["strikes"]],
     ["strikes_remove", ["strikes"]],
-    ["member_roles", ["moderation", "members-settings"]],
+    ["member_roles", ["members-settings", "moderation"]],
     ["recruitment", ["applications-settings"]],
     ["tickets", ["tickets", "applications-settings"]],
     ["fwa", ["fwa-settings"]],
@@ -207,7 +201,10 @@ it("uses the approved labels for menu and page naming", () => {
   expect(navigationLabel("publication", "announce")).toBe("Announcements");
   expect(navigationSection("applications-settings")).toBe("Tickets");
   expect(navigationSection("weight-trial")).toBe("Clans");
-  expect(navigationSection("moderation")).toBe("Staff tools");
+  expect(navigationSection("moderation")).toBe("Members & moderation");
+  expect(navigationSection("bases")).toBe("Activity");
+  expect(navigationSection("connections-settings")).toBe("Admin");
+  expect(navigationLabel("connections-settings")).toBe("Band monitor");
 });
 
 it("renders a unique semantic icon beside every member and staff label", () => {
@@ -226,8 +223,8 @@ it("renders a unique semantic icon beside every member and staff label", () => {
   expect(icons).not.toContain("tools");
 });
 
-it("uses the staff label for direct-link breadcrumbs", () => {
+it("uses the staff label for the overview and the group for moderation", () => {
   expect(navigationSection("staff-overview")).toBe("Staff tools");
-  expect(navigationSection("moderation")).toBe("Staff tools");
-  expect(navigationSection("member-activity")).toBe("Staff tools");
+  expect(navigationSection("moderation")).toBe("Members & moderation");
+  expect(navigationSection("member-activity")).toBe("Members & moderation");
 });

@@ -39,7 +39,9 @@ import {
 import "./ModerationSettings.css";
 
 type DialogState =
-  { type: "test"; event: ModerationKind } | { type: "reload" } | null;
+  | { type: "test"; event: ModerationKind }
+  | { type: "reload" }
+  | null;
 
 /** Keep page-only fields (inventory, previews) that a PUT response omits. */
 function mergeSaved(
@@ -61,10 +63,26 @@ function mergeSaved(
   };
 }
 
+/** "channels" = Log channels tab; "invites" = Invites tab. Each saves only its own fields. */
+export type ModerationSettingsView = "channels" | "invites";
+
+/** The draft with only one tab's edits applied on top of the saved settings. */
+function scopedDraft(
+  saved: SettingsDraft,
+  draft: SettingsDraft,
+  view: ModerationSettingsView,
+): SettingsDraft {
+  return view === "invites"
+    ? { ...cloneSettings(saved), invite_names: { ...draft.invite_names } }
+    : { ...cloneSettings(draft), invite_names: { ...saved.invite_names } };
+}
+
 export default function ModerationSettings({
   onDirty,
+  view = "channels",
 }: {
   onDirty?: (dirty: boolean) => void;
+  view?: ModerationSettingsView;
 }) {
   const [saved, setSaved] = useState<SettingsResponse | null>(null);
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
@@ -83,6 +101,17 @@ export default function ModerationSettings({
   const channels = saved?.channels || [];
   const inventoryAvailable = saved?.channels_available !== false;
   const dirty = !!saved && !!draft && changedSettings(saved, draft);
+  // Unsaved edits on this tab only; the other tab's edits wait for its Save.
+  const viewDirty =
+    !!saved &&
+    !!draft &&
+    changedSettings(saved, scopedDraft(saved, draft, view));
+  // Tests post the saved log setup, so only Log channels edits block them.
+  const channelsDirty =
+    !!saved &&
+    !!draft &&
+    changedSettings(saved, scopedDraft(saved, draft, "channels"));
+  const otherTabDirty = dirty && !viewDirty;
 
   useEffect(() => {
     onDirty?.(dirty);
@@ -244,35 +273,51 @@ export default function ModerationSettings({
   };
 
   const invalidDestination =
+    view === "channels" &&
     !!draft &&
     !!saved &&
     (saved.channels_available === false ||
       hasInvalidDestination(draft, saved.channels));
 
   const invalidName =
+    view === "invites" &&
     !!draft &&
     Object.values(draft.invite_names).some((name) => !!inviteNameError(name));
 
   // Switches save at once, so the bar shows only for draft edits, a blocked
   // save, a running Save, or right after Save succeeded.
-  const savedNotice = "Moderation settings saved.";
+  const savedNotice =
+    view === "invites" ? "Invite names saved." : "Log channels saved.";
   const showSaveBar =
-    dirty ||
+    viewDirty ||
     invalidDestination ||
     (busy && !switchSaving) ||
     notice === savedNotice;
 
   const save = async () => {
-    if (!saved || !draft || !dirty || busy || invalidDestination || invalidName)
+    if (
+      !saved ||
+      !draft ||
+      !viewDirty ||
+      busy ||
+      invalidDestination ||
+      invalidName
+    )
       return;
     const id = ++request.current;
     setBusy(true);
     clearFeedback();
     try {
-      const result = await saveModerationSettings(saved, draft);
+      const result = await saveModerationSettings(
+        saved,
+        scopedDraft(saved, draft, view),
+      );
       if (request.current !== id) return;
       setSaved(mergeSaved(result, saved));
-      setDraft(cloneSettings(result));
+      // Keep the other tab's unsaved edits on top of the new saved version.
+      setDraft((current) =>
+        current ? rebaseDraft(saved, current, result) : cloneSettings(result),
+      );
       setNotice(savedNotice);
     } catch (cause) {
       if (request.current !== id) return;
@@ -376,9 +421,14 @@ export default function ModerationSettings({
   };
 
   const discard = () => {
-    if (!saved || busy) return;
-    setDraft(cloneSettings(saved));
-    setInviteReset((value) => value + 1);
+    if (!saved || !draft || busy) return;
+    // Discard only this tab's edits.
+    setDraft(
+      view === "invites"
+        ? { ...draft, invite_names: { ...saved.invite_names } }
+        : { ...cloneSettings(saved), invite_names: { ...draft.invite_names } },
+    );
+    if (view === "invites") setInviteReset((value) => value + 1);
     clearFeedback();
   };
 
@@ -389,7 +439,7 @@ export default function ModerationSettings({
   };
 
   const startTest = (kind: ModerationKind) => {
-    if (!saved || !draft || dirty || busy) return;
+    if (!saved || !draft || channelsDirty || busy) return;
     const destination = effectiveDestination(saved, kind);
     if (
       !saved.events[kind].enabled ||
@@ -402,7 +452,7 @@ export default function ModerationSettings({
   };
 
   const sendTest = async (kind: ModerationKind) => {
-    if (!saved || dirty || busy) return;
+    if (!saved || channelsDirty || busy) return;
     const id = ++request.current;
     const revision = saved.revision;
     setDialog(null);
@@ -443,18 +493,27 @@ export default function ModerationSettings({
     >
       <header className="moderation-settings-heading">
         <div>
-          <h2 id="moderation-settings-title">Log settings</h2>
+          <h2 id="moderation-settings-title">
+            {view === "invites" ? "Invites" : "Log channels"}
+          </h2>
           <p>
-            Select where member and moderation notices appear. History remains
-            available when posting is off.
+            {view === "invites"
+              ? "Name invite links so join logs show where members came from."
+              : "Select where member and moderation notices appear. History remains available when posting is off."}
           </p>
+          {otherTabDirty && (
+            <p className="moderation-other-tab-dirty" role="status">
+              {view === "invites" ? "Log channels" : "Invites"} has unsaved
+              changes.
+            </p>
+          )}
         </div>
         <button type="button" onClick={reloadLatest} disabled={loading || busy}>
           Refresh settings
         </button>
       </header>
 
-      <ModerationHealth />
+      {view === "channels" && <ModerationHealth />}
 
       {error && (
         <div className="moderation-settings-error" role="alert">
@@ -491,96 +550,102 @@ export default function ModerationSettings({
 
       {saved && draft && (
         <>
-          {(saved.warning || !inventoryAvailable) && (
-            <p className="moderation-settings-empty" role="status">
-              {saved.warning ||
-                "Channel inventory is unavailable. Existing destinations are shown when known; reload before saving or testing."}
-            </p>
+          {view === "channels" && (
+            <>
+              {(saved.warning || !inventoryAvailable) && (
+                <p className="moderation-settings-empty" role="status">
+                  {saved.warning ||
+                    "Channel inventory is unavailable. Existing destinations are shown when known; reload before saving or testing."}
+                </p>
+              )}
+              {inventoryAvailable && channels.length === 0 && (
+                <p className="moderation-settings-empty" role="status">
+                  No text channels or forums are listed. Check bot permissions
+                  or look up a forum post ID.
+                </p>
+              )}
+
+              <div className="moderation-main-route">
+                <h3>Main log channel</h3>
+                <p>
+                  Categories and events can use this destination unless you
+                  select an override.
+                </p>
+                <ModerationDestinationPicker
+                  label="Main log channel"
+                  value={draft.main}
+                  channels={channels}
+                  disabled={busy || loading || !inventoryAvailable}
+                  onResolve={(id) => void resolveDestination("main", "", id)}
+                  onChange={updateMain}
+                />
+              </div>
+
+              <div className="moderation-category-list">
+                {moderationRegistry.map((category) => (
+                  <ModerationCategoryCard
+                    key={category.key}
+                    category={category.key as CategoryKind}
+                    label={category.label}
+                    icon={category.icon}
+                    events={eventTypes.filter(
+                      (event) => event.category === category.key,
+                    )}
+                    draft={draft}
+                    saved={saved}
+                    channels={channels}
+                    busy={busy}
+                    inventoryAvailable={inventoryAvailable}
+                    dirty={channelsDirty}
+                    switchFeedback={switchFeedback}
+                    onSwitch={toggleSwitch}
+                    onCategory={updateCategory}
+                    onEvent={updateEvent}
+                    onResolve={(scope, key, id) =>
+                      void resolveDestination(scope, key, id)
+                    }
+                    onTest={startTest}
+                  />
+                ))}
+              </div>
+
+              <section
+                className="moderation-not-logged"
+                aria-labelledby="moderation-not-logged-title"
+              >
+                <h3 id="moderation-not-logged-title">Not logged</h3>
+                <ModerationIgnoredBots
+                  ids={draft.ignored_bot_ids}
+                  actors={saved.bot_actors || []}
+                  disabled={busy}
+                  onChange={updateIgnoredBots}
+                />
+
+                <small className="moderation-ignore-note">
+                  Applies to all message logs.
+                </small>
+                <ModerationIgnoreLists
+                  ignores={draft.ignores}
+                  channels={channels}
+                  roles={saved.roles}
+                  rolesAvailable={
+                    saved.roles_available === true && Array.isArray(saved.roles)
+                  }
+                  disabled={busy}
+                  onChange={updateIgnores}
+                />
+              </section>
+            </>
           )}
-          {inventoryAvailable && channels.length === 0 && (
-            <p className="moderation-settings-empty" role="status">
-              No text channels or forums are listed. Check bot permissions or
-              look up a forum post ID.
-            </p>
+          {view === "invites" && (
+            <ModerationInviteNames
+              names={draft.invite_names}
+              savedNames={saved.invite_names}
+              disabled={busy}
+              resetKey={`${saved.revision}:${inviteReset}`}
+              onName={updateInviteName}
+            />
           )}
-
-          <div className="moderation-main-route">
-            <h3>Main log channel</h3>
-            <p>
-              Categories and events can use this destination unless you select
-              an override.
-            </p>
-            <ModerationDestinationPicker
-              label="Main log channel"
-              value={draft.main}
-              channels={channels}
-              disabled={busy || loading || !inventoryAvailable}
-              onResolve={(id) => void resolveDestination("main", "", id)}
-              onChange={updateMain}
-            />
-          </div>
-
-          <div className="moderation-category-list">
-            {moderationRegistry.map((category) => (
-              <ModerationCategoryCard
-                key={category.key}
-                category={category.key as CategoryKind}
-                label={category.label}
-                icon={category.icon}
-                events={eventTypes.filter(
-                  (event) => event.category === category.key,
-                )}
-                draft={draft}
-                saved={saved}
-                channels={channels}
-                busy={busy}
-                inventoryAvailable={inventoryAvailable}
-                dirty={dirty}
-                switchFeedback={switchFeedback}
-                onSwitch={toggleSwitch}
-                onCategory={updateCategory}
-                onEvent={updateEvent}
-                onResolve={(scope, key, id) =>
-                  void resolveDestination(scope, key, id)
-                }
-                onTest={startTest}
-              />
-            ))}
-          </div>
-
-          <section
-            className="moderation-not-logged"
-            aria-labelledby="moderation-not-logged-title"
-          >
-            <h3 id="moderation-not-logged-title">Not logged</h3>
-            <ModerationIgnoredBots
-              ids={draft.ignored_bot_ids}
-              actors={saved.bot_actors || []}
-              disabled={busy}
-              onChange={updateIgnoredBots}
-            />
-
-            <small className="moderation-ignore-note">
-              Applies to all message logs.
-            </small>
-            <ModerationIgnoreLists
-              ignores={draft.ignores}
-              channels={channels}
-              roles={saved.roles}
-              rolesAvailable={
-                saved.roles_available === true && Array.isArray(saved.roles)
-              }
-              disabled={busy}
-              onChange={updateIgnores}
-            />
-          </section>
-          <ModerationInviteNames
-            names={draft.invite_names}
-            savedNames={saved.invite_names}
-            disabled={busy}
-            resetKey={`${saved.revision}:${inviteReset}`}
-            onName={updateInviteName}
-          />
           {showSaveBar && (
             <div className="moderation-settings-save">
               {invalidDestination && (
@@ -593,17 +658,17 @@ export default function ModerationSettings({
               <p>
                 <span
                   className={
-                    dirty ? "moderation-dirty-dot" : "moderation-clean-dot"
+                    viewDirty ? "moderation-dirty-dot" : "moderation-clean-dot"
                   }
                   aria-hidden="true"
                 />
-                {dirty ? "Unsaved changes" : "All changes saved"}
+                {viewDirty ? "Unsaved changes" : "All changes saved"}
               </p>
               <div>
                 <button
                   type="button"
                   onClick={discard}
-                  disabled={!dirty || busy}
+                  disabled={!viewDirty || busy}
                 >
                   Discard
                 </button>
@@ -611,7 +676,7 @@ export default function ModerationSettings({
                   className="primary"
                   type="button"
                   disabled={
-                    !dirty ||
+                    !viewDirty ||
                     busy ||
                     loading ||
                     invalidDestination ||
@@ -645,7 +710,7 @@ export default function ModerationSettings({
           heading="Send test log"
           text={`Post a test log to ${destinationName(testDestination, saved.channels)}?`}
           confirmLabel="Send one test"
-          disabled={busy || dirty}
+          disabled={busy || channelsDirty}
           onCancel={() => setDialog(null)}
           onConfirm={() => void sendTest(dialog.event)}
         />

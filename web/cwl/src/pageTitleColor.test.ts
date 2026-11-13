@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-// Settings pages (Ticket settings, Integrations, FWA tools, Return reminders)
+// Settings pages (Ticket settings, Band monitor, FWA tools, Return reminders)
 // share .manage-heading. Their titles must keep the gold ink and red mark.
 it("does not override the gold title colour on settings pages", () => {
   const css = readFileSync("src/ServerManagement.css", "utf8");

@@ -7,7 +7,7 @@ vi.mock("./useCompactPreview", () => ({ default: () => false }));
 it.each([
   ["applications-settings", "Ticket settings"],
   ["fwa-settings", "FWA tools"],
-  ["connections-settings", "Integrations"],
+  ["connections-settings", "Band monitor"],
   ["cwl-returns", "Return reminders"],
 ] as const)("uses one focusable page h1 for %s", (area, title) => {
   const html = renderToStaticMarkup(<ServerManagement area={area} />);

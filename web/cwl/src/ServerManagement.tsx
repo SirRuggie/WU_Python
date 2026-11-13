@@ -591,6 +591,20 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     setBusy(false);
     window.requestAnimationFrame(() => indexTrigger.current?.focus());
   };
+  // Band monitor holds one section: open it directly (D7). Once per visit,
+  // so a failed load shows its error instead of retrying in a loop.
+  const areaList = area ? areaSections(sections, area) : sections;
+  const directSection =
+    area === "connections-settings" && areaList.length === 1
+      ? areaList[0]
+      : null;
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (!directSection || selected || busy || error || autoOpened.current)
+      return;
+    autoOpened.current = true;
+    void open(directSection);
+  });
   const checkAction = async (url: string, wait = false) => {
     for (let attempt = 0; attempt < (wait ? 30 : 1); attempt++) {
       const result = await api<{
@@ -700,7 +714,10 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         <div>
           <PageEyebrow />
           <h1 ref={editorHeading} tabIndex={-1}>
-            {selected?.label || areaInfo?.title || "Manage your server"}
+            {(selected?.id === directSection?.id && areaInfo?.title) ||
+              selected?.label ||
+              areaInfo?.title ||
+              "Manage your server"}
           </h1>
           <p>
             {document?.description ||
@@ -711,9 +728,11 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         </div>
         {selected && (
           <div className="manage-categories">
-            <button disabled={busy || !!statusUrl} onClick={home}>
-              ← {areaInfo?.title || "All settings"}
-            </button>
+            {selected.id !== directSection?.id && (
+              <button disabled={busy || !!statusUrl} onClick={home}>
+                ← {areaInfo?.title || "All settings"}
+              </button>
+            )}
             <button
               disabled={busy || !!statusUrl}
               onClick={() => void open(selected, true)}

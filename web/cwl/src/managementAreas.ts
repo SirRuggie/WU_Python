@@ -14,8 +14,8 @@ export const managementAreas = {
     description: "Manage war messages, bases and clan settings.",
   },
   "connections-settings": {
-    title: "Integrations",
-    description: "Check connected services and technical settings.",
+    title: "Band monitor",
+    description: "Check the band monitor connection and its settings.",
   },
   "cwl-returns": {
     title: "Return reminders",

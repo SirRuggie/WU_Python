@@ -6,7 +6,7 @@ import ModerationSettings from "./ModerationSettings";
 import SectionTabs from "./SectionTabs";
 import "./ModerationWorkspace.css";
 
-type Section = "history" | "settings";
+type Section = "history" | "invites" | "channels";
 
 export default function ModerationWorkspace({
   onDirty,
@@ -21,9 +21,11 @@ export default function ModerationWorkspace({
   const [openedSettings, setOpenedSettings] = useState(false);
   const timeline = !!memberId && section === "history";
 
-  const showSettings = () => {
+  // Invites and Log channels share one settings load and draft; each tab
+  // saves only its own fields.
+  const showSettings = (next: "invites" | "channels") => {
     setOpenedSettings(true);
-    setSection("settings");
+    setSection(next);
   };
   const showHistory = () => {
     setSection("history");
@@ -47,11 +49,12 @@ export default function ModerationWorkspace({
         label="Moderation sections"
         items={[
           { id: "history", label: "Activity history" },
-          { id: "settings", label: "Log settings" },
+          { id: "invites", label: "Invites" },
+          { id: "channels", label: "Log channels" },
         ]}
         value={section}
         onChange={(next) =>
-          next === "history" ? showHistory() : showSettings()
+          next === "history" ? showHistory() : showSettings(next)
         }
       />
       <div hidden={section !== "history" || timeline}>
@@ -68,8 +71,11 @@ export default function ModerationWorkspace({
         />
       )}
       {openedSettings && (
-        <div hidden={section !== "settings"}>
-          <ModerationSettings onDirty={onDirty} />
+        <div hidden={section === "history"}>
+          <ModerationSettings
+            onDirty={onDirty}
+            view={section === "invites" ? "invites" : "channels"}
+          />
         </div>
       )}
     </section>

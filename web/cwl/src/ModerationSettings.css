@@ -30,6 +30,11 @@
   line-height: 1.5;
 }
 
+.moderation-settings-heading .moderation-other-tab-dirty {
+  color: var(--wu-accent);
+  font-weight: 600;
+}
+
 .moderation-settings button,
 .moderation-settings select,
 .moderation-settings input:not([type="checkbox"]) {

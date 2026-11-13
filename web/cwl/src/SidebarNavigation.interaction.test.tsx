@@ -39,7 +39,7 @@ const toggle = (id: string) =>
 const children = (id: string) =>
   host.querySelector<HTMLElement>(`#navigation-${id}`)!;
 
-it("shows direct overview and moderation links without a staff fold-out", async () => {
+it("shows a direct overview link and groups Members with Moderation", async () => {
   await render("home");
   expect(host.querySelector(".navigation-staff-label")?.textContent).toBe(
     "Staff tools",
@@ -53,11 +53,19 @@ it("shows direct overview and moderation links without a staff fold-out", async 
   ];
   expect(direct.map((button) => button.textContent)).toEqual([
     "Staff overview",
-    "Moderation",
-    "Members",
   ]);
   await act(async () => direct[0].click());
-  await act(async () => direct[1].click());
+  await act(async () => toggle("members-moderation").click());
+  const grouped = [
+    ...children("members-moderation").querySelectorAll<HTMLButtonElement>(
+      "button",
+    ),
+  ];
+  expect(grouped.map((button) => button.textContent)).toEqual([
+    "Members",
+    "Moderation",
+  ]);
+  await act(async () => grouped[1].click());
   expect(navigate.mock.calls.map(([view]) => view)).toEqual([
     "staff-overview",
     "moderation",
@@ -66,7 +74,14 @@ it("shows direct overview and moderation links without a staff fold-out", async 
 
 it("keeps every owner staff group flat", async () => {
   await render("home");
-  for (const id of ["cwl", "clans", "tickets", "bot", "admin"]) {
+  for (const id of [
+    "cwl",
+    "clans",
+    "members-moderation",
+    "tickets",
+    "bot",
+    "admin",
+  ]) {
     const group = children(id);
     expect(
       group.querySelector(".navigation-children, .strikes-subnav"),
@@ -122,6 +137,7 @@ it("remembers new groups and drops obsolete v3 keys safely", async () => {
     "bot",
     "clans",
     "cwl",
+    "members-moderation",
     "my-dashboard",
   ]);
   await act(async () => root.render(<div />));
