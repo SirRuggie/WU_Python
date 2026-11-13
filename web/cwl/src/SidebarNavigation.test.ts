@@ -119,11 +119,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
     sections
       .find((section) => section.id === "bot")
       ?.items.map((item) => item.label),
-  ).toEqual([
-    "Command triggers",
-    "Image gallery",
-    "World clocks",
-  ]);
+  ).toEqual(["Command triggers", "Image gallery", "World clocks"]);
   expect(
     sections
       .find((section) => section.id === "admin")

@@ -250,13 +250,6 @@ div.shell {
   display: none;
 }
 
-.cwl-result-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--wu-space-2);
-  margin-bottom: var(--wu-space-4);
-}
-
 @media (max-width: 900px) {
   div.shell {
     grid-template-columns: minmax(0, 1fr);

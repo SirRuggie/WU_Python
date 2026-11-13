@@ -5,8 +5,7 @@
     .workflow-tabs,
     .clan-tabs,
     .cwl-pool-tabs,
-    .roster-workflow-nav,
-    .cwl-result-nav
+    .roster-workflow-nav
   ) {
   display: flex;
   flex-wrap: wrap;
@@ -24,8 +23,7 @@
     .workflow-tabs,
     .clan-tabs,
     .cwl-pool-tabs,
-    .roster-workflow-nav,
-    .cwl-result-nav
+    .roster-workflow-nav
   )
   > button {
   min-height: 44px;
@@ -47,8 +45,7 @@
     .workflow-tabs,
     .clan-tabs,
     .cwl-pool-tabs,
-    .roster-workflow-nav,
-    .cwl-result-nav
+    .roster-workflow-nav
   )
   > button:where(
     :not(.welcome-screen .primary):not(.roster-workspace *):not(
@@ -65,8 +62,7 @@
     .workflow-tabs,
     .clan-tabs,
     .cwl-pool-tabs,
-    .roster-workflow-nav,
-    .cwl-result-nav
+    .roster-workflow-nav
   )
   > button:is(
     .active,
@@ -86,8 +82,7 @@
     .workflow-tabs,
     .clan-tabs,
     .cwl-pool-tabs,
-    .roster-workflow-nav,
-    .cwl-result-nav
+    .roster-workflow-nav
   )
   > button:focus-visible {
   outline: 2px solid var(--wu-focus);
@@ -116,8 +111,7 @@
       .workflow-tabs,
       .clan-tabs,
       .cwl-pool-tabs,
-      .roster-workflow-nav,
-      .cwl-result-nav
+      .roster-workflow-nav
     )
     > button {
     padding: 10px 12px;
@@ -128,8 +122,7 @@
       .workflow-tabs,
       .clan-tabs,
       .cwl-pool-tabs,
-      .roster-workflow-nav,
-      .cwl-result-nav
+      .roster-workflow-nav
     )
     > button:where(
       :not(.welcome-screen .primary):not(.roster-workspace *):not(

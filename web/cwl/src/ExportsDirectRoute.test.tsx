@@ -84,9 +84,7 @@ it.each([
           (b) => b.textContent?.trim() === "Exports & history",
         ),
       ).toBe(true);
-      expect(host.querySelector(".cwl-result-nav")?.textContent).toContain(
-        "Exports & history",
-      );
+      expect(host.querySelector('[aria-label="Results sections"]')).toBeNull();
     } finally {
       await act(async () => root.unmount());
       host.remove();
