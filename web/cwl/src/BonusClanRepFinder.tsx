@@ -14,6 +14,8 @@ type LinkedAccount = { tag: string; name: string; town_hall: number | null };
 type Props = {
   seasonId: string;
   listed: Set<string>;
+  /** Discord members who already have an FWA Rep account (1 per member). */
+  listedUsers: Set<string>;
   noteMax: number;
   disabled: boolean;
   onDirty: (dirty: boolean) => void;
@@ -29,6 +31,7 @@ const errorText = (cause: unknown, fallback: string) =>
 export default function BonusClanRepFinder({
   seasonId,
   listed,
+  listedUsers,
   noteMax,
   disabled,
   onDirty,
@@ -196,6 +199,10 @@ export default function BonusClanRepFinder({
                   </div>
                   {listed.has(account.tag) ? (
                     <span className="rep-finder-listed">x2 · Listed</span>
+                  ) : listedUsers.has(userId) ? (
+                    <span className="rep-finder-taken">
+                      Member already has an FWA Rep account
+                    </span>
                   ) : (
                     <button
                       type="button"

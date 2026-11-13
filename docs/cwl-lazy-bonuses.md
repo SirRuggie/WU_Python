@@ -84,6 +84,19 @@ the actor and before/after values. A note edit does not change odds, so it does
 not make a saved draw stale. The list started empty at release; no data was
 copied from the role.
 
+1 per member and no sit-out (prompt 237, 2026-11-13): each Discord member can
+have only 1 FWA Rep account. Adding a second tag for the same linked owner is
+refused (409 "This member already has an FWA Rep account. Remove it first.");
+an unlinked account counts alone. Rows added before this rule are kept: a
+member with 2+ listed accounts shows "Keep 1 account" in Settings, and every
+listed row keeps x2 and the exemption until staff remove the extras. A Lazy
+account on the list at evaluation time does not sit out after a win
+(`sit_out_exempt`, chip "FWA Rep · no sit-out"); removing it from the list
+restores the normal sit-out from its last win. Infractions, the participation
+rule, did-not-join and one bonus per account each month still apply. A list
+change between draw and approve fails approval (`three_cycle_cooldown` and
+`is_representative` are compared).
+
 "Find Clan Rep (x2 odds)" (2026-11-12) helps staff find accounts: it lists
 Discord members with the FWA Clan Rep role (`769130325460254740`, the same role
 as the FWA war messages) through a read-only

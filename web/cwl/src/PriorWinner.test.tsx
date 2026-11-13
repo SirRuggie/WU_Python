@@ -24,6 +24,15 @@ it("renders the latest win month and eligible-again year in Details", async () =
   );
   expect(host.querySelector(".roster-ui-chip")).toBeTruthy();
 });
+it("shows FWA Rep · no sit-out for a listed rep instead of Prior winner (237)", async () => {
+  const rep = { ...account, sit_out_excluded: false, sit_out_exempt: true };
+  await act(async () => root.render(<PriorWinner account={rep} details />));
+  expect(host.textContent).toBe("FWA Rep · no sit-out");
+  await act(async () =>
+    root.render(<PriorWinner account={{ ...rep, pool: "main" }} details />),
+  );
+  expect(host.textContent).toBe("");
+});
 it("suppresses a pill after eligibility is overridden or the sit-out expires; Main never gets one", async () => {
   for (const row of [
     { ...account, sit_out_excluded: false },
