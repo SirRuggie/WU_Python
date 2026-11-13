@@ -1,3 +1,4 @@
+import PageEyebrow from "../PageEyebrow";
 import { useState } from 'react'
 import DashboardIcon from '../DashboardIcon'
 import { clanDeepLink } from '../publication'
@@ -16,7 +17,7 @@ export default function EventsWorkspace({canEdit,onWars}: {canEdit:boolean; onWa
   const zone = utc ? 'UTC' : undefined
   const zoneName = utc ? 'UTC' : Intl.DateTimeFormat().resolvedOptions().timeZone
   return <section className="clan-activity-workspace events-workspace">
-    <header className="page-head"><div><h1>Events</h1><p>What’s live and what’s next. Times shown in {zoneName}.</p></div><label className="activity-timezone"><input type="checkbox" checked={utc} onChange={event=>setUtc(event.target.checked)}/>Show UTC</label></header>
+    <header className="page-head"><div><PageEyebrow /><h1>Events</h1><p>What’s live and what’s next. Times shown in {zoneName}.</p></div><label className="activity-timezone"><input type="checkbox" checked={utc} onChange={event=>setUtc(event.target.checked)}/>Show UTC</label></header>
     <div className="activity-card-grid">{gameCalendar(now).map(event=>{
       const live = now >= event.start && now < event.end
       const signup = event.id === 'cwl'

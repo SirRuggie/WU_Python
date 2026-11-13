@@ -1,3 +1,4 @@
+import PageEyebrow from "./PageEyebrow";
 import FilterChips from "./FilterChips";
 import { loadAccountDisplay } from "./accountDisplay";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -171,6 +172,7 @@ export default function DashboardSearch({
     <section className="dashboard-search-workspace">
       <header className="page-head">
         <div>
+          <PageEyebrow />
           <h1>Search</h1>
           <p>
             Find your linked players and their clans

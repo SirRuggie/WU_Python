@@ -1,3 +1,4 @@
+import LoadError from "../LoadError";
 import ClanCategories, { clanCategory } from "./ClanCategories";
 import { useEffect, useRef } from "react";
 import "../navList.css";
@@ -88,9 +89,7 @@ export default function ClanDirectory<T extends Row>({
         {loading ? (
           <p role="status">Loading clans…</p>
         ) : error ? (
-          <p role="alert">
-            {error} <button onClick={onRetry}>Retry</button>
-          </p>
+          <LoadError message={error} onRetry={onRetry} />
         ) : (
           <>
             <p className="small" role="status">

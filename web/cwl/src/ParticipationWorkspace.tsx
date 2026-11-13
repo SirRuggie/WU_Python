@@ -522,12 +522,8 @@ export default function ParticipationWorkspace({
       {confirmation}
       <CwlPageHeader
         className="participation-page-head"
-        title={
-          <>
-            <h1>Results &amp; bonuses</h1>
-            <BonusHelpPanel />
-          </>
-        }
+        title={<h1>Results &amp; bonuses</h1>}
+        help={<BonusHelpPanel />}
       >
         <label className="participation-season">
           Season

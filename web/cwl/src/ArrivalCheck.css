@@ -225,15 +225,6 @@
   background: var(--roster-surface);
   color: var(--roster-text-muted);
 }
-.arrival-check .declaration-info {
-  min-width: 44px;
-  min-height: 44px;
-  margin: calc(-1 * var(--wu-space-4)) 0;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  color: var(--roster-text-muted);
-}
 .arrival-check .declaration-refresh {
   flex-wrap: nowrap;
   justify-content: space-between;

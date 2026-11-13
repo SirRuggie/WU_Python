@@ -1,3 +1,4 @@
+import PageEyebrow from "./PageEyebrow";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import TicketConversation from "./TicketConversation";
 import { useEffect, useRef, useState } from "react";
@@ -118,7 +119,7 @@ export default function TicketBrowser() {
     <section className="ticket-browser">
       <div className="page-head">
         <div>
-          <p className="eyebrow">Staff · Read only</p>
+          <PageEyebrow />
           <h1 ref={heading} tabIndex={-1}>
             Tickets
           </h1>

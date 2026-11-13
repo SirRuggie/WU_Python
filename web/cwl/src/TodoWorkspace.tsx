@@ -1,3 +1,4 @@
+import PageEyebrow from "./PageEyebrow";
 import SectionTabs from "./SectionTabs";
 import "./rosterUi/tokens.css";
 import { useJourneyState, useJourneyPosition } from "./journeyState";
@@ -245,7 +246,10 @@ export default function TodoWorkspace({
   return (
     <div className="todo-workspace roster-ui">
       <div className="page-head todo-head">
-        <h1>Tasks</h1>
+        <div>
+          <PageEyebrow />
+          <h1>Tasks</h1>
+        </div>
         <button
           className="todo-check"
           aria-busy={loading || undefined}

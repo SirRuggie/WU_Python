@@ -78,7 +78,7 @@ it.each(["back", "close", "escape"])(
           );
       });
       expect(document.querySelector("dialog")).toBeNull();
-      expect(host.querySelector("button")?.textContent).toBe(
+      expect(host.querySelector("button")?.getAttribute("aria-label")).toBe(
         "How strikes work",
       );
     } finally {

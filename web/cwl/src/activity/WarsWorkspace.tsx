@@ -1,3 +1,4 @@
+import PageEyebrow from "../PageEyebrow";
 import SectionTabs from "../SectionTabs";
 import { useJourneyState, useJourneyPosition } from "../journeyState";
 import { useState } from "react";
@@ -301,6 +302,7 @@ export default function WarsWorkspace({
     <section className="clan-activity-workspace wars-workspace">
       <header className="page-head">
         <div>
+          <PageEyebrow />
           <h1>Wars</h1>
           <p>
             {scope === "mine"

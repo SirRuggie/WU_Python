@@ -15,7 +15,7 @@ describe('Clan directory recovery and filtering', () => {
   it('offers recovery rather than reporting failed data as empty', () => {
     const html = renderToStaticMarkup(<ClanDirectory {...defaults} clans={[]} error="Connection lost" />)
     expect(html).toContain('Connection lost')
-    expect(html).toContain('Retry')
+    expect(html).toContain('Try again')
     expect(html).not.toContain('No family clans')
   })
   it('distinguishes an empty family from filters without matches', () => {

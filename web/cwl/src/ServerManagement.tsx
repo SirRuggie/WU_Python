@@ -1,3 +1,5 @@
+import LoadError from "./LoadError";
+import PageEyebrow from "./PageEyebrow";
 import useConfirmDialog from "./useConfirmDialog";
 import {
   registerActionPanel,
@@ -696,13 +698,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       {dialog}
       <header className="manage-heading">
         <div>
-          <p className="eyebrow">
-            {area === "cwl-returns"
-              ? "CWL"
-              : area === "connections-settings"
-                ? "SETTINGS"
-                : "SERVER TOOLS"}
-          </p>
+          <PageEyebrow />
           <h1 ref={editorHeading} tabIndex={-1}>
             {selected?.label || areaInfo?.title || "Manage your server"}
           </h1>
@@ -727,25 +723,22 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
           </div>
         )}
       </header>
-      {error && (
-        <div className="manage-error" role="alert">
-          <p>{error}</p>
-          <button
-            disabled={busy || !!statusUrl}
-            onClick={() =>
-              selected
-                ? void open(selected)
-                : setCatalogAttempt((value) => value + 1)
-            }
-          >
-            {conflict
-              ? "Discard edits and load latest"
-              : document
-                ? "Refresh saved settings"
-                : "Retry loading"}
-          </button>
-        </div>
-      )}
+      <LoadError
+        message={error}
+        disabled={busy || !!statusUrl}
+        onRetry={() =>
+          selected
+            ? void open(selected)
+            : setCatalogAttempt((value) => value + 1)
+        }
+        retryLabel={
+          conflict
+            ? "Discard edits and load latest"
+            : document
+              ? "Refresh saved settings"
+              : "Try again"
+        }
+      />
       {notice && (
         <p className="manage-notice" role="status">
           {notice}

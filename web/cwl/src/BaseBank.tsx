@@ -1,3 +1,5 @@
+import LoadError, { splitReference } from "./LoadError";
+import PageEyebrow from "./PageEyebrow";
 import FilterChips from "./FilterChips";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
@@ -63,7 +65,14 @@ export default function BaseBank({
         if (!active || controller.signal.aborted || accessLost.current) return;
         if (err instanceof ApiError && [401, 403].includes(err.status))
           denied();
-        else setError("Could not load Base bank. Try again.");
+        else {
+          const { reference } = splitReference(
+            err instanceof Error ? err.message : "",
+          );
+          setError(
+            `Could not load Base bank.${reference ? ` Reference: ${reference}` : ""}`,
+          );
+        }
       });
     return () => {
       active = false;
@@ -90,13 +99,12 @@ export default function BaseBank({
   return (
     <section className="base-bank" aria-labelledby="base-bank-heading">
       <header>
+        <PageEyebrow />
         <h1 id="base-bank-heading">Base bank</h1>
         <p>Select your Town Hall. Then copy a FWA base.</p>
       </header>
       {error ? (
-        <p role="alert">
-          {error} <button onClick={() => setRetry((n) => n + 1)}>Retry</button>
-        </p>
+        <LoadError message={error} onRetry={() => setRetry((n) => n + 1)} />
       ) : !bases ? (
         <p role="status">Loading bases…</p>
       ) : !bases.length ? (
@@ -107,7 +115,11 @@ export default function BaseBank({
             className="base-bank-levels filter-chips--flow"
             label="Town Hall level"
             options={levels.map((th) => {
-              return { value: th, label: <>{th}</>, ariaLabel: `Town Hall ${th}` };
+              return {
+                value: th,
+                label: <>{th}</>,
+                ariaLabel: `Town Hall ${th}`,
+              };
             })}
             value={selected}
             onChange={(th) => {

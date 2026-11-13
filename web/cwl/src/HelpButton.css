@@ -1,0 +1,36 @@
+.page-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--roster-radius-control, 10px);
+  background: transparent;
+  color: var(--wu-text-muted);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .page-help-trigger:hover {
+    background: var(--wu-surface-raised);
+    color: var(--wu-text);
+  }
+}
+.page-help-trigger:focus-visible {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: 2px;
+}
+.page-help-panel .action-panel-content > h3 {
+  margin: var(--wu-space-4) 0 var(--wu-space-2);
+  font-size: var(--wu-text-md);
+}
+.page-help-panel .action-panel-content > h3:first-child {
+  margin-top: 0;
+}
+.page-help-panel .action-panel-content > p {
+  margin: 0 0 var(--wu-space-2);
+  color: var(--wu-text-muted);
+  overflow-wrap: anywhere;
+}

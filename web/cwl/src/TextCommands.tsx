@@ -1,3 +1,4 @@
+import PageEyebrow from "./PageEyebrow";
 import SectionTabs from "./SectionTabs";
 import { relativeTime } from "./commandTime";
 import ConfirmDialog from "./ConfirmDialog";
@@ -294,7 +295,7 @@ export default function TextCommands({
       )}
       <div className="page-head">
         <div>
-          <p className="eyebrow">SERVER TOOLS</p>
+          <PageEyebrow />
           <h1>Command triggers</h1>
           <p>
             Type a command like <strong>!rules</strong> in Discord. The bot

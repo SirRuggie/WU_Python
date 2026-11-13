@@ -61,7 +61,6 @@ export default function ArrivalCheck({
   const [undoError, setUndoError] = useState("");
   const [explicitRefreshing, setExplicitRefreshing] = useState(false);
   const [pool, setPool] = useCwlPool();
-  const [helpOpen, setHelpOpen] = useState(false);
   const { confirm, dialog: confirmation } = useConfirmDialog(seasonId);
   const [pingAttention, setPingAttention] = useState<PingAttention | null>(
     null,
@@ -487,15 +486,6 @@ export default function ArrivalCheck({
                 ` · ${extras.data.clans.reduce((n, c) => n + (c.unpublished_count || 0), 0)} ${failedExtras ? "confirmed " : ""}not published yet`}
               {failedExtras > 0 &&
                 ` · ${failedExtras} ${failedExtras === 1 ? "clan" : "clans"} could not be checked`}
-              <button
-                type="button"
-                className="declaration-info"
-                aria-label="About readiness"
-                aria-expanded={helpOpen}
-                onClick={() => setHelpOpen(!helpOpen)}
-              >
-                ⓘ
-              </button>
               {" · "}
               <span className="declaration-last-checked">
                 {checkedAt
@@ -514,12 +504,6 @@ export default function ArrivalCheck({
                 />
                 Clans with players who are not on the roster
               </label>
-            )}
-            {helpOpen && (
-              <p className="declaration-help">
-                Ready = clan is full, checked in the last 5 minutes. This check
-                works only for Lazy hosting clans.
-              </p>
             )}
             {data.arrival.publication_outdated && (
               <p className="declaration-help">

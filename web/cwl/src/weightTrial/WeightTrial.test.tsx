@@ -165,9 +165,10 @@ it("opens with progress list, collapsed help and no member fanout", async () => 
   await openClanPicker();
   expect(document.body.textContent).toContain("2/4 weighed");
   expect(document.body.textContent).toContain("50/50 weighed");
-  expect(host.querySelector(".weight-trial-note")?.hasAttribute("open")).toBe(
-    false,
-  );
+  expect(host.textContent).not.toContain("share the same saved weight");
+  expect(
+    host.querySelector('[aria-label="How weights are used"]'),
+  ).not.toBeNull();
   expect(host.textContent).not.toContain("Refresh members");
   expect(
     vi.mocked(api).mock.calls.filter(([path]) => path.includes("/clans/")),

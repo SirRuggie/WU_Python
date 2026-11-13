@@ -1,3 +1,4 @@
+import LoadError from "./LoadError";
 import useConfirmDialog from "./useConfirmDialog";
 import {
   registerActionPanel,
@@ -337,6 +338,15 @@ export default function ImageCollection({
         value.toLowerCase().includes(query.trim().toLowerCase()),
       ),
   );
+  async function refreshGallery() {
+    if (!(await guard())) return;
+    setEditing(null);
+    setLink("");
+    setFiles([]);
+    setError("");
+    setNotice("");
+    void load();
+  }
   const pages = Math.max(1, Math.ceil(matches.length / 24)),
     current = Math.min(page, pages - 1);
   return (
@@ -359,24 +369,17 @@ export default function ImageCollection({
         </button>
         <button
           disabled={busy || loading}
-          onClick={async () => {
-            if (!(await guard())) return;
-            setEditing(null);
-            setLink("");
-            setFiles([]);
-            setError("");
-            setNotice("");
-            void load();
-          }}
+          onClick={() => void refreshGallery()}
         >
           Refresh gallery
         </button>
       </div>
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-        </p>
-      )}
+      <LoadError
+        message={error}
+        onRetry={() => void refreshGallery()}
+        busy={loading}
+        disabled={busy}
+      />
       {notice && <p role="status">{notice}</p>}
       {adding && (
         <section className="gallery-upload" aria-label="Add images">
