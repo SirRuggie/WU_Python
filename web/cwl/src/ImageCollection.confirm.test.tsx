@@ -157,19 +157,46 @@ it("unmount cancels a pending request without writing or refreshing", async () =
   expect(document.querySelector(".confirm-dialog")).toBeNull();
   expect(transport).toHaveBeenCalledTimes(1);
 });
+async function closeLibrary() {
+  await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>(
+        ".command-image-library .action-panel-close",
+      )!
+      .click(),
+  );
+}
 it("image library close awaits the guard and Cancel leaves it open", async () => {
   const close = vi.fn();
   await act(async () =>
     root.render(<CommandImageLibrary onClose={close} onChoose={vi.fn()} />),
   );
   await dirty();
-  await click("Close ×");
+  await closeLibrary();
   expect(close).not.toHaveBeenCalled();
   await click("Cancel");
   expect(close).not.toHaveBeenCalled();
-  await click("Close ×");
+  await closeLibrary();
   await click("Discard changes");
   expect(close).toHaveBeenCalledTimes(1);
+});
+
+it("Back on a dirty image library asks first and keeps the panel's Back entry", async () => {
+  const close = vi.fn();
+  await act(async () =>
+    root.render(<CommandImageLibrary onClose={close} onChoose={vi.fn()} />),
+  );
+  await dirty();
+  const push = vi.spyOn(history, "pushState");
+  history.replaceState({}, "");
+  await act(async () =>
+    window.dispatchEvent(new PopStateEvent("popstate", { state: {} })),
+  );
+  expect(document.querySelector(".confirm-dialog")).not.toBeNull();
+  expect(close).not.toHaveBeenCalled();
+  expect(push).toHaveBeenCalled();
+  await click("Cancel");
+  expect(close).not.toHaveBeenCalled();
 });
 
 it("closing the tab keeps the native beforeunload guard", async () => {

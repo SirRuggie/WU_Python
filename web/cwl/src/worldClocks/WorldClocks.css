@@ -471,49 +471,10 @@
 
 /* Add clock sheet */
 
-.world-clock-sheet {
-  box-sizing: border-box;
-  width: min(560px, calc(100vw - 32px));
-  max-height: calc(100dvh - 48px);
-  padding: 0;
-  border: 1px solid var(--wu-border);
-  border-radius: 20px;
-  background: var(--wu-surface);
-  color: var(--wu-text);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 30%);
-}
-
-.world-clock-sheet[open] {
-  display: flex;
-  flex-direction: column;
-}
-
-.world-clock-sheet::backdrop {
-  background: rgb(0 0 0 / 60%);
-}
-
 .world-clock-sheet-body {
   display: grid;
   gap: var(--wu-space-4);
-  min-height: 0;
-  padding: var(--wu-space-4);
-  overflow-y: auto;
-}
-
-.world-clock-sheet h2 {
-  margin: 0;
-  color: var(--wu-accent);
-  font-size: var(--wu-text-lg);
-}
-
-.world-clock-sheet-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--wu-space-2);
-  padding: var(--wu-space-3) var(--wu-space-4)
-    calc(var(--wu-space-3) + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--wu-border-subtle);
-  background: var(--wu-surface);
+  min-width: 0;
 }
 
 .world-clock-mode {
@@ -576,14 +537,6 @@
 
   .world-clock-switch-text {
     display: none;
-  }
-
-  .world-clock-sheet {
-    width: 100vw;
-    max-width: 100vw;
-    max-height: 92dvh;
-    margin: auto 0 0;
-    border-radius: 20px 20px 0 0;
   }
 
   .world-clock-chips {

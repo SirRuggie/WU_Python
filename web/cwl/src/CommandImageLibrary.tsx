@@ -1,6 +1,6 @@
 import PageEyebrow from "./PageEyebrow";
-import { useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useRef, useState } from "react";
+import ActionPanel from "./ActionPanel";
 import ImageCollection from "./ImageCollection";
 export function ImageGallery({
   onDirty,
@@ -25,32 +25,28 @@ export default function CommandImageLibrary({
   onChoose: (url: string) => void;
   onDirty?: (value: boolean) => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null),
-    guard = useRef<() => Promise<boolean>>(async () => true);
-  useEffect(() => {
-    const element = dialog.current;
-    element?.showModal();
-    return () => element?.close();
-  }, []);
-  async function close() {
-    if (await guard.current()) onClose();
+  const guard = useRef<() => Promise<boolean>>(async () => true);
+  // Focus returns here when the picker closes.
+  const [opener] = useState(() =>
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
+  // The unsaved-edit check is async. Returning false keeps the panel's Back
+  // entry; the panel closes only after the check allows it.
+  function close() {
+    void guard.current().then((leave) => {
+      if (leave) onClose();
+    });
+    return false;
   }
-  return createPortal(
-    <dialog
-      ref={dialog}
-      className="command-image-library"
-      onCancel={(e) => {
-        e.preventDefault();
-        close();
-      }}
-      aria-labelledby="image-library-title"
+  return (
+    <ActionPanel
+      title="Select image"
+      className="command-image-library roster-ui"
+      trigger={opener}
+      onClose={close}
     >
-      <header>
-        <h2 id="image-library-title">Select image</h2>
-        <button type="button" onClick={close} aria-label="Close image library">
-          Close ×
-        </button>
-      </header>
       <ImageCollection
         onDirty={onDirty}
         onChoose={onChoose}
@@ -58,7 +54,6 @@ export default function CommandImageLibrary({
           guard.current = value;
         }}
       />
-    </dialog>,
-    document.body,
+    </ActionPanel>
   );
 }

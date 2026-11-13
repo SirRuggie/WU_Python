@@ -1,6 +1,5 @@
 import PageEyebrow from "./PageEyebrow";
-import useChoiceRail from "./useChoiceRail";
-import "./SectionTabs.css";
+import SectionTabs from "./SectionTabs";
 import "./ChoiceGroupLayout.css";
 import {
   clanSections as sections,
@@ -48,7 +47,6 @@ export default function ClanManagement({
   const [view, setView] = useState<"overview" | "clans" | "history">(
     initialRoute?.tab || "clans",
   );
-  const viewTabs = useChoiceRail<HTMLDivElement>(view);
   const reminderEditor = useRef<ReminderEditor | null>(null);
   const initialClanPending = useRef(initialRoute?.tag);
   const [reminderChanges, setReminderChanges] = useState(0);
@@ -443,29 +441,18 @@ export default function ClanManagement({
           + Add clan
         </button>
       </div>
-      <div
-        {...viewTabs.fadeProps}
-        ref={viewTabs.ref}
-        className="clan-tabs section-tabs section-tabs--flow has-horizontal-fades"
-        aria-label="Clan management views"
-      >
-        {(
-          [
-            ["clans", "Clans"],
-            ["overview", "War reminders"],
-            ["history", "History"],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            disabled={disabled}
-            aria-pressed={view === key}
-            onClick={() => void changeView(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <SectionTabs
+        className="clan-tabs section-tabs--flow"
+        label="Clan management views"
+        items={[
+          { id: "clans", label: "Clans" },
+          { id: "overview", label: "War reminders" },
+          { id: "history", label: "History" },
+        ]}
+        value={view}
+        disabled={disabled}
+        onChange={(key) => void changeView(key)}
+      />
       <div hidden={view !== "overview"}>
         <ReminderOverview
           active={view === "overview"}

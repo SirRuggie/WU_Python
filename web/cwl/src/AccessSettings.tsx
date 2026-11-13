@@ -1,3 +1,4 @@
+import useConfirmDialog from "./useConfirmDialog";
 import PageEyebrow from "./PageEyebrow";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
@@ -38,6 +39,7 @@ export default function AccessSettings({
 }: {
   onDirty?: (dirty: boolean) => void;
 }) {
+  const { confirm, dialog: confirmation } = useConfirmDialog();
   const [data, setData] = useState<AccessData | null>(null);
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState<"user" | "role">("user");
@@ -123,24 +125,29 @@ export default function AccessSettings({
     window.addEventListener("beforeunload", protect);
     return () => window.removeEventListener("beforeunload", protect);
   }, [dirty, busy]);
-  function leave() {
-    return (
-      !saving.current &&
-      (!dirty || window.confirm("Discard unsaved access changes?"))
+  // Runs the step now, or after the person confirms discarding their edits.
+  function leave(step: () => void) {
+    if (saving.current) return;
+    if (!dirty) return step();
+    void confirm("Discard unsaved access changes?", "Discard").then(
+      (confirmed) => {
+        if (confirmed) step();
+      },
     );
   }
   function edit(grant?: Grant) {
-    if (!leave()) return;
-    setKind(grant?.kind || "user");
-    setId(grant?.id || "");
-    setSelected(grant?.permissions || []);
-    setChoosing(!grant);
-    setEditing(true);
-    setRemove(null);
-    setError("");
-    setNotice("");
-    setConflict(false);
-    requestAnimationFrame(() => heading.current?.focus());
+    leave(() => {
+      setKind(grant?.kind || "user");
+      setId(grant?.id || "");
+      setSelected(grant?.permissions || []);
+      setChoosing(!grant);
+      setEditing(true);
+      setRemove(null);
+      setError("");
+      setNotice("");
+      setConflict(false);
+      requestAnimationFrame(() => heading.current?.focus());
+    });
   }
   async function save(target: Grant | null = null) {
     if (!data || saving.current || conflict) return;
@@ -187,23 +194,25 @@ export default function AccessSettings({
     }
   }
   function closeEditor() {
-    if (!leave()) return;
-    setEditing(false);
-    setChoosing(false);
-    setSelected([]);
-    setId("");
-    setRemove(null);
-    requestAnimationFrame(() =>
-      document.getElementById("access-list-title")?.focus(),
-    );
+    leave(() => {
+      setEditing(false);
+      setChoosing(false);
+      setSelected([]);
+      setId("");
+      setRemove(null);
+      requestAnimationFrame(() =>
+        document.getElementById("access-list-title")?.focus(),
+      );
+    });
   }
   function choose(next: string) {
-    if (!leave()) return;
-    setId(next);
-    setSelected(
-      data?.grants.find((grant) => grant.kind === kind && grant.id === next)
-        ?.permissions || [],
-    );
+    leave(() => {
+      setId(next);
+      setSelected(
+        data?.grants.find((grant) => grant.kind === kind && grant.id === next)
+          ?.permissions || [],
+      );
+    });
   }
   const picked = members.find(
     (member) => member.id === id || member.value === id,
@@ -233,6 +242,7 @@ export default function AccessSettings({
   );
   return (
     <div className={`access-workspace ${editing ? "access-editing" : ""}`}>
+      {confirmation}
       <div className="page-head">
         <div>
           <PageEyebrow />
@@ -249,12 +259,12 @@ export default function AccessSettings({
         <button
           disabled={busy || loading}
           onClick={() => {
-            if (leave()) {
+            leave(() => {
               setEditing(false);
               setSelected([]);
               setId("");
               void load();
-            }
+            });
           }}
         >
           Refresh access
@@ -414,11 +424,11 @@ export default function AccessSettings({
                             type="radio"
                             checked={kind === "user"}
                             onChange={() => {
-                              if (leave()) {
+                              leave(() => {
                                 setKind("user");
                                 setId("");
                                 setSelected([]);
-                              }
+                              });
                             }}
                           />
                           Person
@@ -428,11 +438,11 @@ export default function AccessSettings({
                             type="radio"
                             checked={kind === "role"}
                             onChange={() => {
-                              if (leave()) {
+                              leave(() => {
                                 setKind("role");
                                 setId("");
                                 setSelected([]);
-                              }
+                              });
                             }}
                           />
                           Discord role

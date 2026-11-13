@@ -1,5 +1,5 @@
-import { useId, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useRef, useState } from "react";
+import ActionPanel from "../ActionPanel";
 import { api, ApiError } from "../api";
 import { Button } from "../rosterUi/primitives";
 import SearchPicker from "../SearchPicker";
@@ -16,7 +16,7 @@ import {
 
 type Mode = "create" | "existing";
 
-/** Add clock: a bottom sheet on the phone, a dialog on desktop. */
+/** Add clock in the shared ActionPanel (bottom sheet on phone, dialog on desktop). */
 export default function AddClockDialog({
   chips,
   usedZones,
@@ -38,8 +38,12 @@ export default function AddClockDialog({
   onAdded: (notice: string) => void;
   onDirty: (dirty: boolean) => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
+  // Focus returns here when the panel closes.
+  const [opener] = useState(() =>
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
   const [draft, setDraft] = useState<ClockDraft>({
     zone: "",
     flag: "",
@@ -53,16 +57,6 @@ export default function AddClockDialog({
   // so the server answers from its receipt instead of creating a 2nd channel.
   const requestId = useRef(newRequestId());
   const category = categories.find((row) => row.id === settings.category_id);
-
-  useLayoutEffect(() => {
-    const opener = document.activeElement;
-    dialog.current?.showModal?.();
-    return () => {
-      dialog.current?.close?.();
-      if (opener instanceof HTMLElement && opener.isConnected)
-        opener.focus({ preventScroll: true });
-    };
-  }, []);
 
   function change(next: ClockDraft) {
     setDraft(next);
@@ -111,18 +105,33 @@ export default function AddClockDialog({
     }
   }
 
-  return createPortal(
-    <dialog
-      ref={dialog}
-      className="world-clock-sheet"
-      aria-labelledby={titleId}
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) onClose();
-      }}
+  return (
+    <ActionPanel
+      title="Add clock"
+      className="world-clock-sheet roster-ui"
+      trigger={opener}
+      busy={busy}
+      onClose={onClose}
+      footer={
+        <>
+          <Button disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!ready || busy}
+            onClick={() => void submit()}
+          >
+            {busy
+              ? "Adding…"
+              : mode === "create"
+                ? "Create channel and add"
+                : "Add clock"}
+          </Button>
+        </>
+      }
     >
       <div className="world-clock-sheet-body">
-        <h2 id={titleId}>Add clock</h2>
         <ClockFields
           draft={draft}
           onChange={change}
@@ -201,23 +210,6 @@ export default function AddClockDialog({
           </p>
         )}
       </div>
-      <div className="world-clock-sheet-footer">
-        <Button disabled={busy} onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          variant="primary"
-          disabled={!ready || busy}
-          onClick={() => void submit()}
-        >
-          {busy
-            ? "Adding…"
-            : mode === "create"
-              ? "Create channel and add"
-              : "Add clock"}
-        </Button>
-      </div>
-    </dialog>,
-    document.body,
+    </ActionPanel>
   );
 }

@@ -447,12 +447,12 @@ function App() {
     if (view === 'signup' && (pending || signupBusy.current)) return false
     if (view === 'signup' && (signupDirty || savedSignupDirty)) return deferCwlLeave('Leave without submitting your CWL selections? Your saved signups will stay unchanged.', action)
     if (view === 'participation' && cwlDirty) return deferCwlLeave('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.', action)
-    if (view === 'access' && cwlDirty) return window.confirm('Discard unsaved access changes?')
+    if (view === 'access' && cwlDirty) return deferCwlLeave('Discard unsaved access changes?', action)
     if (view === 'declaration' && rosterBusy) return false
     if (view === 'declaration' && cwlDirty) return deferCwlLeave('Discard the unsaved ping channel change?', action)
     if (view === 'publication' && publicationBusy) return false
     if (view === 'publication' && publicationDirty) return deferCwlLeave('Leave without saving publication or announcement changes?', action)
-    if ((isManagementArea(view) || ['member-timezones','manage','text-commands','clan-management','moderation','member-activity','world-clocks'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
+    if ((isManagementArea(view) || ['member-timezones','manage','text-commands','clan-management','moderation','member-activity','world-clocks'].includes(view)) && manageDirty) return deferCwlLeave('Leave without saving your changes?', action)
     if (view === 'reminders' && reminderDirty) return deferCwlLeave('Leave without saving your reminder changes?', action)
     return true
   }
