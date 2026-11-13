@@ -81,6 +81,7 @@ class LazyAnnouncementTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(USER, text)
         self.assertIn('Lazy CWL Bonus Medals', text)
         self.assertIn('last 3 seasons', text)
+        self.assertIn('Older', text)  # last month's winner shows the player name
         result = await self.send_now(preview)
         self.assertEqual(result['status'], 'sent')
         self.assertEqual(len(result['urls']), 1)

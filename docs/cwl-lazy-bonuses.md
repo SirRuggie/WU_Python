@@ -224,7 +224,7 @@ schema change: the receipts use the existing `bonus_audit` table.
 
 Format (`utils/cwl_bonus_announcement.py`): Components V2, WU_GOLD `#F2B62A` on
 every container. Container 1: "<:CWL:1399013745598009375> Lazy CWL Bonus Medals",
-the intro, three rules, then last month's Lazy winners as `#TAG · @user` (no
+the intro, three rules, then last month's Lazy winners as `Name · #TAG · @user` (no
 clan names). Rule 3 follows the included clans' sit-out lengths ("last N
 seasons"; none omits it; mixed lengths show each clan's sit-out). Then one
 container per clan: name, tag, bonus medal count (the approved draw's slots) and
