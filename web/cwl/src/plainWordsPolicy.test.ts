@@ -4,9 +4,9 @@ import { expect, it } from "vitest";
 
 /** Canonical owner/reviewer wording, scoped to UI files (never API/status keys or Discord templates). */
 const terms: [string, RegExp][] = [
-  ["App.tsx", /Main: play at full strength\. No hero upgrades\./],
-  ["App.tsx", /Lazy: relaxed CWL\. You can upgrade during the event\./],
-  ["App.tsx", /If you’re in FWA… it’s Lazy Way or No Way!!!/],
+  ["SignupPage.tsx", /Main: play at full strength\. No hero upgrades\./],
+  ["SignupPage.tsx", /Lazy: relaxed CWL\. You can upgrade during the event\./],
+  ["SignupPage.tsx", /If you’re in FWA… it’s Lazy Way or No Way!!!/],
   ["App.tsx", /<h1>Signup reminders<\/h1>/],
   ["ClanSettings.tsx", /Clan size/],
   ["RosterPlayerDialog.tsx", /Summary/],

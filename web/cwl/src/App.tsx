@@ -14,9 +14,7 @@ import "./MemberRefreshNote.css"
 import { memberSignupsOpen } from "./memberSeason"
 import DashboardStorageStatus from './DashboardStorageStatus'
 import type { ClanRoute } from "./clanManagement/routes";
-import SignupReviewHeading from "./SignupReviewHeading"
 import AccountMenu from "./AccountMenu"
-import MemberSeasonLine from "./MemberSeasonLine"
 import { reviewPoolSelection } from "./signupReview"
 import CwlStepStrip, { MemberStepStrip } from "./CwlStepStrip"
 import MemberTour from "./memberTour/MemberTour"
@@ -28,12 +26,7 @@ import { DashboardPermissions } from './DashboardPermissions'
 import FwaSignupDialog from './FwaSignupDialog'
 import {saveSignupMoves, type SignupMove} from './signupMoves'
 import {withdrawInOrder, withdrawConfirmation} from './signupWithdrawal'
-import SavedSignups from './SavedSignups'
-import SavedSignupStatus from './SavedSignupStatus'
-import AttentionSummary from './AttentionSummary'
-import CwlPoolTabs from './CwlPoolTabs'
-import SignupWalkthrough from './SignupWalkthrough'
-import AccountLinkHelp from './AccountLinkHelp'
+import SignupPage, { type Completion, type Notice } from './SignupPage'
 import DashboardIcon from './DashboardIcon'
 import { strikePermissions } from './strikePermissions'
 import {isManagementArea, managementAreas} from './managementAreas'
@@ -42,7 +35,6 @@ import { loginPath } from './memberLinks'
 import { DashboardHistory, dashboardTarget, seasonViews, activityContext } from './dashboardHistory'
 import './Welcome.css'
 import './SignupFlow.css'
-import TownHallIcon from './TownHallIcon'
 import type { ReadinessFilter } from './readiness'
 import './staffNavigation.css'
 import './sidebar.css'
@@ -90,9 +82,6 @@ const OwnerPrank = lazy(() => import('./ownerPrank/OwnerPrank'))
 const ModerationWorkspace = lazy(() => import('./ModerationWorkspace'))
 const WorldClocksWorkspace = lazy(() => import('./worldClocks/WorldClocksWorkspace'))
 type View = DashboardView
-type Notice = { kind: 'success' | 'error'; text: string }
-type Completion = { seasonId: string; seasonLabel: string; pool: Pool; accounts: ReturnType<typeof submittedSummary>; refreshWarning: boolean }
-const poolName = (pool: Pool | null) => pool === 'lazy' ? 'Lazy CWL' : pool === 'main' ? 'Main CWL' : 'CWL'
 const message = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Try again.'
 const tagPath = (tag: string) => encodeURIComponent(tag)
 
@@ -1104,75 +1093,7 @@ function App() {
           setDrafts({ main: {}, lazy: {}, [nextPool]: Object.fromEntries(tags.filter(tag => freshAccounts.some(account => account.tag === tag) && !freshSignups.some(signup => signup.tag === tag)).map(tag => [tag, false])) })
           setPool(nextPool); setSignupPanel('register'); setSignupStep(2); setReview(false); setCompletion(null); changeView('signup')
         }} />}
-        {view === 'signup' && <>
-          <CwlPageHeader className="member-signup-head" title={<h1>{signupPanel === 'saved' ? 'My signups' : 'Sign up'}</h1>} /><p className="cwl-page-description">{signupPanel === 'saved' ? 'Your saved CWL signups for this season.' : activeCompletion ? "Your season signup is saved." : season && !memberSignupsOpen(season) ? "View your saved signups and CWL clans." : "Sign up your accounts for CWL. Staff will select your CWL clans."}</p>
-          {((seasonError && !seasonsKnown) || (!activeCompletion && (dataError || accountError))) && <AttentionSummary urgent items={[
-            ...(seasonError && !seasonsKnown ? [{ title: 'CWL season availability could not be checked', detail: 'The season list may be out of date. Retry before choosing a season.', technicalDetail: seasonError, action: { label: 'Retry seasons', onClick: () => void loadSeasons(), disabled: seasonsLoading } }] : []),
-            ...(!activeCompletion && dataError ? [{ title: accountError ? 'Signup and account data could not be checked' : 'Saved CWL signups could not be checked', detail: accountError ? 'You cannot see saved signups or linked accounts until this check works.' : 'You cannot change signups or saved accounts until this check works.', technicalDetail: [dataError, accountError].filter(Boolean).join(' · '), action: { label: 'Retry CWL data', onClick: retrySignupRead, disabled: loadingData || pending } }] : !activeCompletion && accountError ? [{ title: 'Linked accounts are unavailable', detail: 'You cannot select accounts or change pools until the dashboard checks your links.', technicalDetail: accountError, action: { label: 'Retry CWL data', onClick: retrySignupRead, disabled: loadingData || pending } }] : []),
-          ]} />}
-          {seasonsLoading && <p role="status">Loading seasons…</p>}
-          {!seasonId && !seasonsLoading && !seasonError && <div className="card empty"><p>Staff will make the next CWL season available here.</p></div>}
-          {season && <>{!activeCompletion && loadingData && signupPanel === 'register' && <p role="status">Loading linked accounts…</p>}<MemberSeasonLine season={season} hideClosedStatus={signupPanel === 'register' && !memberSignupsOpen(season)} />
-            {activeCompletion ? <section className="completion-card card" aria-labelledby="completion-title"><div className="completion-mark" aria-hidden="true">✓</div><h2 id="completion-title" ref={completionHeadingRef} tabIndex={-1}>You are signed up</h2><p><strong>{activeCompletion.accounts.length} {activeCompletion.accounts.length === 1 ? 'account is' : 'accounts are'} signed up</strong> for {poolName(activeCompletion.pool)} in {activeCompletion.seasonLabel}.</p><div className="completion-accounts">{activeCompletion.accounts.map(account => <div key={account.tag}><strong>{account.name}</strong><small>{account.tag}</small></div>)}</div><p>Your accounts are signed up. Staff will assign them to clans. You can close this page, or sign up more accounts below.</p>{activeCompletion.refreshWarning && <div className="notice error" role="alert">Your signup is saved. The account list did not refresh. Check your saved signups later.</div>}<div className="completion-actions"><button className="primary" disabled={pending} onClick={() => void showSavedSignups()}>View my signups</button><button disabled={pending} onClick={() => changeView('assignments')}>My clan assignments</button><button disabled={pending} onClick={() => { setPoolRemoved([]); setCompletion(null); setSignupPanel('register'); setSignupStep(1); setPool(null); setReview(false) }}>Sign up more accounts</button></div></section> : <>
-            {signupPanel === 'register' && !memberSignupsOpen(season) && <section data-tour-target="signup-closed" className="signup-guide" aria-label="Signup walkthrough"><h2>Signups closed</h2><p>View your saved signups or check your CWL clan. To make a change, ask staff for help.</p><div className="signup-action-buttons"><button onClick={() => changeSignupPanel('saved')}>My signups</button><button onClick={() => changeView('assignments')}>My clan assignments</button></div></section>}
-            {signupPanel === 'register' && memberSignupsOpen(season) && <div className="signup-flow">
-              {accountsReady && !loadingData && !accountError && accounts.length === 0 && <section className="card" data-tour-target="signup-missing"><h2>Link an account</h2><AccountLinkHelp busy={loadingData || pending} onRefresh={() => void loadSignup()} /></section>}
-              <SignupWalkthrough stage={review ? 3 : signupStep} pool={pool}
-                selectedCount={selected.length} busy={pending}
-                canReview={!!pool && selected.length > 0 && !loadingData && !dataError && !accountError}
-                headingRef={stepHeadingRef} onNavigate={stage => {
-                  if (pending || (stage > 1 && !pool)) return
-                  if (stage === 3 && (!selected.length || loadingData || dataError || accountError)) return
-                  setReturnToReview(review && stage === 1)
-                  setReview(stage === 3)
-                  setSignupStep(stage === 1 ? 1 : 2)
-                }} />
-              {poolRemoved.length > 0 && <p className="notice" role="status">No longer eligible for this pool: {poolRemoved.join(", ")}. These accounts were removed from this unsaved selection.</p>}
-              {signupStep === 1 && !review && <div className="pool-choice"><div className="pool-choice-grid"><button className={pool === 'main' ? 'active' : ''} aria-pressed={pool === 'main'} disabled={pending} onClick={() => choosePool('main')}><span className="pool-choice-symbol">◆</span><strong>Main CWL</strong><small>Main: play at full strength. No hero upgrades.</small><span className="pool-next">Select Main CWL →</span></button><button data-tour-target="signup-pool" className={pool === 'lazy' ? 'active' : ''} aria-pressed={pool === 'lazy'} disabled={pending} onClick={() => choosePool('lazy')}><span className="pool-choice-symbol">◇</span><strong>Lazy CWL</strong><small>Lazy: relaxed CWL. You can upgrade during the event.</small><small className="fwa-cwl-note">If you’re in FWA… it’s Lazy Way or No Way!!!</small><span className="pool-next">Select Lazy CWL →</span></button></div><p className="small">You can use different accounts for Main and Lazy CWL.</p></div>}{pool && signupStep === 2 && !review && <>
-            <CwlPoolTabs value={pool} onChange={choosePool} disabled={pending || loadingData} />
-            <div className="section-heading"><div><h2 ref={selectionHeadingRef} tabIndex={-1}>Select linked accounts</h2><p>{pool === 'lazy' ? 'Linked accounts from any clan can join Lazy CWL. Each account can join one CWL pool per season.' : 'Main CWL signup is separate from Lazy CWL. Each account can join one pool per season.'}</p></div><div className="count-pill">{selected.length} selected</div></div>
-
-            {!accountError && accounts.length > 0 && <>
-              {visibleAccounts.length > 0 && <><div className="selection-bar"><label className="check-label"><input type="checkbox" checked={available.length > 0 && available.every(account => Object.hasOwn(draft, account.tag))} onChange={event => { if (!pool) return; if (event.target.checked) setDraft({...draft, ...Object.fromEntries(available.map(account => [account.tag, draft[account.tag] ?? false]))}); else { const next = {...draft}; for (const account of available) delete next[account.tag]; setDraft(next) } }} disabled={!memberSignupsOpen(season) || !available.length || pending || loadingData || !!dataError || !!accountError} />Select all matching accounts ({available.length})</label><button onClick={() => void loadSignup()} disabled={loadingData || pending}>Refresh accounts</button></div>
-              <label className="signup-account-search">Find a player or clan<input type="search" value={signupSearch} onChange={event => setSignupSearch(event.target.value)} placeholder="Find a player or clan" /></label></>}
-              {visibleAccounts.length > 0 && matchingAccounts.length === 0 && <div className="card empty"><p>No accounts match your search.</p><button onClick={() => setSignupSearch('')}>Clear search</button></div>}
-              {visibleAccounts.length === 0 && <div className="card empty"><h3>All your linked accounts are signed up.</h3><p>To change or withdraw a signup, go to My signups.</p><button disabled={pending} onClick={() => changeSignupPanel('saved')}>My signups</button></div>}
-              <details className="hub-help"><summary data-tour-target="signup-missing">Link an account</summary><AccountLinkHelp busy={loadingData || pending} onRefresh={() => void loadSignup()} /></details>
-              <div className="account-list">{pageAccounts.map((account, index) => {
-                const chosen = Object.hasOwn(draft, account.tag) && !(pool === 'main' && account.current_clan_type === 'FWA')
-                return <article data-tour-target={index === 0 ? "signup-account" : undefined} className={`account-card ${chosen ? 'chosen' : ''}`} key={account.tag}>
-                  <div className="account-top"><label className="account-select"><input type="checkbox" checked={chosen} disabled={ !memberSignupsOpen(season) || pending || loadingData || !!dataError || !!accountError} onChange={event => { if (!pool) return; if (event.target.checked && pool === 'main' && account.current_clan_type === 'FWA') { setFwaBlocked(true); return }; const next = { ...draft }; if (event.target.checked) next[account.tag] = false; else delete next[account.tag]; setDraft(next) }} /><span><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag}</small></span></label></div>
-                  <div className="account-meta"><span>Current clan <strong>{account.current_clan_name || 'None'}{account.current_clan_tag ? ` · ${account.current_clan_tag}` : ''}</strong></span></div>
-                  {pool === 'main' && account.current_clan_type === 'FWA' && <p className="inline-reason">FWA account · Lazy CWL only. Select Lazy CWL above to sign up this account.</p>}
-                </article>
-              })}</div>
-              {lastSignupPage > 0 && <nav className="hub-pagination" aria-label="Signup account pages"><button disabled={currentSignupPage === 0} onClick={() => setSignupPage(currentSignupPage - 1)}>Previous accounts</button><span>Page {currentSignupPage + 1} of {lastSignupPage + 1}</span><button disabled={currentSignupPage === lastSignupPage} onClick={() => setSignupPage(currentSignupPage + 1)}>Next accounts</button></nav>}
-              {memberSignupsOpen(season) && visibleAccounts.length > 0 && <div className="submit-bar"><div><strong>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected</strong><small>Selections across all pages · Not saved yet.</small></div><div className="signup-action-buttons"><button disabled={pending} onClick={() => setSignupStep(1)}>← Back</button><button className="primary" disabled={!selected.length || pending || loadingData || !!dataError || !!accountError} onClick={() => setReview(true)}>Continue →</button></div></div>}
-            </>}
-            </>}
-            {signupStep === 2 && !review && (!accounts.length || accountError || !memberSignupsOpen(season)) && <button disabled={pending} onClick={() => setSignupStep(1)}>← Back to CWL choice</button>}
-            {review && pool && <section data-tour-target="signup-review" className="signup-review card" aria-label="Review selected accounts">{notice?.kind === 'error' && <div className="notice error" role="alert">{notice.text}</div>}<SignupReviewHeading poolLabel={poolName(pool)} count={selected.length} busy={pending} onChange={changeReviewStep} /><div className="review-list">{selected.map(item => { const account = accounts.find(candidate => candidate.tag === item.tag)!; return <div className="review-row" key={item.tag}><div><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag} · TH {account.town_hall ?? '—'} · {account.current_clan_name || 'No current clan'}</small></div>{account.current_clan_type === 'FWA' && pool === 'main' && <span className="transfer-review">FWA account · Lazy CWL only.</span>}</div> })}</div><div className="signup-actions submit-bar"><button disabled={pending} onClick={() => setReview(false)}>← Back</button><button data-tour-target="signup-confirm" className="primary" disabled={!selected.length || pending || loadingData || !memberSignupsOpen(season) || !!dataError || !!accountError} onClick={submit}>{pending ? 'Saving…' : `Sign up ${selected.length} ${selected.length === 1 ? 'account' : 'accounts'}`}</button></div></section>}
-            </div>}
-            {signupPanel === 'saved' && <section className="registered">
-              {!savedSignupsLoaded && !dataError ? <p role="status">Loading saved signups…</p> : dataError ? null : <>
-                {loadingData && !existing.length && <p role="status">Checking linked accounts…</p>}
-                {existing.length > 0 && <SavedSignupStatus
-                  signups={existing}
-                  accounts={loadingData || accountError ? null : accounts}
-                  accountsLoading={loadingData}
-                  accountsUnavailable={!!accountError}
-                  season={season}
-                  onRemaining={() => changeSignupPanel('register', () => { setSignupStep(1); setPool(null) })}
-                  onAssignments={() => changeView('assignments')}
-                />}
-                <SavedSignups key={seasonId} signups={existing} accounts={accounts} editable={memberSignupsOpen(season)} busy={pending || loadingData} canMove={!loadingData && !accountError} headingRef={registeredHeadingRef} onDirty={setSavedSignupDirty} onSave={saveSavedSignups} onWithdraw={rows => void withdraw(rows)} onRefreshAccounts={retrySignupRead}/>
-                {!existing.length && <div className="card empty"><p>No signed-up accounts for this season.</p>{memberSignupsOpen(season) && <button onClick={() => changeSignupPanel('register', () => setSignupStep(1))}>Select accounts</button>}</div>}
-                <button disabled={pending || loadingData} onClick={retrySignupRead}>Refresh saved signups</button>
-              </>}
-            </section>}
-          </>}
-        </>}
-        </>}
+        {view === 'signup' && <SignupPage accountError={accountError} accounts={accounts} accountsReady={accountsReady} activeCompletion={activeCompletion} available={available} changeReviewStep={changeReviewStep} changeSignupPanel={changeSignupPanel} changeView={changeView} choosePool={choosePool} completionHeadingRef={completionHeadingRef} currentSignupPage={currentSignupPage} dataError={dataError} draft={draft} existing={existing} lastSignupPage={lastSignupPage} loadSeasons={loadSeasons} loadSignup={loadSignup} loadingData={loadingData} matchingAccounts={matchingAccounts} notice={notice} pageAccounts={pageAccounts} pending={pending} pool={pool} poolRemoved={poolRemoved} registeredHeadingRef={registeredHeadingRef} retrySignupRead={retrySignupRead} review={review} saveSavedSignups={saveSavedSignups} savedSignupsLoaded={savedSignupsLoaded} season={season} seasonError={seasonError} seasonId={seasonId} seasonsKnown={seasonsKnown} seasonsLoading={seasonsLoading} selected={selected} selectionHeadingRef={selectionHeadingRef} setCompletion={setCompletion} setDraft={setDraft} setFwaBlocked={setFwaBlocked} setPool={setPool} setPoolRemoved={setPoolRemoved} setReturnToReview={setReturnToReview} setReview={setReview} setSavedSignupDirty={setSavedSignupDirty} setSignupPage={setSignupPage} setSignupPanel={setSignupPanel} setSignupSearch={setSignupSearch} setSignupStep={setSignupStep} showSavedSignups={showSavedSignups} signupPanel={signupPanel} signupSearch={signupSearch} signupStep={signupStep} stepHeadingRef={stepHeadingRef} submit={submit} visibleAccounts={visibleAccounts} withdraw={withdraw} />}
         {view === 'assignments' && !seasonsKnown && <p role="status">{seasonError ? 'CWL seasons could not be checked.' : 'Loading seasons…'}</p>}
         {view === 'assignments' && seasonsKnown && <MemberAssignments onChange={() => changeView('signup', '', undefined, 'saved')} onSignup={() => { setSignupStep(1); setPool(null); setCompletion(null); changeView('signup', '', undefined, 'register') }} seasonId={seasonId} seasons={seasons} />}
         {view === 'exports' && session.can_edit && <ExportWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
