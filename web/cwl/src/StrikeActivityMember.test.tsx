@@ -230,7 +230,7 @@ it("groups by clan from the Sort panel and keeps it in the URL", async () => {
 it("keeps one toolbar row of Search, Sort, Filters and a menu, with the tab rule visible", async () => {
   await mount("/strikes?activity_view=all", true);
   const controls = host.querySelectorAll(
-    ".strike-activity-chips button, .strike-activity-toolbar > :is(button, input, select), .strike-activity-toolbar > .strike-activity-sort button, .strike-activity-toolbar > details > summary",
+    ".strike-activity-chips button, .strike-activity-toolbar > :is(button, input, select), .strike-activity-toolbar > .strike-activity-sort button, .strike-activity-toolbar > .roster-player-menu button",
   );
   // Four view chips + Search + Sort + Filters + the menu.
   expect(controls).toHaveLength(8);
@@ -239,15 +239,15 @@ it("keeps one toolbar row of Search, Sort, Filters and a menu, with the tab rule
   expect(host.querySelector(".strike-activity-rule")!.textContent).toBe(
     "All accounts",
   );
-  const groups = [
-    ...host.querySelectorAll(".strike-activity-action-menu [role=group]"),
-  ];
-  expect(groups.map((g) => g.getAttribute("aria-label"))).toEqual([
-    "Account",
-    "List",
-  ]);
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('[aria-label="Actions for Activity"]')!
+      .click(),
+  );
   expect(
-    [...groups[1].querySelectorAll("button")].map((node) => node.textContent),
+    [...document.querySelectorAll('[role="menuitem"]')].map((node) =>
+      node.textContent?.trim(),
+    ),
   ).toEqual(["Copy list", "Refresh activity"]);
   expect(host.textContent).not.toContain("Help");
 });

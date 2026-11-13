@@ -307,7 +307,7 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 - Screen-reader browse mode may skip the MapPin's non-focusable `role="note"` accessible name; consider real visually hidden text with only the pin hidden.
 - Add mutation coverage for clearing roster state on season change; the targeted mutation survived readability review.
 - Unobserve removed horizontal-fade children before the ResizeObserver disconnects.
-- Replace native `window.confirm` across the rest of the app. Roster exits use an in-app dialog, but other existing callers remain outside the hotfix scope.
+- Done 2026-11-13 (UI audit Phase 3): no native `window.confirm` remains; access and settings-page exits use the in-app dialog.
 - Details: a successful save followed by a failed reload drops the Undo toast.
 - `RosterWorkspace.tsx` restates the weight dirty rule separately from `dirty`;
   consolidate these rules in a later cleanup.
@@ -1664,9 +1664,10 @@ Menus within ActionPanel portal into its mounted native dialog through the
 installed public Popover container API; outside-panel menus retain their default.
 First Escape closes the menu, then sheet Escape uses the existing discard guard.
 
-Inside an ActionPanel, the shared menu blocks an opening pointer release or
-compatibility click from selecting an item until a separate item press. Outside
-an ActionPanel, existing opening-drag selection stays unchanged. Keyboard and assistive virtual
+The shared menu blocks an opening pointer release or compatibility click from
+selecting an item until a separate item press. Since the 2026-11-13 UI audit
+(D1, Phase 3) this applies to every ⋯ menu, inside or outside an ActionPanel;
+outside-panel opening-drag selection is no longer kept. Keyboard and assistive virtual
 activation remain available; closing, cancellation and unmount clear the guard.
 The retry fixture reproduced a single opening mouse drag into Remove; the
 previous production stationary-click cause remains unknown. Unit mouse/touch

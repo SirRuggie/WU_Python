@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ImageCollection from "./ImageCollection";
@@ -157,20 +157,118 @@ it("unmount cancels a pending request without writing or refreshing", async () =
   expect(document.querySelector(".confirm-dialog")).toBeNull();
   expect(transport).toHaveBeenCalledTimes(1);
 });
+async function closeLibrary() {
+  await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>(
+        ".command-image-library .action-panel-close",
+      )!
+      .click(),
+  );
+}
 it("image library close awaits the guard and Cancel leaves it open", async () => {
   const close = vi.fn();
   await act(async () =>
     root.render(<CommandImageLibrary onClose={close} onChoose={vi.fn()} />),
   );
   await dirty();
-  await click("Close ×");
+  await closeLibrary();
   expect(close).not.toHaveBeenCalled();
   await click("Cancel");
   expect(close).not.toHaveBeenCalled();
-  await click("Close ×");
+  await closeLibrary();
   await click("Discard changes");
   expect(close).toHaveBeenCalledTimes(1);
 });
+
+// A small browser history: an entry stack, pushState, back() with popstate.
+// With `later`, back() lands on a later task, as it does in a browser.
+function fakeHistory(later = false) {
+  const stack: unknown[] = [{}];
+  let index = 0;
+  vi.spyOn(history, "state", "get").mockImplementation(() => stack[index]);
+  vi.spyOn(history, "pushState").mockImplementation((state) => {
+    stack.splice(index + 1, stack.length, state);
+    index = stack.length - 1;
+  });
+  vi.spyOn(history, "replaceState").mockImplementation((state) => {
+    stack[index] = state;
+  });
+  const move = (delta: number) => {
+    index = Math.max(0, Math.min(stack.length - 1, index + delta));
+    window.dispatchEvent(
+      new PopStateEvent("popstate", { state: stack[index] }),
+    );
+  };
+  const go = (delta: number) =>
+    later ? void setTimeout(() => move(delta), 5) : move(delta);
+  vi.spyOn(history, "back").mockImplementation(() => go(-1));
+  vi.spyOn(history, "go").mockImplementation((delta = 0) => go(delta));
+  // Entries behind and at the current one; forward entries do not matter.
+  const markers = () =>
+    stack.slice(0, index + 1).map((entry, at) => {
+      const marker =
+        (entry as { wuActionPanel?: string } | null)?.wuActionPanel || "route";
+      const name = marker.startsWith("image-confirm")
+        ? "confirm"
+        : marker.startsWith("action-panel")
+          ? "panel"
+          : "route";
+      return at === index ? `*${name}` : name;
+    });
+  return { back: () => go(-1), markers };
+}
+
+it.each([
+  ["Back", "Cancel", false, ["route", "*panel"]],
+  ["Back", "Discard changes", false, ["*route"]],
+  ["Back", "Cancel", true, ["route", "*panel"]],
+  ["Back", "Discard changes", true, ["*route"]],
+  ["Close", "Cancel", true, ["route", "*panel"]],
+  ["Close", "Discard changes", true, ["*route"]],
+])(
+  "%s on a dirty image library, then %s (late history: %s), leaves no extra history entries",
+  async (how, choice, later, expected) => {
+    const nav = fakeHistory(later);
+    const close = vi.fn();
+    const settle = async () => {
+      for (let i = 0; i < 4; i++)
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        });
+    };
+    // The parent unmounts the picker as soon as it closes, like the editor.
+    function Parent() {
+      const [open, setOpen] = useState(true);
+      return open ? (
+        <CommandImageLibrary
+          onClose={() => {
+            close();
+            setOpen(false);
+          }}
+          onChoose={vi.fn()}
+        />
+      ) : null;
+    }
+    await act(async () => root.render(<Parent />));
+    expect(nav.markers()).toEqual(["route", "*panel"]);
+    await dirty();
+    if (how === "Back") await act(async () => nav.back());
+    else await closeLibrary();
+    await settle();
+    expect(document.querySelector(".confirm-dialog")).not.toBeNull();
+    expect(nav.markers()).toEqual(["route", "panel", "*confirm"]);
+    await click(choice);
+    await settle();
+    if (choice === "Cancel") {
+      expect(close).not.toHaveBeenCalled();
+    } else {
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(document.querySelector(".command-image-library")).toBeNull();
+    }
+    expect(nav.markers()).toEqual(expected);
+  },
+);
 
 it("closing the tab keeps the native beforeunload guard", async () => {
   await dirty();

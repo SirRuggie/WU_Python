@@ -124,7 +124,7 @@ it.each([
   "cache date",
   "cache age",
 ])(
-  "malformed directory %s cannot render protected controls and recovers with Refresh",
+  "malformed directory %s cannot render protected controls and recovers with Try again",
   async (bad) => {
     let healthy = false;
     vi.mocked(api).mockImplementation(async (path) => {
@@ -183,7 +183,7 @@ it.each([
     expect(host.textContent).toContain("Members are unavailable");
     expect(host.querySelector(".members-person")).toBeNull();
     healthy = true;
-    await act(async () => button("Refresh members").click());
+    await act(async () => button("Try again").click());
     expect(host.querySelectorAll(".members-person")).toHaveLength(1);
     expect(vi.mocked(api).mock.calls.some((call) => call[1] === "POST")).toBe(
       false,
@@ -486,16 +486,9 @@ it("Clear selection remains available after a refreshed directory loses a select
     host.querySelector<HTMLInputElement>(".members-person input")!.click(),
   );
   departed = true;
-  await act(async () =>
-    host
-      .querySelector<HTMLButtonElement>(
-        'button[aria-label="Actions for Members"]',
-      )!
-      .click(),
-  );
   const refresh = [
-    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-  ].find((row) => row.textContent?.includes("Refresh members"))!;
+    ...host.querySelectorAll<HTMLButtonElement>(".members-actions button"),
+  ].find((button) => button.textContent === "Refresh members")!;
   expect(refresh).toBeTruthy();
   await act(async () => refresh.click());
   const clear = button("Select none");
@@ -566,16 +559,9 @@ it("manual refresh accepts the server TTL and retains visible members", async ()
   });
   await render();
   expect(host.textContent).toContain("Recent member list");
-  await act(async () =>
-    host
-      .querySelector<HTMLButtonElement>(
-        'button[aria-label="Actions for Members"]',
-      )!
-      .click(),
-  );
   const refresh = [
-    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-  ].find((row) => row.textContent?.includes("Refresh members"))!;
+    ...host.querySelectorAll<HTMLButtonElement>(".members-actions button"),
+  ].find((button) => button.textContent === "Refresh members")!;
   await act(async () => refresh.click());
   expect(host.textContent).toContain("Updating member list…");
   expect(host.textContent).toContain("Person 0");

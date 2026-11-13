@@ -221,31 +221,6 @@
     gap: 0;
   }
 }
-.strike-activity-toolbar .strike-activity-actions {
-  padding: 0;
-  align-self: end;
-  position: relative;
-}
-.strike-activity-actions summary {
-  justify-content: center;
-  font-size: var(--wu-text-lg);
-}
-.strike-activity-actions summary::before {
-  content: none;
-}
-.strike-activity-action-menu {
-  position: absolute;
-  right: 0;
-  top: 48px;
-  z-index: 5;
-  min-width: 150px;
-  display: grid;
-  gap: var(--wu-space-1);
-  padding: var(--wu-space-1);
-  background: var(--wu-surface-raised);
-  border: 1px solid #59503d;
-  border-radius: 8px;
-}
 
 .strike-activity-entry {
   min-width: 0;
@@ -296,6 +271,17 @@
   width: 100%;
   min-width: 0;
   padding-inline: var(--wu-space-1);
+}
+.strike-activity-toolbar > .roster-player-menu {
+  align-self: end;
+}
+/* Match the toolbar's square buttons (Search, Sort, Filters). */
+.strike-activity-toolbar > .roster-player-menu .roster-action-trigger {
+  width: 44px;
+  height: 44px;
+  border-color: var(--wu-border-subtle);
+  border-radius: 10px;
+  background: var(--wu-surface);
 }
 .strike-activity-toolbar > button.strike-activity-search-button,
 .strike-activity-search > button.strike-activity-search-close {
@@ -780,16 +766,6 @@
   justify-content: flex-start;
   border-radius: 8px;
   font-weight: inherit;
-}
-.strike-activity-menu-label {
-  margin: 0;
-  padding: var(--wu-space-1) var(--wu-space-2) 0;
-  font-size: var(--wu-text-sm);
-  color: var(--wu-text-muted);
-}
-.strike-activity-action-menu > [role="group"] {
-  display: grid;
-  gap: var(--wu-space-1);
 }
 .strike-activity-rule {
   margin: 0;

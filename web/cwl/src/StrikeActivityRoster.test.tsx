@@ -5,6 +5,24 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import StrikeActivityRoster from "./StrikeActivityRoster";
 vi.mock("./useCompactPreview", () => ({ default: () => false }));
 import type { ActivityAccount } from "./strikeActivityView";
+
+const activityTrigger = () =>
+  document.querySelector<HTMLButtonElement>(
+    '[aria-label="Actions for Activity"]',
+  )!;
+async function openActivityMenu() {
+  if (!document.querySelector('[role="menu"]'))
+    await act(async () => activityTrigger().click());
+}
+const activityItem = (text: string) =>
+  [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (item) => item.textContent?.trim() === text,
+  );
+async function chooseActivity(text: string) {
+  await openActivityMenu();
+  const item = activityItem(text)!;
+  await act(async () => item.click());
+}
 const row: ActivityAccount = {
   player_tag: "#PYY",
   player_name: "Fixture healthy",
@@ -201,11 +219,7 @@ it("permission loss clears loaded protected rows", async () => {
         status: 403,
       }),
   );
-  await act(async () =>
-    [...host.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent === "Refresh activity")!
-      .click(),
-  );
+  await chooseActivity("Refresh activity");
   expect(denied).toHaveBeenCalledOnce();
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(0);
   expect(host.querySelector("[role=alert]")).not.toBeNull();
@@ -215,15 +229,16 @@ it("selection controls are manager-only and Select all covers the current filter
   await act(async () =>
     root.render(<StrikeActivityRoster onChoose={vi.fn()} canManage={false} />),
   );
-  expect(host.textContent).not.toContain("Select accounts");
+  await openActivityMenu();
+  expect(activityItem("Copy list")).toBeDefined();
+  expect(activityItem("Select accounts")).toBeUndefined();
+  await act(async () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })),
+  );
   await act(async () =>
     root.render(<StrikeActivityRoster onChoose={vi.fn()} canManage />),
   );
-  await act(async () =>
-    [...host.querySelectorAll("button")]
-      .find((button) => button.textContent === "Select accounts")!
-      .click(),
-  );
+  await chooseActivity("Select accounts");
   const all = [...host.querySelectorAll("button")].find(
     (button) => button.textContent === "Select all (2)",
   )!;
@@ -256,11 +271,7 @@ it("state-driven filters and explicit Discard clear selection", async () => {
       <StrikeActivityRoster state="?view=all" onChoose={choose} canManage />,
     ),
   );
-  await act(async () =>
-    [...host.querySelectorAll("button")]
-      .find((button) => button.textContent === "Select accounts")!
-      .click(),
-  );
+  await chooseActivity("Select accounts");
   await act(async () =>
     [...host.querySelectorAll("button")]
       .find((button) => button.textContent === "Select all (2)")!
@@ -282,11 +293,7 @@ it("state-driven filters and explicit Discard clear selection", async () => {
   expect(
     host.querySelector('[aria-label="Mark selected replacements"]'),
   ).toBeNull();
-  await act(async () =>
-    [...host.querySelectorAll("button")]
-      .find((button) => button.textContent === "Select accounts")!
-      .click(),
-  );
+  await chooseActivity("Select accounts");
   await act(async () =>
     [...host.querySelectorAll("button")]
       .find((button) => button.textContent === "Select all (1)")!
@@ -328,11 +335,7 @@ it("disables oversized Select all and explains how to enable it", async () => {
       <StrikeActivityRoster state="?view=all" onChoose={vi.fn()} canManage />,
     ),
   );
-  await act(async () =>
-    [...host.querySelectorAll("button")]
-      .find((button) => button.textContent === "Select accounts")!
-      .click(),
-  );
+  await chooseActivity("Select accounts");
   const selectAll = [...host.querySelectorAll("button")].find(
     (button) => button.textContent === "Select all (125)",
   )!;
@@ -398,11 +401,7 @@ it("defaults to known three-war misses and exposes the threshold chip", async ()
     "3+ wars without attacking",
   );
   expect(host.textContent).not.toContain("at risk");
-  await act(async () =>
-    [...host.querySelectorAll("button")]
-      .find((button) => button.textContent === "Select accounts")!
-      .click(),
-  );
+  await chooseActivity("Select accounts");
   await act(async () =>
     [...host.querySelectorAll("button")]
       .find((button) => button.textContent === "Select all (1)")!
@@ -438,14 +437,11 @@ it("copies every matching account across pages and reports clipboard refusal", a
     root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
   );
   expect(host.querySelectorAll("[data-strike-player]")).toHaveLength(25);
-  const copy = [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "Copy list",
-  )!;
-  await act(async () => copy.click());
+  await chooseActivity("Copy list");
   expect(writeText.mock.calls[0][0].split("\n")).toHaveLength(65);
   expect(host.textContent).toContain("Copied 65 accounts");
   writeText.mockRejectedValueOnce(new Error("Denied"));
-  await act(async () => copy.click());
+  await chooseActivity("Copy list");
   expect(host.textContent).toContain("Copy failed");
 });
 
@@ -568,16 +564,8 @@ it("closes the Copy menu and clears a brief toast when filters change", async ()
         <StrikeActivityRoster state="?activity_view=all" onChoose={vi.fn()} />,
       ),
     );
-    const menu = host.querySelector<HTMLDetailsElement>(
-      ".strike-activity-actions",
-    )!;
-    menu.open = true;
-    await act(async () =>
-      [...host.querySelectorAll<HTMLButtonElement>("button")]
-        .find((b) => b.textContent === "Copy list")!
-        .click(),
-    );
-    expect(menu.open).toBe(false);
+    await chooseActivity("Copy list");
+    expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(host.querySelector(".strike-copy-toast")!.textContent).toContain(
       "Copied 2",
     );
@@ -591,11 +579,7 @@ it("closes the Copy menu and clears a brief toast when filters change", async ()
     );
     expect(host.querySelector(".strike-copy-toast")).toBeNull();
     expect(host.textContent).toContain("Showing 1 of 2");
-    await act(async () =>
-      [...host.querySelectorAll<HTMLButtonElement>("button")]
-        .find((b) => b.textContent === "Copy list")!
-        .click(),
-    );
+    await chooseActivity("Copy list");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4001);
     });
@@ -855,7 +839,7 @@ it("keeps Sort, Filters and the actions menu reachable while a query is set", as
     toolbar.querySelector(".strike-activity-filters-button"),
   ).not.toBeNull();
   expect(
-    toolbar.querySelector('[aria-label="Activity actions"]'),
+    toolbar.querySelector('[aria-label="Actions for Activity"]'),
   ).not.toBeNull();
   expect(
     toolbar.querySelector(".strike-activity-search-button"),
