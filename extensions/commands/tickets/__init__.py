@@ -415,5 +415,6 @@ __all__ = [
 ]
 
 from . import player_info
+from . import link_account
 
 from . import link_review
