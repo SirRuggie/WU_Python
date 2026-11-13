@@ -431,7 +431,7 @@
   touch-action: manipulation;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .hub-next {
     flex-wrap: wrap;
   }
@@ -717,7 +717,7 @@
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 390px) {
   .dashboard-home .hub-next {
     padding: var(--wu-space-4);
   }

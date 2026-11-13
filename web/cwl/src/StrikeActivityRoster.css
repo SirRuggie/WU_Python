@@ -445,7 +445,7 @@
   scroll-margin-block: 140px 140px;
 }
 
-@media (min-width: 901px) {
+@media (min-width: 1000px) {
   .strike-activity-roster {
     grid-template-columns: auto minmax(0, 1fr);
     gap: var(--wu-space-1) var(--wu-space-3);
@@ -476,7 +476,7 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-@media (min-width: 901px) {
+@media (min-width: 1000px) {
   .strike-activity-roster {
     row-gap: 0;
   }
@@ -484,7 +484,7 @@
     padding-block: 0;
   }
 }
-@media (min-width: 901px) {
+@media (min-width: 1000px) {
   .strike-activity-toolbar :is(button, input, select, summary),
   .strike-activity-tabs button {
     box-sizing: border-box;
@@ -494,7 +494,7 @@
     top: 44px;
   }
 }
-@media (min-width: 901px) {
+@media (min-width: 1000px) {
   .strike-activity-toolbar details {
     border: 0;
   }
@@ -578,7 +578,7 @@
   min-width: 0;
 }
 /* Phones: the View select and Find slots share the first row. Find slots stays mounted in one place at every width. */
-@media (max-width: 650px) {
+@media (max-width: 760px) {
   .strike-activity-roster.has-find-slots {
     grid-template-columns: minmax(0, 1fr) auto;
   }

@@ -103,7 +103,7 @@
     min-block-size: 2.7em;
   }
 }
-@media (max-width: 480px) {
+@media (max-width: 350px) {
   .saved-view-summary > section:first-child > p:first-of-type {
     min-block-size: 4.5em;
     text-wrap: pretty;

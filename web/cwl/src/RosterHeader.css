@@ -96,7 +96,7 @@
   color: inherit;
   cursor: pointer;
 }
-@media (min-width: 901px) {
+@media (min-width: 1100px) {
   .roster-header > .publication-awareness,
   .roster-header > .signup-activity {
     grid-column: 1 / -1;
@@ -131,7 +131,7 @@
   margin-bottom: 0;
 }
 
-@media (min-width: 901px) {
+@media (min-width: 1100px) {
   .roster-header-title-row {
     grid-area: 1 / 1;
   }

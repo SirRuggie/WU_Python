@@ -71,7 +71,7 @@
   background: var(--wu-danger);
 }
 .issue-dot-warning {
-  background: var(--wu-accent);
+  background: var(--wu-warning);
 }
 .issue-summary time,
 .issue-reference {

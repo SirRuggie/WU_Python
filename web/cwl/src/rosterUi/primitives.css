@@ -413,5 +413,5 @@
   background: var(--wu-success);
 }
 .roster-menu-status-dot.is-warning {
-  background: var(--wu-accent-hover);
+  background: var(--wu-warning);
 }

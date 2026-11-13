@@ -960,7 +960,7 @@ small {
     flex: 1;
   }
 }
-@media (max-width: 480px) {
+@media (max-width: 370px) {
   .account-meta {
     padding-left: 0;
   }
@@ -1098,7 +1098,7 @@ small {
     flex-basis: 30px;
   }
 }
-@media (max-width: 480px) {
+@media (max-width: 370px) {
   .user-pill {
     max-width: 125px;
   }
@@ -1332,7 +1332,7 @@ small {
 .roster-account-head .badge {
   flex: none;
 }
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .roster-account-list {
     grid-template-columns: 1fr;
   }
@@ -2220,13 +2220,13 @@ textarea {
     padding: var(--wu-space-4);
   }
 }
-@media (max-width: 480px) {
+@media (max-width: 320px) {
   .shell .workspace main:has(.moderation-workspace) {
     padding-inline: var(--wu-space-3);
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 320px) {
   .shell .workspace main:has(.events-workspace) {
     padding-inline: var(--wu-space-3);
   }

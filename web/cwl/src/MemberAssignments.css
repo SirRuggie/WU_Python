@@ -407,7 +407,7 @@
     padding: var(--wu-space-4);
   }
 }
-@media (max-width: 480px) {
+@media (max-width: 360px) {
   .member-assignments
     .member-clan-card:not(.member-awaiting-card)
     .member-clan-head {
@@ -417,7 +417,7 @@
 }
 
 /* Entry 742: the existing nowrap status title overflowed the 320px page. */
-@media (max-width: 480px) {
+@media (max-width: 320px) {
   .member-status-line strong {
     white-space: normal;
   }

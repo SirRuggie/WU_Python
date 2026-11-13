@@ -251,7 +251,7 @@
 .participation-dialog-actions button {
   min-height: 44px;
 }
-@media (max-width: 650px) {
+@media (max-width: 760px) {
   .participation-capture {
     padding: var(--wu-space-1) var(--wu-space-1) var(--wu-space-1)
       var(--wu-space-3);

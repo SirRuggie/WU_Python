@@ -156,7 +156,7 @@
   font-size: var(--wu-text-sm);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 390px) {
   .player-clan-details {
     padding: var(--wu-space-4);
   }

@@ -322,7 +322,7 @@ div.shell {
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 370px) {
   .shell .topbar {
     padding-inline: var(--wu-space-3);
     gap: var(--wu-space-2);

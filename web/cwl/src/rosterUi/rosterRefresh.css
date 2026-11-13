@@ -159,7 +159,7 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
-@media (max-width: 480px) {
+@media (max-width: 400px) {
   .roster-workspace .staff-signup-bar .roster-ui-status {
     font-size: var(--wu-text-xs);
   }

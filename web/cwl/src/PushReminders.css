@@ -165,7 +165,7 @@
   min-height: 44px;
   margin: var(--wu-space-2) var(--wu-space-2) 0 0;
 }
-@media (max-width: 480px) {
+@media (max-width: 360px) {
   .push-time-row {
     display: grid;
     grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1fr);

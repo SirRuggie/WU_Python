@@ -471,7 +471,7 @@
 .todo-home-link > button {
   flex: none;
 }
-@media (max-width: 900px) {
+@media (max-width: 1050px) {
   .todo-tabs {
   }
   .todo-picker-list {
@@ -631,7 +631,7 @@
   text-decoration: underline;
 }
 
-@media (max-width: 480px) {
+@media (max-width: 320px) {
   .todo-clan > header {
     padding-left: var(--wu-space-2);
     padding-right: var(--wu-space-2);
