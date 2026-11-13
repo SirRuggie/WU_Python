@@ -1,18 +1,8 @@
 import LoadError from "./LoadError";
 import PageEyebrow from "./PageEyebrow";
-import useConfirmDialog from "./useConfirmDialog";
-import {
-  registerActionPanel,
-  isTopActionPanel,
-  panelHistoryState,
-  installPanelBackHandler,
-  backOutOfPanelEntry,
-} from "./actionPanelHistory";
-import { countLabel } from "./countLabel";
 import SectionTabs from "./SectionTabs";
-import SearchPicker from "./SearchPicker";
 import ServerSettingsIndex from "./ServerSettingsIndex";
-import BandStatusSummary, { bandStatusWarning } from "./BandStatusSummary";
+import { bandStatusWarning } from "./BandStatusSummary";
 import ApplicationSettingsIndex from "./ApplicationSettingsIndex";
 import ReturnReminderOverview, {
   ReturnStatusSummary,
@@ -24,365 +14,40 @@ import {
   managementAreas,
   type ManagementArea,
 } from "./managementAreas";
-import MemberPicker, { type MemberOption } from "./MemberPicker";
-import { previewUrl } from "./previewFormatting";
 import DiscordPreview, { type PreviewPart } from "./DiscordMessagePreview";
 import useCompactPreview from "./useCompactPreview";
 import { useEffect, useRef, useState } from "react";
-import { api, apiUpload, ApiError } from "./api";
+import { api, ApiError } from "./api";
 import {
   recordPickerCopy,
-  actionConfirmation,
-  actionNeedsConfirmation,
-  safeDiscordUrl,
   type ManagementResult,
   ManagementRequestIds,
   changedValues,
   fieldError,
   fieldValues,
   type ManagementDocument,
-  type ManagementField,
   type ManagementSection,
   type ManagementValue,
 } from "./serverManagement";
+import {
+  apiPath,
+  hydrateFields,
+  message,
+  sectionEndpoint,
+} from "./managementRequests";
+import useManagementConfirmation from "./useManagementConfirmation";
+import ManagementActionResult from "./ManagementActionResult";
+import ManagementActions from "./ManagementActions";
+import ManagementEditorForm from "./ManagementEditorForm";
+import ManagementRecordNavigation from "./ManagementRecordNavigation";
+import ManagementStatusCheck from "./ManagementStatusCheck";
 import "./ServerManagement.css";
 import "./navList.css";
-const apiPath = (path: string) => path.replace(/^\/api\/cwl(?=\/)/, "");
-const message = (error: unknown) =>
-  error instanceof Error
-    ? error.message
-    : "Could not load settings. Try again.";
 type Props = {
   area?: ManagementArea;
   onNavigate?: (destination: string) => void;
   onDirty?: (dirty: boolean) => void;
 };
-function Field({
-  field,
-  value,
-  onChange,
-  disabled,
-  revision,
-  onMemberOptions,
-  memberRoles,
-}: {
-  field: ManagementField;
-  value: ManagementValue;
-  onChange: (value: ManagementValue) => void;
-  disabled: boolean;
-  revision: string | number;
-  onMemberOptions?: (options: MemberOption[]) => void;
-  memberRoles?: { value: string; label: string }[];
-}) {
-  const [search, setSearch] = useState(""),
-    [uploading, setUploading] = useState(false),
-    [uploadError, setUploadError] = useState("");
-  const id = `manage-${field.key.replace(/[^a-z0-9]/gi, "-")}`;
-  const [remoteOptions, setRemoteOptions] = useState(field.options || []);
-  useEffect(() => {
-    setRemoteOptions(field.options || []);
-  }, [field.options]);
-
-  const options = remoteOptions;
-  const matching = options.filter((option) =>
-    `${option.label} ${option.value}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
-  const picker =
-    !!field.source ||
-    ["role", "channel", "member", "multiselect"].includes(field.type);
-  const multiple = field.type === "multiselect" || Array.isArray(value);
-  if (field.type === "member" || field.source === "members")
-    return (
-      <MemberPicker
-        compactSelection
-        label={field.label}
-        value={value}
-        onChange={onChange}
-        disabled={disabled || !!field.readonly}
-        multiple={multiple}
-        onOptions={onMemberOptions}
-        roles={memberRoles}
-      />
-    );
-  return (
-    <div
-      className={`manage-field ${field.type === "textarea" ? "manage-field-wide" : ""}`}
-    >
-      {field.type === "boolean" ? (
-        <label className="manage-switch" htmlFor={id}>
-          <input
-            id={id}
-            type="checkbox"
-            checked={Boolean(value)}
-            disabled={disabled || field.readonly}
-            onChange={(event) => onChange(event.target.checked)}
-          />
-          {field.label}
-        </label>
-      ) : (
-        <>
-          <label htmlFor={id}>
-            {field.label}
-            {field.required ? " *" : ""}
-          </label>
-          {picker && (
-            <input
-              aria-label={`Find ${field.label.toLowerCase()}`}
-              placeholder="Search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              disabled={disabled || field.readonly}
-            />
-          )}
-          {field.type === "textarea" ? (
-            <textarea
-              id={id}
-              rows={String(field.value ?? "").length < 160 ? 3 : 5}
-              value={String(value ?? "")}
-              disabled={disabled || field.readonly}
-              maxLength={field.max_length}
-              aria-describedby={field.description ? `${id}-help` : undefined}
-              onChange={(event) => onChange(event.target.value)}
-            />
-          ) : multiple ? (
-            <div
-              id={id}
-              className="manage-option-checks"
-              role="group"
-              aria-label={field.label}
-            >
-              {matching.length ? (
-                matching.map((option) => (
-                  <label key={option.value}>
-                    <input
-                      type="checkbox"
-                      disabled={disabled || field.readonly}
-                      checked={
-                        Array.isArray(value) && value.includes(option.value)
-                      }
-                      onChange={(event) =>
-                        onChange(
-                          event.target.checked
-                            ? [
-                                ...(Array.isArray(value) ? value : []),
-                                option.value,
-                              ]
-                            : (Array.isArray(value) ? value : []).filter(
-                                (item) => item !== option.value,
-                              ),
-                        )
-                      }
-                    />
-                    {option.label}
-                  </label>
-                ))
-              ) : (
-                <small>No matches found.</small>
-              )}
-            </div>
-          ) : picker || field.type === "select" ? (
-            <select
-              id={id}
-              multiple={multiple}
-              size={
-                multiple ? Math.min(6, Math.max(3, matching.length)) : undefined
-              }
-              disabled={disabled || field.readonly}
-              value={
-                multiple
-                  ? Array.isArray(value)
-                    ? value
-                    : []
-                  : String(value ?? "")
-              }
-              onChange={(event) =>
-                onChange(
-                  multiple
-                    ? Array.from(
-                        event.target.selectedOptions,
-                        (option) => option.value,
-                      )
-                    : event.target.value,
-                )
-              }
-            >
-              {!multiple && (
-                <option value="">Select {field.label.toLowerCase()}</option>
-              )}
-              {options
-                .filter(
-                  (option) =>
-                    matching.includes(option) ||
-                    (Array.isArray(value)
-                      ? value.includes(option.value)
-                      : option.value === String(value)),
-                )
-                .map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              {!multiple &&
-                value &&
-                !options.some((option) => option.value === String(value)) && (
-                  <option value={String(value)}>
-                    Current selection · {String(value)}
-                  </option>
-                )}
-            </select>
-          ) : (
-            <input
-              id={id}
-              type={field.type === "number" ? "number" : "text"}
-              value={String(value ?? "")}
-              disabled={disabled || field.readonly}
-              min={field.min}
-              max={field.max}
-              maxLength={field.max_length}
-              placeholder={field.placeholder}
-              onChange={(event) =>
-                onChange(
-                  field.type === "number" && event.target.value !== ""
-                    ? Number(event.target.value)
-                    : event.target.value,
-                )
-              }
-            />
-          )}
-        </>
-      )}
-      {field.upload_endpoint && previewUrl(String(value || "")) && (
-        <div className="manage-image-current">
-          <small>Current {field.label.toLowerCase()}</small>
-          <img
-            src={previewUrl(String(value))}
-            alt={field.label}
-            loading="lazy"
-            referrerPolicy="no-referrer"
-          />
-        </div>
-      )}
-      {field.upload_endpoint && (
-        <label className="manage-upload">
-          {uploading
-            ? "Uploading image…"
-            : field.upload_label || `Upload ${field.label.toLowerCase()}`}
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            disabled={disabled || uploading}
-            onChange={async (event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (!file) return;
-              setUploadError("");
-              if (file.size > (field.upload_max_bytes || 10 * 1024 * 1024)) {
-                setUploadError(
-                  "This image is too large. Select a smaller image.",
-                );
-                return;
-              }
-              setUploading(true);
-              try {
-                const result = await apiUpload<{ url: string }>(
-                  apiPath(field.upload_endpoint!) +
-                    `?revision=${encodeURIComponent(revision)}`,
-                  file,
-                );
-                onChange(result.url);
-              } catch (error) {
-                setUploadError(message(error));
-              } finally {
-                setUploading(false);
-              }
-            }}
-          />
-        </label>
-      )}
-      {uploadError && <p role="alert">{uploadError}</p>}
-      {field.description && (
-        <small id={`${id}-help`}>{field.description}</small>
-      )}
-    </div>
-  );
-}
-async function hydrateFields(fields: ManagementField[]) {
-  if (
-    !fields.some(
-      (field) =>
-        (field.source === "roles" ||
-          field.source === "channels" ||
-          ["channel", "role", "multiselect"].includes(field.type)) &&
-        !field.options &&
-        field.source !== "members",
-    )
-  )
-    return fields;
-  const choices = await api<{
-    channels: { value: string; label: string }[];
-    roles: { value: string; label: string }[];
-  }>("/manage/choices");
-  return fields.map((field) =>
-    field.options
-      ? field
-      : {
-          ...field,
-          options:
-            field.source === "members"
-              ? []
-              : field.type === "channel" || field.source === "channels"
-                ? choices.channels
-                : field.source === "roles" ||
-                    ["role", "multiselect"].includes(field.type)
-                  ? choices.roles
-                  : undefined,
-        },
-  );
-}
-
-let managementConfirmationSerial = 0;
-function useManagementConfirmation() {
-  const [decision, setDecision] = useState(0);
-  const pending = useRef(false);
-  const { confirm, dialog } = useConfirmDialog(String(decision));
-  async function ask(text: string, label = "Discard changes") {
-    if (pending.current) return false;
-    pending.current = true;
-    const marker = `management-confirm-${++managementConfirmationSerial}`;
-    const unregister = registerActionPanel(marker);
-    const state = panelHistoryState(window.history.state, marker);
-    let consumed = false;
-    window.history.pushState(state, "", window.location.href);
-    const uninstall = installPanelBackHandler({
-      windowPort: window,
-      historyPort: window.history,
-      marker,
-      panelState: state,
-      isBusy: () => false,
-      isTop: () => isTopActionPanel(marker),
-      close: () => {
-        consumed = true;
-        setDecision((value) => value + 1);
-      },
-    });
-    try {
-      return await confirm(text, label);
-    } finally {
-      uninstall();
-      unregister();
-      if (!consumed)
-        backOutOfPanelEntry({
-          windowPort: window,
-          historyPort: window.history,
-          marker,
-        });
-      pending.current = false;
-    }
-  }
-  return { ask, dialog };
-}
 
 export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
   const [sections, setSections] = useState<ManagementSection[]>([]),
@@ -470,8 +135,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       alive = false;
     };
   }, [catalogAttempt, area]);
-  const endpoint = (section: ManagementSection) =>
-    apiPath(section.endpoint || `/manage/${encodeURIComponent(section.id)}`);
+  const endpoint = sectionEndpoint;
   useEffect(() => {
     if (!selected || !document?.preview_supported || !previewVisible || busy)
       return;
@@ -763,80 +427,27 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
           {notice}
         </p>
       )}
-      {actionResult && (
-        <section className="manage-result" aria-label="Action result">
-          <h3>Result</h3>
-          {actionResult.message && <p>{actionResult.message}</p>}
-          {actionResult.details && (
-            <p className="manage-result-details">{actionResult.details}</p>
-          )}
-          {safeDiscordUrl(actionResult.url) && (
-            <a
-              className="target-44"
-              href={safeDiscordUrl(actionResult.url)!}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View in Discord ↗
-            </a>
-          )}
-          {actionResult.accounts && (
-            <>
-              <p>{countLabel(actionResult.accounts.length, "account")}</p>
-              <ul>
-                {actionResult.accounts.map((account, index) => (
-                  <li key={`${account.tag || account.player_tag || index}`}>
-                    <strong>
-                      {account.name || account.player_name || "Account"}
-                    </strong>
-                    <span>{account.tag || account.player_tag}</span>
-                    <small>
-                      {account.current_clan_name ||
-                        account.clan_name ||
-                        (typeof account.current_clan === "string"
-                          ? account.current_clan
-                          : account.current_clan?.name) ||
-                        account.clan?.name ||
-                        "No current clan"}
-                    </small>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </section>
+      {notice && (
+        <p className="manage-notice" role="status">
+          {notice}
+        </p>
       )}
+      {actionResult && <ManagementActionResult actionResult={actionResult} />}
       {statusUrl && (
-        <button
-          disabled={busy}
-          onClick={async () => {
-            if (writing.current || !selected) return;
-            const turn = sequence.current;
-            const current = selected;
-            writing.current = true;
-            setBusy(true);
-            try {
-              const status = await checkAction(statusUrl);
-              if (status === "done" && turn === sequence.current) {
-                const result = await api<ManagementDocument>(endpoint(current));
-                const fields = await hydrateFields(result.fields || []);
-                if (turn !== sequence.current) return;
-                setDocument({ ...result, fields });
-                setDraft(fieldValues(fields));
-                setError("");
-                setConflict(false);
-                setPreview(result.preview || null);
-              }
-            } catch (error) {
-              if (turn === sequence.current) setError(message(error));
-            } finally {
-              writing.current = false;
-              if (turn === sequence.current) setBusy(false);
-            }
-          }}
-        >
-          Check request status
-        </button>
+        <ManagementStatusCheck
+          selected={selected}
+          statusUrl={statusUrl}
+          busy={busy}
+          writing={writing}
+          sequence={sequence}
+          checkAction={checkAction}
+          setBusy={setBusy}
+          setError={setError}
+          setConflict={setConflict}
+          setDocument={setDocument}
+          setDraft={setDraft}
+          setPreview={setPreview}
+        />
       )}
       {area === "cwl-returns" && (
         <div hidden={!!selected}>
@@ -880,68 +491,13 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         <p role="status">Loading settings…</p>
       )}
       {selected && documents.length > 0 && (
-        <section
-          className="manage-record-navigation"
-          aria-label={pickerCopy.label}
-        >
-          {documents.length <= 8 ? (
-            <div className="manage-section-choices nav-list">
-              {documents.map((record) => (
-                <button
-                  key={record.id}
-                  disabled={busy}
-                  aria-pressed={record.id === selected.id}
-                  onClick={() => void open(record, true)}
-                >
-                  <span>{record.label}</span>
-                  <span aria-hidden="true">→</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="manage-record-picker">
-              <SearchPicker
-                label={pickerCopy.label}
-                value={
-                  documents.some((item) => item.id === selected.id)
-                    ? selected.id
-                    : ""
-                }
-                options={documents.map((record) => ({
-                  value: record.id,
-                  label: record.label,
-                }))}
-                search={(query) =>
-                  documents
-                    .filter((record) =>
-                      query
-                        .toLowerCase()
-                        .split(/\s+/)
-                        .filter(Boolean)
-                        .every((word) =>
-                          `${record.label} ${record.id}`
-                            .toLowerCase()
-                            .includes(word),
-                        ),
-                    )
-                    .map((record) => ({
-                      value: record.id,
-                      label: record.label,
-                    }))
-                }
-                disabled={busy}
-                placeholder={`Select ${pickerCopy.label.toLowerCase()}`}
-                searchPlaceholder={pickerCopy.placeholder}
-                emptyText="No settings match."
-                limit={100}
-                onChange={(id) => {
-                  const record = documents.find((item) => item.id === id);
-                  if (record) void open(record, true);
-                }}
-              />
-            </div>
-          )}
-        </section>
+        <ManagementRecordNavigation
+          documents={documents}
+          selected={selected}
+          busy={busy}
+          pickerCopy={pickerCopy}
+          onOpen={(record) => void open(record, true)}
+        />
       )}
       {selected && busy && !document && (
         <p role="status">Loading {selected.label.toLowerCase()}…</p>
@@ -991,139 +547,25 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                 : ""
             }
           >
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void save();
-              }}
-            >
-              {document.readonly && operationsWorkspace ? (
-                <BandStatusSummary fields={document.fields} />
-              ) : (
-                <fieldset disabled={busy || document.readonly} aria-busy={busy}>
-                  <legend className="manage-sr-only">
-                    {selected.label} settings
-                  </legend>
-                  {document.fields.length > 6 && (
-                    <label className="manage-record-picker">
-                      Message or setting to edit
-                      <select
-                        value={fieldPage}
-                        onChange={(event) =>
-                          setFieldPage(Number(event.target.value))
-                        }
-                      >
-                        {Array.from(
-                          { length: Math.ceil(document.fields.length / 4) },
-                          (_, index) => (
-                            <option key={index} value={index}>
-                              {document.fields[index * 4].label}
-                            </option>
-                          ),
-                        )}
-                      </select>
-                      <small>Save applies all edits.</small>
-                    </label>
-                  )}
-                  <div className="manage-fields">
-                    {(document.fields.length > 6
-                      ? document.fields.slice(fieldPage * 4, fieldPage * 4 + 4)
-                      : document.fields
-                    ).map((field) => (
-                      <Field
-                        key={field.key + ":" + (document.member_refresh || "")}
-                        memberRoles={
-                          document.fields.find(
-                            (item) => item.key === "role_ids",
-                          )?.options
-                        }
-                        onMemberOptions={(options) =>
-                          setDocument((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  fields: current.fields.map((item) =>
-                                    item.key === field.key
-                                      ? {
-                                          ...item,
-                                          options: [
-                                            ...new Map(
-                                              [
-                                                ...(item.options || []),
-                                                ...options,
-                                              ].map((option) => [
-                                                option.value,
-                                                option,
-                                              ]),
-                                            ).values(),
-                                          ],
-                                        }
-                                      : item,
-                                  ),
-                                }
-                              : current,
-                          )
-                        }
-                        revision={document.revision}
-                        field={field}
-                        value={draft[field.key]}
-                        disabled={busy || !!document.readonly}
-                        onChange={(value) => {
-                          setDraft((current) => ({
-                            ...current,
-                            [field.key]: value,
-                          }));
-                          setNotice("");
-                        }}
-                      />
-                    ))}
-                  </div>
-                </fieldset>
-              )}
-              {!document.readonly && !document.action_only && (
-                <div className="manage-save">
-                  <span
-                    className={busy ? "working-status" : undefined}
-                    aria-live="polite"
-                  >
-                    {busy
-                      ? "Working…"
-                      : dirty
-                        ? "Changes not saved"
-                        : "All changes saved"}
-                  </span>
-                  <div>
-                    {document.preview_supported &&
-                      !compactPreview &&
-                      !operationsWorkspace && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            setMobilePane("preview");
-                            void save(true);
-                          }}
-                        >
-                          Preview
-                        </button>
-                      )}
-                    <button
-                      className="primary"
-                      type="submit"
-                      disabled={
-                        busy ||
-                        !dirty ||
-                        publishDirty ||
-                        conflict ||
-                        !!statusUrl
-                      }
-                    >
-                      Save changes
-                    </button>
-                  </div>
-                </div>
-              )}
-            </form>
+            <ManagementEditorForm
+              selected={selected}
+              document={document}
+              draft={draft}
+              busy={busy}
+              dirty={dirty}
+              conflict={conflict}
+              publishDirty={publishDirty}
+              statusUrl={statusUrl}
+              fieldPage={fieldPage}
+              compactPreview={compactPreview}
+              operationsWorkspace={operationsWorkspace}
+              onSave={(review) => void save(review)}
+              setFieldPage={setFieldPage}
+              setMobilePane={setMobilePane}
+              setDocument={setDocument}
+              setDraft={setDraft}
+              setNotice={setNotice}
+            />
             {document.preview_supported && previewVisible && (
               <DiscordPreview parts={preview || []} status={previewStatus} />
             )}
@@ -1147,165 +589,29 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
               }}
             />
           )}
-          <div>
-            {[false, true].map((advanced) => {
-              const actions = (document.actions || []).filter(
-                (action) => !!action.advanced === advanced,
-              );
-              if (!actions.length) return null;
-              const content = (
-                <div>
-                  {actions.map((action) => (
-                    <div className="manage-action" key={action.id}>
-                      <>{action.description && <p>{action.description}</p>}</>
-                      <button
-                        disabled={
-                          busy ||
-                          !!statusUrl ||
-                          (dirty && !document.action_only)
-                        }
-                        onClick={async () => {
-                          if (writing.current) return;
-                          const invalid = document.fields
-                            .map((field) => fieldError(field, draft[field.key]))
-                            .find(Boolean);
-                          if (invalid) {
-                            setError(invalid);
-                            return;
-                          }
-                          const turn = sequence.current;
-                          if (
-                            actionNeedsConfirmation(document.id, action.id) &&
-                            !(await ask(
-                              actionConfirmation(
-                                action.confirm ||
-                                  `${action.label}? This changes the shared server settings.`,
-                                document.fields,
-                                draft,
-                              ),
-                              action.label,
-                            ))
-                          )
-                            return;
-                          if (writing.current || turn !== sequence.current)
-                            return;
-                          writing.current = true;
-                          setBusy(true);
-                          setError("");
-                          setActionResult(null);
-                          const actionEndpoint = apiPath(
-                            action.endpoint ||
-                              `${endpoint(selected)}/actions/${encodeURIComponent(action.id)}`,
-                          );
-                          const requestKey = requestIds.current.key(
-                            actionEndpoint,
-                            document.revision,
-                            draft,
-                          );
-                          try {
-                            const outcome = await api<{
-                              message?: string;
-                              url?: string;
-                              details?: string;
-                              accounts?: ManagementResult["accounts"];
-                              draft_values?: Record<string, ManagementValue>;
-                              status?: string;
-                              status_url?: string;
-                              removed?: boolean;
-                              return_endpoint?: string;
-                              return_label?: string;
-                            }>(actionEndpoint, "POST", {
-                              revision: document.revision,
-                              values: draft,
-                              request_id: requestIds.current.get(requestKey),
-                            });
-                            setNotice(outcome.message || "Change saved.");
-                            if (outcome.status_url) {
-                              pendingKeys.current.set(
-                                outcome.status_url,
-                                requestKey,
-                              );
-                              const status = await checkAction(
-                                outcome.status_url,
-                                true,
-                              );
-                              if (status !== "done") return;
-                            } else {
-                              requestIds.current.complete(requestKey);
-                              setActionResult(
-                                outcome.url ||
-                                  outcome.details ||
-                                  outcome.accounts
-                                  ? outcome
-                                  : null,
-                              );
-                            }
-                            if (outcome.draft_values) {
-                              setDraft((current) => ({
-                                ...current,
-                                ...outcome.draft_values,
-                              }));
-                              setPreview(null);
-                              return;
-                            }
-                            if (outcome.removed && outcome.return_endpoint) {
-                              const next = {
-                                ...selected,
-                                endpoint: outcome.return_endpoint,
-                                label: outcome.return_label || selected.label,
-                              };
-                              const root = await api<ManagementDocument>(
-                                apiPath(outcome.return_endpoint),
-                              );
-                              setSelected(next);
-                              setDocument(null);
-                              setDraft({});
-                              setDocuments(
-                                (root.documents || []).map((record) => ({
-                                  ...next,
-                                  ...record,
-                                })),
-                              );
-                              return;
-                            }
-                            setDraft(fieldValues(document.fields));
-                            const result = await api<ManagementDocument>(
-                              endpoint(selected),
-                            );
-                            setDocument({
-                              ...result,
-                              member_refresh: Date.now(),
-                              fields: await hydrateFields(result.fields || []),
-                            });
-                            setDraft(fieldValues(result.fields || []));
-                          } catch (error) {
-                            setError(message(error));
-                          } finally {
-                            writing.current = false;
-                            setBusy(false);
-                          }
-                        }}
-                      >
-                        {action.label}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              );
-              return advanced ? (
-                <details className="manage-more-options" key="more">
-                  <summary>
-                    {document.id === "band_monitor"
-                      ? "Diagnostics"
-                      : "More options"}
-                  </summary>
-                  {content}
-                </details>
-              ) : (
-                <div key="primary">{content}</div>
-              );
-            })}
-          </div>{" "}
+          <ManagementActions
+            selected={selected}
+            document={document}
+            draft={draft}
+            busy={busy}
+            dirty={dirty}
+            statusUrl={statusUrl}
+            ask={ask}
+            writing={writing}
+            sequence={sequence}
+            requestIds={requestIds}
+            pendingKeys={pendingKeys}
+            checkAction={checkAction}
+            setBusy={setBusy}
+            setError={setError}
+            setNotice={setNotice}
+            setActionResult={setActionResult}
+            setDraft={setDraft}
+            setPreview={setPreview}
+            setSelected={setSelected}
+            setDocument={setDocument}
+            setDocuments={setDocuments}
+          />{" "}
           {supportsHistory(endpoint(selected)) && !document.action_only && (
             <ChangeHistory
               onBusy={(value) => {
