@@ -1800,3 +1800,22 @@ Pure refactor, no rendered change (pixel comparison of 33 pages at 360 and
   preview test. `activity/EventsWorkspace.tsx` reformatted.
 
 Status: frontend only, draft PR for review.
+
+## Decisions — UI audit 2 (2026-11-13)
+
+Ruggie's decisions, taken in thread:
+
+1. Dashboard success colour stays `--wu-success: #00d659`.
+2. FWA tools "War weights" is renamed "TH weight ranges". Text only
+   (`cwl_web/manage_operations.py`, `cwl_web/server_management.py`); no key,
+   route, data or schema change.
+3. Sidebar items and in-page "Open …" navigation are real `<a href>` links.
+   Plain select uses the History API router; modified clicks use the browser.
+4. Strikes page phone filter selects stay. Tabs stay Accounts / Leave /
+   Settings; no Replacements tab.
+
+Phases (each its own branch and draft PR): #352 A, #355 B, #354 C, #357 D,
+#356 E, #353 F1; F2 adds URL state for page tabs and filters, LoadError for the
+remaining channel retries, human-readable App.tsx and DiscordPreview source, and
+the shared rules in `docs/roster-ui-patterns.md`. Frontend only, except decision
+2.
