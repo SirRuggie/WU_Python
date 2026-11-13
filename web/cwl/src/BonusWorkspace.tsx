@@ -29,6 +29,7 @@ import BonusAddCandidate from "./BonusAddCandidate";
 import BonusDrawStep from "./BonusDrawStep";
 import BonusApproveStep from "./BonusApproveStep";
 import BonusAnnounceStep from "./BonusAnnounceStep";
+import LazyAnnouncementCard from "./LazyAnnouncementCard";
 import BonusClanSelect from "./BonusClanSelect";
 import ResultsSettingsSheet, {
   type SettingsSaved,
@@ -1034,6 +1035,16 @@ export default function BonusWorkspace({
               No current signups are assigned to a hosting clan in this CWL
               pool.
             </p>
+          )}
+          {pool === "lazy" && status && (
+            <LazyAnnouncementCard
+              seasonId={seasonId}
+              clans={status.pools.lazy}
+              clanTag={clanTag}
+              archived={!!archived}
+              disabled={busy || lookingUp}
+              onSent={() => void loadStatus()}
+            />
           )}
           {archived && <p className="notice">Archived season · Read only</p>}
           {!data.sync.enabled && onResults && (
