@@ -111,6 +111,7 @@ async def preview(request):
         'clans': options, 'blockers': blockers, 'pages': pages,
         'last_month_label': data['last_month_label'], 'last_month_count': len(data['last_month']),
         'clan_count': len(data['clans']),
+        'ping_count': len(render.ping_users(data)) if ping else 0,
         'winner_count': sum(len(c['winners']) for c in data['clans']),
         'unlinked_count': sum(1 for c in data['clans'] for w in c['winners'] if not w['user_id'])
                           + sum(1 for r in data['last_month'] if not r['user_id']),

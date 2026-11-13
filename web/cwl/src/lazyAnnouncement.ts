@@ -21,6 +21,8 @@ export type LazyAnnouncementPreview = {
   winner_count: number;
   clan_count: number;
   unlinked_count: number;
+  /** Discord members who get a ping: this month's linked winners. */
+  ping_count: number;
   fingerprint: string;
 };
 export type LazyAnnouncementResult = {

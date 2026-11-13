@@ -218,8 +218,9 @@ dropdown (2026-11-13: Ruggie found the first card too big), in both the All
 clans list and a clan's steps: "Announcement · x of y approved" and an "Open"
 button, at most as wide as the dropdown. It needs the Send CWL
 announcements grant (`cwl_send`) and at least one approved Lazy clan. The sheet
-has Clans (All Lazy clans or One clan), a preview, Channel, "Ping the Lazy CWL
-role" (off by default), and a review check before "Send to #channel".
+has Clans (All Lazy clans or One clan), a preview, Channel, "Ping this month's
+winners (N)" (on by default; 2026-11-13 replaced the Lazy CWL role ping), and a
+review check before "Send to #channel".
 
 `GET /api/cwl/seasons/{id}/bonus-raffle/lazy-announcement?scope=all|one&clan_tag=&ping=0|1`
 is read only. It uses approved draws, non-voided confirmations and imported
@@ -242,7 +243,10 @@ the intro, three rules, then last month's Lazy winners as `Name · #TAG · @user
 clan names). Rule 3 follows the included clans' sit-out lengths ("last N
 seasons"; none omits it; mixed lengths show each clan's sit-out). Then one
 container per clan: name, tag, bonus medal count (the approved draw's slots) and
-numbered winners. The gold footer image is attached to the last container. The
-optional Lazy CWL role mention (`1080521665584308286`) opens message 1 and is the only
-allowed mention; player mentions never notify. Messages split at 38 components
-or 3,800 text characters (Discord limits 40 and 4,000).
+numbered winners. The gold footer image is attached to the last container. No
+role is mentioned (Ruggie, 2026-11-13: the Lazy CWL role ping is removed). With
+the ping on, each message's `allowed_mentions.users` lists only this month's
+winners mentioned in that message; `parse` and `roles` stay empty. Last month's
+winners are never pinged unless they also won this month. Messages split at 38
+components, 3,800 text characters or 100 pinged users (Discord limits 40, 4,000
+and 100).
