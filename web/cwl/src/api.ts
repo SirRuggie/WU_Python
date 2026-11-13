@@ -97,6 +97,16 @@ export function handleAuthorizationFailure(status: number, path = "") {
 }
 let storageGeneration = 0;
 
+// A view that closes cancels its reads, and a hidden or closing page drops its
+// requests. Neither is a fault, so neither creates a staff issue reference.
+export function isExpectedCancel(error: unknown, signal?: AbortSignal) {
+  if (signal?.aborted) return true;
+  if ((error as { name?: unknown } | null)?.name === "AbortError") return true;
+  return (
+    typeof document !== "undefined" && document.visibilityState === "hidden"
+  );
+}
+
 export async function api<T>(
   path: string,
   method = "GET",
@@ -117,8 +127,9 @@ export async function api<T>(
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  } catch {
-    void reportBrowserIssue("network_error");
+  } catch (error) {
+    if (!isExpectedCancel(error, options?.signal))
+      void reportBrowserIssue("network_error");
     throw new ApiError(
       "The CWL service is unavailable. Check your connection and try again.",
       0,
@@ -159,9 +170,9 @@ export async function api<T>(
         (data?.issue_reference ? ` Reference: ${data.issue_reference}` : ""),
       response.status,
       response.status === 429 &&
-      typeof data?.retry_after === "number" &&
-      Number.isFinite(data.retry_after) &&
-      data.retry_after >= 0
+        typeof data?.retry_after === "number" &&
+        Number.isFinite(data.retry_after) &&
+        data.retry_after >= 0
         ? data.retry_after
         : undefined,
       data,

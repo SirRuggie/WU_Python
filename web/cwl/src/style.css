@@ -738,6 +738,11 @@ small {
   font-size: var(--wu-text-md);
   flex: none;
 }
+#dashboard-issue-reference {
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+  margin: var(--wu-space-3);
+}
 .staff-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
