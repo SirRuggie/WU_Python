@@ -1,32 +1,27 @@
-/* Lazy bonus announcement: entry card on the Lazy tab and its send sheet. */
-.lazy-announce-card {
+/* Lazy bonus announcement: entry row on the Lazy tab and its send sheet. */
+.lazy-announce-row {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: var(--roster-space-3);
-  margin: var(--wu-space-4) 0;
-  border: 1px solid var(--roster-border-subtle);
-  border-radius: var(--roster-radius-card);
-  background: var(--roster-surface-raised);
-  padding: var(--roster-space-3) var(--roster-space-4);
+  min-height: var(--roster-height-control);
+  /* Same width as the Hosting clan dropdown above it. */
+  max-width: 420px;
+  margin: var(--roster-space-2) 0 var(--wu-space-4);
 }
-.lazy-announce-card > div {
-  flex: 1 1 14rem;
+.lazy-announce-row p {
+  flex: 1 1 auto;
   min-width: 0;
-}
-.lazy-announce-card h2 {
   margin: 0;
-  color: var(--roster-gold);
-  font-size: var(--wu-text-md);
-}
-.lazy-announce-card p {
-  margin: var(--roster-space-1) 0 0;
   color: var(--roster-text-muted);
   font-size: var(--wu-text-sm);
 }
-.lazy-announce-card button {
+.lazy-announce-row strong {
+  color: var(--roster-text);
+}
+.lazy-announce-row button {
+  flex: none;
   min-height: var(--roster-height-control);
-  margin-left: auto;
+  padding-inline: var(--roster-space-4);
 }
 
 .lazy-announce-scope {

@@ -20,6 +20,7 @@ export type ParticipationAccount = {
   prior_winner_cycle?: string | null;
   eligible_again?: string | null;
   sit_out_excluded?: boolean;
+  sit_out_exempt?: boolean;
   previous_results?: {
     pool: string;
     assigned_clan_name: string | null;

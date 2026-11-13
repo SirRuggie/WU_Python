@@ -1,5 +1,75 @@
 # Release and rollback history
 
+## Lazy announcement compact row — 2026-11-13 (frontend only)
+
+- PR [#330](https://github.com/SirRuggie/WU_Python/pull/330), merge commit
+  `f3021d21bb54cc218d47fb2db750b8a730aa0e8e`, local tag
+  `lazy-announcement-330-1`. Released by Shaka (Claude) on Ruggie's "merge and
+  release 330" (2026-11-13 14:49 UTC).
+- Changes: the Lazy announcement entry is one compact row
+  (`LazyAnnouncementCard.tsx`, `LazyAnnouncement.css`). No Python, route,
+  schema or data change.
+- Backend not changed or restarted: `backend/7a4abbe6…`, PID 434692, active.
+  Bot not changed or restarted.
+- Frontend `current`: `7a4abbe6…` → `f3021d21…` (clean tagged clone, `npm ci`,
+  `tsc -b` and 2510 tests in 364 files passed before staging). Entry
+  `index-u0CibkhF.js`, SHA-256
+  `8dba029ed5b4ce42fea3dde713e1a7f38d7a52ef956d761776df72ed8f9def55`; feature
+  `LazyAnnouncementCard-DCj-doV3.js`, SHA-256
+  `cb3f0bbf8abf42c2df84c660a7655bcf592d0b5172e867a550e7fd19c10e8b39`. Served
+  `index.html` (SHA-256
+  `ffac0f3d3b9f2d0cc4d38998093e7d3736a633a1a0f080fed739f3a85175cb7a`) equals
+  the release file on `/`, `/cwl/results`, `/cwl/bonuses`, `/cwl/exports`; all
+  147 manifest assets match the public site.
+- Backup `.local/lazy-announcement-330-release-20261113T145019Z/before.sqlite3`
+  (SQLite backup API): integrity ok, equal to live, SHA-256
+  `c64a639531302490c05ec18678d5b7b913c82ab3973e383041816b2c6730632e`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131 (signups/assigned/locks),
+  publication max version 6 (6 rows, 4 active) and the lineup-rules digest
+  identical before and after.
+- Signed-out smoke at 360 px on `/cwl/results`, `/cwl/bonuses`,
+  `/cwl/exports`: new entry, no horizontal overflow, only the expected 401 on
+  `/api/cwl/auth/me`, no app writes (only Cloudflare RUM beacons). Signed-in
+  smoke SKIPPED. Send was not selected; no Discord post.
+- Rollback: frontend `switch-release.py
+  7a4abbe66ad87909544c22f9165fe26cc62936e6`. No backend change to roll back.
+  Never restore the database for a code rollback.
+
+## FWA Rep 1 per member, no Lazy sit-out — 2026-11-13 (backend and frontend)
+
+- PR [#327](https://github.com/SirRuggie/WU_Python/pull/327), merge commit
+  `7a4abbe66ad87909544c22f9165fe26cc62936e6`, local tag
+  `fwa-rep-no-sit-out-327-1`. Prompt 237, built and released by Shaka (Claude)
+  on Ruggie's "merge and release". Refuter ACCEPT. Rebased on `ab1fd2dd`
+  (UI audit 323–326) after that release finished; checks rerun (backend 8145
+  passed, frontend 2510 passed).
+- Changes: 1 FWA Rep account per linked member (second add refused; existing
+  duplicates kept with "Keep 1 account"); a listed Lazy account skips the
+  sit-out (`sit_out_exempt`); wording in the help, Settings and chip. No schema
+  change, no data write.
+- Backend: `release.conf` `backend/8f64316e…` → `backend/7a4abbe6…`; PID
+  333211 → 434692, cwd verified, active, ready after 9 s, public config 200,
+  anonymous seasons 401, no tracebacks; other drop-ins byte-identical. Bot not
+  restarted (does not import the changed modules).
+- Frontend `current`: `ab1fd2dd…` → `7a4abbe6…` (clean tagged clone, `npm ci`,
+  2510 tests passed before staging). Entry `index-DApwRnP1.js`, SHA-256
+  `e1b50e0b361331f37590400a03bf39b5b4fec3a49034e77ce54215f3385cee74`; served
+  `index.html` SHA-256
+  `49575742ca9aeb370d8318a6fdec8559f0727365c661beccfc982e1ce2509491` equals the
+  release file; all 147 manifest assets match the public site.
+- Backup `.local/fwa-rep-327-release-20261113T143135Z/dashboard.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `e543e51eddf77176a84cd8948a8b2b3b1e2981ecbfac7c5f6a666684d7f8c7f5`. All 76
+  table counts identical before and after.
+- Signed-out smoke at 360 px on `/cwl/results`, `/cwl/bonuses`,
+  `/cwl/exports`: new entry, only the expected 401, no overflow, GET only.
+  Signed-in smoke SKIPPED.
+- Rollback: backend `release.conf` back to
+  `backend/8f64316e6f4fa2100ef9e7a4dafcfe8658a88a0d`, daemon-reload, restart
+  `wu-cwl-demo-web`; frontend `switch-release.py
+  ab1fd2dd95b1a7015e3c13ac571267de2e2ea379`. Never restore the database for a
+  code rollback.
+
 ## UI audit phases 1–4 — 2026-11-13 (frontend only)
 
 - PRs [#323](https://github.com/SirRuggie/WU_Python/pull/323),
@@ -30,9 +100,14 @@
   contain "Members & moderation" and "Band monitor" (entry), "Activity
   history", "Invites" and "Log channels" (`ModerationWorkspace`); the old
   release contains none of the first two. Public home page loads; the only
-  console error is the anonymous 401. Signed-in page smoke SKIPPED: the
-  browser pane was not signed in. No Save, Send or other write; no Discord
+  console error is the anonymous 401. No Save, Send or other write; no Discord
   post.
+- Signed-in smoke 14:44 UTC (Ruggie signed in; served release was by then
+  `7a4abbe6`, which includes `ab1fd2dd`): 7/7 PASS read-only. Sidebar groups,
+  Moderation tabs, Band monitor opens directly, Results ends with "Next:
+  Exports & history" and has no tab bar, Strikes ⋯ menu items, Members
+  buttons; only console error the pre-sign-in 401. Ruggie's phone touch check
+  of the ⋯ menus passed 14:55 UTC.
 - Backup `.local/ui-audit-1-4-release-20261113T142158Z/dashboard.sqlite3`
   (SQLite backup API, 2,306,048 bytes): integrity ok, equal to live, SHA-256
   `fdef6411caf80aab70472200d2d82282d78b3f6fcd15d0eba1e62ac07ee809b5`. All 76

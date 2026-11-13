@@ -125,6 +125,7 @@
   list-style: none;
 }
 .rep-finder-accounts .rep-account-row {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   padding-inline: 0;
 }
 .rep-finder-accounts button {
@@ -163,4 +164,23 @@
 }
 .rep-account-row > .roster-player-menu {
   width: 48px;
+}
+.rep-accounts .roster-member-heading > .rep-accounts-warning {
+  color: var(--wu-warning);
+  font-weight: var(--wu-weight-medium);
+}
+.rep-finder-taken {
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+  width: 22ch;
+  text-align: right;
+}
+.rep-finder-accounts {
+  min-width: 0;
+}
+@media (max-width: 480px) {
+  .rep-finder-taken {
+    width: auto;
+    text-align: left;
+  }
 }

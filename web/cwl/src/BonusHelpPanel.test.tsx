@@ -73,8 +73,8 @@ const paragraphs = [
   "It comes from the CWL league, plus 1 for each war win.",
   "Main: the minimum attacks in the Rules step. Lazy: 4+ attacks, or 3+ attacks and 8+ stars. One bonus per account each month.",
   "Missed sync, Lingering or Left family removes the account this month. A staff reason can put it back.",
-  "A winner sits out for a set number of months. Each clan sets its number in Settings. Default 3. Example: October win, 3 months → can win again in February.",
-  "Winners are drawn at random. FWA Rep accounts selected in Settings have 2× the chance in Lazy.",
+  "A winner sits out for a set number of months. Each clan sets its number in Settings. Default 3. Example: October win, 3 months → can win again in February. FWA Rep accounts do not sit out.",
+  "Winners are drawn at random. FWA Rep accounts (1 per member, selected in Settings) have 2× the chance in Lazy.",
 ];
 let host: HTMLDivElement, root: Root;
 const dirty = vi.fn();
