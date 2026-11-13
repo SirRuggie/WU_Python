@@ -74,7 +74,7 @@ class LazyAnnouncementTests(unittest.IsolatedAsyncioTestCase):
             db.execute("INSERT INTO bonus_imported_winners VALUES (?,'2026-09','lazy','#Q2Y','Older <@1>','#OLD','Old host','import','staff','now')", (self.sid,))
         preview = await self.preview()
         self.assertEqual(preview['blockers'], [])
-        self.assertEqual(preview['history'][-1], {'label': 'September', 'count': 1})
+        self.assertEqual(preview['history'][-1], {'label': 'September 2026', 'count': 1})
         text = json.dumps(preview['pages'])
         self.assertNotIn(USER, text)
         self.assertIn('Lazy CWL Bonus Medals', text)
@@ -284,7 +284,7 @@ class LazyAnnouncementRenderTests(unittest.TestCase):
         from io import BytesIO
         from PIL import Image
         image = Image.open(BytesIO(first))
-        self.assertEqual(image.size, (1200, 170 + 60 * 64 + 40))
+        self.assertEqual(image.size, (1200, 205 + 60 * 64 + 40))
         self.assertEqual(history_image.alt_text(history), 'Lazy CWL bonus winners by season. July: 0, August: 2, September: 60.')
 
     def test_more_than_100_pinged_users_split_messages(self):

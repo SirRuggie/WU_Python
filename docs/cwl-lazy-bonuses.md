@@ -246,7 +246,8 @@ the intro, three rules, then "Past bonus winners" with one note line and an imag
 (`utils/cwl_bonus_history_image.py`, attached as `Lazy_Bonus_History.png`). The
 image has one column for each of the 3 seasons before this one (Ruggie,
 2026-11-13: decision 1 image, decision 2 the mockup style, decision 3 the place of
-the former last-month list). Each column shows "Month · count", then the Clash
+the former last-month list). Each column shows the month and year ("August 2026"), then "N bonus winners" in
+small muted text (Ruggie, 2026-11-13; "No bonus winners" when empty), then the Clash
 name (bold, shortened with … to fit) and the tag below it, sorted by name, from
 non-voided Lazy confirmations and imported winners of that month (family-wide).
 DejaVu Sans from `assets/fonts` draws it; NFKC turns styled letters into plain
