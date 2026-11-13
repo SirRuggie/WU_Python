@@ -1721,3 +1721,20 @@ title, not the backend label. Permission is unchanged
 
 Status: frontend only, on a draft PR for review; no backend, schema, permission,
 data or release change.
+
+## UI audit Phase 6: code health (2026-11-13)
+
+Pure refactor, no rendered change (pixel comparison of 33 pages at 360 and
+1440 against main: only random error reference ids differ).
+
+- `App.tsx` signup view moved to `SignupPage.tsx` (rendering only).
+- `StrikesWorkspace.tsx` split into `web/cwl/src/strikes/` (types, format,
+  panels, tabs, and the hooks `useStrikeImport`, `useWarSearch`,
+  `useLeaveApproval`).
+- `ReminderWorkspace.tsx` split into `web/cwl/src/reminders/`.
+- `ServerManagement.tsx` split into `managementRequests.ts`,
+  `ManagementFieldInput.tsx`, `useManagementConfirmation.ts` and the
+  `Management*` panels; parent hook order is unchanged for the index-mocked
+  preview test. `activity/EventsWorkspace.tsx` reformatted.
+
+Status: frontend only, draft PR for review.
