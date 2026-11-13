@@ -98,8 +98,8 @@ afterEach(async () => {
 
 it("All clans on the Lazy tab shows the announcement card with the approved count", async () => {
   await mount("pool=lazy");
-  const card = host.querySelector(".lazy-announce-card");
-  expect(card?.textContent).toContain("1 of 2 clans approved");
+  const card = host.querySelector(".lazy-announce-row");
+  expect(card?.textContent).toContain("Announcement · 1 of 2 approved");
   expect(card?.querySelector("button")?.disabled).toBe(false);
   expect(
     api.mock.calls.some((call) =>
@@ -110,10 +110,10 @@ it("All clans on the Lazy tab shows the announcement card with the approved coun
 
 it("the Main tab and staff without send access do not see the card", async () => {
   await mount("pool=main");
-  expect(host.querySelector(".lazy-announce-card")).toBeNull();
+  expect(host.querySelector(".lazy-announce-row")).toBeNull();
   await act(async () => root.unmount());
   host.remove();
   grants.send = false;
   await mount("pool=lazy");
-  expect(host.querySelector(".lazy-announce-card")).toBeNull();
+  expect(host.querySelector(".lazy-announce-row")).toBeNull();
 });

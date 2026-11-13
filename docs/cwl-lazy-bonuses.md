@@ -213,9 +213,10 @@ Results & bonuses has a “How bonuses work” help sheet; update its text whene
 
 ## Lazy bonus announcement (2026-11-13)
 
-The Lazy tab on Results & bonuses shows a "Bonus announcement" card under the
-Hosting clan dropdown, in both the All clans list and a clan's steps, with
-"x of y clans approved" and "Open announcement". It needs the Send CWL
+The Lazy tab on Results & bonuses shows one compact row under the Hosting clan
+dropdown (2026-11-13: Ruggie found the first card too big), in both the All
+clans list and a clan's steps: "Announcement · x of y approved" and an "Open"
+button, at most as wide as the dropdown. It needs the Send CWL
 announcements grant (`cwl_send`) and at least one approved Lazy clan. The sheet
 has Clans (All Lazy clans or One clan), a preview, Channel, "Ping the Lazy CWL
 role" (off by default), and a review check before "Send to #channel".

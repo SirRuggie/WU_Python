@@ -14,7 +14,7 @@ type Props = {
   onSent: () => void;
 };
 
-/** Lazy tab: approved clan count and the send sheet. Needs Send CWL announcements. */
+/** Lazy tab: one compact row with the approved clan count and Open. Needs Send CWL announcements. */
 export default function LazyAnnouncementCard({
   seasonId,
   clans,
@@ -29,23 +29,22 @@ export default function LazyAnnouncementCard({
   if (!canSend || !clans.length) return null;
   const ready = readyCount(clans);
   return (
-    <section
-      className="lazy-announce-card"
-      aria-label="Lazy bonus announcement"
-    >
-      <div>
-        <h2>Bonus announcement</h2>
-        <p>
-          {ready} of {clans.length} clans approved
-        </p>
-      </div>
+    <section className="lazy-announce-row" aria-label="Lazy bonus announcement">
+      <p>
+        Announcement ·{" "}
+        <strong>
+          {ready} of {clans.length}
+        </strong>{" "}
+        approved
+      </p>
       <button
         ref={opener}
         type="button"
+        aria-label="Open bonus announcement"
         disabled={disabled || !ready}
         onClick={() => setOpen(true)}
       >
-        Open announcement
+        Open
       </button>
       {open && (
         <LazyAnnouncementSheet
