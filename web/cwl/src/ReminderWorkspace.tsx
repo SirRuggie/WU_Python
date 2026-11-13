@@ -431,7 +431,7 @@ export default function ReminderWorkspace({
                   </span>
                 ) : state.activated && !state.schedule_synced ? (
                   <span className="notice" role="status">
-                    Waiting for the bot to load changes
+                    Waiting for changes to load in Discord
                   </span>
                 ) : null}
                 <div className="reminder-control-actions">
@@ -744,8 +744,8 @@ export default function ReminderWorkspace({
                                   placeholder="Separate Discord role IDs with commas"
                                 />
                                 <small>
-                                  These roles are notified when the bot sends
-                                  this message.
+                                  These roles are notified when this message is
+                                  sent.
                                 </small>
                               </label>
                             </details>
@@ -1073,7 +1073,7 @@ export default function ReminderWorkspace({
                           setPreview(checked);
                           setConfirmation({
                             confirmLabel: "Save",
-                            text: "Save these reminder settings? They repeat monthly, and the bot will use the new times for enabled messages. Already-sent messages will not be sent again.",
+                            text: "Save these reminder settings? They repeat monthly, and enabled messages will use the new times. Already-sent messages will not be sent again.",
                             action: () =>
                               void act(async () => {
                                 const result = await api<CampaignState>(
@@ -1166,9 +1166,8 @@ export default function ReminderWorkspace({
                   About this schedule · {targetCwlMonth(state.cycle)} CWL
                 </summary>
                 <p>
-                  Messages and times repeat monthly and also update Discord
-                  /manage. Existing signup links stay unchanged. Previously sent
-                  messages are not resent.
+                  Messages and times repeat monthly. Existing signup links stay
+                  unchanged. Previously sent messages are not resent.
                 </p>
               </details>
             </>

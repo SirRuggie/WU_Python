@@ -54,7 +54,7 @@ it("keeps six editable rows and directs roster posts to season Announcements wit
       step: "announce",
       season: "42",
     });
-    expect(host.textContent).not.toContain("Waiting for the bot");
+    expect(host.textContent).not.toContain("Waiting for changes to load");
 
     expect(host.textContent).toContain("Messages for December 2026 CWL");
     await act(async () =>
@@ -138,7 +138,7 @@ it("does not call intentionally inactive schedules pending", async () => {
         <ReminderWorkspace seasonId="42" archived={false} onDirty={() => {}} />,
       ),
     );
-    expect(host.textContent).not.toContain("Waiting for the bot");
+    expect(host.textContent).not.toContain("Waiting for changes to load");
     expect(host.querySelector(".reminder-status .badge")?.textContent).toBe(
       "Off",
     );
