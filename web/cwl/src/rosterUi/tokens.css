@@ -38,7 +38,7 @@
   --roster-border-subtle: var(--wu-border-subtle);
   --roster-text: var(--wu-text);
   --roster-text-muted: var(--wu-text-muted);
-  --roster-danger: var(--wu-danger);
+  --roster-danger: #f19999; /* keep: must reach 4.5:1 on the gold selection surface */
   --roster-success: var(--wu-success);
   --roster-warning: var(--wu-warning);
   --roster-attention-surface: var(--wu-warning-surface);
