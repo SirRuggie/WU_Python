@@ -37,6 +37,7 @@ from .participation import routes as participation_routes
 from .bonuses import routes as bonus_routes
 from .bonus_raffle import routes as bonus_raffle_routes
 from .bonus_announcement import routes as bonus_announcement_routes
+from .lazy_infractions import routes as lazy_infractions_routes
 from .participation_sync import routes as participation_sync_routes, lifecycle as participation_sync_lifecycle
 from .todo import routes as todo_routes, lifecycle as todo_lifecycle
 from .push import routes as push_routes, lifecycle as push_lifecycle
@@ -2138,6 +2139,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     routes.extend(bonus_routes())
     routes.extend(bonus_raffle_routes())
     routes.extend(bonus_announcement_routes())
+    routes.extend(lazy_infractions_routes())
     routes.extend(todo_routes())
     from .strikes import routes as strike_routes
     routes.extend(strike_routes)

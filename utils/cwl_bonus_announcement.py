@@ -225,10 +225,11 @@ def messages(data, names=None, preview=False, ping=False):
     return result
 
 
-def preview_parts(payload, history_url=None):
+def preview_parts(payload, history_url=None, footer_label='Gold footer image'):
     """Map one Components V2 payload to the dashboard DiscordPreview parts.
 
     history_url: same-origin dashboard URL of the history image, shown in place of the attachment.
+    footer_label: placeholder text for the footer image, which is attached only at send time.
     """
     def convert(component):
         kind = component['type']
@@ -245,7 +246,7 @@ def preview_parts(payload, history_url=None):
                 if item['media']['url'] == f'attachment://{history_image.FILE_NAME}':
                     items.append({'url': history_url, 'description': item.get('description')})
                 else:
-                    items.append({'url': None, 'description': 'Gold footer image'})
+                    items.append({'url': None, 'description': footer_label})
             return {'type': 'media', 'items': items}
         return {'type': 'text', 'text': component.get('content', '')}
     return [convert(component) for component in payload['components']]

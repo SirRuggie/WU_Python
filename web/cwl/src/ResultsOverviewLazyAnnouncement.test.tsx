@@ -96,24 +96,38 @@ afterEach(async () => {
   host.remove();
 });
 
-it("All clans on the Lazy tab shows the announcement card with the approved count", async () => {
+it("All clans on the Lazy tab shows Announcements with both rows", async () => {
   await mount("pool=lazy");
-  const card = host.querySelector(".lazy-announce-row");
-  expect(card?.textContent).toContain("Announcement · 1 of 2 approved");
-  expect(card?.querySelector("button")?.disabled).toBe(false);
+  const group = host.querySelector(".lazy-announce-group");
+  expect(group?.querySelector("h3")?.textContent).toBe("Announcements");
+  const rows = [...host.querySelectorAll(".lazy-announce-row")];
+  expect(rows.map((row) => row.querySelector("p")?.textContent)).toEqual([
+    "Bonus winners · 1 of 2 approved",
+    "Infractions",
+  ]);
+  expect(rows.every((row) => !row.querySelector("button")?.disabled)).toBe(
+    true,
+  );
+  // Nothing is fetched until a row is opened.
   expect(
     api.mock.calls.some((call) =>
-      String(call[0]).includes("lazy-announcement"),
+      /lazy-(announcement|infractions)/.test(String(call[0])),
     ),
   ).toBe(false);
 });
 
-it("the Main tab and staff without send access do not see the card", async () => {
+it("the Main tab shows no rows; staff without send access see only Infractions", async () => {
   await mount("pool=main");
   expect(host.querySelector(".lazy-announce-row")).toBeNull();
   await act(async () => root.unmount());
   host.remove();
   grants.send = false;
   await mount("pool=lazy");
-  expect(host.querySelector(".lazy-announce-row")).toBeNull();
+  const rows = [...host.querySelectorAll(".lazy-announce-row")];
+  expect(rows.map((row) => row.querySelector("p")?.textContent)).toEqual([
+    "Infractions",
+  ]);
+  expect(
+    host.querySelector('[aria-label="Open bonus announcement"]'),
+  ).toBeNull();
 });
