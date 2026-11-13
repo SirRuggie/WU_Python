@@ -19,6 +19,7 @@ import { useDashboardPermission } from "./DashboardPermissions";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import { loadBonusStatus, type BonusStatus } from "./bonusStatus";
+import LazyAnnouncementCard from "./LazyAnnouncementCard";
 import {
   countText,
   matchesOutcome,
@@ -700,6 +701,17 @@ export default function ParticipationWorkspace({
               opensSteps={!!onBonus}
               disabled={controlsLocked}
               onChange={chooseClan}
+            />
+          )}
+          {/* Bonuses access opens the steps; the send itself needs cwl_send. */}
+          {pool === "lazy" && onBonus && status && (
+            <LazyAnnouncementCard
+              seasonId={seasonId}
+              clans={status.pools.lazy}
+              clanTag={clan === "all" ? "" : clan}
+              archived={!!archived}
+              disabled={controlsLocked}
+              onSent={() => void loadStatus(seasonId)}
             />
           )}
           <div className="participation-toolbar">
