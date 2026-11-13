@@ -1,5 +1,40 @@
 # Release and rollback history
 
+## FWA Rep 1 per member, no Lazy sit-out — 2026-11-13 (backend and frontend)
+
+- PR [#327](https://github.com/SirRuggie/WU_Python/pull/327), merge commit
+  `7a4abbe66ad87909544c22f9165fe26cc62936e6`, local tag
+  `fwa-rep-no-sit-out-327-1`. Prompt 237, built and released by Shaka (Claude)
+  on Ruggie's "merge and release". Refuter ACCEPT. Rebased on `ab1fd2dd`
+  (UI audit 323–326) after that release finished; checks rerun (backend 8145
+  passed, frontend 2510 passed).
+- Changes: 1 FWA Rep account per linked member (second add refused; existing
+  duplicates kept with "Keep 1 account"); a listed Lazy account skips the
+  sit-out (`sit_out_exempt`); wording in the help, Settings and chip. No schema
+  change, no data write.
+- Backend: `release.conf` `backend/8f64316e…` → `backend/7a4abbe6…`; PID
+  333211 → 434692, cwd verified, active, ready after 9 s, public config 200,
+  anonymous seasons 401, no tracebacks; other drop-ins byte-identical. Bot not
+  restarted (does not import the changed modules).
+- Frontend `current`: `ab1fd2dd…` → `7a4abbe6…` (clean tagged clone, `npm ci`,
+  2510 tests passed before staging). Entry `index-DApwRnP1.js`, SHA-256
+  `e1b50e0b361331f37590400a03bf39b5b4fec3a49034e77ce54215f3385cee74`; served
+  `index.html` SHA-256
+  `49575742ca9aeb370d8318a6fdec8559f0727365c661beccfc982e1ce2509491` equals the
+  release file; all 147 manifest assets match the public site.
+- Backup `.local/fwa-rep-327-release-20261113T143135Z/dashboard.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `e543e51eddf77176a84cd8948a8b2b3b1e2981ecbfac7c5f6a666684d7f8c7f5`. All 76
+  table counts identical before and after.
+- Signed-out smoke at 360 px on `/cwl/results`, `/cwl/bonuses`,
+  `/cwl/exports`: new entry, only the expected 401, no overflow, GET only.
+  Signed-in smoke SKIPPED.
+- Rollback: backend `release.conf` back to
+  `backend/8f64316e6f4fa2100ef9e7a4dafcfe8658a88a0d`, daemon-reload, restart
+  `wu-cwl-demo-web`; frontend `switch-release.py
+  ab1fd2dd95b1a7015e3c13ac571267de2e2ea379`. Never restore the database for a
+  code rollback.
+
 ## Lazy announcement card and renderer — 2026-11-13 (backend and frontend)
 
 - PR [#322](https://github.com/SirRuggie/WU_Python/pull/322), merge commit
