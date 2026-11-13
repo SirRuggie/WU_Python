@@ -13,6 +13,7 @@ import "./style.css";
 import "./workflowControls.css";
 import "./accessibility.css";
 import { registerPushWorker } from "./webPush";
+import { showIssueNotice } from "./issueNotice";
 
 // Installation support is passive; notification permission remains opt-in.
 if ("serviceWorker" in navigator && window.isSecureContext) {
@@ -22,15 +23,7 @@ if ("serviceWorker" in navigator && window.isSecureContext) {
 }
 
 window.addEventListener("dashboard-issue", ((event: CustomEvent<string>) => {
-  let notice = document.getElementById("dashboard-issue-reference");
-  if (!notice) {
-    notice = document.createElement("div");
-    notice.id = "dashboard-issue-reference";
-    notice.className = "notice error";
-    notice.setAttribute("role", "alert");
-    document.body.prepend(notice);
-  }
-  notice.textContent = `The browser reported a problem. Tell staff this reference: ${event.detail}`;
+  showIssueNotice(event.detail);
 }) as EventListener);
 
 createRoot(document.getElementById("root")!).render(
