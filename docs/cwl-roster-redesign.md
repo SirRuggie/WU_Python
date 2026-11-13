@@ -1740,6 +1740,9 @@ D3: the Signups register flow shows "Join the Warriors United Discord server to
 sign up." and a "Join server" link to the permanent invite. Continue and Sign up
 are disabled.
 
+D4 (from the independent review, accepted by Ruggie): Base bank stays
+members-only and shows the same kind of join line.
+
 Details: `docs/dashboard-sign-in.md`. Status: built by Shaka on Ruggie's
 instruction ("you build and release fully"); backend and frontend release, no
 schema change.

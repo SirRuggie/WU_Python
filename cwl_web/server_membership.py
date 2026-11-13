@@ -1,6 +1,6 @@
 """Warriors United server membership for dashboard sessions.
 
-Sign-in does not need the server. Only a CWL signup save does. The save always
+Sign-in does not need the server. A CWL signup save and the Base bank do. The save always
 checks Discord live; `/auth/me` uses a short cache so the page can show the
 join line without a Discord call on every read.
 """
@@ -15,7 +15,8 @@ CACHE_KEY = "server_member_cache"
 CACHE_SECONDS = 60
 STATUS_TIMEOUT_SECONDS = 3
 JOIN_REQUIRED = "Join the Warriors United Discord server to sign up."
-CHECK_UNAVAILABLE = "Discord membership check is unavailable. Try again."
+BASE_BANK_JOIN = "Join the Warriors United Discord server to see the Base bank."
+CHECK_UNAVAILABLE ="Discord membership check is unavailable. Try again."
 
 
 def _check(app):

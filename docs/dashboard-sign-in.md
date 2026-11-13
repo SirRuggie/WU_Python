@@ -13,6 +13,11 @@ dashboard").
 - Everything personal stays open to non-members: Home, Tasks (their accounts,
   their clans and wars, inside or outside the family), My accounts, My signups,
   My clan assignments, push reminders and problem reports.
+- Base bank is members-only (Ruggie, 2026-11-13: "next" on the review finding).
+  `GET /api/cwl/bases` (list and `?level=`) uses the cached status: `false` →
+  403 "Join the Warriors United Discord server to see the Base bank."; `null` →
+  503; no base data is returned in either case. The page shows that line with
+  the "Join server" link.
 - Withdrawing an existing signup stays allowed for a non-member. It only removes
   their own entry.
 - Staff pages keep their permission checks. A non-member has no staff access
@@ -44,6 +49,14 @@ register flow shows "Join the Warriors United Discord server to sign up." with a
 "Join server" link to the permanent invite `https://discord.gg/2edDGBStax`
 (approved by Ruggie on 2026-11-07). Continue and the final Sign up control are
 disabled. `null` shows nothing; the server decides on save.
+
+## Known limits
+
+- A person with a direct staff grant who has left the server keeps staff access
+  while signed in. This was already true for existing 30-day sessions;
+  follow-up: remove staff access when someone leaves the server.
+- A saved-signup pool change by a non-member is refused by the server, but the
+  My signups page shows the refusal text without the "Join server" link.
 
 ## Tests
 

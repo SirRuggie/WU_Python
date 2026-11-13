@@ -14,7 +14,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from cwl_web import create_app
 from cwl_web.discord_member import _guild_member
-from cwl_web.server_membership import CACHE_KEY, CHECK_KEY, CHECK_UNAVAILABLE, JOIN_REQUIRED
+from cwl_web.server_membership import BASE_BANK_JOIN, CACHE_KEY, CHECK_KEY, CHECK_UNAVAILABLE, JOIN_REQUIRED
 from dashboard_access_fakes import AccessCollection
 from test_cwl_web_foundation import FakeProviders
 from utils.cwl_member_service import MemberError
@@ -173,6 +173,24 @@ class NonMemberSignInTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call("GET", "/dashboard/accounts", self.outsider)
         self.assertEqual(response.status, 200)
         self.assertNotIn(NON_MEMBER, self.membership.calls[1:])
+
+    async def test_base_bank_is_members_only(self):
+        self.app["base_bank_cache"] = (time.monotonic() + 30, [{"key": "th18"}], {})
+        response = await self.call("GET", "/bases", self.outsider)
+        self.assertEqual(response.status, 403)
+        self.assertEqual((await response.json())["error"], BASE_BANK_JOIN)
+        response = await self.call("GET", "/bases?level=th18", self.outsider)
+        self.assertEqual(response.status, 403)
+        response = await self.call("GET", "/bases", self.member)
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())["bases"], [{"key": "th18"}])
+
+    async def test_base_bank_refuses_when_discord_cannot_answer(self):
+        self.app["base_bank_cache"] = (time.monotonic() + 30, [{"key": "th18"}], {})
+        self.membership.unavailable = True
+        response = await self.call("GET", "/bases", self.member)
+        self.assertEqual(response.status, 503)
+        self.assertNotIn("th18", await response.text())
 
     async def test_non_member_stays_out_of_staff_routes(self):
         sid = await self.season()

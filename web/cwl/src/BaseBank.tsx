@@ -6,6 +6,10 @@ import { api, ApiError } from "./api";
 import { defaultTownHall, type BankBase } from "./baseBank";
 import BaseBankCard from "./BaseBankCard";
 import { loadAccountDisplay } from "./accountDisplay";
+import ServerJoinNotice, {
+  BASE_BANK_JOIN_TEXT,
+  isJoinRequiredError,
+} from "./ServerJoinNotice";
 import "./BaseBank.css";
 
 export default function BaseBank({
@@ -16,6 +20,7 @@ export default function BaseBank({
   const [bases, setBases] = useState<BankBase[]>();
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [joinRequired, setJoinRequired] = useState(false);
   const [chosen, setChosen] = useState<number | null>(null);
   const accessLost = useRef(false);
   const denied = useCallback(() => {
@@ -63,7 +68,9 @@ export default function BaseBank({
       })
       .catch((err) => {
         if (!active || controller.signal.aborted || accessLost.current) return;
-        if (err instanceof ApiError && [401, 403].includes(err.status))
+        if (isJoinRequiredError(err, BASE_BANK_JOIN_TEXT))
+          setJoinRequired(true);
+        else if (err instanceof ApiError && [401, 403].includes(err.status))
           denied();
         else {
           const { reference } = splitReference(
@@ -103,7 +110,9 @@ export default function BaseBank({
         <h1 id="base-bank-heading">Base bank</h1>
         <p>Select your Town Hall. Then copy a FWA base.</p>
       </header>
-      {error ? (
+      {joinRequired ? (
+        <ServerJoinNotice text={BASE_BANK_JOIN_TEXT} />
+      ) : error ? (
         <LoadError message={error} onRetry={() => setRetry((n) => n + 1)} />
       ) : !bases ? (
         <p role="status">Loading bases…</p>
