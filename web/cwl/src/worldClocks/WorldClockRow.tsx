@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { Ban } from "lucide-react";
 import { api, ApiError } from "../api";
 import ConfirmDialog from "../ConfirmDialog";
 import { Button } from "../rosterUi/primitives";
@@ -196,7 +197,13 @@ export default function WorldClockRow({
             className={problem ? "world-clock-sub is-error" : "world-clock-sub"}
             role={problem ? "alert" : undefined}
           >
-            {problem && <span aria-hidden="true">⛔ </span>}
+            {problem && (
+              <Ban
+                className="world-clock-sub-icon"
+                size="1em"
+                aria-hidden="true"
+              />
+            )}
             {statusLine}
           </p>
           {switchError && (

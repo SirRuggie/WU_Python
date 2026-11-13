@@ -14,7 +14,16 @@ import { useClock } from "./activity/useClock";
 import PushReminders from "./PushReminders";
 import { readSnapshot, writeSnapshot } from "./snapshotCache";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Pause, Play, RefreshCw, Search, X } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  ChevronDown,
+  Pause,
+  Play,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 import { ApiError } from "./api";
 import { clanDeepLink } from "./publication";
 import TownHallIcon from "./TownHallIcon";
@@ -255,7 +264,7 @@ export default function TodoWorkspace({
           disabled={loading}
         >
           <RefreshCw aria-hidden="true" size={16} />
-          {loading ? "Checking…" : "Check now"}
+          {loading ? "Checking…" : "Refresh"}
         </button>
       </CwlPageHeader>
       <div className="todo-refresh">
@@ -295,7 +304,7 @@ export default function TodoWorkspace({
             className="todo-wars-link"
             onClick={() => onWars(tab === "cwl" ? "cwl" : "war")}
           >
-            War scores →
+            War scores <ArrowRight size={16} aria-hidden="true" />
           </button>
         )}
       </div>
@@ -571,7 +580,7 @@ export default function TodoWorkspace({
                             rel="noopener noreferrer"
                             aria-label={`Open ${clanLabel(members[0])} in Clash of Clans`}
                           >
-                            Open ↗
+                            Open <ArrowUpRight size={16} aria-hidden="true" />
                           </a>
                         )}
                       </header>
@@ -602,7 +611,7 @@ export default function TodoWorkspace({
                     disabled={currentPage === lastPage}
                     onClick={() => setPage(currentPage + 1)}
                   >
-                    Next →
+                    Next <ArrowRight size={16} aria-hidden="true" />
                   </button>
                 </nav>
               )}

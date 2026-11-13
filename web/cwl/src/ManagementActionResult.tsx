@@ -1,4 +1,5 @@
 import { countLabel } from "./countLabel";
+import { ArrowUpRight } from "lucide-react";
 import { safeDiscordUrl, type ManagementResult } from "./serverManagement";
 
 export default function ManagementActionResult({
@@ -20,7 +21,7 @@ export default function ManagementActionResult({
           target="_blank"
           rel="noopener noreferrer"
         >
-          View in Discord ↗
+          View in Discord <ArrowUpRight size={16} aria-hidden="true" />
         </a>
       )}
       {actionResult.accounts && (

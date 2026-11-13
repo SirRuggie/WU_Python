@@ -158,6 +158,11 @@
   font-size: var(--wu-text-xs);
 }
 
+.world-clock-sub-icon {
+  margin-right: var(--wu-space-1);
+  vertical-align: -0.125em;
+}
+
 .world-clock-sub.is-error,
 .world-clock-help.is-error {
   color: var(--wu-danger);

@@ -1,6 +1,6 @@
 import { announcementPoolLabel as poolLabel } from "./announcementPoolLabel";
 import { useState, type ReactNode } from "react";
-import { Save, Send } from "lucide-react";
+import { ArrowUpRight, Save, Send } from "lucide-react";
 import ActionPanel from "./ActionPanel";
 import ChannelCombobox from "./ChannelCombobox";
 import { Button, Input } from "./rosterUi/primitives";
@@ -130,7 +130,7 @@ export default function AnnouncementEditor({
           </Button>
           {testUrl && (
             <a href={testUrl} target="_blank" rel="noopener noreferrer">
-              View test in Discord ↗
+              View test in Discord <ArrowUpRight size={16} aria-hidden="true" />
             </a>
           )}
         </details>

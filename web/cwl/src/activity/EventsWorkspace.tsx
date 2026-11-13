@@ -1,4 +1,5 @@
 import CwlPageHeader from "../CwlPageHeader";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import DashboardIcon from "../DashboardIcon";
 import { clanDeepLink } from "../publication";
@@ -106,7 +107,8 @@ export default function EventsWorkspace({
               </div>
               {signup && (
                 <button className="calendar-link" onClick={onWars}>
-                  View clan battle schedules →
+                  View clan battle schedules{" "}
+                  <ArrowRight size={16} aria-hidden="true" />
                 </button>
               )}
             </article>
@@ -128,7 +130,8 @@ export default function EventsWorkspace({
             target="_blank"
             rel="noopener noreferrer"
           >
-            Clash Ninja schedule reference ↗
+            Clash Ninja schedule reference{" "}
+            <ArrowUpRight size={16} aria-hidden="true" />
           </a>{" "}
           ·{" "}
           <a
@@ -136,7 +139,8 @@ export default function EventsWorkspace({
             target="_blank"
             rel="noopener noreferrer"
           >
-            Official event announcements ↗
+            Official event announcements{" "}
+            <ArrowUpRight size={16} aria-hidden="true" />
           </a>
         </p>
       </details>
@@ -252,7 +256,7 @@ export default function EventsWorkspace({
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Open clan ↗
+                    Open clan <ArrowUpRight size={16} aria-hidden="true" />
                   </a>
                 </footer>
               </article>

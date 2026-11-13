@@ -1,6 +1,6 @@
 import { memberSignupsOpen } from "./memberSeason";
 import { useEffect, useState } from "react";
-import { TriangleAlert } from "lucide-react";
+import { ChevronRight, TriangleAlert } from "lucide-react";
 import type { Season } from "./api";
 import "./MemberSignupStatus.css";
 import { countLabel } from "./countLabel";
@@ -199,11 +199,17 @@ export default function MemberSignupStatus({
           </p>
         ))}
         {open && signups.length > 0 && !savedView && onChange && (
-          <button onClick={onChange}>Change signups ›</button>
+          <button onClick={onChange}>
+            Change signups
+            <ChevronRight size={16} aria-hidden="true" />
+          </button>
         )}
         {!signups.length &&
           (open ? (
-            <button onClick={onRemaining}>Sign up for CWL ›</button>
+            <button onClick={onRemaining}>
+              Sign up for CWL
+              <ChevronRight size={16} aria-hidden="true" />
+            </button>
           ) : (
             <p>Signups are closed. Ask staff for help.</p>
           ))}

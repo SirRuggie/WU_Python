@@ -47,7 +47,7 @@ export const membersText = {
     "Import stopped early. No nicknames changed. Press Fix nicknames again.",
   refresh: "Refresh members",
   refreshProgress: "Refresh progress",
-  timeZoneFlag: "Time zone and flag",
+  timeZoneFlag: "Nickname time zone",
   nickname: "Nickname",
   linkedAccounts: "Linked accounts",
   moderationHistory: "Moderation history",

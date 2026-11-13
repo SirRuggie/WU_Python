@@ -1,6 +1,7 @@
 import { formatDateTime } from "./format";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
+import { ArrowRight } from "lucide-react";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import TicketConversation from "./TicketConversation";
 import { useEffect, useRef, useState } from "react";
@@ -285,7 +286,7 @@ export default function TicketBrowser() {
                   setSelected(t);
                 }}
               >
-                Read →
+                Read <ArrowRight size={16} aria-hidden="true" />
               </button>
             </article>
           ))}

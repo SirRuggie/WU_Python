@@ -1,4 +1,5 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { ArrowRight, Coffee, Swords } from "lucide-react";
 import AccountLinkHelp from "./AccountLinkHelp";
 import AttentionSummary from "./AttentionSummary";
 import CwlPageHeader from "./CwlPageHeader";
@@ -401,7 +402,9 @@ export default function SignupPage({
                           disabled={pending}
                           onClick={() => choosePool("main")}
                         >
-                          <span className="pool-choice-symbol">◆</span>
+                          <span className="pool-choice-symbol">
+                            <Swords size={20} aria-hidden="true" />
+                          </span>
                           <strong>Main CWL</strong>
                           <small>
                             Main: play at full strength. No hero upgrades.
@@ -415,7 +418,9 @@ export default function SignupPage({
                           disabled={pending}
                           onClick={() => choosePool("lazy")}
                         >
-                          <span className="pool-choice-symbol">◇</span>
+                          <span className="pool-choice-symbol">
+                            <Coffee size={20} aria-hidden="true" />
+                          </span>
                           <strong>Lazy CWL</strong>
                           <small>
                             Lazy: relaxed CWL. You can upgrade during the event.
@@ -691,7 +696,8 @@ export default function SignupPage({
                                     }
                                     onClick={() => setReview(true)}
                                   >
-                                    Continue →
+                                    Continue{" "}
+                                    <ArrowRight size={16} aria-hidden="true" />
                                   </button>
                                 </div>
                               </div>

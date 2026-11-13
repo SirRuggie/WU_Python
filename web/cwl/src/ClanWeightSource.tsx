@@ -1,4 +1,5 @@
 import { formatDate } from "./format";
+import { ArrowRight } from "lucide-react";
 import "./ClanWeightSource.css";
 import { useDashboardPermission } from "./DashboardPermissions";
 
@@ -65,11 +66,16 @@ export default function ClanWeightSource({
               }
             }}
           >
-            {compact
-              ? "Also on Clan weights ›"
-              : clanTag && !account?.clan_weight_managed
-                ? "Set in Clan weights ›"
-                : "Open Clan weights →"}
+            {compact ? (
+              "Also on Clan weights ›"
+            ) : clanTag && !account?.clan_weight_managed ? (
+              "Set in Clan weights ›"
+            ) : (
+              <>
+                Open Clan weights
+                <ArrowRight size={16} aria-hidden="true" />
+              </>
+            )}
           </a>
         </>
       ) : compact ? (

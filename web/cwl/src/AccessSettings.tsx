@@ -2,6 +2,7 @@ import { formatDateTime } from "./format";
 import useConfirmDialog from "./useConfirmDialog";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import MemberPicker, { type MemberOption } from "./MemberPicker";
@@ -9,6 +10,7 @@ import AccessPermissions from "./AccessPermissions";
 import "./AccessSettings.css";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import DashboardIcon from "./DashboardIcon";
+import { Button } from "./rosterUi/primitives";
 
 type Grant = {
   kind: "user" | "role";
@@ -224,7 +226,7 @@ export default function AccessSettings({
     picked?.display_name ||
     (kind === "role" ? roles.find((role) => role.id === id)?.name : "") ||
     (current?.label !== id ? current?.label : "") ||
-    "Identity unavailable";
+    (kind === "role" ? "Unknown role" : "Identity unavailable");
   const title =
     kind === "user"
       ? discordIdentityName(id, current || picked, rawTitle) ||
@@ -346,7 +348,7 @@ export default function AccessSettings({
                         {grant.display_name ||
                           (grant.label !== grant.id
                             ? grant.label
-                            : "Role unavailable")}
+                            : "Unknown role")}
                       </strong>
                       <small>Role · {grant.permissions.length} actions</small>
                     </span>
@@ -496,7 +498,6 @@ export default function AccessSettings({
                                   onClick={() => choose(role.id)}
                                 >
                                   <strong>{role.name}</strong>
-                                  <small>Role ID: {role.id}</small>
                                 </button>
                               ))}
                             {rolesLoading && (
@@ -517,7 +518,7 @@ export default function AccessSettings({
                     )}
                     {id && (
                       <p>
-                        Selected: <strong>{title}</strong> · {id}
+                        Selected: <strong>{title}</strong>
                       </p>
                     )}
                     {kind === "user" && data.owners.includes(id) && (
@@ -539,7 +540,8 @@ export default function AccessSettings({
                         requestAnimationFrame(() => heading.current?.focus());
                       }}
                     >
-                      Select permissions →
+                      Select permissions{" "}
+                      <ArrowRight size={16} aria-hidden="true" />
                     </button>
                   </>
                 ) : (
@@ -563,9 +565,7 @@ export default function AccessSettings({
                       ) : (
                         <>
                           <DashboardIcon name="shield" />
-                          <p className="access-identity">
-                            Discord role · <code>{id}</code>
-                          </p>
+                          <p className="access-identity">Discord role</p>
                         </>
                       )}
                     </div>
@@ -582,11 +582,14 @@ export default function AccessSettings({
                         target="_blank"
                         rel="noreferrer"
                       >
-                        Open Discord profile ↗
+                        Open Discord profile{" "}
+                        <ArrowUpRight size={16} aria-hidden="true" />
                       </a>
                     )}
                     <p>
-                      CWL includes Main and Lazy. Clan permissions apply to all clans. A person gets the access given to the person and the access given to their roles.
+                      CWL includes Main and Lazy. Clan permissions apply to all
+                      clans. A person gets the access given to the person and
+                      the access given to their roles.
                     </p>
                     {dirty && (
                       <div className="access-change-summary" role="status">
@@ -624,7 +627,8 @@ export default function AccessSettings({
                       onChange={setSelected}
                     />
                     <p className="small">
-                      Only owners can manage access. The controls in this section give only the actions listed here.
+                      Only owners can manage access. The controls in this
+                      section give only the actions listed here.
                     </p>
                     {current && (
                       <button
@@ -640,8 +644,8 @@ export default function AccessSettings({
                         role="alert"
                       >
                         <p>
-                          Remove access for <strong>{title}</strong> (
-                          {remove.id})? Other role or user grants still apply.
+                          Remove access for <strong>{title}</strong>? Other role
+                          or user grants still apply.
                         </p>
                         <div className="access-remove-actions">
                           <button
@@ -650,12 +654,13 @@ export default function AccessSettings({
                           >
                             Cancel removal
                           </button>
-                          <button
+                          <Button
+                            variant="danger"
                             disabled={busy || conflict}
                             onClick={() => void save(remove)}
                           >
                             Confirm removal
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     )}
