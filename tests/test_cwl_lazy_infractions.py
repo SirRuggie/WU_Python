@@ -58,6 +58,22 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(parts[0]['accent'], '#E00010')
         self.assertEqual(parts[0]['children'][-1]['items'][0]['description'], 'Red footer image')
 
+    def test_a_clan_that_does_not_fit_starts_the_next_message(self):
+        players = [account(f'#A{i:03d}Y'.replace('0', '2'), 'N' * 15, clan='#A2Y', flags=['missed_sync'])
+                   for i in range(82)]
+        players += [account('#B2Y', 'Last', clan='#B2Y', flags=['lingering'])]
+        pages = render.messages(render.build(players, {'#A2Y': 'Alpha', '#B2Y': 'Beta'}, '2026-11'))
+        texts = [[c.get('content', '') for c in p['components'][0]['components']] for p in pages]
+        everything = '\n'.join('\n'.join(t) for t in texts)
+        # Beta does not fit after Alpha's 82 rows, so it starts message 2 with its own heading.
+        self.assertEqual(len(pages), 2)
+        self.assertTrue(texts[1][0].startswith('### Beta'))
+        self.assertEqual(everything.count('### Beta'), 1)
+        self.assertEqual(sum(1 for line in everything.splitlines() if line[:1].isdigit()), 83)
+        for page in texts:
+            # No page ends with a clan heading that has no rows under it.
+            self.assertFalse(page[-1].startswith('###'))
+
     def test_many_players_split_with_repeated_heading_and_footer_last(self):
         players = [account(f'#P{i:04d}Y'.replace('0', '2'), 'N' * 15, flags=['missed_sync', 'lingering', 'left_family'],
                            no_show=True) for i in range(160)]
@@ -195,10 +211,10 @@ class LazyInfractionsApiTests(unittest.IsolatedAsyncioTestCase):
             db.execute("UPDATE seasons SET status='archived' WHERE id=?", (self.sid,))
         await self.send_now(preview, status=423)
         self.assertEqual(self.transport.calls, [])
-        from cwl_web.lazy_infractions import send, preview as get_preview
+        # The send is a mutation and needs Send CWL announcements.
+        from cwl_web.lazy_infractions import send
         from cwl_web.cwl_permissions import mutation_permission
-        for handler in (send, get_preview):
-            self.assertEqual(mutation_permission(SimpleNamespace(match_info=SimpleNamespace(handler=handler))), 'cwl_send')
+        self.assertEqual(mutation_permission(SimpleNamespace(match_info=SimpleNamespace(handler=send))), 'cwl_send')
 
 
 # Base is only a source of helpers; keep pytest from collecting its tests twice.

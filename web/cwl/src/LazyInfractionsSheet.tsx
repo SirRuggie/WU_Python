@@ -158,6 +158,7 @@ export default function LazyInfractionsSheet({
     requestId.current = newRequestId();
   }
 
+  // Read only (no send access): no footer; the panel's own Close is enough.
   const footer = result ? (
     <div className="lazy-announce-footer">
       <button type="button" onClick={sendAnother}>
@@ -185,13 +186,7 @@ export default function LazyInfractionsSheet({
             : "Send infractions"}
       </button>
     </div>
-  ) : (
-    <div className="lazy-announce-footer">
-      <button type="button" className="primary" onClick={onClose}>
-        Close
-      </button>
-    </div>
-  );
+  ) : undefined;
 
   return (
     <ActionPanel
