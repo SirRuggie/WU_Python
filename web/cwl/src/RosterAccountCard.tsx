@@ -86,7 +86,9 @@ export default function RosterAccountCard({
             <span className="player-card-inline-th" aria-hidden="true">
               <TownHallIcon level={account.town_hall} />
             </span>
-            <span className="player-card-name-text">{account.player_name}</span>
+            <span className="player-card-name-text" dir="auto">
+              {account.player_name}
+            </span>
           </strong>
         ),
         aside: (

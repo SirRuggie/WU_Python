@@ -145,7 +145,11 @@ export default function DiscordIdentity({
         </span>
       )}
       <span className="roster-discord-person">
-        <strong className="user-display-name">
+        <strong
+          className="user-display-name"
+          dir="auto"
+          title={name || undefined}
+        >
           {name ||
             (profileLoading
               ? "Loading Discord member…"
