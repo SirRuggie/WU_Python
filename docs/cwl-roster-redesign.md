@@ -1641,3 +1641,39 @@ and Exports range defaults remain unchanged.
 
 Status: frontend implementation prepared for isolated native and independent
 review. No backend, persistence, permission or data change.
+
+## Collapsible Results & bonuses Settings (2026-11-12, prompt235)
+
+D1: all three authorized sections start as closed, mounted details. Summaries
+show saved capture On/Off/month, Lazy clan count and saved sit-out range, and
+Rep account count, plus Loading/Not loaded/Unsaved states. Errors with Retry or
+Refresh, archived notice and save status stay above the disclosures. Native
+exclusive details share a name only at ≤680px; closing a section retains drafts
+and the sheet's discard guard. Opening sections makes no request or write.
+
+D2: one primary Plus Add account control sits above the grouped Rep list. It
+opens the existing finder then a closed Add by player tag disclosure, with Add
+tag as submit. A selected Rep without linked accounts opens that disclosure.
+Cancel clears the add form/finder and returns focus; success keeps the area open
+and clears only the form used. Other dirty settings and inline notes survive.
+
+D3: each Rep row keeps TH/name/tag/note and a 48px shared action-menu column.
+Edit note focuses the inline input; Save/Cancel return to its menu; Remove uses
+the existing confirmation and focuses next/previous/Add account after success.
+Menus within ActionPanel portal into its mounted native dialog through the
+installed public Popover container API; outside-panel menus retain their default.
+First Escape closes the menu, then sheet Escape uses the existing discard guard.
+
+Inside an ActionPanel, the shared menu blocks an opening pointer release or
+compatibility click from selecting an item until a separate item press. Outside
+an ActionPanel, existing opening-drag selection stays unchanged. Keyboard and assistive virtual
+activation remain available; closing, cancellation and unmount clear the guard.
+The retry fixture reproduced a single opening mouse drag into Remove; the
+previous production stationary-click cause remains unknown. Unit mouse/touch
+sequences and native mouse checks are separate evidence. Physical touch is
+skipped because the native tool has no touch input; Shaka1055 requires the
+owner phone check after release, with rollback if it fails.
+
+D5: keep “Sit-out after a win”. Request bodies, revision checks,409 reload and
+rule behavior stay unchanged. Status: implemented for isolated native and
+independent review; no backend, schema, permission, data or release change.

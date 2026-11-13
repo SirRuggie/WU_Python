@@ -1411,7 +1411,7 @@ describe("Results & bonuses page: clan steps half", () => {
     });
     expect(document.querySelector("dialog.results-settings")).not.toBeNull();
     expect(
-      [...document.querySelectorAll(".results-settings-section h3")].map(
+      [...document.querySelectorAll(".results-settings-title")].map(
         (node) => node.textContent,
       ),
     ).toEqual(["CWL capture", "Sit-out after a win", "FWA Rep accounts"]);

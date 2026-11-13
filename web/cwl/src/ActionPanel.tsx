@@ -16,6 +16,7 @@ import {
   registerActionPanel,
 } from "./actionPanelHistory";
 import { cycleDialogTab } from "./actionPanelFocus";
+import { ActionPanelPortalContext } from "./actionPanelPortal";
 
 type Props = {
   title: string;
@@ -60,6 +61,7 @@ export default function ActionPanel({
   variant = "default",
 }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [portalContainer, setPortalContainer] = useState<Element>();
   const closeButton = useRef<HTMLButtonElement>(null);
   const busyRef = useRef(busy);
   const onCloseRef = useRef(onClose);
@@ -74,6 +76,7 @@ export default function ActionPanel({
     closeRosterActionMenus();
     const modal = dialog.current;
     if (!modal) return;
+    setPortalContainer(modal);
     const unregisterPanel = registerActionPanel(marker);
     const panelState = panelHistoryState(history.state, marker);
     history.pushState(panelState, "", location.href);
@@ -127,71 +130,73 @@ export default function ActionPanel({
   };
 
   return createPortal(
-    <dialog
-      ref={dialog}
-      className={`action-panel action-panel-${variant}${searchFocused ? " is-search-focused" : ""}${className ? ` ${className}` : ""}`}
-      aria-labelledby={`${panelId}-title`}
-      onKeyDown={(event) => {
-        if (
-          isTopActionPanel(marker) &&
-          dialog.current?.contains(event.target as Node)
-        )
-          cycleDialogTab(dialog.current, event, document.activeElement);
-      }}
-      onCancel={(event) => {
-        // React portal events from a nested native dialog are not this panel's cancel.
-        if (event.target !== dialog.current) return;
-        if (!isTopActionPanel(marker)) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-        event.preventDefault();
-        close();
-      }}
-      onPointerDownCapture={(event) => {
-        pressStartedOnBackdrop.current = event.target === dialog.current;
-      }}
-      onClick={(event) => {
-        // A press that began on a control must never close the panel, even if
-        // the layout moved under the pointer before release.
-        if (
-          isTopActionPanel(marker) &&
-          event.target === dialog.current &&
-          pressStartedOnBackdrop.current
-        )
-          close();
-      }}
-      onFocusCapture={(event) => {
-        if (!isTopActionPanel(marker)) return;
-        if (
-          expandOnSearchFocus &&
-          (event.target as HTMLElement).matches(
-            'input[type="search"], [data-action-panel-search]',
+    <ActionPanelPortalContext.Provider value={portalContainer}>
+      <dialog
+        ref={dialog}
+        className={`action-panel action-panel-${variant}${searchFocused ? " is-search-focused" : ""}${className ? ` ${className}` : ""}`}
+        aria-labelledby={`${panelId}-title`}
+        onKeyDown={(event) => {
+          if (
+            isTopActionPanel(marker) &&
+            dialog.current?.contains(event.target as Node)
           )
-        ) {
-          setSearchFocused(true);
-        }
-      }}
-    >
-      <header className="action-panel-heading">
-        <h2 id={`${panelId}-title`}>{title}</h2>
-        <button
-          ref={closeButton}
-          type="button"
-          className="action-panel-close"
-          onClick={close}
-          disabled={busy}
-          aria-label="Close panel"
-        >
-          Close
-        </button>
-      </header>
-      <div className="action-panel-content">{children}</div>
-      {footer != null && (
-        <footer className="action-panel-footer">{footer}</footer>
-      )}
-    </dialog>,
+            cycleDialogTab(dialog.current, event, document.activeElement);
+        }}
+        onCancel={(event) => {
+          // React portal events from a nested native dialog are not this panel's cancel.
+          if (event.target !== dialog.current) return;
+          if (!isTopActionPanel(marker)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          event.preventDefault();
+          close();
+        }}
+        onPointerDownCapture={(event) => {
+          pressStartedOnBackdrop.current = event.target === dialog.current;
+        }}
+        onClick={(event) => {
+          // A press that began on a control must never close the panel, even if
+          // the layout moved under the pointer before release.
+          if (
+            isTopActionPanel(marker) &&
+            event.target === dialog.current &&
+            pressStartedOnBackdrop.current
+          )
+            close();
+        }}
+        onFocusCapture={(event) => {
+          if (!isTopActionPanel(marker)) return;
+          if (
+            expandOnSearchFocus &&
+            (event.target as HTMLElement).matches(
+              'input[type="search"], [data-action-panel-search]',
+            )
+          ) {
+            setSearchFocused(true);
+          }
+        }}
+      >
+        <header className="action-panel-heading">
+          <h2 id={`${panelId}-title`}>{title}</h2>
+          <button
+            ref={closeButton}
+            type="button"
+            className="action-panel-close"
+            onClick={close}
+            disabled={busy}
+            aria-label="Close panel"
+          >
+            Close
+          </button>
+        </header>
+        <div className="action-panel-content">{children}</div>
+        {footer != null && (
+          <footer className="action-panel-footer">{footer}</footer>
+        )}
+      </dialog>
+    </ActionPanelPortalContext.Provider>,
     document.body,
   );
 }

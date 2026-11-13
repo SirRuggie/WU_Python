@@ -1,5 +1,12 @@
 import { useInteractOutside } from "react-aria";
-import { useEffect, useId, useRef, useSyncExternalStore } from "react";
+import {
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useSyncExternalStore,
+} from "react";
+import { ActionPanelPortalContext } from "../actionPanelPortal";
 import {
   Button as AriaButton,
   Menu,
@@ -37,9 +44,11 @@ export default function ActionMenu({
   items: ActionMenuItem[];
   disabled?: boolean;
 }) {
+  const portalContainer = useContext(ActionPanelPortalContext);
   const id = useId(),
     trigger = useRef<HTMLButtonElement>(null),
     sheet = useRef<HTMLDivElement>(null);
+  const openingPointer = useRef<number | null>(null);
   const active = useSyncExternalStore(
     subscribeRosterActionMenus,
     activeRosterActionMenu,
@@ -47,6 +56,7 @@ export default function ActionMenu({
   );
   const open = active === id && !disabled;
   const close = () => {
+    openingPointer.current = null;
     if (activeRosterActionMenu() === id) setRosterActionMenu(null);
   };
   // Non-modal menus permit switching directly to another card trigger.
@@ -60,6 +70,7 @@ export default function ActionMenu({
   });
   useEffect(
     () => () => {
+      openingPointer.current = null;
       if (activeRosterActionMenu() === id) setRosterActionMenu(null);
     },
     [id],
@@ -67,6 +78,9 @@ export default function ActionMenu({
   useEffect(() => {
     if (disabled) close();
   }, [disabled]);
+  useEffect(() => {
+    if (!open) openingPointer.current = null;
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const scroll = (event: Event) => {
@@ -80,7 +94,22 @@ export default function ActionMenu({
     return () => window.removeEventListener("scroll", scroll, true);
   }, [open]);
   return (
-    <div className="roster-player-menu">
+    <div
+      className="roster-player-menu"
+      onPointerDownCapture={(event) => {
+        if (
+          portalContainer &&
+          !disabled &&
+          event.button === 0 &&
+          trigger.current?.contains(event.target as Node)
+        )
+          openingPointer.current = event.pointerId;
+      }}
+      onPointerCancelCapture={(event) => {
+        if (portalContainer && openingPointer.current === event.pointerId)
+          close();
+      }}
+    >
       <MenuTrigger
         isOpen={open}
         onOpenChange={(value) => (value ? setRosterActionMenu(id) : close())}
@@ -95,6 +124,44 @@ export default function ActionMenu({
           {label && <span>{label}</span>}
         </AriaButton>
         <Popover
+          UNSTABLE_portalContainer={portalContainer}
+          onPointerDownCapture={(event) => {
+            if (
+              portalContainer &&
+              event.button === 0 &&
+              (event.target as Element).closest?.('[role="menuitem"]')
+            )
+              openingPointer.current = null;
+          }}
+          onPointerUpCapture={(event) => {
+            // RAC supports trigger-down → item-up selection. An opening press
+            // must not choose an item that appeared beneath the pointer.
+            if (
+              portalContainer &&
+              openingPointer.current !== null &&
+              (event.target as Element).closest?.('[role="menuitem"]')
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
+          onClickCapture={(event) => {
+            const native = event.nativeEvent as MouseEvent & {
+              pointerType?: string;
+            };
+            const pointerClick =
+              event.detail > 0 ||
+              ["mouse", "touch", "pen"].includes(native.pointerType || "");
+            if (
+              portalContainer &&
+              openingPointer.current !== null &&
+              pointerClick &&
+              (event.target as Element).closest?.('[role="menuitem"]')
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
           ref={sheet}
           className="roster-action-popover roster-ui"
           placement="bottom end"
@@ -106,7 +173,14 @@ export default function ActionMenu({
             className="roster-action-list"
           >
             {items.flatMap((item) => [
-              ...(item.separatorBefore ? [<Separator key={`${item.id}-separator`} className="roster-action-separator" />] : []),
+              ...(item.separatorBefore
+                ? [
+                    <Separator
+                      key={`${item.id}-separator`}
+                      className="roster-action-separator"
+                    />,
+                  ]
+                : []),
               <RosterMenuItem
                 key={item.id}
                 id={item.id}

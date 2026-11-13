@@ -52,7 +52,7 @@
 }
 .rep-account-row {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: 32px minmax(0, 1fr) 48px;
   align-items: center;
   gap: var(--wu-space-3);
   padding: var(--wu-space-3) 14px;
@@ -102,12 +102,6 @@
   .rep-accounts-add button {
     justify-self: start;
   }
-  .rep-account-row {
-    grid-template-columns: 32px minmax(0, 1fr);
-  }
-  .rep-account-row > .rep-account-actions {
-    grid-column: 2;
-  }
 }
 .rep-finder {
   display: grid;
@@ -148,8 +142,25 @@
     justify-self: start;
   }
 }
-.rep-accounts-subhead {
-  margin: var(--wu-space-2) 0 0;
-  font-size: var(--wu-text-sm);
+.rep-accounts,
+.rep-add-area {
+  display: grid;
+  gap: var(--wu-space-3);
+}
+.rep-accounts > button,
+.rep-add-area > button {
+  justify-self: start;
+  min-height: 44px;
+}
+.rep-add-by-tag > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  min-height: 44px;
+  cursor: pointer;
   color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.rep-account-row > .roster-player-menu {
+  width: 48px;
 }
