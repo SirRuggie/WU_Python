@@ -51,12 +51,12 @@
 }
 .strike-activity-roster legend {
   font-size: var(--wu-text-lg);
-  color: #b8b5ad;
+  color: var(--wu-text-muted);
 }
 
 .strike-activity-roster details {
-  border: 1px solid #484238;
-  border-radius: 10px;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
   padding: 0 var(--wu-space-3);
   min-width: 0;
 }
@@ -129,7 +129,7 @@
 }
 .strike-activity-roster h2 small {
   font-weight: var(--wu-weight-regular);
-  color: #b8b5ad;
+  color: var(--wu-text-muted);
 }
 .strike-activity-row {
   display: grid;
@@ -138,14 +138,14 @@
   width: 100%;
   padding: var(--wu-space-2) var(--wu-space-2);
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
   color: inherit;
   min-width: 0;
 }
 @media (hover: hover) and (pointer: fine) {
   .strike-activity-row:hover {
-    border-color: #8a7449;
+    border-color: var(--wu-warning-border);
     background: var(--wu-surface-raised);
   }
 }
@@ -232,8 +232,8 @@
   gap: var(--wu-space-1);
 }
 .strike-bulk-mark {
-  border: 1px solid #59503d;
-  border-radius: 10px;
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
   padding: var(--wu-space-3);
   display: flex;
   gap: var(--wu-space-2);
@@ -280,7 +280,7 @@
   width: 44px;
   height: 44px;
   border-color: var(--wu-border-subtle);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
 }
 .strike-activity-toolbar > button.strike-activity-search-button,
@@ -316,7 +316,7 @@
   padding: var(--wu-space-1) var(--wu-space-2);
 }
 .strike-activity-one-summary {
-  color: #bfbbae;
+  color: var(--wu-text-muted);
   font-size: var(--wu-text-sm);
   overflow: hidden;
   white-space: nowrap;
@@ -403,7 +403,7 @@
   display: none;
 }
 .strike-priority-chopping {
-  color: var(--roster-card-text-danger, #ff9f9f);
+  color: var(--roster-card-text-danger, var(--wu-danger));
   background: transparent;
   border-radius: 0;
   padding: 0;
@@ -429,10 +429,10 @@
   z-index: 80;
   max-width: calc(100vw - 32px);
   padding: var(--wu-space-3) var(--wu-space-4);
-  border: 1px solid #a89564;
-  border-radius: 10px;
+  border: 1px solid var(--wu-accent);
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface-raised);
-  box-shadow: 0 4px 24px #0008;
+  box-shadow: 0 4px 24px #0008; /* keep: black shadow */
 }
 .strike-tab-predicate {
   font-size: var(--wu-text-md);
@@ -445,7 +445,7 @@
   scroll-margin-block: 140px 140px;
 }
 
-@media (min-width: 1000px) {
+@media (min-width: 901px) {
   .strike-activity-roster {
     grid-template-columns: auto minmax(0, 1fr);
     gap: var(--wu-space-1) var(--wu-space-3);
@@ -476,7 +476,7 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-@media (min-width: 1000px) {
+@media (min-width: 901px) {
   .strike-activity-roster {
     row-gap: 0;
   }
@@ -484,7 +484,7 @@
     padding-block: 0;
   }
 }
-@media (min-width: 1000px) {
+@media (min-width: 901px) {
   .strike-activity-toolbar :is(button, input, select, summary),
   .strike-activity-tabs button {
     box-sizing: border-box;
@@ -494,7 +494,7 @@
     top: 44px;
   }
 }
-@media (min-width: 1000px) {
+@media (min-width: 901px) {
   .strike-activity-toolbar details {
     border: 0;
   }
@@ -534,7 +534,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  border-radius: 17px;
+  border-radius: var(--wu-radius-lg);
 }
 .strikes-workspace .strike-activity-status .strikes-tracking > summary::before {
   content: none;
@@ -578,7 +578,7 @@
   min-width: 0;
 }
 /* Phones: the View select and Find slots share the first row. Find slots stays mounted in one place at every width. */
-@media (max-width: 760px) {
+@media (max-width: 650px) {
   .strike-activity-roster.has-find-slots {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -764,7 +764,7 @@
   width: 100%;
   min-height: 44px;
   justify-content: flex-start;
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
   font-weight: inherit;
 }
 .strike-activity-rule {
@@ -796,7 +796,7 @@
   grid-column: 1 / -1;
 }
 .strike-sort-panel button[aria-pressed="true"] {
-  border-color: var(--wu-gold, #a89564);
+  border-color: var(--wu-accent);
 }
 .strike-group-heading {
   display: grid;
@@ -858,7 +858,7 @@
   align-items: stretch;
 }
 .strike-find-slots input[aria-invalid] {
-  border-color: var(--roster-card-text-danger, #ff9f9f);
+  border-color: var(--roster-card-text-danger, var(--wu-danger));
 }
 .strike-find-slots-row {
   display: grid;
@@ -876,7 +876,7 @@
 }
 .strike-find-slots p[role="alert"] {
   margin: 0;
-  color: var(--roster-card-text-danger, #ff9f9f);
+  color: var(--roster-card-text-danger, var(--wu-danger));
 }
 .strike-slot-group {
   display: grid;

@@ -16,7 +16,7 @@
   color: var(--text, var(--wu-text));
   background: var(--wu-surface-soft);
   border: 1px solid var(--wu-text-muted);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
   overflow-wrap: anywhere;
 }
 .image-carousel-jump {
@@ -69,6 +69,6 @@
 }
 .image-carousel-rail:focus-visible,
 .roster-image-carousel button:focus-visible {
-  outline: 2px solid #f2b84b;
+  outline: 2px solid var(--wu-accent);
   outline-offset: 2px;
 }
