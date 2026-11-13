@@ -1,5 +1,45 @@
 # Release and rollback history
 
+## Lazy announcement card and renderer — 2026-11-13 (backend and frontend)
+
+- PR [#322](https://github.com/SirRuggie/WU_Python/pull/322), merge commit
+  `8f64316e6f4fa2100ef9e7a4dafcfe8658a88a0d`, local tag
+  `lazy-announcement-322-1`. Released by Shaka (Claude) on Ruggie's "Merge and
+  release 322" (2026-11-13 04:21 UTC).
+- Changes: Participation shows the Lazy announcement card
+  (`ParticipationWorkspace.tsx`); the renderer
+  (`utils/cwl_bonus_announcement.py`) puts the role ping first and shows names
+  in last month's winners. No route, schema, migration or data change.
+- Backend: `release.conf` `backend/4ed8462b…` → `backend/8f64316e…` (clean
+  `git archive`; imports verified from the release folder). PID 324752 →
+  333211, InvocationID `a26748afe0804fca8e78f48693dfd2e3`, cwd verified,
+  config 200 three times, anonymous seasons 401, anonymous
+  `lazy-announcement?scope=all&ping=0` 401, unknown route 404. No tracebacks
+  from the new PID. `frontend-routing.conf` and `storage-guard.conf`
+  byte-identical. Bot (PID 3529055) not changed or restarted. Workspace
+  fast-forwarded to `8f64316e`.
+- Frontend `current`: `4ed8462b…` → `8f64316e…` (clean tagged clone, `npm ci`,
+  `tsc -b` and 2483 tests in 357 files passed before staging; backend
+  announcement/raffle tests 94 passed). Entry `index-BlbSQ1yr.js`, SHA-256
+  `b9e8bf5303ecc57d3943741a878899a5924f18196397494bce20a17c4c1ae442`; feature
+  `ParticipationWorkspace-BLelAMct.js`, SHA-256
+  `23c7e6936a4ffc0e614471169834d01ec43c98335d9c46cbc998d6d65cba87c3`. Served
+  `index.html` (SHA-256
+  `30c39d380004235c67ded60dbc89344b9787d7bc8854d8d825c9691577ac1e5c`) equals
+  the release file; all 147 release asset files match the public site.
+- Backup `.local/lazy-announcement-322-release-20261113T042413Z/dashboard.sqlite3`
+  (SQLite backup API): integrity ok, equal to live, SHA-256
+  `f46db71da22e782780f46f5dbafa09b98b11ce9a5c5c5db46c103d2583663188`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131 (signups/assigned/locks),
+  publication max version 6 (6 rows, 4 active) and the lineup-rules digest
+  identical before and after.
+- Signed-in smoke SKIPPED. Send was not selected; no Discord post.
+- Rollback: backend `release.conf` back to
+  `backend/4ed8462be26c82f88e0a8930328166501136dd6a`, then daemon-reload and
+  restart `wu-cwl-demo-web`; frontend `switch-release.py
+  4ed8462be26c82f88e0a8930328166501136dd6a`. Never restore the database for a
+  code rollback.
+
 ## Lazy bonus announcement — 2026-11-13 (backend and frontend)
 
 - PR [#320](https://github.com/SirRuggie/WU_Python/pull/320), merge commit
