@@ -21,6 +21,12 @@ body {
   margin: 0;
   min-width: 0;
 }
+/* Keep nested bold text on the 700 scale; the browser's "bolder" gives 900
+   inside an already bold parent. */
+strong,
+b {
+  font-weight: var(--wu-weight-bold);
+}
 button,
 input,
 select {

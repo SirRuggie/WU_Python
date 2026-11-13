@@ -1721,3 +1721,49 @@ title, not the backend label. Permission is unchanged
 
 Status: frontend only, on a draft PR for review; no backend, schema, permission,
 data or release change.
+
+## UI audit Phase 5: tokens and type (2026-11-13)
+
+Visual-only pass over every stylesheet in `web/cwl/src`, built by Shaka with
+six parallel workers. No markup, text, request or permission change.
+
+- Colors use `--wu-*` tokens by role. A hex value stays only with a
+  `/* keep: reason */` comment: shadows and scrims, Discord preview mimicry,
+  art gradients, the selection surface `--roster-selection-surface`, and two
+  values pinned by tests (`.primary` gold in `style.css`,
+  `--roster-card-text-danger`). Gold is normal emphasis, red only errors,
+  green only success; warning dots use `--wu-warning`.
+- Font weights are only 400/600/700 (`--wu-weight-*`). Font sizes use the
+  12–32px scale (`--wu-text-*`), nearest value, ties round up, never below
+  12px. `DiscordPreview.css` keeps Discord's own sizes.
+- New radius tokens in `tokens.css`: `--wu-radius-xs/sm/md/lg/pill` =
+  4/8/12/16/999px. `--roster-radius-*` now point at them.
+- Breakpoints: a rule moves to 480/650/900 (max) or 481/651/901 (min) only
+  when the move is 60px or less. Larger moves (wide layouts at 1000–1200px,
+  tiny-phone rules at 320–400px, the 760px Strikes phone rules) keep their
+  width because moving them changed layouts at real widths. A rule also keeps
+  its width when a TSX `matchMedia` uses the same width (680, 700, 720, 760,
+  767/768, 800, 899/900).
+- Touch: `:where()` rules in `style.css` add `touch-action: manipulation` to
+  controls (zero specificity). 44px minimum height added to the Tasks sort
+  select, the Staff overview Pause label and the Seasons "Direct signup link".
+
+Status: frontend only, draft PR for review; no backend, schema, permission,
+data or release change.
+
+## UI audit Phase 6: code health (2026-11-13)
+
+Pure refactor, no rendered change (pixel comparison of 33 pages at 360 and
+1440 against main: only random error reference ids differ).
+
+- `App.tsx` signup view moved to `SignupPage.tsx` (rendering only).
+- `StrikesWorkspace.tsx` split into `web/cwl/src/strikes/` (types, format,
+  panels, tabs, and the hooks `useStrikeImport`, `useWarSearch`,
+  `useLeaveApproval`).
+- `ReminderWorkspace.tsx` split into `web/cwl/src/reminders/`.
+- `ServerManagement.tsx` split into `managementRequests.ts`,
+  `ManagementFieldInput.tsx`, `useManagementConfirmation.ts` and the
+  `Management*` panels; parent hook order is unchanged for the index-mocked
+  preview test. `activity/EventsWorkspace.tsx` reformatted.
+
+Status: frontend only, draft PR for review.
