@@ -2306,7 +2306,7 @@ summary.target-summary-44 {
   color: var(--wu-accent);
   font-weight: var(--wu-weight-medium);
 }
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .server-join-notice a:hover {
     color: var(--wu-accent-hover);
   }
