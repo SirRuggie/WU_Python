@@ -324,6 +324,34 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(list(db.iterdump()), before)
 
 
+    async def test_bonus_history_rows_carry_display_town_hall(self):
+        await self.setup_published()
+        await self.seed_complete_source()
+        await self.legacy_override(attacks=3, stars=8, notes='')
+        self.assertEqual((await self.settings(0)).status, 200)
+        self.assertEqual((await self.select(1)).status, 200)
+        preview = await self.preview()
+        response = await self.call('POST', self.base + '/confirm', self.owner, json={'revision': 2, 'fingerprint': preview['fingerprint'], 'acknowledge_warnings': True})
+        self.assertIn(response.status, (200, 201), await response.text())
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO bonus_imported_winners VALUES (?,'2026-08','lazy','#Q2Y','Imported','#C2Y','Import clan','import','fixture','now')", (self.sid,))
+            signup_th = db.execute('SELECT town_hall FROM signups WHERE season_id=? AND tag=?', (self.sid, '#P2Y')).fetchone()[0]
+            before = list(db.iterdump())
+        url = f'/seasons/{self.sid}/export-preview?kind=bonus-history&basis=current'
+        payload = await (await self.call('GET', url, self.owner)).json()
+        by_tag = {row['tag']: row for row in payload['rows']}
+        self.assertEqual(by_tag['#P2Y']['town_hall'], signup_th)
+        self.assertIsNone(by_tag['#Q2Y']['town_hall'])
+        # Display only: the download columns do not change.
+        self.assertNotIn('town_hall', payload['columns'])
+        with self.app['store'].tx() as db:
+            self.assertEqual(list(db.iterdump()), before)
+            # Signup removed after the draw: fall back to the published roster.
+            db.execute('DELETE FROM signups WHERE season_id=? AND tag=?', (self.sid, '#P2Y'))
+        payload = await (await self.call('GET', url, self.owner)).json()
+        by_tag = {row['tag']: row for row in payload['rows']}
+        self.assertEqual(by_tag['#P2Y']['town_hall'], signup_th)
+
     async def test_bonus_history_permission_matrix_and_other_kinds_unchanged(self):
         import json
         await self.setup_published()

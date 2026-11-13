@@ -129,7 +129,10 @@
   flex-basis: auto;
 }
 .player-card-top .town-hall-fallback {
+  /* Fit the 20px name row; the default padded box overflowed the name. */
   font-size: var(--wu-text-xs);
+  line-height: 16px;
+  padding: 1px var(--wu-space-1);
 }
 .player-card-top .player-card-name {
   display: flex;
