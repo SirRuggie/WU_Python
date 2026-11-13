@@ -70,6 +70,55 @@
   ab1fd2dd95b1a7015e3c13ac571267de2e2ea379`. Never restore the database for a
   code rollback.
 
+## UI audit phases 1–4 — 2026-11-13 (frontend only)
+
+- PRs [#323](https://github.com/SirRuggie/WU_Python/pull/323),
+  [#324](https://github.com/SirRuggie/WU_Python/pull/324),
+  [#325](https://github.com/SirRuggie/WU_Python/pull/325) and
+  [#326](https://github.com/SirRuggie/WU_Python/pull/326); release commit
+  `ab1fd2dd95b1a7015e3c13ac571267de2e2ea379` (merge of #326), local tag
+  `ui-audit-1-4-1`. Released by Shaka (Claude) on Ruggie's "Merge and release
+  all 4, from what I see it looks good" (2026-11-13 14:19 UTC).
+- Scope: `git diff 8f64316e..ab1fd2dd` touches only `web/cwl/` and `docs/`
+  (93 files; #321 in the range is docs only). No backend, bot, schema, data,
+  config or systemd change. No service restart: backend PID 333211 before and
+  after, still on `backend/8f64316e…`.
+- Build: clean clone at the tag, `npm ci`, `tsc -b` passed, vitest 2509 tests
+  in 364 files passed, checkout clean after; staged with `stage-release.py`
+  (181 files).
+- Frontend `current`: `8f64316e…` → `ab1fd2dd…` at 2026-11-13 14:24:13 UTC
+  (`switch-history.jsonl`). Entry `index-Df6mkzza.js`, SHA-256
+  `b71d17959d4b6ba9c6f8bf47a1f5c7b551f982160f4a2d0dea71d775ff73774d`. Served
+  `index.html` (SHA-256
+  `ddbf9f17e58f4d6ff0c6cb3bd145f4de4984a7a128f16887648c1ea8ba58ae1b`) equals
+  the release file; all 147 release asset files match the public site.
+  Feature chunks: `StaffOverview-BZLhPlAt.js` (SHA-256
+  `4c9874a24b84732d9cbb8f163abe7273ed818829182d4699535867950fd0fdf6`),
+  `ModerationWorkspace-CVJm4ap1.js` (SHA-256
+  `b7ba36974737501caacf5f32cdcc5327f01038f304736ccdf9e39da4561c19e4`).
+- Smoke (read only): config 200 twice, anonymous seasons 401. Served bundles
+  contain "Members & moderation" and "Band monitor" (entry), "Activity
+  history", "Invites" and "Log channels" (`ModerationWorkspace`); the old
+  release contains none of the first two. Public home page loads; the only
+  console error is the anonymous 401. No Save, Send or other write; no Discord
+  post.
+- Signed-in smoke 14:44 UTC (Ruggie signed in; served release was by then
+  `7a4abbe6`, which includes `ab1fd2dd`): 7/7 PASS read-only. Sidebar groups,
+  Moderation tabs, Band monitor opens directly, Results ends with "Next:
+  Exports & history" and has no tab bar, Strikes ⋯ menu items, Members
+  buttons; only console error the pre-sign-in 401. Ruggie's phone touch check
+  of the ⋯ menus passed 14:55 UTC.
+- Backup `.local/ui-audit-1-4-release-20261113T142158Z/dashboard.sqlite3`
+  (SQLite backup API, 2,306,048 bytes): integrity ok, equal to live, SHA-256
+  `fdef6411caf80aab70472200d2d82282d78b3f6fcd15d0eba1e62ac07ee809b5`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131 (signups/assigned/locks),
+  publication max version 6 (6 rows, 4 active) and the lineup-rules digest
+  identical before and after.
+- Rollback (frontend only): `python3
+  /home/ruggie/.local/share/wu-dashboard/switch-release.py
+  8f64316e6f4fa2100ef9e7a4dafcfe8658a88a0d`, then verify public hashes. Never
+  restore the database for a code rollback.
+
 ## Lazy announcement card and renderer — 2026-11-13 (backend and frontend)
 
 - PR [#322](https://github.com/SirRuggie/WU_Python/pull/322), merge commit
