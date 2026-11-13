@@ -41,8 +41,11 @@ const preview = (patch = {}) => ({
   ],
   blockers: [],
   pages: [[{ type: "text", text: "x" }]],
-  last_month_label: "Sep 2026",
-  last_month_count: 3,
+  history: [
+    { label: "July", count: 2 },
+    { label: "August", count: 1 },
+    { label: "September", count: 3 },
+  ],
   winner_count: 2,
   clan_count: 1,
   unlinked_count: 0,

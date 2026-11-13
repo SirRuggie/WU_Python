@@ -16,8 +16,8 @@ export type LazyAnnouncementPreview = {
   clans: LazyAnnouncementClan[];
   blockers: string[];
   pages: PreviewPart[][];
-  last_month_label: string | null;
-  last_month_count: number;
+  /** Seasons in the past-winners image, oldest first. */
+  history: { label: string; count: number }[];
   winner_count: number;
   clan_count: number;
   unlinked_count: number;

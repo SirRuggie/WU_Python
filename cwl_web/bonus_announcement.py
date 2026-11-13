@@ -7,12 +7,14 @@ import asyncio
 import hashlib
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 from aiohttp import web
 
 from extensions.cwl_discord_transport import AnnouncementRejected, AnnouncementUnavailable, DiscordTransport
 from utils import cwl_bonus_announcement as render
+from utils import cwl_bonus_history_image as history_image
 from utils.cwl_bonus_raffle_store import RaffleStore, now
 from .bonus_raffle import _bonus_status
 from .bonuses import _require_draft
@@ -22,6 +24,8 @@ API = '/api/cwl'
 GUILD_ID = '644963518025826315'
 FOOTER_PATH = Path(__file__).resolve().parents[1] / 'assets' / render.FOOTER_FILE
 ACTION = 'lazy_bonus_announcement'
+# The image shows the winners of the 3 seasons before this one (2026-11-13 decision).
+HISTORY_SEASONS = 3
 
 
 def _scope(scope, clan_tag):
@@ -73,15 +77,18 @@ def collect(db, sid, scope, clan_tag):
                             'user_id': account.get('user_id')})
         clans.append({'tag': clan['tag'], 'name': clan['name'], 'bonus_count': snapshot['slots'],
                       'sit_out_months': lengths.get(clan['tag'], 3), 'winners': winners})
-    previous = RaffleStore.shift_cycle(cycle, -1) if cycle else None
-    last = sorted(store.lazy_winners(previous), key=lambda r: r['tag']) if previous else []
-    users = store.discord_users([row['tag'] for row in last] + [w['tag'] for c in clans for w in c['winners'] if not w['user_id']])
+    history = []
+    for back in range(HISTORY_SEASONS, 0, -1):
+        past = RaffleStore.shift_cycle(cycle, -back) if cycle else None
+        if past:
+            rows = sorted(store.lazy_winners(past), key=lambda r: r['tag'])
+            history.append({'cycle': past, 'label': datetime.strptime(past, '%Y-%m').strftime('%B'),
+                            'winners': [{'tag': r['tag'], 'player_name': r['player_name'] or ''} for r in rows]})
+    users = store.discord_users([w['tag'] for c in clans for w in c['winners'] if not w['user_id']])
     for clan in clans:
         for winner in clan['winners']:
             winner['user_id'] = winner['user_id'] or users.get(winner['tag'])
-    data = {'cycle': cycle, 'last_month_label': RaffleStore.month_label(previous) if previous else None,
-            'last_month': [{'tag': r['tag'], 'player_name': r['player_name'], 'user_id': users.get(r['tag'])} for r in last],
-            'clans': clans}
+    data = {'cycle': cycle, 'history': history, 'clans': clans}
     return options, blockers, data
 
 
@@ -98,24 +105,36 @@ async def preview(request):
     with _store(request).tx() as db:
         options, blockers, data = collect(db, sid, scope, clan_tag)
     users = {w['user_id'] for c in data['clans'] for w in c['winners'] if w['user_id']}
-    users |= {r['user_id'] for r in data['last_month'] if r['user_id']}
     names = cached_owner_nicknames(request, users)
+    fingerprint = render.fingerprint(data, ping)
     pages = []
     if data['clans']:
+        # The fingerprint in the URL makes the browser fetch a new image when the winners change.
+        history_url = f"{API}/seasons/{sid}/bonus-raffle/lazy-announcement/history.png?v={fingerprint[:16]}"
         try:
-            pages = [render.preview_parts(p) for p in render.messages(data, names, preview=True, ping=ping)]
+            pages = [render.preview_parts(p, history_url) for p in render.messages(data, names, preview=True, ping=ping)]
         except ValueError as exc:
             blockers.append(str(exc))
     return web.json_response({
         'cycle': data['cycle'], 'scope': scope, 'clan_tag': clan_tag, 'ping': ping,
         'clans': options, 'blockers': blockers, 'pages': pages,
-        'last_month_label': data['last_month_label'], 'last_month_count': len(data['last_month']),
+        'history': [{'label': h['label'], 'count': len(h['winners'])} for h in data['history']],
         'clan_count': len(data['clans']),
         'ping_count': len(render.ping_users(data)) if ping else 0,
         'winner_count': sum(len(c['winners']) for c in data['clans']),
-        'unlinked_count': sum(1 for c in data['clans'] for w in c['winners'] if not w['user_id'])
-                          + sum(1 for r in data['last_month'] if not r['user_id']),
-        'fingerprint': render.fingerprint(data, ping)})
+        'unlinked_count': sum(1 for c in data['clans'] for w in c['winners'] if not w['user_id']),
+        'fingerprint': fingerprint})
+
+
+async def history_png(request):
+    """Read-only PNG of the history image for the dashboard preview. Stored data only."""
+    from .app import _require, _sid, _store
+    _require(request, 'editor')
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        _, _, data = collect(db, sid, 'all', None)
+    return web.Response(body=history_image.render(data['history']), content_type='image/png',
+                        headers={'Cache-Control': 'private, max-age=300'})
 
 
 def _prior(db, sid, request_id):
@@ -178,7 +197,7 @@ async def send(request):
         pages = render.messages(data, ping=ping)
     except ValueError as exc:
         _fail(409, str(exc))
-    footer = FOOTER_PATH.read_bytes()
+    files = {render.FOOTER_FILE: FOOTER_PATH.read_bytes(), history_image.FILE_NAME: history_image.render(data['history'])}
     record = {'request_id': request_id, 'scope': scope, 'clan_tag': clan_tag, 'ping': ping,
               'channel_id': channel_id, 'cycle': data['cycle'], 'clans': [c['tag'] for c in data['clans']],
               'pages': len(pages)}
@@ -192,9 +211,8 @@ async def send(request):
     try:
         for index, payload in enumerate(pages):
             nonce = hashlib.blake2s(f'lazy-bonus:{sid}:{request_id}:{index}'.encode(), digest_size=12).hexdigest()
-            last = index == len(pages) - 1
-            sent.append(await transport.send_components(
-                channel_id, payload, nonce, files=[(render.FOOTER_FILE, footer)] if last else ()))
+            attached = [(name, files[name]) for name in render.attachments(payload)]
+            sent.append(await transport.send_components(channel_id, payload, nonce, files=attached))
     except asyncio.CancelledError:
         # Restart or cancel leaves the reservation unresolved; it is never replayed.
         raise
@@ -211,4 +229,4 @@ async def send(request):
 
 def routes():
     base = API + '/seasons/{season_id}/bonus-raffle/lazy-announcement'
-    return [web.get(base, preview), web.post(base, send)]
+    return [web.get(base, preview), web.post(base, send), web.get(base + '/history.png', history_png)]
