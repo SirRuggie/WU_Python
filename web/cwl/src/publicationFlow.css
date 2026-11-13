@@ -369,6 +369,7 @@
   background: var(--wu-surface);
   color: var(--wu-text);
   overflow: auto;
+  overscroll-behavior: contain;
 }
 .announcement-preview-dialog::backdrop {
   background: #000b; /* keep: black overlay */

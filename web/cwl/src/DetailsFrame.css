@@ -8,6 +8,7 @@
   max-height: 100dvh;
   max-width: 100vw;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: var(--wu-space-4);
   padding-bottom: max(var(--wu-space-4), env(safe-area-inset-bottom));
   border: 1px solid var(--roster-border);
