@@ -762,7 +762,7 @@ export default function PublicationWorkspace({
       {step === "review" && draft?.published && canAnnounce && (
         <CwlNextLink
           label="Announcements"
-          route={{ view: "publication", season: "", step: "announce" }}
+          route={{ view: "publication", season: seasonId, step: "announce" }}
           disabled={locked || loading || instructionsDirty}
           onNext={() => (onNavigateStep ?? onStepChange)("announce")}
         />

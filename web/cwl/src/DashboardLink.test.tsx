@@ -83,6 +83,10 @@ it("does nothing while disabled", async () => {
   try {
     const link = host.querySelector("a")!;
     expect(link.getAttribute("aria-disabled")).toBe("true");
+    expect(link.hasAttribute("href")).toBe(false);
+    const aux = await act(async () => press(link, { button: 1 }));
+    expect(aux.defaultPrevented).toBe(true);
+    expect(go).not.toHaveBeenCalled();
     const event = await act(async () => press(link, {}));
     expect(event.defaultPrevented).toBe(true);
     expect(go).not.toHaveBeenCalled();

@@ -72,9 +72,15 @@ button:where(
     background: var(--wu-surface-soft);
   }
 }
-button:disabled {
+button:disabled,
+a[aria-disabled="true"] {
   opacity: 0.48;
   cursor: not-allowed;
+}
+@media (hover: hover) and (pointer: fine) {
+  .button[aria-disabled="true"]:hover {
+    background: var(--wu-surface);
+  }
 }
 /* keep: base primary gold is pinned by App.welcomeColors.test.tsx. */
 .primary {

@@ -15,6 +15,8 @@ const props = {
   isOwner: true,
   permissions: [] as string[],
   onNavigate: navigate,
+  season: "",
+  publicationStep: "review" as "review" | "announce",
 };
 
 beforeEach(() => {
@@ -239,4 +241,17 @@ it("lets modified clicks through and still navigates on a plain click", async ()
   await act(async () => link.dispatchEvent(plain));
   expect(plain.defaultPrevented).toBe(true);
   expect(navigate).toHaveBeenCalledWith("members-settings");
+});
+
+it("puts the staff season and publication step in every season-page href", async () => {
+  await render("home", { season: "7", publicationStep: "announce" });
+  await act(async () => toggle("cwl").click());
+  const href = (label: string) =>
+    [...host.querySelectorAll<HTMLAnchorElement>("nav a")]
+      .find((link) => link.textContent === label)
+      ?.getAttribute("href");
+  expect(href("Build roster")).toBe("/cwl/roster?season=7");
+  expect(href("Finalize roster")).toBe("/cwl/publish?step=review&season=7");
+  expect(href("Announcements")).toBe("/cwl/publish?step=announce&season=7");
+  expect(href("Exports & history")).toBe("/cwl/exports?season=7");
 });

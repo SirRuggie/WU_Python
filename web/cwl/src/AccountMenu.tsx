@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { ChevronDown, LogOut, RotateCcw } from "lucide-react";
 import {
   Button as AriaButton,
@@ -32,14 +32,24 @@ export default function AccountMenu({
   const name =
     discordIdentityName(user.id, user) || "Discord member unavailable";
   const trigger = useRef<HTMLButtonElement>(null);
-  const guard = useOpeningPressGuard(trigger, disabled, () => guard.release());
+  const [open, setOpen] = useState(false);
+  const guard = useOpeningPressGuard(trigger, disabled, () => {
+    guard.release();
+    setOpen(false);
+  });
 
   return (
     <div
       className={`account-menu account-menu-${variant}`}
       {...guard.rootProps}
     >
-      <MenuTrigger onOpenChange={(open) => !open && guard.release()}>
+      <MenuTrigger
+        isOpen={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) guard.release();
+        }}
+      >
         <AriaButton
           ref={trigger}
           className={`account-menu-trigger account-menu-${variant}-trigger`}

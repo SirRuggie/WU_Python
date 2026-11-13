@@ -133,6 +133,9 @@ export function homeNextStep(
 type Props = {
   session: Session;
   seasonId: string;
+  /** Season and step the staff-tool links open with. */
+  staffSeasonId?: string;
+  publicationStep?: "review" | "announce";
   seasons: Season[];
   seasonsKnown?: boolean;
   seasonError?: string;
@@ -180,6 +183,8 @@ export default function DashboardHome(props: Props) {
   const {
     session,
     seasonId,
+    staffSeasonId = "",
+    publicationStep = "review",
     seasons,
     seasonsKnown = true,
     seasonError = "",
@@ -365,13 +370,9 @@ export default function DashboardHome(props: Props) {
       }
     };
     void load();
-    const tick = () => {
-      if (!paused) return load();
-    };
+    const tick = () => { if (!paused) return load(); };
     const stopRefresh = visibleRefresh(tick, 30000);
-    const online = () => {
-      if (!document.hidden) void tick();
-    };
+    const online = () => { if (!document.hidden) void tick(); };
     window.addEventListener("online", online);
     return () => {
       cancelled = true;
@@ -963,7 +964,9 @@ export default function DashboardHome(props: Props) {
         <details className="hub-help" id="home-account-help">
           <summary>Link an account</summary>
           <AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} />
-          <p>To move or withdraw a signup, go to My signups.</p>
+          <p>
+            To move or withdraw a signup, go to My signups.
+          </p>
           <button onClick={() => onNavigate("saved")}>Open My signups →</button>
         </details>
         {session.can_edit && (
@@ -980,7 +983,11 @@ export default function DashboardHome(props: Props) {
                 <DashboardLink
                   key={view}
                   className="button"
-                  href={dashboardPath({ view, season: "" })}
+                  href={dashboardPath({
+                    view,
+                    season: staffSeasonId,
+                    step: view === "publication" ? publicationStep : undefined,
+                  })}
                   onNavigate={() => onNavigate(view)}
                 >
                   {label}

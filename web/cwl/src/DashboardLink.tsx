@@ -8,7 +8,8 @@ type Props = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
 };
 
 /**
- * Internal dashboard link. A plain primary click uses the in-app router;
+ * Internal dashboard link. While disabled it has no href, so no click
+ * (including middle-click) can navigate. A plain primary click uses the in-app router;
  * modified and non-primary clicks keep the browser's own link behavior.
  */
 export default function DashboardLink({
@@ -39,7 +40,8 @@ export default function DashboardLink({
   return (
     <a
       {...rest}
-      href={href}
+      href={disabled ? undefined : href}
+      role={disabled ? "link" : undefined}
       aria-disabled={disabled || undefined}
       onClick={click}
     />

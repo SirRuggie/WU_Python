@@ -737,7 +737,7 @@ export default function ArrivalCheck({
       {data && published && (
         <CwlNextLink
           label="Results"
-          route={{ view: "participation", season: "" }}
+          route={{ view: "participation", season: seasonId }}
           onNext={onResults}
           disabled={checking}
         />

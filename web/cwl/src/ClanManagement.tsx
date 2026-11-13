@@ -586,8 +586,7 @@ export default function ClanManagement({
                         ) : (
                           <X size={16} aria-hidden="true" />
                         )}
-                        {label}
-                        <small>{complete ? "Done" : "To do"}</small>
+                        {label} <small>{complete ? "Done" : "To do"}</small>
                       </button>
                     ))}
                   </nav>

@@ -411,6 +411,7 @@ export default function SidebarNavigation({
   signupPanel = "register",
   onSignup,
   tourExpanded = false,
+  season = "",
 }: {
   userId: string;
   view: DashboardView;
@@ -423,6 +424,8 @@ export default function SidebarNavigation({
   signupPanel?: "register" | "saved";
   onSignup?: (panel: "register" | "saved") => void;
   tourExpanded?: boolean;
+  /** Staff season the destination links open with. */
+  season?: string;
 }) {
   const key = `wu-navigation-v3:${userId}`;
   const cwlToggled = useRef(false);
@@ -501,8 +504,10 @@ export default function SidebarNavigation({
       key={`${item.view}:${item.step || item.signupPanel || ""}`}
       href={dashboardPath({
         view: item.view,
-        season: "",
-        step: item.step,
+        season,
+        step:
+          item.step ??
+          (item.view === "publication" ? publicationStep : undefined),
         signupPanel: item.signupPanel,
       })}
       aria-current={itemActive(item) ? "page" : undefined}
