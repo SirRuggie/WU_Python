@@ -82,7 +82,7 @@ def collect(db, sid, scope, clan_tag):
         past = RaffleStore.shift_cycle(cycle, -back) if cycle else None
         if past:
             rows = sorted(store.lazy_winners(past), key=lambda r: r['tag'])
-            history.append({'cycle': past, 'label': datetime.strptime(past, '%Y-%m').strftime('%B'),
+            history.append({'cycle': past, 'label': datetime.strptime(past, '%Y-%m').strftime('%B %Y'),
                             'winners': [{'tag': r['tag'], 'player_name': r['player_name'] or ''} for r in rows]})
     users = store.discord_users([w['tag'] for c in clans for w in c['winners'] if not w['user_id']])
     for clan in clans:

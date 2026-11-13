@@ -33,7 +33,7 @@ _MISSING = '￿'
 
 WIDTH = 1200
 MARGIN = 40
-TOP = 170
+TOP = 205
 ROW = 64
 BOTTOM = 40
 BACKGROUND = '#17181B'
@@ -149,10 +149,11 @@ def render(history, title='Lazy CWL bonus winners · last 3 seasons'):
         if index:
             draw.line((x - 20, 110, x - 20, height - 30), fill=RULE, width=2)
         winners = sorted(season['winners'], key=lambda row: (_clean(row.get('player_name')).casefold(), row['tag']))
-        heading = f"{_clean(season['label'])} · {len(winners)}"
-        _draw(draw, x, 110 + _font(True, 34).getmetrics()[0], heading, (_font(True, 34),), text_width, WHITE)
-        if not winners:
-            _draw(draw, x, TOP + _font(False, 26).getmetrics()[0], 'No winners recorded', (_font(False, 26),), text_width, MUTED)
+        # Month and year, then the count in small text (Ruggie, 2026-11-13).
+        _draw(draw, x, 110 + _font(True, 34).getmetrics()[0], _clean(season['label']), (_font(True, 34),), text_width, WHITE)
+        count = len(winners)
+        note = 'No bonus winners' if not count else f"{count} bonus winner{'s' if count != 1 else ''}"
+        _draw(draw, x, 152 + _font(False, 24).getmetrics()[0], note, (_font(False, 24),), text_width, MUTED)
         for row, winner in enumerate(winners):
             y = TOP + row * ROW
             name = _clean(winner.get('player_name')) or _clean(winner['tag'])
