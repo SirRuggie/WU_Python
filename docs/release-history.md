@@ -1,5 +1,39 @@
 # Release and rollback history
 
+## UI audit 2, Phases A–F2 — 2026-11-13 (frontend + backend label)
+
+- PR [#358](https://github.com/SirRuggie/WU_Python/pull/358) (contains #352 A,
+  #355 B, #354 C, #357 D, #356 E, #353 F1, plus F2), merge commit
+  `b68c09e4aaafcb2c160e0132c5d322ad03b7cbce`, local tag `ui-audit-2-358-1`.
+  Built by Shaka (Claude) with parallel builders; each phase had a separate
+  reviewer (REWORK items fixed). Merged on Ruggie's "Merge it", released on his
+  "Release it" in the project thread.
+- Backend change: display label only, "War weights" → "TH weight ranges"
+  (`cwl_web/manage_operations.py`, `cwl_web/server_management.py`). No key,
+  route, schema or data change. Bot not changed.
+- Checks: clean tagged clone vitest 2584 tests in 378 files; build via
+  `stage-release.py`; backend manage tests 45 passed from the clone; phase E
+  branch full pytest 8210 passed, 132 skipped. Release imports verified from
+  `backend/b68c09e4…` with the shared virtualenv.
+- Backend `release.conf` `16f6badf…` → `b68c09e4…`; restart PID 1117969 →
+  1436505; `/proc/<pid>/cwd` = new backend; journal clean.
+- Frontend `current`: `075af26f…` → `b68c09e4…`. Entry `index-Bsvm4vzn.js`.
+  All 181 manifest files match on the origin (127.0.0.1:8766) and on
+  `dash.warriorsunited.cc`.
+- Backup `.local/ui-audit-2-release-358-20261113T234555Z/before.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `da6eb098eedaf8320119e960a7c400c6d8b4d305b1e5b3a1d5c0c21c39f87db3`. All 76
+  table counts, Main 23/23/23 and Lazy 147/146/131, publication max version 6
+  (6 rows, 4 active) and the lineup-rules digest identical before and after.
+- Smoke: anonymous HTTP only (7 routes incl. `?tab=`/`?status=` deep links 200
+  with the new entry; `/api/cwl/auth/me` 401; `/api/cwl/config` 200).
+  Signed-in browser smoke SKIPPED (Chrome extension not connected). No app
+  writes, no Discord post.
+- Rollback (both layers): write `release.conf` back to
+  `backend/16f6badfe337902704bb5663a6448ad20322ed34`, `daemon-reload`,
+  `switch-release.py 075af26f6bb4111008bce40ebefc4ba73bf4d3ab`, restart. Never
+  restore the database for a code rollback.
+
 ## Browser problem banner: no cancel reports, Dismiss — 2026-11-13 (frontend only)
 
 - PR [#347](https://github.com/SirRuggie/WU_Python/pull/347), merge commit
