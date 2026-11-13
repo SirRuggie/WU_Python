@@ -427,11 +427,6 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
           {notice}
         </p>
       )}
-      {notice && (
-        <p className="manage-notice" role="status">
-          {notice}
-        </p>
-      )}
       {actionResult && <ManagementActionResult actionResult={actionResult} />}
       {statusUrl && (
         <ManagementStatusCheck
