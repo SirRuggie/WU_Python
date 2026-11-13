@@ -168,7 +168,7 @@ it("pages 560 compact members and keeps occasional actions above the directory",
   await renderPage();
   expect(host.querySelectorAll(".members-person-open")).toHaveLength(25);
   expect(document.body.textContent).toContain("Showing 1-25 of 560");
-  const actions = host.querySelector(".members-workspace > header")!,
+  const actions = host.querySelector(".members-workspace > .cwl-page-header")!,
     list = host.querySelector(".members-list")!;
   expect(
     actions.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,

@@ -1,3 +1,4 @@
+import CwlPageHeader from "./CwlPageHeader";
 import { visibleRefresh } from "./visibleRefresh";
 import { memberSignupsOpen } from "./memberSeason";
 import MemberSignupStatus, { signupHeading } from "./MemberSignupStatus";
@@ -362,9 +363,13 @@ export default function DashboardHome(props: Props) {
       }
     };
     void load();
-    const tick = () => { if (!paused) return load(); };
+    const tick = () => {
+      if (!paused) return load();
+    };
     const stopRefresh = visibleRefresh(tick, 30000);
-    const online = () => { if (!document.hidden) void tick(); };
+    const online = () => {
+      if (!document.hidden) void tick();
+    };
     window.addEventListener("online", online);
     return () => {
       cancelled = true;
@@ -494,7 +499,12 @@ export default function DashboardHome(props: Props) {
   if (!seasonsKnown)
     return (
       <div className="dashboard-home">
-        <h1>Hey, {session.user.display_name || session.user.username}</h1>
+        <CwlPageHeader
+          eyebrow={false}
+          title={
+            <h1>Hey, {session.user.display_name || session.user.username}</h1>
+          }
+        />
         <p role="status">
           {seasonError
             ? "CWL seasons could not be checked."
@@ -505,16 +515,18 @@ export default function DashboardHome(props: Props) {
     );
   return (
     <div className="dashboard-home">
-      <div className="page-head">
-        <div>
+      <CwlPageHeader
+        eyebrow={false}
+        title={
           <h1>Hey, {session.user.display_name || session.user.username}</h1>
-          <p>Your accounts, your clans, and what to do next.</p>
-        </div>
-        <p className="season-choice">
+        }
+        description="Your accounts, your clans, and what to do next."
+      >
+        <p className="cwl-page-header-season">
           {seasons.find((item) => String(item.id) === seasonId)?.label ||
             (seasonError ? "Season unavailable" : "No CWL season available")}
         </p>
-      </div>
+      </CwlPageHeader>
       <div className="hub-sync">
         <span role="status">
           <span
@@ -956,9 +968,7 @@ export default function DashboardHome(props: Props) {
         <details className="hub-help" id="home-account-help">
           <summary>Link an account</summary>
           <AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} />
-          <p>
-            To move or withdraw a signup, go to My signups.
-          </p>
+          <p>To move or withdraw a signup, go to My signups.</p>
           <button onClick={() => onNavigate("saved")}>Open My signups →</button>
         </details>
         {session.can_edit && (
@@ -971,9 +981,7 @@ export default function DashboardHome(props: Props) {
               <button onClick={() => onNavigate("publication")}>
                 Finalize roster →
               </button>
-              <button onClick={() => onNavigate("staff")}>
-                Seasons →
-              </button>
+              <button onClick={() => onNavigate("staff")}>Seasons →</button>
             </div>
           </section>
         )}

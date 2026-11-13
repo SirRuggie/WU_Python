@@ -1,4 +1,4 @@
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import useDiscordIdentities from "./useDiscordIdentities";
 import StrikeReviewResolution from "./StrikeReviewResolution";
 import { parseActivityFilters } from "./strikeActivityFilters";
@@ -461,15 +461,10 @@ export default function StrikesWorkspace({
     <section
       className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : !selectedWar ? " strikes-activity-overview" : ""}`}
     >
-      <div className="page-head">
-        <div>
-          <PageEyebrow />
-          <div className="strikes-title">
-            <h1>Strikes &amp; replacements</h1>
-            <StrikeHelp limit={settings?.strike_limit} />
-          </div>
-        </div>
-      </div>
+      <CwlPageHeader
+        title={<h1>Strikes &amp; replacements</h1>}
+        help={<StrikeHelp limit={settings?.strike_limit} />}
+      />
       <div className="strikes-navigation">
         <SectionTabs
           className="strikes-tabs"

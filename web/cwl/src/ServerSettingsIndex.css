@@ -115,9 +115,6 @@
     grid-template-columns: 1fr;
     gap: var(--wu-space-1);
   }
-  .server-operations-workspace .manage-heading {
-    gap: var(--wu-space-3);
-  }
   .server-operations-workspace .manage-save > div {
     flex-wrap: wrap;
   }

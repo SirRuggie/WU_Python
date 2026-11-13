@@ -1,4 +1,4 @@
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import TicketConversation from "./TicketConversation";
 import { useEffect, useRef, useState } from "react";
@@ -117,21 +117,18 @@ export default function TicketBrowser() {
     );
   return (
     <section className="ticket-browser">
-      <div className="page-head">
-        <div>
-          <PageEyebrow />
+      <CwlPageHeader
+        title={
           <h1 ref={heading} tabIndex={-1}>
             Tickets
           </h1>
-          <p>
-            Review applications and conversations. Reply or make decisions in
-            Discord.
-          </p>
-        </div>
+        }
+        description="Review applications and conversations. Reply or make decisions in Discord."
+      >
         <button disabled={busy} onClick={() => setReload((n) => n + 1)}>
           Refresh
         </button>
-      </div>
+      </CwlPageHeader>
       <div className="ticket-filters">
         <label>
           Find a ticket

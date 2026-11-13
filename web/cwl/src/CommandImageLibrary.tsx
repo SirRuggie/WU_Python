@@ -1,4 +1,4 @@
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import { useRef, useState } from "react";
 import ActionPanel from "./ActionPanel";
 import ImageCollection from "./ImageCollection";
@@ -9,9 +9,10 @@ export function ImageGallery({
 }) {
   return (
     <section className="image-gallery">
-      <PageEyebrow />
-      <h1>Image gallery</h1>
-      <p>Find and organize images for commands and server messages.</p>
+      <CwlPageHeader
+        title={<h1>Image gallery</h1>}
+        description="Find and organize images for commands and server messages."
+      />
       <ImageCollection onDirty={onDirty} />
     </section>
   );

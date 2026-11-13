@@ -1,7 +1,8 @@
 import FilterChips from "./FilterChips";
 import SelectionActionBar from "./SelectionActionBar";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
-import ActionPanel from "./ActionPanel";
+import { createPortal } from "react-dom";
+import HelpButton from "./HelpButton";
 import "./members/Members.css";
 import ReturnBatch from "./returns/ReturnBatch";
 import {
@@ -53,13 +54,15 @@ export function ReturnStatusSummary({ status }: { status: ReturnStatus }) {
 export default function ReturnReminderOverview({
   onOpen,
   onDirty,
+  helpSlot,
   active = true,
 }: {
   active?: boolean;
+  /** Where the page header shows the ? help; its content needs this page's state. */
+  helpSlot?: HTMLElement | null;
   onOpen: (section: ManagementSection) => void;
   onDirty?: (dirty: boolean) => void;
 }) {
-  const [aboutTrigger, setAboutTrigger] = useState<HTMLElement | null>(null);
   const [records, setRecords] = useState<ReturnClan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -207,7 +210,11 @@ export default function ReturnReminderOverview({
     const row = records.find((row) => row.id === id);
     if (row) onOpen(row);
   };
-  const pauseAction: ReturnAction = chosen.length > 0 && chosen.every(row => row.return_status?.state === "paused") ? "resume" : "pause";
+  const pauseAction: ReturnAction =
+    chosen.length > 0 &&
+    chosen.every((row) => row.return_status?.state === "paused")
+      ? "resume"
+      : "pause";
   const actions: ReturnAction[] =
     section === "FWA"
       ? [
@@ -216,13 +223,17 @@ export default function ReturnReminderOverview({
           "send",
           "away",
           "start",
-          ...(pauseAction === "pause" && chosen.some(row => row.return_status?.state === "paused") ? ["resume" as const] : []),
+          ...(pauseAction === "pause" &&
+          chosen.some((row) => row.return_status?.state === "paused")
+            ? ["resume" as const]
+            : []),
           "save",
           "replace",
           "clear",
         ]
       : ["save", "send", "away", "replace", "clear"];
-  const applicable = (action: ReturnAction) => visible.some(row => selected.includes(row.id) && canApply(row, action));
+  const applicable = (action: ReturnAction) =>
+    visible.some((row) => selected.includes(row.id) && canApply(row, action));
   const menuAction = (action: ReturnAction): ActionMenuItem => ({
     id: action,
     label: actionLabels[action],
@@ -230,10 +241,14 @@ export default function ReturnReminderOverview({
     onAction: () => openBatch(action),
     danger: action === "replace" || action === "clear",
   });
-  const primaryIds: ReturnAction[] = section === "FWA" ? ["frequency", pauseAction] : [];
-  const overflow = actions.filter(action => !primaryIds.includes(action) && applicable(action)).map(menuAction);
-  const firstDanger = overflow.findIndex(action => action.danger);
-  if (firstDanger >= 0) overflow[firstDanger] = { ...overflow[firstDanger], separatorBefore: true };
+  const primaryIds: ReturnAction[] =
+    section === "FWA" ? ["frequency", pauseAction] : [];
+  const overflow = actions
+    .filter((action) => !primaryIds.includes(action) && applicable(action))
+    .map(menuAction);
+  const firstDanger = overflow.findIndex((action) => action.danger);
+  if (firstDanger >= 0)
+    overflow[firstDanger] = { ...overflow[firstDanger], separatorBefore: true };
   return (
     <section
       className="return-overview"
@@ -267,31 +282,28 @@ export default function ReturnReminderOverview({
           revealSelection
         />
       </div>
-      {aboutTrigger && (
-        <ActionPanel
-          className="return-about-panel"
-          title="About this page"
-          trigger={aboutTrigger}
-          onClose={() => setAboutTrigger(null)}
-        >
-          <div className="return-context">
-            <span>
-              <strong>Purpose</strong>Bring saved members back to their home
-              clans after CWL.
-            </span>
-            <span>
-              <strong>Destination</strong>
-              {destinationName}
-            </span>
-            <span>
-              <strong>Timing</strong>
-              {section === "FWA"
-                ? "Automatic after start; stops at cutoff"
-                : "Manual send only"}
-            </span>
-          </div>
-        </ActionPanel>
-      )}
+      {helpSlot &&
+        createPortal(
+          <HelpButton title="About this page" className="return-about-panel">
+            <div className="return-context">
+              <span>
+                <strong>Purpose</strong>Bring saved members back to their home
+                clans after CWL.
+              </span>
+              <span>
+                <strong>Destination</strong>
+                {destinationName}
+              </span>
+              <span>
+                <strong>Timing</strong>
+                {section === "FWA"
+                  ? "Automatic after start; stops at cutoff"
+                  : "Manual send only"}
+              </span>
+            </div>
+          </HelpButton>,
+          helpSlot,
+        )}
       {destinationError && (
         <p className="return-destination-warning" role="status">
           {destinationError}{" "}
@@ -413,11 +425,6 @@ export default function ReturnReminderOverview({
                 label: "Return channels",
                 disabled: loading,
                 onAction: () => utility("return-channels"),
-              },
-              {
-                id: "about",
-                label: "About this page",
-                onAction: setAboutTrigger,
               },
             ]}
           />

@@ -4,19 +4,6 @@
   margin: 0 auto;
 }
 
-.moderation-workspace-heading {
-  margin-bottom: 14px;
-}
-
-.moderation-workspace-heading h1 {
-  margin: 4px 0 8px;
-}
-
-.moderation-workspace-heading p:last-child {
-  margin: 0;
-  color: var(--wu-text-muted);
-}
-
 .moderation-sections {
   margin-bottom: var(--wu-space-4);
 }

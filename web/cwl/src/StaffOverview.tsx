@@ -1,5 +1,5 @@
 import LoadError from "./LoadError";
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import { seasonMonthLabel } from "./seasonLabels";
 import VisitorSummary from "./VisitorSummary";
 import DashboardIcon from "./DashboardIcon";
@@ -82,12 +82,10 @@ export default function StaffOverview({
   }, [paused, refresh]);
   return (
     <section className="staff-overview">
-      <header className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Staff overview</h1>
-          <p>What needs attention across your areas.</p>
-        </div>
+      <CwlPageHeader
+        title={<h1>Staff overview</h1>}
+        description="What needs attention across your areas."
+      >
         <button
           aria-busy={busy || undefined}
           disabled={busy}
@@ -95,7 +93,7 @@ export default function StaffOverview({
         >
           {busy ? "Refreshing…" : "Refresh"}
         </button>
-      </header>
+      </CwlPageHeader>
       <VisitorSummary refresh={refresh} />
       <div className="staff-overview-status">
         <span>

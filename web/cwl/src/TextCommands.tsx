@@ -1,4 +1,4 @@
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import SectionTabs from "./SectionTabs";
 import { relativeTime } from "./commandTime";
 import ConfirmDialog from "./ConfirmDialog";
@@ -293,15 +293,15 @@ export default function TextCommands({
           }}
         />
       )}
-      <div className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Command triggers</h1>
-          <p>
+      <CwlPageHeader
+        title={<h1>Command triggers</h1>}
+        description={
+          <>
             Type a command like <strong>!rules</strong> in Discord. The bot
             posts its reply.
-          </p>
-        </div>
+          </>
+        }
+      >
         <button
           className="primary"
           disabled={busy || loading}
@@ -309,7 +309,7 @@ export default function TextCommands({
         >
           + New command
         </button>
-      </div>
+      </CwlPageHeader>
       {error && (
         <div className="notice error" role="alert">
           {error}

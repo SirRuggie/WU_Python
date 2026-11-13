@@ -1,5 +1,5 @@
 import LoadError from "./LoadError";
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import SectionTabs from "./SectionTabs";
 import ServerSettingsIndex from "./ServerSettingsIndex";
 import { bandStatusWarning } from "./BandStatusSummary";
@@ -66,7 +66,8 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     [actionResult, setActionResult] = useState<ManagementResult | null>(null);
   const pickerCopy = recordPickerCopy(documents);
   const [previewStatus, setPreviewStatus] = useState(""),
-    [mobilePane, setMobilePane] = useState<"edit" | "preview">("edit");
+    [mobilePane, setMobilePane] = useState<"edit" | "preview">("edit"),
+    [helpSlot, setHelpSlot] = useState<HTMLElement | null>(null);
   const compactPreview = useCompactPreview(900);
   const operationsWorkspace =
     !area || area === "fwa-settings" || area === "connections-settings";
@@ -374,24 +375,29 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       className={`server-management ${area === "applications-settings" ? "applications-workspace" : ""} ${operationsWorkspace ? "server-operations-workspace" : ""}`}
     >
       {dialog}
-      <header className="manage-heading">
-        <div>
-          <PageEyebrow />
+      <CwlPageHeader
+        title={
           <h1 ref={editorHeading} tabIndex={-1}>
             {(selected?.id === directSection?.id && areaInfo?.title) ||
               selected?.label ||
               areaInfo?.title ||
               "Manage your server"}
           </h1>
-          <p>
-            {document?.description ||
-              selected?.description ||
-              areaInfo?.description ||
-              "Bot settings for this server."}
-          </p>
-        </div>
+        }
+        description={
+          document?.description ||
+          selected?.description ||
+          areaInfo?.description ||
+          "Bot settings for this server."
+        }
+        help={
+          area === "cwl-returns" && !selected ? (
+            <span ref={setHelpSlot} className="page-help-slot" />
+          ) : undefined
+        }
+      >
         {selected && (
-          <div className="manage-categories">
+          <div className="cwl-page-header-actions">
             {selected.id !== directSection?.id && (
               <button disabled={busy || !!statusUrl} onClick={home}>
                 ← {areaInfo?.title || "All settings"}
@@ -405,7 +411,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
             </button>
           </div>
         )}
-      </header>
+      </CwlPageHeader>
       <LoadError
         message={error}
         disabled={busy || !!statusUrl}
@@ -450,6 +456,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
             active={!selected}
             onDirty={setReturnDirty}
             onOpen={(section) => void open(section)}
+            helpSlot={helpSlot}
           />
         </div>
       )}

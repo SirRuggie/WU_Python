@@ -1,4 +1,4 @@
-import PageEyebrow from "../PageEyebrow";
+import CwlPageHeader from "../CwlPageHeader";
 import { useState } from "react";
 import DashboardIcon from "../DashboardIcon";
 import { clanDeepLink } from "../publication";
@@ -26,12 +26,12 @@ export default function EventsWorkspace({
     : Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
     <section className="clan-activity-workspace events-workspace">
-      <header className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Events</h1>
-          <p>What’s live and what’s next. Times shown in {zoneName}.</p>
-        </div>
+      <CwlPageHeader
+        title={<h1>Events</h1>}
+        description={
+          <>What’s live and what’s next. Times shown in {zoneName}.</>
+        }
+      >
         <label className="activity-timezone">
           <input
             type="checkbox"
@@ -40,7 +40,7 @@ export default function EventsWorkspace({
           />
           Show UTC
         </label>
-      </header>
+      </CwlPageHeader>
       <div className="activity-card-grid">
         {gameCalendar(now).map((event) => {
           const live = now >= event.start && now < event.end;

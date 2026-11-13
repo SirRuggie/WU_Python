@@ -2,7 +2,6 @@
   max-width: 1120px;
   margin-inline: auto;
 }
-.issues-intro,
 .issues-count,
 .issues-hint {
   color: var(--wu-text-muted);

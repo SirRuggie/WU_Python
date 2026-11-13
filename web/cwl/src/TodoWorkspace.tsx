@@ -1,4 +1,4 @@
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import SectionTabs from "./SectionTabs";
 import "./rosterUi/tokens.css";
 import { useJourneyState, useJourneyPosition } from "./journeyState";
@@ -245,11 +245,7 @@ export default function TodoWorkspace({
   );
   return (
     <div className="todo-workspace roster-ui">
-      <div className="page-head todo-head">
-        <div>
-          <PageEyebrow />
-          <h1>Tasks</h1>
-        </div>
+      <CwlPageHeader title={<h1>Tasks</h1>}>
         <button
           className="todo-check"
           aria-busy={loading || undefined}
@@ -259,7 +255,7 @@ export default function TodoWorkspace({
           <RefreshCw aria-hidden="true" size={16} />
           {loading ? "Checking…" : "Check now"}
         </button>
-      </div>
+      </CwlPageHeader>
       <div className="todo-refresh">
         <span role="status" className="todo-status">
           <span

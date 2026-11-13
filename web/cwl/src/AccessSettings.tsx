@@ -1,5 +1,5 @@
 import useConfirmDialog from "./useConfirmDialog";
-import PageEyebrow from "./PageEyebrow";
+import CwlPageHeader from "./CwlPageHeader";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import MemberPicker, { type MemberOption } from "./MemberPicker";
@@ -243,13 +243,10 @@ export default function AccessSettings({
   return (
     <div className={`access-workspace ${editing ? "access-editing" : ""}`}>
       {confirmation}
-      <div className="page-head">
-        <div>
-          <PageEyebrow />
-          <h1>Staff access</h1>
-          <p>Select a person or role, select what they can do, then save.</p>
-        </div>
-      </div>
+      <CwlPageHeader
+        title={<h1>Staff access</h1>}
+        description="Select a person or role, select what they can do, then save."
+      />
       <div className="access-toolbar">
         <span>
           {data
@@ -594,7 +591,9 @@ export default function AccessSettings({
                       </a>
                     )}
                     <p>
-                      CWL includes Main and Lazy. Clan permissions apply to all clans. A person gets the access given to the person and the access given to their roles.
+                      CWL includes Main and Lazy. Clan permissions apply to all
+                      clans. A person gets the access given to the person and
+                      the access given to their roles.
                     </p>
                     {dirty && (
                       <div className="access-change-summary" role="status">
@@ -632,7 +631,8 @@ export default function AccessSettings({
                       onChange={setSelected}
                     />
                     <p className="small">
-                      Only owners can manage access. The controls in this section give only the actions listed here.
+                      Only owners can manage access. The controls in this
+                      section give only the actions listed here.
                     </p>
                     {current && (
                       <button
