@@ -259,6 +259,22 @@ class LazyAnnouncementRenderTests(unittest.TestCase):
         # About 27 winners per season and 4 Lazy clans x 7 winners (2026-11-13 estimate).
         self.assertEqual(len(render.messages(self.data(clans=4, winners=7, last=27))), 1)
 
+    def test_history_image_names_use_font_fallback(self):
+        # Names seen in Clash; DejaVu alone draws every one of these as an empty box.
+        names = ['꧁Dragon꧂', '亗Legend亗', 'ツ Ninja', '김철수', 'محمد', 'สมชาย', '༒Warrior',
+                 '🔥Fire', '⚔️Blade', '𓆩Royal𓆪', '୨୧ cute', '♛Queen']
+        fonts = history_image._chain(True, 30)
+        for name in names:
+            for char in name:
+                if not history_image._joins(char):
+                    self.assertTrue(any(history_image._has(font, char) for font in fonts), (name, hex(ord(char))))
+        self.assertFalse(history_image._has(fonts[0], '亗'))
+        # Same-font characters stay in one run, so scripts such as Arabic keep their shaping.
+        self.assertEqual([part for part, _ in history_image.runs('محمد', fonts)], ['محمد'])
+        self.assertEqual(len(history_image.runs('亗Star亗', fonts)), 3)
+        history = [{'label': 'Aug', 'winners': [{'tag': f'#N{i:03d}Y', 'player_name': n} for i, n in enumerate(names)]}]
+        self.assertTrue(history_image.render(history).startswith(b'\x89PNG'))
+
     def test_history_image_is_deterministic_and_handles_edge_rows(self):
         history = [{'label': 'July', 'winners': []},
                    {'label': 'August', 'winners': [{'tag': '#AAAY', 'player_name': 'W' * 15}, {'tag': '#BBBY', 'player_name': ''}]},
