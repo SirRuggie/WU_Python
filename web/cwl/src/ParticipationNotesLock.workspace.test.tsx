@@ -103,7 +103,9 @@ it("the open Details sheet saves staff notes; the list and other records stay lo
   ).toBe(true);
   expect(details("Bravo").disabled).toBe(true);
   expect(
-    host.querySelector<HTMLSelectElement>('select[name="season"]')?.disabled,
+    host.querySelector<HTMLButtonElement>(
+      ".cwl-page-header .roster-menu-trigger",
+    )?.disabled,
   ).toBe(true);
   await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(

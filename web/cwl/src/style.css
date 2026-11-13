@@ -530,6 +530,7 @@ small {
 .check-label {
   display: flex;
   align-items: center;
+  min-height: 44px;
   gap: var(--wu-space-2);
   font-size: var(--wu-text-sm);
   color: var(--wu-text);

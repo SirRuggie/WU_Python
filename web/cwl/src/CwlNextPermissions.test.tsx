@@ -119,7 +119,7 @@ async function mount(path: string, permissions: string[]) {
   };
   await act(async () => root.render(<App />));
   await settle();
-  const button = (label: string, selector = "button") =>
+  const button = (label: string, selector = "button, a") =>
     [...host.querySelectorAll<HTMLButtonElement>(selector)].find(
       (node) => node.textContent?.trim() === label,
     );
@@ -144,7 +144,7 @@ it.each(["next", "sidebar"])(
     const destination =
       way === "next"
         ? button("Next fixture Build")!
-        : button("Build roster", ".sidebar button")!;
+        : button("Build roster", ".sidebar a")!;
     await act(async () => destination.click());
     await settle();
     expect(document.querySelectorAll(".confirm-dialog")).toHaveLength(1);

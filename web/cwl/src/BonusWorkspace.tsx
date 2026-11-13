@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import ActionMenu from "./rosterUi/ActionMenu";
+import RosterMenu from "./rosterUi/Menu";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { api, ApiError, type Pool, type Season } from "./api";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
@@ -886,26 +887,21 @@ export default function BonusWorkspace({
         title={<h1>Results &amp; bonuses</h1>}
         help={<BonusHelpPanel />}
       >
-        <label className="bonus-season">
-          Season
-          <select
-            name="season"
-            autoComplete="off"
-            value={seasonId}
-            disabled={busy || lookingUp}
-            onChange={async (event) => {
-              const id = event.target.value;
-              if (id !== seasonId && (await canDiscard())) onSeasonChange(id);
-            }}
-          >
-            <option value="">Select a season</option>
-            {monthSeasons(seasons).map((season) => (
-              <option key={season.id} value={String(season.id)}>
-                {seasonMonthLabel(season)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <RosterMenu
+          label="Season"
+          value={seasonId}
+          disabled={busy || lookingUp}
+          onValueChange={async (id) => {
+            if (id !== seasonId && (await canDiscard())) onSeasonChange(id);
+          }}
+          options={[
+            { value: "", label: "Select a season" },
+            ...monthSeasons(seasons).map((season) => ({
+              value: String(season.id),
+              label: seasonMonthLabel(season),
+            })),
+          ]}
+        />
       </CwlPageHeader>
       {data && (
         <div className="bonus-context">

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { ChevronDown, LogOut, RotateCcw } from "lucide-react";
 import {
   Button as AriaButton,
@@ -10,6 +11,7 @@ import {
 import type { Session } from "./api";
 import { discordIdentityName } from "./DiscordIdentity";
 import { AccountIdentity } from "./AccountIdentity";
+import useOpeningPressGuard from "./rosterUi/useOpeningPressGuard";
 import "./AccountMenu.css";
 
 type Props = {
@@ -29,11 +31,17 @@ export default function AccountMenu({
 }: Props) {
   const name =
     discordIdentityName(user.id, user) || "Discord member unavailable";
+  const trigger = useRef<HTMLButtonElement>(null);
+  const guard = useOpeningPressGuard(trigger, disabled, () => guard.release());
 
   return (
-    <div className={`account-menu account-menu-${variant}`}>
-      <MenuTrigger>
+    <div
+      className={`account-menu account-menu-${variant}`}
+      {...guard.rootProps}
+    >
+      <MenuTrigger onOpenChange={(open) => !open && guard.release()}>
         <AriaButton
+          ref={trigger}
           className={`account-menu-trigger account-menu-${variant}-trigger`}
           aria-label={variant === "avatar" ? "Account menu" : undefined}
           isDisabled={disabled}
@@ -52,6 +60,7 @@ export default function AccountMenu({
         </AriaButton>
         <Popover
           className="account-menu-popover"
+          {...guard.popoverProps}
           placement={variant === "avatar" ? "bottom end" : "top start"}
         >
           <div className="account-menu-summary">

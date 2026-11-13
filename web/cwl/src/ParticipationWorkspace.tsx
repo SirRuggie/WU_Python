@@ -4,6 +4,7 @@ import BonusHelpPanel from "./BonusHelpPanel";
 import useConfirmDialog from "./useConfirmDialog";
 import { exportMonthLabel } from "./exportPreview";
 import ActionMenu from "./rosterUi/ActionMenu";
+import RosterMenu from "./rosterUi/Menu";
 import "./ParticipationWorkspace.css";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import FilterChips from "./FilterChips";
@@ -525,23 +526,19 @@ export default function ParticipationWorkspace({
         title={<h1>Results &amp; bonuses</h1>}
         help={<BonusHelpPanel />}
       >
-        <label className="participation-season">
-          Season
-          <select
-            name="season"
-            autoComplete="off"
-            value={seasonId}
-            disabled={controlsLocked}
-            onChange={(event) => void changeSeason(event.target.value)}
-          >
-            <option value="">Select a season</option>
-            {monthSeasons(seasons).map((season) => (
-              <option key={season.id} value={String(season.id)}>
-                {seasonMonthLabel(season)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <RosterMenu
+          label="Season"
+          value={seasonId}
+          disabled={controlsLocked}
+          onValueChange={(next) => void changeSeason(next)}
+          options={[
+            { value: "", label: "Select a season" },
+            ...monthSeasons(seasons).map((season) => ({
+              value: String(season.id),
+              label: seasonMonthLabel(season),
+            })),
+          ]}
+        />
       </CwlPageHeader>
       {/* The step bar tracks one hosting clan; with all clans it has no state. */}
       {seasonId && onBonus && clan !== "all" && (

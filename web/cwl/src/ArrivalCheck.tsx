@@ -735,7 +735,12 @@ export default function ArrivalCheck({
         />
       )}
       {data && published && (
-        <CwlNextLink label="Results" onNext={onResults} disabled={checking} />
+        <CwlNextLink
+          label="Results"
+          route={{ view: "participation", season: "" }}
+          onNext={onResults}
+          disabled={checking}
+        />
       )}
     </section>
   );

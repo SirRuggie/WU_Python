@@ -80,7 +80,7 @@ it.each([
         "Exports & history",
       );
       expect(
-        [...host.querySelectorAll(".sidebar button")].some(
+        [...host.querySelectorAll(".sidebar a")].some(
           (b) => b.textContent?.trim() === "Exports & history",
         ),
       ).toBe(true);

@@ -5,15 +5,6 @@
 .participation-page-head {
   margin-bottom: var(--wu-space-4);
 }
-.cwl-page-header > .participation-season {
-  display: grid;
-  flex: 0 1 200px;
-  min-width: 0;
-  font-size: var(--wu-text-xs);
-}
-.participation-season select {
-  width: 100%;
-}
 .participation-page-head p {
   margin-bottom: 0;
   text-wrap: pretty;

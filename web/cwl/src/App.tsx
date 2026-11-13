@@ -1013,6 +1013,7 @@ function App() {
         {session.can_edit && ['roster', 'publication'].includes(view) && <CwlStepStrip
           step={view === 'roster' ? 'build' : publicationStep}
           draft={flowPublication?.season === seasonId ? flowPublication.draft : null}
+          season={seasonId}
           onBuild={() => changeView('roster')}
           onFinalize={() => openPublication('review')}
           onAnnounce={() => openPublication('announce')}
@@ -1091,7 +1092,7 @@ function App() {
         {isManagementArea(view) && view !== 'members-settings' && <ServerManagement key={view} area={view} onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {(view === 'members-settings' || view === 'member-timezones') && <MembersPage onDirty={setManageDirty} initialMember={entryAccount} onInitialConsumed={() => setEntryAccount(null)} />}
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
-        {view === 'reminders' && session.can_edit && <><CwlPageHeader title={<h1>Signup reminders</h1>}><RosterMenu label="Season" value={seasonId} onValueChange={async next => { if (!reminderDirty || await confirmCwl('Discard unsaved reminder edits and change season?', 'Discard and change season')) setSeasonId(next) }} options={[{value: '', label: 'Select season'}, ...monthSeasons(seasons).map(item => ({value: String(item.id), label: seasonMonthLabel(item)}))]} /></CwlPageHeader>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Select a season to manage its reminders.</p>}{seasonId && <CwlNextLink label="Build roster" onNext={allowedView("roster") === "roster" ? () => navigateSidebar("roster") : undefined} disabled={rosterBusy} />}</>}
+        {view === 'reminders' && session.can_edit && <><CwlPageHeader title={<h1>Signup reminders</h1>}><RosterMenu label="Season" value={seasonId} onValueChange={async next => { if (!reminderDirty || await confirmCwl('Discard unsaved reminder edits and change season?', 'Discard and change season')) setSeasonId(next) }} options={[{value: '', label: 'Select season'}, ...monthSeasons(seasons).map(item => ({value: String(item.id), label: seasonMonthLabel(item)}))]} /></CwlPageHeader>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Select a season to manage its reminders.</p>}{seasonId && <CwlNextLink label="Build roster" route={{view: 'roster', season: seasonId}} onNext={allowedView("roster") === "roster" ? () => navigateSidebar("roster") : undefined} disabled={rosterBusy} />}</>}
         {view === 'search' && <DashboardSearch key={session.user.id} session={session} includeFamily={session.can_edit} query={searchQuery} onQuery={value => { setSearchQuery(value); setSearchPage(0) }} kind={searchKind} onKind={value => { setSearchKind(value); setSearchPage(0) }} page={searchPage} onPage={setSearchPage} onTasks={tag => changeView('todo', tag)} />}
         {view === 'todo' && <TodoWorkspace key={`${session.user.id}:${activitySearch}:${activityKind || "default"}`} userId={session.user.id} initialSearch={activitySearch} initialTab={activityKind} onWars={kind => changeView('wars', '', kind)} />}
         {view === 'wars' && <WarsWorkspace key={`${session.user.id}:${activityVisit}:${activityKind || "default"}`} userId={session.user.id} visit={activityVisit} initialType={activityKind === 'cwl' ? 'cwl' : 'regular'} canEdit={session.can_edit} onTasks={(tag,kind) => changeView('todo', tag,kind)} />}
@@ -1169,7 +1170,7 @@ function App() {
             />
           )
         }
-        {view === 'participation' && session.can_edit && <><ResultsBonusesWorkspace grants={resultsPageAccess(session.is_owner, session.dashboard_permissions || [])} onAddStrike={strikePermissions(session.dashboard_permissions, session.is_owner).add ? openStrikePlayer : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} /><CwlNextLink label="Exports & history" onNext={allowedView("exports") === "exports" ? () => navigateSidebar("exports") : undefined} /></>}
+        {view === 'participation' && session.can_edit && <><ResultsBonusesWorkspace grants={resultsPageAccess(session.is_owner, session.dashboard_permissions || [])} onAddStrike={strikePermissions(session.dashboard_permissions, session.is_owner).add ? openStrikePlayer : undefined} urlState={resultsState} onUrlState={changeResultsState} onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} /><CwlNextLink label="Exports & history" route={{view: 'exports', season: seasonId}} onNext={allowedView("exports") === "exports" ? () => navigateSidebar("exports") : undefined} /></>}
         {view === "roster" && session.can_edit && (
           <RosterWorkspace
             onPublication={draft => setFlowPublication({season: seasonId, draft})}

@@ -87,7 +87,7 @@ it("keeps a roster draft guarded when Discard history replay receives no popstat
       });
   };
   const button = (name: string) =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    [...document.querySelectorAll<HTMLButtonElement>("button, a")].find(
       (item) => item.textContent?.trim() === name,
     )!;
   try {
@@ -189,7 +189,7 @@ it("guards Finalize navigation with Keep editing and exact Discard action", asyn
       });
   };
   const button = (name: string) =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    [...document.querySelectorAll<HTMLButtonElement>("button, a")].find(
       (b) => b.textContent?.trim() === name,
     )!;
   try {

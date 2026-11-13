@@ -419,7 +419,7 @@
   gap: var(--wu-space-2);
 }
 
-.hub-staff button {
+.hub-staff :is(button, a) {
   font-size: var(--wu-text-md);
 }
 

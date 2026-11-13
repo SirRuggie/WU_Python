@@ -155,8 +155,8 @@ it.each(["results", "rules", "draw", "approve", "announce"])(
     expect(help().title).toBe("How bonuses work");
     expect(help().type).toBe("button");
     expect(
-      host.querySelector<HTMLSelectElement>('select[name="season"]')?.value,
-    ).toBe("1");
+      host.querySelector(".cwl-page-header .roster-menu-current")?.textContent,
+    ).toBe("November 2026");
   },
 );
 it("is available with no season and without the Bonuses grant, with no reads or writes", async () => {
@@ -324,10 +324,9 @@ it.each([
       host.querySelectorAll('[aria-label="How bonuses work"]'),
     ).toHaveLength(1);
     expect(host.querySelector("h1")?.nextElementSibling).toBe(help());
-    const season = host.querySelector<HTMLSelectElement>(
-      ".participation-season select",
-    )!;
-    expect(season.value).toBe(seasonId);
+    expect(
+      host.querySelector(".cwl-page-header .roster-menu-current")?.textContent,
+    ).toBe(seasonId ? "November 2026" : "Select a season");
     const before = api.mock.calls.length;
     await act(async () => help().click());
     expect(panel()?.open).toBe(true);
@@ -338,7 +337,9 @@ it.each([
     await settle();
     expect(panel()).toBeNull();
     expect(document.activeElement).toBe(help());
-    expect(season.value).toBe(seasonId);
+    expect(
+      host.querySelector(".cwl-page-header .roster-menu-current")?.textContent,
+    ).toBe(seasonId ? "November 2026" : "Select a season");
     expect(api.mock.calls).toHaveLength(before);
     expect(fetchMock).not.toHaveBeenCalled();
   },

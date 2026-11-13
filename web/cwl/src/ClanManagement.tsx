@@ -1,3 +1,4 @@
+import { Check, X } from "lucide-react";
 import PageEyebrow from "./PageEyebrow";
 import SectionTabs from "./SectionTabs";
 import "./ChoiceGroupLayout.css";
@@ -580,7 +581,13 @@ export default function ClanManagement({
                           });
                         }}
                       >
-                        {complete ? "✓" : "✗"} {label}
+                        {complete ? (
+                          <Check size={16} aria-hidden="true" />
+                        ) : (
+                          <X size={16} aria-hidden="true" />
+                        )}
+                        {label}
+                        <small>{complete ? "Done" : "To do"}</small>
                       </button>
                     ))}
                   </nav>

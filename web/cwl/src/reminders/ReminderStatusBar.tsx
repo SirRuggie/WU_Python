@@ -1,4 +1,5 @@
 import { api } from "../api";
+import { StatusPill } from "../rosterUi/primitives";
 import type { Campaign, CampaignState } from "../reminderCampaign";
 import type { Act, Confirmation } from "./reminderWorkspaceHelpers";
 
@@ -27,16 +28,22 @@ export default function ReminderStatusBar({
 }) {
   return (
     <div className="reminder-status">
-      <span className="badge">
+      <StatusPill
+        tone={
+          !state.activated ? "neutral" : draft.paused ? "warning" : "success"
+        }
+      >
         {!state.activated ? "Off" : draft.paused ? "Paused" : "On"}
-      </span>
+      </StatusPill>
       {!state.worker_ready ? (
-        <span className="notice error" role="status">
-          Bot offline
+        <span role="status">
+          <StatusPill tone="danger">Bot offline</StatusPill>
         </span>
       ) : state.activated && !state.schedule_synced ? (
-        <span className="notice" role="status">
-          Waiting for changes to load in Discord
+        <span role="status">
+          <StatusPill tone="warning">
+            Waiting for changes to load in Discord
+          </StatusPill>
         </span>
       ) : null}
       <div className="reminder-control-actions">

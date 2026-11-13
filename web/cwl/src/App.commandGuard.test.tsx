@@ -67,7 +67,7 @@ it("keeps a command draft guarded when Discard history replay receives no popsta
       });
   };
   const button = (name: string) =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    [...document.querySelectorAll<HTMLButtonElement>("button, a")].find(
       (item) => item.textContent?.trim() === name,
     )!;
   try {

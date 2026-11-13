@@ -93,7 +93,7 @@ it("uses unnumbered member destinations while retaining numbered staff steps", (
   );
   expect(member).toContain('aria-label="My CWL steps"');
   expect(member).toMatch(
-    />Sign up<\/button>.*aria-current="step"[^>]*>My signups<\/button>.*>My clan<\/button>/,
+    />Sign up<\/a>.*aria-current="step"[^>]*>My signups<\/a>.*>My clan<\/a>/,
   );
   expect(member).not.toMatch(/>[123] (?:Sign up|My signups|My clan)/);
   const staff = markup(["cwl"], null);

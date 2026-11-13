@@ -11,6 +11,9 @@ import { weightText } from "./roster";
 import AccountLinkHelp from "./AccountLinkHelp";
 import AttentionSummary, { type AttentionItem } from "./AttentionSummary";
 import DashboardIcon from "./DashboardIcon";
+import DashboardLink from "./DashboardLink";
+import { dashboardPath } from "./dashboardHistory";
+import { ArrowRight } from "lucide-react";
 import { readSnapshot, writeSnapshot } from "./snapshotCache";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -362,9 +365,13 @@ export default function DashboardHome(props: Props) {
       }
     };
     void load();
-    const tick = () => { if (!paused) return load(); };
+    const tick = () => {
+      if (!paused) return load();
+    };
     const stopRefresh = visibleRefresh(tick, 30000);
-    const online = () => { if (!document.hidden) void tick(); };
+    const online = () => {
+      if (!document.hidden) void tick();
+    };
     window.addEventListener("online", online);
     return () => {
       cancelled = true;
@@ -956,24 +963,30 @@ export default function DashboardHome(props: Props) {
         <details className="hub-help" id="home-account-help">
           <summary>Link an account</summary>
           <AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} />
-          <p>
-            To move or withdraw a signup, go to My signups.
-          </p>
+          <p>To move or withdraw a signup, go to My signups.</p>
           <button onClick={() => onNavigate("saved")}>Open My signups →</button>
         </details>
         {session.can_edit && (
           <section className="hub-staff">
             <h3>Staff tools</h3>
             <div>
-              <button onClick={() => onNavigate("roster")}>
-                Build roster →
-              </button>
-              <button onClick={() => onNavigate("publication")}>
-                Finalize roster →
-              </button>
-              <button onClick={() => onNavigate("staff")}>
-                Seasons →
-              </button>
+              {(
+                [
+                  ["roster", "Build roster"],
+                  ["publication", "Finalize roster"],
+                  ["staff", "Seasons"],
+                ] as const
+              ).map(([view, label]) => (
+                <DashboardLink
+                  key={view}
+                  className="button"
+                  href={dashboardPath({ view, season: "" })}
+                  onNavigate={() => onNavigate(view)}
+                >
+                  {label}
+                  <ArrowRight aria-hidden="true" size={16} />
+                </DashboardLink>
+              ))}
             </div>
           </section>
         )}

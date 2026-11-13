@@ -772,7 +772,7 @@ export default function TextCommands({
             )}
           </section>
         ) : (
-          <section className="card">
+          <section className="card text-command-hint">
             <h2>Create a saved reply</h2>
             <p>Select New command or select a command to edit.</p>
             <p className="small">Example: !trigger → your saved reply.</p>

@@ -1665,6 +1665,7 @@ export default function RosterWorkspace({
         ) : (
           <CwlNextLink
             label="Finalize roster"
+            route={{ view: "publication", season: "", step: "review" }}
             disabled={uiLocked}
             onNext={onReviewPublication}
           />

@@ -331,14 +331,6 @@ only editing opens the long forms. */
   padding: var(--wu-space-2) var(--wu-space-3);
   border-radius: var(--wu-radius-sm);
 }
-.reminders-workspace .reminder-status > span {
-  font-size: var(--wu-text-xs);
-}
-.reminders-workspace .reminder-status .badge {
-  background: transparent;
-  padding: 0;
-  color: var(--wu-warning);
-}
 @media (max-width: 650px) {
   .shell .reminders-workspace .workflow-tabs:where(:not(.section-tabs--flow)) {
     display: grid;
