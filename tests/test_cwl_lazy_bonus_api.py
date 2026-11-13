@@ -11,7 +11,7 @@ USER = '111111111111111111'
 
 
 class LazyBonusApiTests(RaffleTests):
-    async def ready_lazy(self):
+    async def ready_lazy(self, rep=True):
         await self.ready()
         self.discord_down = False
         self.discord_calls = 0
@@ -33,6 +33,8 @@ class LazyBonusApiTests(RaffleTests):
             db.execute("UPDATE clans SET pool='lazy' WHERE tag='#C2Y'")
             db.execute("UPDATE participation_source_results SET attacks=3,stars=8,roster_token=? WHERE season_id=?", (account_token(working_accounts(db, self.sid)['#P2Y']), self.sid))
         state = await self.get_state()
+        if not rep:
+            return state
         return await self.add_rep('#P2Y', 'REP for Edrag Rush/420', state['revision'])
 
     async def add_rep(self, tag, note, revision, user=None, status=200):
@@ -404,7 +406,8 @@ class LazyBonusApiTests(RaffleTests):
         self.assertEqual(restored['manual_candidates'][0]['reason'], 'Verified missing sync')
 
     async def test_three_consecutive_prior_cycles_are_a_reasoned_lazy_exclusion(self):
-        await self.ready_lazy()
+        # Not an FWA Rep: FWA Rep accounts do not sit out (237).
+        await self.ready_lazy(rep=False)
         with self.app['store'].tx() as db:
             for index, cycle in enumerate(('2026-07', '2026-08', '2026-09')):
                 batch = db.execute('INSERT INTO bonus_batches(season_id,cycle,base_revision,fingerprint,snapshot_json,confirmed_by,confirmed_at) VALUES (?,?,?,?,?,?,?)',
@@ -552,7 +555,8 @@ class PriorWinnerSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.save_length(6)).status, 423)
 
     async def test_imported_win_draw_host_length_main_ignored_status_and_override(self):
-        await self.ready_lazy()
+        # Not an FWA Rep: FWA Rep accounts do not sit out (237).
+        await self.ready_lazy(rep=False)
         with self.app['store'].tx() as db:
             db.execute("INSERT INTO bonus_imported_winners VALUES (?,'2026-09','lazy','#P2Y','Official','#OLD','Old host','import','staff','now')", (self.sid,))
         response = await self.save_length(1)
@@ -581,7 +585,8 @@ class PriorWinnerSettingsTests(unittest.IsolatedAsyncioTestCase):
         return (await response.json())['draws'][0]
 
     async def test_length_or_new_import_blocks_v4_approval_without_reroll(self):
-        await self.ready_lazy()
+        # Not an FWA Rep: FWA Rep accounts do not sit out (237).
+        await self.ready_lazy(rep=False)
         draw = await self.saved_lazy_draw()
         self.assertEqual(draw['snapshot']['rules_version'], 4)
         self.assertEqual(draw['snapshot']['sit_out_months'], 3)
@@ -638,3 +643,117 @@ class PriorWinnerSettingsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(dict(db.execute('SELECT pool,capacity,min_weight,max_weight,sit_out_months FROM lineup_rules WHERE season_id=?', (sid,)).fetchone()),
                              {'pool': 'lazy', 'capacity': 30, 'min_weight': 150000, 'max_weight': 180000, 'sit_out_months': 2})
             self.assertEqual(db.execute('SELECT history_only FROM seasons WHERE id=?', (sid,)).fetchone()[0], 0)
+
+    async def rep_exempt_state(self):
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO bonus_imported_winners VALUES (?,'2026-09','lazy','#P2Y','Official','#OLD','Old host','import','staff','now')", (self.sid,))
+        state = await self.get_state()
+        return state, next(a for a in state['accounts'] if a['tag'] == '#P2Y')
+
+    async def test_fwa_rep_skips_the_sit_out_until_removed(self):
+        await self.ready_lazy()
+        state, account = await self.rep_exempt_state()
+        self.assertEqual((account['sit_out_exempt'], account['three_cycle_cooldown'], account['multiplier']), (True, False, 2))
+        self.assertEqual(account['prior_winner_label'], 'Sep 2026')
+        preview = await self.review_preview()
+        self.assertEqual([a['tag'] for a in preview['eligible']], ['#P2Y'])
+        # Results view (participation.py) shows the same exemption.
+        response = await self.call('GET', f'/seasons/{self.sid}/participation', self.owner)
+        self.assertEqual(response.status, 200, await response.text())
+        row = next(a for a in (await response.json())['accounts'] if a['tag'] == '#P2Y')
+        self.assertEqual((row.get('sit_out_exempt'), row.get('sit_out_excluded')), (True, False))
+        rep = next(r for r in state['rep_accounts'] if r['tag'] == '#P2Y')
+        response = await self.call('DELETE', self.base + '/rep-accounts', self.owner, json={
+            'tag': '#P2Y', 'rep_revision': rep['revision'], 'revision': state['revision']})
+        self.assertEqual(response.status, 200, await response.text())
+        account = next(a for a in (await response.json())['accounts'] if a['tag'] == '#P2Y')
+        self.assertEqual((account['sit_out_exempt'], account['three_cycle_cooldown'], account['multiplier']), (False, True, 1))
+        preview = await self.review_preview()
+        self.assertIn('Prior winner (Sep 2026)', next(a for a in preview['excluded'] if a['tag'] == '#P2Y')['exclusion'])
+
+    async def test_not_listed_prior_winner_still_sits_out(self):
+        await self.ready_lazy(rep=False)
+        _, account = await self.rep_exempt_state()
+        self.assertEqual((account['sit_out_exempt'], account['three_cycle_cooldown']), (False, True))
+
+    async def test_exemption_does_not_bypass_other_rules(self):
+        await self.ready_lazy()
+        state, _ = await self.rep_exempt_state()
+        response = await self.call('PATCH', self.base + '/account-review', self.owner, json={
+            'tag': '#P2Y', 'flags': ['lingering'], 'override_reason': '', 'revision': state['revision']})
+        self.assertEqual(response.status, 200, await response.text())
+        preview = await self.review_preview()
+        exclusion = next(a for a in preview['excluded'] if a['tag'] == '#P2Y')['exclusion']
+        self.assertIn('Lingering', exclusion)
+        self.assertNotIn('Prior winner', exclusion)
+
+    async def test_rep_removed_between_draw_and_approve_blocks_approval(self):
+        await self.ready_lazy()
+        state, _ = await self.rep_exempt_state()
+        preview = await self.review_preview()
+        response = await self.call('POST', self.base + '/draw', self.owner, json={
+            'pool': 'lazy', 'clan_tag': '#C2Y', 'slots': 2, 'fingerprint': preview['fingerprint']})
+        self.assertEqual(response.status, 200, await response.text())
+        state = await response.json()
+        draw = state['draws'][0]
+        rep = next(r for r in state['rep_accounts'] if r['tag'] == '#P2Y')
+        response = await self.call('DELETE', self.base + '/rep-accounts', self.owner, json={
+            'tag': '#P2Y', 'rep_revision': rep['revision'], 'revision': state['revision']})
+        self.assertEqual(response.status, 200, await response.text())
+        response = await self.call('POST', self.base + f"/{draw['id']}/approve", self.owner, json={})
+        self.assertEqual(response.status, 409)
+        self.assertIsNone(self.app['store'].one('SELECT 1 FROM bonus_confirmations WHERE season_id=? AND cycle=?', (self.sid, state['cycle'])))
+
+    async def test_one_rep_account_per_member(self):
+        state = await self.ready_lazy()
+        # #Q2Y links to the same Discord user as #P2Y in this fixture.
+        response = await self.call('POST', self.base + '/rep-accounts', self.owner, json={'tag': '#Q2Y', 'note': '', 'revision': state['revision']})
+        self.assertEqual(response.status, 409)
+        self.assertIn('This member already has an FWA Rep account. Remove it first.', await response.text())
+        self.assertEqual([r['tag'] for r in (await self.get_state())['rep_accounts']], ['#P2Y'])
+        async def unlinked(tag):
+            return None
+        self.providers.linked_owner = unlinked
+        state = await self.get_state()
+        for tag in ('#Q2Y', '#G2Y'):
+            response = await self.call('POST', self.base + '/rep-accounts', self.owner, json={'tag': tag, 'note': '', 'revision': state['revision']})
+            self.assertEqual(response.status, 200, await response.text())
+            state = await response.json()
+        self.assertEqual(sorted(r['tag'] for r in state['rep_accounts']), ['#G2Y', '#P2Y', '#Q2Y'])
+
+    async def test_existing_duplicate_pair_still_loads_with_x2(self):
+        await self.ready_lazy()
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO bonus_raffle_rep_accounts(tag,player_name,town_hall,user_id,note,created_by,created_at,updated_by,updated_at) "
+                       "VALUES ('#Q2Y','Alt',15,?, '', 'x','now','x','now')", (USER,))
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO bonus_imported_winners VALUES (?,'2026-09','lazy','#Q2Y','Alt','#OLD','Old host','import','staff','now')", (self.sid,))
+        state = await self.get_state()
+        self.assertEqual(sorted(r['tag'] for r in state['rep_accounts']), ['#P2Y', '#Q2Y'])
+        self.assertEqual(next(a for a in state['accounts'] if a['tag'] == '#P2Y')['multiplier'], 2)
+        from utils.cwl_bonus_raffle_store import RaffleStore
+        rows = [{'tag': '#Q2Y', 'pool': 'lazy', 'assigned_clan_tag': '#C2Y'}]
+        with self.app['store'].tx() as db:
+            RaffleStore(db, self.sid).enrich_prior_winners(rows, state['cycle'])
+        self.assertEqual((rows[0]['sit_out_exempt'], rows[0]['three_cycle_cooldown']), (True, False))
+
+    async def test_note_edit_keeps_an_exempt_rep_draw_approvable_and_main_is_unchanged(self):
+        await self.ready_lazy()
+        state, _ = await self.rep_exempt_state()
+        preview = await self.review_preview()
+        response = await self.call('POST', self.base + '/draw', self.owner, json={
+            'pool': 'lazy', 'clan_tag': '#C2Y', 'slots': 2, 'fingerprint': preview['fingerprint']})
+        self.assertEqual(response.status, 200, await response.text())
+        state = await response.json()
+        rep = next(r for r in state['rep_accounts'] if r['tag'] == '#P2Y')
+        response = await self.call('PATCH', self.base + '/rep-accounts', self.owner, json={
+            'tag': '#P2Y', 'note': 'Edited', 'rep_revision': rep['revision'], 'revision': state['revision']})
+        self.assertEqual(response.status, 200, await response.text())
+        response = await self.call('POST', self.base + f"/{state['draws'][0]['id']}/approve", self.owner, json={})
+        self.assertEqual(response.status, 200, await response.text())
+        # Main accounts never get the exemption fields.
+        from utils.cwl_bonus_raffle_store import RaffleStore
+        rows = [{'tag': '#P2Y', 'pool': 'main', 'assigned_clan_tag': '#C2Y'}]
+        with self.app['store'].tx() as db:
+            RaffleStore(db, self.sid).enrich_prior_winners(rows, state['cycle'])
+        self.assertNotIn('sit_out_exempt', rows[0])

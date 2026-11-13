@@ -44,6 +44,7 @@ const raffle = {
 const clanReps = {
   members: [
     { id: "111111111111111111", display_name: "Ruggie", username: "ruggie" },
+    { id: "444444444444444444", display_name: "Edrag", username: "edrag" },
   ],
 };
 const linked = {
@@ -149,7 +150,9 @@ beforeEach(() => {
         : route.endsWith("/bonus-raffle/clan-rep-members")
           ? clanReps
           : route.includes("/staff-signups/accounts?user_id=")
-            ? linked
+            ? route.endsWith("111111111111111111")
+              ? linked
+              : { accounts: [linked.accounts[1]] }
             : route.endsWith("/bonus-raffle/rep-accounts")
               ? { ...raffle, revision: 8, rep_accounts: [] }
               : route.endsWith("/participation/sync-settings")
@@ -259,6 +262,15 @@ describe("Settings sheet", () => {
     expect(
       document.querySelector(".rep-accounts-group header")?.textContent,
     ).toContain("Ruggie");
+    // 1 account per member (237): a 2-account member shows the warning;
+    // the unlinked group never does.
+    const warnings = [...document.querySelectorAll(".rep-accounts-warning")];
+    expect(warnings.map((node) => node.textContent)).toEqual([
+      "Keep 1 account",
+    ]);
+    expect(document.querySelector(".rep-accounts > p")?.textContent).toBe(
+      "1 account per member. It gets 2 chances in Lazy draws and no sit-out.",
+    );
     expect(
       document.querySelectorAll(".rep-accounts-group")[1].textContent,
     ).toContain("Not linked");
@@ -289,14 +301,23 @@ describe("Settings sheet", () => {
       ),
     ).toBe(true);
     const finder = document.querySelector(".rep-finder")!;
-    // Already listed: no add control, the x2 status shows instead.
+    // Already listed: no add control, the x2 status shows instead. The
+    // member has a listed account, so the other one cannot be added (237 D1).
     expect(finder.textContent).toContain("x2 · Listed");
-    expect(button("Add for x2", finder)).toBeDefined();
+    expect(finder.textContent).toContain(
+      "Member already has an FWA Rep account",
+    );
     expect(
       [...finder.querySelectorAll("button")].filter(
         (node) => node.textContent === "Add for x2",
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+    await pickOption(
+      pickerByLabel(document.body, "Find Clan Rep (x2 odds)"),
+      "Edrag",
+    );
+    await settle();
+    expect(button("Add for x2", finder)).toBeDefined();
     await type(
       finder.querySelector<HTMLInputElement>('input[name="rep-finder-note"]')!,
       "REP for Edrag Rush",
@@ -1103,8 +1124,9 @@ it("a successful finder add clears only its note and keeps the tag form/draft an
   );
   await pickOption(
     pickerByLabel(document.body, "Find Clan Rep (x2 odds)"),
-    "Ruggie",
+    "Edrag",
   );
+  await settle();
   const finder = document.querySelector(".rep-finder")!;
   await type(
     finder.querySelector<HTMLInputElement>('input[name="rep-finder-note"]')!,

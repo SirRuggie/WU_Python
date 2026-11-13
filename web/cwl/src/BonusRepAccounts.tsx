@@ -84,6 +84,11 @@ export default function BonusRepAccounts({
     () => new Set(accounts.map((row) => row.tag)),
     [accounts],
   );
+  const listedUsers = useMemo(
+    () =>
+      new Set(accounts.flatMap((row) => (row.user_id ? [row.user_id] : []))),
+    [accounts],
+  );
   const groups = useMemo(() => repGroups(accounts), [accounts]);
   const ids = useMemo(
     () =>
@@ -192,7 +197,9 @@ export default function BonusRepAccounts({
 
   return (
     <div className="rep-accounts roster-ui">
-      <p>Only these accounts get 2 chances in Lazy draws, in every season.</p>
+      <p>
+        1 account per member. It gets 2 chances in Lazy draws and no sit-out.
+      </p>
       <button
         ref={addButton}
         type="button"
@@ -213,6 +220,7 @@ export default function BonusRepAccounts({
               onNoLinkedAccounts={openByTag}
               seasonId={seasonId}
               listed={listed}
+              listedUsers={listedUsers}
               noteMax={REP_NOTE_MAX}
               disabled={disabled}
               onDirty={setFinderDirty}
@@ -299,6 +307,9 @@ export default function BonusRepAccounts({
                 <small>
                   {rows.length} account{rows.length === 1 ? "" : "s"}
                 </small>
+                {userId && rows.length > 1 && (
+                  <small className="rep-accounts-warning">Keep 1 account</small>
+                )}
               </header>
               <ul>
                 {rows.map((row) => (

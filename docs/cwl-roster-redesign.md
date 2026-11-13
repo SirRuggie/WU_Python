@@ -1476,6 +1476,12 @@ starts empty. Settings section "FWA Rep accounts" in `BonusRepAccounts.tsx`;
 the "Discord roles unavailable" blocker is removed. Details:
 `docs/cwl-lazy-bonuses.md`.
 
+Follow-up 237 (2026-11-13, Ruggie; built by Shaka on "Approved 237 and Shaka
+builds it"): D1 1 FWA Rep account per Discord member (existing duplicates kept
+with a "Keep 1 account" warning); D2 a listed account skips the Lazy sit-out,
+decided by the list at draw time; D3 wording in the "How bonuses work" help,
+the Settings line and the chip "FWA Rep · no sit-out". Status: built, draft PR; not released.
+
 Follow-up (2026-11-12): Lazy infractions (flags and staff reason) move into the
 player Details sheet and the steps "Infractions" panel; ⋯ "Review" is renamed
 "Infractions"; step cards show flag chips (overview cards do not). Frontend

@@ -19,12 +19,12 @@ export default function BonusHelpPanel() {
       <p>
         A winner sits out for a set number of months. Each clan sets its number
         in Settings. Default 3. Example: October win, 3 months → can win again
-        in February.
+        in February. FWA Rep accounts do not sit out.
       </p>
       <h3>Draw</h3>
       <p>
-        Winners are drawn at random. FWA Rep accounts selected in Settings have
-        2× the chance in Lazy.
+        Winners are drawn at random. FWA Rep accounts (1 per member, selected in
+        Settings) have 2× the chance in Lazy.
       </p>
     </HelpButton>
   );

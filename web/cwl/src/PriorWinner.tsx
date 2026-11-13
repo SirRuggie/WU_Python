@@ -3,6 +3,8 @@ import { Chip } from "./rosterUi/primitives";
 type PriorWin = {
   pool: string;
   sit_out_excluded?: boolean;
+  /** FWA Rep account on the list: its prior win does not block it. */
+  sit_out_exempt?: boolean;
   prior_winner_cycle?: string | null;
   eligible_again?: string | null;
 };
@@ -25,6 +27,8 @@ export default function PriorWinner({
   details?: boolean;
 }) {
   const month = winnerMonth(account.prior_winner_cycle);
+  if (account.pool === "lazy" && account.sit_out_exempt && month)
+    return <Chip>FWA Rep · no sit-out</Chip>;
   if (account.pool !== "lazy" || !account.sit_out_excluded || !month)
     return null;
   return (

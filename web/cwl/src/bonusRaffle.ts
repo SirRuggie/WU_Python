@@ -26,6 +26,7 @@ export type RaffleAccount = BonusAccount & {
   eligible_again?: string | null;
   sit_out_months?: number;
   sit_out_excluded?: boolean;
+  sit_out_exempt?: boolean;
   is_representative?: boolean;
   representative_status?: string;
 };

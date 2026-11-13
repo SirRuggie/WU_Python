@@ -162,6 +162,10 @@ class RaffleStore:
         note = self._rep_note(note)
         if self._rep_row(identity['tag']):
             raise RaffleConflict('This account is already an FWA Rep account')
+        # 1 FWA Rep account per Discord member (237 D1); an unlinked account counts alone.
+        if identity.get('user_id') and self.db.execute(
+                'SELECT 1 FROM bonus_raffle_rep_accounts WHERE user_id=? LIMIT 1', (identity['user_id'],)).fetchone():
+            raise RaffleConflict('This member already has an FWA Rep account. Remove it first.')
         stamp = now()
         self.db.execute('INSERT INTO bonus_raffle_rep_accounts(tag,player_name,town_hall,user_id,note,created_by,created_at,updated_by,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
                         (identity['tag'], identity['player_name'], identity.get('town_hall'), identity.get('user_id'), note, actor, stamp, actor, stamp))
@@ -366,10 +370,15 @@ class RaffleStore:
     def enrich_prior_winners(self, accounts, cycle):
         lengths = {row['tag']: row['months'] for row in self.sit_out_settings()}
         reviews = self.account_reviews()
+        reps = self.rep_tags()
         for account in accounts:
             if account.get('pool') != 'lazy':
                 continue
             account.update(self.sit_out(account['tag'], cycle, lengths.get(account.get('assigned_clan_tag'), 3)))
+            # FWA Rep accounts on the list at evaluation time do not sit out (237 D2).
+            account['sit_out_exempt'] = bool(account['three_cycle_cooldown'] and account['tag'] in reps)
+            if account['sit_out_exempt']:
+                account['three_cycle_cooldown'] = False
             account['sit_out_excluded'] = bool(account['three_cycle_cooldown'] and not
                 str(reviews.get(account['tag'], {}).get('override_reason') or '').strip())
         return accounts
