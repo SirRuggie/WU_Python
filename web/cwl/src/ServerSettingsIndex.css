@@ -22,7 +22,7 @@
 }
 .server-settings-list {
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   overflow: hidden;
 }
 .server-settings-list > button {
@@ -87,7 +87,7 @@
 .manage-status-summary {
   margin: var(--wu-space-4) 0;
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   padding: 0 var(--wu-space-4);
 }
 .manage-status-summary > div {

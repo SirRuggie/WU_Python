@@ -41,7 +41,7 @@
   gap: var(--wu-space-3);
   padding: var(--wu-space-4);
   border: 1px solid var(--wu-border);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
 }
 .gallery-upload p {
   overflow-wrap: anywhere;
@@ -59,7 +59,7 @@
   min-width: 0;
   padding: var(--wu-space-3);
   border: 1px solid var(--wu-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
   overflow-wrap: anywhere;
 }
@@ -71,7 +71,7 @@
   width: 100%;
   height: 150px;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: var(--wu-radius-sm);
   background: var(--wu-bg);
 }
 .command-image-grid p {
@@ -115,9 +115,9 @@
   flex-wrap: wrap;
   gap: var(--wu-space-3);
   padding: var(--wu-space-3);
-  border: 1px solid #e2b332;
-  border-radius: 10px;
-  background: #e2b3320d;
+  border: 1px solid var(--wu-accent);
+  border-radius: var(--wu-radius-md);
+  background: color-mix(in srgb, var(--wu-accent) 5%, transparent);
 }
 .gallery-bulk label {
   flex: 1;

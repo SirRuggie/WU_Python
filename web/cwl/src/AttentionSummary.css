@@ -1,14 +1,14 @@
 .attention-summary {
   margin: 0 0 var(--wu-space-4);
   padding: var(--wu-space-3) var(--wu-space-4);
-  border: 1px solid #806843;
-  border-radius: 12px;
+  border: 1px solid var(--wu-warning-border);
+  border-radius: var(--wu-radius-md);
   background: var(--wu-warning-surface);
 }
 
 .attention-summary h2 {
   margin: 0 0 var(--wu-space-2);
-  color: #f5d584;
+  color: var(--wu-warning);
   font-size: var(--wu-text-xl);
   font-weight: var(--wu-weight-bold);
   line-height: 1.2;
@@ -27,13 +27,13 @@
   padding: var(--wu-space-2) 0;
 }
 .attention-summary li + li {
-  border-top: 1px solid #64553c;
+  border-top: 1px solid var(--wu-warning-border);
 }
 .attention-summary-copy {
   min-width: 0;
 }
 .attention-summary strong {
-  color: #fff;
+  color: var(--wu-text);
   overflow-wrap: anywhere;
 }
 .attention-summary p {
@@ -61,7 +61,7 @@
   min-height: 44px;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 480px) {
   .attention-summary li {
     align-items: stretch;
     flex-direction: column;

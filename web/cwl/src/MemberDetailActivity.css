@@ -21,7 +21,7 @@
   content: "▸";
   width: 1.25rem;
   flex: 0 0 1.25rem;
-  color: var(--muted, #aaa);
+  color: var(--muted, var(--wu-text-muted));
 }
 
 .member-detail-activity[open] > summary::before {
@@ -40,12 +40,12 @@
 }
 
 .member-detail-activity-checked {
-  color: var(--muted, #aaa);
+  color: var(--muted, var(--wu-text-muted));
 }
 
 .member-detail-activity-warning,
 .member-detail-activity-error {
-  color: var(--attention, #f4c64e);
+  color: var(--attention, var(--wu-warning));
 }
 
 .member-detail-war {

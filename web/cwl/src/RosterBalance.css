@@ -24,7 +24,7 @@
   gap: var(--wu-space-3);
   align-items: center;
   padding: var(--wu-space-3) var(--wu-space-1);
-  border-bottom: 1px solid #ffffff20;
+  border-bottom: 1px solid var(--wu-border-subtle);
   cursor: pointer;
 }
 .roster-plan-clan span {
@@ -57,8 +57,8 @@
   display: grid;
   gap: var(--wu-space-1);
   padding: var(--wu-space-3);
-  border: 1px solid #ffffff26;
-  border-radius: 10px;
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: var(--wu-radius-md);
   font-variant-numeric: tabular-nums;
 }
 .roster-balance-panel ul {
@@ -68,7 +68,7 @@
 }
 .roster-balance-panel li {
   padding: var(--wu-space-2) 0;
-  border-bottom: 1px solid #ffffff20;
+  border-bottom: 1px solid var(--wu-border-subtle);
   overflow-wrap: anywhere;
 }
 .roster-balance-panel li span,
@@ -90,6 +90,6 @@
   min-height: 44px;
 }
 .roster-plan-pools [aria-pressed="true"] {
-  border-color: #edc64d;
-  color: #edc64d;
+  border-color: var(--wu-accent);
+  color: var(--wu-accent);
 }

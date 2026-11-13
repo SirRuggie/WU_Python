@@ -22,7 +22,7 @@
   content: "▾";
 }
 .bonus-history {
-  border-top: 1px solid #ffffff28;
+  border-top: 1px solid var(--wu-border-subtle);
 }
 .bonus-history > summary {
   display: flex;

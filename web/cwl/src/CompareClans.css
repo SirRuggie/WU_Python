@@ -13,7 +13,7 @@
 }
 .compare-header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--wu-text-lg);
 }
 .compare-header small {
   color: var(--wu-text-muted);
@@ -30,7 +30,7 @@
 }
 .compare-toolbar-note {
   color: var(--wu-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   background: transparent;
   padding: 0;
 }
@@ -93,7 +93,7 @@
   flex-direction: column;
   max-height: var(--compare-column-height);
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-surface);
   scroll-snap-align: start;
 }
@@ -116,7 +116,7 @@
 .compare-clan-picker .roster-ui-input-control input,
 .compare-clan-picker .roster-menu-trigger {
   border-color: var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--wu-bg);
 }
 .compare-picker-list {
@@ -131,7 +131,7 @@
   min-height: 44px;
   padding: 8px;
   border: 1px solid var(--wu-border);
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
 }
 .compare-picker-list input {
   width: 20px;
@@ -173,7 +173,7 @@
   margin: 0;
   gap: 2px;
   padding: 6px 8px;
-  border-radius: 14px;
+  border-radius: var(--wu-radius-md);
   background: var(--roster-surface-raised);
   color: var(--roster-text);
 }
@@ -184,9 +184,9 @@
   min-width: 0;
 }
 .compare-workspace .compare-clan-top strong {
-  font-size: 15px;
+  font-size: var(--wu-text-md);
   line-height: 17px;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   flex-basis: auto;
   color: var(--roster-text);
 }
@@ -213,16 +213,16 @@
   padding: 0;
   background: transparent;
   border-radius: 0;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   line-height: 14px;
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
   color: var(--roster-text-muted);
 }
 .compare-workspace .compare-total {
   flex-basis: auto;
-  font-size: 14px;
+  font-size: var(--wu-text-sm);
   line-height: 16px;
-  font-weight: 700;
+  font-weight: var(--wu-weight-bold);
   color: var(--roster-text);
   font-variant-numeric: tabular-nums;
 }
@@ -267,12 +267,12 @@
   display: inline-flex;
   padding: 0 4px;
   border: 1px solid var(--roster-border);
-  border-radius: 999px;
+  border-radius: var(--wu-radius-pill);
   background: var(--roster-surface);
   color: var(--roster-text-muted);
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   line-height: 14px;
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
 }
 .compare-tag.is-danger {
   color: var(--roster-danger);
@@ -283,9 +283,9 @@
   border-color: var(--roster-warning);
 }
 .compare-publish-note {
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   line-height: 14px;
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
   color: var(--roster-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -325,18 +325,18 @@
     padding: 8px;
   }
   .compare-header h2 {
-    font-size: 17px;
+    font-size: var(--wu-text-md);
   }
   .compare-header > button {
     padding: 6px 10px;
-    font-size: 12px;
+    font-size: var(--wu-text-xs);
   }
   .compare-toolbar {
     gap: 5px;
   }
   .compare-toolbar > button {
     padding: 6px 8px;
-    font-size: 12px;
+    font-size: var(--wu-text-xs);
     flex: 1;
     overflow: hidden;
     white-space: nowrap;
@@ -352,7 +352,11 @@
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
-    mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+    mask-image: linear-gradient(
+      to right,
+      #000 calc(100% - 18px),
+      transparent
+    ); /* keep: mask alpha, not a color */
   }
   .compare-mobile-rail::-webkit-scrollbar {
     display: none;
@@ -364,7 +368,7 @@
     min-width: 0;
     padding: 0;
     border: 1px solid var(--roster-border);
-    border-radius: 14px;
+    border-radius: var(--wu-radius-md);
     background: var(--roster-surface-raised);
     color: var(--roster-text);
     scroll-snap-align: start;
@@ -403,7 +407,7 @@
   .compare-mobile-navigation span {
     flex: 1;
     text-align: center;
-    font-size: 12px;
+    font-size: var(--wu-text-xs);
   }
   .compare-navigation,
   .compare-pan-frame::before,
@@ -473,8 +477,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  font-weight: 400;
+  font-size: var(--wu-text-xs);
+  font-weight: var(--wu-weight-regular);
   color: var(--roster-text-muted);
 }
 
@@ -507,7 +511,7 @@
 }
 .compare-time-zone {
   flex: none;
-  font-size: 12px;
+  font-size: var(--wu-text-xs);
   white-space: nowrap;
   color: var(--roster-text-muted);
 }

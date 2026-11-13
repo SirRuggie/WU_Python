@@ -68,7 +68,7 @@
   gap: var(--wu-space-2);
   align-items: center;
   background: var(--surface, var(--wu-surface-raised));
-  border: 1px solid #656771;
+  border: 1px solid var(--wu-border);
   padding: var(--wu-space-3);
 }
 .members-bulk-bar button {
@@ -109,7 +109,7 @@
   text-align: left;
   padding: var(--wu-space-2);
   white-space: normal;
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
 }
 .members-person-zone {
   overflow-wrap: anywhere;
@@ -232,7 +232,7 @@
 .members-more-filters[open] {
   padding: var(--wu-space-2);
   border: 1px solid var(--roster-border);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
 }
 .members-more-filters label {
   margin-block: var(--wu-space-2);
@@ -261,7 +261,7 @@
   align-items: center;
   cursor: pointer;
 }
-@media (max-width: 600px) {
+@media (max-width: 650px) {
   .members-workspace > header > div {
     width: 100%;
   }
@@ -312,7 +312,7 @@
   padding: var(--wu-space-1) var(--wu-space-2);
   box-sizing: border-box;
   border: 1px solid var(--roster-border);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
   white-space: nowrap;
 }
 .members-filter-panel {
@@ -323,10 +323,10 @@
   width: min(300px, calc(100vw - 32px));
   box-sizing: border-box;
   border: 1px solid var(--roster-border);
-  border-radius: 10px;
+  border-radius: var(--wu-radius-md);
   padding: var(--wu-space-5);
   background: var(--surface, var(--wu-surface-raised));
-  box-shadow: 0 8px 24px #0008;
+  box-shadow: 0 8px 24px #0008; /* keep: shadow */
 }
 .members-range {
   margin: 0;

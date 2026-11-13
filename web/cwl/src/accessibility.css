@@ -8,9 +8,9 @@
   padding: var(--wu-space-3) var(--wu-space-4);
   min-height: 44px;
   border: 2px solid var(--wu-accent);
-  border-radius: 8px;
+  border-radius: var(--wu-radius-sm);
   background: var(--wu-surface-soft);
-  color: #fff;
+  color: var(--wu-text);
 }
 .skip-to-content:focus {
   transform: translateY(0);

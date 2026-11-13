@@ -10,6 +10,7 @@
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* keep: #000 is mask alpha, not a color */
   mask-image: linear-gradient(
     to right,
     #000 0,
@@ -156,7 +157,7 @@
   background: var(--wu-brand-red);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 650px) {
   .roster-clan-chips {
     padding-inline-end: max(22px, calc(100% - 78vw));
   }

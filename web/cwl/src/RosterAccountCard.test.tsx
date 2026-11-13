@@ -352,7 +352,7 @@ it.each([360, 700, 701, 1440])(
   },
 );
 
-it.each([360, 899, 900, 1440])(
+it.each([360, 900, 901, 1440])(
   "shows account columns only at desktop width %ipx",
   (width) => {
     const w = new Window({ width });
@@ -374,11 +374,11 @@ it.each([360, 899, 900, 1440])(
     const card = w.document.querySelector(".roster-player-card")!;
     const columns = card.querySelector(".roster-account-columns")!;
     expect(w.getComputedStyle(columns).display).toBe(
-      width >= 900 ? "grid" : "none",
+      width >= 901 ? "grid" : "none",
     );
     expect(
       w.getComputedStyle(card.querySelector(".player-card-meta")!).display,
-    ).toBe(width >= 900 ? "none" : "flex");
+    ).toBe(width >= 901 ? "none" : "flex");
     expect([...columns.children].map((column) => column.className)).toEqual([
       "roster-account-column-name",
       "roster-account-column-pool",

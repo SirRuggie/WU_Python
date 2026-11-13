@@ -6,10 +6,10 @@
   color: var(--roster-warning);
 }
 .declaration-clan.is-not-ready > .declaration-extras {
-  background: #221316;
+  background: var(--wu-danger-surface);
 }
 .declaration-clan.is-ready > .declaration-extras {
-  background: #14261a;
+  background: var(--wu-success-surface);
 }
 .declaration-extras summary {
   min-height: 44px;
@@ -80,7 +80,7 @@
 }
 .declaration-member-card .account-card-status .roster-player-placement strong {
   color: var(--roster-card-text-muted);
-  font-weight: 400;
+  font-weight: var(--wu-weight-regular);
 }
 .declaration-member-card .roster-filler-control {
   min-width: 0;

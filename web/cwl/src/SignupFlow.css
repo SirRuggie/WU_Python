@@ -7,7 +7,7 @@
   margin: 0 0 var(--wu-space-5);
   background: var(--wu-surface-raised);
   color: var(--wu-text);
-  border-radius: 16px;
+  border-radius: var(--wu-radius-lg);
   border: 1px solid var(--wu-text-muted);
 }
 .signup-guide .eyebrow {
@@ -48,7 +48,7 @@
   flex-shrink: 0;
   width: 27px;
   height: 27px;
-  border: 1px solid #715b26;
+  border: 1px solid var(--wu-warning-border);
   border-radius: 50%;
 }
 .signup-guide li[aria-current="step"] span {
@@ -155,7 +155,7 @@
   .signup-flow .submit-bar {
     margin-left: 0;
     margin-right: 0;
-    border-radius: 12px;
+    border-radius: var(--wu-radius-md);
     flex-wrap: wrap;
   }
   .signup-action-buttons {
@@ -201,7 +201,7 @@
 
 .member-season-line {
   margin: 0 0 var(--wu-space-4);
-  color: #d9d7d0;
+  color: var(--wu-text);
   font-size: var(--wu-text-sm);
   line-height: 1.5;
 }

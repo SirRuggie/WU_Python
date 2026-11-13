@@ -1,7 +1,7 @@
 .signup-walkthrough {
   margin-bottom: var(--wu-space-4);
-  border: 1px solid #8b733b;
-  border-radius: 14px;
+  border: 1px solid var(--wu-warning-border);
+  border-radius: var(--wu-radius-md);
   overflow: hidden;
   background: var(--wu-surface);
 }
@@ -16,10 +16,10 @@
   position: relative;
   min-width: 0;
   padding: var(--wu-space-3);
-  color: #e1d7bd;
+  color: var(--wu-text);
 }
 .signup-walkthrough li + li {
-  border-left: 1px solid #8b733b;
+  border-left: 1px solid var(--wu-warning-border);
 }
 .signup-walkthrough li.current {
   background: var(--wu-accent);
@@ -108,7 +108,7 @@
   }
   .signup-walkthrough li + li {
     border-left: 0;
-    border-top: 1px solid #8b733b;
+    border-top: 1px solid var(--wu-warning-border);
   }
   .signup-walkthrough li.current {
     min-height: 116px;
