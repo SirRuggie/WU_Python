@@ -63,6 +63,20 @@ const button = (text: string, scope: ParentNode = document) => {
   expect(b, text).toBeTruthy();
   return b!;
 };
+async function chooseMenu(text: string) {
+  if (!document.querySelector('[role="menu"]'))
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Actions for Activity"]',
+        )!
+        .click(),
+    );
+  const item = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((node) => node.textContent?.trim() === text)!;
+  await act(async () => item.click());
+}
 const click = async (text: string, scope?: ParentNode) => {
   await act(async () => button(text, scope).click());
 };
@@ -475,7 +489,7 @@ it("finds wars beyond the first page and discloses incomplete upstream name sear
     />,
   );
   await settle();
-  await click("Find war");
+  await chooseMenu("Find war");
   await settle();
   expect(host.textContent).toContain("Some opponent names are unavailable");
   await click("Next wars");
@@ -695,7 +709,7 @@ it("keeps a saved quarantine visible and identifies its hold without claiming no
     <StrikesWorkspace permissions={["strikes"]} isOwner={false} userId="1" />,
   );
   await settle();
-  await click("Find war");
+  await chooseMenu("Find war");
   await settle();
   await act(async () =>
     host

@@ -425,12 +425,16 @@ it("disabling an open menu clears opening state and blocks activation", async ()
   expect(action).toHaveBeenCalledTimes(1);
 });
 
-it("preserves outside-ActionPanel opening-drag selection without a second item press", async () => {
+it("blocks outside-ActionPanel opening-drag selection until a new press", async () => {
   await pointer(trigger("One"), "pointerdown", "mouse");
   expect(action).not.toHaveBeenCalled();
   const item = document.querySelector('[role="menuitem"]')!;
   expect(item.closest("dialog")).toBeNull();
   await pointer(item, "pointerup", "mouse");
+  await pointer(item, "click", "mouse");
+  expect(action).not.toHaveBeenCalled();
+  expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  await pointerClick(item, "mouse");
   expect(action).toHaveBeenCalledTimes(1);
   expect(document.querySelector('[role="menu"]')).toBeNull();
 });

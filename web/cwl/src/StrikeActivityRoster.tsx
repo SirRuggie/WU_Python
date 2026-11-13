@@ -1,5 +1,6 @@
 import { Search, X } from "lucide-react";
 import FilterChips from "./FilterChips";
+import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import StrikeActivityRows from "./StrikeActivityRows";
 import FindSlots from "./FindSlots";
 import SortTrigger from "./rosterUi/SortTrigger";
@@ -18,7 +19,6 @@ import {
   useRef,
   useState,
   type RefObject,
-  type ReactNode,
 } from "react";
 import { api, ApiError } from "./api";
 import { spendPanelEntry } from "./actionPanelHistory";
@@ -76,7 +76,8 @@ export default function StrikeActivityRoster({
   overviewActions,
   trackingSlotRef,
 }: {
-  overviewActions?: ReactNode;
+  /** Account actions listed first in the toolbar ⋯ menu. */
+  overviewActions?: ActionMenuItem[];
   trackingSlotRef?: (slot: HTMLDivElement | null) => void;
   state?: string;
   canManage?: boolean;
@@ -173,6 +174,17 @@ export default function StrikeActivityRoster({
   const [sortTrigger, setSortTrigger] = useState<HTMLElement | null>(null);
   const copyIdentity = useRef(filterIdentity);
   copyIdentity.current = filterIdentity;
+  async function copyList() {
+    const current = filterIdentity;
+    try {
+      await navigator.clipboard.writeText(copyActivityList(visible));
+      if (copyIdentity.current !== current) return;
+      setCopied(`Copied ${visible.length} accounts`);
+    } catch {
+      if (copyIdentity.current !== current) return;
+      setCopied("Copy failed. Your browser did not allow clipboard access.");
+    }
+  }
   const [copied, setCopied] = useState("");
   useEffect(() => {
     setCopied("");
@@ -581,79 +593,35 @@ export default function StrikeActivityRoster({
         >
           Filters
         </button>
-        <details
-          className="strike-activity-actions"
-          onToggle={(event) => {
-            const menu = event.currentTarget.querySelector<HTMLElement>(
-              ".strike-activity-action-menu",
-            );
-            if (!event.currentTarget.open || !menu) return;
-            const anchor = event.currentTarget.getBoundingClientRect();
-            const below = window.innerHeight - anchor.bottom - 8;
-            const above = anchor.top - 8;
-            const flip = below < menu.scrollHeight && above > below;
-            Object.assign(menu.style, {
-              top: flip ? "auto" : "48px",
-              bottom: flip ? "48px" : "auto",
-              maxHeight: `${Math.max(44, flip ? above : below)}px`,
-              overflowY: "auto",
-              boxSizing: "border-box",
-            });
-          }}
-        >
-          <summary aria-label="Activity actions">⋯</summary>
-          <div className="strike-activity-action-menu">
-            <div role="group" aria-label="Account">
-              <p className="strike-activity-menu-label">Account</p>
-              {overviewActions}
-            </div>
-            <div role="group" aria-label="List">
-              <p className="strike-activity-menu-label">List</p>
-              <button
-                disabled={!visible.length}
-                onClick={async (event) => {
-                  event.currentTarget
-                    .closest("details")
-                    ?.removeAttribute("open");
-                  const current = filterIdentity;
-                  try {
-                    await navigator.clipboard.writeText(
-                      copyActivityList(visible),
-                    );
-                    if (copyIdentity.current !== current) return;
-                    setCopied(`Copied ${visible.length} accounts`);
-                  } catch {
-                    if (copyIdentity.current !== current) return;
-                    setCopied(
-                      "Copy failed. Your browser did not allow clipboard access.",
-                    );
-                  }
-                }}
-              >
-                Copy list
-              </button>
-              {canManage && !selecting && (
-                <button
-                  disabled={bulkBusy}
-                  onClick={(event) => {
-                    event.currentTarget
-                      .closest("details")
-                      ?.removeAttribute("open");
-                    setSelecting(true);
-                  }}
-                >
-                  Select accounts
-                </button>
-              )}
-              <button
-                disabled={loading || bulkBusy}
-                onClick={() => void read()}
-              >
-                Refresh activity
-              </button>
-            </div>
-          </div>
-        </details>
+        <ActionMenu
+          name="Activity"
+          items={[
+            ...(overviewActions || []),
+            {
+              id: "copy-list",
+              label: "Copy list",
+              separatorBefore: !!overviewActions?.length,
+              disabled: !visible.length,
+              onAction: () => void copyList(),
+            },
+            ...(canManage && !selecting
+              ? [
+                  {
+                    id: "select-accounts",
+                    label: "Select accounts",
+                    disabled: bulkBusy,
+                    onAction: () => setSelecting(true),
+                  },
+                ]
+              : []),
+            {
+              id: "refresh-activity",
+              label: "Refresh activity",
+              disabled: loading || bulkBusy,
+              onAction: () => void read(),
+            },
+          ]}
+        />
       </div>
       {searching && (
         <div className="strike-activity-search">

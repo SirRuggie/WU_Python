@@ -98,7 +98,6 @@ export default function ActionMenu({
       className="roster-player-menu"
       onPointerDownCapture={(event) => {
         if (
-          portalContainer &&
           !disabled &&
           event.button === 0 &&
           trigger.current?.contains(event.target as Node)
@@ -106,8 +105,7 @@ export default function ActionMenu({
           openingPointer.current = event.pointerId;
       }}
       onPointerCancelCapture={(event) => {
-        if (portalContainer && openingPointer.current === event.pointerId)
-          close();
+        if (openingPointer.current === event.pointerId) close();
       }}
     >
       <MenuTrigger
@@ -127,7 +125,6 @@ export default function ActionMenu({
           UNSTABLE_portalContainer={portalContainer}
           onPointerDownCapture={(event) => {
             if (
-              portalContainer &&
               event.button === 0 &&
               (event.target as Element).closest?.('[role="menuitem"]')
             )
@@ -135,9 +132,9 @@ export default function ActionMenu({
           }}
           onPointerUpCapture={(event) => {
             // RAC supports trigger-down → item-up selection. An opening press
-            // must not choose an item that appeared beneath the pointer.
+            // must never choose an item that appeared beneath the pointer, in
+            // or outside an ActionPanel.
             if (
-              portalContainer &&
               openingPointer.current !== null &&
               (event.target as Element).closest?.('[role="menuitem"]')
             ) {
@@ -153,7 +150,6 @@ export default function ActionMenu({
               event.detail > 0 ||
               ["mouse", "touch", "pen"].includes(native.pointerType || "");
             if (
-              portalContainer &&
               openingPointer.current !== null &&
               pointerClick &&
               (event.target as Element).closest?.('[role="menuitem"]')

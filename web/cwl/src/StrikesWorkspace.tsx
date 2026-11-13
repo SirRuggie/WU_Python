@@ -1434,35 +1434,28 @@ export default function StrikesWorkspace({
           ) : (
             <StrikeActivityRoster
               trackingSlotRef={setTrackingSlot}
-              overviewActions={
-                <>
-                  {access.add && (
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        leaveDraft(() => {
-                          setNotice("");
-                          setError("");
-                          setManualOpen(true);
-                        })
-                      }
-                    >
-                      Add strike
-                    </button>
-                  )}
-                  <button
-                    aria-expanded={showWarSearch}
-                    onClick={(event) => {
-                      event.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                      setShowWarSearch((open) => !open);
-                    }}
-                  >
-                    {showWarSearch ? "Close war search" : "Find war"}
-                  </button>
-                </>
-              }
+              overviewActions={[
+                ...(access.add
+                  ? [
+                      {
+                        id: "add-strike",
+                        label: "Add strike",
+                        disabled: busy,
+                        onAction: () =>
+                          leaveDraft(() => {
+                            setNotice("");
+                            setError("");
+                            setManualOpen(true);
+                          }),
+                      },
+                    ]
+                  : []),
+                {
+                  id: "find-war",
+                  label: showWarSearch ? "Close war search" : "Find war",
+                  onAction: () => setShowWarSearch((open) => !open),
+                },
+              ]}
               selectionReset={selectionReset}
               canManage={access.manage}
               onWorking={setBusy}

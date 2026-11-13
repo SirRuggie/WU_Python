@@ -46,6 +46,20 @@ function button(name: string, scope: ParentNode = document) {
   expect(found, name).toBeTruthy();
   return found!;
 }
+async function chooseMenu(text: string) {
+  if (!document.querySelector('[role="menu"]'))
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Actions for Activity"]',
+        )!
+        .click(),
+    );
+  const item = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((node) => node.textContent?.trim() === text)!;
+  await act(async () => item.click());
+}
 async function click(name: string, scope?: ParentNode) {
   await act(async () => button(name, scope).click());
 }
@@ -173,7 +187,7 @@ it("workspace Cancel confirms once and tab navigation retains the draft until Di
   await render(
     <StrikesWorkspace permissions={[]} isOwner userId="cancel-workspace" />,
   );
-  await click("Add strike");
+  await chooseMenu("Add strike");
   await input(
     'input[placeholder="Why is this strike needed?"]',
     "Keep this draft",
