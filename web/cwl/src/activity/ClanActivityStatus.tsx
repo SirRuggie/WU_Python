@@ -21,7 +21,7 @@ export default function ClanActivityStatus({
             ? "Checking clan activity…"
             : checkedAt
               ? `Checked ${new Date(checkedAt).toLocaleTimeString()}`
-              : "War status not checked yet"}
+              : "Not checked yet"}
           {error && checkedAt ? " · Showing the last update" : ""}
         </span>
         <button aria-busy={busy || undefined} onClick={refresh} disabled={busy}>

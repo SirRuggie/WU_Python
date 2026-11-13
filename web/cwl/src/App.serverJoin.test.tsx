@@ -89,7 +89,7 @@ async function renderSignup() {
 
 const continueButton = (host: HTMLElement) =>
   [...host.querySelectorAll<HTMLButtonElement>(".submit-bar button")].find(
-    (b) => b.textContent === "Continue ",
+    (b) => b.textContent?.trim() === "Continue",
   )!;
 
 it("non-member sees the join line with the invite and cannot continue", async () => {

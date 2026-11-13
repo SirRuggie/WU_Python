@@ -174,7 +174,7 @@ async def catalog(request):
             ('band_monitor', 'BAND monitor', 'Check the bot’s calendar connection and debug mode.', 'War', '/manage/operations/band_monitor'),
             ('fwa_points', 'FWA points', 'Manage watched clans and points checks.', 'War', '/manage/operations/fwa_points'),
             ('fwa_sync', 'FWA sync reminders', 'Manage calendar reminders and their channel.', 'War', '/manage/operations/fwa_sync'),
-            ('fwa_weight', 'TH weight ranges', 'Manage Town Hall weight ranges.', 'War', '/manage/operations/fwa_weight'),
+            ('fwa_weight', 'TH weight ranges', 'Set the weight range for each Town Hall level.', 'War', '/manage/operations/fwa_weight'),
             ('fwa_blacklist', 'Clan blacklist', 'View or change the shared clan blacklist.', 'War', '/manage/operations/fwa_blacklist'),
             ('fwa_bases', 'FWA bases', 'Manage base links, images, and guidance.', 'War', '/manage/operations/fwa_bases'),
             ('cwl_rosters', 'CWL return reminders', 'Manage saved clans and return reminders.', 'War', '/manage/return-reminders'),

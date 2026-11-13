@@ -197,7 +197,13 @@ export default function WorldClockRow({
             className={problem ? "world-clock-sub is-error" : "world-clock-sub"}
             role={problem ? "alert" : undefined}
           >
-            {problem && <Ban size={16} aria-hidden="true" />}
+            {problem && (
+              <Ban
+                className="world-clock-sub-icon"
+                size="1em"
+                aria-hidden="true"
+              />
+            )}
             {statusLine}
           </p>
           {switchError && (

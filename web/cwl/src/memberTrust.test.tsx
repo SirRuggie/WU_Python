@@ -734,7 +734,7 @@ it("keeps a known signup season warning small while an explicit stale signup rem
   await flush();
   await act(async () =>
     [...host.querySelectorAll("button")]
-      .find((b) => b.textContent === "Continue ")!
+      .find((b) => b.textContent?.trim() === "Continue")!
       .click(),
   );
   await flush();

@@ -131,7 +131,7 @@ it("shows compact dates without clan tags, plain withdrawals and linked pool-swi
   expect(rows[0].querySelector("time")?.textContent).toMatch(/Oct 28/);
   expect(rows[0].querySelector("time")?.title).toContain("2026");
   const link = rows[0].querySelector("a")!;
-  expect(link.textContent).toBe("Message ↗");
+  expect(link.textContent).toBe("Message");
   expect(link.rel).toBe("noopener noreferrer");
   await click("Player 2");
   expect(details).toHaveBeenCalledWith(item(2).tag);

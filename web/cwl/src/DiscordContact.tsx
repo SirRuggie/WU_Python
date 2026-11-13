@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export function discordContact(userId?: string | null, compact = false) {
   return {
     href:
@@ -17,7 +19,7 @@ export default function DiscordContact({
 }: {
   userId?: string | null;
   compact?: boolean;
-  label?: string;
+  label?: ReactNode;
   className?: string;
 }) {
   const contact = discordContact(userId, compact);

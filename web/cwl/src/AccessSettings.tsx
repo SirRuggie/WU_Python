@@ -350,7 +350,7 @@ export default function AccessSettings({
                         {grant.display_name ||
                           (grant.label !== grant.id
                             ? grant.label
-                            : "Role unavailable")}
+                            : "Unknown role")}
                       </strong>
                       <small>Role · {grant.permissions.length} actions</small>
                     </span>

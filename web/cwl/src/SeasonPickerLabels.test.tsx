@@ -211,7 +211,7 @@ it("formats staff text and preserves its destination id", async () => {
   expect(host.textContent).toContain("October 2026");
   await act(async () =>
     [...host.querySelectorAll("button")]
-      .find((row) => row.textContent === "Open roster ")!
+      .find((row) => row.textContent?.trim() === "Open roster")!
       .click(),
   );
   expect(change).toHaveBeenCalledWith("roster", "4");

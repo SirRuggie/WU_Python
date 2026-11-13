@@ -963,7 +963,9 @@ export default function DashboardHome(props: Props) {
         <details className="hub-help" id="home-account-help">
           <summary>Link an account</summary>
           <AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} />
-          <p>To move or withdraw a signup, go to My signups.</p>
+          <p>
+            To move or withdraw a signup, go to My signups.
+          </p>
           <button onClick={() => onNavigate("saved")}>Open My signups →</button>
         </details>
         {session.can_edit && (
@@ -976,7 +978,9 @@ export default function DashboardHome(props: Props) {
               <button onClick={() => onNavigate("publication")}>
                 Finalize roster →
               </button>
-              <button onClick={() => onNavigate("staff")}>Seasons →</button>
+              <button onClick={() => onNavigate("staff")}>
+                Seasons →
+              </button>
             </div>
           </section>
         )}
