@@ -217,3 +217,9 @@ def test_command_reply_is_private_and_mention_free(monkeypatch):
     assert kwargs["ephemeral"] is True and kwargs["user_mentions"] is False and kwargs["role_mentions"] is False
     assert "Not verified" in ctx.respond.call_args.args[0]
     assert 123 not in accounts._result_cache
+
+
+def test_other_owner_reports_owner_username(fake):
+    fake.owners, fake.session = {"#P0Y": "456"}, Session([])
+    result = run(123, "#P0Y")
+    assert result.status == writes.OTHER_OWNER and result.owner == "y"

@@ -3384,6 +3384,7 @@ async def build_staff_identity_context(
         components.append(ActionRow(components=[
             Button(style=hikari.ButtonStyle.SECONDARY,label="View All Player Info",custom_id=f"ticket_player_info:{_ticket_id(ticket_doc)}|1"),
             Button(style=hikari.ButtonStyle.SECONDARY,label="Refresh Player Info",custom_id=f"ticket_player_refresh:{_ticket_id(ticket_doc)}"),
+            Button(style=hikari.ButtonStyle.SECONDARY,label="Link account",custom_id=f"ticket_link:{_ticket_id(ticket_doc)}"),
         ]))
     for (prefix, reason), reason_budget in zip(flag_copy, reason_budgets):
         components.append(Text(content=(
