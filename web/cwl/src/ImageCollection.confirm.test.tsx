@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ImageCollection from "./ImageCollection";
@@ -182,7 +182,8 @@ it("image library close awaits the guard and Cancel leaves it open", async () =>
 });
 
 // A small browser history: an entry stack, pushState, back() with popstate.
-function fakeHistory() {
+// With `later`, back() lands on a later task, as it does in a browser.
+function fakeHistory(later = false) {
   const stack: unknown[] = [{}];
   let index = 0;
   vi.spyOn(history, "state", "get").mockImplementation(() => stack[index]);
@@ -193,12 +194,14 @@ function fakeHistory() {
   vi.spyOn(history, "replaceState").mockImplementation((state) => {
     stack[index] = state;
   });
-  const go = (delta: number) => {
+  const move = (delta: number) => {
     index = Math.max(0, Math.min(stack.length - 1, index + delta));
     window.dispatchEvent(
       new PopStateEvent("popstate", { state: stack[index] }),
     );
   };
+  const go = (delta: number) =>
+    later ? void setTimeout(() => move(delta), 5) : move(delta);
   vi.spyOn(history, "back").mockImplementation(() => go(-1));
   vi.spyOn(history, "go").mockImplementation((delta = 0) => go(delta));
   // Entries behind and at the current one; forward entries do not matter.
@@ -217,25 +220,41 @@ function fakeHistory() {
 }
 
 it.each([
-  ["Cancel", ["route", "*panel"]],
-  ["Discard changes", ["*route"]],
+  ["Back", "Cancel", false, ["route", "*panel"]],
+  ["Back", "Discard changes", false, ["*route"]],
+  ["Back", "Cancel", true, ["route", "*panel"]],
+  ["Back", "Discard changes", true, ["*route"]],
+  ["Close", "Cancel", true, ["route", "*panel"]],
+  ["Close", "Discard changes", true, ["*route"]],
 ])(
-  "Back on a dirty image library, then %s, leaves no extra history entries",
-  async (choice, expected) => {
-    const nav = fakeHistory();
+  "%s on a dirty image library, then %s (late history: %s), leaves no extra history entries",
+  async (how, choice, later, expected) => {
+    const nav = fakeHistory(later);
     const close = vi.fn();
     const settle = async () => {
-      for (let i = 0; i < 3; i++)
+      for (let i = 0; i < 4; i++)
         await act(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 0));
+          await new Promise((resolve) => setTimeout(resolve, 25));
         });
     };
-    await act(async () =>
-      root.render(<CommandImageLibrary onClose={close} onChoose={vi.fn()} />),
-    );
+    // The parent unmounts the picker as soon as it closes, like the editor.
+    function Parent() {
+      const [open, setOpen] = useState(true);
+      return open ? (
+        <CommandImageLibrary
+          onClose={() => {
+            close();
+            setOpen(false);
+          }}
+          onChoose={vi.fn()}
+        />
+      ) : null;
+    }
+    await act(async () => root.render(<Parent />));
     expect(nav.markers()).toEqual(["route", "*panel"]);
     await dirty();
-    await act(async () => nav.back());
+    if (how === "Back") await act(async () => nav.back());
+    else await closeLibrary();
     await settle();
     expect(document.querySelector(".confirm-dialog")).not.toBeNull();
     expect(nav.markers()).toEqual(["route", "panel", "*confirm"]);
@@ -245,8 +264,7 @@ it.each([
       expect(close).not.toHaveBeenCalled();
     } else {
       expect(close).toHaveBeenCalledTimes(1);
-      await act(async () => root.render(<></>));
-      await settle();
+      expect(document.querySelector(".command-image-library")).toBeNull();
     }
     expect(nav.markers()).toEqual(expected);
   },

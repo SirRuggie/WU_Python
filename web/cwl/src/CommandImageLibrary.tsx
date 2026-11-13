@@ -35,11 +35,12 @@ export default function CommandImageLibrary({
   // The unsaved-edit check is async. Returning false makes Back re-push the
   // panel entry first; the check starts after that, so its own confirm entry
   // sits on top and is removed when it settles. The panel closes only after
-  // the check allows it.
+  // the check allows it and the confirm entry is gone, so the panel can
+  // remove its own entry when it unmounts.
   function close() {
     queueMicrotask(() => {
       void guard.current().then((leave) => {
-        if (leave) onClose();
+        if (leave) afterConfirmEntryLeaves(onClose);
       });
     });
     return false;
@@ -60,4 +61,22 @@ export default function CommandImageLibrary({
       />
     </ActionPanel>
   );
+}
+
+// A browser finishes history.back() on a later task. Wait for the confirm's
+// own back move to land before running the next step.
+function afterConfirmEntryLeaves(run: () => void) {
+  const started = Date.now();
+  const check = () => {
+    const state: unknown = window.history.state;
+    const marker =
+      state && typeof state === "object"
+        ? (state as Record<string, unknown>).wuActionPanel
+        : undefined;
+    const waiting =
+      typeof marker === "string" && marker.startsWith("image-confirm-");
+    if (!waiting || Date.now() - started > 1500) run();
+    else window.setTimeout(check, 16);
+  };
+  check();
 }
