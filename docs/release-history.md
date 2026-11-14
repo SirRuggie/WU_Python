@@ -1,5 +1,34 @@
 # Release and rollback history
 
+## /manage "TH weight ranges" label — 2026-11-14 (bot only)
+
+- PR [#360](https://github.com/SirRuggie/WU_Python/pull/360), merge commit
+  `2c6aa95d83076bdd4c022c6bdf2dbc467d13745e`, local tag
+  `manage-th-weight-360-1`. Merged and released by Shaka (Claude) on Ruggie's
+  "Merge and restart".
+- Change: Discord `/manage` FWA panel label, title, breadcrumb and permission
+  error text "War Weight" → "TH weight ranges"; docs/manage-web-parity.md row.
+  Action id `fwa_weight`, stored settings and behaviour unchanged.
+- Checks: backend suite in a network-isolated namespace 8208 passed, 132
+  skipped, 2 failed (real-Mongo ticket tests that need a network database;
+  files not touched). Import check as botrunner passed.
+- Bot: `/home/botrunner/wu-bot` `470388ca…` → `2c6aa95d…` (detached, clean,
+  fast-forward; requirements unchanged). Other non-web files since `470388ca`
+  are `cwl_web/{access_settings,exports,manage_operations,server_management}.py`,
+  already released with the dashboard backend `b68c09e4`. PID 1030657 →
+  1467543, InvocationID `30e15a512f95415a913d9cb4b80b9bc0`, NRestarts 0; 60
+  extensions loaded (same as before), gateway ready, no tracebacks or errors in
+  the first minute of the journal.
+- Dashboard frontend and backend not changed or restarted.
+- Backup `.local/manage-th-weight-360-release-*/before.sqlite3`: integrity ok,
+  SHA-256 `0b2a28046a1d338099948aad2bffc4d1845c3ddadf99534dfdae8fe7de000caf`;
+  all 76 table counts, Main 23/23/23, Lazy 147/146/131, publication max version
+  6 and the lineup-rules digest identical before and after. Mongo counts not
+  compared (the live bot writes continuously). No Discord post; `/manage` was
+  not opened live.
+- Rollback: `sudo -n -u botrunner git -C /home/botrunner/wu-bot checkout
+  --detach 470388ca`, then `sudo -n systemctl restart wu-bot.service`.
+
 ## UI audit 2, Phases A–F2 — 2026-11-13 (frontend + backend label)
 
 - PR [#358](https://github.com/SirRuggie/WU_Python/pull/358) (contains #352 A,
