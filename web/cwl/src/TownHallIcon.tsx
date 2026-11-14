@@ -17,7 +17,8 @@ const townHallEmoji: Record<number, string> = {
   "15": "1395729045962096651",
   "16": "1395729067990319164",
   "17": "1395729126014324837",
-  "18": "1447966636496650310"
+  "18": "1447966636496650310",
+  "19": "1571021740375806063"
 }
 export default function TownHallIcon({ level }: { level: number | null | undefined }) {
   const [failedId, setFailedId] = useState<string | null>(null)
