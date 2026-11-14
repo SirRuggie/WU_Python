@@ -1,5 +1,58 @@
 # Release and rollback history
 
+## Seasons: next month in one select — 2026-11-14 (frontend only)
+
+- PR [#362](https://github.com/SirRuggie/WU_Python/pull/362), merge commit
+  `bb87479f79776a2749236d55c5676952fa442129`, local tag
+  `seasons-next-month-362-1`. Built by Shaka (Claude); separate reviewer
+  REWORK fixed. Merged and released on Ruggie's "merge and release".
+- Changes: Seasons "Create <month>", "Finish <month>" (create next month if
+  missing, show it to members, optional open signups, off by default) and
+  "Lock <month>" (only before the member month). Uses existing endpoints; no
+  Python, route, schema or data change.
+- Checks: clean tagged clone vitest 2601 tests in 381 files; build via
+  `stage-release.py`.
+- Frontend `current`: `b68c09e4…` → `bb87479f…`. Entry `index-Brl1gkrn.js`.
+  All 181 manifest files match on the origin (127.0.0.1:8766) and on
+  `dash.warriorsunited.cc`. Backend not changed or restarted (PID 1436505).
+  Bot not changed.
+- Backup `.local/seasons-next-month-362-release-20261114T012415Z/before.sqlite3`: integrity ok, equal to live, SHA-256
+  `6ed3ea85a8d1f6e302d8583f72b7dd758de7a2288990d4f7cf469eea53c0701f`. All 76 table counts, Main 23/23/23, Lazy 147/146/131,
+  publication max version 6 and the lineup-rules digest identical before and
+  after.
+- Smoke: anonymous HTTP only. Signed-in smoke SKIPPED. No writes; Create,
+  Finish and Lock were not selected live.
+- Rollback: `switch-release.py b68c09e4aaafcb2c160e0132c5d322ad03b7cbce`.
+
+## /manage "TH weight ranges" label — 2026-11-14 (bot only)
+
+- PR [#360](https://github.com/SirRuggie/WU_Python/pull/360), merge commit
+  `2c6aa95d83076bdd4c022c6bdf2dbc467d13745e`, local tag
+  `manage-th-weight-360-1`. Merged and released by Shaka (Claude) on Ruggie's
+  "Merge and restart".
+- Change: Discord `/manage` FWA panel label, title, breadcrumb and permission
+  error text "War Weight" → "TH weight ranges"; docs/manage-web-parity.md row.
+  Action id `fwa_weight`, stored settings and behaviour unchanged.
+- Checks: backend suite in a network-isolated namespace 8208 passed, 132
+  skipped, 2 failed (real-Mongo ticket tests that need a network database;
+  files not touched). Import check as botrunner passed.
+- Bot: `/home/botrunner/wu-bot` `470388ca…` → `2c6aa95d…` (detached, clean,
+  fast-forward; requirements unchanged). Other non-web files since `470388ca`
+  are `cwl_web/{access_settings,exports,manage_operations,server_management}.py`,
+  already released with the dashboard backend `b68c09e4`. PID 1030657 →
+  1467543, InvocationID `30e15a512f95415a913d9cb4b80b9bc0`, NRestarts 0; 60
+  extensions loaded (same as before), gateway ready, no tracebacks or errors in
+  the first minute of the journal.
+- Dashboard frontend and backend not changed or restarted.
+- Backup `.local/manage-th-weight-360-release-*/before.sqlite3`: integrity ok,
+  SHA-256 `0b2a28046a1d338099948aad2bffc4d1845c3ddadf99534dfdae8fe7de000caf`;
+  all 76 table counts, Main 23/23/23, Lazy 147/146/131, publication max version
+  6 and the lineup-rules digest identical before and after. Mongo counts not
+  compared (the live bot writes continuously). No Discord post; `/manage` was
+  not opened live.
+- Rollback: `sudo -n -u botrunner git -C /home/botrunner/wu-bot checkout
+  --detach 470388ca`, then `sudo -n systemctl restart wu-bot.service`.
+
 ## UI audit 2, Phases A–F2 — 2026-11-13 (frontend + backend label)
 
 - PR [#358](https://github.com/SirRuggie/WU_Python/pull/358) (contains #352 A,
