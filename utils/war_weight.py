@@ -83,7 +83,10 @@ def emoji_for(th, config, available=()):
     override = config["ranges"].get(str(th), {}).get("emoji", "")
     if override.startswith("<"):
         return override
-    names = (override,) if override else (f"TH_{th}", f"TH{th}")
+    static = getattr(emojis, f"TH{th}", None)
+    # The configured emoji name (for example TH_19A) wins over other emojis named TH_19.
+    preferred = (str(static).split(":")[1],) if static is not None else ()
+    names = (override,) if override else tuple(dict.fromkeys((*preferred, f"TH_{th}", f"TH{th}")))
     for name in names:
         for emoji in available:
             if str(emoji.name).casefold() == name.casefold() and getattr(emoji, "is_available", True):

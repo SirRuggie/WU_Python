@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState } from "react";
 // Uses the same Discord Town Hall emoji IDs as utils/emoji.py.
 const townHallEmoji: Record<number, string> = {
   "2": "1395728426849275997",
@@ -17,13 +17,31 @@ const townHallEmoji: Record<number, string> = {
   "15": "1395729045962096651",
   "16": "1395729067990319164",
   "17": "1395729126014324837",
-  "18": "1447966636496650310"
-}
-export default function TownHallIcon({ level }: { level: number | null | undefined }) {
-  const [failedId, setFailedId] = useState<string | null>(null)
-  const id = level == null ? undefined : townHallEmoji[level]
-  const label = level == null ? 'Town Hall unknown' : `Town Hall ${level}`
-  return id && failedId !== id
-    ? <img className="town-hall-icon" src={`https://cdn.discordapp.com/emojis/${id}.png?size=64`} alt={label} title={label} width={32} height={32} loading="lazy" onError={() => setFailedId(id)} />
-    : <span className="town-hall-fallback" title={label}>TH {level ?? '—'}</span>
+  "18": "1447966636496650310",
+  "19": "1571025137896005783",
+};
+export default function TownHallIcon({
+  level,
+}: {
+  level: number | null | undefined;
+}) {
+  const [failedId, setFailedId] = useState<string | null>(null);
+  const id = level == null ? undefined : townHallEmoji[level];
+  const label = level == null ? "Town Hall unknown" : `Town Hall ${level}`;
+  return id && failedId !== id ? (
+    <img
+      className="town-hall-icon"
+      src={`https://cdn.discordapp.com/emojis/${id}.png?size=64`}
+      alt={label}
+      title={label}
+      width={32}
+      height={32}
+      loading="lazy"
+      onError={() => setFailedId(id)}
+    />
+  ) : (
+    <span className="town-hall-fallback" title={label}>
+      TH {level ?? "—"}
+    </span>
+  );
 }
