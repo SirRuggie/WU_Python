@@ -10,3 +10,10 @@
 .seasons-page > .card ~ .card {
   margin-top: var(--wu-space-3);
 }
+/* Keep the list-item display so the disclosure marker stays visible. */
+.seasons-page summary {
+  box-sizing: border-box;
+  min-height: 44px;
+  padding-block: 10px;
+  cursor: pointer;
+}

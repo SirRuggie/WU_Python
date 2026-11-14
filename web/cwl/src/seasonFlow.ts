@@ -1,4 +1,5 @@
 import { api, ApiError, type Season } from "./api";
+import { seasonMonth, seasonMonthLabel } from "./seasonLabels";
 export type SeasonState = {
   seasons: Season[];
   member_season: { season_id: number | null; revision: number };
@@ -74,4 +75,57 @@ export function createSeasonConfirmation(label: string, first: boolean) {
 }
 export function createdSeasonMessage(label: string, count: number) {
   return `${label} created with ${count} hosting clans and their settings. Signups start empty.`;
+}
+
+/**
+ * Create the next month season (if missing), show it to members, optionally
+ * open its signups. State is re-read first so a retry skips finished steps; each
+ * step runs only after the previous one succeeded.
+ */
+export async function finishMonth(
+  cycle: string,
+  openSignups: boolean,
+  seen: { season_id: number | null; revision: number },
+) {
+  const name = seasonMonthLabel({ label: cycle });
+  const create = `create ${name}`;
+  const show = `show ${name} to members`;
+  const open = `open ${name} signups`;
+  const done: string[] = [];
+  let steps = [create, show, ...(openSignups ? [open] : [])];
+  const stale = new Error("Changed by someone else. Refresh and try again.");
+  try {
+    let state = await api<SeasonState>("/seasons");
+    let next = state.seasons.find((item) => seasonMonth(item) === cycle);
+    const shown = state.member_season.season_id;
+    if (shown !== seen.season_id && shown !== next?.id) throw stale;
+    if (next) steps = steps.slice(1);
+    else {
+      await api("/seasons", "POST", { label: name, signup_open: false });
+      done.push(create);
+      state = await api<SeasonState>("/seasons");
+      next = state.seasons.find((item) => seasonMonth(item) === cycle);
+      if (!next) throw new Error("The new season was not found.");
+    }
+    if (state.member_season.season_id !== next.id)
+      await api("/member-season", "PUT", {
+        season_id: next.id,
+        revision: seen.revision,
+      });
+    done.push(show);
+    if (openSignups && !next.signup_open) {
+      await api(`/seasons/${next.id}`, "PATCH", {
+        signup_open: true,
+        expected_signup_open: false,
+      });
+    }
+    if (openSignups) done.push(open);
+  } catch (cause) {
+    if (cause === stale) throw cause;
+    const reason = cause instanceof Error ? cause.message : "Request failed.";
+    const left = steps.filter((step) => !done.includes(step));
+    throw new Error(
+      `${reason} Done: ${done.join(", ") || "nothing"}. Not done: ${left.join(", ")}.`,
+    );
+  }
 }

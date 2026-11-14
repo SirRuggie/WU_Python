@@ -1,4 +1,9 @@
-import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
+import {
+  monthSeasons,
+  nextMonthCycle,
+  seasonMonth,
+  seasonMonthLabel,
+} from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
 import CwlNextLink from "./CwlNextLink";
 import StaffSignupControls from "./StaffSignupControls";
@@ -15,6 +20,7 @@ import MemberSeasonSettings from "./MemberSeasonSettings";
 import {
   createSeasonConfirmation,
   createdSeasonMessage,
+  finishMonth,
   type SeasonState,
 } from "./seasonFlow";
 import { useDashboardPermission } from "./DashboardPermissions";
@@ -45,6 +51,9 @@ export default function SeasonsPage({
     !!season?.signup_open && memberSeason.season_id !== season?.id;
   const [label, setLabel] = useState("");
   const [createLabel, setCreateLabel] = useState<string | null>(null);
+  const [finishing, setFinishing] = useState(false);
+  const [openSignups, setOpenSignups] = useState(false);
+  const [locking, setLocking] = useState(false);
   const [visibility, setVisibility] = useState<"show" | "hide" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -56,6 +65,24 @@ export default function SeasonsPage({
   const [signupBusy, setSignupBusy] = useState(false);
   const [roleDirty, setRoleDirty] = useState(false);
   const [signupDirty, setSignupDirty] = useState(false);
+  const current = seasons.find((item) => item.id === memberSeason.season_id);
+  const currentMonth = current ? seasonMonth(current) : "";
+  // One target month: the month after the member season, else after the newest.
+  const target = nextMonthCycle(currentMonth ? [current!] : seasons);
+  const targetName = seasonMonthLabel({ label: target });
+  const targetSeason = seasons.find((item) => seasonMonth(item) === target);
+  const canCreate = !targetSeason;
+  const canFinish =
+    !!current &&
+    (!targetSeason ||
+      (targetSeason.id !== current.id && targetSeason.status !== "archived"));
+  const canLock =
+    !!season &&
+    !!currentMonth &&
+    season.status !== "archived" &&
+    season.id !== memberSeason.season_id &&
+    !!seasonMonth(season) &&
+    seasonMonth(season) < currentMonth;
   const working = busy || roleBusy || signupBusy;
   useEffect(() => {
     onDirty?.(roleDirty || signupDirty || !!label.trim());
@@ -80,7 +107,12 @@ export default function SeasonsPage({
         "POST",
         { label: chosen, signup_open: false },
       );
-      setNotice(createdSeasonMessage(result.label, result.copied_clan_count));
+      setNotice(
+        createdSeasonMessage(
+          seasonMonthLabel(result),
+          result.copied_clan_count,
+        ),
+      );
       setLabel("");
       try {
         await onRefresh();
@@ -95,6 +127,67 @@ export default function SeasonsPage({
         cause instanceof Error ? cause.message : "Could not create season.",
       );
     } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
+  async function finish() {
+    if (pending.current || !allowed || !current) return;
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    setRefreshFailed(false);
+    setFinishing(false);
+    const openNow = openSignups;
+    setOpenSignups(false);
+    try {
+      await finishMonth(target, openNow, {
+        season_id: memberSeason.season_id,
+        revision: memberSeason.revision,
+      });
+      setNotice(
+        `${targetName} is shown to members${openNow ? " and signups are open" : ""}.`,
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not finish the month.",
+      );
+    } finally {
+      try {
+        await onRefresh();
+      } catch {
+        setError((value) =>
+          `${value} The season list could not refresh.`.trim(),
+        );
+        setRefreshFailed(true);
+      }
+      pending.current = false;
+      setBusy(false);
+    }
+  }
+  async function lock() {
+    if (pending.current || !allowed || !canLock || !season) return;
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    setRefreshFailed(false);
+    setLocking(false);
+    try {
+      await api(`/seasons/${season.id}`, "PATCH", { status: "archived" });
+      setNotice(`${seasonMonthLabel(season)} is locked.`);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not lock season.",
+      );
+    } finally {
+      try {
+        await onRefresh();
+      } catch {
+        setError((value) =>
+          `${value} The season list could not refresh.`.trim(),
+        );
+        setRefreshFailed(true);
+      }
       pending.current = false;
       setBusy(false);
     }
@@ -194,42 +287,120 @@ export default function SeasonsPage({
               {season.signup_open ? "Signups open" : "Signups closed"}
               {hiddenOpen && " · not visible to members"}
             </StatusPill>
+            {canLock && allowed && (
+              <Button
+                variant="secondary"
+                disabled={working}
+                onClick={() => setLocking(true)}
+              >
+                {`Lock ${seasonMonthLabel(season)}`}
+              </Button>
+            )}
           </div>
         )}
       </div>
       {allowed && (
-        <form
-          className="card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!working && label.trim().length >= 3)
-              setCreateLabel(label.trim());
-          }}
-        >
-          <h2>Create season</h2>
-          <Input
-            label="New season label"
-            value={label}
-            onChange={(event) => setLabel(event.target.value)}
-            placeholder="November 2026"
-            maxLength={80}
-          />
-          <Button
-            icon={Plus}
-            type="submit"
-            disabled={working || label.trim().length < 3}
-          >
-            Create season
-          </Button>
-        </form>
+        <div className="card">
+          <h2>Next month</h2>
+          <div className="staff-row">
+            {canCreate && (
+              <Button
+                icon={Plus}
+                disabled={working}
+                onClick={() => setCreateLabel(targetName)}
+              >
+                {`Create ${targetName}`}
+              </Button>
+            )}
+            {canFinish && current && (
+              <Button
+                variant="secondary"
+                disabled={working}
+                onClick={() => setFinishing(true)}
+              >
+                {`Finish ${seasonMonthLabel(current)}`}
+              </Button>
+            )}
+          </div>
+          <details>
+            <summary>Other name</summary>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const typed = label.trim();
+                if (working || typed.length < 3) return;
+                const month = seasonMonth({ label: typed });
+                if (
+                  month &&
+                  seasons.some((item) => seasonMonth(item) === month)
+                )
+                  setError(
+                    `${seasonMonthLabel({ label: month })} already exists.`,
+                  );
+                else setCreateLabel(typed);
+              }}
+            >
+              <Input
+                label="New season label"
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+                placeholder="November 2026"
+                maxLength={80}
+              />
+              <Button
+                icon={Plus}
+                type="submit"
+                disabled={working || label.trim().length < 3}
+              >
+                Create season
+              </Button>
+            </form>
+          </details>
+        </div>
       )}
       {createLabel && (
         <ConfirmDialog
           heading="Create season"
-          text={createSeasonConfirmation(createLabel, seasons.length === 0)}
-          confirmLabel="Create season"
+          text={createSeasonConfirmation(
+            seasonMonthLabel({ label: createLabel }),
+            seasons.length === 0,
+          )}
+          confirmLabel={`Create ${seasonMonthLabel({ label: createLabel })}`}
           onCancel={() => setCreateLabel(null)}
           onConfirm={() => void save()}
+          disabled={working || !allowed}
+        />
+      )}
+      {finishing && current && (
+        <ConfirmDialog
+          heading={`Finish ${seasonMonthLabel(current)}`}
+          text={`${targetSeason ? "" : `Create ${targetName} with the hosting clans from the previous season. `}Show ${targetName} to members.`}
+          confirmLabel="Finish"
+          onCancel={() => {
+            setFinishing(false);
+            setOpenSignups(false);
+          }}
+          onConfirm={() => void finish()}
+          disabled={working || !allowed}
+        >
+          <label>
+            <input
+              type="checkbox"
+              checked={openSignups}
+              onChange={(event) => setOpenSignups(event.target.checked)}
+            />{" "}
+            {`Open ${targetName} signups now`}
+          </label>
+        </ConfirmDialog>
+      )}
+      {locking && season && (
+        <ConfirmDialog
+          heading={`Lock ${seasonMonthLabel(season)}`}
+          text="It becomes read-only. Results, bonuses and roster edits are blocked."
+          confirmLabel="Lock season"
+          danger
+          onCancel={() => setLocking(false)}
+          onConfirm={() => void lock()}
           disabled={working || !allowed}
         />
       )}
