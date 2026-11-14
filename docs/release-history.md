@@ -1,5 +1,46 @@
 # Release and rollback history
 
+## TH19 emoji — 2026-11-14 (frontend + backend + bot)
+
+- PR [#363](https://github.com/SirRuggie/WU_Python/pull/363), merge commit
+  `4d4158bd596b28eb49f2a89c8f89c06e5a687958`, local tag `th19-emoji-363-1`.
+  Released by Shaka (Claude) on Ruggie's "Merge and release 363".
+- Changes: `utils/emoji.py` adds TH19 (`<:TH_19A:1571025137896005783>`);
+  `utils/war_weight.py` `emoji_for` prefers the configured emoji name;
+  `web/cwl/src/TownHallIcon.tsx` adds "19"; 2 test files. No route, schema,
+  data, config, secret or systemd change. Backend imports `utils.war_weight`
+  through `cwl_web/manage_operations.py`, so all three layers were released.
+- Checks: clean tagged clone vitest 2601 tests in 381 files; the two changed
+  pytest files 20 passed; build via `stage-release.py`. Full backend suite
+  not run for this release.
+- Frontend `current`: `bb87479f…` → `4d4158bd…`. Entry `index-CIzI7IBQ.js`,
+  SHA-256 `3bb28f7eb5b44ab4cee25f77363b5109fd4b8238537f01dc4db90b24514a1203`;
+  TownHallIcon is in the entry and contains `1571025137896005783`. All 182
+  manifest files match on the origin (127.0.0.1:8766) and on
+  `dash.warriorsunited.cc` (`cwl.ruggie.zone` redirects there).
+- Backend `release.conf` `b68c09e4…` → `4d4158bd…` (other drop-ins
+  byte-identical); PID 1436505 → 1735036; `/proc/<pid>/cwd` = new backend;
+  `/api/cwl/config` 200 twice; journal clean.
+- Bot: `/home/botrunner/wu-bot` `2c6aa95d…` → `4d4158bd…` (detached, clean,
+  requirements unchanged; non-web diff is only the files above). PID 1467543
+  → 1735352, InvocationID `e12a646107d0427e9d9b2a96a5d20b56`, NRestarts 0;
+  60 extensions loaded (same as before), shard ready, started in about 5 s,
+  no errors or tracebacks in the journal.
+- Backup `.local/th19-emoji-363-release-20261114T060619Z/before.sqlite3`:
+  integrity ok, equal to live, SHA-256
+  `6c69c1caf3a467f109082031248962da070635d471e6c4398982d2048087be3a`. All 76
+  table counts, Main 23/23/23, Lazy 147/146/131, publication max version 6
+  (6 rows, 4 active) and the lineup-rules digest identical before and after.
+  Mongo counts not compared (the live bot writes continuously).
+- Smoke: anonymous HTTP only (`/`, `/signup`, `/strikes`, `/server/members`
+  200 with the new entry; `/api/cwl/auth/me` 401; `/api/cwl/config` 200).
+  Signed-in smoke SKIPPED. No app writes, no Discord post.
+- Rollback (code only, never restore the DB): write `release.conf` back to
+  `backend/b68c09e4aaafcb2c160e0132c5d322ad03b7cbce`, `daemon-reload`,
+  `switch-release.py bb87479f79776a2749236d55c5676952fa442129`, restart the
+  backend; `sudo -n -u botrunner git -C /home/botrunner/wu-bot checkout
+  --detach 2c6aa95d`, then `sudo -n systemctl restart wu-bot.service`.
+
 ## Seasons: next month in one select — 2026-11-14 (frontend only)
 
 - PR [#362](https://github.com/SirRuggie/WU_Python/pull/362), merge commit
