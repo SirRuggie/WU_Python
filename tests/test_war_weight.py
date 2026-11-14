@@ -42,7 +42,7 @@ def test_named_emoji_and_fallback():
     emoji = hikari.CustomEmoji(id=123456789012345678, name='TH_19', is_animated=False)
     assert store.emoji_for(19, config, [emoji]) == str(emoji)
     # No live TH_19 emoji: fall back to the static WU Wizard emoji in utils/emoji.py.
-    assert store.emoji_for(19, config) == '<:TH_19:1571021740375806063>'
+    assert store.emoji_for(19, config) == '<:TH_19A:1571025137896005783>'
     config['ranges']['19']['emoji'] = str(emoji)
     assert store.emoji_for(19, config) == str(emoji)
 
