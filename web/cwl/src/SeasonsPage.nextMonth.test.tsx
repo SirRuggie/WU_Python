@@ -59,7 +59,11 @@ it("offers the next month by name and creates it only after confirm", async () =
     expect(host.textContent).toContain("Other name");
     await act(async () => buttonByText("Create December 2026", host).click());
     expect(writes()).toEqual([]);
-    api.mockResolvedValue({ id: 2, label: "2026-12", copied_clan_count: 1 });
+    api.mockResolvedValue({
+      id: 2,
+      label: "December 2026",
+      copied_clan_count: 1,
+    });
     await act(async () =>
       buttonByText(
         "Create December 2026",
@@ -67,7 +71,7 @@ it("offers the next month by name and creates it only after confirm", async () =
       ).click(),
     );
     expect(api).toHaveBeenCalledWith("/seasons", "POST", {
-      label: "2026-12",
+      label: "December 2026",
       signup_open: false,
     });
   } finally {
@@ -84,7 +88,7 @@ it("finishes with signups off and ignores a double select", async () => {
     member_season: { season_id: 1, revision: 4 },
   });
   try {
-    expect(host.textContent).not.toContain("Create December 2026");
+    expect(host.textContent).not.toMatch(/Create [A-Z][a-z]+ \d{4}/);
     await act(async () => buttonByText("Finish November 2026", host).click());
     const box = document.querySelector<HTMLInputElement>(
       "dialog input[type=checkbox]",
@@ -148,6 +152,64 @@ it("does not offer Lock for the member season", async () => {
   const { host, cleanup } = await renderSeasons([make(2, "2026-11")], 2);
   try {
     expect(host.textContent).not.toContain("Lock November 2026");
+  } finally {
+    await cleanup();
+  }
+});
+
+it("offers only Create when no season is shown to members", async () => {
+  const { host, cleanup } = await renderSeasons([make(1, "2026-11")], 0);
+  try {
+    expect(host.textContent).toContain("Create December 2026");
+    expect(host.textContent).not.toContain("Finish");
+  } finally {
+    await cleanup();
+  }
+});
+
+it("offers no Finish when the target month is archived, and no Create two months ahead", async () => {
+  const dec = { ...make(2, "2026-12"), status: "archived" };
+  const { host, cleanup } = await renderSeasons([make(1, "2026-11"), dec], 1);
+  try {
+    expect(host.textContent).not.toContain("Finish");
+    expect(host.textContent).not.toMatch(/Create [A-Z][a-z]+ \d{4}/);
+  } finally {
+    await cleanup();
+  }
+});
+
+it("never offers Lock for a season after the member season", async () => {
+  const { host, cleanup } = await renderSeasons(
+    [make(2, "2026-12"), make(1, "2026-11")],
+    1,
+  );
+  try {
+    expect(host.textContent).not.toContain("Lock December 2026");
+  } finally {
+    await cleanup();
+  }
+});
+
+it("blocks a typed name for a month that already exists", async () => {
+  const { host, cleanup } = await renderSeasons(
+    [make(1, "November 2026"), make(2, "2026-12")],
+    1,
+  );
+  try {
+    const input = host.querySelector<HTMLInputElement>("details input")!;
+    const set = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    await act(async () => {
+      set.call(input, "December 2026");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => buttonByText("Create season", host).click());
+    expect(host.querySelector(".load-error")?.textContent).toContain(
+      "December 2026 already exists.",
+    );
+    expect(document.querySelector("dialog")).toBeNull();
   } finally {
     await cleanup();
   }

@@ -10,3 +10,9 @@
 .seasons-page > .card ~ .card {
   margin-top: var(--wu-space-3);
 }
+.seasons-page summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
