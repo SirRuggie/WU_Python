@@ -22,7 +22,7 @@ Audited 2026-10-15 against current source, not only the older management guide. 
 | FWA Points Monitor | Status/results; enable/disable; add/remove manually watched extras | `tasks/fwa_points_monitor.py`; `fwa_points` and monitor config | Administrator |
 | FWA Sync & Reminders | State/next sync/recent results; enable/disable; destination; fallback BAND link; check feed; test DM | `tasks/band_sync_ical.py`; `fwa_sync_config`, `fwa_sync_events`, `fwa_sync_deliveries` | Administrator |
 | BAND Monitor | Runtime poll health/startup recovery/last error; debug enable/disable | `tasks/band_monitor.py` process globals | Administrator |
-| War Weights | Minimum TH; TH ranges and emoji; add/edit entries | `utils/war_weight.py`; `fwa_data.database.war_weight_settings` | Administrator |
+| TH weight ranges | Minimum TH; TH ranges and emoji; add/edit entries | `utils/war_weight.py`; `fwa_data.database.war_weight_settings` | Administrator |
 | CWL | Existing message/reminder controls plus native final-roster publish parity | `cwl_campaign`, `cwl_web_bridge`; bot config + queues | Native Administrator; existing web explicitly granted editor access must remain scoped to CWL |
 | CWL Return Pings | Main/FWA/all/individual scope; save current members; replace/clear list; add/remove saved players; away status; send now; FWA start/pause/resume/frequency; failed-only retry | `lazy_cwl_service.py`, `lazy_cwl_store.py`; native saved snapshots | Administrator |
 

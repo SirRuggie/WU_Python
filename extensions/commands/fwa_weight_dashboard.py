@@ -21,7 +21,7 @@ def admin(ctx):
 async def session(ctx, mongo, token):
     state = await get_state(mongo, token)
     if not admin(ctx) or not state or state.get("type") != "war_weight_editor" or state.get("user_id") != int(ctx.user.id) or state.get("guild_id") != ctx.interaction.guild_id:
-        raise ValueError("Open your own War Weight panel in /manage with Administrator permission.")
+        raise ValueError("Open your own TH weight ranges panel in /manage with Administrator permission.")
     return state
 
 
@@ -36,7 +36,7 @@ async def panel(mongo, state, notice=""):
     await insert_state(mongo, state, ttl=timedelta(minutes=30))
     sid = state["_id"]
     entries = store.ranges(config)
-    children = [hikari.impl.TextDisplayComponentBuilder(content="## War Weight\nManage → FWA → War Weight"),
+    children = [hikari.impl.TextDisplayComponentBuilder(content="## TH weight ranges\nManage → FWA → TH weight ranges"),
         hikari.impl.TextDisplayComponentBuilder(content=f"Reference list: **TH{config['minimum_th']}–TH{max(entries)}**\nCalculations still use all configured ranges. Enter total weights, not single-storage values.")]
     if notice:
         children.append(hikari.impl.TextDisplayComponentBuilder(content=notice))
