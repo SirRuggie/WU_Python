@@ -1,5 +1,29 @@
 # Release and rollback history
 
+## Seasons: next month in one select — 2026-11-14 (frontend only)
+
+- PR [#362](https://github.com/SirRuggie/WU_Python/pull/362), merge commit
+  `bb87479f79776a2749236d55c5676952fa442129`, local tag
+  `seasons-next-month-362-1`. Built by Shaka (Claude); separate reviewer
+  REWORK fixed. Merged and released on Ruggie's "merge and release".
+- Changes: Seasons "Create <month>", "Finish <month>" (create next month if
+  missing, show it to members, optional open signups, off by default) and
+  "Lock <month>" (only before the member month). Uses existing endpoints; no
+  Python, route, schema or data change.
+- Checks: clean tagged clone vitest 2601 tests in 381 files; build via
+  `stage-release.py`.
+- Frontend `current`: `b68c09e4…` → `bb87479f…`. Entry `index-Brl1gkrn.js`.
+  All 181 manifest files match on the origin (127.0.0.1:8766) and on
+  `dash.warriorsunited.cc`. Backend not changed or restarted (PID 1436505).
+  Bot not changed.
+- Backup `.local/seasons-next-month-362-release-20261114T012415Z/before.sqlite3`: integrity ok, equal to live, SHA-256
+  `6ed3ea85a8d1f6e302d8583f72b7dd758de7a2288990d4f7cf469eea53c0701f`. All 76 table counts, Main 23/23/23, Lazy 147/146/131,
+  publication max version 6 and the lineup-rules digest identical before and
+  after.
+- Smoke: anonymous HTTP only. Signed-in smoke SKIPPED. No writes; Create,
+  Finish and Lock were not selected live.
+- Rollback: `switch-release.py b68c09e4aaafcb2c160e0132c5d322ad03b7cbce`.
+
 ## /manage "TH weight ranges" label — 2026-11-14 (bot only)
 
 - PR [#360](https://github.com/SirRuggie/WU_Python/pull/360), merge commit
