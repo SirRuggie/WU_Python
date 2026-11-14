@@ -48,6 +48,7 @@ DOCUMENTS = {
     "strike-system": Document("strike-system", "WU Strike System", "strikesystem_acknowledge"),
     "family-particulars": Document("family-particulars", "Family Particulars", "familyparticulars_acknowledge"),
     "apply": Document("apply", "Apply / Clan Entry", "ticket_v2_rite_open"),
+    "warrior_desk": Document("warrior_desk", "Warrior Desk", "ticket_v2_create"),
     "rite-of-passage": Document("rite-of-passage", "Rite of Passage", "ticket_v2_rite_choose"),
 }
 BLOCK_LABELS = {
@@ -56,6 +57,7 @@ BLOCK_LABELS = {
     "strike-system": ("Basic rules heading", "Basic rules", "Strike overview heading", "Strike overview", "Main clan heading", "Main clan note", "FWA heading", "FWA note", "Terms heading", "Terms", "Acknowledgement heading", "Acknowledgement"),
     "family-particulars": ("Family heading", "Golden rule heading", "Golden rule", "Friendly challenges heading", "Friendly challenges", "Clan games heading", "Clan games", "War rules heading", "War eligibility heading", "War eligibility", "Prep day heading", "Prep day", "Battle day heading", "Battle day", "CWL heading", "CWL overview", "CWL principles heading", "CWL principles", "Acknowledgement heading", "Acknowledgement"),
     "apply": ("Heading", "Body"),
+    "warrior_desk": ("Heading", "Body"),
     "rite-of-passage": ("Heading", "Introduction", "Main path", "FWA path", "Closing"),
 }
 MEDIA_SLOTS = {
@@ -68,8 +70,12 @@ MEDIA_SLOTS = {
     ),
     "family-particulars": (("welcome", "Welcome banner"), ("cwl", "CWL banner")),
     "apply": (("footer", "Footer image"),),
+    "warrior_desk": (("footer", "Footer image"),),
     "rite-of-passage": (("guide", "Rite of Passage guide"),),
 }
+# Panels bound to one live post owned by the ticket rollout (no posting channel).
+_BOUND_PANELS = frozenset({"apply", "warrior_desk"})
+BOUND_PANELS = _BOUND_PANELS  # public name for the web content/publish adapters
 _baselines: dict[str, list] = {}
 _DESTINATION_TYPES = frozenset((hikari.ChannelType.GUILD_TEXT, hikari.ChannelType.GUILD_NEWS))
 
@@ -207,6 +213,7 @@ async def baseline(document: Document):
         "strike-system": recruit_strikesystem.build_strikesystem,
         "family-particulars": recruit_familyparticulars.build_familyparticulars,
         "apply": ticket_setup.create_public_ticket_embed,
+        "warrior_desk": ticket_setup.create_warrior_desk_embed,
         "rite-of-passage": rite.build_rite,
     }[document.key]
     _baselines[document.key] = build()
@@ -222,6 +229,7 @@ def document_renderer(document: Document):
         "strike-system": recruit_strikesystem.build_strikesystem,
         "family-particulars": recruit_familyparticulars.build_familyparticulars,
         "apply": ticket_setup.create_public_ticket_embed,
+        "warrior_desk": ticket_setup.create_warrior_desk_embed,
         "rite-of-passage": rite.build_rite,
     }[document.key]
 
@@ -299,8 +307,9 @@ def editable_groups(document, sections):
             ("What happens next", ((blocks[2][0], "Title", "title"), (blocks[2][0], "Body", "body"))),
             ("Call to action", ((blocks[3][0], "Title", "title"), (blocks[3][0], "Body", "body"))),
         )
-    if document.key == "apply":
-        return (("Apply panel", ((0, "Heading", "full"), (1, "Body", "full"))),)
+    if document.key in _BOUND_PANELS:
+        return (("Apply panel" if document.key == "apply" else "Warrior Desk panel",
+                 ((0, "Heading", "full"), (1, "Body", "full"))),)
     if document.key == "rite-of-passage":
         return (
             ("Introduction", ((0, "Heading", "full"), (1, "Body", "full"))),
@@ -377,10 +386,12 @@ def published_key(guild_id: int, document_key: str) -> str:
 async def published_for(mongo, guild_id: int, document_key: str):
     if document_key == "rite-of-passage":
         return None
-    if document_key == "apply":
+    if document_key in _BOUND_PANELS:
         from extensions.commands import ticket_runtime
         rollout = await ticket_runtime.get_rollout(mongo)
-        source = rollout.thread_intake if rollout.valid else None
+        source = (
+            rollout.thread_intake if document_key == "apply" else rollout.desk_intake
+        ) if rollout.valid else None
         if source is None or source.guild_id != int(guild_id):
             return None
         return {"channel_id": source.channel_id, "message_id": source.message_id}
@@ -413,6 +424,8 @@ async def loaded_published_target(bot, guild_id: int, document: Document, coordi
     recovery = (
         "Complete ticket setup to restore the active public Apply post."
         if document.key == "apply" else
+        "Post the Warrior Desk panel again from Ticket settings."
+        if document.key == "warrior_desk" else
         "Check the channel. If you need a new post, select Send to channel."
     )
     try:
@@ -585,7 +598,7 @@ def panel(state, notice=None):
         source = "custom image" if slot in overrides else "default image"
         image_menu.add_option(f"{label} ({source})", slot, is_default=slot == selected_slot)
     private_only = document.key == "rite-of-passage"
-    fixed_public = document.key == "apply"
+    fixed_public = document.key in _BOUND_PANELS
     destination = state.get("destination_channel_id")
     destination_menu = hikari.impl.MessageActionRowBuilder()
     destination_menu.add_channel_menu(
@@ -758,7 +771,7 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
             except (ValueError, hikari.NotFoundError, hikari.ForbiddenError) as exc:
                 await initial_panel(ctx, mongo, state, str(exc) if isinstance(exc, ValueError) else "The bot cannot read that message."); return
             document = next((item for item in DOCUMENTS.values() if int(message.author.id) == int(ctx.interaction.application_id) and acknowledgement_id(message.components, item)), None)
-            if document and document.key in {"apply", "rite-of-passage"}:
+            if document and document.key in {*_BOUND_PANELS, "rite-of-passage"}:
                 source = await published_for(mongo, state["guild_id"], document.key)
                 if source != {"channel_id": int(match[2]), "message_id": int(match[3])}:
                     await initial_panel(ctx, mongo, state, "Open this ticket panel from Recruit Gauntlet. Apply updates only the active public ticket post."); return
@@ -838,8 +851,8 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
     sections, media, revision = await template_for(mongo, document, state["guild_id"])
     destination_row = await mongo.bot_config.find_one({"_id": destination_key(state["guild_id"], document.key)})
     destination_channel_id = ((destination_row or {}).get("channel_id")
-                              if document.key not in {"apply", "rite-of-passage"} else None)
-    target = state.get("target") if state.get("document") == document.key and document.key != "apply" else None
+                              if document.key not in {*_BOUND_PANELS, "rite-of-passage"} else None)
+    target = state.get("target") if state.get("document") == document.key and document.key not in _BOUND_PANELS else None
     notice = None
     if target is None:
         coordinates = await published_for(mongo, state["guild_id"], document.key)
@@ -859,8 +872,10 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
         destination_channel_id=destination_channel_id, selected_media_slot=None,
         destination_baseline=destination_row,
     )
-    if document.key == "apply" and target is None and notice is None:
-        notice = "No active public Apply post is bound. Complete ticket setup before updating the post."
+    if document.key in _BOUND_PANELS and target is None and notice is None:
+        notice = ("No active public Apply post is bound. Complete ticket setup before updating the post."
+                  if document.key == "apply" else
+                  "No Warrior Desk post is bound. Post it from Ticket settings before updating the post.")
     draft_state["saved_snapshot"] = draft_snapshot(draft_state)
     return panel(await new_draft(mongo, draft_state), notice)
 
@@ -898,7 +913,7 @@ async def choose_destination(
         return error_panel(problem)
     document_key = state.get("document")
     values = getattr(ctx.interaction, "values", ()) or ()
-    if document_key in {"apply", "rite-of-passage"}:
+    if document_key in {*_BOUND_PANELS, "rite-of-passage"}:
         return panel(state, "This ticket panel does not support a posting channel. Use ticket setup for the public Apply post.")
     if document_key not in DOCUMENTS or len(values) != 1:
         return panel(state, "Select one text or announcement channel.")
@@ -951,7 +966,7 @@ async def send_to_channel(
     if problem:
         return error_panel(problem)
     document_key = state.get("document")
-    if document_key in {"apply", "rite-of-passage"}:
+    if document_key in {*_BOUND_PANELS, "rite-of-passage"}:
         return panel(state, "This ticket panel cannot send a new post. Use ticket setup for the public Apply post.")
     channel_id = state.get("destination_channel_id")
     if document_key not in DOCUMENTS or not isinstance(channel_id, int) or channel_id <= 0:
@@ -1357,8 +1372,8 @@ async def save_and_publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
         return panel(state, "Rite of Passage is private. Save the template to update future choice panels.")
     if not state.get("document") or not target_matches_destination(state):
         return panel(state, "The published post is unavailable in this posting channel. Your draft is unchanged.")
-    if state["document"] == "apply":
-        source = await published_for(mongo, state["guild_id"], "apply")
+    if state["document"] in _BOUND_PANELS:
+        source = await published_for(mongo, state["guild_id"], state["document"])
         target = state.get("target") or {}
         if not source or any(target.get(key) != value for key, value in source.items()):
             return panel(state, "The public Apply post changed or is missing. Complete ticket setup, then reopen Recruit Gauntlet. Your draft is unchanged.")
@@ -1385,8 +1400,8 @@ async def publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bo
 async def publish_state(ctx, state, mongo, bot, *, saved_template=False):
     if state.get("document") == "rite-of-passage":
         return panel(state, "Rite of Passage is private. Save the template to update future choice panels.")
-    if state.get("document") == "apply":
-        authoritative = await published_for(mongo, state["guild_id"], "apply")
+    if state.get("document") in _BOUND_PANELS:
+        authoritative = await published_for(mongo, state["guild_id"], state["document"])
         target = state.get("target")
         if not authoritative or not target or any(target.get(key) != value for key, value in authoritative.items()):
             return panel(state, "The public Apply post changed or is missing. Complete ticket setup, then reopen Recruit Gauntlet. Your draft is unchanged.")
@@ -1414,10 +1429,14 @@ async def publish_state(ctx, state, mongo, bot, *, saved_template=False):
             raise ValueError("That post changed since this draft opened. Reopen the dashboard to review it.")
         acknowledgement = acknowledgement_id(message.components, document)
         if not acknowledgement: raise ValueError("That is not the selected content type.")
-        if document.key == "apply":
-            source = await published_for(mongo, state["guild_id"], "apply")
+        if document.key in _BOUND_PANELS:
+            source = await published_for(mongo, state["guild_id"], document.key)
             if source != {"channel_id": target["channel_id"], "message_id": target["message_id"]}:
-                raise ValueError("The active public Apply post changed. Reopen Recruit Gauntlet after ticket setup.")
+                raise ValueError(
+                    "The active public Apply post changed. Reopen Recruit Gauntlet after ticket setup."
+                    if document.key == "apply" else
+                    "The Warrior Desk post changed. Reopen Recruit Gauntlet after posting it from Ticket settings."
+                )
         rendered = await render(
             document, state["sections"], media=state.get("media"), action_id=acknowledgement
         )

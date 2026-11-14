@@ -33,6 +33,10 @@ def test_close_records_no_denial_fields_and_preserves_flags(monkeypatch):
         monkeypatch.setattr(
             lifecycle.perms, "is_recruiter", AsyncMock(return_value=True)
         )
+        monkeypatch.setattr(
+            lifecycle.perms, "can_handle",
+            lambda member, mongo, ticket_type: lifecycle.perms.is_recruiter(member, mongo),
+        )
         monkeypatch.setattr(ticket_runtime, "mark_slot_release_pending", AsyncMock())
         monkeypatch.setattr(ticket_runtime, "release_open_slot", AsyncMock())
         monkeypatch.setattr(
@@ -79,6 +83,10 @@ def test_close_rejects_unauthorized_and_decided_tickets(
         monkeypatch.setattr(
             lifecycle.perms, "is_recruiter", AsyncMock(return_value=authorized)
         )
+        monkeypatch.setattr(
+            lifecycle.perms, "can_handle",
+            lambda member, mongo, ticket_type: lifecycle.perms.is_recruiter(member, mongo),
+        )
         result = await lifecycle.change(
             NS(),
             _mongo(doc),
@@ -99,6 +107,10 @@ def test_stale_activity_prevents_inactivity_close(monkeypatch):
         doc.update(activity_revision=4, inactivity={"prompt": {"token": "new"}})
         monkeypatch.setattr(
             lifecycle.perms, "is_recruiter", AsyncMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            lifecycle.perms, "can_handle",
+            lambda member, mongo, ticket_type: lifecycle.perms.is_recruiter(member, mongo),
         )
         result = await lifecycle.change(
             NS(),
@@ -123,6 +135,10 @@ def test_reopen_reserves_slot_resets_timer_and_never_releases_it(monkeypatch):
         mongo = _mongo(doc)
         monkeypatch.setattr(
             lifecycle.perms, "is_recruiter", AsyncMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            lifecycle.perms, "can_handle",
+            lambda member, mongo, ticket_type: lifecycle.perms.is_recruiter(member, mongo),
         )
         monkeypatch.setattr(
             ticket_runtime, "get_rollout", AsyncMock(return_value=NS(revision=2))
@@ -163,6 +179,10 @@ def test_reopen_blocks_another_open_ticket(monkeypatch):
         doc = _ticket(status="closed")
         monkeypatch.setattr(
             lifecycle.perms, "is_recruiter", AsyncMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            lifecycle.perms, "can_handle",
+            lambda member, mongo, ticket_type: lifecycle.perms.is_recruiter(member, mongo),
         )
         monkeypatch.setattr(
             ticket_runtime, "get_rollout", AsyncMock(return_value=NS(revision=2))
@@ -293,6 +313,10 @@ def test_reopen_preserves_pending_ghosted_flag_recovery(monkeypatch):
         doc["inactivity"] = {"prompt": {"state": "yes", "token": "pending"}}
         monkeypatch.setattr(
             lifecycle.perms, "is_recruiter", AsyncMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            lifecycle.perms, "can_handle",
+            lambda member, mongo, ticket_type: lifecycle.perms.is_recruiter(member, mongo),
         )
         result = await lifecycle.change(
             NS(),

@@ -74,3 +74,13 @@ Retired rollout/pilot controls: `pilot-user`, `pilot-role`, `rollout-status`,
 Live pre-deployment inspection confirmed `thread_default`, valid bindings, and
 10080-minute inactivity. Those values are preserved. Old open Recruit 4 tickets
 and historical migration recovery are not deleted or implicitly resolved.
+
+## Warrior Desk
+
+Dashboard part `desk` (also in change history) edits `desk_channel_id`,
+`desk_staff_parent`, `account_thread_recruiter_role` and
+`staff_thread_recruiter_role`. The tools action `restore_desk_entry` posts or
+repairs the panel and binds `desk_intake`. The setup check validates the desk
+parents when a desk channel and role are set, and otherwise reports "Warrior
+Desk not set." The desk channel is not held to the Apply-channel rule. See
+[warrior-desk.md](warrior-desk.md).

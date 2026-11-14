@@ -214,7 +214,7 @@ _FLEW_THE_COOP_NAME_PREFIX = "🐔 "
 _KNOWN_NAME_PREFIXES = (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX, _FLEW_THE_COOP_NAME_PREFIX)
 THREAD_NAME_RECONCILE_LEASE = timedelta(minutes=10)
 _CANONICAL_THREAD_NAME = re.compile(
-    r"^(?:staff-)?(?:main|fwa)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    r"^(?:staff-)?(?:main|fwa|account|staff)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
 )
 
 
@@ -675,21 +675,37 @@ async def validate_thread_parents(
     return candidate, staff
 
 
+def _config_parents(config: Mapping[str, Any], kind: str) -> tuple[int, int, int]:
+    """(candidate parent, staff parent, recruiter role) configured for one type."""
+    role = _as_int(config.get(f"{kind}_thread_recruiter_role"))
+    if kind in schema.DESK_TICKET_TYPES:
+        staff_parent = _as_int(config.get("desk_staff_parent")) or _as_int(
+            config.get("main_staff_parent")
+        )
+        return _as_int(config.get("desk_channel_id")), staff_parent, role
+    return (
+        _as_int(config.get(f"{kind}_candidate_parent")),
+        _as_int(config.get(f"{kind}_staff_parent")),
+        role,
+    )
+
+
 def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: str) -> ThreadParents:
-    prefix = "main" if ticket_type == "main" else "fwa"
+    if ticket_type not in schema.TICKET_TYPES:
+        raise ThreadConfigurationError(f"unknown ticket type: {ticket_type!r}")
+    prefix = ticket_type
     target_guild = _as_int(config.get("ticket_target_guild_id"))
     if not target_guild:
         raise ThreadConfigurationError("missing ticket configuration: ticket_target_guild_id")
     if target_guild != int(guild_id):
         raise ThreadConfigurationError("thread ticketing is configured for a different guild")
-    candidate_parent = _as_int(config.get(f"{prefix}_candidate_parent"))
-    staff_parent = _as_int(config.get(f"{prefix}_staff_parent"))
-    recruiter_role = _as_int(config.get(f"{prefix}_thread_recruiter_role"))
+    candidate_parent, staff_parent, recruiter_role = _config_parents(config, prefix)
+    desk = prefix in schema.DESK_TICKET_TYPES
     missing = [
         label
         for label, value in (
-            (f"{prefix}_candidate_parent", candidate_parent),
-            (f"{prefix}_staff_parent", staff_parent),
+            ("desk_channel_id" if desk else f"{prefix}_candidate_parent", candidate_parent),
+            ("desk_staff_parent" if desk else f"{prefix}_staff_parent", staff_parent),
             (f"{prefix}_thread_recruiter_role", recruiter_role),
         )
         if not value
@@ -697,10 +713,10 @@ def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: s
     if missing:
         raise ThreadConfigurationError("missing ticket configuration: " + ", ".join(missing))
     shared_roles = tuple(sorted({
-        _as_int(config.get(f"{kind}_thread_recruiter_role"))
-        for kind in ("main", "fwa")
-        if _as_int(config.get(f"{kind}_staff_parent")) == staff_parent
-        and _as_int(config.get(f"{kind}_thread_recruiter_role"))
+        _config_parents(config, kind)[2]
+        for kind in sorted(schema.TICKET_TYPES)
+        if _config_parents(config, kind)[1] == staff_parent
+        and _config_parents(config, kind)[2]
     } - {recruiter_role}))
     viewer_roles = tuple(sorted({
         _as_int(value) for value in (config.get("ticket_staff_viewer_role_ids") or ())
@@ -753,8 +769,8 @@ async def ensure_canonical_ticket_store(mongo: MongoClient) -> None:
 
 async def reserve_ticket_number(mongo: MongoClient, ticket_type: str) -> int:
     """Use the cross-runtime allocator shared with the legacy runtime."""
-    if ticket_type not in {"main", "fwa"}:
-        raise ThreadConfigurationError("ticket type must be main or fwa")
+    if ticket_type not in schema.TICKET_TYPES:
+        raise ThreadConfigurationError("unsupported ticket type")
     if testing_service.is_test_scope(mongo):
         return await testing_service.reserve_test_ticket_number(mongo)
     return await ticket_runtime.reserve_ticket_number(mongo, ticket_type)
@@ -1364,6 +1380,18 @@ _CANDIDATE_WELCOME_TITLE_PREFIX = "## 👋 Welcome to your "
 _CANDIDATE_WELCOME_TITLE_SUFFIX = " interest ticket"
 _STAFF_OPENING_TITLE_PREFIX = "## 🔒 "
 _STAFF_OPENING_TITLE_INFIX = " recruiter workspace · #"
+_DESK_OPENING_TITLE_INFIX = " staff workspace · #"
+# Warrior Desk requests: (welcome title, welcome body). No "ticket" or "support".
+_DESK_WELCOME = {
+    "account": ("## ➕ Add another account", "Answer here. Staff check your accounts."),
+    "staff": ("## 💬 Contact staff", "Tell us what you need. Staff reply here."),
+}
+# One line per question; add a line here to ask more.
+ACCOUNT_QUESTIONS = (
+    "How many accounts do you want to add?",
+    "Send the player tag of each account.",
+)
+_ACCOUNT_QUESTIONNAIRE_TITLE = "## **Add another account questions**"
 
 # Recruiter talking-point messages, carried over byte-for-byte from the
 # legacy channel ticket system (`extensions/commands/tickets_legacy/handlers.py`,
@@ -1420,6 +1448,10 @@ def _is_candidate_welcome_card(message: Any) -> bool:
             prefix=_CANDIDATE_WELCOME_TITLE_PREFIX,
             suffix=_CANDIDATE_WELCOME_TITLE_SUFFIX,
         )
+        or any(
+            _component_title_matches(component, prefix=title)
+            for title, _body in _DESK_WELCOME.values()
+        )
         for component in getattr(message, "components", ()) or ()
     )
 
@@ -1431,8 +1463,9 @@ def _is_staff_opening_card(message: Any) -> bool:
         _component_title_matches(
             component,
             prefix=_STAFF_OPENING_TITLE_PREFIX,
-            infix=_STAFF_OPENING_TITLE_INFIX,
+            infix=infix,
         )
+        for infix in (_STAFF_OPENING_TITLE_INFIX, _DESK_OPENING_TITLE_INFIX)
         for component in getattr(message, "components", ()) or ()
     )
 
@@ -1440,6 +1473,17 @@ def _is_staff_opening_card(message: Any) -> bool:
 def _candidate_welcome_components(ticket: Mapping[str, Any]) -> list:
     ticket_type = str(ticket.get("ticket_type") or "main").upper()
     user_id = _as_int(ticket.get("user_id"))
+    if ticket.get("ticket_type") in schema.DESK_TICKET_TYPES:
+        title, body = _DESK_WELCOME[ticket["ticket_type"]]
+        return [Container(
+            accent_color=WU_GOLD,
+            components=[
+                Text(content=title),
+                *([Text(content="🧪 TEST MODE — this is a simulated request.")]
+                  if testing_service.is_test_ticket(ticket) else []),
+                Text(content=f"<@{user_id}> {body}"),
+            ],
+        )]
     return [Container(
         accent_color=WU_GOLD,
         components=[
@@ -1470,7 +1514,12 @@ def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
         ticket.get("display_name") or raw_username, limit=80
     )
     user_id = _as_int(ticket.get("user_id"))
+    desk = ticket.get("ticket_type") in schema.DESK_TICKET_TYPES
     notification = (
+        f"<@&{recruiter_role}> a member opened a request."
+        if recruiter_role and desk else
+        "A member opened a request."
+        if desk and not testing_service.is_test_ticket(ticket) else
         f"<@&{recruiter_role}> a new applicant is ready for review."
         if recruiter_role else
         "A test applicant is ready for a simulated review."
@@ -1480,23 +1529,26 @@ def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
     return [Container(
         accent_color=WU_GOLD,
         components=[
-            Text(content=f"## 🔒 {ticket_type} recruiter workspace · #{testing_service.number_label(ticket_number) if testing_service.is_test_ticket(ticket) else ticket_number}"),
+            Text(content=f"## 🔒 {ticket_type} {'staff' if desk else 'recruiter'} workspace · #{testing_service.number_label(ticket_number) if testing_service.is_test_ticket(ticket) else ticket_number}"),
             Text(content=notification),
             Separator(divider=True),
             Text(content=(
-                f"**Candidate:** {display_name} (`{username}`)\n"
+                f"**{'Member' if desk else 'Candidate'}:** {display_name} (`{username}`)\n"
                 f"**Discord ID:** `{user_id}`\n"
-                f"**Candidate thread:** <#{public_id}>"
+                f"**{'Request' if desk else 'Candidate'} thread:** <#{public_id}>"
             )),
             Text(content=(
                 "🧪 **TEST MODE:** Selected testers may see both test spaces. "
                 "Decisions here do not affect live applications."
                 if testing_service.is_test_ticket(ticket) else
+                "⚠️ **Staff-only:** The member cannot see this thread. "
+                "Do not mention or add them here."
+                if desk else
                 "⚠️ **Recruiter-only:** The candidate cannot see this thread. "
                 "Do not mention or add them here."
             )),
             ActionRow(components=[LinkButton(
-                label="Open Recruit Ticket",
+                label="Open request" if desk else "Open Recruit Ticket",
                 url=f"https://discord.com/channels/{_as_int(ticket.get('guild_id'))}/{public_id}",
                 emoji=hikari.CustomEmoji.parse("<:open_new:1553091643639468213>"),
             )]),
@@ -1515,6 +1567,19 @@ def _questionnaire_components(
     *,
     ticket: Mapping[str, Any] | None = None,
 ) -> list:
+    if ticket_type == "account":
+        return [Container(
+            accent_color=WU_GOLD,
+            components=[
+                *([Text(content="🧪 TEST MODE — practice form; answers stay in the isolated test database.")]
+                  if ticket is not None and testing_service.is_test_ticket(ticket) else []),
+                Text(content=_ACCOUNT_QUESTIONNAIRE_TITLE),
+                Text(content="\n".join(
+                    f"{number}. {question}"
+                    for number, question in enumerate(ACCOUNT_QUESTIONS, start=1)
+                )),
+            ],
+        )]
     logo = guild_icon_url or "assets/branding/logo/WU_Logo.png"
     is_fwa = ticket_type == "fwa"
     title = (
@@ -1561,7 +1626,9 @@ async def _questionnaire_exists(
     ticket_type: str,
 ) -> bool:
     needle = (
-        "Warriors United FWA Clan Entry Ticket"
+        "Add another account questions"
+        if ticket_type == "account"
+        else "Warriors United FWA Clan Entry Ticket"
         if ticket_type == "fwa"
         else "Warriors United Main Clan Entry Ticket"
     )
@@ -1673,7 +1740,7 @@ async def _deliver_opening_messages(
         post_marker=False,
         is_match=candidate_card_match,
     )
-    if not await _questionnaire_exists(rest, public_id, ticket_type):
+    if ticket_type != "staff" and not await _questionnaire_exists(rest, public_id, ticket_type):
         guild = await rest.fetch_guild(_as_int(ticket.get("guild_id")))
         icon = getattr(guild, "make_icon_url", lambda: None)()
         await rest.create_message(
@@ -1698,10 +1765,11 @@ async def _deliver_opening_messages(
         post_marker=False,
         is_match=staff_card_match,
     )
-    await _deliver_staff_talking_points(
-        rest, staff_id, ticket_type, recruiter_role=recruiter_role, bot_id=bot_id,
-        template=ticket.get("staff_thread_content"),
-    )
+    if ticket_type not in schema.DESK_TICKET_TYPES:
+        await _deliver_staff_talking_points(
+            rest, staff_id, ticket_type, recruiter_role=recruiter_role, bot_id=bot_id,
+            template=ticket.get("staff_thread_content"),
+        )
 
 
 async def _deliver_staff_talking_points(
@@ -1790,6 +1858,9 @@ async def _send_ticket_creation_dm(
                 components=[
                     Text(content=f"**{guild_name}**"),
                     Text(content=(
+                        "Staff will reply in your request. Select the button to "
+                        "open it."
+                        if ticket.get("ticket_type") in schema.DESK_TICKET_TYPES else
                         "A recruiter will reply in your ticket. Select the button to "
                         "open it."
                     )),
@@ -1797,7 +1868,14 @@ async def _send_ticket_creation_dm(
                 accessory=Thumbnail(media=logo),
             ),
             ActionRow(components=[
-                LinkButton(label="Open my ticket", url=jump_url),
+                LinkButton(
+                    label=(
+                        "Open my request"
+                        if ticket.get("ticket_type") in schema.DESK_TICKET_TYPES
+                        else "Open my ticket"
+                    ),
+                    url=jump_url,
+                ),
             ]),
         ],
     )]
@@ -2093,8 +2171,8 @@ async def create_live_thread_ticket(
     opened_by: int | None = None,
 ) -> CreatedThreadTicket:
     """Create or resume one live thread ticket without duplicating resources."""
-    if ticket_type not in {"main", "fwa"}:
-        raise ThreadConfigurationError("ticket type must be main or fwa")
+    if ticket_type not in schema.TICKET_TYPES:
+        raise ThreadConfigurationError("unsupported ticket type")
     slot = _validated_open_slot_claim(
         open_slot_claim,
         guild_id=guild_id,
@@ -2256,7 +2334,10 @@ async def create_live_thread_ticket(
             candidate = staff = None
             committed_ticket: dict | None = None
             try:
-                staff_template = await ticket_staff_content.load(mongo, guild_id, ticket_type)
+                staff_template = (
+                    None if ticket_type in schema.DESK_TICKET_TYPES
+                    else await ticket_staff_content.load(mongo, guild_id, ticket_type)
+                )
                 candidate, staff, state = await _ensure_live_thread_pair(
                     rest=bot.rest,
                     mongo=mongo,
@@ -2954,6 +3035,35 @@ async def _retry_or_retire_pending_delivery(
         )
 
 
+def _recovery_config(state: Mapping[str, Any], ticket_type: str, guild_id: int) -> dict[str, Any]:
+    """Rebuild the parents_from_config input from a stored creation state.
+
+    Uses the stored ids only. Every shared staff role is kept: each is mapped
+    onto one other ticket type that shares the staff parent.
+    """
+    candidate_parent = state.get("candidate_parent_id")
+    staff_parent = state.get("staff_parent_id")
+    config: dict[str, Any] = {
+        "ticket_target_guild_id": guild_id,
+        "ticket_staff_viewer_role_ids": state.get("staff_viewer_role_ids") or (),
+        f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
+    }
+    if ticket_type in schema.DESK_TICKET_TYPES:
+        config["desk_channel_id"] = candidate_parent
+        config["desk_staff_parent"] = staff_parent
+    else:
+        config[f"{ticket_type}_candidate_parent"] = candidate_parent
+        config[f"{ticket_type}_staff_parent"] = staff_parent
+    others = sorted(schema.TICKET_TYPES - {ticket_type})
+    for kind, role in zip(others, state.get("shared_staff_role_ids") or ()):
+        config[f"{kind}_thread_recruiter_role"] = role
+        if kind in schema.DESK_TICKET_TYPES:
+            config["desk_staff_parent"] = staff_parent
+        else:
+            config[f"{kind}_staff_parent"] = staff_parent
+    return config
+
+
 async def recover_pending_thread_ticket_creations(
     *,
     bot: hikari.GatewayBot,
@@ -2987,18 +3097,7 @@ async def recover_pending_thread_ticket_creations(
         counts["processed"] += 1
         ticket_type = str(state.get("ticket_type") or "")
         state_guild_id = _as_int(state.get("guild_id"))
-        config = {
-            "ticket_target_guild_id": state_guild_id,
-            "ticket_staff_viewer_role_ids": state.get("staff_viewer_role_ids") or (),
-            f"{ticket_type}_candidate_parent": state.get("candidate_parent_id"),
-            f"{ticket_type}_staff_parent": state.get("staff_parent_id"),
-            f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
-        }
-        shared_roles = state.get("shared_staff_role_ids") or ()
-        if shared_roles:
-            other_type = "fwa" if ticket_type == "main" else "main"
-            config[f"{other_type}_staff_parent"] = state.get("staff_parent_id")
-            config[f"{other_type}_thread_recruiter_role"] = shared_roles[0]
+        config = _recovery_config(state, ticket_type, state_guild_id)
         result: CreatedThreadTicket | None = None
         degraded_reason: str | None = None
         try:

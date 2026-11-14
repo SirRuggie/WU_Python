@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import hikari
 import pytest
@@ -265,7 +266,7 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
         hikari.ComponentType.MEDIA_GALLERY,
         hikari.ComponentType.SEPARATOR,
     ]
-    assert container["components"][0]["content"] == "# Ticket Console"
+    assert container["components"][0]["content"] == "# Ticket Command"
     assert [attachment.filename for attachment in attachments] == [
         "ticket_overview.png", "clan_main.png", "ticket_main_status.png",
         "clan_fwa.png", "ticket_fwa_status.png",
@@ -345,16 +346,279 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
     _assert_component_limits(view)
 
 
-def test_shared_actions_three_ticket_page_separates_rows_within_limit():
-    tickets = [_ticket(index, _console_name=f"fwa-{index}-candidate") for index in range(1, 4)]
-    view = console.build_hub_actions(tickets, page=6, total=30)
-    assert len(_component_nodes(view)) == 40
+def _group_view(**by_group):
+    """build_hub_actions input: tickets and open counts per dropdown group."""
+    groups = {key: by_group.get(key, []) for key in ("recruits", "account", "staff")}
+    counts = {key: len(value) for key, value in groups.items()}
+    return groups, counts
+
+
+def _selects(view):
+    return [
+        component
+        for child in view[0].components
+        if child.type == hikari.ComponentType.ACTION_ROW
+        for component in child.components
+        if component.type == hikari.ComponentType.TEXT_SELECT_MENU
+    ]
+
+
+def test_ticket_command_groups_open_tickets_into_three_type_dropdowns():
+    groups, counts = _group_view(
+        recruits=[_ticket(1, _console_name="fwa-1-candidate"), _ticket(2, _console_name="main-2-candidate")],
+        account=[_ticket(3, ticket_type="account", _console_name="account-3-ann")],
+        staff=[_ticket(4, ticket_type="staff", _console_name="staff-4-bo"),
+               _ticket(5, ticket_type="staff", _console_name="👻staff-5-cy")],
+    )
+    view = console.build_hub_actions(groups, counts=counts, total=5)
+    selects = _selects(view)
+    assert [s.placeholder for s in selects] == [
+        "New recruits (2 open)", "Add account (1 open)", "Staff (2 open)",
+    ]
+    assert [s.custom_id for s in selects] == [
+        "ticket_v2_hub_open:recruits", "ticket_v2_hub_open:account", "ticket_v2_hub_open:staff",
+    ]
+    assert not any(s.is_disabled for s in selects)
+    recruits, account, staff = selects
+    assert [o.value for o in recruits.options] == ["ticket_1001", "ticket_1002"]
+    assert [str(o.emoji) for o in recruits.options] == ["💎", "🏆"]
+    assert [o.label for o in recruits.options] == ["fwa-1-candidate", "main-2-candidate"]
+    assert [str(o.emoji) for o in account.options] == ["➕"]
+    assert [str(o.emoji) for o in staff.options] == ["💬", "💬"]
+    assert [o.label for o in staff.options] == ["staff-4-bo", "👻staff-5-cy"]
+    assert all(len(o.description) <= 100 for s in selects for o in s.options)
+    assert "Staff" in staff.options[0].description
     nodes = _nodes(view)
-    assert sum(node.get("type") == hikari.ComponentType.TEXT_SELECT_MENU for node in nodes) == 3
-    assert any(str(node.get("content", "")).startswith("Page 7/10 · **30 open tickets** · Oldest first") for node in nodes)
-    assert len([node for node in nodes if str(node.get("custom_id", "")).startswith("ticket_v2_hub_details:")]) == 3
-    assert len([node for node in nodes if node.get("url")]) == 6
+    assert any(node.get("content") == "## Open tickets" for node in nodes)
+    assert any("**5 open tickets** · Oldest first" in str(node.get("content", "")) for node in nodes)
     _assert_component_limits(view)
+
+
+def test_ticket_command_option_label_falls_back_to_the_readable_ticket_label():
+    groups, counts = _group_view(staff=[_ticket(4, ticket_type="staff", username="Bo")])
+    (_, _, staff) = _selects(console.build_hub_actions(groups, counts=counts, total=1))
+    assert staff.options[0].label == "Staff #4 · Bo"
+
+
+def test_ticket_command_caps_each_select_at_25_and_says_so():
+    groups, counts = _group_view(
+        recruits=[_ticket(n, _console_name=f"fwa-{n}-x") for n in range(1, 26)],
+    )
+    counts["recruits"] = 40
+    view = console.build_hub_actions(groups, counts=counts, total=40)
+    recruits = _selects(view)[0]
+    assert len(recruits.options) == 25
+    assert recruits.placeholder == "New recruits (40 open) · 25 shown"
+    exact = console.build_hub_actions(groups, counts={**counts, "recruits": 25}, total=25)
+    assert _selects(exact)[0].placeholder == "New recruits (25 open)"
+    _assert_component_limits(view)
+
+
+def test_ticket_command_empty_type_is_one_disabled_none_option():
+    groups, counts = _group_view(staff=[_ticket(4, ticket_type="staff", _console_name="staff-4-bo")])
+    view = console.build_hub_actions(groups, counts=counts, total=1)
+    recruits, account, staff = _selects(view)
+    for empty in (recruits, account):
+        assert empty.is_disabled is True
+        assert [(o.label, o.value) for o in empty.options] == [("No open tickets", "none")]
+    assert recruits.placeholder == "New recruits (0 open)"
+    assert staff.is_disabled is False
+    _assert_component_limits(view)
+
+
+def test_ticket_command_worst_case_stays_within_component_limit():
+    groups = {
+        "recruits": [_ticket(n, _console_name=f"fwa-{n}-x") for n in range(1, 26)],
+        "account": [_ticket(n, ticket_type="account", _console_name=f"account-{n}-x") for n in range(1, 26)],
+        "staff": [_ticket(n, ticket_type="staff", _console_name=f"staff-{n}-x") for n in range(1, 26)],
+    }
+    view = console.build_hub_actions(groups, counts={k: 99 for k in groups}, total=297, total_tickets=5000)
+    assert len(_component_nodes(view)) <= 40
+    _assert_component_limits(view)
+
+
+def test_ticket_command_drops_per_ticket_controls_and_paging():
+    groups, counts = _group_view(recruits=[_ticket(1, _console_name="fwa-1-x")])
+    view = console.build_hub_actions(groups, counts=counts, total=1)
+    ids = [str(n.get("custom_id", "")) for n in _nodes(view)]
+    assert not [i for i in ids if i.startswith(("ticket_v2_hub_details:", "ticket_v2_hub_closure:"))]
+    assert "ticket_v2_hub_page:previous" not in ids and "ticket_v2_hub_page:next" not in ids
+    assert "ticket_v2_hub_page:refresh" in ids
+    assert not [n for n in _nodes(view) if n.get("url")]
+
+
+def test_empty_actions_retains_tools_without_unneeded_navigation():
+    groups, counts = _group_view()
+    view = console.build_hub_actions(groups, counts=counts, total=0)
+    nodes = _nodes(view)
+    buttons = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON]
+    assert [button["label"] for button in buttons] == ["Find Ticket", "Browse Tickets", "Member History", "Flags", "Refresh", "Create for Recruit", "Admin Settings"]
+    _assert_component_limits(view)
+
+
+def test_ticket_command_tools_stay_grouped_below_the_dropdowns():
+    groups, counts = _group_view(recruits=[_ticket(1, _console_name="fwa-1-candidate")])
+    view = console.build_hub_actions(groups, counts=counts, total=1)
+    children = view[0].components
+    rows = [child for child in children if child.type == hikari.ComponentType.ACTION_ROW]
+    assert [[getattr(c, "label", getattr(c, "placeholder", None)) for c in row.components] for row in rows] == [
+        ["New recruits (1 open)"], ["Add account (0 open)"], ["Staff (0 open)"],
+        ["Find Ticket", "Browse Tickets", "Member History", "Flags", "Refresh"],
+        ["Create for Recruit", "Admin Settings"],
+    ]
+    tools_index = next(i for i, child in enumerate(children) if getattr(child, "content", "") == "### Console tools")
+    assert children[tools_index - 1].type == hikari.ComponentType.SEPARATOR
+    _assert_component_limits(view)
+
+
+def _open_ctx(value, *, message_id=77):
+    followups = []
+
+    class Interaction:
+        values = (value,) if value is not None else ()
+        message = SimpleNamespace(id=message_id, channel_id=55)
+
+        async def execute(self, **kwargs):
+            followups.append(kwargs)
+
+    ctx = SimpleNamespace(
+        interaction=Interaction(), user=SimpleNamespace(id=22), member=object(), guild_id=33,
+    )
+    return ctx, followups
+
+
+def _patch_open(monkeypatch, *, doc, can_handle=True, recruiter=True):
+    finds = []
+
+    async def hub_state(_mongo):
+        return {"guild_id": 33, "channel_id": 55, "actions_message_id": 77}
+
+    async def is_recruiter(_member, _mongo):
+        return recruiter
+
+    async def handle(_member, _mongo, ticket_type):
+        finds.append(("can_handle", ticket_type))
+        return can_handle
+
+    async def find_one(_mongo, query):
+        finds.append(("find", query["_id"]))
+        return doc
+
+    async def detail(_mongo, ticket_doc, **_kwargs):
+        return ["PRIVATE " + ticket_doc["_id"]]
+
+    monkeypatch.setattr(console, "_hub_state", hub_state)
+    monkeypatch.setattr(console.perms, "is_recruiter", is_recruiter)
+    monkeypatch.setattr(console.perms, "can_handle", handle)
+    monkeypatch.setattr(console.store, "find_one", find_one)
+    monkeypatch.setattr(console, "_ticket_detail_panel", detail)
+    return finds
+
+
+def _notice_text(followup):
+    return [node.content for node in followup["components"][0].components]
+
+
+def test_ticket_command_selection_opens_private_details_for_authorized_user(monkeypatch):
+    finds = _patch_open(monkeypatch, doc=_ticket(4, ticket_type="staff"))
+    ctx, followups = _open_ctx("ticket_1004")
+    asyncio.run(console.ticket_hub_open(ctx, "staff", mongo=object()))
+    assert followups[0]["components"] == ["PRIVATE ticket_1004"]
+    assert followups[0]["flags"] & hikari.MessageFlag.EPHEMERAL
+    assert ("can_handle", "staff") in finds
+    assert len(followups) == 1
+
+
+@pytest.mark.parametrize("case", ["unauthorized", "closed", "missing"])
+def test_ticket_command_selection_refuses_with_private_notice_and_no_write(monkeypatch, case):
+    doc = {
+        "unauthorized": _ticket(4, ticket_type="staff"),
+        "closed": _ticket(4, ticket_type="staff", status="closed"),
+        "missing": None,
+    }[case]
+    _patch_open(monkeypatch, doc=doc, can_handle=case != "unauthorized")
+    writes = []
+    monkeypatch.setattr(console, "insert_state", lambda *a, **k: writes.append(a))
+    ctx, followups = _open_ctx("ticket_1004")
+    asyncio.run(console.ticket_hub_open(ctx, "staff", mongo=object()))
+    assert len(followups) == 1
+    assert _notice_text(followups[0])[0] == "## Ticket unavailable"
+    assert followups[0]["flags"] & hikari.MessageFlag.EPHEMERAL
+    assert writes == []
+
+
+@pytest.mark.parametrize("value", ["none", None, ""])
+def test_ticket_command_none_or_empty_selection_is_a_notice_without_lookup(monkeypatch, value):
+    finds = _patch_open(monkeypatch, doc=_ticket(4))
+    ctx, followups = _open_ctx(value)
+    asyncio.run(console.ticket_hub_open(ctx, "recruits", mongo=object()))
+    assert finds == []
+    assert _notice_text(followups[0])[0] == "## No open tickets"
+
+
+def test_ticket_command_handlers_are_private_and_old_ids_stay_registered():
+    open_action = dispatcher.registered_functions["ticket_v2_hub_open"]
+    assert open_action.no_return is True and open_action.preload_state is False
+    for old in ("ticket_v2_hub_details", "ticket_v2_hub_closure", "ticket_v2_hub_page"):
+        assert old in dispatcher.registered_functions
+
+
+@pytest.mark.parametrize("action_id", ["previous", "next", "refresh"])
+def test_old_hub_page_clicks_only_refresh(monkeypatch, action_id):
+    refreshes = []
+    updates = []
+
+    async def hub_state(_mongo):
+        return {"guild_id": 33, "channel_id": 55, "actions_message_id": 77}
+
+    async def recruiter(_member, _mongo):
+        return True
+
+    async def refresh(_bot, _mongo, **kwargs):
+        refreshes.append(kwargs)
+
+    monkeypatch.setattr(console, "_hub_state", hub_state)
+    monkeypatch.setattr(console.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(console, "request_hub_refresh", refresh)
+    mongo = SimpleNamespace(ticket_setup=SimpleNamespace(update_one=AsyncMock(side_effect=lambda *a, **k: updates.append(a))))
+    ctx, _ = _open_ctx(None)
+    asyncio.run(console.ticket_hub_page(ctx, action_id, mongo=mongo, bot=object()))
+    assert len(refreshes) == 1 and refreshes[0]["force"] is True
+    assert updates == []
+
+
+def test_hub_actions_payload_groups_open_tickets_by_type(monkeypatch):
+    docs = {
+        ("main", "fwa"): [_ticket(n) for n in range(1, 26)],
+        ("account",): [_ticket(3, ticket_type="account")],
+        ("staff",): [],
+    }
+    seen = []
+
+    async def by_types(_mongo, types, limit=25):
+        seen.append((tuple(types), limit))
+        return [dict(d) for d in docs[tuple(types)]]
+
+    async def counts(_mongo):
+        return {
+            "statuses": {"open": 45, "approved": 3},
+            "by_type": {"main": {"open": 30}, "fwa": {"open": 10}, "account": {"open": 1}, "staff": {"open": 0}},
+        }
+
+    async def names(_mongo, doc):
+        return (f"name-{doc['ticket_number']}", "x")
+
+    monkeypatch.setattr(console.store, "list_open_by_types", by_types)
+    monkeypatch.setattr(console.store, "console_counts", counts)
+    monkeypatch.setattr(console.thread_service, "thread_names_for_ticket", names)
+    view = asyncio.run(console._hub_actions_payload(object(), {}))
+    assert sorted(seen) == [(("account",), 25), (("main", "fwa"), 25), (("staff",), 25)]
+    recruits, account, staff = _selects(view)
+    assert recruits.placeholder == "New recruits (40 open) · 25 shown"
+    assert [o.label for o in recruits.options][:2] == ["name-1", "name-2"]
+    assert len(recruits.options) == 25
+    assert account.placeholder == "Add account (1 open)"
+    assert staff.is_disabled is True
 
 
 def test_hub_clan_lines_keep_closed_counts_native_when_present():
@@ -370,37 +634,6 @@ def test_hub_clan_lines_keep_closed_counts_native_when_present():
     assert any("3 closed" in content for content in contents)
     assert not any("closed / no decision" in content for content in contents)
     _assert_component_limits(view)
-
-
-def test_empty_actions_retains_tools_without_unneeded_navigation():
-    view = console.build_hub_actions([], page=0, total=0)
-    nodes = _nodes(view)
-    buttons = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON]
-    assert [button["label"] for button in buttons] == ["Find Ticket", "Browse Tickets", "Member History", "Flags", "Refresh", "Create for Recruit", "Admin Settings"]
-    _assert_component_limits(view)
-
-
-def test_single_ticket_groups_navigation_decisions_and_console_tools():
-    view = console.build_hub_actions([_ticket(1, _console_name="fwa-1-candidate")], page=0, total=1)
-    children = view[0].components
-    rows = [child for child in children if child.type == hikari.ComponentType.ACTION_ROW]
-    assert [[getattr(button, "label", getattr(button, "placeholder", None)) for button in row.components] for row in rows] == [
-        ["View Details", "Recruit Thread", "Staff Thread"],
-        ["Closure options"],
-        ["Find Ticket", "Browse Tickets", "Member History", "Flags", "Refresh"],
-        ["Create for Recruit", "Admin Settings"],
-    ]
-    dropdown = rows[1].components[0]
-    assert [option.label for option in dropdown.options] == ["Approve", "Deny", "Close"]
-    assert dropdown.custom_id == "ticket_v2_hub_closure:ticket_1001"
-    tools_index = next(i for i, child in enumerate(children) if getattr(child, "content", "") == "### Console tools")
-    assert children[tools_index - 1].type == hikari.ComponentType.SEPARATOR
-    _assert_component_limits(view)
-
-
-def test_shared_action_name_is_escaped_and_ghost_marker_is_preserved():
-    view = console.build_hub_actions([_ticket(1, _console_name="👻fwa-809-akl_07")], page=0, total=1)
-    assert any(node.get("content") == "### 👻fwa-809-akl\\_07" for node in _nodes(view))
 
 
 def test_search_worst_case_uses_exact_safe_budget_and_unknown_status_fallback():
@@ -685,6 +918,7 @@ def test_browse_status_filter_updates_state_and_resets_page(monkeypatch):
         return ["RENDERED"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_session", render)
 
@@ -730,6 +964,7 @@ def test_browse_flag_filter_updates_state_and_preserves_other_filters(monkeypatc
         return ["RENDERED"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_session", render)
 
@@ -778,6 +1013,8 @@ def test_browse_filter_re_renders_unchanged_panel_when_not_recruiter(monkeypatch
         return ["UNCHANGED"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", denied)
+    monkeypatch.setattr(console.perms, "is_ticket_staff", denied)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_render_browse_session", render)
 
     result = asyncio.run(console.ticket_console_browse_type(
@@ -824,6 +1061,7 @@ def test_browse_page_button_advances_and_retreats_with_a_floor_of_one(monkeypatc
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_session", render)
 
@@ -875,6 +1113,7 @@ def test_browse_pick_opens_the_ticket_detail_panel(monkeypatch):
         return ["DETAIL"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store, "find_one", find_one)
     monkeypatch.setattr(console, "_ticket_detail_panel", detail)
 
@@ -926,6 +1165,7 @@ def test_browse_button_opens_a_fresh_ephemeral_panel(monkeypatch):
         return ["PANEL"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_create_browse_state", create_state)
     monkeypatch.setattr(console, "_render_browse_session", render)
 
@@ -1050,6 +1290,7 @@ def test_browse_period_custom_choice_enters_custom_mode(monkeypatch):
         return ["CUSTOM_PANEL"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "ticket_console_browse_custom", custom_entry)
 
     result = asyncio.run(console.ticket_console_browse_period(
@@ -1081,6 +1322,7 @@ def test_browse_custom_entry_seeds_state_defaults_and_renders_the_editor(monkeyp
         return ["EDITOR"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
     monkeypatch.setattr(console, "utcnow", lambda: datetime(2026, 9, 9, tzinfo=timezone.utc))
@@ -1123,6 +1365,7 @@ def test_browse_custom_entry_reuses_an_already_applied_range_when_reopened(monke
         return ["EDITOR"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
 
@@ -1160,6 +1403,7 @@ def test_browse_custom_from_year_select_updates_one_field_and_stays_in_the_edito
         return ["EDITOR"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
 
@@ -1197,6 +1441,7 @@ def test_browse_custom_apply_rejects_from_after_to_with_an_inline_error(monkeypa
         return ["ERROR_VIEW"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
 
@@ -1237,6 +1482,7 @@ def test_browse_custom_apply_commits_the_range_resets_page_and_shows_the_placeho
         return [_ticket(index) for index in range(1, 4)]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "update_state", update)
     monkeypatch.setattr(console.store, "browse_count", browse_count)
     monkeypatch.setattr(console.store, "browse", browse)
@@ -1271,6 +1517,7 @@ def test_browse_custom_cancel_restores_the_previous_period(monkeypatch):
         return ["LIST"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_render_browse_session", render)
 
     result = asyncio.run(console.ticket_console_browse_custom_cancel(
@@ -1599,6 +1846,7 @@ def test_flag_modal_openers_acknowledge_with_modal_before_state_or_permission(
 
     monkeypatch.setattr(dispatcher, "get_state", forbidden)
     monkeypatch.setattr(console.perms, "is_recruiter", forbidden)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
 
     asyncio.run(dispatcher._dispatch(Context(
         f"ticket_v2_flag_set:{'a' * 32}|blacklisted"
@@ -1682,6 +1930,7 @@ def test_flag_set_submit_uses_latest_ticket_discord_id_and_all_37_tags(
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store, "find_one", latest)
     monkeypatch.setattr(
         console.flag_store, "set_flag_if_current_authorized", save
@@ -1766,6 +2015,7 @@ def test_flag_remove_submit_resolves_selection_slot_and_audits_reason(monkeypatc
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store, "find_one", latest)
     monkeypatch.setattr(console.flag_store, "list_for_identity", matching)
     monkeypatch.setattr(console.flag_store, "deactivate_flag_authorized", remove)
@@ -1814,6 +2064,7 @@ def test_flag_manager_state_denies_wrong_owner_guild_or_recruiter(
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", permission)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     data, error = asyncio.run(console._authorized_flag_manager_state(
         Context(), object(), "manager",
     ))
@@ -2295,6 +2546,7 @@ def test_ticket_search_and_deny_openers_send_modals_without_prerequisite_work(
 
     monkeypatch.setattr(console, "get_state", forbidden)
     monkeypatch.setattr(console.perms, "is_recruiter", forbidden)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_create_search_state", forbidden)
 
     ctx = Context()
@@ -2347,6 +2599,7 @@ def test_public_picker_creates_ephemeral_followup_and_leaves_hub_byte_exact(monk
         return ["PRIVATE"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store, "find_one", find_one)
     monkeypatch.setattr(console, "_ticket_detail_panel", detail)
 
@@ -2409,6 +2662,7 @@ def test_search_again_submit_defers_before_permission_and_mongo_work(monkeypatch
         return ["RESULT"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console, "_create_search_state", state)
     monkeypatch.setattr(console, "_render_search_session", render)
@@ -2453,6 +2707,7 @@ def test_root_find_submit_acknowledges_before_creating_owner_bound_state(monkeyp
         return ["RESULT"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_create_search_state", state)
     monkeypatch.setattr(console, "_render_search_session", render)
 
@@ -2502,6 +2757,8 @@ def test_status_filter_re_renders_the_panel_instead_of_blanking_it_when_not_recr
         return ["UNCHANGED PANEL"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", denied)
+    monkeypatch.setattr(console.perms, "is_ticket_staff", denied)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_render_search_session", render)
 
     result = asyncio.run(console.ticket_console_status(
@@ -2612,6 +2869,7 @@ def test_console_deny_submit_authorizes_before_loading_private_state(monkeypatch
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.resolve, "deny_ticket", deny)
 
     asyncio.run(console.ticket_console_deny_submit(
@@ -2682,6 +2940,7 @@ def test_console_deny_submit_already_decided_mentions_and_suppresses_pings(monke
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console, "insert_state", insert)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.resolve, "deny_ticket", deny)
 
     asyncio.run(console.ticket_console_deny_submit(
@@ -2711,6 +2970,7 @@ def test_console_approve_opens_a_confirm_step_before_touching_anything(monkeypat
         return copy.deepcopy(ticket)
 
     monkeypatch.setattr(console.store, "find_one", find)
+    monkeypatch.setattr(console.perms, "can_handle", AsyncMock(return_value=True))
 
     ctx = SimpleNamespace(user=SimpleNamespace(id=22, username="Recruiter"))
 
@@ -2748,6 +3008,7 @@ def test_console_approve_confirm_step_completes_the_approval(monkeypatch):
         return copy.deepcopy(ticket)
 
     monkeypatch.setattr(console.store, "find_one", find)
+    monkeypatch.setattr(console.perms, "can_handle", AsyncMock(return_value=True))
 
     ctx = SimpleNamespace(
         user=SimpleNamespace(id=22, username="Recruiter"),
@@ -2895,6 +3156,7 @@ def test_console_deny_submit_shows_in_progress_notice_before_calling_deny_ticket
 
     monkeypatch.setattr(console, "get_state", get)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.resolve, "deny_ticket", deny)
     monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
 
@@ -3036,6 +3298,7 @@ def test_direct_find_command_defers_before_permission_and_search_work(monkeypatc
         return ["RESULT"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console, "_create_search_state", state)
     monkeypatch.setattr(console, "_render_search_session", render)
 
@@ -4399,7 +4662,7 @@ def test_deleted_hub_message_is_recreated_and_new_id_is_saved(monkeypatch):
     settle_query, settle_update = collection.updates[-1]
     assert "desired_revision" in settle_query
     assert settle_update["$set"]["force_pending"] is False
-    assert settle_update["$set"]["chart_signature"] == "sig:page=0"
+    assert settle_update["$set"]["chart_signature"] == "sig"
 
 
 def test_orphaned_hub_is_reused_after_create_checkpoint_loss(monkeypatch):
@@ -4598,7 +4861,7 @@ def test_hub_skips_render_when_chart_signature_is_unchanged_and_not_forced(
         object(),
         {
             "guild_id": 321, "channel_id": 123, "message_id": 456,
-            "actions_message_id": 457, "force_pending": False, "chart_signature": signature + ":page=0",
+            "actions_message_id": 457, "force_pending": False, "chart_signature": signature,
         },
     ))
 
@@ -4899,6 +5162,7 @@ def test_shared_deny_modal_never_updates_origin_and_uses_normal_cas(monkeypatch)
 
     monkeypatch.setattr(console, "_hub_state", hub_state)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store, "find_one", find)
     monkeypatch.setattr(console.resolve, "deny_ticket", deny)
     asyncio.run(
@@ -4929,6 +5193,7 @@ def test_shared_ticket_rejects_copied_source_before_reading_ticket(monkeypatch):
     monkeypatch.setattr(console, "_hub_state", state)
     monkeypatch.setattr(console.store, "find_one", forbidden)
     monkeypatch.setattr(console.perms, "is_recruiter", forbidden)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     assert asyncio.run(console._shared_ticket(ctx, object(), "ticket_1")) is None
 
 
@@ -5002,16 +5267,12 @@ def test_readonly_and_actions_orphans_recover_by_distinct_stable_component_ids()
     )
 
 
-def test_open_page_can_reach_rows_after_25_with_stable_sort(monkeypatch):
+def test_open_by_types_filters_types_oldest_first_and_caps_at_25():
     calls = []
 
     class Cursor:
         def sort(self, order):
             calls.append(("sort", order))
-            return self
-
-        def skip(self, offset):
-            calls.append(("skip", offset))
             return self
 
         def limit(self, amount):
@@ -5026,17 +5287,14 @@ def test_open_page_can_reach_rows_after_25_with_stable_sort(monkeypatch):
             calls.append(("find", query))
             return Cursor()
 
-    assert (
-        asyncio.run(
-            console.store.list_open_page(
-                SimpleNamespace(tickets=Collection()), offset=28, limit=4
-            )
-        )
-        == []
-    )
-    assert ("skip", 28) in calls
+    mongo = SimpleNamespace(tickets=Collection())
+    assert asyncio.run(console.store.list_open_by_types(mongo, ("main", "fwa"), limit=99)) == []
+    query = next(call[1] for call in calls if call[0] == "find")
+    assert query["status"] == "open"
+    assert query["ticket_type"] == {"$in": ["main", "fwa"]}
+    assert all(query[key] == value for key, value in console.store.RUNTIME_FILTER.items())
     assert ("sort", [("created_at", 1), ("_id", 1)]) in calls
-    assert ("limit", 4) in calls
+    assert ("limit", 25) in calls
 
 
 def test_paired_publish_refuses_writes_after_lease_owner_changed(monkeypatch):

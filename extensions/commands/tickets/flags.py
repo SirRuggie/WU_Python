@@ -108,11 +108,13 @@ async def flag_identity_from_context(ctx, mongo, discord_ids, player_tags):
     """Infer only when neither identity option was supplied; never mix targets."""
     if discord_ids or player_tags:
         return discord_ids, player_tags
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return (), ()  # The authoritative write authorization returns the denial.
     document = await store.find_by_location(mongo, ctx.channel_id)
     if not document or int(document.get("guild_id") or 0) != int(ctx.guild_id or 0):
         raise ValueError("Run this command in the recruit's ticket or staff thread, or supply discord-ids or player-tags.")
+    if not await perms.can_handle(getattr(ctx, "member", None), mongo, document.get("ticket_type")):
+        raise ValueError("You cannot manage flags from this request type.")
     applicant = document.get("user_id")
     if not applicant:
         raise ValueError("This ticket has no applicant identity. Supply discord-ids or player-tags.")

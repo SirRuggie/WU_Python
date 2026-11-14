@@ -8,6 +8,12 @@ from .manage_bridge import GUILD_ID, API
 from .manage_content import fingerprint
 
 
+def _bound(key):
+    """Apply and Warrior Desk posts are bound to ticket intake; Ticket settings posts them."""
+    from extensions.commands import content
+    return key in content.BOUND_PANELS
+
+
 def snapshot(components):
     """Equivalent snapshot for Discord JSON and Hikari component objects."""
     from extensions.commands import content
@@ -80,10 +86,10 @@ async def page(request):
             raise web.HTTPForbidden(text='The existing post is not in this server.')
         existing_channel = '#' + existing.get('name', str(data['target']['channel_id']))
     actions = []
-    for action, label, enabled in [('send','Send new post',key != 'apply' and data['destination']), ('update','Update existing post',data['target'])]:
+    for action, label, enabled in [('send','Send new post',not _bound(key) and data['destination']), ('update','Update existing post',data['target'])]:
         if enabled:
             actions.append({'id':action,'label':label,'confirm':f'{label} in Discord? Review the channel and saved message above first.', 'endpoint':API + f'/manage/publish/{key}/{action}'})
-    return web.json_response({'id':'publish--'+key,'label':'Publish '+content.DOCUMENTS[key].label,'group':'Welcome messages','description':'Publish the saved message to Discord.', 'posting_channel':channel_name, 'existing_channel':existing_channel, 'destination_editor':API + '/manage/content/destination--' + key if key != 'apply' else None, 'target_url':f"https://discord.com/channels/{GUILD_ID}/{data['target']['channel_id']}/{data['target']['message_id']}" if data['target'] else None, 'revision':fingerprint(data),'fields':fields,'readonly':True,'actions':actions})
+    return web.json_response({'id':'publish--'+key,'label':'Publish '+content.DOCUMENTS[key].label,'group':'Welcome messages','description':'Publish the saved message to Discord.', 'posting_channel':channel_name, 'existing_channel':existing_channel, 'destination_editor':API + '/manage/content/destination--' + key if not _bound(key) else None, 'target_url':f"https://discord.com/channels/{GUILD_ID}/{data['target']['channel_id']}/{data['target']['message_id']}" if data['target'] else None, 'revision':fingerprint(data),'fields':fields,'readonly':True,'actions':actions})
 
 
 async def queue(request):
@@ -97,8 +103,8 @@ async def queue(request):
     body = await request.json()
     if not isinstance(body, dict) or body.get('revision') != fingerprint(data):
         raise web.HTTPConflict(text='The message, post, or channel changed. Reload and review before publishing.')
-    if action == 'send' and (key == 'apply' or not data['destination']):
-        raise web.HTTPBadRequest(text="Select a posting channel. Apply posts must be created through ticket setup.")
+    if action == 'send' and (_bound(key) or not data['destination']):
+        raise web.HTTPBadRequest(text="Select a posting channel. Apply and Warrior Desk posts are created in Ticket settings.")
     if action == 'update' and not data['target']:
         raise web.HTTPBadRequest(text='There is no saved post to update')
     return await queue_action(request, 'recruit', action, data, fingerprint(data))
@@ -124,8 +130,8 @@ async def publish(bot, mongo, row, ctx):
         if snapshot(existing.components) != values['post']:
             raise ValueError('The Discord post changed. Reload and review before sending.')
     if action == 'send':
-        if key == 'apply' or not destination:
-            raise ValueError("Select a posting channel. Use ticket setup to create Apply posts.")
+        if _bound(key) or not destination:
+            raise ValueError("Select a posting channel. Apply and Warrior Desk posts are created in Ticket settings.")
         channel = await bot.rest.fetch_channel(destination)
         if int(getattr(channel,'guild_id',0)) != GUILD_ID or channel.type not in content._DESTINATION_TYPES:
             raise ValueError("Select a text or announcement channel in this server.")

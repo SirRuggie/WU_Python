@@ -58,7 +58,7 @@ def target_info(value):
         try: name=command_name(unquote(path.removeprefix('/manage/text-commands/')))
         except ValueError: raise web.HTTPBadRequest(text="Select a valid text command.") from None
         return 'commands','text_commands',{'name':name},base+'text-commands/'+name
-    match=re.fullmatch(r'/manage/ticket-settings/(timers|main|fwa|viewers)',path)
+    match=re.fullmatch(r'/manage/ticket-settings/(timers|main|fwa|viewers|desk)',path)
     if match:return 'tickets','ticket_settings',{'part':match[1]},base+'ticket-settings/'+match[1]
     raise web.HTTPBadRequest(text='History is not available for this action.')
 

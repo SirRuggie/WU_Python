@@ -23,6 +23,7 @@ from utils.mongo import MongoClient
 NO_MENTIONS = dict(user_mentions=False, role_mentions=False, mentions_everyone=False)
 FIELDS = tuple(f'{kind}_{key}' for kind in ('main', 'fwa') for key in
                ('candidate_parent', 'staff_parent', 'thread_recruiter_role')) + (
+               'desk_channel_id', 'desk_staff_parent', 'account_thread_recruiter_role', 'staff_thread_recruiter_role',
                'ticket_staff_viewer_role_ids', 'ticket_inactivity_minutes', 'ticket_archive_quiet_days')
 PANEL_LOCK = asyncio.Lock()
 
@@ -153,7 +154,7 @@ def page(data, notice=''):
                 [button(token, 'repair_entry', 'Restore application message')])
         section('Staff console', f'**Channel:** {channel(data.get("console_channel"))}\nRefresh or recreate the staff ticket console. Select its current channel, or select a channel for first-time setup. This cannot move an existing console. Selecting Restore applies immediately.',
                 [Row(components=[Select(type=hikari.ComponentType.CHANNEL_SELECT_MENU, custom_id=f'ticket_settings:{token}:select:console_channel', placeholder='Select the staff console channel',min_values=1,max_values=1)]),
-                 button(token, 'repair_console', 'Restore staff console')])
+                 button(token, 'repair_console', 'Post Ticket Command')])
     if view != 'home':
         body.append(Separator())
         if view in ('main', 'fwa', 'access'):
@@ -184,15 +185,60 @@ async def open_dashboard(ctx,mongo,*,manage_token=None,deferred=False):
 
 
 async def validate(mongo,rest,cfg,gid):
+    """Raise on a bad setup; return the Warrior Desk result line."""
     me=await rest.fetch_my_user()
     for kind in ('main','fwa'):
         parents=thread_service.parents_from_config(cfg,gid,kind)
         await thread_service.validate_thread_parents(rest,parents,bot_user_id=int(me.id))
+    desk=[]
+    for kind in ('account','staff'):
+        if not (cfg.get('desk_channel_id') and cfg.get(f'{kind}_thread_recruiter_role')):
+            continue
+        parents=thread_service.parents_from_config(cfg,gid,kind)
+        await thread_service.validate_thread_parents(rest,parents,bot_user_id=int(me.id))
+        desk.append(kind)
     state=await ticket_runtime.get_rollout(mongo)
     if not state.valid or not state.thread_intake or state.thread_intake.guild_id!=gid:
         raise ValueError('The active entry-panel binding is unavailable. Nothing was saved.')
     if any(int(cfg.get(f'{kind}_candidate_parent') or 0)!=state.thread_intake.channel_id for kind in ('main','fwa')):
         raise ValueError('Candidate channels must match the active entry panel. Moving intake requires a coordinated binding change; nothing was saved.')
+    return 'Warrior Desk passed.' if desk else 'Warrior Desk not set.'
+
+
+async def repair_desk_entry(ctx,mongo,bot):
+    async with PANEL_LOCK:
+        cfg=await mongo.ticket_setup.find_one({'_id':'config'}) or {}
+        channel_id=int(cfg.get('desk_channel_id') or 0)
+        if not channel_id:raise ValueError('The Warrior Desk channel is not set. Nothing was posted.')
+        await validate(mongo,bot.rest,cfg,guild(ctx))
+        state=await ticket_runtime.get_rollout(mongo)
+        source=state.desk_intake
+        payload=await setup.saved_warrior_desk_embed(mongo,guild(ctx))
+        me=await bot.rest.fetch_my_user()
+        old=None
+        if source and source.channel_id==channel_id and source.guild_id==guild(ctx):
+            try:
+                old=await bot.rest.fetch_message(source.channel_id,source.message_id)
+            except hikari.NotFoundError:
+                old=None
+        if old:
+            if int(old.author.id)!=int(me.id):raise ValueError('The bound Warrior Desk message is not owned by this bot.')
+            await bot.rest.edit_message(source.channel_id,source.message_id,components=payload,**NO_MENTIONS)
+            return 'Warrior Desk panel updated.'
+        new=await bot.rest.create_message(channel_id,components=payload,**NO_MENTIONS)
+        try:
+            await ticket_runtime.configure_rollout(mongo,expected_revision=state.revision,actor_id=int(ctx.user.id),
+                legacy_intake=state.legacy_intake,thread_intake=state.thread_intake,
+                desk_intake=ticket_runtime.IntakeSource(guild(ctx),channel_id,int(new.id)),
+                pilot={'intake':{'guild_id':state.pilot_intake.guild_id,'channel_id':state.pilot_intake.channel_id,'message_id':state.pilot_intake.message_id},'user_ids':list(state.pilot_user_ids),'role_ids':list(state.pilot_role_ids),'ticket_types':list(state.pilot_ticket_types)})
+        except Exception:
+            try:
+                await bot.rest.delete_message(channel_id,new.id)
+            except Exception as cleanup_error:
+                print(f"[Tickets] desk_panel_cleanup_failed channel={channel_id} message={new.id} error={type(cleanup_error).__name__}")
+                raise ValueError('The Warrior Desk panel was posted but could not be bound, and the new post could not be removed. Delete it by hand and run repair again.')
+            raise
+        return 'Warrior Desk panel posted and bound.'
 
 
 async def save(ctx,mongo,rest,data):
@@ -210,7 +256,7 @@ async def save(ctx,mongo,rest,data):
         if guild(ctx)==GUILD_ID:
             from cwl_web.change_history import begin,finish
             from cwl_web.manage_tickets import history_values
-            for part in ('timers','main','fwa','viewers'):
+            for part in ('timers','main','fwa','viewers','desk'):
                 before=history_values(baseline,part)
                 if set(before).intersection(changes):
                     token=await begin(mongo,'/api/cwl/manage/ticket-settings/'+part,{'user_id':str(ctx.user.id)},before,'discord_edit')
@@ -273,9 +319,9 @@ async def action(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,bot:h
             notice=await save(ctx,mongo,bot.rest,data);data=await fresh(ctx,mongo,data)
         elif op=='validate':
             cfg=await mongo.ticket_setup.find_one({'_id':'config'}) or {}
-            await validate(mongo,bot.rest,cfg,guild(ctx))
+            desk=await validate(mongo,bot.rest,cfg,guild(ctx))
             from extensions.commands import tickets
-            notice='Main and FWA permissions passed. '+('Storage indexes healthy.' if not tickets.startup_index_errors else 'Storage index issues: '+', '.join(tickets.startup_index_errors))
+            notice='Main and FWA permissions passed. '+desk+' '+('Storage indexes healthy.' if not tickets.startup_index_errors else 'Storage index issues: '+', '.join(tickets.startup_index_errors))
         elif op=='repair_entry':notice=await repair_entry(ctx,mongo,bot)
         elif op=='repair_console':
             await console.configure_hub_here(bot,mongo,guild_id=guild(ctx),channel_id=int(data.get('console_channel') or 0));notice='Recruiter console saved and repaired.'

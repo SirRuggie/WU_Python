@@ -10,11 +10,12 @@ from hikari.impl import (
 )
 
 from extensions.commands import ticket_runtime
-from . import perms, resolve, store, testing_service
+from . import perms, resolve, schema, store, testing_service
 
 
 def components(ticket, kind, *, staff=False):
     closing = kind == "close"
+    desk = ticket.get("ticket_type") in schema.DESK_TICKET_TYPES
     title = "📁 Ticket closed" if closing else "🆕 Ticket reopened"
     reason = (
         ticket.get("closure_reason" if closing else "reopen_reason")
@@ -25,6 +26,20 @@ def components(ticket, kind, *, staff=False):
         if closing
         else "Recruitment staff reopened this application. You can continue the conversation here."
     )
+    if desk:
+        title = "📁 Request closed" if closing else "🆕 Request reopened"
+        text = (
+            "Staff closed this request. They did not approve or deny it."
+            if closing
+            else "Staff reopened this request. You can continue the conversation here."
+        )
+        if ticket.get("ticket_type") == "staff":
+            title = "✅ Done" if closing else title
+            text = (
+                "Staff marked this request as done."
+                if closing
+                else "Staff reopened this request. You can continue the conversation here."
+            )
     return [
         Container(
             accent_color=hikari.Color(0x808080),
@@ -38,7 +53,7 @@ def components(ticket, kind, *, staff=False):
                     else []
                 ),
                 Text(
-                    content=f"**Recruit:** <@{ticket['user_id']}>\n**Handled by:** <@{ticket['handled_by']}>\n**Time:** {resolve.ts(ticket['handled_at'], 'F')}"
+                    content=f"**{'Member' if desk else 'Recruit'}:** <@{ticket['user_id']}>\n**Handled by:** <@{ticket['handled_by']}>\n**Time:** {resolve.ts(ticket['handled_at'], 'F')}"
                 ),
                 Text(content=f"{text}\n\n**Reason:** {reason}"),
             ],
@@ -108,7 +123,7 @@ async def change(
     expected_activity_revision=None,
     expected_inactivity_token=None,
 ):
-    if not await perms.is_recruiter(member, mongo):
+    if not await perms.is_ticket_staff(member, mongo):
         return store.Transition(
             store.UNAUTHORIZED, None, "Recruiter permission required."
         )
@@ -124,6 +139,10 @@ async def change(
         return store.Transition(store.MISSING, None)
     if int(ticket["guild_id"]) != int(member.guild_id):
         return store.Transition(store.UNAUTHORIZED, ticket, "Use this ticket’s server.")
+    if not await perms.can_handle(member, mongo, ticket.get("ticket_type")):
+        return store.Transition(
+            store.UNAUTHORIZED, None, "Permission required for this request type."
+        )
     source = "open" if kind == "close" else "closed"
     if ticket.get("status") != source:
         return store.Transition(
