@@ -87,7 +87,7 @@ fs.mkdirSync(out, { recursive: true });
       await p.getByRole("button", { name: "Cancel", exact: true }).click();
       if (width <= 800) await p.locator('.clan-section-toggle').filter({hasText:'War reminders'}).click();
       else await p.getByRole('tab', {name:'War reminders', exact:true}).click();
-      await p.getByText("Preview & send a test", { exact: true }).click();
+      await p.getByText("Test & history", { exact: true }).click();
       await p
         .getByText("Sample war reminder · 1h left", { exact: true })
         .waitFor();
@@ -99,7 +99,10 @@ fs.mkdirSync(out, { recursive: true });
         .click();
       await snap("test-confirm");
       await p.getByRole("button", { name: "Cancel", exact: true }).click();
-      await p.getByRole("button", { name: "Reminders", exact: true }).click();
+      await p
+        .getByRole("button", { name: "War reminders", exact: true })
+        .first()
+        .click();
       await p.locator(".reminder-overview").waitFor();
       await snap("reminders");
       await p.getByRole("button", { name: "History", exact: true }).click();

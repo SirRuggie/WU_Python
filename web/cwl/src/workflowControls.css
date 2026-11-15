@@ -150,7 +150,7 @@
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-regular);
 }
-.shell :is(.overview-filters, .clan-category-filters, .search-kind-filters) {
+.shell :is(.clan-category-filters, .search-kind-filters) {
   width: fit-content;
   max-width: 100%;
   margin: var(--wu-space-3) 0;

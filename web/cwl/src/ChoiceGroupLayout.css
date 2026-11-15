@@ -59,11 +59,7 @@
 
 /* These existing selected counts were gold before pattern adoption. */
 .shell
-  :is(
-    .clan-category-filters,
-    .overview-filters,
-    .return-clan-type
-  ).filter-chips--flow
+  :is(.clan-category-filters, .return-clan-type).filter-chips--flow
   > button[aria-pressed="true"]
   > small {
   color: inherit;

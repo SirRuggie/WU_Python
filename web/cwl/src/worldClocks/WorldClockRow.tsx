@@ -3,6 +3,7 @@ import { Ban } from "lucide-react";
 import { api, ApiError } from "../api";
 import ConfirmDialog from "../ConfirmDialog";
 import { Button } from "../rosterUi/primitives";
+import Switch from "../rosterUi/Switch";
 import SearchPicker from "../SearchPicker";
 import ClockFields from "./ClockFields";
 import {
@@ -212,20 +213,13 @@ export default function WorldClockRow({
             </p>
           )}
         </div>
-        <label className={`world-clock-switch${problem ? " is-problem" : ""}`}>
-          <input
-            type="checkbox"
-            role="switch"
-            checked={enabled}
-            disabled={switchBusy}
-            aria-label={`Update ${clock.name_now || clock.zone}`}
-            onChange={(event) => void toggle(event.target.checked)}
-          />
-          <span className="world-clock-switch-track" aria-hidden="true" />
-          <span className="world-clock-switch-text">
-            {enabled ? "On" : "Off"}
-          </span>
-        </label>
+        <Switch
+          checked={enabled}
+          disabled={switchBusy}
+          problem={problem}
+          aria-label={`Update ${clock.name_now || clock.zone}`}
+          onChange={(next) => void toggle(next)}
+        />
         <Button
           className="world-clock-edit"
           aria-expanded={open}

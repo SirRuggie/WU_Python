@@ -23,12 +23,12 @@ def validate(value):
     if not isinstance(value['channel_id'], str) or (value['channel_id'] and not re.fullmatch(r'[0-9]{15,22}', value['channel_id'])):
         raise ValueError('Choose a Discord channel.')
     if value['enabled'] and not value['channel_id']:
-        raise ValueError('Choose a channel before enabling reminders.')
+        raise ValueError('Select a channel before turning reminders on.')
     minutes = value['minutes']
     if not isinstance(minutes, list) or len(minutes) > 1440 or any(type(n) is not int or not 1 <= n <= 1440 for n in minutes):
         raise ValueError('Use whole minutes from 1 to 1440 (24 hours).')
     if value['enabled'] and not minutes and not value['war_started']:
-        raise ValueError('Add a reminder time or enable the war-start notice.')
+        raise ValueError('Add a reminder time or turn on the war-start notice.')
     if value['audience'] not in ('remaining', 'zero'):
         raise ValueError('Choose players with attacks remaining or no attacks used.')
     return {**value, 'minutes': sorted(set(minutes), reverse=True)}
