@@ -1,5 +1,44 @@
 # Release and rollback history
 
+## War reminder switches — 2026-11-15 (frontend + backend)
+
+- PR [#366](https://github.com/SirRuggie/WU_Python/pull/366), merge commit
+  `8e1b57c2906ba04c9f06af14a2c31078da61e750`, local tag
+  `war-reminder-switches-366-1` (clean clone
+  `/home/ruggie/wu-release-checkouts/war-reminder-switches-366-1`). Built and
+  released by Shaka (Claude) on Ruggie's "Shaka build this and release".
+- Changes: War reminders overview and editor On/Off switches (instant save),
+  shared `rosterUi/Switch` (World clocks uses it), one filter row, editor
+  cleanup. Backend: overview rows gain `revision` (Ruggie-approved); two
+  validation messages say "Select"/"turn on". No route, schema, data, config,
+  secret or systemd change other than the normal release switch.
+- Bot not released: its only changed import, `utils/war_reminders.py`, changed
+  two strings in `validate()`, which only the web backend calls.
+- Checks: clean tagged clone vitest 2631 tests in 383 files; branch full pytest
+  8217 passed, 134 skipped; `tools/check_war_reminders.py` pass; family-clans
+  layout test pass; independent refuter ACCEPT.
+- Frontend `current`: `c678cb63…` → `8e1b57c2…`. Entry `index-C-wTAPQ6.js`.
+  All 184 manifest files match on `dash.warriorsunited.cc`.
+- Backend `release.conf` `backend/c678cb63…` → `backend/8e1b57c2…` (file diff
+  versus the old backend is only the PR's files); PID 2161731 → 2311879;
+  `/proc/<pid>/cwd` = new backend; `/api/cwl/config` 200; no tracebacks for the
+  new PID in the journal.
+- Backup `.local/war-reminder-switches-366-release-20261115T230611Z/before.sqlite3`:
+  integrity ok, all 76 tables and schema equal to live, SHA-256
+  `6b24de1babac85a4fa314066c799d28f6b08fc89fdb730832f9a24aee6e0f436`. After:
+  76 table counts and schema identical; content changed only in the automatic
+  tables `participation_sync_settings` and `participation_group_observations`
+  (see `release-automatic-fields.md`). Mongo counts not compared.
+- Smoke: anonymous HTTP (`/`, `/signup`, `/clans/reminders` 200 with the new
+  entry; `/api/cwl/auth/me` 401). Signed-in read only in Ruggie's Chrome:
+  25 overview rows, every row has a `revision`, 2 switches (both On), 23 "Set
+  up", Filters button present, no Refresh button. No switch selected, no app
+  writes, no Discord post.
+- Rollback (code only, never restore the DB): write `release.conf` back to
+  `backend/c678cb6367ec1f768320010db8b0c17a239fc933`, `systemctl --user
+  daemon-reload`, `switch-release.py c678cb6367ec1f768320010db8b0c17a239fc933`,
+  `systemctl --user restart wu-cwl-demo-web.service`.
+
 ## TH19 emoji — 2026-11-14 (frontend + backend + bot)
 
 - PR [#363](https://github.com/SirRuggie/WU_Python/pull/363), merge commit
