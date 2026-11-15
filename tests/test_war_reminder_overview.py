@@ -85,3 +85,27 @@ def test_overview_response_is_read_only_and_contains_public_fields(monkeypatch):
     assert '_id' not in body['clans'][0]['clan']
     assert body['generated_at'].endswith('+00:00')
     actor.assert_awaited_once_with(request,'clans')
+
+
+def test_overview_row_revision_matches_the_clan_read_route(monkeypatch):
+    monkeypatch.setattr(api,'require_manage',AsyncMock())
+    @asynccontextmanager
+    async def mongo(request):yield object()
+    monkeypatch.setattr(api,'mongo',mongo)
+    saved={'_id':'#P0LY',**CONFIG}
+    rows=[({'_id':'a','tag':'#P0LY','name':'Warriors'},saved,STATE,None),
+          ({'_id':'b','tag':'#NONE','name':'Unset'},None,None,None)]
+    stored={'#P0LY':saved,'#NONE':None}
+    def make_store(db):
+        return NS(family_overview=AsyncMock(return_value=rows),
+                  clan=AsyncMock(side_effect=lambda tag:next(r[0] for r in rows if r[0]['tag']==tag)),
+                  get_settings=AsyncMock(side_effect=lambda tag:stored[tag]),
+                  recent_deliveries=AsyncMock(return_value=[]),
+                  get_status=AsyncMock(return_value=None))
+    monkeypatch.setattr(api,'WarReminderStore',make_store)
+    body=json.loads(asyncio.run(api.overview(NS())).text)
+    assert all(isinstance(entry['revision'],str) and entry['revision'] for entry in body['clans'])
+    for entry in body['clans']:
+        monkeypatch.setattr(api,'tag',lambda request,value=entry['clan']['tag']:value)
+        read=json.loads(asyncio.run(api.read(NS())).text)
+        assert entry['revision']==read['revision']

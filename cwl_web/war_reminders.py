@@ -76,7 +76,7 @@ async def overview(request):
     for row, config, state, delivery in rows:
         category, label, detail = health(config, state, delivery, now)
         entries.append(dict(
-            clan=public_clan(row), settings=reminders.settings(config),
+            clan=public_clan(row), settings=reminders.settings(config), revision=revision(config),
             health=dict(category=category, label=label, detail=detail),
             checked_at=(state or {}).get('checked_at'), last_delivery=delivery,
         ))

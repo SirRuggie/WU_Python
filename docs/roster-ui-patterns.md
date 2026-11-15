@@ -296,6 +296,7 @@ computed free-space numbers.
   - Footer: `Reset` + `Show N accounts`. One line explaining OR within a section, AND across sections.
 - **Active filter chips:** removable (`Assigned ✕`) + `Clear all`, above the list.
 - **Tabs, chips and navigation items (B-6, 2026-11-11):** three patterns only; see "Dashboard choice patterns" below.
+- **Switch (`rosterUi/Switch`):** for a setting that is on or off and saves at once (World clocks, war reminders). A native checkbox with `role="switch"`, 44px hit area, On/Off text, optional visible label. The caller saves optimistically, rolls back and shows the error beside it on failure. Never use it for a value that waits for a Save button; use a checkbox there. A problem state is red (`problem`), never green. Thumb moves 150ms ease-out; none under reduced motion.
 - **Status pill:** `Draft · not published` / `Published` / `Unpublished changes`, the same height as the buttons beside it.
 - **Undo toast:** `Assigned 5 to W. U. Lazy.127 · Undo`; shows "Undo no longer available" when a later edit invalidates it. aria-live.
 

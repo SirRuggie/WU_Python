@@ -168,83 +168,6 @@
   color: var(--wu-danger);
 }
 
-/* Switch: a real checkbox with a 44px hit area. */
-
-.world-clock-switch {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--wu-space-2);
-  min-height: 44px;
-  cursor: pointer;
-  font-size: var(--wu-text-sm);
-  font-weight: var(--wu-weight-medium);
-}
-
-.world-clock-switch input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.world-clock-switch-track {
-  position: relative;
-  display: inline-block;
-  flex: none;
-  width: 44px;
-  height: 26px;
-  border: 1px solid var(--wu-border);
-  border-radius: var(--wu-radius-pill);
-  background: var(--wu-surface-soft);
-}
-
-.world-clock-switch-track::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--wu-text-muted);
-  transition: transform 150ms ease;
-}
-
-.world-clock-switch input:checked + .world-clock-switch-track {
-  border-color: var(--wu-success-border);
-  background: var(--wu-success-surface);
-}
-
-.world-clock-switch input:checked + .world-clock-switch-track::after {
-  transform: translateX(18px);
-  background: var(--wu-success);
-}
-
-/* A problem never shows a green switch (Impeccable M6). */
-.world-clock-switch.is-problem input:checked + .world-clock-switch-track {
-  border-color: var(--wu-danger-border);
-  background: var(--wu-danger-surface);
-}
-
-.world-clock-switch.is-problem
-  input:checked
-  + .world-clock-switch-track::after {
-  background: var(--wu-danger);
-}
-
-.world-clock-switch input:focus-visible + .world-clock-switch-track {
-  outline: 2px solid var(--wu-focus);
-  outline-offset: 2px;
-}
-
-.world-clock-switch input:disabled + .world-clock-switch-track {
-  opacity: 0.6;
-}
-
 /* Edit panel and shared fields */
 
 .world-clock-panel {
@@ -526,18 +449,12 @@
     padding: var(--wu-space-2);
   }
 
-  .world-clock-switch-text {
+  .world-clock-row .wu-switch-text {
     display: none;
   }
 
   .world-clock-chips {
     flex-wrap: nowrap;
     overflow-x: auto;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .world-clock-switch-track::after {
-    transition: none;
   }
 }

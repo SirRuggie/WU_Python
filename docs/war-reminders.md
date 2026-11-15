@@ -75,26 +75,50 @@ focus after selection and section navigation. Inspect a 50-player preview with
 multiple owners and unlinked accounts, including all message parts. Use mocked
 requests for this workflow review; live Discord delivery is a separate check.
 
-The routine reminder view shows configured times, channel, audience, save controls,
-and current status. Add reminder times, Preview & send a test, Delivery history,
-and How reminders work are closed disclosures by default. Preview requests only
-run while the testing section is open; closing it retains its choices and send
-receipt. During a send it stays open. Uncertain or failed recent deliveries remain
-flagged in the history summary even when its details are collapsed.
+The routine reminder view shows the Reminders switch, channel, "Who to remind",
+configured times, save controls, and current status. The switch is the shared
+`rosterUi/Switch`. It saves at once through the same `PUT` with the saved
+settings and only `enabled` changed, so it never counts as an unsaved change and
+never carries other edits. A failed save rolls it back with an inline error; a
+409 keeps the draft and shows the server message with Refresh. It stays off and
+disabled with "Select a channel first" until the saved settings have a channel.
+Add time is a closed disclosure. One closed "Test & history" disclosure holds
+Delivery history and Preview & send a test, then Copy reminder settings follows.
+Preview requests only run while Test & history is open; closing it retains its
+choices and send receipt. During a send it stays open. Uncertain or failed recent
+deliveries remain flagged in its summary even when it is closed.
 
 ## Family overview
 
-Family clans opens on Reminder overview. It shows all family clans, enabled counts,
-attention filters, channel/schedule, and the latest scheduled delivery. Search by
-clan name, tag, type, or channel. Manage reminders opens the existing clan editor;
-returning preserves filters and returns focus to that clan. Desktop uses a table;
-mobile uses labeled records. The view refreshes every 30 seconds while active.
+Family clans opens on Reminder overview: a list of clans, one row each, with
+the clan name and type, one status line (channel name, schedule, last scheduled
+delivery), the shared On/Off switch, and Edit ("Review" when the destination
+needs review; "Set up" and no switch when no channel is saved). Off rows are dimmed
+and end the schedule with "saved". A missing channel reads "Channel missing ·
+select a new one"; raw channel IDs are never shown.
+
+One tool row holds "Find a clan" (name, tag, type or channel name) and a Filters
+button. Filters opens an ActionPanel with Type and Status (All, Needs attention,
+On, Off, Not set up) with per-option counts, a draft state, and Apply/Reset.
+Applied filters show as removable chips with Clear all. "Not set up" means no
+saved channel; "Off" means a channel and disabled. Attention rows sort first.
+Edit opens the existing clan editor; returning preserves filters and returns
+focus to that clan. The view refreshes every 30 seconds while active, and a row
+with a save in flight is not overwritten by that refresh.
+
+The switch saves at once with `PUT /manage/clans/<tag>/war-reminders`, the saved
+settings with only `enabled` changed, and the row `revision`. Success replaces
+that row's settings and revision; failure rolls back with an error under the row;
+409 reloads the overview and shows the server message. A row whose health is
+"attention" shows a red switch, never green.
 
 The read-only `/manage/war-reminders/overview` route uses the same clan-management
 permission and storage owner. It batches clan/settings/status reads and aggregates
 only the newest scheduled receipt per current clan; test receipts and removed
-clans are excluded. Raw Mongo IDs and actor IDs are not exposed. Clan revisions
-are computed from the same full stored row as the existing editor.
+clans are excluded. Raw Mongo IDs and actor IDs are not exposed. Each row carries the reminder
+`revision` of its settings, computed like the editor's GET revision, also for a
+clan with no stored settings. Clan revisions are computed from the same full
+stored row as the existing editor.
 
 `utils/war_reminder_health.py` interprets stored checks. Enabled reminders whose
 checks are over three minutes old are flagged; a recent settings update gets a

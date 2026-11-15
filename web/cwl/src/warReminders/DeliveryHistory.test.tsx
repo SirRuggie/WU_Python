@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import DeliveryHistory from "./DeliveryHistory";
+import DeliveryHistory, {
+  DeliveryStatus,
+  historySummary,
+} from "./DeliveryHistory";
 import type { ReminderData } from "./types";
 const data: ReminderData = {
   settings: {
@@ -25,32 +28,44 @@ const data: ReminderData = {
     },
   ],
 };
-describe("Collapsed delivery history", () => {
-  it("keeps current status and unresolved delivery counts discoverable", () => {
-    const html = renderToStaticMarkup(<DeliveryHistory data={data} enabled />);
-    expect(html.split("<details")[0]).toContain("Tracking current war.");
+describe("Reminder status and history", () => {
+  it("keeps current status visible with one short line about who is named", () => {
+    const html = renderToStaticMarkup(<DeliveryStatus data={data} enabled />);
+    expect(html).toContain("Tracking current war.");
     expect(html).toContain(
-      "<summary>Delivery history · 1 need review</summary>",
+      "Each player is named once, with only their accounts that have attacks left.",
     );
-    expect(html).not.toMatch(/<details[^>]*\bopen/);
+    expect(html).not.toContain("<details");
+    expect(html).not.toMatch(/the bot/i);
   });
-  it("does not imply disabled reminders are tracking or successful sends need review", () => {
+  it("does not imply disabled reminders are tracking", () => {
     const html = renderToStaticMarkup(
-      <DeliveryHistory
-        data={{ ...data, history: [{ ...data.history[0], status: "sent" }] }}
-        enabled={false}
-      />,
+      <DeliveryStatus data={data} enabled={false} />,
     );
     expect(html).toContain("Automatic reminders are disabled.");
     expect(html).not.toContain("Tracking current war.");
-    expect(html).toContain("<summary>Delivery history · 1 recent</summary>");
+  });
+  it("waits for the first check in plain words", () => {
+    const html = renderToStaticMarkup(
+      <DeliveryStatus data={{ ...data, status: null }} enabled />,
+    );
+    expect(html).toContain("Waiting for the first check.");
+  });
+  it("flags unresolved deliveries in the closed summary only when they exist", () => {
+    expect(historySummary(data)).toBe("Test & history · 1 need review");
+    expect(
+      historySummary({
+        ...data,
+        history: [{ ...data.history[0], status: "sent" }],
+      }),
+    ).toBe("Test & history");
+    expect(historySummary({ ...data, history: [] })).toBe("Test & history");
   });
 });
 
 it("labels outcomes visibly without inventing a reason for skipped reminders", () => {
   const html = renderToStaticMarkup(
     <DeliveryHistory
-      enabled
       data={{
         ...data,
         history: [
@@ -80,4 +95,10 @@ it("labels outcomes visibly without inventing a reason for skipped reminders", (
     expect(html).toContain(label);
   expect(html).not.toContain("Skipped · too late");
   expect(html).toContain('class="war-delivery-link"');
+});
+it("explains an empty history", () => {
+  const html = renderToStaticMarkup(
+    <DeliveryHistory data={{ ...data, history: [] }} />,
+  );
+  expect(html).toContain("No deliveries yet");
 });

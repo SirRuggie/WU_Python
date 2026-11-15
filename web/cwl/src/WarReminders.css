@@ -1,27 +1,20 @@
 .war-reminders {
   min-width: 0;
 }
-.war-intro {
+.war-switch-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--wu-space-4);
-  padding: var(--wu-space-4);
-  background: var(--wu-surface);
-  border: 1px solid var(--wu-border);
-  border-radius: var(--wu-radius-md);
+  gap: var(--wu-space-1) var(--wu-space-3);
   margin: var(--wu-space-4) 0;
 }
-.war-intro h3 {
-  font-size: var(--wu-text-lg);
-  margin: var(--wu-space-2) 0;
-  font-weight: var(--wu-weight-medium);
-  line-height: 1.3;
-  text-wrap: balance;
+.war-switch-row p {
+  margin: 0;
+  color: var(--wu-danger);
+  font-size: var(--wu-text-sm);
 }
-.war-intro p {
-  margin: var(--wu-space-2) 0;
-  text-wrap: pretty;
+.war-switch-row small {
+  color: var(--wu-text-muted);
 }
 .clan-management .war-toggle {
   display: flex;
@@ -73,6 +66,7 @@
   align-items: center;
 }
 .war-test,
+.war-status,
 .war-deliveries {
   margin-top: var(--wu-space-5);
   padding-top: var(--wu-space-3);
@@ -127,10 +121,6 @@
   text-wrap: pretty;
 }
 @media (max-width: 650px) {
-  .war-intro {
-    align-items: start;
-    flex-direction: column;
-  }
   .war-time-input {
     grid-template-columns: 1fr 1fr;
   }
@@ -187,10 +177,19 @@
 .war-disclosure > summary[aria-disabled="true"] {
   cursor: progress;
 }
-.war-disclosure > .war-test {
+.war-disclosure > .war-test,
+.war-disclosure > .war-deliveries {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
+}
+.war-disclosure > .war-deliveries + .war-test {
+  margin-top: var(--wu-space-5);
+  padding-top: var(--wu-space-3);
+  border-top: 1px solid var(--wu-border-subtle);
+}
+.war-deliveries h4 {
+  margin: var(--wu-space-2) 0;
 }
 
 .war-delivery-link {
@@ -206,8 +205,24 @@
   outline-offset: 2px;
 }
 
-.war-reminders label:has(input[type="checkbox"]) {
+/* A checkbox and its label share one line in one 44px row. */
+.clan-management
+  .war-reminders
+  label:not(.wu-switch):has(> input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
   min-height: 44px;
   box-sizing: border-box;
-  align-items: center;
+}
+.clan-management .war-reminders label:not(.wu-switch) > input[type="checkbox"] {
+  width: 20px;
+  flex: none;
+  margin: 0;
+}
+
+/* Long option text such as "Players with no attacks used" must fit at 360px. */
+.war-reminders select {
+  padding-inline: var(--wu-space-2);
+  font-size: var(--wu-text-sm);
 }

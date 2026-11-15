@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
 import type { AnnouncementChannel } from "./announcements";
 import ScheduleEditor from "./warReminders/ScheduleEditor";
 import CopyReminders from "./warReminders/CopyReminders";
 import TestPanel from "./warReminders/TestPanel";
-import DeliveryHistory from "./warReminders/DeliveryHistory";
+import DeliveryHistory, {
+  DeliveryStatus,
+  historySummary,
+} from "./warReminders/DeliveryHistory";
 import type { ReminderData, ReminderSettings } from "./warReminders/types";
 import "./WarReminders.css";
 
@@ -43,17 +46,28 @@ export default function WarReminders({
   const [copyBusy, setCopyBusy] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
   const [testOpen, setTestOpen] = useState(false);
+  const [switchBusy, setSwitchBusy] = useState(false);
+  const [switchError, setSwitchError] = useState("");
   useEffect(() => {
-    onBusy?.(busy || testBusy || copyBusy);
+    onBusy?.(busy || testBusy || copyBusy || switchBusy);
     return () => onBusy?.(false);
-  }, [busy, testBusy, copyBusy, onBusy]);
+  }, [busy, testBusy, copyBusy, switchBusy, onBusy]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const generation = useRef(0);
   const saving = useRef(false);
+  const switching = useRef(false);
   const historyGeneration = useRef(0);
-  const dirty =
-    !!draft && JSON.stringify(draft) !== JSON.stringify(data?.settings);
+  // The On/Off switch saves at once, so it never counts as an unsaved change.
+  const changedKeys =
+    draft && data
+      ? (Object.keys(draft) as (keyof ReminderSettings)[]).filter(
+          (key) =>
+            key !== "enabled" &&
+            JSON.stringify(draft[key]) !== JSON.stringify(data.settings[key]),
+        )
+      : [];
+  const dirty = changedKeys.length > 0;
 
   const load = useCallback(async () => {
     const turn = ++generation.current;
@@ -106,7 +120,7 @@ export default function WarReminders({
   }, [!!data, active, refreshHistory]);
 
   async function save() {
-    if (!draft || !data || saving.current) return false;
+    if (!draft || !data || saving.current || switching.current) return false;
     saving.current = true;
     const turn = ++generation.current;
     setBusy(true);
@@ -114,7 +128,7 @@ export default function WarReminders({
     setNotice("");
     try {
       const result = await api<ReminderData>(base, "PUT", {
-        settings: draft,
+        settings: { ...draft, enabled: data.settings.enabled },
         revision: data.revision,
       });
       if (turn !== generation.current) return false;
@@ -132,14 +146,38 @@ export default function WarReminders({
     }
   }
 
-  const changes =
-    draft && data
-      ? Object.keys(draft).filter(
-          (key) =>
-            JSON.stringify(draft[key as keyof ReminderSettings]) !==
-            JSON.stringify(data.settings[key as keyof ReminderSettings]),
-        ).length
-      : 0;
+  const changes = changedKeys.length;
+  async function toggleEnabled(next: boolean) {
+    if (!data || saving.current || switching.current) return;
+    switching.current = true;
+    setSwitchBusy(true);
+    setSwitchError("");
+    setError("");
+    setNotice("");
+    setDraft((current) => (current ? { ...current, enabled: next } : current));
+    try {
+      const result = await api<ReminderData>(base, "PUT", {
+        settings: { ...data.settings, enabled: next },
+        revision: data.revision,
+      });
+      setData(result);
+      // Keep every other unsaved edit; only the saved On/Off state is applied.
+      setDraft((current) =>
+        current ? { ...current, enabled: result.settings.enabled } : current,
+      );
+    } catch (e) {
+      setDraft((current) =>
+        current ? { ...current, enabled: data.settings.enabled } : current,
+      );
+      const message =
+        e instanceof Error ? e.message : "Could not save. Try again.";
+      if (e instanceof ApiError && e.status === 409) setError(message);
+      else setSwitchError(message);
+    } finally {
+      switching.current = false;
+      setSwitchBusy(false);
+    }
+  }
   useEffect(() => {
     onEditor?.({
       changes,
@@ -193,6 +231,10 @@ export default function WarReminders({
             settings={draft}
             channels={channels}
             disabled={busy || testBusy || copyBusy || disabled}
+            hasChannel={!!data.settings.channel_id}
+            switchBusy={switchBusy}
+            switchError={switchError}
+            onToggle={(next) => void toggleEnabled(next)}
             onChange={(patch) =>
               setDraft((current) =>
                 current ? { ...current, ...patch } : current,
@@ -206,21 +248,21 @@ export default function WarReminders({
               </small>
               <button
                 className="primary"
-                disabled={busy || testBusy || copyBusy || disabled || !dirty}
+                disabled={
+                  busy ||
+                  testBusy ||
+                  copyBusy ||
+                  switchBusy ||
+                  disabled ||
+                  !dirty
+                }
                 onClick={() => void save()}
               >
                 Save reminders
               </button>
             </div>
           )}
-          <CopyReminders
-            key={tag}
-            base={base}
-            source={data}
-            disabled={disabled || busy || testBusy || dirty}
-            onBusy={setCopyBusy}
-          />
-          <DeliveryHistory data={data} enabled={data.settings.enabled} />
+          <DeliveryStatus data={data} enabled={data.settings.enabled} />
           <details
             className="war-disclosure"
             onToggle={(event) => setTestOpen(event.currentTarget.open)}
@@ -231,8 +273,10 @@ export default function WarReminders({
                 if (testBusy) event.preventDefault();
               }}
             >
-              Preview &amp; send a test{testBusy ? " · Sending…" : ""}
+              {historySummary(data)}
+              {testBusy ? " · Sending…" : ""}
             </summary>
+            <DeliveryHistory data={data} />
             <TestPanel
               channelName={
                 channels.find((channel) => channel.id === draft.channel_id)
@@ -246,6 +290,13 @@ export default function WarReminders({
               onBusy={setTestBusy}
             />
           </details>
+          <CopyReminders
+            key={tag}
+            base={base}
+            source={data}
+            disabled={disabled || busy || testBusy || switchBusy || dirty}
+            onBusy={setCopyBusy}
+          />
         </>
       )}
       {confirmReload && (

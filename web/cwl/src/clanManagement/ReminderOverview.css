@@ -1,119 +1,113 @@
 .reminder-overview {
   min-width: 0;
 }
-.overview-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--wu-space-4);
-  align-items: center;
-  margin: var(--wu-space-3) 0 var(--wu-space-5);
-}
-.overview-heading h2 {
-  margin: var(--wu-space-2) 0;
+.reminder-overview > h2 {
+  margin: var(--wu-space-3) 0 var(--wu-space-3);
   font-size: var(--wu-text-xl);
   font-weight: var(--wu-weight-bold);
   line-height: 1.2;
   text-wrap: balance;
 }
-.overview-heading p {
-  margin: var(--wu-space-2) 0;
-  text-wrap: pretty;
-}
-.overview-heading > button {
-  flex-shrink: 0;
-}
-.overview-toolbar {
+.overview-tools {
   display: flex;
-  justify-content: space-between;
   align-items: end;
-  gap: var(--wu-space-4);
-  margin: var(--wu-space-4) 0 var(--wu-space-4);
+  gap: var(--wu-space-3);
+  margin: var(--wu-space-3) 0;
 }
-.overview-toolbar > label {
+.overview-tools > label {
   flex: 1;
+  min-width: 0;
   max-width: 480px;
 }
-.overview-toolbar p {
-  margin: 0 0 var(--wu-space-1);
-  text-wrap: pretty;
-}
-.overview-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: var(--wu-text-sm);
-  table-layout: fixed;
-}
-.overview-table th,
-.overview-table td {
-  padding: var(--wu-space-4) var(--wu-space-3);
-  vertical-align: top;
-  text-align: left;
-  border-bottom: 1px solid var(--wu-border-subtle);
-  overflow-wrap: anywhere;
-}
-.overview-table thead th {
-  color: var(--wu-text-muted);
-  font-size: var(--wu-text-sm);
-  font-weight: var(--wu-weight-medium);
-  background: var(--wu-surface);
-}
-.overview-table thead th:first-child {
-  border-radius: var(--wu-radius-md) 0 0 0;
-}
-.overview-table thead th:last-child {
-  border-radius: 0 var(--wu-radius-md) 0 0;
-}
-.overview-table tbody tr {
-  background: var(--wu-surface);
-}
-.overview-table tbody tr:focus-within {
-  background: var(--wu-surface-raised);
-}
-@media (hover: hover) and (pointer: fine) {
-  .overview-table tbody tr:hover {
-    background: var(--wu-surface-raised);
-  }
-}
-.overview-table th:first-child {
-  width: 18%;
-}
-.overview-table small {
-  display: block;
-  margin-top: var(--wu-space-1);
-  color: var(--wu-text-muted);
-  font-weight: var(--wu-weight-regular);
-  line-height: 1.45;
-}
-.overview-table td button {
+.overview-tools input {
   width: 100%;
   min-height: 44px;
-  text-align: left;
+  box-sizing: border-box;
 }
-.overview-state {
-  display: inline-block;
-  border: 1px solid var(--wu-border);
-  color: var(--wu-text);
-  border-radius: var(--wu-radius-sm);
-  padding: var(--wu-space-1) var(--wu-space-2);
-  font-weight: var(--wu-weight-medium);
-  font-size: var(--wu-text-xs);
+.overview-tools button,
+.overview-applied button {
+  min-height: 44px;
+  flex-shrink: 0;
 }
-.overview-state-attention {
-  border-color: var(--wu-warning);
-  color: var(--wu-bg);
-  background: var(--wu-warning);
-  -webkit-text-fill-color: currentColor;
+.overview-applied {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+  margin-bottom: var(--wu-space-3);
 }
-.overview-state-tracking {
-  border-color: var(--wu-success);
-  color: var(--wu-bg);
-  background: var(--wu-success);
-  -webkit-text-fill-color: currentColor;
-}
-.overview-state-off,
-.overview-state-not_configured {
+.overview-meta {
+  margin: 0 0 var(--wu-space-3);
   color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.overview-list {
+  display: grid;
+  gap: var(--wu-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.overview-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--wu-space-2) var(--wu-space-3);
+  min-height: 64px;
+  padding: var(--wu-space-2) var(--wu-space-3);
+  border: 1px solid var(--wu-border-subtle);
+  border-radius: var(--wu-radius-md);
+  background: var(--wu-surface);
+}
+.overview-row.is-problem {
+  border-color: var(--wu-danger-border);
+}
+.overview-row-text {
+  min-width: 0;
+}
+.overview-row-text p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.overview-row-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wu-space-2);
+  min-width: 0;
+}
+.overview-row-name strong {
+  min-width: 0;
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-medium);
+  overflow-wrap: anywhere;
+}
+.overview-row-name span {
+  flex-shrink: 0;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.overview-row-line,
+.overview-row-issue {
+  margin-top: 2px;
+  font-size: var(--wu-text-sm);
+  text-wrap: pretty;
+}
+.overview-row-line {
+  color: var(--wu-text);
+}
+.overview-row.is-off .overview-row-line {
+  color: var(--wu-text-muted);
+}
+.overview-row-issue {
+  color: var(--wu-text-muted);
+}
+.overview-row-error {
+  margin-top: 2px;
+  color: var(--wu-danger);
+  font-size: var(--wu-text-sm);
+}
+.overview-row > button {
+  min-height: 44px;
+  min-width: 44px;
 }
 .overview-empty {
   padding: var(--wu-space-6) var(--wu-space-4);
@@ -126,126 +120,29 @@
   font-size: var(--wu-text-sm);
   margin-top: var(--wu-space-4);
 }
-.overview-mobile-label {
-  display: none;
+.overview-filter-sections {
+  display: grid;
+  gap: var(--wu-space-4);
+  padding-bottom: var(--wu-space-3);
 }
-.overview-sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.overview-filter-sections h3 {
+  margin: 0 0 var(--wu-space-2);
+  font-size: var(--wu-text-md);
+  font-weight: var(--wu-weight-medium);
 }
 .reminder-overview :is(button, input, select):focus-visible {
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
-@media (max-width: 900px) {
-  .overview-heading,
-  .overview-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-    gap: var(--wu-space-3);
+@media (max-width: 640px) {
+  .overview-row {
+    gap: var(--wu-space-2);
+    padding: var(--wu-space-2);
   }
-  .overview-heading > button {
-    align-self: flex-start;
+  .overview-row .wu-switch-text {
+    display: none;
   }
-  .overview-toolbar > label {
+  .overview-tools > label {
     max-width: none;
   }
-  .overview-table,
-  .overview-table tbody {
-    display: block;
-  }
-  .overview-table thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-  }
-  .overview-table tbody tr {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    border: 1px solid var(--wu-border);
-    border-radius: var(--wu-radius-md);
-    margin-bottom: var(--wu-space-3);
-    padding: var(--wu-space-2);
-  }
-  .overview-table th,
-  .overview-table td {
-    display: block;
-    width: auto !important;
-    border: 0;
-    padding: var(--wu-space-2);
-  }
-  .overview-table th {
-    font-size: var(--wu-text-sm);
-  }
-  .overview-mobile-label {
-    display: block;
-    color: var(--wu-text-muted);
-    font-size: var(--wu-text-sm);
-    margin-bottom: var(--wu-space-1);
-  }
-}
-
-.reminder-overview details.overview-note > summary {
-  min-height: 44px;
-  box-sizing: border-box;
-  padding-block: var(--wu-space-3);
-  cursor: pointer;
-}
-
-.overview-table .overview-off-row {
-  display: table-row;
-}
-.overview-table .overview-off-row > td {
-  display: table-cell;
-  padding: var(--wu-space-1) var(--wu-space-2);
-}
-.overview-off-line {
-  display: flex;
-  align-items: center;
-  gap: var(--wu-space-2);
-  min-width: 0;
-}
-.overview-off-line strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  flex: 1;
-}
-.overview-off-line span {
-  font-size: var(--wu-text-sm);
-  white-space: nowrap;
-}
-.overview-off-line button {
-  flex-shrink: 0;
-  min-height: 44px;
-}
-
-@media (max-width: 800px) {
-  .overview-table tbody tr.overview-off-row,
-  .overview-table .overview-off-row > td {
-    display: block;
-  }
-  .overview-table tbody tr.overview-off-row {
-    padding: 0;
-    margin-bottom: var(--wu-space-1);
-  }
-  .overview-off-line span {
-    max-width: 36%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-}
-
-.overview-table .overview-off-line button {
-  width: auto;
 }

@@ -191,9 +191,7 @@ it("counts states honestly and never shows a problem as a green switch", async (
   );
   const problemRow = host.querySelector(".world-clock-row.is-problem")!;
   expect(
-    problemRow
-      .querySelector(".world-clock-switch")
-      ?.classList.contains("is-problem"),
+    problemRow.querySelector(".wu-switch")?.classList.contains("is-problem"),
   ).toBe(true);
   expect(problemRow.textContent).toContain("Channel missing");
   expect(button("Fix", problemRow)).toBeTruthy();
