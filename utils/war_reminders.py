@@ -89,7 +89,8 @@ def discord_length(text):
 
 
 def messages(war, config, event, owners=None, *, test=False, tester=None, sample_label="Sample players", sample_group="Sample accounts"):
-    """Group accounts under one notifying mention; split safely without repeat pings."""
+    """One line per single-account owner; multi-account owners get one mention
+    and a quoted row per account. Pages split safely without repeat pings."""
     from utils.emoji import emojis
     members = pending(war, config['audience'])
     if not members and not test:
@@ -102,49 +103,78 @@ def messages(war, config, event, owners=None, *, test=False, tester=None, sample
         if test:
             uid = '' if member.get('sample_unlinked') else (uid or 'sample')
         groups.setdefault(uid, []).append(member)
-    # Unlinked accounts remain visible, but never imply a Discord owner.
-    if '' in groups:
-        groups[''] = groups.pop('')
+    unlinked = groups.pop('', [])
+    singles = [(uid, accounts) for uid, accounts in groups.items() if len(accounts) == 1 and uid != 'sample']
+    multis = [(uid, accounts) for uid, accounts in groups.items() if len(accounts) > 1 or uid == 'sample']
+
+    def account(member, tag=False):
+        emoji = str(getattr(emojis, f"TH{member['th']}", f"TH{member['th']}"))
+        text = f"{emoji} **{clean(member['name'])}**"
+        if tag:
+            text += f" `{re.sub(r'[^#A-Z0-9]', '', str(member['tag']).upper())[:24]}`"
+        # Non-breaking spaces keep the count next to its separator on phones.
+        return text + f" ·\u00a0{member['used']}/{war['limit']}"
+
     label = 'War started' if event == 'start' else duration(int(event))+' left'
-    header = f"🔔 **{clean(war['name'])} war reminder · {label}**\n"
-    header += f"vs {clean(war['opponent'])} · Ends <t:{int(war['end'].timestamp())}:t>"
-    if test:
-        header += f'\n\n-# Test reminder · {sample_label} · Simulated attacks'
+    title = f"🔔 **{clean(war['name'])} · {label}**"
+    end = int(war['end'].timestamp())
     remaining = sum(war['limit']-m['used'] for m in members)
-    footer = f"-# {len(members)} accounts · {remaining} attacks remaining · Attacks used / available"
-    budget = 2000 - discord_length(header+'\n\n'+footer+'\n\n')
-    # First split oversized owners into continuation blocks with no second mention.
-    blocks = []
-    for uid, accounts in groups.items():
-        title = f'**{sample_group}**' if uid == 'sample' else f'<@{uid}>' if uid else '**Unlinked accounts**'
-        text, mentions = title, [uid] if uid and uid != 'sample' else []
-        for member in accounts:
-            emoji = str(getattr(emojis, f"TH{member['th']}", f"TH{member['th']}"))
-            player_tag = re.sub(r'[^#A-Z0-9]', '', str(member['tag']).upper())[:24]
-            line = f"> {emoji} **{clean(member['name'])}** `{player_tag}` · {member['used']}/{war['limit']}"
-            if discord_length(text+'\n'+line) > budget:
-                blocks.append((text, mentions))
-                text, mentions = '**Accounts continued**', []
-            text += '\n'+line
-        blocks.append((text, mentions))
+    count = f"{len(members)} account{'s' if len(members) != 1 else ''}"
+    subline = (f"-# vs {clean(war['opponent'])} · Ends <t:{end}:t> (<t:{end}:R>) · "
+               f"{remaining} attacks left on {count} · Attacks used / available")
+    if test:
+        subline += f'\n-# Test reminder · {sample_label} · Simulated attacks'
+
+    def head(part, first):
+        # Concatenate: clan names may contain braces, so never str.format them.
+        return title+part+'\n'+(subline+'\n' if first else '')+'\n'
+
+    longest_part = ' · part 99 of 99'
+    first_budget = 2000 - discord_length(head(longest_part, True))
+    later_budget = 2000 - discord_length(head(longest_part, False))
+
+    # Blocks never carry a second mention: an oversized group continues unpinged.
+    blocks = [(f"<@{uid}> {account(accounts[0])}", [uid]) for uid, accounts in singles]
+    for uid, accounts in multis:
+        heading = f'**{sample_group}**' if uid == 'sample' else f'<@{uid}> · {len(accounts)} accounts'
+        blocks.extend(_grouped(heading, [uid] if uid != 'sample' else [], ['> '+account(m) for m in accounts], first_budget))
+    if unlinked:
+        blocks.extend(_grouped('-# Not linked · no ping', [], ['> '+account(m, tag=True) for m in unlinked], first_budget))
     if not blocks:
         blocks = [('All attacks are complete!', [])]
+
     pages, text, users = [], '', []
     for block, mentions in blocks:
         candidate = text+'\n'+block if text else block
-        if discord_length(candidate) > budget:
+        if text and discord_length(candidate) > (later_budget if pages else first_budget):
             pages.append((text, users))
-            text, users = block, mentions.copy()
+            text, users = block, list(mentions)
         else:
             text, users = candidate, users+mentions
     pages.append((text, users))
-    return [dict(content=header+'\n\n'+text+'\n\n'+footer,
-                 allowed_mentions=dict(parse=[], users=users, roles=[], replied_user=False),
-                 components=[{"type": 1, "components": [
-                     {"type": 2, "style": 5, "label": "My tasks", "url": TASKS_URL},
-                     {"type": 2, "style": 5, "label": "Wars", "url": WARS_URL},
-                 ]}])
-            for text, users in pages]
+    total = len(pages)
+    results = []
+    for index, (text, users) in enumerate(pages):
+        part = f' · part {index+1} of {total}' if total > 1 else ''
+        results.append(dict(content=head(part, index == 0)+text,
+                            allowed_mentions=dict(parse=[], users=users, roles=[], replied_user=False),
+                            components=[{"type": 1, "components": [
+                                {"type": 2, "style": 5, "label": "My tasks", "url": TASKS_URL},
+                                {"type": 2, "style": 5, "label": "Wars", "url": WARS_URL},
+                            ]}]))
+    return results
+
+
+def _grouped(heading, mentions, rows, budget):
+    """Split one owner's rows into blocks; only the first block can mention."""
+    blocks, text, users = [], heading, list(mentions)
+    for row in rows:
+        if discord_length(text+'\n'+row) > budget:
+            blocks.append((text, users))
+            text, users = '**Accounts continued**', []
+        text += '\n'+row
+    blocks.append((text, users))
+    return blocks
 
 
 def sample(clan, event):
