@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
 import pytest
+import re
 from utils import war_reminders as r
 from utils import war_reminder_store as storage
 from extensions.tasks.war_reminders import scan_clan
@@ -126,7 +127,8 @@ def test_five_accounts_group_under_single_owner_and_heading_is_notification_text
     payloads=r.messages(w,config(),'720',{m['tag']:uid for m in w['members']})
     assert len(payloads)==1
     text=payloads[0]['content']
-    assert text.startswith('🔔 **Edrag Rush war reminder · 12 hours left**')
+    assert text.startswith('🔔 **Edrag Rush · 12 hours left**\n-# vs ')
+    assert f'<@{uid}> · 5 accounts' in text
     assert text.count(f'<@{uid}>')==1
     for i in range(5):assert text.count(f'Account {i}')==1
     assert text.index(f'<@{uid}>') < text.index('Account 0')
@@ -138,7 +140,9 @@ def test_distinct_owners_have_separate_account_groups():
     w=war(); a='123456789012345670'; b='123456789012345671'
     text=r.messages(w,config(),'75',{'#SAMPLE1':a,'#SAMPLE2':b,'#SAMPLE3':a})[0]['content']
     assert '1 hour 15 minutes left' in text
-    assert text.index('Shield Bearer') < text.index('Iron Guardian') < text.index(f'<@{b}>') < text.index('Night Archer')
+    # Single-account owners come first, on one line; then grouped owners.
+    assert f'<@{b}> <:TH_17:' in text and text.index(f'<@{b}>') < text.index(f'<@{a}> · 2 accounts')
+    assert text.index(f'<@{a}>') < text.index('Shield Bearer') < text.index('Iron Guardian')
 
 
 def test_large_unicode_roster_preserves_every_account_within_discord_limit():
@@ -153,9 +157,9 @@ def test_unlinked_row_includes_name_tag_emoji_and_counts_without_ping():
     w=war();uid='505227988229554179'
     payload=r.messages(w,config(),'720',{'#SAMPLE1':uid,'#SAMPLE2':uid})[0]
     text=payload['content']
-    assert '**Shield Bearer** `#SAMPLE1` · 0/2' in text
-    unlinked=text.split('**Unlinked accounts**')[1]
-    assert '<:TH_16:' in unlinked and '**Iron Guardian** `#SAMPLE3` · 0/2' in unlinked
+    assert '**Shield Bearer** ·\u00a00/2' in text and '#SAMPLE1' not in text
+    unlinked=text.split('-# Not linked · no ping')[1]
+    assert '<:TH_16:' in unlinked and '> <:TH_16:1395729067990319164> **Iron Guardian** `#SAMPLE3` ·\u00a00/2' in unlinked
     assert '<@' not in unlinked
     assert payload['allowed_mentions']['users']==[uid]
 
@@ -163,10 +167,11 @@ def test_unlinked_row_includes_name_tag_emoji_and_counts_without_ping():
 def test_sample_preview_shows_linked_and_unlinked_groups():
     payload=r.messages(war(),config(),'60',test=True,tester='505227988229554179')[0]
     assert '<@505227988229554179>' in payload['content']
-    unlinked=payload['content'].split('**Unlinked accounts**')[1]
+    unlinked=payload['content'].split('-# Not linked · no ping')[1]
     assert '`#SAMPLE3`' in unlinked and '<@' not in unlinked
     muted=r.messages(war(),config(),'60',test=True)[0]
-    assert '**Sample accounts**' in muted['content'] and '**Unlinked accounts**' in muted['content']
+    assert '**Sample accounts**\n> ' in muted['content'] and '-# Not linked · no ping' in muted['content']
+    assert '-# Test reminder · Sample players · Simulated attacks' in muted['content']
     assert muted['allowed_mentions']['users']==[]
 
 
@@ -195,3 +200,53 @@ def test_default_times_are_not_shared_mutable_state():
 
 def test_non_ascii_channel_ids_are_rejected():
     with pytest.raises(ValueError):r.validate(config(channel_id='１'*18))
+
+
+def test_single_account_owner_uses_one_line_with_used_over_available():
+    w=war(); uid='505227988229554179'
+    text=r.messages(w,config(),'60',{'#SAMPLE2':uid})[0]['content']
+    assert f'<@{uid}> <:TH_17:1395729126014324837> **Night Archer** ·\u00a01/2\n' in text
+    assert f'<@{uid}>\n' not in text
+
+
+def test_header_has_live_end_time_totals_legend_and_singular_count():
+    w=war(); w['members']=w['members'][:1]
+    text=r.messages(w,config(),'60',{'#SAMPLE1':'505227988229554179'})[0]['content']
+    end=int(w['end'].timestamp())
+    first,second=text.split('\n')[:2]
+    assert first=='🔔 **Warriors · 1 hour left**'
+    assert second==f'-# vs Rival Clan · Ends <t:{end}:t> (<t:{end}:R>) · 2 attacks left on 1 account · Attacks used / available'
+    assert 'attacks remaining' not in text
+
+
+def test_long_reminder_repeats_short_header_and_never_repeats_pings():
+    w=war(); w['name']='Edrag Rush'
+    w['members']=[dict(tag=f'#{i}',name=f'Player number {i}',position=i,th=18,used=0) for i in range(50)]
+    owners={m['tag']:str(123456789012345600+i//3) for i,m in enumerate(w['members'])}
+    pages=r.messages(w,config(),'start',owners)
+    assert len(pages)>1
+    assert all(r.discord_length(p['content'])<=2000 for p in pages)
+    assert pages[0]['content'].startswith(f'🔔 **Edrag Rush · War started** · part 1 of {len(pages)}\n-# vs ')
+    for n,page in enumerate(pages[1:],2):
+        assert page['content'].startswith(f'🔔 **Edrag Rush · War started** · part {n} of {len(pages)}\n\n')
+        assert '-# vs ' not in page['content']
+    users=[u for p in pages for u in p['allowed_mentions']['users']]
+    assert len(users)==len(set(users))==len(set(owners.values()))
+    for p in pages:
+        assert sorted(set(re.findall(r'<@(\d+)>',p['content'])))==sorted(p['allowed_mentions']['users'])
+
+
+def test_oversized_group_continues_without_second_mention():
+    w=war(); uid='505227988229554179'
+    w['members']=[dict(tag=f'#{i}',name='🛡'*100,position=i,th=18,used=0) for i in range(12)]
+    pages=r.messages(w,config(),'60',{m['tag']:uid for m in w['members']})
+    assert len(pages)>1 and all(r.discord_length(p['content'])<=2000 for p in pages)
+    assert sum(p['content'].count(f'<@{uid}>') for p in pages)==1
+    assert '**Accounts continued**' in pages[-1]['content']
+    assert pages[-1]['allowed_mentions']['users']==[]
+
+
+def test_braces_in_clan_name_render_literally():
+    w=war(); w['name']='{part} {0}'
+    text=r.messages(w,config(),'60',{'#SAMPLE1':'505227988229554179'})[0]['content']
+    assert text.startswith('🔔 **{part} {0} · 1 hour left**')
