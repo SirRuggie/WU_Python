@@ -1,5 +1,7 @@
 import asyncio
 from types import SimpleNamespace
+import pytest
+from pymongo.errors import OperationFailure
 from utils.player_activity_polling import poll_hour
 
 
@@ -87,36 +89,116 @@ def test_worker_cancels_its_background_seed_on_shutdown(monkeypatch):
     asyncio.run(scenario())
 
 
-def test_transient_index_failure_does_not_permanently_kill_worker(monkeypatch):
+@pytest.mark.parametrize('failed_index,error', [
+    ('activity_family_clan', TimeoutError('fixture index timeout')),
+    ('activity_departed_player_180d', OperationFailure('fixture index conflict', code=85)),
+])
+def test_index_failure_preserves_same_sweep_retries_next_hour_and_logs_index(
+    monkeypatch, caplog, failed_index, error,
+):
+    from utils import player_activity_polling as polling, player_activity_history as history
+    from tests.test_player_activity_retention_239n import IndexCollection
+    from tests.test_player_activity_store import PLAYER, CLAN
+    from tests.test_player_activity import NOW
+    from utils.player_activity_store import PlayerActivityStore
+
+    async def scenario():
+        events = []
+        real_sleep = asyncio.sleep
+
+        class FailingCollection(IndexCollection):
+            failed = False
+
+            async def create_index(self, field, **options):
+                await super().create_index(field, **options)
+                events.append(('index', options['name']))
+                if not self.failed and options['name'] == failed_index:
+                    self.failed = True
+                    raise error
+
+        collection = FailingCollection()
+        mongo = SimpleNamespace(player_activity=collection)
+        await PlayerActivityStore(mongo).record({'tag': PLAYER, 'attackWins': 1}, CLAN, now=NOW)
+        collection.rows[PLAYER].update(left_at=NOW, current_clan_tag=None)
+        reconcile = PlayerActivityStore.reconcile_membership
+
+        async def observed_reconcile(store, members):
+            events.append(('reconcile',))
+            return await reconcile(store, members)
+
+        async def family(*args):
+            events.append(('family',))
+            return polling.RosterSweep({PLAYER: CLAN}, [CLAN], True)
+
+        async def hour(store, members, *args, **kwargs):
+            # The real membership write already ran, even on the failed-index hour.
+            row = await store.get(PLAYER)
+            assert row['left_at'] is None and row['current_clan_tag'] == CLAN
+            events.append(('poll',))
+            await store.record({'tag': PLAYER, 'attackWins': 2}, CLAN)
+            await real_sleep(0)
+            return {'success': 1, 'failure': 0}
+
+        async def raids(*args):
+            events.append(('raids',))
+
+        async def backfill(*args):
+            return None
+
+        async def seed(*args):
+            return {'pending': 0, 'retryable': 0}
+
+        async def next_hour(delay):
+            events.append(('hour_end',))
+            if events.count(('hour_end',)) == 3:
+                raise asyncio.CancelledError()
+            await real_sleep(0)
+
+        monkeypatch.setattr(polling, 'family_members', family)
+        monkeypatch.setattr(PlayerActivityStore, 'reconcile_membership', observed_reconcile)
+        monkeypatch.setattr(polling, 'capture_raids', raids)
+        monkeypatch.setattr(polling, 'poll_hour', hour)
+        monkeypatch.setattr(polling, 'seed_from_clashking', seed)
+        monkeypatch.setattr(history, 'backfill_recent_wars', backfill)
+        monkeypatch.setattr(polling.asyncio, 'sleep', next_hour)
+        with pytest.raises(asyncio.CancelledError):
+            await polling.run(mongo, SimpleNamespace(get_player=None))
+        all_indexes = ['activity_family_clan', 'activity_departed_player_180d']
+        failed_attempt = all_indexes[:all_indexes.index(failed_index) + 1]
+        assert [options['name'] for _, options in collection.index_calls] == failed_attempt + all_indexes
+        for stage in ('family', 'reconcile', 'poll', 'raids', 'hour_end'):
+            assert events.count((stage,)) == 3
+        first_sweep = [('index', name) for name in failed_attempt] + [
+            ('family',), ('reconcile',), ('poll',), ('raids',), ('hour_end',),
+        ]
+        assert events[:len(first_sweep)] == first_sweep
+        failures = [record for record in caplog.records if 'index unavailable' in record.message]
+        assert len(failures) == 1
+        assert failed_index in failures[0].message
+        assert failures[0].exc_info[0] is type(error)
+        assert str(error) in caplog.text
+        assert 'family sweep unavailable' not in caplog.text
+    asyncio.run(scenario())
+
+
+def test_index_cancellation_propagates_before_sweep(monkeypatch, caplog):
     import pytest
     from utils import player_activity_polling as polling
+    from tests.test_player_activity_retention_239n import IndexCollection
+
     async def scenario():
-        attempts = []
-        class Store:
-            def __init__(self, mongo):
-                pass
-            async def ensure_indexes(self):
-                attempts.append(1)
-                if len(attempts)==1:
-                    raise TimeoutError()
-            async def reconcile_membership(self, members):
-                pass
+        class CancelledCollection(IndexCollection):
+            async def create_index(self, *args, **kwargs):
+                raise asyncio.CancelledError()
+
         async def family(*args):
-            return polling.RosterSweep({}, [], False)
-        async def raids(*args):
-            pass
-        async def stop(*args, **kwargs):
-            raise asyncio.CancelledError()
-        async def no_sleep(delay):
-            pass
-        monkeypatch.setattr(polling, 'PlayerActivityStore', Store)
+            pytest.fail('Cancelled index bootstrap must not start a sweep')
+
         monkeypatch.setattr(polling, 'family_members', family)
-        monkeypatch.setattr(polling, 'capture_raids', raids)
-        monkeypatch.setattr(polling, 'poll_hour', stop)
-        monkeypatch.setattr(polling.asyncio, 'sleep', no_sleep)
+        mongo = SimpleNamespace(player_activity=CancelledCollection())
         with pytest.raises(asyncio.CancelledError):
-            await polling.run(None, SimpleNamespace(get_player=None))
-        assert len(attempts)==2
+            await polling.run(mongo, SimpleNamespace(get_player=None))
+        assert 'index unavailable' not in caplog.text
     asyncio.run(scenario())
 
 
