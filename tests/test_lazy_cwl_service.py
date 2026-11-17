@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -1066,32 +1067,45 @@ def test_finish_key_set_matches_on_every_path(monkeypatch):
 # --------------------------------------------------------- repo-wide grep ----
 
 
-def test_only_store_mongo_and_tests_reference_lazy_cwl_lists():
+def _lazy_cwl_collection_references(root):
     result = subprocess.run(
-        ["grep", "-rl", "lazy_cwl_lists", "--include=*.py", "."],
-        cwd=REPO_ROOT,
+        ["git", "ls-files", "-z", "--", "*.py"],
+        cwd=root,
         capture_output=True,
-        text=True,
+        check=True,
     )
-    hits = [
-        line for line in result.stdout.splitlines()
-        if not line.startswith("./.worktrees/") and not line.startswith("./.claude/")
+    return [
+        name for raw_name in result.stdout.split(b"\0")
+        if raw_name
+        for name in [os.fsdecode(raw_name)]
+        if "lazy_cwl_lists" in (root / name).read_text(encoding="utf-8")
     ]
-    # The central namespace router may declare the collection; application
-    # access must still go through the store.
+
+
+def test_only_store_mongo_and_tests_reference_lazy_cwl_lists():
+    hits = _lazy_cwl_collection_references(REPO_ROOT)
     allowed_exact = {
-        "./utils/lazy_cwl_store.py", "./utils/mongo.py",
-        "./utils/mongo_routes.py", "./tools/lazycwl_mongo.py",
+        "utils/lazy_cwl_store.py", "utils/mongo.py",
+        "utils/mongo_routes.py", "tools/lazycwl_mongo.py",
     }
     disallowed = [
         hit for hit in hits
-        if hit not in allowed_exact and not hit.startswith("./tests/")
+        if hit not in allowed_exact and not hit.startswith("tests/")
     ]
     assert disallowed == []
-    # builder-05 NOTED 9: a vacuous grep (zero hits at all) would also pass
-    # the assertion above; require the accessor itself to actually show up.
-    assert hits, "grep for lazy_cwl_lists returned nothing at all"
-    assert "./utils/lazy_cwl_store.py" in hits
+    assert "utils/lazy_cwl_store.py" in hits
+
+
+def test_collection_scan_ignores_untracked_copies_and_checks_tracked_files(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "tracked.py").write_text("lazy_cwl_lists", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".local/\n", encoding="utf-8")
+    ignored = tmp_path / ".local" / "copy"
+    ignored.mkdir(parents=True)
+    (ignored / "copy.py").write_text("lazy_cwl_lists", encoding="utf-8")
+    (tmp_path / "untracked.py").write_text("lazy_cwl_lists", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.py", ".gitignore"], cwd=tmp_path, check=True)
+    assert _lazy_cwl_collection_references(tmp_path) == ["tracked.py"]
 
 
 def test_service_module_never_references_collection_or_registers_actions():

@@ -19,6 +19,8 @@ def test_mongodb_uri():
     The database path is validated before a client is constructed so a copied
     production URI fails safely instead of being used by an optional test.
     """
+    if os.getenv("WU_REAL_MONGO_TESTS") != "1":
+        return None
     uri = os.getenv("TICKET_TEST_MONGODB_URI")
     if not uri:
         return None

@@ -8,4 +8,7 @@ sys.path.insert(0, str(ROOT))
 from utils.gold_loot import connect, gold, leaderboard, main, save_sample
 
 if __name__ == '__main__':
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / '.env')
     sys.exit(main())

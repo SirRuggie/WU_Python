@@ -9,7 +9,6 @@ import sys
 import tempfile
 
 import aiohttp
-from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
 CLAN = '#2YRVY8YCP'
@@ -141,7 +140,6 @@ def expand_rosters(db, clans):
 async def expand_family(db):
     """Read the same registered clan collection as the bot's family tracker."""
     from utils.mongo import MongoClient
-    load_dotenv(ROOT / '.env')
     if not os.getenv('MONGODB_URI') or not os.getenv('COC_API_TOKEN'):
         raise ValueError('MONGODB_URI and COC_API_TOKEN must be configured')
     mongo = MongoClient(uri=os.environ['MONGODB_URI'], serverSelectionTimeoutMS=10000)
@@ -257,7 +255,6 @@ def leaderboard(db):
 async def collect(db, command, *, display=True):
     if command != 'start':
         return await collect_battles(db, display=display)
-    load_dotenv(ROOT / '.env')
     token = os.getenv('COC_API_TOKEN', '').strip()
     if not token:
         raise ValueError('COC_API_TOKEN is not configured')
@@ -331,7 +328,6 @@ async def collect(db, command, *, display=True):
 
 async def load_town_halls(player_tags):
     """Fetch current TH levels for displayed players; failures remain unknown."""
-    load_dotenv(ROOT / '.env')
     token = os.getenv('COC_API_TOKEN', '').strip()
     if not token:
         return {}
@@ -424,4 +420,7 @@ def main():
 
 
 if __name__ == '__main__':
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / '.env')
     sys.exit(main())
