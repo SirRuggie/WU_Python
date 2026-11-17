@@ -162,7 +162,7 @@ def test_exact_opt_in_preserves_independent_inventory(monkeypatch):
     # test_mongo_test_support; this test must never construct a Mongo client.
 
 
-def _collection_probe(tmp_path, *, simulate_omitted_names=False):
+def _collection_probe(tmp_path, *, simulate_omitted_names=False, first_diagnostic=None):
     source = (ROOT / "conftest.py").read_text(encoding="utf-8")
     if simulate_omitted_names:
         source += "\nLIVE_CREDENTIAL_NAMES = tuple(name for name in LIVE_CREDENTIAL_NAMES if name not in " + repr(OMITTED_URI_NAMES) + ")\n"
@@ -194,6 +194,10 @@ class Probe:
     def pytest_collection_modifyitems(self, items):
         modules = {item.module for item in items}
         assert len(modules) == 4
+        if sys.argv[3]:
+            # Force each legitimate first rejection without relying on set/hash order.
+            modules = sorted(modules, key=lambda module: hasattr(module, 'RESTORE_URI'),
+                             reverse=sys.argv[3] == 'restore')
         for module in modules:
             assert module.URI is None, 'ambient URI survived module collection'
             if hasattr(module, 'RESTORE_URI'):
@@ -217,7 +221,7 @@ raise SystemExit(pytest.main(['-q', sys.argv[2]], plugins=[Probe()]))
         "PYTHON_DOTENV_DISABLED": "1",
     })
     return subprocess.run(
-        [sys.executable, "-c", code, str(ROOT), str(tmp_path)],
+        [sys.executable, "-c", code, str(ROOT), str(tmp_path), first_diagnostic or ""],
         env=env, cwd=tmp_path, capture_output=True, text=True, timeout=60,
     )
 
@@ -231,10 +235,20 @@ def test_independent_omitted_uris_are_cleared_before_real_module_collection(tmp_
     assert "passed" not in result.stdout
 
 
-def test_collection_probe_rejects_the_previously_omitted_inventory(tmp_path):
+@pytest.mark.parametrize("first_diagnostic", [None, "uri", "restore"])
+def test_collection_probe_rejects_the_previously_omitted_inventory(tmp_path, first_diagnostic):
     # Negative control: reproduces the exact missing-three-name policy. It
     # must fail at collection, before any optional test body or Mongo call.
-    result = _collection_probe(tmp_path, simulate_omitted_names=True)
+    result = _collection_probe(
+        tmp_path, simulate_omitted_names=True, first_diagnostic=first_diagnostic,
+    )
+    output = result.stdout + result.stderr
     assert result.returncode != 0
-    assert "ambient URI survived module collection" in result.stdout + result.stderr
+    diagnostics = {
+        "uri": "ambient URI survived module collection",
+        "restore": "ambient restore URI survived module collection",
+    }
+    assert any(diagnostic in output for diagnostic in diagnostics.values())
+    if first_diagnostic is not None:
+        assert diagnostics[first_diagnostic] in output
     assert "MONGO_CONSTRUCTOR_ATTEMPTS=0" in result.stdout
