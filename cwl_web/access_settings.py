@@ -1,11 +1,62 @@
 """Owner-only access editing and live request authorization."""
+import asyncio
+from collections import OrderedDict
 import json
+import time
+from weakref import WeakValueDictionary
 from .access_identities import decorate_access
 from aiohttp import web
 from pymongo.write_concern import WriteConcern
 from utils.dashboard_access import (
     AccessRepository, AccessConflict, PERMISSIONS, GROUPS, OWNER_IDS, effective, expand_legacy,
 )
+
+ROLE_CACHE_KEY = 'dashboard_staff_member_roles'
+ROLE_CACHE_SECONDS = 30
+ROLE_CACHE_LIMIT = 512
+_role_clock = time.monotonic
+
+
+async def member_roles(request, guild_id, user_id, fetch):
+    """Cache successful role IDs only; grants and request scopes stay live."""
+    state = request.app.setdefault(ROLE_CACHE_KEY, {
+        'roles': OrderedDict(), 'locks': WeakValueDictionary(),
+    })
+    cache = state['roles']
+    key = (str(guild_id), str(user_id))
+    now = _role_clock()
+    for expired, (until, _) in list(cache.items()):
+        if until <= now:
+            cache.pop(expired, None)
+    cached = cache.get(key)
+    if cached:
+        cache.move_to_end(key)
+        return list(cached[1])
+    lock = state['locks'].get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        state['locks'][key] = lock
+    async with lock:
+        cached = cache.get(key)
+        if cached and cached[0] > _role_clock():
+            cache.move_to_end(key)
+            return list(cached[1])
+        # An expired success must never survive a failed refresh.
+        cache.pop(key, None)
+        member = await fetch()
+        roles = member.get('roles') if isinstance(member, dict) else None
+        if not isinstance(roles, list) or any(
+            not isinstance(role, str) or not role.isascii() or not role.isdigit()
+            or not 1 <= len(role) <= 25
+        or not 1 <= int(role) <= 2 ** 64 - 1 for role in roles
+        ):
+            raise web.HTTPServiceUnavailable(text='Discord roles could not be checked.')
+        frozen = tuple(roles)
+        cache[key] = (_role_clock() + ROLE_CACHE_SECONDS, frozen)
+        cache.move_to_end(key)
+        while len(cache) > ROLE_CACHE_LIMIT:
+            cache.popitem(last=False)
+        return list(frozen)
 
 
 def repository(db):
@@ -58,8 +109,10 @@ async def access_context(request, handler):
         return await handler(request)
     roles = []
     try:
-        member = await discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{uid}')
-        roles = member.get('roles', [])
+        roles = await member_roles(
+            request, GUILD_ID, uid,
+            lambda: discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{uid}'),
+        )
     except web.HTTPNotFound:
         # Confirmed not in the server: no staff access. Grants are kept, so
         # rejoining restores access on the next request.

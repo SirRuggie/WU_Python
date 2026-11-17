@@ -122,7 +122,7 @@ async def identity(request, *, cached_read=False):
 async def allowed(actor, section, db, *, write=False):
     if actor.get('dashboard'):
         from .access_control import dashboard_allowed
-        return await dashboard_allowed(actor, section, db)
+        return await dashboard_allowed(actor, section, db, write=write)
     admin = bool(actor['permissions'] & 8)
     roles = actor['role_ids']
     if section in {'recruit', 'recruitment_questions', 'recruitment_staff_thread'}:

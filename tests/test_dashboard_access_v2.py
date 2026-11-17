@@ -6,7 +6,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from aiohttp.test_utils import TestClient, TestServer
 from cwl_web import create_app
 from cwl_web.providers import FixtureProviders
@@ -16,6 +16,11 @@ from dashboard_access_fakes import AccessCollection
 
 class DashboardAccessTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        from cwl_web import access_settings
+        self.role_clock = 0.0
+        clock = patch.object(access_settings, '_role_clock', lambda: self.role_clock)
+        clock.start()
+        self.addCleanup(clock.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.collection = AccessCollection()
         self.db = SimpleNamespace(bot_config=self.collection)
@@ -94,15 +99,17 @@ class DashboardAccessTests(unittest.IsolatedAsyncioTestCase):
         # Restarting a repository reads the same authority, not stale local grants.
         self.assertEqual((await AccessRepository(self.collection).read())['revision'],1)
 
-    async def test_role_membership_is_fresh_and_combines_with_direct_grants(self):
+    async def test_role_membership_refreshes_after_30_seconds_and_combines_with_direct_grants(self):
         await self.save(['cwl_signups'],kind='role',subject='777')
         await self.save(['clan_weights'])
         data=await (await self.call('GET','/auth/me',self.member)).json()
         self.assertEqual(data['dashboard_permissions'],['clan_weights'])
         self.member_roles=['777']
+        self.role_clock += 30
         data=await (await self.call('GET','/auth/me',self.member)).json()
         self.assertEqual(set(data['dashboard_permissions']),{'clan_weights','cwl_signups'})
         self.member_roles=[]
+        self.role_clock += 30
         data=await (await self.call('GET','/auth/me',self.member)).json()
         self.assertFalse(data['can_edit'])
 
@@ -166,6 +173,7 @@ class DashboardAccessTests(unittest.IsolatedAsyncioTestCase):
         await self.save(['cwl_roster'])
         self.assertNotEqual((await self.call('GET','/seasons/1/roster',self.member)).status,403)
         self.left_server.add('100')
+        self.role_clock += 30
         data=await (await self.call('GET','/auth/me',self.member)).json()
         self.assertEqual(data['dashboard_permissions'],[])
         self.assertFalse(data['can_edit'])
@@ -218,9 +226,35 @@ class DashboardAccessTests(unittest.IsolatedAsyncioTestCase):
             db.execute('INSERT INTO grants(user_id,granted_by,permissions) VALUES (?,?,?)',('100','owner',json.dumps(['cwl'])))
         self.assertTrue((await (await self.call('GET','/auth/me',self.member)).json())['can_edit'])
         self.left_server.add('100')
+        self.role_clock += 30
         data=await (await self.call('GET','/auth/me',self.member)).json()
         self.assertFalse(data['can_edit'])
         self.assertEqual(data['dashboard_permissions'],[])
+
+    async def test_cached_member_roles_never_cache_grant_revocation(self):
+        await self.save(['cwl_signups'], kind='role', subject='777')
+        self.member_roles = ['777']
+        data = await (await self.call('GET', '/auth/me', self.member)).json()
+        self.assertEqual(data['dashboard_permissions'], ['cwl_signups'])
+        await self.save(None, kind='role', subject='777')
+        before = self.member_lookups
+        data = await (await self.call('GET', '/auth/me', self.member)).json()
+        self.assertEqual(data['dashboard_permissions'], [])
+        self.assertEqual(self.member_lookups, before)
+
+    async def test_expired_member_cache_failure_keeps_only_direct_grants(self):
+        from aiohttp import web
+        await self.save(['cwl_signups'], kind='role', subject='777')
+        await self.save(['clan_weights'])
+        self.member_roles = ['777']
+        data = await (await self.call('GET', '/auth/me', self.member)).json()
+        self.assertEqual(set(data['dashboard_permissions']), {'clan_weights', 'cwl_signups'})
+        self.role_clock += 30
+        self.app['server_management_discord'] = AsyncMock(side_effect=web.HTTPServiceUnavailable())
+        data = await (await self.call('GET', '/auth/me', self.member)).json()
+        self.assertEqual(data['dashboard_permissions'], ['clan_weights'])
+        self.assertIn('could not be checked', data['access_warning'])
+        self.app['server_management_discord'].assert_awaited_once()
 
     async def test_expired_session_cannot_block_a_fresh_login(self):
         with self.app['store'].tx() as db:
