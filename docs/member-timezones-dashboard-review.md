@@ -35,6 +35,8 @@ real-Mongo cases pass, including uncertainty lifetime, Stop and replay.
 
 ## Stop and recovery
 
+The Members panel keeps the queued request's `status_url` and identity across status-only polls until a terminal result.
+
 A sticky stop_requested barrier cancels unclaimed work and keeps the single lane
 held while an already claimed member finishes. The parent then becomes stopped;
 confirmation replay returns that terminal run and cannot resume it. The transport

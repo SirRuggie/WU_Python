@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import DetailsFrame from "../DetailsFrame";
 import { requestDetailsNavigation } from "../detailsNavigation";
@@ -178,7 +178,11 @@ export default function MemberPersonPanel({
     [profileOpen, setProfileOpen] = useState(false),
     [accountsOpen, setAccountsOpen] = useState(false),
     [request, setRequest] = useState<RequestState | null>(null);
+  const queueIdentity = useRef<{ member: string; id: string } | null>(null);
+  const completedRequest = useRef<string | null>(null);
   useLayoutEffect(() => {
+    queueIdentity.current = null;
+    completedRequest.current = null;
     setDirty(false);
     setProfileOpen(false);
     setAccountsOpen(false);
@@ -196,35 +200,74 @@ export default function MemberPersonPanel({
     onDirty(dirty || pending);
     return () => onDirty(false);
   }, [dirty, pending, onDirty]);
+  const complete = (identity: { member: string; id: string }) => {
+    if (queueIdentity.current !== identity) return;
+    setDirty(false);
+    setProfileOpen(false);
+    if (completedRequest.current !== identity.id) {
+      completedRequest.current = identity.id;
+      onChanged();
+    }
+  };
   useEffect(() => {
-    if (!request || !["pending", "running"].includes(request.status)) return;
+    const identity = queueIdentity.current;
+    if (
+      !request ||
+      !["pending", "running"].includes(request.status) ||
+      !identity ||
+      identity.member !== member.discord_id ||
+      identity.id !== request.request_id
+    )
+      return;
+    if (typeof request.status_url !== "string" || !request.status_url.trim()) {
+      setRequest((previous) =>
+        previous && queueIdentity.current === identity
+          ? { ...previous, status: "uncertain", message: t.roleUncertain }
+          : previous,
+      );
+      return;
+    }
     let stopped = false,
       inflight = false;
     const controller = new AbortController();
+    const current = () => !stopped && queueIdentity.current === identity;
+    const stop = () => {
+      stopped = true;
+      controller.abort();
+      window.clearInterval(timer);
+    };
+    const merge = (
+      result: Pick<RequestState, "status" | "message" | "result">,
+    ) =>
+      setRequest((previous) =>
+        previous && queueIdentity.current === identity
+          ? {
+              ...previous,
+              ...result,
+              request_id: request.request_id,
+              status_url: request.status_url,
+            }
+          : previous,
+      );
     const poll = async () => {
-      if (stopped || inflight || document.visibilityState === "hidden") return;
+      if (!current() || inflight || document.visibilityState === "hidden")
+        return;
       inflight = true;
       try {
-        const result = await api<RequestState>(
-          request.status_url,
-          "GET",
-          undefined,
-          { signal: controller.signal },
-        );
-        if (stopped) return;
-        setRequest(result);
-        if (result.status === "done") {
-          setDirty(false);
-          setProfileOpen(false);
-          onChanged();
-        }
+        const result = await api<
+          Pick<RequestState, "status" | "message" | "result">
+        >(request.status_url, "GET", undefined, { signal: controller.signal });
+        if (!current()) return;
+        merge(result);
+        if (!["pending", "running"].includes(result.status)) stop();
+        if (result.status === "done") complete(identity);
       } catch (cause) {
-        if (!stopped) {
+        if (current()) {
+          stop();
           if (cause instanceof ApiError && [401, 403].includes(cause.status))
             onDenied();
           else
-            setRequest({
-              ...request,
+            merge({
               status: "uncertain",
               message: cause instanceof Error ? cause.message : t.roleUncertain,
             });
@@ -235,12 +278,8 @@ export default function MemberPersonPanel({
     };
     const timer = window.setInterval(() => void poll(), 2000);
     void poll();
-    return () => {
-      stopped = true;
-      controller.abort();
-      window.clearInterval(timer);
-    };
-  }, [request?.request_id, request?.status]);
+    return stop;
+  }, [member.discord_id, request?.request_id]);
   const sections = [
     {
       id: "roles",
@@ -312,7 +351,15 @@ export default function MemberPersonPanel({
               data={data}
               busy={busy || pending}
               outcome={request}
-              onQueue={setRequest}
+              onQueue={(queued) => {
+                const identity = {
+                  member: member.discord_id,
+                  id: queued.request_id,
+                };
+                queueIdentity.current = identity;
+                setRequest(queued);
+                if (queued.status === "done") complete(identity);
+              }}
               onDirty={setDirty}
               onDenied={onDenied}
               onClose={() =>
