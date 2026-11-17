@@ -154,12 +154,32 @@ async def release_automation_delivery(
     )
 
 
-async def send_with_retries(rest, **kwargs) -> None:
-    """Send one message with a short bounded retry window."""
+def initial_delivery_nonce(channel_id: int, step: str) -> str:
+    """Stable ticket-channel/step identity, including after a process restart."""
+    if (
+        isinstance(channel_id, bool)
+        or not isinstance(channel_id, int)
+        or not 0 < channel_id < 2 ** 64
+    ):
+        raise ValueError("ticket channel ID must be a positive Discord snowflake")
+    step_token = {
+        "welcome_sent": "w",
+        "questionnaire_sent": "q",
+    }.get(step) if isinstance(step, str) else None
+    if step_token is None:
+        raise ValueError("unknown initial ticket delivery step")
+    # uint64 snowflakes have at most 20 digits: 3 + 20 + 1 + 1 = 25.
+    return f"tw-{channel_id}-{step_token}"
+
+
+async def send_with_retries(rest, *, channel: int, step: str, **kwargs) -> None:
+    """Retry one stable message identity within the existing short window."""
+    nonce = initial_delivery_nonce(channel, step)
     last_error = None
     for attempt in range(DELIVERY_ATTEMPTS):
         try:
-            await rest.create_message(**kwargs)
+            # Hikari 2.6 adds wire enforce_nonce=True for a nonempty nonce.
+            await rest.create_message(channel=channel, nonce=nonce, **kwargs)
             return
         except Exception as exc:  # noqa: BLE001 - Discord errors are retried uniformly
             last_error = exc
@@ -368,10 +388,11 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
             if not delivery_state.get("welcome_sent"):
                 await send_with_retries(
                     event.app.rest,
-                channel=channel_id,
-                content=welcome_message,
-                user_mentions=True,
-                role_mentions=True if fwa_recruiter_role else False
+                    channel=channel_id,
+                    step="welcome_sent",
+                    content=welcome_message,
+                    user_mentions=True,
+                    role_mentions=True if fwa_recruiter_role else False,
                 )
                 await mark_delivery_step(mongo_client, channel_id, "welcome_sent")
                 print(f"[DEBUG] Sent FWA welcome message to channel {channel_id}")
@@ -420,6 +441,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                 await send_with_retries(
                     event.app.rest,
                     channel=channel_id,
+                    step="questionnaire_sent",
                     components=components,
                     user_mentions=True,
                 )
@@ -453,10 +475,11 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
             if not delivery_state.get("welcome_sent"):
                 await send_with_retries(
                     event.app.rest,
-                channel=channel_id,
-                content=welcome_message,
-                user_mentions=True,
-                role_mentions=True if main_recruiter_role else False
+                    channel=channel_id,
+                    step="welcome_sent",
+                    content=welcome_message,
+                    user_mentions=True,
+                    role_mentions=True if main_recruiter_role else False,
                 )
                 await mark_delivery_step(mongo_client, channel_id, "welcome_sent")
                 print(f"[DEBUG] Sent MAIN welcome message to channel {channel_id}")
@@ -504,6 +527,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                 await send_with_retries(
                     event.app.rest,
                     channel=channel_id,
+                    step="questionnaire_sent",
                     components=components,
                     user_mentions=True,
                 )
