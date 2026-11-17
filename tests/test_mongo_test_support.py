@@ -6,6 +6,7 @@ from tests import mongo_test_support as support
 
 
 def test_test_mongodb_uri_requires_the_explicit_test_database(monkeypatch):
+    monkeypatch.setenv("WU_REAL_MONGO_TESTS", "1")
     monkeypatch.setenv("TICKET_TEST_MONGODB_URI", "mongodb://example.test/wubot_test")
     assert support.test_mongodb_uri() == "mongodb://example.test/wubot_test"
 
@@ -95,3 +96,22 @@ def test_denied_access_path_does_not_clean_up_collections():
         assert database.dropped == []
 
     asyncio.run(scenario())
+
+
+def test_explicit_runner_passes_opt_in_without_other_credentials(monkeypatch):
+    from types import SimpleNamespace
+    from tools import run_ticket_real_mongo_tests as runner
+
+    monkeypatch.setattr(runner, "dotenv_values", lambda path: {
+        "TICKET_TEST_MONGODB_URI": "mongodb://example.invalid/wubot_test",
+        "MONGODB_URI": "must-not-forward",
+    })
+    calls = []
+    monkeypatch.setattr(runner.subprocess, "run", lambda *args, **kwargs: (
+        calls.append(kwargs) or SimpleNamespace(returncode=0)
+    ))
+    assert runner.main() == 0
+    assert calls[0]["env"] == {
+        "TICKET_TEST_MONGODB_URI": "mongodb://example.invalid/wubot_test",
+        "WU_REAL_MONGO_TESTS": "1",
+    }

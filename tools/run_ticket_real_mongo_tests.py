@@ -24,7 +24,7 @@ def main() -> int:
     return subprocess.run(
         [sys.executable, "-m", "pytest", "-q", *TEST_FILES],
         cwd=ROOT,
-        env={TEST_URI_VARIABLE: test_uri},
+        env={TEST_URI_VARIABLE: test_uri, "WU_REAL_MONGO_TESTS": "1"},
         check=False,
     ).returncode
 
