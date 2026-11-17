@@ -1,4 +1,6 @@
 """Explicitly opted-in browser reminders, using durable per-device settings."""
+
+from utils.cwl_roster_sequence import persist_delivery_result
 import asyncio
 import base64
 import hashlib
@@ -87,8 +89,11 @@ def _public(row):
 async def settings(request):
     from .app import _require
     uid = _require(request)['user_id']
-    with request.app['store'].tx() as db:
+    rows: object
+    def _settings_transaction_1(db):
+        nonlocal rows
         rows = db.execute('SELECT * FROM push_subscriptions WHERE user_id=?', (uid,)).fetchall()
+    await request.app['store'].run_tx(_settings_transaction_1)
     return web.json_response({'available': available(), 'public_key': config()[1] if available() else None,
                               'subscriptions': [_public(row) for row in rows]})
 
@@ -119,7 +124,9 @@ async def save(request):
     if not set(tags) <= set(links):
         raise web.HTTPForbidden(text='Only your linked accounts can receive reminders')
     sid = hashlib.sha256(sub['endpoint'].encode()).hexdigest()
-    with request.app['store'].tx() as db:
+    row: object
+    def _save_transaction_1(db):
+        nonlocal row
         existing = db.execute('SELECT * FROM push_subscriptions WHERE id=?', (sid,)).fetchone()
         # A browser changing Discord identities must explicitly remove its old subscription first.
         if existing and existing['user_id'] != uid:
@@ -130,14 +137,16 @@ async def save(request):
         db.execute('INSERT INTO push_subscriptions(id,user_id,subscription,enabled,tags,war,cwl,offsets,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET subscription=excluded.subscription,enabled=excluded.enabled,tags=excluded.tags,war=excluded.war,cwl=excluded.cwl,offsets=excluded.offsets,updated_at=excluded.updated_at',
                    (sid, uid, json.dumps(sub), int(body['enabled']), json.dumps(sorted(set(tags))), int(body['war']), int(body['cwl']), json.dumps(sorted(set(offsets), reverse=True)), int(time.time())))
         row = db.execute('SELECT * FROM push_subscriptions WHERE id=?', (sid,)).fetchone()
+    await request.app['store'].run_tx(_save_transaction_1)
     return web.json_response(_public(row))
 
 
 async def remove(request):
     from .app import _require
     uid = _require(request)['user_id']
-    with request.app['store'].tx() as db:
+    def _remove_transaction_1(db):
         db.execute('DELETE FROM push_subscriptions WHERE id=? AND user_id=?', (request.match_info['sid'], uid))
+    await request.app['store'].run_tx(_remove_transaction_1)
     return web.json_response({'ok': True})
 
 
@@ -171,17 +180,21 @@ async def test(request):
     if not available():
         raise web.HTTPServiceUnavailable(text='Notifications are not configured yet')
     now = int(time.time())
-    with request.app['store'].tx() as db:
+    row: object
+    def _test_transaction_1(db):
+        nonlocal row
         row = db.execute('SELECT * FROM push_subscriptions WHERE id=? AND user_id=?', (request.match_info['sid'], uid)).fetchone()
         if not row:
             raise web.HTTPNotFound(text='Device subscription not found')
         if now - row['test_at'] < 60:
             raise web.HTTPTooManyRequests(text='Wait a minute before another test')
         db.execute('UPDATE push_subscriptions SET test_at=? WHERE id=?', (now, row['id']))
+    await request.app['store'].run_tx(_test_transaction_1)
     result = await asyncio.to_thread(send, json.loads(row['subscription']), {'title': 'Warriors United reminders', 'body': 'Notifications are ready. Tap to open Tasks.', 'url': '/tasks', 'tag': 'wu-push-test'})
     if result == 'expired':
-        with request.app['store'].tx() as db:
+        def _test_transaction_2(db):
             db.execute('DELETE FROM push_subscriptions WHERE id=?', (row['id'],))
+        await request.app['store'].run_tx(_test_transaction_2)
     if result != 'sent':
         raise web.HTTPServiceUnavailable(text='Notification could not be delivered. Re-enable reminders on this device.')
     return web.json_response({'ok': True})
@@ -226,8 +239,11 @@ async def fresh(app, uid):
     from .todo import get_clash_client, load_recent_clans
     from utils import todo_data
     links = await asyncio.wait_for(app['providers'].linked_tags(uid), 10)
-    with app['store'].tx() as db:
+    rows: object
+    def _fresh_transaction_1(db):
+        nonlocal rows
         rows = db.execute('SELECT tags,war,cwl FROM push_subscriptions WHERE user_id=? AND enabled=1', (uid,)).fetchall()
+    await app['store'].run_tx(_fresh_transaction_1)
     selected = {tag for row in rows for tag in json.loads(row['tags'])}
     tags = [tag for tag in links if tag in selected][:100]
     if not tags:
@@ -285,22 +301,31 @@ def reminder_payload(item):
 
 
 async def process_user(app, uid):
-    with app['store'].tx() as db:
+    active: object
+    def _process_user_transaction_1(db):
+        nonlocal active
         active = db.execute('SELECT 1 FROM push_subscriptions WHERE user_id=? AND enabled=1 LIMIT 1', (uid,)).fetchone()
+    await app['store'].run_tx(_process_user_transaction_1)
     if not active:
         return
     snapshot = await asyncio.wait_for(fresh(app, uid), FRESH_CHECK_TIMEOUT)
     now = int(time.time())
-    with app['store'].tx() as db:
+    subscriptions: object
+    def _process_user_transaction_2(db):
+        nonlocal subscriptions
         subscriptions = db.execute('SELECT * FROM push_subscriptions WHERE user_id=? AND enabled=1', (uid,)).fetchall()
+    await app['store'].run_tx(_process_user_transaction_2)
     for sub in subscriptions:
         for item in plan(snapshot, sub, now):
-            with app['store'].tx() as db:
+            def claim(db):
                 current = db.execute('SELECT * FROM push_subscriptions WHERE id=? AND enabled=1', (sub['id'],)).fetchone()
                 if not current or dict(current) != dict(sub):
-                    break
+                    return None
                 cursor = db.execute('INSERT OR IGNORE INTO push_deliveries VALUES (?,?,?,?)', (sub['id'], item['event'], item['offset'], item['expires_at']))
-                claimed = bool(cursor.rowcount)
+                return bool(cursor.rowcount)
+            claimed = await app['store'].run_tx(claim)
+            if claimed is None:
+                break
             if not claimed:
                 continue
             payload = reminder_payload(item)
@@ -308,8 +333,9 @@ async def process_user(app, uid):
             if result == 'failed':
                 LOG.warning('Push clan reminder delivery failed; claim retained to avoid duplicate notification')
             if result == 'expired':
-                with app['store'].tx() as db:
+                def _process_user_transaction_3(db):
                     db.execute('DELETE FROM push_subscriptions WHERE id=?', (sub['id'],))
+                await persist_delivery_result(app['store'].run_tx(_process_user_transaction_3))
                 break
             # Claim before delivery prevents duplicate alerts after process restart.
             # Do not retry ambiguous failures: delivery may already have succeeded.
@@ -318,9 +344,12 @@ async def process_user(app, uid):
 async def worker(app):
     while True:
         try:
-            with app['store'].tx() as db:
+            users: object
+            def _worker_transaction_1(db):
+                nonlocal users
                 db.execute('DELETE FROM push_deliveries WHERE expires_at<?', (int(time.time()) - 86400,))
                 users = [row[0] for row in db.execute('SELECT DISTINCT user_id FROM push_subscriptions WHERE enabled=1')]
+            await app['store'].run_tx(_worker_transaction_1)
             sem = asyncio.Semaphore(3)
             async def one(uid):
                 async with sem:

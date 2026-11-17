@@ -10,6 +10,20 @@ def timestamp(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
+def settings_identity(updated_at, version):
+    """Identity of an actually scanned settings row at BSON date precision."""
+    updated = timestamp(updated_at)
+    if updated is not None:
+        updated = updated.replace(microsecond=updated.microsecond // 1000 * 1000)
+    return updated, version if isinstance(version, int) and not isinstance(version, bool) else None
+
+
+def checked_settings(config, status):
+    return ('settings_updated_at' in status and 'settings_version' in status
+            and settings_identity(config.get('updated_at'), config.get('version'))
+            == settings_identity(status['settings_updated_at'], status['settings_version']))
+
+
 def health(config, status, delivery, now):
     if not config:
         return 'not_configured', 'Not configured', 'Choose a channel and reminder times to get started.'
@@ -21,9 +35,9 @@ def health(config, status, delivery, now):
         return 'attention', 'Check delivery', 'The last scheduled delivery was not confirmed. Check the channel before taking action.'
     status = status or {}
     checked = timestamp(status.get('checked_at'))
-    updated = timestamp(config.get('updated_at'))
+    updated = settings_identity(config.get('updated_at'), config.get('version'))[0]
     # A check from before the settings changed does not verify the new settings.
-    if checked is None or (updated and checked < updated):
+    if checked is None or not checked_settings(config, status) or (updated and checked < updated):
         if updated and 0 <= (now-updated).total_seconds() <= STALE_SECONDS:
             return 'pending', 'Awaiting check', 'Waiting for the bot to check these settings.'
         return 'attention', 'No recent check', 'No check has confirmed the current settings. Check bot availability.'

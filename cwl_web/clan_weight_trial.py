@@ -186,9 +186,12 @@ async def directory(request):
             season_id = int(request.query["season_id"])
         except ValueError:
             _fail(400, "Select a valid season.")
-        with _store(request).tx() as db:
+        accounts: object
+        def _directory_transaction_1(db):
+            nonlocal accounts
             _season(db, season_id)
             accounts = _roster_rows(db, season_id)
+        await _store(request).run_tx(_directory_transaction_1)
         if all(snapshot["status"] == "current" for snapshot in snapshots.values()):
             outside = sum(
                 account["effective_weight"] is None

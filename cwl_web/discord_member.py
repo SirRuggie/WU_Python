@@ -107,11 +107,11 @@ async def dispatch(request):
         elif action == "withdraw":
             if type(body.get("expected_revision")) is not int or body.get("expected_pool") not in ("main", "lazy"):
                 raise member.MemberError(400, "Missing signup revision or source pool")
-            result = member.withdraw(
+            result = (await store.run_writer(lambda: member.withdraw(
                 store, _season_id(body), user_id, body.get("tag"),
                 expected_pool=body["expected_pool"],
                 expected_revision=body["expected_revision"],
-            )
+            )))
         else:
             raise member.MemberError(400, "Invalid CWL action")
         return web.json_response(result)

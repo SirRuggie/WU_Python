@@ -14,8 +14,8 @@ from cwl_web import war_reminders as api
 from cwl_web.manage_clans import public
 
 NOW = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
-CONFIG = dict(enabled=True, channel_id='123456789012345678', updated_at=NOW-timedelta(minutes=10))
-STATE = dict(checked_at=NOW, detail='Tracking battle day', error=None)
+CONFIG = dict(version=1, enabled=True, channel_id='123456789012345678', updated_at=NOW-timedelta(minutes=10))
+STATE = dict(settings_updated_at=CONFIG['updated_at'], settings_version=CONFIG['version'], checked_at=NOW, detail='Tracking battle day', error=None)
 
 @pytest.mark.parametrize('config,state,delivery,category,label', [
     (None,None,None,'not_configured','Not configured'),

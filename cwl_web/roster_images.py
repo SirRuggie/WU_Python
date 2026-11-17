@@ -12,7 +12,7 @@ def snapshot(request, version=None, clan_tag=None):
     from .app import _require, _sid, _store, _season
     _require(request,'editor')
     sid=_sid(request)
-    with _store(request).tx() as db:
+    with _store(request).read() as db:
         season=dict(_season(db,sid))
         pub=db.execute('SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1',(sid,)).fetchone()
         if not pub: raise web.HTTPConflict(text='Finalize a roster first.')
@@ -69,12 +69,15 @@ async def send_test(request):
     if pages>10:raise web.HTTPBadRequest(text='This roster is too large to send.')
     images=await asyncio.gather(*(asyncio.to_thread(render,season,pub,group,p) for p in range(1,pages+1)))
     key=f'roster-image:{actor["user_id"]}:{nonce}'
-    with _store(request).tx() as db:
+    def _send_test_transaction_1(db):
         old=db.execute('SELECT url FROM roster_test_messages WHERE id=?',(key,)).fetchone()
         if old:
-            if old['url']:return web.json_response({'url':old['url']})
+            if old['url']:return (True, web.json_response({'url':old['url']}))
             raise web.HTTPConflict(text='Test delivery is unconfirmed. Check Discord before sending again.')
         db.execute('INSERT INTO roster_test_messages(id,season_id,pool,channel_id,actor_id) VALUES (?,?,?,?,?)',(key,sid,group['pool'],channel,actor['user_id']))
+    _outcome = await _store(request).run_tx(_send_test_transaction_1)
+    if _outcome is not None:
+        return _outcome[1]
     form=FormData()
     payload = {**clan_image_message(group['name'], group['tag'], test=True),
                'nonce': nonce, 'enforce_nonce': True,
@@ -87,7 +90,9 @@ async def send_test(request):
     except DiscordDeliveryUncertain:
         raise web.HTTPServiceUnavailable(text='Test delivery is unconfirmed. Check Discord before sending again.') from None
     url=f'https://discord.com/channels/{GUILD_ID}/{channel}/{message["id"]}'
-    with _store(request).tx() as db:db.execute('UPDATE roster_test_messages SET url=? WHERE id=?',(url,key))
+    def _send_test_transaction_2(db):
+        db.execute('UPDATE roster_test_messages SET url=? WHERE id=?',(url,key))
+    await _store(request).run_tx(_send_test_transaction_2)
     return web.json_response({'url':url})
 
 def routes():

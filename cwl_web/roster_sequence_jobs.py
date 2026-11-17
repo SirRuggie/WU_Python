@@ -36,12 +36,12 @@ class SequenceJobs:
 
     async def advance(self, sequence_id, *, resume=False):
         if resume:
-            self.storage.resume_sequence(sequence_id)
+            (await self.storage.store.run_writer(lambda: self.storage.resume_sequence(sequence_id)))
         job = self.storage.sequence(sequence_id)
         if not job or job['status'] not in ('awaiting_announcement', 'ready'):
             return
         if not await self.authorized(job):
-            self.storage.stop_sequence(sequence_id, 'Send permission was removed')
+            (await self.storage.store.run_writer(lambda: self.storage.stop_sequence(sequence_id, 'Send permission was removed')))
             return
         if job['status'] == 'awaiting_announcement':
             async with _mongo(self.request) as mongo:
@@ -50,7 +50,7 @@ class SequenceJobs:
                     # Revalidate the saved intent before recovering a missing native queue.
                     publication = self.storage.publication(job['season_id'])
                     if not publication or publication[1]['version'] != job['target_version']:
-                        self.storage.stop_sequence(sequence_id, 'Published roster changed; review again')
+                        (await self.storage.store.run_writer(lambda: self.storage.stop_sequence(sequence_id, 'Published roster changed; review again')))
                         return
                     # Recover a crash after SQLite intent but before native queue insertion.
                     try:
@@ -67,23 +67,23 @@ class SequenceJobs:
                             raise
                     return
             if bridge.get('sequence_id') != sequence_id:
-                self.storage.stop_sequence(sequence_id, 'Announcement belongs to another review; refresh')
+                (await self.storage.store.run_writer(lambda: self.storage.stop_sequence(sequence_id, 'Announcement belongs to another review; refresh')))
                 return
             if bridge.get('status') in ('pending', 'sending'):
                 return
             if bridge.get('status') != 'sent':
-                self.storage.stop_sequence(sequence_id, bridge.get('error') or 'Announcement is not confirmed')
+                (await self.storage.store.run_writer(lambda: self.storage.stop_sequence(sequence_id, bridge.get('error') or 'Announcement is not confirmed')))
                 return
             try:
-                self.storage.confirm_sequence_announcement(sequence_id, bridge)
+                (await self.storage.store.run_writer(lambda: self.storage.confirm_sequence_announcement(sequence_id, bridge)))
             except ImageConflict as exc:
-                self.storage.stop_sequence(sequence_id, str(exc))
+                (await self.storage.store.run_writer(lambda: self.storage.stop_sequence(sequence_id, str(exc))))
                 return
         worker = SequenceWorker(self.storage, SequenceTransport(self.app), self.authorized)
         result = await worker.advance(sequence_id, resume=resume)
         if result['status'] in ('stopped', 'uncertain'):
             where = result.get('clan_tag') or result.get('step') or 'sequence'
-            self.storage.stop_sequence(sequence_id, f"Stopped at {where}: {result.get('error') or result['status']}")
+            (await self.storage.store.run_writer(lambda: self.storage.stop_sequence(sequence_id, f"Stopped at {where}: {result.get('error') or result['status']}")))
 
     async def _run(self, sequence_id):
         try:
@@ -91,7 +91,7 @@ class SequenceJobs:
         except asyncio.CancelledError:
             raise
         except BridgeConflict as exc:
-            self.storage.stop_sequence(sequence_id, str(exc))
+            (await self.storage.store.run_writer(lambda: self.storage.stop_sequence(sequence_id, str(exc))))
         except Exception:
             # Persisted receipts prevent replay of any uncertain external side effect.
             LOG.exception('Roster sequence pass failed for %s', sequence_id)

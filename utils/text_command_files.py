@@ -1,4 +1,6 @@
 """Bounded, content-addressed command attachments in the backed-up settings database."""
+
+from utils.mongo_routes import collection_from
 import hashlib,re
 from datetime import datetime,timezone
 from pymongo.write_concern import WriteConcern
@@ -6,7 +8,7 @@ from utils.text_commands import GUILD_ID,walk_blocks
 MAX_BYTES=8*1024*1024
 
 def collection(db):
-    return db.bot_config.database.get_collection('text_command_files',write_concern=WriteConcern(w='majority',wtimeout=10000))
+    return collection_from(db.bot_config, 'text_command_files', write_concern=WriteConcern(w='majority'))
 
 def filename(value):
     value=re.sub(r'[^A-Za-z0-9_. -]','_',value.rsplit('/',1)[-1].rsplit('\\',1)[-1])[:100].strip(' .')

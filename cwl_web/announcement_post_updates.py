@@ -19,7 +19,7 @@ def _scope(request, *, writing=False):
     pool = manage_bridge._pool(request)
     cycle = manage_bridge._required_binding(request, sid)
     if writing:
-        with _store(request).tx() as db:
+        with _store(request).read() as db:
             if _season(db, sid)["status"] != "draft":
                 raise web.HTTPConflict(text="Season is archived")
     return actor, sid, cycle, pool
@@ -224,7 +224,9 @@ async def validate(request):
     ):
         raise web.HTTPBadRequest(text="Invalid validation identity")
     sid = int(body["season_id"])
-    with _store(request).tx() as db:
+    valid: object
+    def _validate_transaction_1(db):
+        nonlocal valid
         season = _season(db, sid)
         binding = db.execute(
             "SELECT cycle FROM manage_campaign_bindings WHERE season_id=?", (sid,)
@@ -234,6 +236,7 @@ async def validate(request):
             and binding is not None
             and binding["cycle"] == body["cycle"]
         )
+    await _store(request).run_tx(_validate_transaction_1)
     async with manage_bridge._mongo(request) as mongo:
         claimed = await PostUpdateStore(mongo).active_claim(
             workflow_id=body["workflow_id"],

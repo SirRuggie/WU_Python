@@ -1,4 +1,6 @@
 """Shared, non-executable Discord text commands stored beside bot configuration."""
+
+from utils.mongo_routes import collection_from
 import re
 import ipaddress
 import logging
@@ -16,7 +18,7 @@ _recent = OrderedDict()
 
 def collection(db):
     # Same configured database as bot_config; permanent collection, no TTL.
-    return db.bot_config.database.get_collection('text_commands', write_concern=WriteConcern(w='majority', wtimeout=10000))
+    return collection_from(db.bot_config, 'text_commands', write_concern=WriteConcern(w='majority'))
 
 
 def command_name(value):

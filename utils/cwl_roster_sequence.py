@@ -6,8 +6,49 @@ are never automatically retried. No dashboard or bot imports belong here.
 """
 import asyncio
 import math
+import logging
 
 from utils.cwl_roster_image_store import ImageConflict
+
+
+async def persist_delivery_result(write):
+    """Persist an already-known result, then propagate the original cancellation.
+
+    Unlike an unstarted claim, a confirmed transport result cannot be abandoned
+    in the writer queue. The task owns only this existing storage operation;
+    it never repeats a transport request or changes a delivery classification.
+    """
+    task = asyncio.create_task(write)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not task.cancelled():
+            error = task.exception()
+            if error is not None:
+                logging.getLogger(__name__).warning(
+                    'Delivery result could not be persisted during cancellation',
+                    exc_info=(type(error), error, error.__traceback__),
+                )
+        raise
+
+
+async def cancel_image_claim(storage, receipt, *, sequence_id=None,
+                             error='Delivery interrupted; check Discord first'):
+    """Close only this still-owned in-flight receipt; never mask cancellation."""
+    try:
+        await persist_delivery_result(storage.store.run_writer(lambda: storage.finish(
+            receipt, 'uncertain', error=error,
+            sequence_id=sequence_id, only_sending=True,
+        )))
+    except (Exception, asyncio.CancelledError):
+        logging.getLogger(__name__).exception('Cancelled image claim cleanup unavailable')
 
 
 class SequenceRejected(Exception):
@@ -43,7 +84,7 @@ class SequenceWorker:
                     job = self.storage.sequence(sequence_id)
                     if not job or not await self.authorize(job):
                         return {'status': 'stopped', 'error': 'Send permission was removed'}
-                    self.storage.resume_sequence(sequence_id)
+                    (await self.storage.store.run_writer(lambda: self.storage.resume_sequence(sequence_id)))
                 result = await self._advance(sequence_id, resume=resume)
                 if result['status'] != 'rate_limited':
                     return result
@@ -64,21 +105,30 @@ class SequenceWorker:
                     return self._blocked(item['tag'], receipt)
             if not await self.authorize(job):
                 return {'status': 'stopped', 'clan_tag': item['tag'], 'error': 'Send permission was removed'}
+            completed_claim = []
+            def claim_image():
+                if receipt and resume:
+                    result = (self.storage.retry_sequence_image(sequence_id, item['request_id']), True)
+                else:
+                    result = self.storage.claim(
+                        job['season_id'], job['pool'], item['tag'], job['target_version'],
+                        item['request_id'], 'post', job['channel_id'], None, item['frozen'],
+                        job['actor_id'], sequence_id=sequence_id,
+                        confirm_duplicate=item.get('confirm_duplicate', False),
+                    )
+                completed_claim.append(result)
+                return result
             try:
                 if receipt and resume:
                     if receipt.get('retry_after') is not None:
                         await asyncio.sleep(receipt['retry_after'])
                         if not await self.authorize(job):
                             return {'status': 'stopped', 'clan_tag': item['tag'], 'error': 'Send permission was removed'}
-                    receipt = self.storage.retry_sequence_image(sequence_id, item['request_id'])
-                    acquired = True
-                else:
-                    receipt, acquired = self.storage.claim(
-                        job['season_id'], job['pool'], item['tag'], job['target_version'],
-                        item['request_id'], 'post', job['channel_id'], None, item['frozen'],
-                        job['actor_id'], sequence_id=sequence_id,
-                        confirm_duplicate=item.get('confirm_duplicate', False),
-                    )
+                receipt, acquired = await self.storage.store.run_writer(claim_image)
+            except asyncio.CancelledError:
+                if completed_claim and completed_claim[0][1]:
+                    await cancel_image_claim(self.storage, completed_claim[0][0], sequence_id=sequence_id)
+                raise
             except ImageConflict as exc:
                 return {'status': 'stopped', 'clan_tag': item['tag'], 'error': str(exc)}
             if not acquired:
@@ -87,18 +137,19 @@ class SequenceWorker:
                 message = await self.transport.image(job, item)
                 self._message_id(message)
             except asyncio.CancelledError:
-                self.storage.finish(receipt, 'uncertain', error='Delivery interrupted; check Discord first', sequence_id=sequence_id)
+                await cancel_image_claim(self.storage, receipt, sequence_id=sequence_id)
                 raise
             except SequenceRateLimit as exc:
-                self.storage.finish(receipt, 'failed', error=str(exc), retry_after=exc.seconds, sequence_id=sequence_id)
+                (await persist_delivery_result(self.storage.store.run_writer(lambda: self.storage.finish(receipt, 'failed', error=str(exc), retry_after=exc.seconds, sequence_id=sequence_id))))
                 return {'status': 'rate_limited', 'clan_tag': item['tag'], 'retry_after': exc.seconds}
             except SequenceRejected as exc:
-                self.storage.finish(receipt, 'failed', error=str(exc), sequence_id=sequence_id)
+                (await persist_delivery_result(self.storage.store.run_writer(lambda: self.storage.finish(receipt, 'failed', error=str(exc), sequence_id=sequence_id))))
                 return {'status': 'stopped', 'clan_tag': item['tag'], 'error': str(exc)}
             except Exception:
-                self.storage.finish(receipt, 'uncertain', error='Delivery outcome unknown; check Discord first', sequence_id=sequence_id)
+                (await persist_delivery_result(self.storage.store.run_writer(lambda: self.storage.finish(receipt, 'uncertain', error='Delivery outcome unknown; check Discord first', sequence_id=sequence_id))))
                 return {'status': 'uncertain', 'clan_tag': item['tag']}
-            self.storage.finish(receipt, 'posted', str(message))
+            await persist_delivery_result(self.storage.store.run_writer(
+                lambda: self.storage.finish(receipt, 'posted', str(message))))
         if not await self.authorize(job):
             return {'status': 'stopped', 'step': 'closing', 'error': 'Send permission was removed'}
         prior_closing = self.storage.closing_receipt(sequence_id)
@@ -106,8 +157,25 @@ class SequenceWorker:
             await asyncio.sleep(prior_closing['retry_after'])
             if not await self.authorize(job):
                 return {'status': 'stopped', 'step': 'closing', 'error': 'Send permission was removed'}
+        completed_closing = []
+        def claim_closing():
+            result = self.storage.claim_sequence_closing(sequence_id, retry_failed=resume)
+            completed_closing.append(result)
+            return result
+        async def cancel_closing(owned):
+            try:
+                await persist_delivery_result(self.storage.store.run_writer(
+                    lambda: self.storage.finish_sequence_closing(
+                        sequence_id, expected_request_id=owned['request_id'], status='uncertain',
+                        error='Delivery interrupted; check Discord first')))
+            except (Exception, asyncio.CancelledError):
+                logging.getLogger(__name__).exception('Cancelled closing-note cleanup unavailable')
         try:
-            receipt, acquired = self.storage.claim_sequence_closing(sequence_id, retry_failed=resume)
+            receipt, acquired = await self.storage.store.run_writer(claim_closing)
+        except asyncio.CancelledError:
+            if completed_closing and completed_closing[0][1]:
+                await cancel_closing(completed_closing[0][0])
+            raise
         except ImageConflict as exc:
             return {'status': 'stopped', 'step': 'closing', 'error': str(exc)}
         if not acquired:
@@ -118,21 +186,21 @@ class SequenceWorker:
             message = await self.transport.closing(job, plan['closing'])
             self._message_id(message)
         except asyncio.CancelledError:
-            self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='uncertain',
-                                                 error='Delivery interrupted; check Discord first')
+            await cancel_closing(receipt)
             raise
         except SequenceRateLimit as exc:
-            self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='failed',
-                                                 error=str(exc), retry_after=exc.seconds)
+            (await persist_delivery_result(self.storage.store.run_writer(lambda: self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='failed',
+                                                 error=str(exc), retry_after=exc.seconds))))
             return {'status': 'rate_limited', 'step': 'closing', 'retry_after': exc.seconds}
         except SequenceRejected as exc:
-            self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='failed', error=str(exc))
+            (await persist_delivery_result(self.storage.store.run_writer(lambda: self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='failed', error=str(exc)))))
             return {'status': 'stopped', 'step': 'closing', 'error': str(exc)}
         except Exception:
-            self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='uncertain',
-                                                 error='Delivery outcome unknown; check Discord first')
+            (await persist_delivery_result(self.storage.store.run_writer(lambda: self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='uncertain',
+                                                 error='Delivery outcome unknown; check Discord first'))))
             return {'status': 'uncertain', 'step': 'closing'}
-        self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='posted', message=str(message))
+        await persist_delivery_result(self.storage.store.run_writer(
+            lambda: self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='posted', message=str(message))))
         return {'status': 'complete'}
 
     @staticmethod

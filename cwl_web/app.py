@@ -5,6 +5,8 @@ from .ticket_browser import routes as ticket_browser_routes
 """Aiohttp CWL foundation. Read-only bot directory; no bot gateway or Discord sends."""
 
 import asyncio
+import ipaddress
+from collections import OrderedDict, deque
 import hashlib
 import json
 import logging
@@ -79,7 +81,7 @@ class HTTPLocked(web.HTTPClientError):
 def _fail(status, message):
     kinds = {400: web.HTTPBadRequest, 401: web.HTTPUnauthorized,
              403: web.HTTPForbidden, 404: web.HTTPNotFound,
-             409: web.HTTPConflict, 423: HTTPLocked,
+             409: web.HTTPConflict, 423: HTTPLocked, 429: web.HTTPTooManyRequests,
              503: web.HTTPServiceUnavailable}
     raise kinds[status](text=message)
 
@@ -370,9 +372,15 @@ async def auth_start(request):
     if not all(cfg.values()):
         _fail(503, "Discord OAuth is not configured")
     state = secrets.token_urlsafe(32)
-    with _store(request).tx() as db:
-        db.execute("DELETE FROM oauth_states WHERE expires_at<=?", (int(time.time()),))
-        db.execute("INSERT INTO oauth_states VALUES (?,?)", (_hash(state), int(time.time()) + 300))
+    now = time.monotonic()
+    states = request.app["oauth_states"]
+    for key in list(states):
+        if states[key] <= now:
+            del states[key]
+    # Bound anonymous state memory. Eviction only expires an outstanding login.
+    while len(states) >= 10000:
+        states.popitem(last=False)
+    states[_hash(state)] = now + 300
     params = {"client_id": cfg["client_id"], "redirect_uri": cfg["redirect_uri"], "response_type": "code", "scope": "identify guilds", "state": state, "prompt": "consent" if request.query.get("retry") == "1" else "none"}
     response = web.HTTPFound("https://discord.com/oauth2/authorize?" + urlencode(params, quote_via=quote))
     destination = login_destination(request.query)
@@ -387,12 +395,11 @@ async def auth_start(request):
 async def auth_callback(request):
     state = request.query.get("state", "")
     cookie_state = request.cookies.get(STATE_COOKIE, "")
-    if not state or not cookie_state or not secrets.compare_digest(state, cookie_state):
+    if not state or not cookie_state or not secrets.compare_digest(state.encode("utf-8"), cookie_state.encode("utf-8")):
         _fail(403, "OAuth state mismatch")
-    with _store(request).tx() as db:
-        cursor = db.execute("DELETE FROM oauth_states WHERE state_hash=? AND expires_at>?", (_hash(state), int(time.time())))
-        if cursor.rowcount != 1:
-            _fail(403, "OAuth state expired or already used")
+    expires = request.app["oauth_states"].pop(_hash(state), 0)
+    if expires <= time.monotonic():
+        _fail(403, "OAuth state expired or already used")
     if request.query.get("error"):
         _fail(401, "Discord authorization was not completed")
     cfg = request.app["oauth"]
@@ -443,13 +450,15 @@ async def auth_callback(request):
     guild = next((g for g in guilds if isinstance(g, dict) and str(g.get("id")) == GUILD_ID), None) or {}
     raw = secrets.token_urlsafe(48)
     csrf = secrets.token_urlsafe(32)
-    with _store(request).tx() as db:
+    def _auth_callback_transaction_1(db):
+        db.execute("DELETE FROM sessions WHERE expires_at<=?", (int(time.time()),))
         username = str(user.get("username") or user["id"])
         global_name = user.get("global_name")
         display_name = global_name.strip() if isinstance(global_name, str) and global_name.strip() else username
         db.execute("INSERT INTO sessions(token_hash,user_id,username,guild_owner,csrf,expires_at,display_name,avatar_url,is_bot) VALUES (?,?,?,?,?,?,?,?,?)",
                    (_hash(raw), str(user["id"]), username, int(guild.get("owner") is True), csrf,
                     int(time.time()) + SESSION_SECONDS, display_name, _discord_avatar_url(user), int(user.get("bot") is True)))
+    await _store(request).run_tx(_auth_callback_transaction_1)
     response = web.HTTPFound(saved_login_destination(request) or request.app["after_login"])
     response.del_cookie(RETURN_COOKIE, path=API + "/auth")
     response.set_cookie(COOKIE, raw, max_age=SESSION_SECONDS, httponly=True, secure=request.app["secure_cookies"], samesite="Lax", path=API)
@@ -463,10 +472,11 @@ async def logout(request):
     invalidate(request.app, session["user_id"])
     body = await request.json() if request.can_read_body else {}
     push_id = body.get("push_id") if isinstance(body, dict) else None
-    with _store(request).tx() as db:
+    def _logout_transaction_1(db):
         if isinstance(push_id, str):
             db.execute("DELETE FROM push_subscriptions WHERE id=? AND user_id=?", (push_id, session["user_id"]))
         db.execute("DELETE FROM sessions WHERE token_hash=?", (_hash(request.cookies[COOKIE]),))
+    await _store(request).run_tx(_logout_transaction_1)
     response = web.json_response({"ok": True})
     response.del_cookie(COOKIE, path=API)
     return response
@@ -482,11 +492,12 @@ async def dev_login(request):
         _fail(404, "Not found")
     identity = request.app["dev_identity"]
     raw, csrf = secrets.token_urlsafe(48), secrets.token_urlsafe(32)
-    with _store(request).tx() as db:
+    def _dev_login_transaction_1(db):
         db.execute("INSERT INTO sessions(token_hash,user_id,username,guild_owner,csrf,expires_at,display_name,avatar_url,is_bot) VALUES (?,?,?,?,?,?,?,?,?)",
                    (_hash(raw), identity["id"], identity["username"], int(identity.get("guild_owner", False)),
                     csrf, int(time.time()) + SESSION_SECONDS, identity.get("display_name") or identity["username"],
                     identity.get("avatar_url") or _discord_avatar_url(identity), int(identity.get("bot") is True)))
+    await _store(request).run_tx(_dev_login_transaction_1)
     response = web.json_response({"ok": True})
     response.set_cookie(COOKIE, raw, max_age=SESSION_SECONDS, httponly=True, secure=False, samesite="Lax", path=API)
     return response
@@ -499,8 +510,11 @@ async def seasons(request):
     if not _editor(request, session):
         rows = [row for row in rows if row['id'] == selection['season_id']]
     from .participation_sync import resolved_cwl_months
-    with _store(request).tx() as db:
+    months: object
+    def _seasons_transaction_1(db):
+        nonlocal months
         months = resolved_cwl_months(db, [row['id'] for row in rows])
+    await _store(request).run_tx(_seasons_transaction_1)
     from .member_timing import seasons_timing
     timing = await seasons_timing(request, [row['id'] for row in rows])
     return web.json_response({"seasons": [_season_dict(row) | dates | {"cwl_month": months.get(row['id'])} for row, dates in zip(rows, timing)], "member_season": selection})
@@ -513,7 +527,7 @@ async def set_member_season(request):
     if set(body) != {'season_id', 'revision'} or type(revision) is not int or (sid is not None and (type(sid) is not int or not 0 < sid < 2**63)):
         _fail(400, 'Invalid member season selection')
     try:
-        result = _store(request).set_member_season(sid, revision, session['user_id'])
+        result = (await _store(request).run_writer(lambda: _store(request).set_member_season(sid, revision, session['user_id'])))
     except ValueError as error:
         _fail(400, str(error))
     except RuntimeError as error:
@@ -529,7 +543,12 @@ async def create_season(request):
         _fail(400, "Season label must have 3–80 characters")
     opened = _body_bool(body, "signup_open")
     try:
-        with _store(request).tx() as db:
+        copied: object
+        cursor: object
+        row: object
+        source: object
+        def _create_season_transaction_1(db):
+            nonlocal copied, row
             source = db.execute("SELECT MAX(l.season_id) FROM lineup l JOIN seasons s ON s.id=l.season_id WHERE s.history_only=0").fetchone()[0]
             try:
                 cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
@@ -551,6 +570,7 @@ async def create_season(request):
                 )
             if db.execute('SELECT COUNT(*) FROM seasons').fetchone()[0] == 1:
                 db.execute('UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1 AND season_id IS NULL', (row['id'],))
+        await _store(request).run_tx(_create_season_transaction_1)
     except sqlite3.Error as error:
         logging.getLogger("cwl.seasons").error(
             "Hosting clan copy failed (%s): %s", type(error).__name__, str(error)
@@ -566,7 +586,9 @@ async def update_season(request):
         _fail(400, "Invalid season update")
     if "expected_signup_open" in body and type(body["expected_signup_open"]) is not bool:
         _fail(400, "expected_signup_open must be a boolean")
-    with _store(request).tx() as db:
+    result: object
+    def _update_season_transaction_1(db):
+        nonlocal result
         row = _season(db, _sid(request))
         if "expected_signup_open" in body and bool(row["signup_open"]) != body["expected_signup_open"]:
             _fail(409, "Signups were changed by someone else. Refresh and try again.")
@@ -585,6 +607,7 @@ async def update_season(request):
         if (label, opened, status) != (row["label"], bool(row["signup_open"]), row["status"]):
             _bump(db, row["id"])
             _audit(db, row["id"], None, session["user_id"], "season_update", _season_dict(row), _season_dict(result))
+    await _store(request).run_tx(_update_season_transaction_1)
     return web.json_response(_season_dict(result))
 
 
@@ -619,7 +642,9 @@ async def create_clan(request):
     except ValueError:
         _fail(400, "Invalid clan tag")
     clan = await request.app["providers"].clan(value)
-    with _store(request).tx() as db:
+    after: object
+    def _create_clan_transaction_1(db):
+        nonlocal after
         before_row = db.execute("SELECT * FROM clans WHERE tag=?", (clan["tag"],)).fetchone()
         before = dict(before_row) if before_row else None
         pool = body.get("pool", before["pool"] if before else None)
@@ -629,6 +654,7 @@ async def create_clan(request):
             for season in db.execute("SELECT id FROM seasons"):
                 _bump(db, season["id"])
                 _audit(db, season["id"], clan["tag"], session["user_id"], "directory_add_or_restore", before, after)
+    await _store(request).run_tx(_create_clan_transaction_1)
     return web.json_response(after, status=201)
 
 
@@ -644,7 +670,9 @@ async def archive_clan(request):
         value = tag(request.match_info["tag"])
     except ValueError:
         _fail(400, "Invalid clan tag")
-    with _store(request).tx() as db:
+    after: object
+    def _archive_clan_transaction_1(db):
+        nonlocal after
         current = db.execute("SELECT * FROM clans WHERE tag=?", (value,)).fetchone()
         if current is None:
             _fail(404, "Clan not found")
@@ -656,6 +684,7 @@ async def archive_clan(request):
             for row in db.execute("SELECT id FROM seasons"):
                 _bump(db, row["id"])
                 _audit(db, row["id"], value, session["user_id"], "directory_update", before, after)
+    await _store(request).run_tx(_archive_clan_transaction_1)
     return web.json_response(after)
 
 
@@ -676,7 +705,9 @@ async def add_lineup(request):
         value = tag(body.get("tag"))
     except ValueError:
         _fail(400, "Invalid clan tag")
-    with _store(request).tx() as db:
+    clan: object
+    def _add_lineup_transaction_1(db):
+        nonlocal clan
         season = _season(db, _sid(request))
         if season["status"] != "draft":
             _fail(423, "Season is archived")
@@ -688,6 +719,7 @@ async def add_lineup(request):
             _bump(db, season["id"])
             _audit(db, season["id"], value, session["user_id"], "lineup_add", None,
                    {"tag": value, "name": clan["name"]})
+    await _store(request).run_tx(_add_lineup_transaction_1)
     return web.json_response({"tag": value, "name": clan["name"]}, status=201)
 
 
@@ -697,7 +729,7 @@ async def remove_lineup(request):
         value = tag(request.match_info["tag"])
     except ValueError:
         _fail(400, "Invalid clan tag")
-    with _store(request).tx() as db:
+    def _remove_lineup_transaction_1(db):
         sid = _sid(request)
         season = _season(db, sid)
         if season["status"] != "draft":
@@ -709,6 +741,7 @@ async def remove_lineup(request):
         if deleted.rowcount:
             _bump(db, sid)
             _audit(db, sid, value, session["user_id"], "lineup_remove", {"tag": value}, None)
+    await _store(request).run_tx(_remove_lineup_transaction_1)
     return web.json_response({"ok": True})
 
 
@@ -839,7 +872,13 @@ async def _dashboard_accounts_lifecycle(app):
 async def signups(request):
     session = _require(request)
     sid = _sid(request)
-    with _store(request).tx() as db:
+    assignments: object
+    placed: object
+    revision: object
+    rows: object
+    staff_view: object
+    def _signups_transaction_1(db):
+        nonlocal assignments, placed, revision, rows, staff_view
         _season(db, sid)
         placed = {row["tag"] for row in db.execute(
             "SELECT tag FROM roster_entries WHERE season_id=? AND assigned_clan_tag IS NOT NULL", (sid,)
@@ -851,6 +890,7 @@ async def signups(request):
             rows = db.execute("SELECT * FROM signups WHERE season_id=? ORDER BY user_id,tag", (sid,)).fetchall()
         else:
             rows = db.execute("SELECT * FROM signups WHERE season_id=? AND user_id=? ORDER BY tag", (sid, session["user_id"])).fetchall()
+    await _store(request).run_tx(_signups_transaction_1)
     directory = await _family_directory(request)
     approved = None if directory is None else set(directory)
     result = []
@@ -908,11 +948,14 @@ async def staff_signup_members(request):
             sid = int(request.query["season_id"])
         except ValueError:
             _fail(400, "Invalid season")
-        with _store(request).tx() as db:
+        signup_ids: object
+        def _staff_signup_members_transaction_1(db):
+            nonlocal signup_ids
             _season(db, sid)
             signup_ids = {str(row["user_id"]) for row in db.execute(
                 "SELECT DISTINCT user_id FROM signups WHERE season_id=? AND user_id IS NOT NULL", (sid,)
             )}
+        await _store(request).run_tx(_staff_signup_members_transaction_1)
     rows = await searchable_members(request)
     matches = [row for row in rows if not row.get("user", {}).get("bot") and
                (signup_ids is None or str(row["user"]["id"]) in signup_ids) and
@@ -936,9 +979,12 @@ async def staff_signup_accounts(request):
     _require(request, "editor")
     uid = signup_member_id(request.query.get("user_id"))
     sid = _sid(request)
-    with _store(request).tx() as db:
+    signed: object
+    def _staff_signup_accounts_transaction_1(db):
+        nonlocal signed
         _season(db, sid)
         signed = {row["tag"]: row["pool"] for row in db.execute("SELECT tag,pool FROM signups WHERE season_id=?", (sid,))}
+    await _store(request).run_tx(_staff_signup_accounts_transaction_1)
     accounts = await _accounts(request, uid)
     return web.json_response({"accounts": [{**account, "signed_up_pool": signed.get(account["tag"])} for account in accounts]})
 
@@ -963,14 +1009,18 @@ async def staff_add_signup(request):
             _fail(400, "Account selected twice")
         requested[value] = choice["prefer_crystal_1_or_lower"] if pool == "lazy" else False
     sid = _sid(request)
-    with _store(request).tx() as db:
+    def _staff_add_signup_transaction_1(db):
         if _season(db, sid)["status"] != "draft":
             _fail(423, "Archived seasons cannot be changed")
+    await _store(request).run_tx(_staff_add_signup_transaction_1)
     available = {account["tag"]: account for account in await _accounts(request, uid)}
     if not set(requested) <= set(available):
         _fail(409, "An account is no longer linked to this member. Reload their accounts.")
     _check_signup_pool(pool, [available[value] for value in requested])
-    with _store(request).tx() as db:
+    account: object
+    value: object
+    def _staff_add_signup_transaction_2(db):
+        nonlocal account, value
         if _season(db, sid)["status"] != "draft":
             _fail(423, "Archived seasons cannot be changed")
         # Validate the whole batch under the write lock; never replace a signup.
@@ -986,6 +1036,7 @@ async def staff_add_signup(request):
             after = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
             _audit(db, sid, value, actor["user_id"], "staff_signup", None, dict(after))
         _bump(db, sid)
+    await _store(request).run_tx(_staff_add_signup_transaction_2)
     return web.json_response({"ok": True, "count": len(requested)}, status=201)
 
 
@@ -999,7 +1050,7 @@ async def staff_remove_signup(request):
         value = tag(request.match_info["tag"])
     except ValueError:
         _fail(400, "Invalid player tag")
-    with _store(request).tx() as db:
+    def _staff_remove_signup_transaction_1(db):
         if _season(db, sid)["status"] != "draft":
             _fail(423, "Season is archived")
         _check_revision(db, sid, body["revision"])
@@ -1011,6 +1062,7 @@ async def staff_remove_signup(request):
                {"signup": dict(signup), "roster": dict(entry) if entry else None}, None)
         db.execute("DELETE FROM signups WHERE season_id=? AND tag=?", (sid, value))
         _bump(db, sid)
+    await _store(request).run_tx(_staff_remove_signup_transaction_1)
     return web.json_response({"ok": True})
 
 
@@ -1020,10 +1072,10 @@ async def withdraw(request):
     session = _require(request)
     sid = _sid(request)
     try:
-        result = member_withdraw(
+        result = (await _store(request).run_writer(lambda: member_withdraw(
             _store(request), sid, session["user_id"], request.match_info["tag"],
             selected_only=not _editor(request, session),
-        )
+        )))
     except MemberError as exc:
         _fail(exc.status, str(exc))
     return web.json_response({"ok": result["ok"]})
@@ -1086,7 +1138,10 @@ def _rule_rows(db, sid):
 async def roster(request):
     session = _require(request, "editor")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    account: object
+    result: object
+    def _roster_transaction_1(db):
+        nonlocal account, result
         season = _season(db, sid)
         result = {"revision": _revision(db, sid), "accounts": _roster_rows(db, sid),
                   "clans": _rule_rows(db, sid),
@@ -1098,6 +1153,7 @@ async def roster(request):
             reason = reasons.get(account["tag"])
             account["auto_placement_reason"] = reason
             account["auto_placement_note"] = explain_placement(account, result["clans"], reason) if reason else None
+    await _store(request).run_tx(_roster_transaction_1)
     if request.query.get("background") == "1":
         from .roster_metadata import enrich as enrich_metadata
         family = await enrich_metadata(request, result)
@@ -1145,7 +1201,16 @@ async def arrival_check(request):
 async def arrival_snapshot(request, *, source=None, force=None):
     """The existing arrival read, shared by explicit reviewed declaration pings."""
     sid = _sid(request)
-    with _store(request).tx() as db:
+    account: object
+    accounts: object
+    current_tags: object
+    latest: object
+    publication_outdated: object
+    published: object
+    published_tags: object
+    season: object
+    def _arrival_snapshot_transaction_1(db):
+        nonlocal account, accounts, current_tags, latest, publication_outdated, published, published_tags, season
         season = _season(db, sid)
         latest = _latest_publication(db, sid)
         requested_source = source if source is not None else request.query.get('source', 'draft')
@@ -1166,6 +1231,7 @@ async def arrival_snapshot(request, *, source=None, force=None):
         clan_pools = {row['tag']: row['pool'] for row in _rule_rows(db, sid)}
         for account in accounts:
             account['hosting_pool'] = clan_pools.get(account['assigned_clan_tag']) or account['pool']
+    await _store(request).run_tx(_arrival_snapshot_transaction_1)
     from .roster_locations import enrich, background_enrich
     from utils.cwl_location_rules import outside_family, arrival_status
     hosts = _store(request).active_hosting_tags()
@@ -1197,7 +1263,9 @@ async def update_lineup_rules(request):
     except ValueError:
         _fail(400, "Invalid clan tag")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    revision: object
+    def _update_lineup_rules_transaction_1(db):
+        nonlocal revision
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Season is archived")
@@ -1226,6 +1294,7 @@ async def update_lineup_rules(request):
                    (sid, clan_tag, rule["pool"], rule["capacity"], rule["min_weight"], rule["max_weight"]))
         revision = _bump(db, sid)
         _audit(db, sid, clan_tag, session["user_id"], "hosting_rules", before, rule)
+    await _store(request).run_tx(_update_lineup_rules_transaction_1)
     return web.json_response({"revision": revision})
 
 
@@ -1249,7 +1318,7 @@ async def update_roster_filler(request):
     except ValueError:
         _fail(400, 'Invalid player tag')
     sid = _sid(request)
-    with _store(request).tx() as db:
+    def _update_roster_filler_transaction_1(db):
         if _season(db, sid)['status'] != 'draft':
             _fail(423, 'Season is archived')
         _check_revision(db, sid, body['revision'])
@@ -1266,10 +1335,13 @@ async def update_roster_filler(request):
                          [{'kind': 'roster_filler', 'tag': player_tag,
                            'before': bool(before['roster_filler']), 'after': bool(after['roster_filler']),
                            'mark_revision': after['revision']}])
-        return web.json_response({'revision': _revision(db, sid), 'tag': player_tag,
+        return (True, web.json_response({'revision': _revision(db, sid), 'tag': player_tag,
                                   'roster_filler': bool(after['roster_filler']),
                                   'mark_revision': after['revision'],
-                                  'undo': _current_undo(db, sid, session['user_id'])})
+                                  'undo': _current_undo(db, sid, session['user_id'])}))
+    _outcome = await _store(request).run_tx(_update_roster_filler_transaction_1)
+    if _outcome is not None:
+        return _outcome[1]
 
 
 async def bulk_assign_roster(request):
@@ -1293,7 +1365,9 @@ async def bulk_assign_roster(request):
         except ValueError:
             _fail(400, "Invalid hosting clan tag")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    revision: object
+    def _bulk_assign_roster_transaction_1(db):
+        nonlocal revision
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Season is archived")
@@ -1354,6 +1428,7 @@ async def bulk_assign_roster(request):
         verb = "Assign" if destination is not None else "Unassign"
         _record_undo(db, sid, session["user_id"],
                      f"{verb} {len(tags)} account{'s' if len(tags) != 1 else ''}", revision, changes)
+    await _store(request).run_tx(_bulk_assign_roster_transaction_1)
     return web.json_response({"revision": revision, "updated": len(tags)})
 
 
@@ -1375,7 +1450,9 @@ async def update_roster_account(request):
     except ValueError:
         _fail(400, "Invalid player tag")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    revision: object
+    def _update_roster_account_transaction_1(db):
+        nonlocal revision
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Season is archived")
@@ -1426,6 +1503,7 @@ async def update_roster_account(request):
         _record_undo(db, sid, session["user_id"], "Edit account placement", revision,
                      [{"tag": player_tag, "before": _placement(before),
                        "after": _placement(after)}])
+    await _store(request).run_tx(_update_roster_account_transaction_1)
     return web.json_response({"revision": revision})
 
 
@@ -1442,7 +1520,9 @@ async def swap_roster(request):
     if left_tag == right_tag:
         _fail(400, "Select two different accounts")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    revision: object
+    def _swap_roster_transaction_1(db):
+        nonlocal revision
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Season is archived")
@@ -1479,6 +1559,7 @@ async def swap_roster(request):
                             "after": _placement(after)})
         revision = _bump(db, sid)
         _record_undo(db, sid, session["user_id"], "Swap two accounts", revision, changes)
+    await _store(request).run_tx(_swap_roster_transaction_1)
     return web.json_response({"revision": revision})
 
 
@@ -1488,7 +1569,9 @@ async def undo_roster(request):
     if set(body) != {"revision", "undo_id"} or type(body["undo_id"]) is not int or body["undo_id"] < 1:
         _fail(400, "The request is not complete. Refresh the page and try again.")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    revision: object
+    def _undo_roster_transaction_1(db):
+        nonlocal revision
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Season is archived")
@@ -1514,9 +1597,9 @@ async def undo_roster(request):
             db.execute("UPDATE roster_undo SET consumed_at=CURRENT_TIMESTAMP WHERE id=?", (undo['id'],))
             _audit(db, sid, change['tag'], session['user_id'], 'roster_filler_undo',
                    {'roster_filler': change['after']}, {'roster_filler': change['before']})
-            return web.json_response({'revision': _revision(db, sid), 'tag': change['tag'],
+            return (True, web.json_response({'revision': _revision(db, sid), 'tag': change['tag'],
                                       'roster_filler': bool(restored['roster_filler']),
-                                      'mark_revision': restored['revision']})
+                                      'mark_revision': restored['revision']}))
         current = {}
         occupancy_delta = {}
         restored_hosts = set()
@@ -1570,6 +1653,9 @@ async def undo_roster(request):
         revision = _bump(db, sid)
         _audit(db, sid, None, session["user_id"], "roster_undo", {"undo_id": undo["id"]},
                {"revision": revision})
+    _outcome = await _store(request).run_tx(_undo_roster_transaction_1)
+    if _outcome is not None:
+        return _outcome[1]
     return web.json_response({"revision": revision})
 
 
@@ -1654,13 +1740,18 @@ async def auto_preview(request):
     if pool not in (None, "main", "lazy"):
         _fail(400, "Select Main or Lazy CWL")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    placements: object
+    revision: object
+    unassigned: object
+    def _auto_preview_transaction_1(db):
+        nonlocal placements, revision, unassigned
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Season is archived")
         _check_revision(db, sid, body.get("revision"))
         placements, unassigned = _requested_plan(db, sid, body, pool)
         revision = _revision(db, sid)
+    await _store(request).run_tx(_auto_preview_transaction_1)
     return web.json_response({"revision": revision, "placements": placements, "unassigned": unassigned})
 
 
@@ -1674,7 +1765,10 @@ async def auto_apply(request):
     if pool not in (None, "main", "lazy"):
         _fail(400, "Select Main or Lazy CWL")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    placements: object
+    revision: object
+    def _auto_apply_transaction_1(db):
+        nonlocal placements, revision
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Season is archived")
@@ -1698,6 +1792,7 @@ async def auto_apply(request):
         revision = _bump(db, sid) if placements else _revision(db, sid)
         if placements:
             _record_undo(db, sid, session["user_id"], "Balance selected accounts" if body.get("mode") == "balance" else "Auto-place accounts", revision, changes)
+    await _store(request).run_tx(_auto_apply_transaction_1)
     return web.json_response({"revision": revision, "applied": len(placements)})
 
 
@@ -1705,16 +1800,24 @@ async def refresh_weights(request):
     session = _require(request, "editor")
     body = await _json(request)
     sid = _sid(request)
-    with _store(request).tx() as db:
+    tags: object
+    def _refresh_weights_transaction_1(db):
+        nonlocal tags
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Season is archived")
         _check_revision(db, sid, body.get("revision"))
         tags = [row["tag"] for row in db.execute("SELECT tag FROM signups WHERE season_id=?", (sid,))]
+    await _store(request).run_tx(_refresh_weights_transaction_1)
     try:
         found = await source_weights(_store(request), request.app["providers"], tags)
     except ProviderUnavailable:
-        with _store(request).tx() as db:
+        after: object
+        before: object
+        old: object
+        player_tag: object
+        def _refresh_weights_transaction_3(db):
+            nonlocal after, before, old, player_tag
             _check_revision(db, sid, body.get("revision"))
             for player_tag in tags:
                 old = db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone()
@@ -1726,6 +1829,7 @@ async def refresh_weights(request):
                 _audit(db, sid, player_tag, session["user_id"], "weight_refresh_failed", before, after)
             if tags:
                 _bump(db, sid)
+        await _store(request).run_tx(_refresh_weights_transaction_3)
         _fail(503, "FWA weight source unavailable; previous values retained")
     if not isinstance(found, dict) or not set(found) <= set(tags):
         _fail(503, "Invalid FWA weight response")
@@ -1733,7 +1837,14 @@ async def refresh_weights(request):
         if not isinstance(item, dict) or type(item.get("weight")) is not int or item["weight"] <= 0 or item["weight"] > 1_000_000_000 or not isinstance(item.get("source_name"), str) or (item.get("source_modified_at") is not None and not isinstance(item.get("source_modified_at"), str)):
             _fail(503, "Invalid FWA weight response")
     checked_at = getattr(request.app["providers"], "weights_checked_at", None) or datetime.now(timezone.utc).isoformat()
-    with _store(request).tx() as db:
+    after: object
+    before: object
+    item: object
+    old: object
+    player_tag: object
+    revision: object
+    def _refresh_weights_transaction_2(db):
+        nonlocal after, before, item, old, player_tag, revision
         _check_revision(db, sid, body.get("revision"))
         for player_tag in tags:
             item = found.get(player_tag)
@@ -1753,6 +1864,7 @@ async def refresh_weights(request):
             after = dict(db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone())
             _audit(db, sid, player_tag, session["user_id"], "weight_refresh", before, after)
         revision = _bump(db, sid) if tags else _revision(db, sid)
+    await _store(request).run_tx(_refresh_weights_transaction_2)
     return web.json_response({"revision": revision, "refreshed": len(found), "missing": len(tags)-len(found)})
 
 
@@ -1800,7 +1912,9 @@ def _publication_changed(db, sid, latest):
 async def publication_preview(request):
     _require(request, "editor")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    result: object
+    def _publication_preview_transaction_1(db):
+        nonlocal result
         _season(db, sid)
         accounts = _roster_rows(db, sid)
         clans = _rule_rows(db, sid)
@@ -1827,6 +1941,7 @@ async def publication_preview(request):
             },
             "published": _publication_meta(latest),
         }
+    await _store(request).run_tx(_publication_preview_transaction_1)
     return web.json_response(result)
 
 
@@ -1843,13 +1958,15 @@ async def publish_roster(request):
     if not isinstance(instructions, str) or len(instructions) > 2000:
         _fail(400, "Joining instructions must not be more than 2,000 characters.")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    published: object
+    def _publish_roster_transaction_1(db):
+        nonlocal published
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Season is archived")
         latest = _latest_publication(db, sid)
         if latest and latest["revision"] == revision and latest["joining_instructions"] == instructions:
-            return web.json_response({"published": _publication_meta(latest)})
+            return (True, web.json_response({"published": _publication_meta(latest)}))
         _check_revision(db, sid, revision)
         accounts = _roster_rows(db, sid)
         if not accounts:
@@ -1889,6 +2006,9 @@ async def publish_roster(request):
         _audit(db, sid, None, session["user_id"], "roster_publish",
                _publication_meta(latest), published)
         _bump(db, sid)
+    _outcome = await _store(request).run_tx(_publish_roster_transaction_1)
+    if _outcome is not None:
+        return _outcome[1]
     return web.json_response({"published": published}, status=201)
 
 
@@ -1900,7 +2020,9 @@ async def withdraw_publication(request):
     ):
         _fail(400, "The request is not complete. Refresh the page and try again.")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    revision: object
+    def _withdraw_publication_transaction_1(db):
+        nonlocal revision
         _season(db, sid)
         _check_revision(db, sid, body["revision"])
         latest = _latest_publication(db, sid)
@@ -1912,6 +2034,7 @@ async def withdraw_publication(request):
                    (datetime.now(timezone.utc).isoformat(), sid))
         _audit(db, sid, None, session["user_id"], "roster_unpublish", _publication_meta(latest), None)
         revision = _bump(db, sid)
+    await _store(request).run_tx(_withdraw_publication_transaction_1)
     return web.json_response({"published": None, "revision": revision})
 
 
@@ -1948,6 +2071,38 @@ async def my_assignments(request):
                 if field in observed:
                     account[field] = observed[field]
     return web.json_response(result)
+
+
+@web.middleware
+async def auth_rate_limit(request, handler):
+    """Trust only the edge-derived header overwritten by the loopback proxy."""
+    if request.path.startswith(API + "/auth/"):
+        peer = request.transport.get_extra_info("peername") if request.transport else None
+        raw = request.headers.get("X-WU-Client-IP", "")
+        try:
+            trusted = bool(peer and peer[0] in {"127.0.0.1", "::1"})
+            address = str(ipaddress.ip_address(raw)) if trusted and raw else None
+        except ValueError:
+            address = None
+        if address is not None:
+            now = time.monotonic()
+            buckets = request.app["auth_rate_buckets"]
+            # Ordered by latest request; cleanup never scans an unbounded map.
+            while buckets and next(iter(buckets.values()))[-1] <= now - 60:
+                buckets.popitem(last=False)
+            bucket = buckets.get(address)
+            if bucket is None:
+                if len(buckets) >= 10000:
+                    _fail(429, "Too many sign-in requests. Try again shortly.")
+                bucket = deque()
+                buckets[address] = bucket
+            while bucket and bucket[0] <= now - 60:
+                bucket.popleft()
+            if len(bucket) >= 20:
+                _fail(429, "Too many sign-in requests. Try again shortly.")
+            bucket.append(now)
+            buckets.move_to_end(address)
+    return await handler(request)
 
 
 @web.middleware
@@ -1994,7 +2149,7 @@ async def errors(request, handler):
                 exc.headers["Cache-Control"] = "no-store"
                 exc.headers["X-Content-Type-Options"] = "nosniff"
             raise
-        if request.path == API + "/auth/callback" and "text/html" in request.headers.get("Accept", ""):
+        if request.path == API + "/auth/callback" and exc.status != 429 and "text/html" in request.headers.get("Accept", ""):
             destination = saved_login_destination(request)
             separator = "&" if "?" in destination else "?"
             response = web.HTTPFound((destination or "/") + separator + "signin_error=discord")
@@ -2016,7 +2171,9 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         raise ValueError("CWL_WEB_DB_PATH is required for the dashboard working copy")
     if dev_fixture and dev_identity is None:
         dev_identity = {"id": PERMANENT_OWNER_ID, "username": "Development owner", "guild_owner": False}
-    app = web.Application(middlewares=[diagnostics, errors, canonical_host, access_context, auth_diagnostics], client_max_size=32 * 1024)
+    app = web.Application(middlewares=[diagnostics, errors, canonical_host, access_context, auth_rate_limit, auth_diagnostics], client_max_size=32 * 1024)
+    from .durability import writer_lifecycle
+    app.cleanup_ctx.append(writer_lifecycle)
     from .mongo_client import lifecycle as mongo_lifecycle
     app.cleanup_ctx.append(mongo_lifecycle)
     from .strike_activity_cache import lifecycle as strike_activity_cache_lifecycle, snapshots as activity_snapshots
@@ -2038,6 +2195,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         with app["store"].tx() as db:
             db.execute("INSERT OR IGNORE INTO seasons(label,signup_open) VALUES ('Development season',1)")
     app["providers"] = providers or LiveProviders()
+    app["oauth_states"] = OrderedDict()
+    app["auth_rate_buckets"] = OrderedDict()
     app["oauth"] = oauth or {"client_id": os.getenv("CWL_DISCORD_CLIENT_ID", ""), "client_secret": os.getenv("CWL_DISCORD_CLIENT_SECRET", ""), "redirect_uri": os.getenv("CWL_DISCORD_REDIRECT_URI", "")}
     app["secure_cookies"] = secure_cookies
     app["after_login"] = after_login

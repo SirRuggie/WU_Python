@@ -280,10 +280,13 @@ async def get_bonuses(request):
     from .app import _fail, _require, _sid, _store
 
     _require(request, "editor")
-    with _store(request).tx() as db:
+    result: object
+    def _get_bonuses_transaction_1(db):
+        nonlocal result
         result = _view(db, _sid(request))
         if result is None:
             _fail(404, "Season not found")
+    await _store(request).run_tx(_get_bonuses_transaction_1)
     return participation_json_response(request, result)
 
 
@@ -291,10 +294,13 @@ async def get_preview(request):
     from .app import _fail, _require, _sid, _store
 
     _require(request, "editor")
-    with _store(request).tx() as db:
+    result: object
+    def _get_preview_transaction_1(db):
+        nonlocal result
         result = _preview(db, _sid(request))
         if result is None:
             _fail(404, "Season not found")
+    await _store(request).run_tx(_get_preview_transaction_1)
     return participation_json_response(request, result)
 
 
@@ -322,7 +328,9 @@ async def patch_settings(request):
             _fail(400, "Invalid clan bonus slots")
         supplied[tag] = slots
     sid = _sid(request)
-    with _store(request).tx() as db:
+    result: object
+    def _patch_settings_transaction_1(db):
+        nonlocal result
         _require_draft(db, sid, _fail)
         _cas(db, sid, revision, _fail)
         current = _view(db, sid)
@@ -343,6 +351,7 @@ async def patch_settings(request):
         _bump(db, sid, session["user_id"])
         result = _view(db, sid)
         _audit(db, sid, session["user_id"], "settings", before, {"policy": result["policy"], "clans": result["clans"]})
+    await _store(request).run_tx(_patch_settings_transaction_1)
     return participation_json_response(request, result)
 
 
@@ -363,7 +372,9 @@ async def patch_draft(request):
             _fail(400, "Invalid bonus selection")
         selections[tag] = reason.strip()
     sid = _sid(request)
-    with _store(request).tx() as db:
+    result: object
+    def _patch_draft_transaction_1(db):
+        nonlocal result
         _require_draft(db, sid, _fail)
         _cas(db, sid, revision, _fail)
         current = _view(db, sid)
@@ -379,6 +390,7 @@ async def patch_draft(request):
         _bump(db, sid, session["user_id"])
         result = _view(db, sid)
         _audit(db, sid, session["user_id"], "draft", before, selections)
+    await _store(request).run_tx(_patch_draft_transaction_1)
     return participation_json_response(request, result)
 
 
@@ -394,7 +406,9 @@ async def confirm(request):
     if not isinstance(fingerprint, str) or len(fingerprint) != 64 or type(acknowledged) is not bool:
         _fail(400, "Invalid bonus confirmation")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    result: object
+    def _confirm_transaction_1(db):
+        nonlocal result
         _require_draft(db, sid, _fail)
         actual, _ = _meta(db, sid)
         if actual == revision + 1:
@@ -403,7 +417,7 @@ async def confirm(request):
                 (sid, revision, fingerprint),
             ).fetchone()
             if prior:
-                return participation_json_response(request, _view(db, sid), db=db)
+                return (True, participation_json_response(request, _view(db, sid), db=db))
         _cas(db, sid, revision, _fail)
         preview = _preview(db, sid)
         if preview["fingerprint"] != fingerprint:
@@ -449,6 +463,9 @@ async def confirm(request):
         _bump(db, sid, session["user_id"])
         result = _view(db, sid)
         _audit(db, sid, session["user_id"], "confirm", None, {"batch_id": batch_id, "tags": sorted(row["tag"] for row in preview["selected"])})
+    _outcome = await _store(request).run_tx(_confirm_transaction_1)
+    if _outcome is not None:
+        return _outcome[1]
     return participation_json_response(request, result)
 
 
@@ -468,7 +485,9 @@ async def void_confirmation(request):
     except ValueError:
         _fail(400, "Invalid confirmation id")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    result: object
+    def _void_confirmation_transaction_1(db):
+        nonlocal result
         _require_draft(db, sid, _fail)
         _cas(db, sid, revision, _fail)
         row = db.execute(
@@ -486,6 +505,7 @@ async def void_confirmation(request):
         _bump(db, sid, session["user_id"])
         result = _view(db, sid)
         _audit(db, sid, session["user_id"], "void", {"id": history_id, "tag": row["tag"]}, {"id": history_id, "reason": reason.strip()})
+    await _store(request).run_tx(_void_confirmation_transaction_1)
     return participation_json_response(request, result)
 
 

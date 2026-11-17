@@ -219,7 +219,7 @@ def participation_json_response(request, payload, *, db=None):
     if db is not None:
         result = decorate_participation_payload(db, sid, payload)
     else:
-        with _store(request).tx() as connection:
+        with _store(request).read() as connection:
             result = decorate_participation_payload(connection, sid, payload)
     return web.json_response(result)
 

@@ -260,7 +260,7 @@ def test_real_mongo_recovery_when_local_binary_is_available(setup, tmp_path, mon
             assert recovered.one('SELECT manual_weight FROM roster_entries')['manual_weight'] == 179000
             assert recovered.one('SELECT league FROM bonus_allowance_leagues')['league'] == 'Crystal League I'
             assert recovered.one('SELECT war_tag FROM bonus_allowance_wars')['war_tag'] == '#Y2Y'
-            assert second.collection.write_concern.document == {'w': 'majority', 'j': True, 'wtimeout': 5000}
+            assert second.collection.write_concern.document == {'w': 'majority', 'j': True}
         finally:
             for client in (first, second):
                 if client:

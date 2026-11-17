@@ -39,8 +39,11 @@ async def change(request):
             accounts.append(dict(row))
         return accounts
 
-    with _store(request).tx() as db:
+    accounts: object
+    def _change_transaction_1(db):
+        nonlocal accounts
         accounts = check(db)
+    await _store(request).run_tx(_change_transaction_1)
     # Verify current FWA eligibility only for accounts actually moving to Main.
     if action == 'main':
         directory = await _family_directory(request)
@@ -52,7 +55,13 @@ async def change(request):
             current['family_clan_status'] = _family_status(current.get('current_clan_tag'), None if directory is None else set(directory))
             _check_signup_pool('main', [current])
         await asyncio.gather(*(eligible(account) for account in accounts if account['pool'] != 'main'))
-    with _store(request).tx() as db:
+    account: object
+    accounts: object
+    count: object
+    revision: object
+    value: object
+    def _change_transaction_2(db):
+        nonlocal account, accounts, count, revision, value
         accounts = check(db)
         count = 0
         for account in accounts:
@@ -71,6 +80,7 @@ async def change(request):
             _audit(db, sid, value, actor['user_id'], 'staff_remove_signup' if action == 'remove' else 'staff_pool_change', before, after)
             count += 1
         revision = _bump(db, sid) if count else body['revision']
+    await _store(request).run_tx(_change_transaction_2)
     return web.json_response({'ok': True, 'count': count, 'revision': revision})
 
 

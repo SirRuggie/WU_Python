@@ -135,7 +135,7 @@ async def accounts_for_member(provider, user_id, *, verified_only=False):
 
 def member_view(store, user_id):
     """Only current signups and matching published assignments are visible."""
-    with store.tx() as db:
+    with store.read() as db:
         selected = db.execute("SELECT season_id FROM member_season WHERE id=1").fetchone()
         season_id = selected["season_id"] if selected else None
         if season_id is None:
@@ -181,7 +181,7 @@ def _published_assignments(db, season_id, user_id, *, include_pending=False):
 
 def assignment_view(store, user_id, season_id, *, selected_only=True):
     """Dashboard and Discord use one publication visibility rule."""
-    with store.tx() as db:
+    with store.read() as db:
         _season(db, season_id, selected_only=selected_only)
         published, assignments = _published_assignments(db, season_id, user_id, include_pending=True)
         return {"published": published, "visibility": "current",
@@ -249,7 +249,10 @@ async def submit(store, provider, season_id, user_id, pool, selections, *, verif
             problem = main_signup_error(available[value])
             if problem:
                 raise MemberError(*problem)
-    with store.tx() as db:
+    moved: object
+    value: object
+    def _submit_transaction_1(db):
+        nonlocal moved, value
         season = _season(db, season_id, selected_only=selected_only)
         _check_revision(db, season_id, expected_revision)
         if not season["signup_open"] or season["status"] != "draft":
@@ -309,6 +312,7 @@ async def submit(store, provider, season_id, user_id, pool, selections, *, verif
                    "member_pool_change" if changed_pool else "member_signup", before, dict(after))
         if requested:
             _bump(db, season_id)
+    await store.run_tx(_submit_transaction_1)
     return {"ok": True, "count": len(requested), "moved": moved}
 
 

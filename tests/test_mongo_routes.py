@@ -7,7 +7,7 @@ import pytest
 from pymongo import MongoClient as SyncClient
 
 from utils.mongo import MongoClient
-from utils.mongo_routes import DEFAULT_ROUTES, RoutedCollections, collection_for, load_routes
+from utils.mongo_routes import DEFAULT_ROUTES, PARENT_ALIASES, RoutedCollections, collection_for, load_routes
 from extensions.commands.tickets.testing_service import TestTicketMongo as SandboxMongo
 
 URI = "mongodb://127.0.0.1:1/ignored_uri_database"
@@ -27,6 +27,7 @@ def test_defaults_cover_live_inventory_without_changing_names():
                  'strike_leave_history', 'strike_profiles', 'strike_imports',
                  'strike_tracking', 'strike_war_snapshots', 'cwl_dashboard_state',
                  'member_events', 'member_event_test_audit', 'member_invites', 'fwa_war_plans', 'player_activity', 'member_profiles'}
+    expected |= set(PARENT_ALIASES)
     routes = load_routes({})
     assert {n.collection for n in routes.values()} == expected
     assert {n.database for n in routes.values()} == {"settings"}
@@ -40,11 +41,11 @@ def test_async_bot_and_sync_tools_agree_for_every_alias_and_override(monkeypatch
             with SyncClient(URI, connect=False) as sync:
                 facade = RoutedCollections(sync)
                 for alias in DEFAULT_ROUTES:
-                    assert getattr(client, alias).full_name == facade[alias].full_name
+                    assert collection_for(client, alias).full_name == facade[alias].full_name
                 assert client.clans.full_name == "warriors_united.clans"
                 assert client.tickets.full_name == "settings.tickets"
                 assert client.discord_polls.full_name == "settings.wu_discord_polls"
-                assert client.lazy_cwl_lists.write_concern.document == {"w": "majority", "wtimeout": 10000}
+                assert client.lazy_cwl_lists.write_concern.document == {"w": "majority"}
                 assert facade.lazy_cwl_lists.write_concern == client.lazy_cwl_lists.write_concern
         finally:
             await client.close()

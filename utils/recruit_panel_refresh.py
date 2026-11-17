@@ -4,6 +4,8 @@ Interaction tokens are short-lived credentials: never log rows or exception URLs
 They are removed on completion/failure/expiry. All jobs have a one-day TTL.
 """
 
+from utils.mongo_routes import collection_from
+
 import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
@@ -34,7 +36,7 @@ def aware(value):
 def collection(mongo):
     # Follow the configured component-state database without mixing job data
     # with panel sessions, challenges, or legacy button_store records.
-    return mongo.component_state.database.get_collection("recruit_panel_refreshes")
+    return collection_from(mongo.component_state, "recruit_panel_refreshes")
 
 
 async def prepare(mongo):

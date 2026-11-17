@@ -45,8 +45,11 @@ async def get(request):
     from .app import _store
 
     require_settings(request)
-    with _store(request).tx() as db:
+    result: object
+    def _get_transaction_1(db):
+        nonlocal result
         result = service.snapshot(db)
+    await _store(request).run_tx(_get_transaction_1)
     store = _store(request)
     warning = store.role_recovery_error or store.role_backup_error
     import time
@@ -114,7 +117,10 @@ async def save(request):
     }:
         _fail(400, "Select an available role below the bot.")
     try:
-        with _store(request).tx() as db:
+        paused: object
+        result: object
+        def _save_transaction_1(db):
+            nonlocal paused, result
             result = service.save(
                 db,
                 body["pool"],
@@ -124,6 +130,7 @@ async def save(request):
                 actor["user_id"],
             )
             paused = service.recovery_paused(db)
+        await _store(request).run_tx(_save_transaction_1)
     except service.Conflict as exc:
         _fail(409, str(exc))
     except (ValueError, TypeError) as exc:
@@ -165,7 +172,7 @@ def schedule_progress_backup(request):
 
         async def flush():
             try:
-                await asyncio.to_thread(store.flush_role_progress)
+                await store.run_writer(store.flush_role_progress)
             except Exception:
                 import logging
 
@@ -214,10 +221,13 @@ async def bridge(request):
         import time
 
         store.role_last_contact = time.time()
-        with store.role_tx() as db:
+        job: object
+        def _bridge_transaction_1(db):
+            nonlocal job
             if service.clear_pause_if_off(db):
                 store.role_recovery_error = None
             job = None if store.role_recovery_error else service.claim(db)
+        await store.run_role_tx(_bridge_transaction_1)
         schedule_progress_backup(request)
         return web.json_response({"job": job})
     if action not in {"validate", "finish"}:
@@ -247,7 +257,9 @@ async def bridge(request):
     ):
         _fail(400, "Invalid role result.")
     try:
-        with _store(request).role_tx() as db:
+        result: object
+        def _bridge_transaction_2(db):
+            nonlocal result
             result = (
                 service.validate(
                     db, body["id"], body["lease_token"], body["generation"]
@@ -257,6 +269,7 @@ async def bridge(request):
                     db, body["id"], body["lease_token"], body["generation"], **extra
                 )
             )
+        await _store(request).run_role_tx(_bridge_transaction_2)
     except (ValueError, TypeError) as exc:
         _fail(400, str(exc))
     if action == "validate" and result.get("valid"):
@@ -265,10 +278,13 @@ async def bridge(request):
 
         async with mongo(request) as shared:
             forbidden = await dashboard_role_grants(shared)
-        with _store(request).role_tx() as db:
+        current: object
+        def _bridge_transaction_3(db):
+            nonlocal current
             current = service.owned(
                 db, body["id"], body["lease_token"], body["generation"]
             )
+        await _store(request).run_role_tx(_bridge_transaction_3)
         result["role_allowed"] = bool(current and current["role_id"] not in forbidden)
     schedule_progress_backup(request)
     return web.json_response(result)

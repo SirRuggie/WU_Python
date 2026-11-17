@@ -39,7 +39,7 @@ async def _mongo(request):
 
 def _binding(request, sid):
     from .app import _store, _season
-    with _store(request).tx() as db:
+    with _store(request).read() as db:
         _season(db, sid)
         row = db.execute('SELECT cycle FROM manage_campaign_bindings WHERE season_id=?', (sid,)).fetchone()
     return row['cycle'] if row else None
@@ -137,7 +137,8 @@ async def bind(request):
                 if await get_roster_send_status(mongo, guild_id=GUILD_ID, cycle=previous, pool=pool):
                     raise web.HTTPConflict(text="This season already has delivery activity. Keep its CWL month.")
     try:
-        with _store(request).tx() as db:
+        current: object
+        def _bind_transaction_1(db):
             if _season(db, sid)['status'] != 'draft':
                 raise web.HTTPConflict(text='Season is archived')
             current = db.execute('SELECT cycle FROM manage_campaign_bindings WHERE season_id=?', (sid,)).fetchone()
@@ -145,6 +146,7 @@ async def bind(request):
                 raise web.HTTPConflict(text="The CWL month link changed. Refresh first.")
             db.execute('INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES (?,?) ON CONFLICT(season_id) DO UPDATE SET cycle=excluded.cycle', (sid, cycle))
             _audit(db, sid, None, session['user_id'], 'manage_campaign_bind', {'cycle': previous}, {'cycle': cycle})
+        await _store(request).run_tx(_bind_transaction_1)
     except sqlite3.IntegrityError as exc:
         raise web.HTTPConflict(text="That CWL month is already linked to another dashboard season") from exc
     return web.json_response({'cycle': cycle})
@@ -181,9 +183,10 @@ async def save_variant(request):
         valid = False
     if not valid:
         raise web.HTTPBadRequest(text='Roster link must use HTTPS')
-    with _store(request).tx() as db:
+    def _save_variant_transaction_1(db):
         if _season(db, sid)['status'] != 'draft':
             raise web.HTTPConflict(text='Season is archived')
+    await _store(request).run_tx(_save_variant_transaction_1)
     try:
         await _transport(request).get_channel(channel_id)
     except AnnouncementRejected as exc:
@@ -248,12 +251,13 @@ async def send(request):
     expected_keys = {'generation', 'channel_id', 'version'} | ({'deleted_message_id', 'confirm_resend'} if resend else set())
     if set(body) != expected_keys or type(body.get('version')) is not int:
         raise web.HTTPBadRequest(text='Review the published version, channel and Manage settings before sending')
-    with _store(request).tx() as db:
+    def _send_transaction_1(db):
         if _season(db, sid)['status'] != 'draft':
             raise web.HTTPConflict(text='Season is archived')
         latest = db.execute('SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
         if latest is None or latest['version'] != body['version']:
             raise web.HTTPConflict(text="Published roster changed. Refresh and review.")
+    await _store(request).run_tx(_send_transaction_1)
     if not isinstance(body['channel_id'], str) or not re.fullmatch(r'\d{15,22}', body['channel_id']) or not isinstance(body['generation'], str):
         raise web.HTTPBadRequest(text="The channel or saved automatic message settings are not valid.")
     async with _mongo(request) as mongo:
@@ -330,16 +334,20 @@ async def test_announcement(request):
         except ValueError as exc:
             raise web.HTTPBadRequest(text=str(exc)) from None
     key = f'{actor["user_id"]}:{nonce}'
-    with _store(request).tx() as db:
+    def _test_announcement_transaction_1(db):
         previous = db.execute('SELECT url FROM roster_test_messages WHERE id=?',(key,)).fetchone()
         if previous:
-            if previous['url']: return web.json_response({'url':previous['url']})
+            if previous['url']: return (True, web.json_response({'url':previous['url']}))
             raise web.HTTPConflict(text='Test delivery is unconfirmed. Check Discord before trying again.')
         db.execute('INSERT INTO roster_test_messages(id,season_id,pool,channel_id,actor_id) VALUES (?,?,?,?,?)',(key,sid,pool,channel,actor['user_id']))
+    _outcome = await _store(request).run_tx(_test_announcement_transaction_1)
+    if _outcome is not None:
+        return _outcome[1]
     message = await discord(request,'POST',f'/channels/{channel}/messages',json={
         'components':[component.build()[0] for component in components], 'flags':32768,
         'allowed_mentions':{'parse':[], 'roles':[]}, 'nonce':nonce,'enforce_nonce':True})
     url = f'https://discord.com/channels/{GUILD_ID}/{channel}/{message["id"]}'
-    with _store(request).tx() as db:
+    def _test_announcement_transaction_2(db):
         db.execute('UPDATE roster_test_messages SET url=? WHERE id=?',(url,key))
+    await _store(request).run_tx(_test_announcement_transaction_2)
     return web.json_response({'url':url})

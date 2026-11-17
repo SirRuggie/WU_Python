@@ -122,9 +122,9 @@ async def event(request):
     if not isinstance(body, dict) or set(body) - {'event', 'card', 'branch', 'run'}:
         raise web.HTTPBadRequest(text='Invalid prank event.')
     try:
-        updated, claimed = apply(store, user_id, body.get('event'), body.get('card'),
+        updated, claimed = (await store.run_writer(lambda: apply(store, user_id, body.get('event'), body.get('card'),
                                  body.get('run'), body.get('branch'),
-                                 can_replay=user_id == config[0])
+                                 can_replay=user_id == config[0])))
     except StaleRun as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     except InvalidEvent as exc:

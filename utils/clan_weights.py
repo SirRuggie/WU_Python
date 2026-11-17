@@ -21,7 +21,7 @@ def saved_sources(db, tags):
 
 
 async def source_weights(store, provider, tags):
-    with store.tx() as db:
+    with store.read() as db:
         saved = saved_sources(db, tags)
     missing = [tag for tag in tags if tag not in saved]
     external = await provider.weights(missing) if missing else {}
@@ -34,7 +34,7 @@ async def source_weights(store, provider, tags):
 def overlay_accounts(store, payload):
     """Apply current saved weights after cache/in-flight reads finish."""
     accounts = payload['accounts']
-    with store.tx() as db:
+    with store.read() as db:
         saved = saved_sources(db, [account['tag'] for account in accounts])
         manual = {row['tag']: row['weight'] for row in db.execute('SELECT tag,weight FROM player_weights WHERE weight IS NOT NULL')}
     return {**payload, 'accounts': [

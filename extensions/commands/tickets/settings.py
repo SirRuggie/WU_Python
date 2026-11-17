@@ -3,6 +3,8 @@
 Transient drafts use component_state. Audit entries use ticket_settings_audit in
 that same settings database, never button_store or applicant ticket records.
 """
+
+from utils.mongo_routes import collection_from
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -215,7 +217,7 @@ async def save(ctx,mongo,rest,data):
                 if set(before).intersection(changes):
                     token=await begin(mongo,'/api/cwl/manage/ticket-settings/'+part,{'user_id':str(ctx.user.id)},before,'discord_edit')
                     histories.append((token,part))
-    audit=mongo.ticket_setup.database.get_collection('ticket_settings_audit')
+    audit=collection_from(mongo.ticket_setup, 'ticket_settings_audit')
     aid=uuid4().hex
     await audit.insert_one({'_id':aid,'guild_id':guild(ctx),'actor_id':int(ctx.user.id),'at':datetime.now(timezone.utc),'state':'pending','before':{k:baseline.get(k) for k in changes},'after':changes})
     result=await mongo.ticket_setup.update_one(query,{'$set':changes,'$inc':{'ticket_settings_revision':1}})

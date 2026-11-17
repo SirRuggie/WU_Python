@@ -3,6 +3,7 @@ import re
 from utils.cwl_roster_order import ordered_roster_clans
 from aiohttp import web
 from utils.cwl_roster_image_store import RosterImageStore, has_active_image_message
+from utils.cwl_roster_sequence import cancel_image_claim, persist_delivery_result
 from .server_management import discord, GUILD_ID
 
 
@@ -36,15 +37,16 @@ async def configure(request):
     destination = await discord(request, 'GET', f'/channels/{channel}')
     if str(destination.get('guild_id')) != str(GUILD_ID) or destination.get('type') not in (0, 5):
         raise web.HTTPBadRequest(text="Select a text channel in this server.")
-    return web.json_response(store(request).configure(body['pool'], channel, str(destination.get('name') or channel), actor['user_id']))
+    return web.json_response((await store(request).store.run_writer(lambda: store(request).configure(body['pool'], channel, str(destination.get('name') or channel), actor['user_id']))))
 
 
 async def posts(request):
     from .app import _sid, _season
     staff(request)
     sid = _sid(request)
-    with request.app['store'].tx() as db:
+    def _posts_transaction_1(db):
         _season(db, sid)
+    await request.app['store'].run_tx(_posts_transaction_1)
     storage = store(request)
     result = storage.posts(sid)
     from .roster_image_destination import new_post_destination
@@ -132,7 +134,7 @@ async def deliver(request):
     storage = store(request)
     if operation == 'dismiss':
         try:
-            return delivery_response(storage.dismiss(sid, pool, clan, version, actor['user_id']))
+            return delivery_response((await storage.store.run_writer(lambda: storage.dismiss(sid, pool, clan, version, actor['user_id']))))
         except ImageConflict as exc:
             raise web.HTTPConflict(text=str(exc)) from None
     old_request = storage.receipt(nonce)
@@ -212,13 +214,22 @@ async def deliver(request):
         if pages > 10:
             raise web.HTTPBadRequest(text='This roster is too large to send.')
         images = await asyncio.gather(*(asyncio.to_thread(render, {'label': frozen['season_label']}, pub, group, page) for page in range(1, pages + 1)))
+    completed_claim = []
+    def claim_image():
+        result = storage.claim(sid, pool, clan, version, nonce, operation, channel, message_id, frozen, actor['user_id'], confirm_duplicate=body.get('confirm_duplicate', False), announcement_channel=channel if operation == 'post' else None)
+        completed_claim.append(result)
+        return result
     try:
         # Recheck after rendering; current announcement state may have changed.
         if operation == 'post' and not (previous and previous['status'] in ('failed', 'uncertain')):
             from .roster_image_destination import new_post_destination
             if await new_post_destination(request, sid, pool) != channel:
                 raise ImageConflict('The announcement destination changed; review again')
-        receipt, acquired = storage.claim(sid, pool, clan, version, nonce, operation, channel, message_id, frozen, actor['user_id'], confirm_duplicate=body.get('confirm_duplicate', False), announcement_channel=channel if operation == 'post' else None)
+        receipt, acquired = await storage.store.run_writer(claim_image)
+    except asyncio.CancelledError:
+        if completed_claim and completed_claim[0][1]:
+            await cancel_image_claim(storage, completed_claim[0][0], error='Check Discord: this clan may have posted')
+        raise
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     if not acquired:
@@ -244,7 +255,17 @@ async def deliver(request):
         except DiscordItemNotFound as exc:
             if exc.discord_code != 10008 or operation != 'update':
                 raise
-            receipt = storage.repost_deleted(receipt)
+            completed_replacement = []
+            def replace_deleted():
+                replacement = storage.repost_deleted(receipt)
+                completed_replacement.append(replacement)
+                return replacement
+            try:
+                receipt = await storage.store.run_writer(replace_deleted)
+            except asyncio.CancelledError:
+                if completed_replacement:
+                    receipt = completed_replacement[0]
+                raise
             method, path, message_id = 'POST', f'/channels/{channel}/messages', None
             payload.update(nonce=receipt['request_id'], enforce_nonce=True)
             reposted = True
@@ -252,20 +273,22 @@ async def deliver(request):
         message_id = str((result or {}).get('id') or message_id or '')
         if not re.fullmatch(r'\d{15,22}', message_id):
             raise DiscordDeliveryUncertain('Discord did not return a message ID')
-        return delivery_response(storage.finish(receipt, 'dropped' if operation == 'drop' else 'posted', message_id,
-                                               error='Reposted (old message was deleted)' if reposted else None))
     except web.HTTPTooManyRequests as exc:
         wait = float(json.loads(exc.text).get('retry_after', 1))
-        storage.finish(receipt, 'failed', error='Discord rate limit', retry_after=wait)
+        (await persist_delivery_result(storage.store.run_writer(lambda: storage.finish(receipt, 'failed', error='Discord rate limit', retry_after=wait))))
         return web.json_response({'retry_after': wait, 'error': 'Discord rate limit'}, status=429)
     except web.HTTPNotFound as exc:
         deleted = isinstance(exc, DiscordItemNotFound) and exc.discord_code == 10008
         error = 'Message was deleted in Discord' if deleted else 'Channel or message not found in Discord'
-        return delivery_response(storage.finish(receipt, 'dropped' if operation == 'drop' and deleted else 'failed', error=error, clear_message=operation == 'update' and deleted))
+        return delivery_response((await persist_delivery_result(storage.store.run_writer(lambda: storage.finish(receipt, 'dropped' if operation == 'drop' and deleted else 'failed', error=error, clear_message=operation == 'update' and deleted)))))
     except asyncio.CancelledError:
-        storage.finish(receipt, 'uncertain', error='Check Discord: this clan may have posted')
+        await cancel_image_claim(storage, receipt, error='Check Discord: this clan may have posted')
         raise
     except (DiscordDeliveryUncertain, aiohttp.ClientError, TimeoutError):
-        return delivery_response(storage.finish(receipt, 'uncertain', error='Check Discord: this clan may have posted'))
+        return delivery_response((await persist_delivery_result(storage.store.run_writer(lambda: storage.finish(receipt, 'uncertain', error='Check Discord: this clan may have posted')))))
     except web.HTTPException as exc:
-        return delivery_response(storage.finish(receipt, 'failed', error=exc.text))
+        return delivery_response((await persist_delivery_result(storage.store.run_writer(lambda: storage.finish(receipt, 'failed', error=exc.text)))))
+    result = await persist_delivery_result(storage.store.run_writer(
+        lambda: storage.finish(receipt, 'dropped' if operation == 'drop' else 'posted', message_id,
+                               error='Reposted (old message was deleted)' if reposted else None)))
+    return delivery_response(result)

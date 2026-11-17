@@ -5,6 +5,8 @@ version/pool/channel delivery before contacting Discord; uncertain attempts are
 never blindly retried, even after Discord's short nonce window expires.
 """
 
+from utils.cwl_roster_sequence import persist_delivery_result
+
 import asyncio
 import hashlib
 import os
@@ -126,7 +128,10 @@ async def announcement_status(request):
     except AnnouncementUnavailable as exc:
         site_url = None
         preview_error = str(exc)
-    with _store(request).tx() as db:
+    latest: object
+    pools: object
+    def _announcement_status_transaction_1(db):
+        nonlocal latest, pools
         season = _season(db, sid)
         latest = db.execute(
             "SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1",
@@ -156,6 +161,7 @@ async def announcement_status(request):
                 "preview": preview,
                 "delivery": _delivery(delivery),
             }
+    await _store(request).run_tx(_announcement_status_transaction_1)
     return web.json_response({
         "latest_publication": {"version": latest["version"],
                                "published_at": latest["published_at"]} if latest else None,
@@ -189,7 +195,9 @@ async def set_channel(request):
         if channel["id"] != channel_id:
             _fail(503, "Discord channel response did not match")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    after: object
+    def _set_channel_transaction_1(db):
+        nonlocal after
         _season(db, sid)
         other = "lazy" if pool == "main" else "main"
         if channel_id and db.execute(
@@ -215,6 +223,7 @@ async def set_channel(request):
         after = {"channel_id": channel_id, "channel_name": channel["name"] if channel else None}
         if before != after:
             _audit(db, sid, None, session["user_id"], f"announcement_channel_{pool}", before, after)
+    await _store(request).run_tx(_set_channel_transaction_1)
     return web.json_response({"pool": pool, **after})
 
 
@@ -237,7 +246,12 @@ async def send_announcement(request):
         site_url = _public_url(request)
     except AnnouncementUnavailable:
         _fail(503, "CWL_WEB_PUBLIC_URL is not configured")
-    with _store(request).tx() as db:
+    content: object
+    existing: object
+    latest: object
+    setting: object
+    def _send_announcement_transaction_1(db):
+        nonlocal content, existing, latest, setting
         season = _season(db, sid)
         latest = db.execute(
             "SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1",
@@ -263,10 +277,13 @@ async def send_announcement(request):
         ).fetchone()
         if existing:
             if existing["status"] == "sent":
-                return web.json_response({"delivery": _delivery(existing)})
+                return (True, web.json_response({"delivery": _delivery(existing)}))
             if existing["status"] != "failed":
                 _fail(409, "The earlier delivery is not final. Check Discord before you send again.")
         content = _content(season["label"], latest, pool, counts, site_url)
+    _outcome = await _store(request).run_tx(_send_announcement_transaction_1)
+    if _outcome is not None:
+        return _outcome[1]
     try:
         channel = await _transport(request).get_channel(channel_id)
     except AnnouncementRejected:
@@ -276,7 +293,11 @@ async def send_announcement(request):
     if channel["id"] != channel_id:
         _fail(503, "Discord channel response did not match")
     nonce = _nonce(sid, version, pool, channel_id)
-    with _store(request).tx() as db:
+    existing: object
+    latest: object
+    setting: object
+    def _send_announcement_transaction_2(db):
+        nonlocal existing, latest, setting
         _season(db, sid)
         latest = db.execute("SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL "
                             "ORDER BY version DESC LIMIT 1", (sid,)).fetchone()
@@ -290,7 +311,7 @@ async def send_announcement(request):
         ).fetchone()
         if existing:
             if existing["status"] == "sent":
-                return web.json_response({"delivery": _delivery(existing)})
+                return (True, web.json_response({"delivery": _delivery(existing)}))
             if existing["status"] != "failed":
                 _fail(409, "The earlier delivery is not final. Check Discord before you send again.")
             changed = db.execute(
@@ -309,6 +330,9 @@ async def send_announcement(request):
                 "status,requested_by,requested_at) VALUES (?,?,?,?,?,?,'sending',?,?)",
                 (sid, version, pool, channel_id, nonce, content, session["user_id"], _now()),
             )
+    _outcome = await _store(request).run_tx(_send_announcement_transaction_2)
+    if _outcome is not None:
+        return _outcome[1]
     transport = _transport(request)
     try:
         message_id = await transport.send(channel_id, content, nonce)
@@ -320,7 +344,9 @@ async def send_announcement(request):
         message_id = None
     else:
         status, failure = "sent", None
-    with _store(request).tx() as db:
+    row: object
+    def _send_announcement_transaction_3(db):
+        nonlocal row
         db.execute(
             "UPDATE announcement_deliveries SET status=?,message_id=?,sent_at=?,failure=? "
             "WHERE season_id=? AND publication_version=? AND pool=? AND channel_id=? AND status='sending'",
@@ -332,6 +358,7 @@ async def send_announcement(request):
             "AND pool=? AND channel_id=?", (sid, version, pool, channel_id),
         ).fetchone()
         _audit(db, sid, None, session["user_id"], f"announcement_{status}", None, _delivery(row))
+    await persist_delivery_result(_store(request).run_tx(_send_announcement_transaction_3))
     if status != "sent":
         _fail(503 if status == "uncertain" else 409, failure)
     return web.json_response({"delivery": _delivery(row)}, status=201)

@@ -1,4 +1,6 @@
 """Guild-owned war weight settings. Permanent fwa_data database collection; no TTL."""
+
+from utils.mongo_routes import collection_from
 from copy import deepcopy
 from datetime import datetime, timezone
 import re
@@ -20,7 +22,7 @@ DEFAULT_RANGES = {
 
 
 def collection(mongo):
-    return mongo.fwa_data.database.get_collection("war_weight_settings")
+    return collection_from(mongo.fwa_data, "war_weight_settings")
 
 
 def defaults():

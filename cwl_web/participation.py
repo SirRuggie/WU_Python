@@ -216,7 +216,15 @@ async def get_participation(request):
 
     _require(request, "editor")
     season_id = _sid(request)
-    with _store(request).tx() as db:
+    accounts: object
+    current: object
+    history: object
+    latest: object
+    saved: object
+    scope_counts: object
+    settings: object
+    def _get_participation_transaction_1(db):
+        nonlocal accounts, current, history, latest, saved, scope_counts, settings
         season = _season(db, season_id)
         latest = _latest(db, season_id)
         settings = settings_view(db, season_id)
@@ -250,6 +258,7 @@ async def get_participation(request):
         from utils.cwl_bonus_raffle_store import RaffleStore
         RaffleStore(db, season_id).enrich_prior_winners(accounts, settings['cycle'])
         scope_counts = {'current_signups': len(current), 'saved_history': len(saved)}
+    await _store(request).run_tx(_get_participation_transaction_1)
     return web.json_response({
         "publication_version": latest["version"] if latest else 0,
         "roster_source": "history" if history else "current_signups",
@@ -271,7 +280,9 @@ async def patch_participation(request):
         player_tag = normalize_tag(request.match_info["tag"])
     except ValueError:
         _fail(400, "Invalid player tag")
-    with _store(request).tx() as db:
+    account: object
+    def _patch_participation_transaction_1(db):
+        nonlocal account
         latest, snapshot, saved, source = _context(
             db, season_id, player_tag, publication_version, _fail, body.get("roster_token"),
         )
@@ -337,6 +348,7 @@ async def patch_participation(request):
             [account], participation_evidence(db, season_id, settings['cycle'], accounts=[account]),
             sync_status=settings['status'],
         )[0]
+    await _store(request).run_tx(_patch_participation_transaction_1)
     return web.json_response({"account": account})
 
 
@@ -362,7 +374,9 @@ async def reset_to_source(request):
         player_tag = normalize_tag(request.match_info["tag"])
     except ValueError:
         _fail(400, "Invalid player tag")
-    with _store(request).tx() as db:
+    account: object
+    def _reset_to_source_transaction_1(db):
+        nonlocal account
         latest, snapshot, saved, source = _context(
             db, sid, player_tag, publication_version, _fail, body.get("roster_token"), reconcile=True,
         )
@@ -394,6 +408,7 @@ async def reset_to_source(request):
             [account], participation_evidence(db, sid, settings['cycle'], accounts=[account]),
             sync_status=settings['status'],
         )[0]
+    await _store(request).run_tx(_reset_to_source_transaction_1)
     return web.json_response({"account": account})
 
 

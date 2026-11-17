@@ -89,8 +89,8 @@ def effective_permissions(base: int, role_ids, user_id: int, overwrites, guild_i
 
 class MemberEventStore:
     def __init__(self, collection, test_audit=None):
-        self.collection = collection.with_options(write_concern=WriteConcern(w="majority", wtimeout=10000)) if hasattr(collection, "with_options") else collection
-        self.test_audit = test_audit.with_options(write_concern=WriteConcern(w="majority", wtimeout=10000)) if hasattr(test_audit, "with_options") else test_audit
+        self.collection = collection.with_options(write_concern=WriteConcern(w="majority")) if hasattr(collection, "with_options") else collection
+        self.test_audit = test_audit.with_options(write_concern=WriteConcern(w="majority")) if hasattr(test_audit, "with_options") else test_audit
 
     async def ensure_indexes(self):
         await self.collection.create_index("event_key", unique=True, name="member_event_key")

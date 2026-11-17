@@ -21,7 +21,7 @@ def current(request, pool):
     from .app import _sid, _latest_publication, _rule_rows
 
     sid = _sid(request)
-    with request.app["store"].tx() as db:
+    with request.app["store"].read() as db:
         latest = _latest_publication(db, sid)
         pools = {r["tag"]: r["pool"] for r in _rule_rows(db, sid)}
         draft = [

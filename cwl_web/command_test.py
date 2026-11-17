@@ -1,4 +1,6 @@
 """Send an inert, mention-free draft preview without changing saved triggers."""
+
+from utils.mongo_routes import collection_from
 import json,re,hashlib
 from datetime import datetime,timezone
 import aiohttp
@@ -44,7 +46,7 @@ async def send(request):
             data['attachments']=[{'id':i,'filename':item.filename} for i,item in enumerate(attachments)]
             for i,item in enumerate(attachments):form.add_field(f'files[{i}]',await item.read(),filename=item.filename,content_type='application/octet-stream')
             form.add_field('payload_json',json.dumps(data),content_type='application/json')
-        audit=db.bot_config.database.get_collection('text_command_tests',write_concern=WriteConcern(w='majority',wtimeout=10000))
+        audit=collection_from(db.bot_config, 'text_command_tests', write_concern=WriteConcern(w='majority'))
         key=f'{GUILD_ID}:{actor["user_id"]}:{nonce}'
         try:await audit.insert_one({'_id':key,'guild_id':GUILD_ID,'user_id':actor['user_id'],'command':values['command'],'channel_id':channel,'at':datetime.now(timezone.utc),'status':'sending','fingerprint':fingerprint})
         except DuplicateKeyError:

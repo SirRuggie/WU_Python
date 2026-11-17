@@ -1,4 +1,6 @@
 """Reusable artwork catalog; stored beside command settings, with live usage."""
+
+from utils.mongo_routes import collection_from
 import hashlib
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, unquote
@@ -11,7 +13,7 @@ from .server_management import mongo, require_manage, API
 
 
 def collection(db):
-    return db.bot_config.database.get_collection('text_command_images',write_concern=WriteConcern(w='majority',wtimeout=10000))
+    return collection_from(db.bot_config, 'text_command_images', write_concern=WriteConcern(w='majority'))
 
 
 def image_slots(row):

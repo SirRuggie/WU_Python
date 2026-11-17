@@ -188,9 +188,10 @@ async def _edit(request, preview=False):
     sid = _sid(request)
     cycle = None  # Reminder editing is independent of roster month bindings.
     body = await _json(request)
-    with _store(request).tx() as db:
+    def __edit_transaction_1(db):
         if _season(db, sid)['status'] != 'draft':
             raise web.HTTPConflict(text='Season is archived')
+    await _store(request).run_tx(__edit_transaction_1)
     try:
         _object(body, ('generation', 'patch', 'repeat_monthly'), 'request')
         if not isinstance(body.get('generation'), str) or not isinstance(body.get('patch'), dict):
@@ -228,8 +229,9 @@ async def _edit(request, preview=False):
                 saved = await cwl_campaign.apply_draft(mongo, draft['_id'], int(session['user_id']), expected_revision=loaded['revision'], candidate_campaign=candidate, require_future_signup=True, repeat_monthly=repeat, expected_generation=body['generation'])
             finally:
                 await mongo.bot_config.delete_one({'_id': draft['_id'], 'user_id': int(session['user_id'])})
-            with _store(request).tx() as db:
+            def __edit_transaction_2(db):
                 _audit(db, sid, None, session['user_id'], 'manage_reminders_save', {'generation': body['generation']}, {'generation': campaign_generation(saved), 'repeat_monthly': repeat})
+            await _store(request).run_tx(__edit_transaction_2)
             return web.json_response(await _response(request, mongo, saved, protected=saved.get('protected_sent', [])))
     except AnnouncementRejected as exc:
         raise web.HTTPBadRequest(text="Select Warriors United text channels") from exc
@@ -257,16 +259,18 @@ async def pause(request):
     body = await _json(request)
     if set(body) != {'generation', 'paused'} or not isinstance(body['generation'], str) or type(body['paused']) is not bool:
         raise web.HTTPBadRequest(text='Review reminder settings and pause state first')
-    with _store(request).tx() as db:
+    def _pause_transaction_1(db):
         if _season(db, sid)['status'] != 'draft':
             raise web.HTTPConflict(text='Season is archived')
+    await _store(request).run_tx(_pause_transaction_1)
     async with _mongo(request) as mongo:
         try:
             saved = await cwl_campaign.set_paused(mongo, GUILD_ID, body['paused'], cycle, int(session['user_id']), expected_generation=body['generation'])
         except RuntimeError as exc:
             raise web.HTTPConflict(text=str(exc)) from exc
-        with _store(request).tx() as db:
+        def _pause_transaction_2(db):
             _audit(db, sid, None, session['user_id'], 'manage_reminders_pause', None, {'paused': body['paused']})
+        await _store(request).run_tx(_pause_transaction_2)
         return web.json_response(await _response(request, mongo, saved))
 
 

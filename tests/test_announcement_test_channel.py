@@ -41,3 +41,51 @@ class AnnouncementTestChannelTests(ManageBridgeTests):
                      {'channel_id': '123456789012345678', 'expected_revision': -1},
                      {'channel_id': '123456789012345678', 'expected_revision': 0, 'extra': 1}):
             self.assertEqual((await self.call('PUT', path, self.owner, json=body)).status, 400)
+
+    async def test_slow_save_keeps_timer_and_authenticated_reads_responsive(self):
+        import asyncio
+        import threading
+        import time
+
+        channel = '123456789012345678'
+        path = '/manage/announcement-test-channel'
+        async def destination(method, url, **kwargs):
+            return {'id': channel, 'guild_id': str(GUILD_ID), 'type': 0, 'name': 'bot-testing'}
+        self.app['server_management_discord'] = destination
+        storage = self.app['store']
+        publish_threads = []
+        class SlowOwner:
+            def check(self):
+                pass
+            def publish(self, db):
+                publish_threads.append(threading.get_ident())
+                time.sleep(.5)
+        storage.durability = SlowOwner()
+        async def timer():
+            await asyncio.sleep(.02)
+            return time.monotonic()
+        started = time.monotonic()
+        tick = asyncio.create_task(timer())
+        pending = asyncio.create_task(self.call('PUT', path, self.owner, json={
+            'channel_id': channel, 'expected_revision': 0}))
+        try:
+            self.assertLess((await tick) - started, .2)
+            self.assertFalse(pending.done())
+            read_started = time.monotonic()
+            before = await self.call('GET', path, self.owner)
+            self.assertEqual(before.status, 200)
+            self.assertEqual(await before.json(), {'channel_id': '', 'channel_name': '', 'revision': 0})
+            self.assertLess(time.monotonic() - read_started, .2)
+            saved = await pending
+            self.assertEqual(saved.status, 200, await saved.text())
+            self.assertEqual(await saved.json(), {'channel_id': channel, 'channel_name': 'bot-testing', 'revision': 1})
+            after = await self.call('GET', path, self.owner)
+            self.assertEqual((await after.json())['revision'], 1)
+            stale = await self.call('PUT', path, self.owner, json={
+                'channel_id': channel, 'expected_revision': 0})
+            self.assertEqual(stale.status, 409)
+            self.assertEqual(len(publish_threads), 1)
+            self.assertNotEqual(publish_threads[0], threading.get_ident())
+        finally:
+            await pending
+            storage.durability = None

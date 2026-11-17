@@ -131,3 +131,63 @@ information, not proof of future notification delivery.
 See `docs/dashboard-interaction-standard.md` for design comparisons, shared rules,
 and the manual/adversarial checklist. No notification renderer or Discord payload
 changed in this overview release.
+
+
+## Audit 239 polling decision (D7, Shaka 1073)
+
+The worker's membership checks use `clan_exists`, projecting only `_id`. Web
+editors retain the complete clan read for names, revision/history and copying.
+Status changes (including failures and recovery) write immediately. Identical
+status skips the write except for a `checked_at` liveness refresh at most every
+120 seconds. The existing 180-second stale-check threshold is unchanged; no
+second liveness storage owner is introduced. A backwards or missing timestamp
+forces a refresh rather than silently preserving stale health.
+
+At a fixed 60-second scan cadence a quiet healthy clan previously produced 60
+status writes/hour; the fixture now produces 30/hour and remains Monitoring at
+each scan. Polling still reads current persisted status before deciding whether
+to write; this changes writes and payload size, not every Mongo operation count.
+The stored timestamp can lag an individual scan by less than 120 seconds.
+A settings edit invalidates old checks using the existing updated-at comparison.
+The first successful scan of that edited configuration writes immediately
+(Shaka 1087), even inside the 120-second liveness interval. A same-status write
+can skip only when the stored check covers the scanned configuration's
+`updated_at` and is less than 120 seconds old. The worker passes the timestamp
+from the configuration it actually scanned; it does not certify a later edit.
+Status records persist `settings_updated_at` and `settings_version` for the
+configuration actually scanned (audit239 stale48). Health requires that exact
+UTC/BSON-millisecond timestamp and version identity, as well as a fresh check.
+An old in-flight scan writing at t+120 cannot certify a t+1 settings edit; the
+first actual new-settings scan at t+180 still writes immediately. A later result
+for an older version cannot overwrite the newer identity, even if its status
+changed or failed. The storage owner conditionally matches its observed marker
+and check timestamp, rereads on a race, and rejects older results. Same-ms edits
+remain distinct through the existing monotonic settings version.
+Within the same scanned settings identity, an older `checked_at` result cannot
+replace a newer receipt, even when success/error status differs (audit239 late68).
+The exact observed check timestamp remains in the conditional write; a lost
+update or competing insert is reread and the older result is rejected. Thus a
+late success cannot hide a newer failure, and a late error cannot regress a newer
+healthy check. Dates compare at existing UTC/BSON-millisecond precision; equal
+millisecond timestamps retain the previous tie behavior.
+Legacy rows without markers remain unverified until one honest worker refresh
+records identity; no migration or backfill is needed. Unknown/unbound results
+cannot replace a bound status. Existing permanent delivery receipts are untouched.
+Both the backend health reader and bot worker use this contract and must be
+included in the eventual backend/bot release; this work performs no release.
+In the settings-edit fixture, an edit at t+1 second causes the t+60 scan to write
+once and show Monitoring; the same-status t+120 scan skips. Rare settings edits
+add this immediate write; unchanged settings retain the 60-to-30 writes/hour
+reduction and the existing 180-second stale threshold.
+Cancellation, permanent delivery receipts and uncertain-send non-retry behavior
+are unchanged. Fixture delivery tests do not establish live Discord delivery.
+
+Supplemental audit 239 check (brief 27): status-field datetime equality uses UTC
+instants at BSON millisecond precision. Default Mongo reads return naive UTC and
+truncate sub-millisecond detail, while fresh war snapshots are aware UTC. Those
+representation differences do not constitute a status change. Real changed
+milliseconds, a new war end, an error/recovery or changed non-date values still
+write immediately. Values are compared only; no client-wide `tz_aware` setting,
+stored date migration, endpoint or health-policy change is introduced. BSON
+round-trip fixtures verify both active-war and no-war 60-second polling produces
+30 status writes/hour and maintains the existing liveness window.

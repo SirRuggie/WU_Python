@@ -7,6 +7,14 @@ from contextlib import suppress
 from utils.cwl_dashboard_state import DashboardDurabilityError, DashboardDurabilityAttention
 
 
+async def writer_lifecycle(app):
+    """Registered first so worker lifecycles stop before the writer is drained."""
+    try:
+        yield
+    finally:
+        await app["store"].close_writer()
+
+
 async def lifecycle(app):
     durability = app["store"].durability
     if durability is None:
@@ -19,9 +27,9 @@ async def lifecycle(app):
             await asyncio.sleep(20)
             try:
                 if durability.poisoned:
-                    await asyncio.to_thread(app["store"].recover_durability)
+                    await app["store"].run_writer(app["store"].recover_durability)
                 else:
-                    durability.heartbeat()
+                    await app["store"].run_writer(durability.heartbeat)
                 if degraded:
                     logging.getLogger(__name__).info(
                         "Dashboard durable storage recovered; saved receipts reconciled."

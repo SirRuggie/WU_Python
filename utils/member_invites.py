@@ -53,7 +53,7 @@ def snapshot_row(guild_id: int, code: str, *, uses, max_uses, inviter_id=None, i
 class MemberInviteStore:
     def __init__(self, collection):
         self.collection = collection.with_options(
-            write_concern=WriteConcern(w="majority", wtimeout=10000)) if hasattr(collection, "with_options") else collection
+            write_concern=WriteConcern(w="majority")) if hasattr(collection, "with_options") else collection
 
     async def ensure_indexes(self):
         await self.collection.create_index("guild_id", name="member_invite_guild")

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from pymongo import ReturnDocument
+from utils.mongo_routes import ticket_test_collection
 
 
 DATABASE_NAME = "ticket_testing"
@@ -30,9 +31,8 @@ class TestTicketMongo:
     })
 
     def __init__(self, mongo: Any):
-        self._database = mongo.get_database(DATABASE_NAME)
         for name in self._collections:
-            setattr(self, name, self._database.get_collection(name))
+            setattr(self, name, ticket_test_collection(mongo, name))
 
     def __getattr__(self, name: str):
         raise AttributeError(f"{name} is unavailable in the test ticket scope")

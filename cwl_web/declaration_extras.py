@@ -17,7 +17,7 @@ def snapshot(request, source):
     )
 
     sid = _sid(request)
-    with request.app["store"].tx() as db:
+    with request.app["store"].read() as db:
         _season(db, sid)
         if source == "published":
             publication = _latest_publication(db, sid)
@@ -53,8 +53,11 @@ async def check(request):
         raise web.HTTPConflict(text="Roster changed. Refresh before checking members.")
     from utils.roster_player_marks import marks
 
-    with request.app["store"].tx() as db:
+    roster_marks: object
+    def _check_transaction_1(db):
+        nonlocal roster_marks
         roster_marks = marks(db)
+    await request.app['store'].run_tx(_check_transaction_1)
     assigned = {row.get("assigned_clan_tag") for row in accounts}
     lazy = [
         clan

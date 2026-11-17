@@ -1,4 +1,6 @@
 """Permanent manual player weights: transactional local outbox and Mongo history."""
+
+from utils.mongo_routes import collection_from
 import asyncio
 import contextlib
 import json
@@ -62,15 +64,20 @@ async def sync(app):
     from .server_management import mongo, GUILD_ID
     store = app['store']
     async with mongo(SimpleNamespace(app=app)) as shared:
-        collection = shared.fwa_data.database.get_collection('player_manual_weight_history', write_concern=WriteConcern(w='majority', wtimeout=10000))
+        collection = collection_from(shared.fwa_data, 'player_manual_weight_history', write_concern=WriteConcern(w='majority'))
         for row in store.rows('SELECT * FROM player_weight_events WHERE synced=0 ORDER BY recorded_at,id'):
             document = {key:value for key,value in row.items() if key not in ('id','synced')}
             await collection.update_one({'_id':f"{GUILD_ID}:{row['id']}"}, {'$setOnInsert':{**document,'event_id':row['id'],'guild_id':GUILD_ID}},upsert=True)
-            with store.tx() as db:
+            def _sync_transaction_2(db):
                 db.execute('UPDATE player_weight_events SET synced=1 WHERE id=?',(row['id'],))
+            await store.run_tx(_sync_transaction_2)
         # Also rebuild the local cache from Mongo after a host/database recovery.
         rows = await collection.find({'guild_id':GUILD_ID}).to_list(length=None)
-        with store.tx() as db:
+        row: object
+        tag: object
+        tags: object
+        def _sync_transaction_1(db):
+            nonlocal row
             tags = set()
             for row in rows:
                 db.execute('INSERT OR IGNORE INTO player_weight_events VALUES (?,?,?,?,?,?,1)',
@@ -78,6 +85,7 @@ async def sync(app):
                 tags.add(row['tag'])
             for tag in tags:
                 rebuild(db,tag)
+        await store.run_tx(_sync_transaction_1)
 
 
 async def lifecycle(app):

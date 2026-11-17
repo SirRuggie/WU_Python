@@ -304,7 +304,7 @@ def test_owner_changed_after_fence_cannot_complete_local_recovery(owner):
     assert state.poisoned
 
 
-def test_lifecycle_retries_recovery_and_keeps_heartbeat_alive(monkeypatch, caplog):
+def test_lifecycle_retries_recovery_and_keeps_heartbeat_alive(monkeypatch, caplog, tmp_path):
     import asyncio
 
     async def scenario():
@@ -349,13 +349,16 @@ def test_lifecycle_retries_recovery_and_keeps_heartbeat_alive(monkeypatch, caplo
                 CancelledError=asyncio.CancelledError,
             ),
         )
-        context = durability.lifecycle(
-            {"store": SimpleNamespace(durability=owner, recover_durability=recover)}
-        )
+        from cwl_web.store import Store
+        store = Store(str(tmp_path / "lifecycle.sqlite"))
+        store.durability = owner
+        store.recover_durability = recover
+        context = durability.lifecycle({"store": store})
         with caplog.at_level(logging.INFO):
             await context.__anext__()
             await asyncio.wait_for(finished.wait(), 3)
             await context.aclose()
+            await store.close_writer()
         assert len(attempts) == 2
         assert owner.heartbeats == 1
         assert (
@@ -604,5 +607,6 @@ def test_actual_renew_loop_keeps_permanent_attention_alive_without_downgrade(
             assert not any("storage is recovering" in r.message for r in caplog.records)
         finally:
             await lifecycle.aclose()
+            await store.close_writer()
 
     asyncio.run(run())

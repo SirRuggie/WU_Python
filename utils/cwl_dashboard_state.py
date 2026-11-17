@@ -253,7 +253,7 @@ class MongoDashboardState:
         collection = collection_for(
             client, "cwl_dashboard_state", routes=routes
         ).with_options(
-            write_concern=WriteConcern(w="majority", j=True, wtimeout=5000),
+            write_concern=WriteConcern(w="majority", j=True),
             read_concern=ReadConcern("majority"),
             read_preference=ReadPreference.PRIMARY,
         )
