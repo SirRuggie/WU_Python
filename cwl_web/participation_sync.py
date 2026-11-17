@@ -720,7 +720,16 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
     lock = locks.setdefault(season_id, asyncio.Lock())
     async with lock:
         store = app["store"]
-        with store.tx() as db:
+        clans: object
+        cycle: object
+        identities: object
+        latest: object
+        publication_version: object
+        season: object
+        settings: object
+        working_snapshot: object
+        def _sync_season_transaction_1(db):
+            nonlocal clans, cycle, identities, latest, publication_version, season, settings, working_snapshot
             season = db.execute(
                 "SELECT * FROM seasons WHERE id=?", (season_id,)
             ).fetchone()
@@ -732,7 +741,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             if not settings["cycle"]:
                 _fail(409, "Select a CWL month before syncing")
             if not force and not settings["enabled"]:
-                return {"sync": settings, "updated_accounts": 0}
+                return (True, {"sync": settings, "updated_accounts": 0})
             latest = db.execute(
                 "SELECT id,version FROM roster_publications "
                 "WHERE withdrawn_at IS NULL AND season_id=? ORDER BY version DESC LIMIT 1",
@@ -749,9 +758,18 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             )
             cycle = settings["cycle"]
             publication_version = latest["version"] if latest else 0
+        _outcome = await store.run_tx(_sync_season_transaction_1)
+        if _outcome is not None:
+            return _outcome[1]
         if len(clans) > MAX_CLANS:
             _fail(400, "Too many hosting clans for one sync")
-        with store.tx() as db:
+        final: object
+        known_groups: object
+        known_sides: object
+        row: object
+        tags: object
+        def _sync_season_transaction_2(db):
+            nonlocal known_groups, known_sides, row, tags
             known_groups = _group_rows(db, season_id, cycle)
             known_sides = {}
             for row in db.execute(
@@ -772,6 +790,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 except (ValueError, KeyError, TypeError):
                     continue
                 known_sides.setdefault(row['war_tag'], set()).update(tags)
+        await store.run_tx(_sync_season_transaction_2)
         failure_details = []
         fetch_diagnostics = []
         clan_names = {row['assigned_clan_tag']: row.get('assigned_clan_name') or row['assigned_clan_tag']
@@ -816,7 +835,11 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             groups_to_write.append((clan_tag, state, rounds, members, league))
             rounds_by_clan[clan_tag] = rounds
             fresh_groups.add(clan_tag)
-        with store.tx() as db:
+        cached_fetches: object
+        cached_groups: object
+        captured_scores: object
+        def _sync_season_transaction_3(db):
+            nonlocal cached_fetches, cached_groups, captured_scores
             captured_scores = AllowanceStore(db, season_id, cycle).captured_wars()
             cached_groups = _group_rows(db, season_id, cycle)
             cached_fetches = {
@@ -827,6 +850,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     (season_id, cycle),
                 ).fetchall()
             }
+        await store.run_tx(_sync_season_transaction_3)
         all_tags = set()
         for clan_tag in clans:
             fresh = next((row for row in groups_to_write if row[0] == clan_tag), None)
@@ -899,7 +923,46 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 if side is not None:
                     wars_to_write.append((war_tag, clan_tag, side))
         stamp = now()
-        with store.tx() as db:
+        _: object
+        active_war: object
+        allowances: object
+        attacks: object
+        checked_at: object
+        clan: object
+        clan_tag: object
+        complete: object
+        current: object
+        end: object
+        error: object
+        existing_identity: object
+        group_rows: object
+        group_tags: object
+        identity: object
+        latest: object
+        league: object
+        members: object
+        old: object
+        overall: object
+        player_tag: object
+        prior: object
+        reason: object
+        result: object
+        rounds: object
+        season: object
+        side: object
+        stars: object
+        state: object
+        status: object
+        statuses: object
+        updated: object
+        values: object
+        waiting_clans: object
+        war: object
+        war_rows: object
+        war_tag: object
+        warning: object
+        def _sync_season_transaction_4(db):
+            nonlocal _, clan, clan_tag, error, latest, league, members, reason, result, rounds, season, side, state, updated, war, war_tag
             season = db.execute(
                 "SELECT status FROM seasons WHERE id=?", (season_id,)
             ).fetchone()
@@ -1211,6 +1274,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 ),
             )
             result = settings_view(db, season_id)
+        await store.run_tx(_sync_season_transaction_4)
         return {"sync": result, "updated_accounts": updated, "failures": failure_details}
 
 
@@ -1263,7 +1327,9 @@ async def sync_settings(request):
     ):
         _fail(400, "expected_updated_at must be a timestamp or null")
     sid = _sid(request)
-    with _store(request).tx() as db:
+    result: object
+    def _sync_settings_transaction_1(db):
+        nonlocal result
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Archived season is read-only")
@@ -1297,6 +1363,7 @@ async def sync_settings(request):
             ),
         )
         result = settings_view(db, sid)
+    await _store(request).run_tx(_sync_settings_transaction_1)
     return web.json_response({"sync": result})
 
 
@@ -1312,7 +1379,9 @@ async def _worker(app):
     try:
         while True:
             await asyncio.sleep(INTERVAL_SECONDS)
-            with app["store"].tx() as db:
+            season_ids: object
+            def __worker_transaction_1(db):
+                nonlocal season_ids
                 season_ids = [
                     row["season_id"]
                     for row in db.execute(
@@ -1321,6 +1390,7 @@ async def _worker(app):
                         "WHERE s.enabled=1 AND x.status='draft'"
                     ).fetchall()
                 ]
+            await app['store'].run_tx(__worker_transaction_1)
             for season_id in season_ids:
                 try:
                     await sync_season(app, season_id)

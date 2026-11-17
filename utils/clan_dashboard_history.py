@@ -1,4 +1,6 @@
 """Durable clan recovery snapshots shared by Discord and the dashboard."""
+
+from utils.mongo_routes import collection_from
 from datetime import datetime, timezone
 from uuid import uuid4
 from pymongo.write_concern import WriteConcern
@@ -6,8 +8,7 @@ from pymongo.write_concern import WriteConcern
 GUILD_ID = 644963518025826315
 
 def collection(db):
-    return db.bot_config.database.get_collection(
-        'clan_dashboard_history', write_concern=WriteConcern(w='majority', wtimeout=10000))
+    return collection_from(db.bot_config, 'clan_dashboard_history', write_concern=WriteConcern(w='majority'))
 
 async def audit(db, actor, action, row):
     if row is None:

@@ -3,6 +3,8 @@
 See docs/recruit-message-delivery.md. No message bodies or tokens are stored.
 """
 
+from utils.mongo_routes import collection_from
+
 import asyncio
 import hashlib
 import logging
@@ -37,9 +39,7 @@ def aware(value):
 
 
 def collection(mongo):
-    return mongo.recruit_challenges.database.get_collection(
-        "recruit_message_deliveries"
-    )
+    return collection_from(mongo.recruit_challenges, "recruit_message_deliveries")
 
 
 def identity(kind, channel_id, user_id, session_id):

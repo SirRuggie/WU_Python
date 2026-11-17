@@ -3,6 +3,8 @@
 Reads stored results and saved reviews only. Sends Components V2 messages through the
 shared announcement transport with no mentions. Uncertain sends are never retried automatically.
 """
+
+from utils.cwl_roster_sequence import persist_delivery_result
 import asyncio
 import hashlib
 import json
@@ -42,8 +44,12 @@ async def preview(request):
     from .app import _require, _sid, _store
     _require(request, 'editor')
     sid = _sid(request)
-    with _store(request).tx() as db:
+    blockers: object
+    data: object
+    def _preview_transaction_1(db):
+        nonlocal blockers, data
         blockers, data = collect(db, sid)
+    await _store(request).run_tx(_preview_transaction_1)
     pages = []
     if data['clans']:
         try:
@@ -102,8 +108,12 @@ async def send(request):
             _fail(409, 'The infractions changed. Review the preview again.')
         return data, None
 
-    with _store(request).tx() as db:
+    data: object
+    done: object
+    def _send_transaction_1(db):
+        nonlocal data, done
         data, done = checked(db)
+    await _store(request).run_tx(_send_transaction_1)
     if done:
         return web.json_response(done)
     try:
@@ -120,12 +130,17 @@ async def send(request):
     record = {'request_id': request_id, 'channel_id': channel_id, 'cycle': data['cycle'],
               'clans': [c['tag'] for c in data['clans']],
               'players': [p['tag'] for c in data['clans'] for p in c['players']], 'pages': len(pages)}
-    with _store(request).tx() as db:
+    done: object
+    def _send_transaction_2(db):
+        nonlocal done
         _, done = checked(db)
         if done:
-            return web.json_response(done)
+            return (True, web.json_response(done))
         # The reservation is durable before Discord sees anything.
         _audit(db, sid, actor, {**record, 'status': 'sending'})
+    _outcome = await _store(request).run_tx(_send_transaction_2)
+    if _outcome is not None:
+        return _outcome[1]
     sent, status, failure = [], 'sent', None
     try:
         for index, payload in enumerate(pages):
@@ -141,8 +156,9 @@ async def send(request):
                    else 'Delivery stopped. Check Discord before you send again; this will not resend automatically.')
     result = {**record, 'status': status, 'failure': failure,
               'message_ids': sent, 'urls': [_url(channel_id, m) for m in sent]}
-    with _store(request).tx() as db:
+    def _send_transaction_3(db):
         _audit(db, sid, actor, result)
+    await persist_delivery_result(_store(request).run_tx(_send_transaction_3))
     return web.json_response(result)
 
 

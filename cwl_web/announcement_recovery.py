@@ -74,7 +74,7 @@ async def prepare_resend(request, mongo, *, sid, cycle, pool, body, actor, previ
         storage.check_archive_deleted_sequence(sid, pool, message)
         await reopen_deleted_request(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool,
                                      receipt=receipt, actor_id=actor['user_id'])
-        storage.archive_deleted_sequence(sid, pool, message, actor['user_id'])
+        (await storage.store.run_writer(lambda: storage.archive_deleted_sequence(sid, pool, message, actor['user_id'])))
     except (ValueError, ImageConflict) as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     return await get_roster_send_status(mongo, GUILD_ID, cycle, pool)

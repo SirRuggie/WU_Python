@@ -25,8 +25,11 @@ async def save(request):
             or str(channel.get('id')) != body['channel_id'] or not channel.get('name')):
         raise web.HTTPBadRequest(text="Select a text or announcement channel in this server")
     try:
-        result = RosterImageStore(request.app['store']).configure_test_channel(
-            body['channel_id'], channel['name'], actor['user_id'], body['expected_revision'])
+        storage = RosterImageStore(request.app['store'])
+        result = await request.app['store'].run_writer(
+            lambda: storage.configure_test_channel(
+                body['channel_id'], channel['name'], actor['user_id'], body['expected_revision'])
+        )
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     return web.json_response(result)

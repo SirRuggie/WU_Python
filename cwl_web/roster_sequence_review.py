@@ -44,15 +44,15 @@ async def prepare(request, sid, pool, cycle, body, actor, previous):
     plan = await frozen_plan(request, sid, pool, body['version'])
     try:
         if existing:
-            return storage.revise_unsent_sequence(
+            return (await storage.store.run_writer(lambda: storage.revise_unsent_sequence(
                 existing['sequence_id'], version=body['version'], generation=body['generation'],
                 channel=body['channel_id'], actor=str(actor['user_id']), plan=plan,
-            )
-        return storage.prepare_sequence(
+            )))
+        return (await storage.store.run_writer(lambda: storage.prepare_sequence(
             sequence_id=secrets.token_hex(12), sid=sid, pool=pool, cycle=cycle,
             version=body['version'], generation=body['generation'], channel=body['channel_id'],
             actor=str(actor['user_id']), plan=plan,
-        )
+        )))
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
 
@@ -110,7 +110,7 @@ async def resume(request):
     if any(receipt and receipt['status'] in ('sending', 'uncertain') for receipt in receipts):
         raise web.HTTPConflict(text='Check Discord first: a message may already have posted')
     try:
-        storage.request_sequence_resume(job['sequence_id'], str(actor['user_id']))
+        (await storage.store.run_writer(lambda: storage.request_sequence_resume(job['sequence_id'], str(actor['user_id']))))
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     return web.json_response({'sequence': describe(storage, job['season_id'], job['pool'])}, status=202)
@@ -136,8 +136,8 @@ async def recover(request):
             or body['sequence_id'] != job['sequence_id']):
         raise web.HTTPBadRequest(text='Check Discord first and confirm Post again anyway')
     try:
-        storage.recover_sequence_message(job['sequence_id'], body['request_id'],
-                                         secrets.token_hex(12), str(actor['user_id']))
+        (await storage.store.run_writer(lambda: storage.recover_sequence_message(job['sequence_id'], body['request_id'],
+                                         secrets.token_hex(12), str(actor['user_id']))))
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     return web.json_response({'sequence': describe(storage, job['season_id'], job['pool'])}, status=202)
@@ -164,7 +164,7 @@ async def repair_closing(request):
     if not await deleted_in_discord(request, receipt):
         return web.json_response({'reposted': False})
     try:
-        storage.repost_deleted_closing(job['sequence_id'], body['message_id'], actor['user_id'])
+        (await storage.store.run_writer(lambda: storage.repost_deleted_closing(job['sequence_id'], body['message_id'], actor['user_id'])))
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     return web.json_response({'repost_queued': True}, status=202)
@@ -190,7 +190,7 @@ async def assume_announcement(request):
     async with _mongo(request) as mongo:
         bridge = await get_roster_send_status(mongo, GUILD_ID, job['cycle'], pool)
     try:
-        storage.assume_announcement(job, bridge or {}, str(actor['user_id']))
+        (await storage.store.run_writer(lambda: storage.assume_announcement(job, bridge or {}, str(actor['user_id']))))
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     return web.json_response({'sequence': describe(storage, sid, pool)}, status=202)

@@ -23,7 +23,7 @@ def context(request, *, send=False):
     if pool not in ("main", "lazy"):
         raise web.HTTPBadRequest(text="Select Main or Lazy")
     sid = _sid(request)
-    with request.app["store"].tx() as db:
+    with request.app["store"].read() as db:
         _season(db, sid)
     return actor["user_id"], sid, pool
 

@@ -1,4 +1,6 @@
 """Explicitly configured self-service roles, checked against the bot on every click."""
+
+from utils.mongo_routes import collection_from
 from datetime import datetime,timezone
 from types import SimpleNamespace as NS
 import hikari
@@ -40,7 +42,7 @@ async def perform(interaction,db,row,action):
     if not authorized or not safe_role(role,await protected_roles(db)) or not role_is_manageable(guild,bot,role):
         raise ValueError('This role action is unavailable. Ask staff to review it.')
     target=await rest.fetch_member(GUILD_ID,interaction.user.id)
-    events=db.bot_config.database.get_collection('text_command_events',write_concern=WriteConcern(w='majority',wtimeout=10000))
+    events=collection_from(db.bot_config, 'text_command_events', write_concern=WriteConcern(w='majority'))
     key='role:'+str(interaction.id)
     from pymongo.errors import DuplicateKeyError
     try:

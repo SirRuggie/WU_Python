@@ -3,10 +3,21 @@
 Collections follow bot_config's configured database. Settings and receipt IDs
 are permanent: deleting receipts could replay notifications after a restart.
 """
+
+from utils.mongo_routes import collection_from
 from datetime import datetime, timezone
 
 from pymongo.errors import DuplicateKeyError
 from pymongo.write_concern import WriteConcern
+from utils.war_reminder_health import timestamp, settings_identity, checked_settings
+
+
+def _status_value(value):
+    """Compare persisted/fresh dates in the representation BSON can retain."""
+    if isinstance(value, datetime):
+        value = timestamp(value)
+        return value.replace(microsecond=value.microsecond // 1000 * 1000)
+    return value
 
 
 class SettingsConflict(Exception):
@@ -14,9 +25,7 @@ class SettingsConflict(Exception):
 
 
 def collection(db, name='war_reminder_settings'):
-    return db.bot_config.database.get_collection(
-        name, write_concern=WriteConcern(w='majority', wtimeout=10000)
-    )
+    return collection_from(db.bot_config, name, write_concern=WriteConcern(w='majority'))
 
 
 class WarReminderStore:
@@ -59,6 +68,10 @@ class WarReminderStore:
     async def clan(self, tag):
         return await self.db.clans.find_one({'tag': tag})
 
+    async def clan_exists(self, tag):
+        """Worker membership check; web editors still need the full clan row."""
+        return await self.db.clans.find_one({'tag': tag}, {'_id': 1}) is not None
+
     async def get_settings(self, tag):
         return await self.settings.find_one({'_id': tag})
 
@@ -98,8 +111,68 @@ class WarReminderStore:
     async def get_status(self, tag):
         return await self.status.find_one({'_id': tag}, {'_id': 0})
 
-    async def record_status(self, tag, **values):
-        await self.status.update_one({'_id': tag}, {'$set': values}, upsert=True)
+    async def record_status(self, tag, *, settings_updated_at=None, settings_version=None, **values):
+        """Persist the actual scanned identity; reject late older results atomically.
+
+        Legacy rows gain identity on their first bound scan. Unbound callers
+        cannot overwrite a bound result. Same-identity liveness refreshes every
+        120 s; a new identity or a real status change writes immediately.
+        """
+        bound = settings_updated_at is not None or settings_version is not None
+        identity = settings_identity(settings_updated_at, settings_version)
+        config = {'updated_at': settings_updated_at, 'version': settings_version}
+        while True:
+            before = await self.status.find_one({'_id': tag})
+            marked = before is not None and 'settings_updated_at' in before and 'settings_version' in before
+            if marked:
+                stored = settings_identity(before['settings_updated_at'], before['settings_version'])
+                if not bound:
+                    return False
+                # Versions are monotonic even for edits within one BSON ms or
+                # a backwards wall clock. Unknown versions cannot replace one.
+                if stored[1] is not None:
+                    if identity[1] is None or identity[1] < stored[1]:
+                        return False
+                if identity[1] == stored[1] and stored[0] is not None:
+                    if identity[0] is None or identity[0] < stored[0]:
+                        return False
+            status = {key: value for key, value in values.items() if key != 'checked_at'}
+            same_identity = checked_settings(config, before) if bound and before else not bound
+            checked = values.get('checked_at')
+            previous = before.get('checked_at') if before else None
+            # The observed clock remains in the CAS below. After any race we
+            # reread and reject an older result, even if its status differs.
+            # BSON-ms ties retain the existing status-change behavior.
+            if (same_identity and isinstance(checked, datetime) and isinstance(previous, datetime)
+                    and _status_value(checked) < _status_value(previous)):
+                return False
+            if before is not None and same_identity and all(
+                    _status_value(before.get(key)) == _status_value(value)
+                    for key, value in status.items()):
+                updated = identity[0]
+                settings_checked = updated is None or (
+                    isinstance(previous, datetime) and _status_value(previous) >= updated)
+                if checked is None and settings_checked:
+                    return False
+                if settings_checked and isinstance(checked, datetime) and isinstance(previous, datetime):
+                    if 0 <= (timestamp(checked) - timestamp(previous)).total_seconds() < 120:
+                        return False
+            saved = dict(values)
+            if bound:
+                saved.update(settings_updated_at=identity[0], settings_version=identity[1])
+            # Match the exact observation so a newer scan winning after our
+            # read cannot be overwritten by this result. Retry against its row.
+            query = {'_id': tag}
+            for key in ('checked_at', 'settings_updated_at', 'settings_version'):
+                query[key] = before[key] if before and key in before else {'$exists': False}
+            try:
+                result = await self.status.update_one(query, {'$set': saved}, upsert=before is None)
+            except DuplicateKeyError:
+                if before is not None:
+                    raise
+                continue  # Another scan inserted this clan before our upsert.
+            if result.matched_count or result.upserted_id is not None:
+                return True
 
     async def delivered_or_claimed(self, key):
         return await self.deliveries.find_one({'_id': key}) is not None

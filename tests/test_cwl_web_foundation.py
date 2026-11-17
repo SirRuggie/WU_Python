@@ -571,8 +571,7 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         state = parse_qs(urlparse(response.headers["Location"]).query)["state"][0]
         cookie = response.cookies["cwl_oauth_state"].value
         state_header = {"Cookie": "cwl_oauth_state=" + cookie}
-        with self.app["store"].tx() as db:
-            db.execute("UPDATE oauth_states SET expires_at=0")
+        self.app["oauth_states"][hashlib.sha256(state.encode()).hexdigest()] = 0
         response = await self.call("GET", f"/auth/callback?state={state}&code=dummy", state_header)
         self.assertEqual(response.status, 403)
 
@@ -606,9 +605,14 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
                     return FakeResponse({"id": "300", "username": "owner_handle", "global_name": "Current owner", "avatar": "a_0123456789abcdef0123456789abcdef"})
                 return FakeResponse([{"id": "644963518025826315", "owner": True}])
 
+        with self.app["store"].tx() as db:
+            db.execute("INSERT INTO sessions(token_hash,user_id,username,guild_owner,csrf,expires_at) VALUES ('expired','999','expired',0,'x',?)", (int(time.time()) - 1,))
+            db.execute("INSERT INTO sessions(token_hash,user_id,username,guild_owner,csrf,expires_at) VALUES ('kept','998','kept',0,'x',?)", (int(time.time()) + 60,))
         with patch("cwl_web.app.aiohttp.ClientSession", return_value=FakeSession()):
             response = await self.call("GET", f"/auth/callback?state={state}&code=code",
                                        {"Cookie": "cwl_oauth_state=" + cookie + "; wu_login_page=/cwl/publish?season=12&step=announce"}, allow_redirects=False)
+        self.assertIsNone(self.app["store"].one("SELECT * FROM sessions WHERE token_hash='expired'"))
+        self.assertIsNotNone(self.app["store"].one("SELECT * FROM sessions WHERE token_hash='kept'"))
         self.assertEqual(response.status, 302)
         self.assertEqual(response.headers["Location"], "/cwl/publish?season=12&step=announce")
         self.assertEqual(response.cookies["wu_login_page"]["max-age"], "0")

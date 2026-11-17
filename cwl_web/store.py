@@ -1,6 +1,8 @@
 """Relational dashboard working copy with optional Mongo commit protection."""
 
 import sqlite3
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -295,6 +297,7 @@ def signup_timestamps(db, season_id):
 
 class Store:
     def __init__(self, path: str, durability=None):
+        self._writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dashboard-writer")
         self.durability = None
         self.role_dirty = False
         self.role_backup_error = None
@@ -484,6 +487,68 @@ class Store:
                 recovered.close()
             if db is not None:
                 db.close()
+
+    async def run_writer(self, operation):
+        """Run a complete synchronous storage operation in writer order.
+
+        Cancel a queued job before it starts. Once it starts, wait for
+        its terminal outcome before propagating cancellation; receipts remain
+        authoritative and callers must not retry an uncertain external send.
+        """
+        job = self._writer.submit(operation)
+        future = asyncio.wrap_future(job)
+        try:
+            return await asyncio.shield(future)
+        except asyncio.CancelledError:
+            if job.cancel():
+                # concurrent.futures arbitrates the queued/running race. A
+                # successful cancellation guarantees the body never ran.
+                future.cancel()
+                raise
+            while not future.done():
+                try:
+                    await asyncio.shield(future)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            # Retrieve any failure even when the caller has gone away.
+            if not future.cancelled():
+                future.exception()
+            raise
+
+    async def run_tx(self, operation):
+        """Execute body, durable publish and commit together off the event loop."""
+        def write():
+            with self.tx() as db:
+                return operation(db)
+        return await self.run_writer(write)
+
+    async def run_role_tx(self, operation, *, track=True):
+        """Execute a complete role-progress transaction on the same writer."""
+        def write():
+            with self.role_tx(track=track) as db:
+                return operation(db)
+        return await self.run_writer(write)
+
+    async def close_writer(self):
+        """Drain accepted writes before releasing executor threads at cleanup."""
+        await asyncio.to_thread(self._writer.shutdown, wait=True)
+
+    @contextmanager
+    def read(self):
+        """Read a consistent snapshot without acquiring the SQLite writer lock."""
+        if self.durability:
+            self.durability.check()
+        db = sqlite3.connect(self.path, timeout=15, isolation_level=None)
+        db.row_factory = sqlite3.Row
+        try:
+            db.execute("PRAGMA foreign_keys=ON")
+            db.execute("PRAGMA query_only=ON")
+            db.execute("BEGIN")
+            yield db
+        finally:
+            db.close()
 
     @contextmanager
     def tx(self):
@@ -691,8 +756,7 @@ class Store:
     def rows(self, sql, args=()):
         if self.durability:
             self.durability.check()
-        with sqlite3.connect(self.path) as db:
-            db.row_factory = sqlite3.Row
+        with self.read() as db:
             return [dict(row) for row in db.execute(sql, args)]
 
     def active_hosting_tags(self):
@@ -705,7 +769,7 @@ class Store:
 
     def signup_activity(self, season_id):
         """One durable audit event per change; reviewed events remain in audit history."""
-        with self.tx() as db:
+        with self.read() as db:
             return [
                 dict(row)
                 for row in db.execute(

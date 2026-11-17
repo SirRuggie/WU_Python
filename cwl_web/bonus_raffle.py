@@ -1,4 +1,6 @@
 """Authorized HTTP adapters for staff-reviewed bonus raffles."""
+
+from utils.cwl_roster_sequence import persist_delivery_result
 import asyncio
 import hashlib
 import json
@@ -32,8 +34,11 @@ def _state(db, sid):
 
 async def _response(request, sid):
     from .app import _store
-    with _store(request).tx() as db:
+    result: object
+    def __response_transaction_1(db):
+        nonlocal result
         result = _state(db, sid)
+    await _store(request).run_tx(__response_transaction_1)
     return participation_json_response(request, result)
 
 
@@ -101,8 +106,11 @@ async def bonus_status(request):
     from .app import _require, _sid, _store
     _require(request, 'editor')
     sid = _sid(request)
-    with _store(request).tx() as db:
+    result: object
+    def _bonus_status_transaction_1(db):
+        nonlocal result
         result = _bonus_status(db, sid)
+    await _store(request).run_tx(_bonus_status_transaction_1)
     return web.json_response(result)
 
 
@@ -124,12 +132,15 @@ async def policy(request):
             _fail(400, 'Select a Lazy clan and a sit-out length of 0–6 months')
         sid = _sid(request)
         try:
-            with _store(request).tx() as db:
+            result: object
+            def _policy_transaction_2(db):
+                nonlocal result
                 _require_draft(db, sid, _fail)
                 _cas(db, sid, _validate_revision(body, _fail), _fail)
                 RaffleStore(db, sid).save_sit_out(body['clan_tag'], body['sit_out_months'], actor)
                 _bump(db, sid, actor)
                 result = _state(db, sid)
+            await _store(request).run_tx(_policy_transaction_2)
         except RaffleConflict as exc:
             _fail(409, str(exc))
         return participation_json_response(request, result)
@@ -138,12 +149,15 @@ async def policy(request):
     if body['pool'] == 'lazy':
         _fail(400, 'Lazy CWL uses 4 attacks, or 3 attacks with 8 stars')
     sid = _sid(request)
-    with _store(request).tx() as db:
+    result: object
+    def _policy_transaction_1(db):
+        nonlocal result
         _require_draft(db, sid, _fail)
         _cas(db, sid, _validate_revision(body, _fail), _fail)
         RaffleStore(db, sid).save_policy(body['pool'], body['minimum'])
         _bump(db, sid, actor)
         result = _state(db, sid)
+    await _store(request).run_tx(_policy_transaction_1)
     return participation_json_response(request, result)
 
 
@@ -155,9 +169,12 @@ async def preview(request):
         _fail(400, 'Expected CWL pool, hosting clan and bonus count')
     selection = _selection(body)
     sid = _sid(request)
-    with _store(request).tx() as db:
+    result: object
+    def _preview_transaction_1(db):
+        nonlocal result
         _require_draft(db, sid, _fail)
         result = RaffleStore(db, sid).preview(_state(db, sid), *selection)
+    await _store(request).run_tx(_preview_transaction_1)
     return participation_json_response(request, result)
 
 
@@ -170,10 +187,13 @@ async def draw(request):
     selection = _selection(body)
     sid = _sid(request)
     try:
-        with _store(request).tx() as db:
+        result: object
+        def _draw_transaction_1(db):
+            nonlocal result
             _require_draft(db, sid, _fail)
             RaffleStore(db, sid).draw(_state(db, sid), *selection, body['fingerprint'], actor)
             result = _state(db, sid)
+        await _store(request).run_tx(_draw_transaction_1)
     except RaffleConflict as exc:
         _fail(409, str(exc))
     return participation_json_response(request, result)
@@ -194,13 +214,17 @@ async def approve(request):
         _fail(400, 'Unexpected approval fields')
     sid, draw_id = _sid(request), _draw_id(request)
     try:
-        with _store(request).tx() as db:
+        prior: object
+        result: object
+        def _approve_transaction_1(db):
+            nonlocal result
             _require_draft(db, sid, _fail)
             prior = RaffleStore(db, sid).get(draw_id)
             RaffleStore(db, sid).approve(draw_id, _state(db, sid), actor)
             if not prior['approved_at']:
                 _bump(db, sid, actor)
             result = _state(db, sid)
+        await _store(request).run_tx(_approve_transaction_1)
     except (RaffleConflict, sqlite3.IntegrityError) as exc:
         _fail(409, str(exc) if isinstance(exc, RaffleConflict) else 'Bonus selections changed. Refresh and review')
     return participation_json_response(request, result)
@@ -214,10 +238,13 @@ async def cancel(request):
         _fail(400, 'Explain why this draw needs to be cancelled (up to 500 characters)')
     sid = _sid(request)
     try:
-        with _store(request).tx() as db:
+        result: object
+        def _cancel_transaction_1(db):
+            nonlocal result
             _require_draft(db, sid, _fail)
             RaffleStore(db, sid).cancel(_draw_id(request), actor, body['reason'].strip())
             result = _state(db, sid)
+        await _store(request).run_tx(_cancel_transaction_1)
     except RaffleConflict as exc:
         _fail(409, str(exc))
     return participation_json_response(request, result)
@@ -233,17 +260,24 @@ async def send(request):
     sid, draw_id = _sid(request), _draw_id(request)
     transport = request.app.get('announcement_transport') or DiscordTransport()
     try:
-        with _store(request).tx() as db:
+        prior: object
+        def _send_transaction_2(db):
             _require_draft(db, sid, _fail)
             prior = RaffleStore(db, sid).get(draw_id)
             if prior['delivery'] and not (prior['delivery']['status'] == 'failed' and body.get('retry') is True):
-                return participation_json_response(request, _state(db, sid), db=db)
+                return (True, participation_json_response(request, _state(db, sid), db=db))
+        _outcome = await _store(request).run_tx(_send_transaction_2)
+        if _outcome is not None:
+            return _outcome[1]
         channel = await transport.get_channel(channel_id)
         if channel['id'] != channel_id:
             _fail(503, 'Discord channel lookup did not match')
-        with _store(request).tx() as db:
+        messages: object
+        def _send_transaction_3(db):
+            nonlocal messages
             _require_draft(db, sid, _fail)
             messages = RaffleStore(db, sid).reserve_delivery(draw_id, channel_id, actor, retry=body.get('retry', False))
+        await _store(request).run_tx(_send_transaction_3)
     except RaffleConflict as exc:
         _fail(409, str(exc))
     except (AnnouncementRejected, AnnouncementUnavailable):
@@ -252,21 +286,27 @@ async def send(request):
         for index, message in messages:
             nonce = hashlib.blake2s(f'bonus:{sid}:{draw_id}:{index}'.encode(), digest_size=12).hexdigest()
             message_id = await transport.send(channel_id, message, nonce)
-            with _store(request).tx() as db:
+            def _send_transaction_5(db):
                 RaffleStore(db, sid).page_sent(draw_id, index, message_id)
+            await persist_delivery_result(_store(request).run_tx(_send_transaction_5))
     except asyncio.CancelledError:
         # Restart/cancellation leaves the durable reservation unresolved, never replayed.
         raise
     except Exception as exc:
         rejected = isinstance(exc, AnnouncementRejected)
-        with _store(request).tx() as db:
+        def _send_transaction_6(db):
             RaffleStore(db, sid).finish_delivery(draw_id, 'failed' if rejected else 'uncertain',
                 'Delivery stopped. Check Discord and the receipts below; this announcement will not resend automatically.')
+        await persist_delivery_result(_store(request).run_tx(_send_transaction_6))
     else:
-        with _store(request).tx() as db:
+        def _send_transaction_4(db):
             RaffleStore(db, sid).finish_delivery(draw_id, 'sent')
-    with _store(request).tx() as db:
+        await persist_delivery_result(_store(request).run_tx(_send_transaction_4))
+    result: object
+    def _send_transaction_1(db):
+        nonlocal result
         result = _state(db, sid)
+    await _store(request).run_tx(_send_transaction_1)
     return participation_json_response(request, result)
 
 
@@ -295,7 +335,9 @@ async def account_review(request):
         _fail(400, "Select valid flags and an override reason of at most 500 characters")
     sid = _sid(request)
     try:
-        with _store(request).tx() as db:
+        account: object
+        current: object
+        def _account_review_transaction_1(db):
             _require_draft(db, sid, _fail)
             _cas(db, sid, revision, _fail)
             current = _state(db, sid)
@@ -304,6 +346,7 @@ async def account_review(request):
                 _fail(400, "Select a Lazy CWL account from this season")
             RaffleStore(db, sid).save_account_review(tag, body['flags'], body['override_reason'], actor)
             _bump(db, sid, actor)
+        await _store(request).run_tx(_account_review_transaction_1)
     except RaffleConflict as exc:
         _fail(409, str(exc))
     return await _response(request, sid)
@@ -323,9 +366,10 @@ async def rep_accounts(request):
     if 'rep_revision' in keys and (type(body['rep_revision']) is not int or body['rep_revision'] < 1):
         _fail(400, 'Refresh the FWA Rep accounts and try again')
     sid = _sid(request)
-    with _store(request).tx() as db:
+    def _rep_accounts_transaction_1(db):
         _require_draft(db, sid, _fail)
         _cas(db, sid, revision, _fail)
+    await _store(request).run_tx(_rep_accounts_transaction_1)
     identity = None
     if request.method == 'POST':
         provider = request.app['providers']
@@ -337,7 +381,8 @@ async def rep_accounts(request):
             _fail(503, 'Player lookup did not match the requested tag')
         identity = {'tag': tag, 'player_name': account.get('name') or tag, 'town_hall': account.get('town_hall'), 'user_id': owner}
     try:
-        with _store(request).tx() as db:
+        store: object
+        def _rep_accounts_transaction_2(db):
             _require_draft(db, sid, _fail)
             _cas(db, sid, revision, _fail)
             store = RaffleStore(db, sid)
@@ -348,6 +393,7 @@ async def rep_accounts(request):
             else:
                 store.remove_rep_account(tag, body['rep_revision'], actor)
             _bump(db, sid, actor)
+        await _store(request).run_tx(_rep_accounts_transaction_2)
     except RaffleConflict as exc:
         _fail(409, str(exc))
     return await _response(request, sid)
@@ -359,9 +405,10 @@ async def clan_rep_members(request):
     from .manage_roles import searchable_members, member_option
     _require(request, 'editor')
     sid = _sid(request)
-    with _store(request).tx() as db:
+    def _clan_rep_members_transaction_1(db):
         if db.execute('SELECT 1 FROM seasons WHERE id=?', (sid,)).fetchone() is None:
             _fail(404, 'Season not found')
+    await _store(request).run_tx(_clan_rep_members_transaction_1)
     try:
         rows = await asyncio.wait_for(searchable_members(request), timeout=25)
     except (web.HTTPException, TimeoutError):
@@ -384,9 +431,10 @@ async def manual_candidates(request):
     removing = request.method == 'DELETE'
     tag, revision = _review_body(body, {'tag', 'revision'} if removing else {'tag', 'clan_tag', 'reason', 'revision'})
     sid = _sid(request)
-    with _store(request).tx() as db:
+    def _manual_candidates_transaction_1(db):
         _require_draft(db, sid, _fail)
         _cas(db, sid, revision, _fail)
+    await _store(request).run_tx(_manual_candidates_transaction_1)
     identity = None
     if not removing:
         if not isinstance(body['reason'], str) or not 1 <= len(body['reason'].strip()) <= 500:
@@ -395,10 +443,12 @@ async def manual_candidates(request):
             clan_tag = normalize_tag(body['clan_tag'])
         except (ValueError, TypeError):
             _fail(400, "Select an active Lazy hosting clan")
-        with _store(request).tx() as db:
+        host: object
+        def _manual_candidates_transaction_2(db):
             host = db.execute(f"SELECT c.tag FROM clans c JOIN lineup l ON c.tag=l.tag {SEASON_POOL_JOIN} WHERE l.season_id=? AND c.tag=? AND c.archived=0 AND {LAZY_SEASON_POOL}", (sid, clan_tag)).fetchone()
             if not host:
                 _fail(400, "Select an active Lazy hosting clan in this season")
+        await _store(request).run_tx(_manual_candidates_transaction_2)
         provider = request.app['providers']
         try:
             account, owner = await asyncio.wait_for(asyncio.gather(provider.player(tag), provider.linked_owner(tag)), timeout=20)
@@ -408,7 +458,8 @@ async def manual_candidates(request):
             _fail(503, 'Player lookup did not match the requested tag')
         identity = {'tag': tag, 'player_name': account.get('name'), 'town_hall': account.get('town_hall'), 'user_id': owner}
     try:
-        with _store(request).tx() as db:
+        store: object
+        def _manual_candidates_transaction_3(db):
             _require_draft(db, sid, _fail)
             _cas(db, sid, revision, _fail)
             store = RaffleStore(db, sid)
@@ -417,6 +468,7 @@ async def manual_candidates(request):
             else:
                 store.add_manual_candidate(identity, clan_tag, body['reason'].strip(), actor)
             _bump(db, sid, actor)
+        await _store(request).run_tx(_manual_candidates_transaction_3)
     except RaffleConflict as exc:
         _fail(409, str(exc))
     return await _response(request, sid)

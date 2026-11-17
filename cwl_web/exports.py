@@ -277,7 +277,10 @@ async def export_preview(request):
     season_id = _sid(request)
     kind, basis = _query(request)
     _require_bonus_history(request, kind, session)
-    with _store(request).tx() as db:
+    result: object
+    def _export_preview_transaction_1(db):
+        nonlocal result
         result = _export_snapshot(db, season_id, kind, basis, datetime.now(timezone.utc).isoformat())
         result = decorate_export_snapshot(db, season_id, result)
+    await _store(request).run_tx(_export_preview_transaction_1)
     return web.json_response(result, headers={"Cache-Control": "no-store"})

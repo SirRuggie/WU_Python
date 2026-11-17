@@ -7,9 +7,12 @@ async def activity(request):
     from .app import _require, _store, _sid, _season
     _require(request, 'editor')
     sid = _sid(request)
-    with _store(request).tx() as db:
+    clans: object
+    def _activity_transaction_1(db):
+        nonlocal clans
         _season(db, sid)
         clans = {row["tag"]: row["name"] for row in db.execute("SELECT tag,name FROM clans")}
+    await _store(request).run_tx(_activity_transaction_1)
     items = []
     for row in _store(request).signup_activity(sid):
         before = json.loads(row['before_json'] or '{}')
@@ -31,7 +34,7 @@ async def review(request):
         audit_id = int(request.match_info['audit_id'])
     except ValueError:
         _fail(400, 'Invalid activity')
-    if not _store(request).review_signup_activity(_sid(request), audit_id, actor['user_id']):
+    if not (await _store(request).run_writer(lambda: _store(request).review_signup_activity(_sid(request), audit_id, actor['user_id']))):
         _fail(404, 'Signup activity not found')
     return web.json_response({'ok': True})
 

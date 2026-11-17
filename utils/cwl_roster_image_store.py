@@ -129,7 +129,7 @@ class RosterImageStore:
         self.store = store
 
     def test_channel(self):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             row = db.execute('SELECT * FROM announcement_test_settings WHERE id=1').fetchone()
             return ({'channel_id': row['channel_id'], 'channel_name': row['channel_name'],
                      'revision': row['revision']} if row else
@@ -180,7 +180,7 @@ class RosterImageStore:
         return self.test_sequence(request_id)
 
     def pending_test_sequences(self):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             return [dict(row) for row in db.execute("SELECT * FROM roster_image_test_sequences WHERE status='ready' ORDER BY created_at")]
 
     def stop_test_sequence(self, request_id, error):
@@ -188,7 +188,7 @@ class RosterImageStore:
             db.execute("UPDATE roster_image_test_sequences SET status='failed',error=?,updated_at=CURRENT_TIMESTAMP WHERE request_id=? AND status='ready'", (error, request_id))
 
     def test_sequence(self, request_id):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             row = db.execute('SELECT * FROM roster_image_test_sequences WHERE request_id=?', (request_id,)).fetchone()
             if not row:
                 return None
@@ -214,13 +214,18 @@ class RosterImageStore:
             db.execute("UPDATE roster_image_test_sequences SET status='sending',updated_at=CURRENT_TIMESTAMP WHERE request_id=?", (request_id,))
             return {'step': step, 'nonce': nonce, 'item': plan[step]}
 
-    def finish_test_step(self, request_id, step, *, status, message_id=None, error=None):
+    def finish_test_step(self, request_id, step, *, status, message_id=None, error=None,
+                         only_sending=False, expected_actor=None):
         if status not in ('posted', 'failed', 'uncertain'):
             raise ImageConflict('Invalid test delivery result')
         if status == 'posted' and (not isinstance(message_id, str) or not re.fullmatch(r'\d{15,22}', message_id)):
             raise ImageConflict('A confirmed test message is required')
         with self.store.tx() as db:
             row = db.execute('SELECT * FROM roster_image_test_sequences WHERE request_id=?', (request_id,)).fetchone()
+            if only_sending and (not row or row['status'] != 'sending'
+                                 or row['next_step'] != step
+                                 or row['actor_id'] != expected_actor):
+                return dict(row) if row else None
             if not row or row['status'] != 'sending' or row['next_step'] != step:
                 raise ImageConflict('Test result no longer matches the active step')
             db.execute("UPDATE roster_image_test_receipts SET status=?,message_id=?,error=? WHERE request_id=? AND step=? AND status='sending'", (status, message_id, error, request_id, step))
@@ -286,7 +291,7 @@ class RosterImageStore:
             ).fetchone())
 
     def pool_sequence(self, sid, pool):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             row = db.execute('SELECT * FROM roster_image_sequences WHERE season_id=? AND pool=?',
                              (sid, pool)).fetchone()
             return dict(row) if row else None
@@ -315,7 +320,7 @@ class RosterImageStore:
                                    (sequence_id,)).fetchone())
 
     def pending_sequences(self):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             return [dict(row) for row in db.execute(
                 "SELECT * FROM roster_image_sequences WHERE status IN ('awaiting_announcement','ready') "
                 'ORDER BY created_at,sequence_id')]
@@ -327,7 +332,7 @@ class RosterImageStore:
                        (error, sequence_id))
 
     def sequence(self, sequence_id):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             row = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
                              (sequence_id,)).fetchone()
             return dict(row) if row else None
@@ -340,7 +345,7 @@ class RosterImageStore:
         ).fetchone())
 
     def announcement_assumption(self, sequence_id):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             row = db.execute('SELECT * FROM roster_image_sequence_assumptions WHERE sequence_id=?',
                              (sequence_id,)).fetchone()
             return dict(row) if row else None
@@ -408,7 +413,7 @@ class RosterImageStore:
                                    (sequence_id,)).fetchone())
 
     def channels(self):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             return [dict(r) for r in db.execute('SELECT * FROM roster_image_channels ORDER BY pool')]
 
     def configure(self, pool, channel, name, actor):
@@ -423,7 +428,7 @@ class RosterImageStore:
             return new
 
     def posts(self, sid):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             rows = [dict(r) for r in db.execute('SELECT * FROM roster_image_posts WHERE season_id=? ORDER BY pool,clan_tag', (sid,))]
             last = db.execute('SELECT version,published_at,withdrawn_at FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
             published = db.execute('SELECT version,published_at FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
@@ -436,7 +441,7 @@ class RosterImageStore:
 
     def publication(self, sid, version=None):
         """Read immutable publication rows; no draft roster is used for images."""
-        with self.store.tx() as db:
+        with self.store.read() as db:
             season = db.execute('SELECT * FROM seasons WHERE id=?', (sid,)).fetchone()
             if version is None:
                 pub = db.execute('SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
@@ -448,12 +453,12 @@ class RosterImageStore:
             return dict(season), dict(pub), accounts
 
     def receipt(self, request_id):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             row = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()
             return dict(row) if row else None
 
     def current(self, sid, pool, clan):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             row = db.execute('SELECT * FROM roster_image_posts WHERE season_id=? AND pool=? AND clan_tag=?', (sid, pool, clan)).fetchone()
             return dict(row) if row else None
 
@@ -555,7 +560,7 @@ class RosterImageStore:
                 raise ImageConflict('Sequence changed; refresh before resuming')
 
     def closing_receipt(self, sequence_id):
-        with self.store.tx() as db:
+        with self.store.read() as db:
             row = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
                              (sequence_id,)).fetchone()
             return dict(row) if row else None
@@ -746,7 +751,7 @@ class RosterImageStore:
         """Preflight every archive refusal before changing the native occurrence."""
         if pool not in ('main', 'lazy') or not re.fullmatch(r'\d{15,22}', str(deleted_message_id)):
             raise ImageConflict('A confirmed deleted announcement receipt is required')
-        with self.store.tx() as db:
+        with self.store.read() as db:
             self._deleted_sequence_state(db, sid, pool, deleted_message_id)
 
     @staticmethod
@@ -809,8 +814,21 @@ class RosterImageStore:
                        (current['season_id'], current['clan_tag'], current['actor_id'], 'roster_image_deleted', json.dumps({'message_id': current['message_id'], 'request_id': receipt['request_id'], 'replacement_request_id': replacement})))
             return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (replacement,)).fetchone())
 
-    def finish(self, receipt, status, message=None, error=None, retry_after=None, *, clear_message=False, sequence_id=None):
+    def finish(self, receipt, status, message=None, error=None, retry_after=None, *, clear_message=False,
+               sequence_id=None, only_sending=False):
         with self.store.tx() as db:
+            if only_sending:
+                current = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?',
+                                     (receipt['request_id'],)).fetchone()
+                post = db.execute('SELECT * FROM roster_image_posts WHERE request_id=?',
+                                  (receipt['request_id'],)).fetchone()
+                identity = ('request_id', 'actor_id', 'operation', 'season_id', 'pool',
+                            'clan_tag', 'target_version', 'channel_id')
+                if (not current or not post or current['status'] != 'sending'
+                        or post['status'] != 'sending'
+                        or post['posted_by'] != receipt['actor_id']
+                        or any(current[key] != receipt[key] for key in identity)):
+                    return dict(post) if post else dict(current) if current else None
             db.execute('UPDATE roster_image_requests SET status=?,message_id=COALESCE(?,message_id),error=?,retry_after=?,updated_at=CURRENT_TIMESTAMP WHERE request_id=?',
                        (status, message, error, retry_after, receipt['request_id']))
             if sequence_id is not None and status in ('failed', 'uncertain'):

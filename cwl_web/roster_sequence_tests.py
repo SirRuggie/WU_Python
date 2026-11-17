@@ -80,8 +80,8 @@ async def prepare(request):
                      'frozen': {**clan['frozen'], 'payload': payload}})
     plan.append({'kind': 'closing', 'payload': closing_message(test=True)})
     try:
-        job = storage.prepare_test_sequence(request_id=nonce, sid=sid, pool=pool, version=body['version'],
-                                           channel=channel, actor=str(actor['user_id']), plan=plan)
+        job = (await storage.store.run_writer(lambda: storage.prepare_test_sequence(request_id=nonce, sid=sid, pool=pool, version=body['version'],
+                                           channel=channel, actor=str(actor['user_id']), plan=plan)))
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     return web.json_response({'test': public_test(job)}, status=202)

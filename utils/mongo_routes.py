@@ -16,7 +16,7 @@ from types import MappingProxyType
 from pymongo.write_concern import WriteConcern
 
 ROUTES_ENV = "MONGODB_ROUTES"
-LAZYCWL_WRITE_CONCERN = WriteConcern(w="majority", wtimeout=10000)
+LAZYCWL_WRITE_CONCERN = WriteConcern(w="majority")
 RESERVED_DATABASES = frozenset({
     "admin", "local", "config", "database", "test",
     "ticket_testing", "wubot_test",
@@ -86,6 +86,45 @@ DEFAULT_ROUTES = MappingProxyType({
 })
 
 
+# These collections historically followed their parent's configured database.
+# A child override is explicit; otherwise parent database overrides propagate.
+PARENT_ALIASES = MappingProxyType({
+    'ticket_staff_templates': 'ticket_setup',
+    'warrior_settings': 'ticket_setup',
+    'warrior_walkthroughs': 'ticket_setup',
+    'warrior_history': 'ticket_setup',
+    'warrior_audit': 'ticket_setup',
+    'war_reminder_settings': 'bot_config',
+    'war_reminder_status': 'bot_config',
+    'war_reminder_deliveries': 'bot_config',
+    'clan_dashboard_history': 'bot_config',
+    'text_command_files': 'bot_config',
+    'text_command_images': 'bot_config',
+    'text_command_tests': 'bot_config',
+    'text_command_events': 'bot_config',
+    'text_commands': 'bot_config',
+    'world_clock_settings': 'bot_config',
+    'world_clocks': 'bot_config',
+    'world_clock_requests': 'bot_config',
+    'world_clock_runs': 'bot_config',
+    'player_manual_weight_history': 'fwa_data',
+    'war_weight_settings': 'fwa_data',
+    'recruit_panel_refreshes': 'component_state',
+    'recruit_message_deliveries': 'recruit_challenges',
+    'ticket_settings_audit': 'ticket_setup',
+})
+DEFAULT_ROUTES = MappingProxyType({
+    **DEFAULT_ROUTES,
+    **{alias: Namespace(DEFAULT_ROUTES[parent].database, alias)
+       for alias, parent in PARENT_ALIASES.items()},
+})
+TICKET_TEST_ALIASES = frozenset({
+    "tickets", "ticket_creation_state", "ticket_open_slots", "ticket_rollout",
+    "ticket_flags", "ticket_automation_state", "ticket_setup", "ticket_migrations",
+    "button_store", "component_state", "bot_config",
+})
+
+
 def _unique_object(pairs):
     result = {}
     for key, value in pairs:
@@ -123,6 +162,9 @@ def load_routes(overrides=None):
         if len(database + "." + collection) > 95:
             raise ValueError("Production namespace exceeds the configured 95-byte limit")
         routes[alias] = Namespace(database, collection)
+    for alias, parent in PARENT_ALIASES.items():
+        if alias not in overrides:
+            routes[alias] = Namespace(routes[parent].database, DEFAULT_ROUTES[alias].collection)
     if len(set(routes.values())) != len(routes):
         raise ValueError("Production collection routes must have unique destinations")
     return MappingProxyType(routes)
@@ -139,7 +181,14 @@ def collection_for(client, alias, *, routes=None, **options):
     namespace = routes[alias]  # Unknown aliases must never create ad hoc collections.
     if alias == "lazy_cwl_lists":
         options.setdefault("write_concern", LAZYCWL_WRITE_CONCERN)
-    return client.get_database(namespace.database).get_collection(namespace.collection, **options)
+    collection = client.get_database(namespace.database).get_collection(namespace.collection, **options)
+    # Route context belongs to this handle, never a shared mutable client map.
+    # Two facades may intentionally use different routes on the same client.
+    try:
+        object.__setattr__(collection, "_wu_collection_routes", routes)
+    except AttributeError:
+        pass  # Narrow disconnected test facades can return immutable sentinels.
+    return collection
 
 
 class RoutedCollections:
@@ -156,3 +205,30 @@ class RoutedCollections:
         if alias.startswith("_") or alias not in self._routes:
             raise AttributeError(alias)
         return self[alias]
+
+
+def collection_from(parent, alias, **options):
+    """Resolve a child alias while retaining the parent's historical database.
+
+    Routed clients carry the complete immutable route map. Plain clients and
+    narrow fixture facades retain their existing parent database and options.
+    """
+    if alias not in PARENT_ALIASES:
+        raise KeyError(alias)
+    database = parent.database
+    try:
+        routes = object.__getattribute__(parent, "_wu_collection_routes")
+    except AttributeError:
+        try:
+            client = object.__getattribute__(database, "client")
+            routes = object.__getattribute__(client, "_wu_collection_routes")
+        except AttributeError:
+            return database.get_collection(DEFAULT_ROUTES[alias].collection, **options)
+    return collection_for(database.client, alias, routes=routes, **options)
+
+
+def ticket_test_collection(client, alias):
+    """Fixed isolated ticket-exercise namespace; production overrides never apply."""
+    if alias not in TICKET_TEST_ALIASES:
+        raise KeyError(alias)
+    return client.get_database("ticket_testing").get_collection(alias)

@@ -451,10 +451,13 @@ async def export_season(request):
         "basis", "published"
     ) not in ("current", "published"):
         raise web.HTTPBadRequest(text="Select Published or Working roster")
-    with _store(request).tx() as db:
+    snapshot: object
+    def _export_season_transaction_1(db):
+        nonlocal snapshot
         snapshot = season_snapshot(
             db, _sid(request), request.query.get("basis", "published")
         )
+    await _store(request).run_tx(_export_season_transaction_1)
     return _response(workbook([snapshot]), "CWL " + snapshot["label"] + ".xlsx")
 
 
@@ -464,8 +467,11 @@ async def export_range(request):
     _authorize(request)
     if set(request.query) != {"from", "to"}:
         raise web.HTTPBadRequest(text="Select From and To months")
-    with _store(request).tx() as db:
+    snapshots: object
+    def _export_range_transaction_1(db):
+        nonlocal snapshots
         snapshots = range_snapshots(db, request.query["from"], request.query["to"])
+    await _store(request).run_tx(_export_range_transaction_1)
     start, end = request.query["from"], request.query["to"]
     label = (
         f"{calendar.month_abbr[int(start[5:7])]}–{calendar.month_abbr[int(end[5:7])]} {end[:4]}"

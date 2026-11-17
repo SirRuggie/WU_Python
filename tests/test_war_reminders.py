@@ -91,7 +91,9 @@ def test_scheduler_claim_is_durable_and_duplicate_scan_does_not_send(monkeypatch
         def __init__(self): self.rows = {}
         async def find_one(self, q): return self.rows.get(q['_id'])
         async def insert_one(self, row): self.rows[row['_id']] = row.copy()
-        async def update_one(self, q, update, **kw): self.rows.setdefault(q['_id'], {}).update(update['$set'])
+        async def update_one(self, q, update, **kw):
+            self.rows.setdefault(q['_id'], {}).update(update['$set'])
+            return NS(matched_count=1, upserted_id=None)
     def coll(db, name='war_reminder_settings'): return collections.setdefault(name, Rows())
     coll(None).rows['#P0LY'] = cfg
     monkeypatch.setattr(storage, 'collection', coll)

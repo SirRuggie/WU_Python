@@ -30,7 +30,7 @@ async def send_occurrence(store, bot, config, war, event, owners):
     key = occurrence_key(clan_tag, war['start'], event)
     fresh = await store.get_settings(clan_tag)
     if (not fresh or fresh.get('version') != config.get('version')
-            or not fresh['enabled'] or not await store.clan(clan_tag)):
+            or not fresh['enabled'] or not await store.clan_exists(clan_tag)):
         return
     now = datetime.now(timezone.utc)
     if event not in reminders.due(war, config, now):
@@ -70,13 +70,14 @@ async def send_occurrence(store, bot, config, war, event, owners):
 async def scan_clan(db, client, bot, links, config):
     store = WarReminderStore(db)
     clan_tag = config['_id']
-    if not await store.clan(clan_tag):
+    if not await store.clan_exists(clan_tag):
         return
     try:
         war = reminders.snapshot(await client.get_current_war(clan_tag), clan_tag)
         now = datetime.now(timezone.utc)
         await store.record_status(
-            clan_tag, checked_at=now, error=None,
+            clan_tag, settings_updated_at=config.get('updated_at'),
+            settings_version=config.get('version'), checked_at=now, error=None,
             detail='Tracking battle day' if war else 'Waiting for an active war',
             war_end=war['end'] if war else None,
         )
@@ -99,7 +100,9 @@ async def scan_clan(db, client, bot, links, config):
     except Exception as exc:
         _log.warning('War reminder check failed for %s: %s', clan_tag, type(exc).__name__)
         await store.record_status(
-            clan_tag, checked_at=datetime.now(timezone.utc), error=type(exc).__name__,
+            clan_tag, settings_updated_at=config.get('updated_at'),
+            settings_version=config.get('version'),
+            checked_at=datetime.now(timezone.utc), error=type(exc).__name__,
             detail="The bot could not check or send the reminders. Check these things: the war log is public, the account link service works, and the bot can use the channel.",
         )
 

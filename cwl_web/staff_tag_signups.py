@@ -10,9 +10,12 @@ async def lookup(request):
         value = tag(request.query.get('tag'))
     except ValueError:
         _fail(400, 'Enter a valid player tag')
-    with _store(request).tx() as db:
+    saved: object
+    def _lookup_transaction_1(db):
+        nonlocal saved
         _season(db, _sid(request))
         saved = db.execute('SELECT pool FROM signups WHERE season_id=? AND tag=?', (_sid(request), value)).fetchone()
+    await _store(request).run_tx(_lookup_transaction_1)
     provider = request.app['providers']
     account = await provider.player(value)
     owner = await provider.linked_owner(value)
@@ -35,9 +38,10 @@ async def add(request):
     if not isinstance(uid, str) or (has_discord and not re.fullmatch(r'[0-9]{15,22}', uid)) or (not has_discord and uid):
         _fail(400, 'Enter a valid Discord ID or turn off Has a Discord account')
     sid = _sid(request)
-    with _store(request).tx() as db:
+    def _add_transaction_1(db):
         if _season(db, sid)['status'] != 'draft':
             _fail(423, 'Archived seasons cannot be changed')
+    await _store(request).run_tx(_add_transaction_1)
     provider = request.app['providers']
     account = await provider.player(value)
     directory = await _family_directory(request)
@@ -49,7 +53,7 @@ async def add(request):
         _fail(409, 'The Discord link changed. Look up the player again.')
     if owner and (not has_discord or uid != owner):
         _fail(409, 'Use the Discord account already linked to this player')
-    with _store(request).tx() as db:
+    def _add_transaction_2(db):
         if _season(db, sid)['status'] != 'draft':
             _fail(423, 'Archived seasons cannot be changed')
         if db.execute('SELECT 1 FROM signups WHERE season_id=? AND tag=?', (sid, value)).fetchone():
@@ -60,6 +64,7 @@ async def add(request):
         after = dict(db.execute('SELECT * FROM signups WHERE season_id=? AND tag=?', (sid, value)).fetchone())
         _audit(db, sid, value, actor['user_id'], 'staff_signup', None, {**after, 'association_source': 'linked' if owner else 'staff' if uid else 'none'})
         _bump(db, sid)
+    await _store(request).run_tx(_add_transaction_2)
     return web.json_response({'ok': True, 'count': 1}, status=201)
 
 routes = [web.get('/api/cwl/seasons/{season_id}/staff-signups/player', lookup),

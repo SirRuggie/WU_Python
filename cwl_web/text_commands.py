@@ -1,4 +1,6 @@
 """Owner-granted text command editor with optimistic updates."""
+
+from utils.mongo_routes import collection_from
 import re
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -230,7 +232,7 @@ async def role_activity(request):
         try:query['command']=command_name(request.query['command'])
         except ValueError as exc:raise web.HTTPBadRequest(text=str(exc)) from None
     async with mongo(request) as db:
-        events=db.bot_config.database.get_collection('text_command_events')
+        events=collection_from(db.bot_config, 'text_command_events')
         rows=await events.find(query).sort('at',-1).to_list(length=25)
     return web.json_response({'events':[{'id':r['_id'],'command':r['command'],'member':r.get('member_name',r['member_id']),'role':r.get('role_name',r['role_id']),'action':r['action'],'status':r['status'],'at':r['at'].isoformat()} for r in rows]})
 

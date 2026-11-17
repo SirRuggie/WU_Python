@@ -3,6 +3,8 @@
 Reads approved draws and stored winners only. Sends Components V2 messages through the
 shared announcement transport. Uncertain sends are never retried automatically.
 """
+
+from utils.cwl_roster_sequence import persist_delivery_result
 import asyncio
 import hashlib
 import json
@@ -102,8 +104,13 @@ async def preview(request):
     sid = _sid(request)
     scope, clan_tag = _scope(request.query.get('scope'), request.query.get('clan_tag'))
     ping = _ping(request.query.get('ping'))
-    with _store(request).tx() as db:
+    blockers: object
+    data: object
+    options: object
+    def _preview_transaction_1(db):
+        nonlocal blockers, data, options
         options, blockers, data = collect(db, sid, scope, clan_tag)
+    await _store(request).run_tx(_preview_transaction_1)
     users = {w['user_id'] for c in data['clans'] for w in c['winners'] if w['user_id']}
     names = cached_owner_nicknames(request, users)
     fingerprint = render.fingerprint(data, ping)
@@ -131,8 +138,11 @@ async def history_png(request):
     from .app import _require, _sid, _store
     _require(request, 'editor')
     sid = _sid(request)
-    with _store(request).tx() as db:
+    data: object
+    def _history_png_transaction_1(db):
+        nonlocal data
         _, _, data = collect(db, sid, 'all', None)
+    await _store(request).run_tx(_history_png_transaction_1)
     return web.Response(body=history_image.render(data['history']), content_type='image/png',
                         headers={'Cache-Control': 'private, max-age=300'})
 
@@ -183,8 +193,12 @@ async def send(request):
             _fail(409, 'The announcement changed. Review the preview again.')
         return data, None
 
-    with _store(request).tx() as db:
+    data: object
+    done: object
+    def _send_transaction_1(db):
+        nonlocal data, done
         data, done = checked(db)
+    await _store(request).run_tx(_send_transaction_1)
     if done:
         return web.json_response(done)
     try:
@@ -201,12 +215,17 @@ async def send(request):
     record = {'request_id': request_id, 'scope': scope, 'clan_tag': clan_tag, 'ping': ping,
               'channel_id': channel_id, 'cycle': data['cycle'], 'clans': [c['tag'] for c in data['clans']],
               'pages': len(pages)}
-    with _store(request).tx() as db:
+    done: object
+    def _send_transaction_2(db):
+        nonlocal done
         data_again, done = checked(db)
         if done:
-            return web.json_response(done)
+            return (True, web.json_response(done))
         # The reservation is durable before Discord sees anything.
         _audit(db, sid, actor, {**record, 'status': 'sending'})
+    _outcome = await _store(request).run_tx(_send_transaction_2)
+    if _outcome is not None:
+        return _outcome[1]
     sent, status, failure = [], 'sent', None
     try:
         for index, payload in enumerate(pages):
@@ -222,8 +241,9 @@ async def send(request):
                    else 'Delivery stopped. Check Discord before you send again; this will not resend automatically.')
     result = {**record, 'status': status, 'failure': failure,
               'message_ids': sent, 'urls': [_url(channel_id, m) for m in sent]}
-    with _store(request).tx() as db:
+    def _send_transaction_3(db):
         _audit(db, sid, actor, result)
+    await persist_delivery_result(_store(request).run_tx(_send_transaction_3))
     return web.json_response(result)
 
 

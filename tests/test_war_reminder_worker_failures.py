@@ -17,8 +17,8 @@ class Store:
         self.status = {}
         self.exists = True
 
-    async def clan(self, tag):
-        return {'tag': tag} if self.exists else None
+    async def clan_exists(self, tag):
+        return self.exists
 
     async def get_settings(self, tag):
         return self.config.copy()
@@ -131,3 +131,55 @@ def test_partial_send_records_progress_and_no_repeat_pings(setup, monkeypatch):
     receipt = next(iter(store.receipts.values()))
     assert receipt['status'] == 'uncertain' and len(receipt['urls']) == 1
     assert bot.rest.create_message.await_args.kwargs['user_mentions'] == []
+
+
+@pytest.mark.parametrize('scan_old_settings_first', [False, True])
+def test_scan_confirms_only_scanned_settings_and_refreshes_first_new_success(monkeypatch, scan_old_settings_first):
+    from bson import BSON
+    from utils.war_reminder_health import health
+    from utils.war_reminder_store import WarReminderStore
+    first = datetime(2026, 11, 17, tzinfo=timezone.utc)
+    config = {**reminders.settings(), '_id': '#P2Y', 'enabled': True,
+              'channel_id': '123456789012345678', 'version': 2,
+              'updated_at': first + timedelta(seconds=1)}
+    persisted = BSON.encode({'_id': '#P2Y', 'checked_at': first, 'error': None,
+                             'detail': 'Waiting for an active war', 'war_end': None,
+                             'settings_updated_at': first, 'settings_version': 1}).decode()
+    writes = []
+    async def find(query):
+        return persisted
+    async def update(query, values, **kwargs):
+        nonlocal persisted
+        persisted = BSON.encode({'_id': query['_id'], **values['$set']}).decode()
+        writes.append(persisted.copy())
+        return NS(matched_count=1, upserted_id=None)
+    store = WarReminderStore.__new__(WarReminderStore)
+    store.status = NS(find_one=find, update_one=update)
+    store.db = NS(clans=NS(find_one=AsyncMock(return_value={'_id': 'clan'})))
+    monkeypatch.setattr(worker, 'WarReminderStore', lambda db: store)
+    monkeypatch.setattr(reminders, 'snapshot', lambda *_: None)
+    class Clock(datetime):
+        current = first + timedelta(seconds=60)
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current
+    monkeypatch.setattr(worker, 'datetime', Clock)
+    client = NS(get_current_war=AsyncMock(return_value=None))
+    bot = NS(rest=NS(create_message=AsyncMock()))
+    async def check():
+        if scan_old_settings_first:
+            old_config = {**config, 'version': 1, 'updated_at': first}
+            await worker.scan_clan(NS(), client, bot, NS(), old_config)
+            assert len(writes) == 0
+            assert health(config, persisted, None, Clock.current)[0] == 'pending'
+        await worker.scan_clan(NS(), client, bot, NS(), config)
+        assert len(writes) == 1
+        assert health(config, persisted, None, Clock.current)[0] == 'tracking'
+        Clock.current = first + timedelta(seconds=120)
+        await worker.scan_clan(NS(), client, bot, NS(), config)
+        assert len(writes) == 1
+        assert health(config, persisted, None, Clock.current)[0] == 'tracking'
+        assert persisted['settings_version'] == 2
+        assert persisted['settings_updated_at'].replace(tzinfo=timezone.utc) == config['updated_at']
+        bot.rest.create_message.assert_not_awaited()
+    asyncio.run(check())

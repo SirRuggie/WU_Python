@@ -14,6 +14,8 @@ bot_config's database, like war reminders:
 """
 from __future__ import annotations
 
+from utils.mongo_routes import collection_from
+
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -37,9 +39,7 @@ class ChannelInUse(Exception):
 
 
 def collection(db, name):
-    return db.bot_config.database.get_collection(
-        name, write_concern=WriteConcern(w="majority", wtimeout=10000)
-    )
+    return collection_from(db.bot_config, name, write_concern=WriteConcern(w='majority'))
 
 
 def default_settings() -> dict:

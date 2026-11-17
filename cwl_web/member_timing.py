@@ -20,7 +20,7 @@ def eligible_bindings(app):
     now = datetime.now(timezone.utc)
     next_month = (now.replace(day=1) + timedelta(days=32)).replace(day=1)
     cycles = (now.strftime('%Y-%m'), next_month.strftime('%Y-%m'))
-    with app['store'].tx() as db:
+    with app['store'].read() as db:
         return {row['id']: row['cycle'] for row in db.execute(
             'SELECT s.id,b.cycle FROM seasons s JOIN manage_campaign_bindings b '
             'ON b.season_id=s.id WHERE (s.signup_open OR NOT EXISTS '
