@@ -47,10 +47,23 @@ permissions.
 ## Enforcement and failure handling
 
 Production requests read the shared policy. The member is fetched from Discord
-when the person has a direct grant or any role grant exists; stale role membership
-is never used to authorize. If Discord role lookup is unavailable, direct grants
-continue to work, role grants fail closed, and the dashboard explains the missing
-role-based access.
+when the person has a direct grant or any role grant exists. Decision D11 (backend
+audit 239, approved 2026-11-17) permits successful member-role IDs to be cached for
+at most 30 seconds, using monotonic time. This is an approved maximum 30-second lag
+for Discord role changes and successful membership checks, including departures.
+The cache is local to one application process, keyed by guild and user, bounded
+to 512 successful entries, and stores immutable role IDs with a copy returned to
+each caller. Concurrent reads share a successful lookup; cancellation propagates,
+and a cancelled fetch does not populate the cache.
+
+Grants, revocations, permission decisions and request-specific scope intersections
+are never cached. Each request rereads the policy even when role IDs are cached.
+404s, failures and malformed responses are not cached; an expired success is
+discarded before refreshing, with no stale-success fallback on failure. If role
+lookup is unavailable, direct grants continue to work, role grants fail closed,
+and the dashboard explains the missing role-based access. Native management
+identity reads, worker authorization and signup membership checks keep their
+existing independent freshness rules.
 
 A person who is not in the Warriors United server has no staff access (Ruggie,
 2026-11-13). When Discord answers 404 for the member, the request gets no
@@ -62,6 +75,16 @@ lookup unless role grants exist. Legacy SQLite grants (before the first owner
 save) follow the same rule. The `/fwa weight` bridge is unchanged: it runs from a
 slash command inside the server. Public
 login endpoints remain usable with an expired session cookie.
+
+Decision D18's dashboard `write` argument is forwarded explicitly to the shared
+policy. Existing section grants are management rights and authorize their
+section's reads and writes; no read/write grant field, representation or migration
+is introduced. Native Discord role restrictions are not applied to explicit
+dashboard grants. `strikes_read` is a read-only aggregate of the three strike
+grants: it never authorizes a write, including for owners. Mutations continue to
+use their explicit strike action scope. Unknown sections fail closed. Owners
+retain full access to all valid management sections; legacy expansion and
+per-request scope intersections are unchanged.
 
 The shared management worker rereads grants and current role membership before
 executing. Queued roster announcements recheck send access before attempting
@@ -87,3 +110,16 @@ Frontend tests cover separate navigation groups and action visibility. Browser
 checks used isolated sample data at 320px, 390px and 1280px: role edit/save,
 selected-action counts, saved feedback, and no horizontal page overflow.
 No live Discord messages or production grant changes were made during review.
+
+Audit239 fixture review inventories all current management scope mappings and
+99 authorization call sites, with 47 scenarios / 2256 read/write matrix entries
+covering every permission as both direct and role grants, owners, legacy grants,
+grant unions and request-scope restrictions. Before/after valid UI writer rights
+are identical. Only an invalid write through read-only `strikes_read` is newly
+denied; its current endpoint/decorator paths are reads. No production grants were
+read, and no claim is made about live Discord cache delivery or membership.
+
+Role-cache responses accept only ASCII-decimal role ID strings whose numeric
+value is in the positive uint64 range (`1..2**64-1`). Valid strings are retained
+without coercion; malformed or out-of-range responses are not cached and the
+next request refetches instead of reusing an expired success.

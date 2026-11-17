@@ -1,7 +1,8 @@
 """Dashboard access policy and single-document, revisioned Mongo storage.
 
 Discord command authorization remains separate. Role IDs here are effective only
-when explicitly granted, and must come from a fresh guild-member lookup.
+when explicitly granted. HTTP role lookups may use the documented short cache;
+workers continue to supply their own current member roles.
 """
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -113,7 +114,11 @@ class AccessRepository:
         return updated
 
 
-async def dashboard_allowed(actor, section, db):
+async def dashboard_allowed(actor, section, db, *, write=False):
+    # This aggregate scope is used only by read endpoints, never mutations.
+    # Mapped scopes are management grants and retain both read/write rights.
+    if write and section == 'strikes_read':
+        return False
     scope = SECTION_SCOPE.get(section)
     if not scope and section != 'strikes_read':
         return False
