@@ -34,8 +34,20 @@ class PlayerActivityStore:
         self._roster_seen = {}
 
     async def ensure_indexes(self):
-        # TTL creation is reserved for the backup-verified retention migration.
         await self.collection.create_index('current_clan_tag', name='activity_family_clan')
+        # D19: release only after a verified backup and recorded counts. Players
+        # have a tag and no kind; retired history_clan caches also have left_at.
+        # Equality to null includes missing kind, unlike unsupported partial $ne.
+        await self.collection.create_index(
+            'left_at',
+            name='activity_departed_player_180d',
+            expireAfterSeconds=180 * 24 * 60 * 60,
+            partialFilterExpression={
+                'kind': None,
+                'tag': {'$type': 'string'},
+                'left_at': {'$exists': True, '$type': 'date'},
+            },
+        )
 
     async def all_players(self, *, view=None):
         return await self.collection.find({"kind": {"$ne": "history_clan"}}, player_read_fields(view)).to_list(
@@ -290,7 +302,7 @@ class PlayerActivityStore:
         )
 
     async def retire_history_clans(self, active, *, now=None):
-        """Retired caches use the already-approved90-day departure index."""
+        """Mark retired caches; the departed-player TTL excludes these rows."""
         now = utc(now or datetime.now(timezone.utc))
         for row in await self.history_clans():
             if row["clan_tag"] not in active and not row.get("left_at"):
