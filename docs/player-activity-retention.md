@@ -5,6 +5,12 @@ departed-player activity 180 days after `left_at`. The storage owner is
 `utils/player_activity_store.py`; the collection route remains
 `settings.player_activity`. No document migration or application write is added.
 
+`tools/maintenance/strike_retention.py` owns only strike retention. Its former
+unfiltered 90-day player-activity index step and activity manifest entry are
+removed by the Shaka 1074 rework. That tool cannot create, change or drop an
+activity index. Strike-record and war-snapshot policies and backup/restore gates
+are unchanged.
+
 `PlayerActivityStore.ensure_indexes()` preserves `activity_family_clan` and adds
 the single-field TTL index `activity_departed_player_180d` on `left_at`, with
 `expireAfterSeconds=15552000`. Its partial filter is:
@@ -36,6 +42,24 @@ and [TTL indexes](https://www.mongodb.com/docs/manual/core/index-ttl/).
 
 ## Release gate
 
+After taking and verifying the backup, inventory `player_activity` indexes
+**read-only** with `listIndexes` (or `index_information()`), using the configured
+collection route. Record each index name, key, `expireAfterSeconds` and partial
+filter in READY, including an explicit UNKNOWN if inventory cannot be completed.
+If `activity_departure_retention` **or any TTL on `left_at`** already exists,
+**STOP and report to Ruggie before release/index bootstrap**. Creating another
+index does not disable the old retention policy. No index drop, replacement,
+`collMod`, migration or production repair is authorized by D19; obtain a separate
+decision for any such change. An unknown inventory also leaves this gate blocked.
+
+Known observation (2026-11-17, coordinator's read-only inventory):
+`activity_departure_retention` exists on `left_at`, `expireAfterSeconds=7776000`
+(90 days), with no partial filter. **Release gate: BLOCKED.** The observation used
+the documented backup tooling's configuration source; the current runtime
+configuration was not independently compared. No index change was performed.
+This records the blocker; it does not satisfy a later backup-verified release
+inventory or authorize removing that index.
+
 Do not run index bootstrap against production as a development check. Index
 creation begins deletion eligibility for already-old player rows. Before the
 release starts the bot/index bootstrap, take and **verify** a Mongo backup and
@@ -54,3 +78,14 @@ Rolling back code does not remove a created TTL index or restore deleted rows;
 retain the verified backup, and treat index removal or data restoration as a
 separate explicitly authorized production action. No live index or database
 operation is part of the implementation checks.
+
+## Index bootstrap failure
+
+The store returns readiness from `ensure_indexes()`. A failed `create_index`
+logs a traceback and the exact index name, returns false, and leaves readiness
+false. The hourly worker still performs that same sweep's family-membership
+read, complete-roster reconciliation, player poll and raid capture; it retries
+index bootstrap on the next hourly sweep. Successful bootstrap stops retries.
+Cancellation propagates; unrelated sweep failures retain their existing error
+handling. Continuing observations does not waive the blocked release gate or
+prove that the intended TTL is active.

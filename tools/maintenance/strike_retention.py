@@ -17,7 +17,7 @@ from pymongo import MongoClient
 
 from utils.mongo_routes import load_routes
 from utils.strike_retention import validate_record_retention, snapshot_purge_after
-from utils.strike_retention_policy import SNAPSHOT_DAYS, DEPARTED_ACTIVITY_DAYS
+from utils.strike_retention_policy import SNAPSHOT_DAYS
 from utils.strike_store import stamp
 
 COLLECTIONS = ('strike_records', 'strike_war_snapshots', 'strike_profiles')
@@ -59,7 +59,7 @@ def migrate(client, routes, destination, *, restore_client, apply=False, allow_e
     restore_name = 'wu_retention_restore_' + uuid4().hex
     restore = restore_client[restore_name]
     manifest = {'collections': {}, 'restored': False, 'ttl_applied': False,
-                'indexes': {name: 'not_applied' for name in (*COLLECTIONS[:2], 'player_activity')}}
+                'indexes': {name: 'not_applied' for name in COLLECTIONS[:2]}}
     try:
         snapshots = {}
         for name in COLLECTIONS:
@@ -97,16 +97,12 @@ def migrate(client, routes, destination, *, restore_client, apply=False, allow_e
                 for row, purge in plan:
                     update = {'$set': {'purge_after': purge}} if purge is not None else {'$unset': {'purge_after': ''}}
                     collection.update_one({'_id': row['_id']}, update)
-            for name in ('strike_records', 'strike_war_snapshots', 'player_activity'):
+            for name in ('strike_records', 'strike_war_snapshots'):
                 route = routes[name]
                 manifest['indexes'][name] = 'attempting'
                 try:
-                    if name == 'player_activity':
-                        client[route.database][route.collection].create_index('left_at', expireAfterSeconds=DEPARTED_ACTIVITY_DAYS*86400,
-                                                                            name='activity_departure_retention')
-                    else:
-                        client[route.database][route.collection].create_index('purge_after', expireAfterSeconds=0,
-                                                                            name='retention_purge_after')
+                    client[route.database][route.collection].create_index('purge_after', expireAfterSeconds=0,
+                                                                        name='retention_purge_after')
                 except Exception:
                     manifest['indexes'][name] = 'failed'
                     raise

@@ -34,20 +34,29 @@ class PlayerActivityStore:
         self._roster_seen = {}
 
     async def ensure_indexes(self):
-        await self.collection.create_index('current_clan_tag', name='activity_family_clan')
+        """Return readiness; a failed index must not stop activity observations."""
         # D19: release only after a verified backup and recorded counts. Players
         # have a tag and no kind; retired history_clan caches also have left_at.
         # Equality to null includes missing kind, unlike unsupported partial $ne.
-        await self.collection.create_index(
-            'left_at',
-            name='activity_departed_player_180d',
-            expireAfterSeconds=180 * 24 * 60 * 60,
-            partialFilterExpression={
-                'kind': None,
-                'tag': {'$type': 'string'},
-                'left_at': {'$exists': True, '$type': 'date'},
-            },
+        indexes = (
+            ('current_clan_tag', {'name': 'activity_family_clan'}),
+            ('left_at', {
+                'name': 'activity_departed_player_180d',
+                'expireAfterSeconds': 180 * 24 * 60 * 60,
+                'partialFilterExpression': {
+                    'kind': None,
+                    'tag': {'$type': 'string'},
+                    'left_at': {'$exists': True, '$type': 'date'},
+                },
+            }),
         )
+        for field, options in indexes:
+            try:
+                await self.collection.create_index(field, **options)
+            except Exception:
+                log.exception('Player activity index unavailable: %s', options['name'])
+                return False
+        return True
 
     async def all_players(self, *, view=None):
         return await self.collection.find({"kind": {"$ne": "history_clan"}}, player_read_fields(view)).to_list(

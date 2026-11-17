@@ -46,7 +46,9 @@ def test_real_backup_restore_ttl_and_purge_invariance(tmp_path):
             assert list(db.strike_profiles.find({})) == profiles
             assert db.strike_records.count_documents({'expires_at': {'$gt': now}}) == active
             assert db.strike_records.index_information()['retention_purge_after']['expireAfterSeconds']==0
-            assert db.player_activity.index_information()['activity_departure_retention']['expireAfterSeconds']==90*86400
+            assert set(result['indexes']) == {'strike_records', 'strike_war_snapshots'}
+            assert not any('expireAfterSeconds' in index
+                           for index in db.player_activity.index_information().values())
         finally:
             client.drop_database(name)
 

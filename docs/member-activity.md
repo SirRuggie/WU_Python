@@ -96,13 +96,23 @@ exceptions remain effective under optimized Python. Any failure or pending strea
 receipt prevents TTL creation. The manifest reports each index independently if
 creation fails partway through; a false overall flag does not mean no index exists.
 
+Player activity is outside this strike maintenance tool's retention scope.
+Backend audit 239 D19 assigns its 180-day partial TTL exclusively to
+`PlayerActivityStore`; see [player activity retention](player-activity-retention.md).
+The former maintenance implementation created an unfiltered 90-day
+`activity_departure_retention` index. That is historical behavior, removed by
+the 2026-11-17 Shaka 1074 rework; an already-created index is not removed by a code
+change. After a verified backup, inventory activity indexes read-only before
+release. If that old index or any TTL on `left_at` exists (or the inventory is
+unknown), STOP and report to Ruggie. D19 alone does not authorize dropping,
+modifying or replacing an activity index; separate Ruggie approval is required.
+
 Rollback stops future purges with these exact index names, using the configured
 collection routes (default names shown). Retain the immutable code rollback too:
 
 ```javascript
 db.strike_records.dropIndex("retention_purge_after")
 db.strike_war_snapshots.dropIndex("retention_purge_after")
-db.player_activity.dropIndex("activity_departure_retention")
 ```
 
 A real recovery command verifies the retained file hashes, content hashes and

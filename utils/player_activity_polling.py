@@ -151,8 +151,7 @@ async def run(mongo, client):
             started = time.monotonic()
             try:
                 if not indexes_ready:
-                    await store.ensure_indexes()
-                    indexes_ready = True
+                    indexes_ready = await store.ensure_indexes()
                 sweep = await family_members(mongo, client)
                 members = sweep.members
                 if sweep.complete:

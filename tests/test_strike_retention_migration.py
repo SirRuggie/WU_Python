@@ -125,15 +125,15 @@ def test_separate_server_and_empty_source_gates(tmp_path):
 def test_partial_index_failure_is_reported_per_index(tmp_path, monkeypatch):
     client, routes = populated()
     original = Collection.create_index
-    def fail_departure(self, field, **options):
-        if field == 'left_at':
-            raise RuntimeError('departure index unavailable')
+    def fail_snapshot(self, field, **options):
+        if self is client['fixture']['strike_war_snapshots']:
+            raise RuntimeError('snapshot index unavailable')
         original(self, field, **options)
-    monkeypatch.setattr(Collection, 'create_index', fail_departure)
-    with pytest.raises(RuntimeError, match='departure index'):
+    monkeypatch.setattr(Collection, 'create_index', fail_snapshot)
+    with pytest.raises(RuntimeError, match='snapshot index'):
         migrate(client, routes, tmp_path/'partial', restore_client=Client(restore=True), apply=True)
     result = json.loads((tmp_path/'partial/manifest.json').read_text())
-    assert result['indexes'] == {'strike_records': 'applied', 'strike_war_snapshots': 'applied', 'player_activity': 'failed'}
+    assert result['indexes'] == {'strike_records': 'applied', 'strike_war_snapshots': 'failed'}
     assert not result['ttl_applied']
 
 

@@ -54,7 +54,7 @@ def test_index_definition_preserves_existing_index_without_document_writes():
         collection.rows[PLAYER] = {'_id': PLAYER, 'tag': PLAYER, 'left_at': NOW}
         before = deepcopy(collection.rows)
         store = PlayerActivityStore(SimpleNamespace(player_activity=collection))
-        await store.ensure_indexes()
+        assert await store.ensure_indexes() is True
         assert collection.index_calls == [
             ('current_clan_tag', {'name': 'activity_family_clan'}),
             ('left_at', {
