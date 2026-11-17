@@ -603,9 +603,42 @@ for configuration, validation, and rollback requirements.
 Message edits, existing text-command edits, ticket channels/access/wait settings,
 and editable FWA configuration now keep before/after records in `settings.bot_config`
 (`kind=dashboard_history`, `_id=dashboard-history:<uuid>`). This collection is part
-of the existing full Mongo backups. Keep the compound `dashboard_history_target_time`
-index on `kind`, `target`, and descending `at`. No TTL is applied; the UI shows the
-latest 30 entries per editor. History begins with deployment; native `/manage`
+of the existing full Mongo backups. Decision D10 (audit 239) supersedes the former
+no-TTL policy: bot startup creates `dashboard_history_target_time_partial_v1` on
+`{kind: 1, target: 1, at: -1}` and `dashboard_history_at_365d_v1` on `{at: 1}`
+with `expireAfterSeconds: 31536000` (365 days). Both indexes have the exact partial
+filter `{kind: "dashboard_history"}`. Scalar equality also matches an array
+containing `"dashboard_history"`; a malformed mixed-kind row can therefore match
+these indexes. Matching rows with a BSON date in `at` can expire; for a date
+array, MongoDB uses its earliest date. Other scalar kinds, kind arrays without
+`"dashboard_history"`, missing dates and non-date scalar values are not TTL
+candidates. MongoDB expires eligible history asynchronously; the UI still shows
+the latest 30 available entries per editor. See MongoDB's
+[equality semantics](https://www.mongodb.com/docs/manual/reference/operator/query/eq/)
+and [TTL date-array behavior](https://www.mongodb.com/docs/manual/core/index-ttl/).
+
+The distinct versioned names preserve any externally created full
+`dashboard_history_target_time` index and both Gauntlet indexes. No index is
+dropped or repaired automatically. An incompatible existing index under either
+new name is logged as `Dashboard history indexes unavailable`; stop release and
+resolve that conflict through review rather than dropping an index blindly.
+Ruggie approved the D10 delete ("next", 2026-11-17 15:54 UTC): history older than
+one year expires. Before release, take and verify a Mongo backup and record
+history and other-kind row counts before/after; compare observed history changes
+to approved expiry and require other-kind counts to remain unchanged. Before
+starting the new bot or creating either index, run this read-only check against
+the verified backup's production namespace with the existing approved release
+reader: `bot_config.count_documents({"kind": {"$type": "array", "$eq":
+"dashboard_history"}})`. Record the count and require **zero**. If any such row
+exists, stop before index creation and report it for review, regardless of its
+current `at` value or age. Do not repair data, drop an index or change the exact
+partial filter automatically. This precondition avoids treating malformed arrays
+as exclusively history data; fixture eligibility is not proof that production
+has no such rows. Release still requires Shaka approval of the current full
+head. Code rollback does not restore expired history, and the TTL index persists
+until separately reviewed.
+
+History begins with deployment; native `/manage`
 edits are not newly journaled by this dashboard feature, but native edits still
 invalidate stale dashboard revisions.
 
