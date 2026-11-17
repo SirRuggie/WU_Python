@@ -1,59 +1,76 @@
-"""Fetching an image the bot was handed a URL for.
-
-Two callers pull images from URLs a person typed: the clan dashboard's emoji
-flow (`update_clan_info.process_emoji_upload`) and the FWA dashboard's
-"update images from URL" modal, which used to hand the URL to Cloudinary and
-let Cloudinary do the fetching. Cloudinary is gone (see
-docs/media-hosting.md), so the bot fetches for itself, and both callers need
-the same guards: a public-only host check (utils/url_safety.py), no
-redirects, a timeout, and a byte cap.
-
-Both functions are BLOCKING on purpose. Call them through
-`asyncio.to_thread` so the download never runs on the event loop.
-"""
+"""Blocking, checked-address image downloads; call through asyncio.to_thread."""
 
 from __future__ import annotations
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3 import HTTPConnectionPool, HTTPSConnectionPool
 
-from utils.url_safety import MAX_IMAGE_BYTES, is_safe_public_url
+from utils.url_safety import MAX_IMAGE_BYTES, PublicImageTarget, resolve_public_image_url
+
+
+class _CheckedAddressAdapter(HTTPAdapter):
+    """Keep the HTTP/TLS hostname while the pool connects to a checked IP.
+
+    One request owns this adapter and pool. There is no fallback resolution,
+    proxy, redirect, or retry to an unchecked destination.
+    """
+
+    def __init__(self, target: PublicImageTarget):
+        super().__init__(max_retries=0)
+        if target.scheme == "https":
+            self.checked_pool = HTTPSConnectionPool(
+                target.addresses[0], target.port,
+                server_hostname=target.host, assert_hostname=target.host,
+            )
+        else:
+            self.checked_pool = HTTPConnectionPool(target.addresses[0], target.port)
+
+    def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
+        if proxies:
+            raise ValueError("Image downloads do not support proxies.")
+        return self.checked_pool
+
+    def get_connection(self, url, proxies=None):
+        """Requests <2.32 compatibility; same checked pool."""
+        if proxies:
+            raise ValueError("Image downloads do not support proxies.")
+        return self.checked_pool
+
+    def close(self):
+        self.checked_pool.close()
+        super().close()
+
+
+def _download(target: PublicImageTarget) -> bytes:
+    with requests.Session() as session:
+        session.trust_env = False
+        session.mount(f"{target.scheme}://", _CheckedAddressAdapter(target))
+        with session.get(
+            target.url, headers={"Host": target.authority},
+            timeout=(5, 15), allow_redirects=False, stream=True,
+        ) as resp:
+            resp.raise_for_status()
+            if not 200 <= resp.status_code < 300:
+                raise requests.HTTPError("Image URL did not return a successful response.", response=resp)
+            declared = resp.headers.get("Content-Length")
+            if declared is not None and declared.isdigit() and int(declared) > MAX_IMAGE_BYTES:
+                raise ValueError("Image is larger than the 10 MB limit.")
+            chunks = []
+            total = 0
+            for chunk in resp.iter_content(8192):
+                total += len(chunk)
+                if total > MAX_IMAGE_BYTES:
+                    raise ValueError("Image is larger than the 10 MB limit.")
+                chunks.append(chunk)
+            return b"".join(chunks)
 
 
 def download_image_blocking(url: str) -> bytes:
-    """Fetch an image with a timeout, no redirects, and a byte cap.
-
-    allow_redirects is off so a URL validated as public cannot bounce the bot
-    to an internal host. Raises `requests.HTTPError` for a non-2xx status and
-    `ValueError` when the body is larger than MAX_IMAGE_BYTES.
-    """
-    with requests.get(
-        url,
-        timeout=(5, 15),        # (connect seconds, read seconds)
-        allow_redirects=False,
-        stream=True,
-    ) as resp:
-        resp.raise_for_status()
-        declared = resp.headers.get("Content-Length")
-        if declared is not None and declared.isdigit() and int(declared) > MAX_IMAGE_BYTES:
-            raise ValueError("Image is larger than the 10 MB limit.")
-        chunks = []
-        total = 0
-        for chunk in resp.iter_content(8192):
-            total += len(chunk)
-            if total > MAX_IMAGE_BYTES:
-                raise ValueError("Image is larger than the 10 MB limit.")
-            chunks.append(chunk)
-        return b"".join(chunks)
+    """Guard direct attachment/migration callers, including extensionless URLs."""
+    return _download(resolve_public_image_url(url, require_image_extension=False))
 
 
 def fetch_public_image(url: str) -> bytes:
-    """`download_image_blocking` behind the public-URL check.
-
-    Raises `ValueError` with a user-facing reason when the URL is not a
-    direct, public image link, so callers can put the message straight into
-    a Discord reply.
-    """
-    ok, reason = is_safe_public_url(url)
-    if not ok:
-        raise ValueError(reason)
-    return download_image_blocking(url)
+    """Fetch a user-entered image URL with one resolution and a pinned socket."""
+    return _download(resolve_public_image_url(url))
