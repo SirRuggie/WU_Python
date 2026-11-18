@@ -23,6 +23,17 @@ _schedule_repair_attempts: dict[int, tuple[str, str, float]] = {}
 SCHEDULE_REPAIR_RETRY_SECONDS = 300
 
 
+def schedule_repair_pending(guild_id: int, runtime_id: str) -> bool:
+    """Whether this process still owes a schedule repair/acknowledgement.
+
+    The existing retry cache survives failed reloads and their backoff. A healthy
+    unchanged acknowledgement clears it. This read adds no Mongo operation and
+    does not change reconcile_campaign_changes' public changed/no-change bool.
+    """
+    attempt = _schedule_repair_attempts.get(int(guild_id))
+    return bool(attempt and attempt[0] == runtime_id)
+
+
 class BridgeConflict(ValueError):
     """The reviewed request no longer matches native campaign state."""
 

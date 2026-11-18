@@ -3,7 +3,12 @@
 Handles "How to ping" messages to explain Discord pinging.
 """
 
+import asyncio
+import logging
+import aiohttp
+
 import hikari
+from utils.background import log_failure
 import lightbulb
 from typing import Optional
 
@@ -18,6 +23,8 @@ from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 from utils import recruit_goblin_challenges as storage
 
+_log = logging.getLogger(__name__)
+
 # Global instances
 bot_instance: Optional[hikari.GatewayBot] = None
 mongo_client: Optional[MongoClient] = None
@@ -28,7 +35,7 @@ def initialize(bot: hikari.GatewayBot, mongo: Optional[MongoClient] = None):
     global bot_instance, mongo_client
     bot_instance = bot
     mongo_client = mongo
-    print("[HowToPing] Handler initialized")
+    _log.debug("How-to-ping handler initialized")
 
 
 async def check_how_to_ping(event: hikari.GuildMessageCreateEvent) -> bool:
@@ -60,7 +67,7 @@ async def check_how_to_ping(event: hikari.GuildMessageCreateEvent) -> bool:
             # No active challenge, don't respond
             return False
         
-        print(f"[HowToPing] Detected 'how to ping' from user {event.author_id} in channel {event.channel_id} with active challenge")
+        _log.debug("How-to-ping request matched an active challenge")
         
         # Send the explanation
         await send_ping_explanation(event.channel_id, event.author_id)
@@ -68,8 +75,14 @@ async def check_how_to_ping(event: hikari.GuildMessageCreateEvent) -> bool:
         # Add reaction to acknowledge
         try:
             await event.message.add_reaction("📌")
-        except:
+        except asyncio.CancelledError:
+            raise
+        except (hikari.HTTPError, hikari.RateLimitTooLongError, aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
+            log_failure(_log, "ping-acknowledgement", error)
             pass
+        except Exception as error:
+            log_failure(_log, "ping-acknowledgement-unexpected", error)
+            raise
         
         return True
     
@@ -119,7 +132,7 @@ async def send_ping_explanation(channel_id: int, user_id: int):
             user_mentions=[user_id]
         )
         
-        print(f"[HowToPing] Sent ping explanation to user {user_id}")
+        _log.debug("How-to-ping explanation sent")
         
     except Exception as e:
-        print(f"[HowToPing] Error sending ping explanation: {e}")
+        log_failure(_log, "ping-explanation", e)

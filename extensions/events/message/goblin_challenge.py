@@ -4,8 +4,11 @@ Handles the goblin ping challenge for recruit questions.
 Monitors for users to say "goblin" and ping their recruiter.
 """
 
+import aiohttp
+
 import asyncio
 import hikari
+from utils.background import log_failure
 import logging
 from typing import Optional
 from utils import recruit_goblin_challenges as storage
@@ -34,7 +37,7 @@ def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
     global mongo_client, bot_instance
     mongo_client = mongo
     bot_instance = bot
-    print("[GoblinChallenge] Handler initialized")
+    _log.debug("Goblin challenge handler initialized")
 
 
 async def prepare_storage() -> None:
@@ -43,8 +46,8 @@ async def prepare_storage() -> None:
     try:
         migrated = await storage.prepare_storage(mongo_client)
         _log.info("Goblin challenge storage ready: migrated=%s", migrated)
-    except Exception:
-        _log.exception("Goblin challenge storage preparation failed; legacy rows preserved for retry")
+    except Exception as error:
+        log_failure(_log, "goblin-storage-prepare", error)
 
 
 async def check_goblin_challenge(event: hikari.GuildMessageCreateEvent) -> bool:
@@ -68,7 +71,7 @@ async def check_goblin_challenge(event: hikari.GuildMessageCreateEvent) -> bool:
         return False
 
     # Only log if we found a relevant challenge
-    print(f"[GoblinChallenge] Found active challenge ID {challenge.get('_id')} in channel {event.channel_id} for user {challenge.get('user_id')}")
+    _log.debug("Goblin message matched an active challenge")
 
     # Check if it's the right user
     if event.author_id != challenge.get("user_id"):
@@ -82,7 +85,7 @@ async def check_goblin_challenge(event: hikari.GuildMessageCreateEvent) -> bool:
     recruiter_id = challenge.get("recruiter_id")
     has_recruiter_ping = recruiter_id in event.message.user_mentions_ids
 
-    print(f"[GoblinChallenge] Checking message: has_goblin={has_goblin}, has_recruiter_ping={has_recruiter_ping}")
+    _log.debug("Goblin message predicates word=%s recruiter_ping=%s", has_goblin, has_recruiter_ping)
 
     if has_goblin and has_recruiter_ping:
         claim_id = await storage.claim(mongo_client, challenge)
@@ -93,18 +96,23 @@ async def check_goblin_challenge(event: hikari.GuildMessageCreateEvent) -> bool:
             # leaves a claim that becomes eligible again after two minutes.
             async with asyncio.timeout(60):
                 message = await send_success_message(event.channel_id, event.author_id, recruiter_id, challenge=challenge)
-        except Exception:
+        except Exception as error:
             await storage.release(mongo_client, challenge, claim_id)
-            _log.exception("Goblin confirmation failed; challenge retained channel=%s user=%s",
-                           event.channel_id, event.author_id)
+            log_failure(_log, "goblin-confirmation", error)
             return True
         await storage.complete(mongo_client, challenge, claim_id, message.id)
 
         # Add reaction to the user's message
         try:
             await event.message.add_reaction("✅")
-        except:
+        except asyncio.CancelledError:
+            raise
+        except (hikari.HTTPError, hikari.RateLimitTooLongError, aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
+            log_failure(_log, "goblin-acknowledgement", error)
             pass
+        except Exception as error:
+            log_failure(_log, "goblin-acknowledgement-unexpected", error)
+            raise
 
         return True
 
@@ -117,8 +125,14 @@ async def check_goblin_challenge(event: hikari.GuildMessageCreateEvent) -> bool:
                 mentions_everyone=False,
                 user_mentions=[event.author_id]
             )
-        except:
+        except asyncio.CancelledError:
+            raise
+        except (hikari.HTTPError, hikari.RateLimitTooLongError, aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
+            log_failure(_log, "goblin-acknowledgement", error)
             pass
+        except Exception as error:
+            log_failure(_log, "goblin-acknowledgement-unexpected", error)
+            raise
         return True
 
     elif has_recruiter_ping and not has_goblin:
@@ -130,8 +144,14 @@ async def check_goblin_challenge(event: hikari.GuildMessageCreateEvent) -> bool:
                 mentions_everyone=False,
                 user_mentions=[event.author_id]
             )
-        except:
+        except asyncio.CancelledError:
+            raise
+        except (hikari.HTTPError, hikari.RateLimitTooLongError, aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
+            log_failure(_log, "goblin-acknowledgement", error)
             pass
+        except Exception as error:
+            log_failure(_log, "goblin-acknowledgement-unexpected", error)
+            raise
         return True
 
     return False

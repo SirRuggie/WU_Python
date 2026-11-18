@@ -10,6 +10,7 @@ import lightbulb
 from utils import account_links, war_reminders as reminders
 from utils.mongo import MongoClient
 from utils.war_reminder_store import WarReminderStore, occurrence_key
+from utils.background import run_periodic, log_failure, cancel_and_wait
 
 loader = lightbulb.Loader()
 _log = logging.getLogger(__name__)
@@ -98,41 +99,49 @@ async def scan_clan(db, client, bot, links, config):
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        _log.warning('War reminder check failed for %s: %s', clan_tag, type(exc).__name__)
+        log_failure(_log, 'war-reminders.clan', exc)
         await store.record_status(
             clan_tag, settings_updated_at=config.get('updated_at'),
             settings_version=config.get('version'),
             checked_at=datetime.now(timezone.utc), error=type(exc).__name__,
             detail="The bot could not check or send the reminders. Check these things: the war log is public, the account link service works, and the bot can use the channel.",
         )
+        return False
 
 
 async def loop(db, client, bot):
     store = WarReminderStore(db)
     indexes_ready = False
     semaphore = asyncio.Semaphore(FETCH_CONCURRENCY)
-    while True:
+    async def scan():
+        nonlocal indexes_ready
+        if not indexes_ready:
+            await store.ensure_indexes()
+            indexes_ready = True
+        configs = await store.enabled_settings()
+
+        async def run(config):
+            async with semaphore:
+                try:
+                    return await scan_clan(db, client, bot, account_links, config)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    log_failure(_log, "war-reminders.state-update", error)
+                    return False
+
+        tasks = []
         try:
-            if not indexes_ready:
-                await store.ensure_indexes()
-                indexes_ready = True
-            configs = await store.enabled_settings()
+            for config in configs:
+                tasks.append(asyncio.create_task(run(config)))
+            results = await asyncio.gather(*tasks)
+            return all(result is not False for result in results)
+        finally:
+            # gather does not cancel siblings when a child itself is cancelled.
+            # Own every scan until all of its cancellation cleanup has finished.
+            await cancel_and_wait(tasks)
 
-            async def run(config):
-                async with semaphore:
-                    try:
-                        await scan_clan(db, client, bot, account_links, config)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        _log.exception('War reminder state update failed for %s', config['_id'])
-
-            await asyncio.gather(*(run(config) for config in configs))
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _log.exception('War reminder scan failed')
-        await asyncio.sleep(SCAN_INTERVAL_SECONDS)
+    await run_periodic("war-reminders", scan, SCAN_INTERVAL_SECONDS, logger=_log)
 
 
 @loader.listener(hikari.StartedEvent)

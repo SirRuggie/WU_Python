@@ -3,7 +3,11 @@
 Ticket button and interaction handlers
 """
 
+import logging
+import aiohttp
+
 import hikari
+from utils.background import log_failure
 import hikari.errors
 import lightbulb
 from typing import List, Dict
@@ -26,6 +30,8 @@ from utils.constants import RED_ACCENT, GOLD_ACCENT
 from extensions.components import register_action
 from extensions.commands.tickets_legacy import loader
 from extensions.commands.tickets_legacy import store
+
+_log = logging.getLogger(__name__)
 
 # Default configuration values
 DEFAULT_MAIN_CATEGORY = 1395400463897202738
@@ -420,28 +426,18 @@ async def check_category_space(bot: hikari.GatewayBot, category_id: int, ticket_
         try:
             category = await bot.rest.fetch_channel(category_id)
             category_name = category.name
-        except:
+        except asyncio.CancelledError:
+            raise
+        except (hikari.HTTPError, hikari.RateLimitTooLongError, aiohttp.ClientError, asyncio.TimeoutError, OSError, AttributeError) as error:
+            log_failure(_log, "ticket-category-name", error)
             category_name = "Unknown"
 
         # Discord limit is 50 channels per category
         used_slots = len(channels_in_category)
         remaining_slots = 50 - used_slots
 
-        # Enhanced logging
-        print(f"[Tickets] Category Space Check:")
-        print(f"  - Category: {category_name} (ID: {category_id})")
-        print(f"  - Type: {ticket_type.upper()}")
-        print(f"  - Channels Used: {used_slots}/50")
-        print(f"  - Remaining Slots: {remaining_slots}")
-        print(f"  - Guild Channels Total: {len(guild_channels)}/500")  # free, already fetched above
-
-        # Show first 5 channel names as examples
-        if channels_in_category:
-            print(f"  - Example channels:")
-            for i, channel in enumerate(channels_in_category[:5]):
-                print(f"    • {channel.name}")
-            if len(channels_in_category) > 5:
-                print(f"    ... and {len(channels_in_category) - 5} more")
+        _log.debug("Ticket category capacity checked used=%s remaining=%s",
+                   used_slots, remaining_slots)
 
         # Check if we need to notify admin
         if remaining_slots <= CHANNEL_WARNING_THRESHOLD:
@@ -463,15 +459,24 @@ async def check_category_space(bot: hikari.GatewayBot, category_id: int, ticket_
                     f"*This warning triggers when 5 or fewer slots remain.*"
                 )
 
-                print(f"[Tickets] ⚠️ Admin notified about low space in {category_name}")
-            except Exception as e:
-                print(f"[Tickets] Failed to DM admin about low channel space: {e}")
+                _log.info("Ticket category capacity warning sent")
+            except asyncio.CancelledError:
+                raise
+            except (hikari.HTTPError, hikari.RateLimitTooLongError, aiohttp.ClientError,
+                    asyncio.TimeoutError, OSError) as error:
+                log_failure(_log, "ticket-category-warning", error)
 
         return remaining_slots
 
-    except Exception as e:
-        print(f"[Tickets] Error checking category space: {e}")
-        return -1  # Return -1 to indicate error
+    except asyncio.CancelledError:
+        raise
+    except (hikari.HTTPError, hikari.RateLimitTooLongError, aiohttp.ClientError,
+            asyncio.TimeoutError, OSError, ValueError, TypeError, AttributeError) as error:
+        log_failure(_log, "ticket-category-capacity", error)
+        return -1  # Preserve the fail-closed result for unavailable/malformed data.
+    except Exception as error:
+        log_failure(_log, "ticket-category-capacity-unexpected", error)
+        raise
 
 @register_action("create_ticket", opens_modal=True, no_return=True)
 @lightbulb.di.with_di

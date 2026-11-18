@@ -191,3 +191,9 @@ write immediately. Values are compared only; no client-wide `tz_aware` setting,
 stored date migration, endpoint or health-policy change is introduced. BSON
 round-trip fixtures verify both active-war and no-war 60-second polling produces
 30 status writes/hour and maintains the existing liveness window.
+
+The worker's periodic scan uses the process-local observation helper described
+in [background-jobs.md](background-jobs.md). A partial clan scan does not advance
+the whole-job successful completion clock. This adds no persisted health writes
+and does not change the 120-second D7 status refresh, 180-second health window,
+claim/receipt semantics or the handling of possibly accepted Discord deliveries.
