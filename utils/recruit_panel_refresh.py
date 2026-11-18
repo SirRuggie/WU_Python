@@ -12,6 +12,7 @@ import logging
 import uuid
 
 import hikari
+import pymongo
 from pymongo import ReturnDocument
 
 _log = logging.getLogger(__name__)
@@ -41,12 +42,14 @@ def collection(mongo):
 
 async def prepare(mongo):
     jobs = collection(mongo)
-    await jobs.create_index(
-        "expires_at", expireAfterSeconds=0, name="recruit_panel_refresh_expiry"
-    )
-    await jobs.create_index(
-        [("status", 1), ("next_at", 1)], name="recruit_panel_refresh_due"
-    )
+    with pymongo.timeout(30):
+        await jobs.create_index(
+            "expires_at", expireAfterSeconds=0, name="recruit_panel_refresh_expiry"
+        )
+    with pymongo.timeout(30):
+        await jobs.create_index(
+            [("status", 1), ("next_at", 1)], name="recruit_panel_refresh_due"
+        )
 
 
 async def schedule(mongo, ctx, user_id):

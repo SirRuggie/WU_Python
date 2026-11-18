@@ -7,7 +7,7 @@ from pathlib import Path
 from utils.mongo import MongoClient
 
 
-def test_bot_driver_has_named_bounded_pool_and_separate_selection_operation_budgets():
+def test_bot_driver_has_named_bounded_pool_and_ten_second_operation_budget():
     tree = ast.parse(Path("main.py").read_text())
     call = next(
         node.value
@@ -36,7 +36,7 @@ def test_bot_driver_has_named_bounded_pool_and_separate_selection_operation_budg
             {"MongoClient": local_client, "_mongodb_uri": "mongodb://127.0.0.1:27154"},
         )
         try:
-            assert client.options.timeout == 30
+            assert client.options.timeout == 10
             assert client.options.server_selection_timeout == 3
             assert client.options.pool_options.max_pool_size == 20
             assert client.options.pool_options.appname == "wu-bot"

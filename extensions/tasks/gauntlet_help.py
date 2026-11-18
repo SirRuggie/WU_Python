@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import hikari
 import lightbulb
 from hikari.impl import ContainerComponentBuilder as Container, TextDisplayComponentBuilder as Text
+import pymongo
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -418,29 +419,33 @@ async def on_started(event: hikari.StartedEvent, bot: hikari.GatewayBot = lightb
     if _task and not _task.done():
         return
     try:
-        await mongo.bot_config.create_index(
-            [("kind", 1), ("guild_id", 1), ("status", 1), ("due_at", 1)],
-            name="gauntlet_help_due_v1",
-        )
-        await mongo.bot_config.create_index(
-            [("kind", 1), ("guild_id", 1), ("delete_at", 1)],
-            name="gauntlet_help_delete_v1",
-        )
+        with pymongo.timeout(30):
+            await mongo.bot_config.create_index(
+                [("kind", 1), ("guild_id", 1), ("status", 1), ("due_at", 1)],
+                name="gauntlet_help_due_v1",
+            )
+        with pymongo.timeout(30):
+            await mongo.bot_config.create_index(
+                [("kind", 1), ("guild_id", 1), ("delete_at", 1)],
+                name="gauntlet_help_delete_v1",
+            )
     except Exception:
         log.exception("Gauntlet help indexes unavailable")
     try:
         # Distinct names preserve any externally managed non-partial history index.
-        await mongo.bot_config.create_index(
-            [("kind", 1), ("target", 1), ("at", -1)],
-            name="dashboard_history_target_time_partial_v1",
-            partialFilterExpression={"kind": "dashboard_history"},
-        )
-        await mongo.bot_config.create_index(
-            [("at", 1)],
-            name="dashboard_history_at_365d_v1",
-            expireAfterSeconds=365 * 86400,
-            partialFilterExpression={"kind": "dashboard_history"},
-        )
+        with pymongo.timeout(30):
+            await mongo.bot_config.create_index(
+                [("kind", 1), ("target", 1), ("at", -1)],
+                name="dashboard_history_target_time_partial_v1",
+                partialFilterExpression={"kind": "dashboard_history"},
+            )
+        with pymongo.timeout(30):
+            await mongo.bot_config.create_index(
+                [("at", 1)],
+                name="dashboard_history_at_365d_v1",
+                expireAfterSeconds=365 * 86400,
+                partialFilterExpression={"kind": "dashboard_history"},
+            )
     except Exception:
         log.exception("Dashboard history indexes unavailable")
     _task = asyncio.create_task(_loop(), name="gauntlet-help")

@@ -8,6 +8,7 @@ import time
 import aiohttp
 import hikari
 import lightbulb
+import pymongo
 from pymongo import ReturnDocument
 
 from hikari.impl import (
@@ -534,9 +535,10 @@ async def _reconcile_band_startup() -> None:
         raise BandKeyResolutionError("BAND key resolver returned no key")
 
     try:
-        await mongo_client.fwa_band_data.create_index(
-            "expire_at", expireAfterSeconds=0, name="ttl_expire_at"
-        )
+        with pymongo.timeout(30):
+            await mongo_client.fwa_band_data.create_index(
+                "expire_at", expireAfterSeconds=0, name="ttl_expire_at"
+            )
     except Exception as e:
         print(
             f"[BAND Monitor] WARNING response_ttl_index_unavailable "

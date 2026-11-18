@@ -8,6 +8,7 @@ is an upsert keyed on the unchanged `_id`, safe to re-run any number of times.
 Read docs/ticket-data-model.md before changing anything here.
 """
 
+import pymongo
 from collections import Counter, defaultdict
 
 import hikari
@@ -114,7 +115,8 @@ class MigrateStore(
 
         await ctx.defer(ephemeral=True)
 
-        source = await mongo.button_store.find(store.TICKET_FILTER).to_list(length=None)
+        with pymongo.timeout(30):
+            source = await mongo.button_store.find(store.TICKET_FILTER).to_list(length=None)
         src_counts = dict(Counter(d.get("status") or "(missing)" for d in source))
         dst_counts = await store.status_counts(mongo.tickets)
         dst_total = sum(dst_counts.values())
@@ -203,14 +205,16 @@ class MigrateStore(
 
         index_notes = []
         try:
-            await mongo.tickets.create_index(
-                [("channel_id", 1)], unique=True, name="channel_unique")
+            with pymongo.timeout(30):
+                await mongo.tickets.create_index(
+                    [("channel_id", 1)], unique=True, name="channel_unique")
             index_notes.append("✅ `channel_unique` (unique on channel_id)")
         except Exception as exc:
             index_notes.append(f"❌ `channel_unique` failed: {str(exc)[:200]}")
         try:
-            await mongo.tickets.create_index(
-                [("status", 1), ("created_at", -1)], name="status_created")
+            with pymongo.timeout(30):
+                await mongo.tickets.create_index(
+                    [("status", 1), ("created_at", -1)], name="status_created")
             index_notes.append("✅ `status_created`")
         except Exception as exc:
             index_notes.append(f"❌ `status_created` failed: {str(exc)[:200]}")

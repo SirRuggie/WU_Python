@@ -24,6 +24,7 @@ from typing import Any, Mapping
 
 import hikari
 import lightbulb
+import pymongo
 from pymongo import ReturnDocument
 from utils.constants import WU_GOLD
 from hikari.impl import (
@@ -590,7 +591,8 @@ async def _recovered_completed_channels(mongo: MongoClient) -> dict[int, set[int
         "kind": "legacy_thread_migration", "state": "complete",
         "source.guild_id": {"$in": guild_ids},
     })
-    rows = await cursor.to_list(length=None)
+    with pymongo.timeout(30):
+        rows = await cursor.to_list(length=None)
     channels = {guild_id: set() for guild_id in guild_ids}
     for row in rows:
         source = row.get("source") or {}

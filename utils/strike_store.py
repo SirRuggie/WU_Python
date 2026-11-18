@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
+import pymongo
 from pymongo.errors import DuplicateKeyError
 
 from utils.strike_retention_policy import RECORD_DAYS
@@ -144,18 +145,28 @@ class StrikeService:
         self.role_resolver = role_resolver
 
     async def ensure_indexes(self):
-        await self.mongo.strike_records.create_index([('guild_id', 1), ('player_tag', 1), ('occurred_at', -1)])
-        await self.mongo.strike_records.create_index([('guild_id', 1), ('member_id', 1), ('occurred_at', -1)])
-        await self.mongo.strike_records.create_index([('guild_id', 1), ('clan_tag', 1), ('occurred_at', -1)])
+        with pymongo.timeout(30):
+            await self.mongo.strike_records.create_index([('guild_id', 1), ('player_tag', 1), ('occurred_at', -1)])
+        with pymongo.timeout(30):
+            await self.mongo.strike_records.create_index([('guild_id', 1), ('member_id', 1), ('occurred_at', -1)])
+        with pymongo.timeout(30):
+            await self.mongo.strike_records.create_index([('guild_id', 1), ('clan_tag', 1), ('occurred_at', -1)])
         # Stable history pages and exact-war dedup probes used by Find war.
-        await self.mongo.strike_records.create_index([('guild_id', 1), ('kind', 1), ('occurred_at', -1), ('_id', 1)])
-        await self.mongo.strike_records.create_index([('guild_id', 1), ('war_key', 1)])
-        await self.mongo.strike_profiles.create_index([('guild_id', 1), ('player_tag', 1)])
-        await self.mongo.strike_profiles.create_index([('guild_id', 1), ('current_clan_tag', 1)])
-        await self.mongo.strike_profiles.create_index([('guild_id', 1), ('departed_last_seen_at', 1)])
-        await self.mongo.strike_imports.create_index('expires_at', expireAfterSeconds=0)
-        await self.mongo.strike_leave_history.create_index(
-            [('guild_id', 1), ('member_id', 1), ('starts_at', -1)])
+        with pymongo.timeout(30):
+            await self.mongo.strike_records.create_index([('guild_id', 1), ('kind', 1), ('occurred_at', -1), ('_id', 1)])
+        with pymongo.timeout(30):
+            await self.mongo.strike_records.create_index([('guild_id', 1), ('war_key', 1)])
+        with pymongo.timeout(30):
+            await self.mongo.strike_profiles.create_index([('guild_id', 1), ('player_tag', 1)])
+        with pymongo.timeout(30):
+            await self.mongo.strike_profiles.create_index([('guild_id', 1), ('current_clan_tag', 1)])
+        with pymongo.timeout(30):
+            await self.mongo.strike_profiles.create_index([('guild_id', 1), ('departed_last_seen_at', 1)])
+        with pymongo.timeout(30):
+            await self.mongo.strike_imports.create_index('expires_at', expireAfterSeconds=0)
+        with pymongo.timeout(30):
+            await self.mongo.strike_leave_history.create_index(
+                [('guild_id', 1), ('member_id', 1), ('starts_at', -1)])
 
     async def settings(self, guild_id: int) -> dict:
         saved = await self.mongo.strike_settings.find_one({'_id': str(int(guild_id))})

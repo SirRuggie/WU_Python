@@ -32,6 +32,7 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
     ThumbnailComponentBuilder as Thumbnail,
 )
+import pymongo
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -723,9 +724,10 @@ async def ensure_creation_indexes(mongo: MongoClient) -> None:
         # This is the final guard against duplicate pairs if multiple bot
         # processes run.
         await ensure_canonical_ticket_store(mongo)
-        await mongo.ticket_creation_state.create_index(
-            "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
-        )
+        with pymongo.timeout(30):
+            await mongo.ticket_creation_state.create_index(
+                "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
+            )
     except Exception as exc:
         # Only an outcome that needs operator repair is worth caching; a
         # transient Atlas outage must not block ticket intake for the retry

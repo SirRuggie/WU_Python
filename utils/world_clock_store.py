@@ -19,6 +19,7 @@ from utils.mongo_routes import collection_from
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pymongo
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from pymongo.write_concern import WriteConcern
@@ -68,11 +69,13 @@ class WorldClockStore:
         self.runs = collection(db, "world_clock_runs")
 
     async def ensure_indexes(self):
-        await self.clocks.create_index(
-            "channel_id", unique=True, name="one_clock_per_channel",
-            partialFilterExpression={"channel_id": {"$type": "string"}},
-        )
-        await self.runs.create_index([("at", -1)], name="recent_runs")
+        with pymongo.timeout(30):
+            await self.clocks.create_index(
+                "channel_id", unique=True, name="one_clock_per_channel",
+                partialFilterExpression={"channel_id": {"$type": "string"}},
+            )
+        with pymongo.timeout(30):
+            await self.runs.create_index([("at", -1)], name="recent_runs")
 
     # Settings ---------------------------------------------------------------
 

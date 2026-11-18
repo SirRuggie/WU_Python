@@ -7,6 +7,7 @@ are permanent: deleting receipts could replay notifications after a restart.
 from utils.mongo_routes import collection_from
 from datetime import datetime, timezone
 
+import pymongo
 from pymongo.errors import DuplicateKeyError
 from pymongo.write_concern import WriteConcern
 from utils.war_reminder_health import timestamp, settings_identity, checked_settings
@@ -36,10 +37,12 @@ class WarReminderStore:
         self.deliveries = collection(db, 'war_reminder_deliveries')
 
     async def ensure_indexes(self):
-        await self.deliveries.create_index(
-            [('clan_tag', 1), ('at', -1)], name='clan_delivery_history'
-        )
-        await self.settings.create_index('enabled', name='enabled_reminders')
+        with pymongo.timeout(30):
+            await self.deliveries.create_index(
+                [('clan_tag', 1), ('at', -1)], name='clan_delivery_history'
+            )
+        with pymongo.timeout(30):
+            await self.settings.create_index('enabled', name='enabled_reminders')
 
     async def family_overview(self):
         clans = await self.db.clans.find({}).sort('name', 1).to_list(length=None)

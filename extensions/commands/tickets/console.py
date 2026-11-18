@@ -22,6 +22,7 @@ from typing import Iterable, Mapping, Sequence
 
 import hikari
 import lightbulb
+import pymongo
 from pymongo import ReturnDocument
 
 from hikari.impl import (
@@ -4267,16 +4268,17 @@ async def deliver_staff_identity_context(
 
 async def ensure_staff_context_indexes(mongo: MongoClient) -> None:
     """Index only durable staff-context work that can require recovery."""
-    await mongo.ticket_automation_state.create_index(
-        [
-            ("kind", 1),
-            ("delivery_state", 1),
-            ("lease_until", 1),
-            ("updated_at", 1),
-        ],
-        name="ticket_staff_context_recovery",
-        partialFilterExpression={"kind": "ticket_staff_context"},
-    )
+    with pymongo.timeout(30):
+        await mongo.ticket_automation_state.create_index(
+            [
+                ("kind", 1),
+                ("delivery_state", 1),
+                ("lease_until", 1),
+                ("updated_at", 1),
+            ],
+            name="ticket_staff_context_recovery",
+            partialFilterExpression={"kind": "ticket_staff_context"},
+        )
 
 
 def _pending_staff_context_filter(now: datetime) -> dict:
@@ -4637,7 +4639,8 @@ async def reconcile_prior_denial_flags(
         "_id": 1, "user_id": 1, "player_tags": 1, "playerTags": 1,
         "player_tag": 1, "tag": 1, "linked_accounts": 1,
     }).sort([("created_at", 1), ("_id", 1)])
-    tickets = await cursor.to_list(length=None)
+    with pymongo.timeout(30):
+        tickets = await cursor.to_list(length=None)
     created = 0
     failed = 0
     for ticket_doc in tickets:

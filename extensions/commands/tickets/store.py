@@ -10,6 +10,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Iterable, Mapping
 
+import pymongo
 from pymongo import ReturnDocument
 from pymongo.errors import (
     DuplicateKeyError,
@@ -1335,8 +1336,9 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
     if conflicts:
         raise IndexConflictError(conflicts)
     collection = mongo.tickets
-    specs = [
-        await collection.create_index(
+    specs = []
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("location.id", 1)],
             unique=True,
             partialFilterExpression={
@@ -1344,8 +1346,9 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
                 "location.id": {"$exists": True},
             },
             name="thread_v2_ticket_location_unique",
-        ),
-        await collection.create_index(
+        ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("location.staff_space_id", 1)],
             unique=True,
             partialFilterExpression={
@@ -1353,15 +1356,16 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
                 "location.staff_space_id": {"$exists": True},
             },
             name="thread_v2_ticket_staff_location_unique",
-        ),
-        # find_by_location resolves which ticket a channel/thread belongs to
-        # on every guild message via two sequential single-field lookups on
-        # location.id/location.staff_space_id, each with a non-null $in,
-        # which entails existence -- so the unique partial indexes above
-        # (whose partial filter is exactly RUNTIME_FILTER plus that field
-        # existing) already serve the read path; a separate non-unique index
-        # on the same keys would be redundant.
-        await collection.create_index(
+        ))
+    # find_by_location resolves which ticket a channel/thread belongs to
+    # on every guild message via two sequential single-field lookups on
+    # location.id/location.staff_space_id, each with a non-null $in,
+    # which entails existence -- so the unique partial indexes above
+    # (whose partial filter is exactly RUNTIME_FILTER plus that field
+    # existing) already serve the read path; a separate non-unique index
+    # on the same keys would be redundant.
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("ticket_type", 1), ("ticket_number", 1)],
             unique=True,
             partialFilterExpression={
@@ -1370,8 +1374,9 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
                 "ticket_number": {"$exists": True},
             },
             name="thread_v2_ticket_number_unique",
-        ),
-        await collection.create_index(
+        ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("user_id", 1), ("ticket_type", 1)],
             unique=True,
             partialFilterExpression={
@@ -1381,8 +1386,9 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
                 "ticket_type": {"$exists": True},
             },
             name="thread_v2_one_open_ticket_per_applicant_type",
-        ),
-        await collection.create_index(
+        ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("source.guild_id", 1), ("source.channel_id", 1)],
             unique=True,
             partialFilterExpression={
@@ -1391,62 +1397,69 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
                 "source.channel_id": {"$exists": True},
             },
             name="thread_v2_ticket_source_unique",
-        ),
-        await collection.create_index(
+        ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("status", 1), ("created_at", -1)],
             partialFilterExpression=RUNTIME_FILTER,
             name="thread_v2_status_created",
-        ),
-        # thread_v2_status_created's own partialFilterExpression is just
-        # RUNTIME_FILTER, not a specific status, so a browse query for one
-        # status still implies it and can use it -- but ESR needs equality on
-        # the index's leading field for the trailing `created_at` sort to be
-        # usable, and a bare "All status" browse (console.py's Browse
-        # tickets panel) has no equality on `status` at all, only the sort.
-        # Without a dedicated index, that query would fall back to an
-        # in-memory sort over the whole thread-ticket collection. This
-        # single-field index serves exactly that case (rule 12).
-        await collection.create_index(
+        ))
+    # thread_v2_status_created's own partialFilterExpression is just
+    # RUNTIME_FILTER, not a specific status, so a browse query for one
+    # status still implies it and can use it -- but ESR needs equality on
+    # the index's leading field for the trailing `created_at` sort to be
+    # usable, and a bare "All status" browse (console.py's Browse
+    # tickets panel) has no equality on `status` at all, only the sort.
+    # Without a dedicated index, that query would fall back to an
+    # in-memory sort over the whole thread-ticket collection. This
+    # single-field index serves exactly that case (rule 12).
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             # Key pattern must match browse()'s sort exactly (created_at, _id)
             # or Mongo cannot serve the sort from the index.
             [("created_at", -1), ("_id", -1)],
             partialFilterExpression=RUNTIME_FILTER,
             name="thread_v2_created",
-        ),
-        await collection.create_index(
+        ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("ticket_type", 1), ("status", 1), ("created_at", -1)],
             partialFilterExpression=RUNTIME_FILTER,
             name="thread_v2_type_status_created",
-        ),
-        await collection.create_index(
+        ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("user_id", 1), ("created_at", -1)],
             partialFilterExpression=RUNTIME_FILTER,
             name="thread_v2_user_created",
-        ),
-        await collection.create_index(
+        ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("player_tags", 1), ("created_at", -1)],
             partialFilterExpression=RUNTIME_FILTER,
             name="thread_v2_player_tags_created",
-        ),
-        await collection.create_index(
+        ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("username_search", 1), ("created_at", -1)],
             partialFilterExpression=RUNTIME_FILTER,
             name="thread_v2_username_created",
-        ),
-    ]
-    for field in ACCOUNT_RECOVERY_BOOLEAN_FIELDS:
-        specs.append(await collection.create_index(
-            [(field, 1)],
-            partialFilterExpression={**RUNTIME_FILTER, field: True},
-            name="thread_v2_account_recovery_" + field.rsplit(".", 1)[-1],
         ))
+    for field in ACCOUNT_RECOVERY_BOOLEAN_FIELDS:
+        with pymongo.timeout(30):
+            specs.append(await collection.create_index(
+                [(field, 1)],
+                partialFilterExpression={**RUNTIME_FILTER, field: True},
+                name="thread_v2_account_recovery_" + field.rsplit(".", 1)[-1],
+            ))
     # account_sync.recover_pending_account_syncs sorts every sweep by this
     # field, oldest first, to bound and order its batch at the database --
     # without a supporting index that sort has nothing to use and every
     # stuck row with no `last_attempt_at` sorts first unindexed.
-    specs.append(await collection.create_index(
-        [("linked_accounts.last_attempt_at", 1)],
-        partialFilterExpression=RUNTIME_FILTER,
-        name="thread_v2_account_recovery_last_attempt",
-    ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
+            [("linked_accounts.last_attempt_at", 1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_account_recovery_last_attempt",
+        ))
     return [str(name) for name in specs]

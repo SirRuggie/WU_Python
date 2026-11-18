@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from aiohttp.web_routedef import delete
 from hikari import GatewayBot
+import pymongo
 from pymongo import ReturnDocument
 from hikari.api import LinkButtonBuilder
 from hikari.impl import (
@@ -935,9 +936,10 @@ async def migrate_legacy_family_codes(
 ) -> dict[str, int]:
     """Move only recent open family-code rows out of durable onboarding data."""
     now = now or utcnow()
-    documents = await mongo.recruit_onboarding.find({
-        "type": FAMILY_CODE_TYPE,
-    }).to_list(length=None)
+    with pymongo.timeout(30):
+        documents = await mongo.recruit_onboarding.find({
+            "type": FAMILY_CODE_TYPE,
+        }).to_list(length=None)
     groups: dict[tuple[int, int] | tuple[str, str], list[dict]] = {}
 
     for document in documents:
@@ -991,10 +993,11 @@ async def migrate_legacy_family_codes(
                 _log.exception("failed to migrate legacy family-code group %r", key)
                 continue
 
-        result = await mongo.recruit_onboarding.delete_many({
-            "_id": {"$in": [row["_id"] for row in rows]},
-            "type": FAMILY_CODE_TYPE,
-        })
+        with pymongo.timeout(30):
+            result = await mongo.recruit_onboarding.delete_many({
+                "_id": {"$in": [row["_id"] for row in rows]},
+                "type": FAMILY_CODE_TYPE,
+            })
         counts["removed"] += result.deleted_count
 
     return counts
@@ -1009,11 +1012,12 @@ async def prepare_family_code_storage(
 ) -> None:
     """Install expiry before migrating exact legacy family-code documents."""
     try:
-        await mongo.recruit_challenges.create_index(
-            "expires_at",
-            expireAfterSeconds=0,
-            name=FAMILY_CODE_TTL_INDEX,
-        )
+        with pymongo.timeout(30):
+            await mongo.recruit_challenges.create_index(
+                "expires_at",
+                expireAfterSeconds=0,
+                name=FAMILY_CODE_TTL_INDEX,
+            )
     except Exception:
         _log.exception("family-code TTL index unavailable; legacy cleanup skipped")
         return

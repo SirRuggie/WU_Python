@@ -23,6 +23,7 @@ from typing import Any, Iterable, Mapping, Sequence
 import aiohttp
 import hikari
 import lightbulb
+import pymongo
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -805,24 +806,28 @@ async def ensure_migration_indexes(mongo: MongoClient) -> None:
     # before any destination Discord resources are created.
     await thread_service.ensure_canonical_ticket_store(mongo)
     collection = mongo.ticket_migrations
-    await collection.create_index(
-        [("source.guild_id", 1), ("source.channel_id", 1)],
-        unique=True,
-        name="legacy_source_unique",
-    )
-    await collection.create_index(
-        [("destination.public_thread_id", 1)],
-        unique=True,
-        partialFilterExpression={"destination.public_thread_id": {"$exists": True}},
-        name="legacy_public_thread_unique",
-    )
-    await collection.create_index(
-        [("destination.staff_thread_id", 1)],
-        unique=True,
-        partialFilterExpression={"destination.staff_thread_id": {"$exists": True}},
-        name="legacy_staff_thread_unique",
-    )
-    await collection.create_index([("state", 1), ("updated_at", -1)], name="legacy_state")
+    with pymongo.timeout(30):
+        await collection.create_index(
+            [("source.guild_id", 1), ("source.channel_id", 1)],
+            unique=True,
+            name="legacy_source_unique",
+        )
+    with pymongo.timeout(30):
+        await collection.create_index(
+            [("destination.public_thread_id", 1)],
+            unique=True,
+            partialFilterExpression={"destination.public_thread_id": {"$exists": True}},
+            name="legacy_public_thread_unique",
+        )
+    with pymongo.timeout(30):
+        await collection.create_index(
+            [("destination.staff_thread_id", 1)],
+            unique=True,
+            partialFilterExpression={"destination.staff_thread_id": {"$exists": True}},
+            name="legacy_staff_thread_unique",
+        )
+    with pymongo.timeout(30):
+        await collection.create_index([("state", 1), ("updated_at", -1)], name="legacy_state")
     _migration_index_ready = True
 
 

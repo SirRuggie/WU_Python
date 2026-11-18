@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping, Sequence
 
+import pymongo
 from pymongo import ASCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -273,25 +274,29 @@ def _parse_rollout(document: Mapping[str, Any] | None) -> RolloutState:
 async def ensure_indexes(mongo: Any) -> None:
     """Create non-TTL indexes required by the shared durability layer."""
 
-    await mongo.ticket_open_slots.create_index(
-        [("ticket_id", ASCENDING)],
-        name="ticket_open_slot_ticket_unique",
-        unique=True,
-        partialFilterExpression={"ticket_id": {"$exists": True}},
-    )
-    await mongo.ticket_open_slots.create_index(
-        [("workflow_id", ASCENDING)],
-        name="ticket_open_slot_workflow_unique",
-        unique=True,
-    )
-    await mongo.ticket_open_slots.create_index(
-        [("state", ASCENDING), ("updated_at", ASCENDING)],
-        name="ticket_open_slot_reconcile",
-    )
-    await mongo.ticket_rollout.create_index(
-        [("phase", ASCENDING), ("revision", ASCENDING)],
-        name="ticket_rollout_phase_revision",
-    )
+    with pymongo.timeout(30):
+        await mongo.ticket_open_slots.create_index(
+            [("ticket_id", ASCENDING)],
+            name="ticket_open_slot_ticket_unique",
+            unique=True,
+            partialFilterExpression={"ticket_id": {"$exists": True}},
+        )
+    with pymongo.timeout(30):
+        await mongo.ticket_open_slots.create_index(
+            [("workflow_id", ASCENDING)],
+            name="ticket_open_slot_workflow_unique",
+            unique=True,
+        )
+    with pymongo.timeout(30):
+        await mongo.ticket_open_slots.create_index(
+            [("state", ASCENDING), ("updated_at", ASCENDING)],
+            name="ticket_open_slot_reconcile",
+        )
+    with pymongo.timeout(30):
+        await mongo.ticket_rollout.create_index(
+            [("phase", ASCENDING), ("revision", ASCENDING)],
+            name="ticket_rollout_phase_revision",
+        )
 
 
 async def get_rollout(mongo: Any) -> RolloutState:

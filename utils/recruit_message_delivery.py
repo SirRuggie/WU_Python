@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import uuid
 
 import hikari
+import pymongo
 from pymongo import ReturnDocument
 
 _log = logging.getLogger(__name__)
@@ -51,16 +52,19 @@ def identity(kind, channel_id, user_id, session_id):
 
 async def prepare(mongo):
     receipts = collection(mongo)
-    await receipts.create_index(
-        "expires_at", expireAfterSeconds=0, name="recruit_delivery_retention"
-    )
-    await receipts.create_index(
-        [("status", 1), ("updated_at", -1)], name="recruit_delivery_status"
-    )
-    await receipts.create_index(
-        [("user_id", 1), ("channel_id", 1), ("created_at", -1)],
-        name="recruit_delivery_lookup",
-    )
+    with pymongo.timeout(30):
+        await receipts.create_index(
+            "expires_at", expireAfterSeconds=0, name="recruit_delivery_retention"
+        )
+    with pymongo.timeout(30):
+        await receipts.create_index(
+            [("status", 1), ("updated_at", -1)], name="recruit_delivery_status"
+        )
+    with pymongo.timeout(30):
+        await receipts.create_index(
+            [("user_id", 1), ("channel_id", 1), ("created_at", -1)],
+            name="recruit_delivery_lookup",
+        )
 
 
 async def record_sent(receipts, row, message_id, *, recovered=False):

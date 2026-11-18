@@ -22,6 +22,7 @@ from hikari.impl import (
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
 )
+import pymongo
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -82,11 +83,12 @@ async def ensure_creation_index(mongo: MongoClient) -> None:
     global _creation_index_ready
     if _creation_index_ready:
         return
-    await mongo.ticket_creation_state.create_index(
-        "expires_at",
-        expireAfterSeconds=0,
-        name="ttl_expires_at",
-    )
+    with pymongo.timeout(30):
+        await mongo.ticket_creation_state.create_index(
+            "expires_at",
+            expireAfterSeconds=0,
+            name="ttl_expires_at",
+        )
     _creation_index_ready = True
 
 
