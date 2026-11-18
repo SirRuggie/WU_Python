@@ -1,4 +1,5 @@
 """Shared Discord/web Todo FWA records and current-war matching."""
+import pymongo
 from datetime import datetime
 from utils import todo_data
 from utils.fwa_blacklist import blacklisted_tags
@@ -40,9 +41,10 @@ async def load_fwa_records(mongo, war_rows: list, *, strict=False) -> dict:
     if not sanitized_to_original:
         return {}
     try:
-        docs = await mongo.fwa_points.find(
-            {"_id": {"$in": list(sanitized_to_original)}}
-        ).to_list(length=None)
+        with pymongo.timeout(30):
+            docs = await mongo.fwa_points.find(
+                {"_id": {"$in": list(sanitized_to_original)}}
+            ).to_list(length=None)
     except Exception as exc:  # noqa: BLE001 - a missing suffix must not break the panel
         if strict:
             raise

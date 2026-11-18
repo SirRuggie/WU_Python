@@ -317,7 +317,13 @@ async def migrate_legacy_state(mongo: MongoClient, *, now: datetime | None = Non
     now = now or utcnow()
     counts = {"migrated": 0, "removed": 0, "protected_or_unknown": 0, "failed": 0}
 
-    async for document in mongo.button_store.find({}):
+    cursor = aiter(mongo.button_store.find({}))
+    while True:
+        try:
+            with pymongo.timeout(30):
+                document = await anext(cursor)
+        except StopAsyncIteration:
+            break
         kind = legacy_state_kind(document)
         if kind is None:
             counts["protected_or_unknown"] += 1

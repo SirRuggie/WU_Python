@@ -79,7 +79,8 @@ class WarReminderStore:
         return await self.settings.find_one({'_id': tag})
 
     async def enabled_settings(self):
-        return await self.settings.find({'enabled': True}).to_list(length=None)
+        with pymongo.timeout(30):
+            return await self.settings.find({'enabled': True}).to_list(length=None)
 
     async def save_settings(self, tag, before, values, actor, *, history_context=None, history_names=None):
         event_id = None

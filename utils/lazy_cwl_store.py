@@ -522,7 +522,8 @@ async def expire_due(mongo: MongoClient, now: datetime | None = None) -> list[di
     scheduler jobs."""
     now = _utc(now)
     cursor = _coll(mongo).find({"status": "active", "expires_at": {"$lte": now}})
-    due = await cursor.to_list(length=None)
+    with pymongo.timeout(30):
+        due = await cursor.to_list(length=None)
 
     flipped = []
     for document in due:
@@ -543,7 +544,8 @@ async def list_reminder_enabled(mongo: MongoClient, *, section: str = "FWA") -> 
     if section == "MAIN":
         return []
     cursor = _coll(mongo).find({"status": "active", "section": section, "reminders.enabled": True})
-    return await cursor.to_list(length=None)
+    with pymongo.timeout(30):
+        return await cursor.to_list(length=None)
 
 
 async def repair_imported_expiry(mongo: MongoClient, now: datetime | None = None) -> int:
@@ -555,7 +557,8 @@ async def repair_imported_expiry(mongo: MongoClient, now: datetime | None = None
     """
     now = _utc(now)
     repaired = 0
-    documents = await _coll(mongo).find({"legacy_snapshot_id": {"$exists": True}}).to_list(length=None)
+    with pymongo.timeout(30):
+        documents = await _coll(mongo).find({"legacy_snapshot_id": {"$exists": True}}).to_list(length=None)
     for document in documents:
         if not document.get("legacy_snapshot_id") or not isinstance(document.get("saved_at"), datetime):
             continue
@@ -591,7 +594,8 @@ async def migrate_legacy_active_snapshots(mongo: MongoClient, now: datetime | No
     if legacy is None:
         return 0
 
-    snapshots = await legacy.find({"active": True}).to_list(length=None)
+    with pymongo.timeout(30):
+        snapshots = await legacy.find({"active": True}).to_list(length=None)
     # The retired implementation repaired duplicate active snapshots by
     # retaining the newest one.  Do the same before importing: otherwise the
     # partial unique destination index makes the winner depend on cursor

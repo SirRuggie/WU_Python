@@ -320,9 +320,10 @@ class StrikeService:
         racing this pass wins. The audit reason remains on the profile forever.
         """
         now = utc(now or datetime.now(timezone.utc))
-        profiles = await self.mongo.strike_profiles.find(
-            {'guild_id': int(guild_id), 'departed_last_seen_at': {'$lt': now - REPLACEMENT_GRACE}}
-        ).to_list(length=None)
+        with pymongo.timeout(30):
+            profiles = await self.mongo.strike_profiles.find(
+                {'guild_id': int(guild_id), 'departed_last_seen_at': {'$lt': now - REPLACEMENT_GRACE}}
+            ).to_list(length=None)
         for profile in profiles:
             clan = profile.get('departed_clan_tag')
             if not clan or profile.get('current_clan_tag') == clan:
@@ -344,9 +345,10 @@ class StrikeService:
         clan = tag(clan_tag)
         now = utc(observed_at or datetime.now(timezone.utc))
         current_tags = [tag(member['tag']) for member in members]
-        missing = await self.mongo.strike_profiles.find(
-            {'guild_id': int(guild_id), 'current_clan_tag': clan,
-             'player_tag': {'$nin': current_tags}}).to_list(length=None)
+        with pymongo.timeout(30):
+            missing = await self.mongo.strike_profiles.find(
+                {'guild_id': int(guild_id), 'current_clan_tag': clan,
+                 'player_tag': {'$nin': current_tags}}).to_list(length=None)
         for profile in missing:
             if utc(profile.get('roster_observed_at') or profile.get('roster_seen_at') or now) > now:
                 continue
@@ -1122,8 +1124,9 @@ class StrikeService:
             if member_id not in leave_cache:
                 current = await self.mongo.strike_leaves.find_one({'_id': f'{int(guild_id)}:{int(member_id)}'})
                 await self._finish_leave_history(f'{int(guild_id)}:{int(member_id)}', current)
-                history = await self.mongo.strike_leave_history.find({
-                    'guild_id': int(guild_id), 'member_id': int(member_id)}).to_list(length=None)
+                with pymongo.timeout(30):
+                    history = await self.mongo.strike_leave_history.find({
+                        'guild_id': int(guild_id), 'member_id': int(member_id)}).to_list(length=None)
                 leave_cache[member_id] = ([current] if current else []) + history
             for leave in leave_cache[member_id]:
                 selected = leave.get('account_tags')
@@ -1417,10 +1420,11 @@ class StrikeService:
         guild_id, player = row['guild_id'], row['player_tag']
         profile_id = f'{guild_id}:{player}'
         order = utc(row['occurred_at']).isoformat() + ':' + row['war_key']
-        snapshots = await self.mongo.strike_war_snapshots.find(
-            {'guild_id': guild_id, 'seen_active': True,
-             '$or': [{'status': 'observing'}, {'manual_review_required': True}],
-             'end_time': {'$lte': row['occurred_at']}}).to_list(length=None)
+        with pymongo.timeout(30):
+            snapshots = await self.mongo.strike_war_snapshots.find(
+                {'guild_id': guild_id, 'seen_active': True,
+                 '$or': [{'status': 'observing'}, {'manual_review_required': True}],
+                 'end_time': {'$lte': row['occurred_at']}}).to_list(length=None)
         for snapshot in snapshots:
             other = snapshot['war']
             other_order = utc(snapshot['end_time']).isoformat() + ':' + snapshot['war_key']
@@ -1454,9 +1458,10 @@ class StrikeService:
             now = datetime.now(timezone.utc)
             targets = []
             if reason:
-                targets = await self.mongo.strike_records.find(
-                    {'guild_id': guild_id, 'player_tag': player, 'kind': 'strike',
-                     'revoked_at': {'$exists': False}, 'expires_at': {'$gt': now}}).to_list(length=None)
+                with pymongo.timeout(30):
+                    targets = await self.mongo.strike_records.find(
+                        {'guild_id': guild_id, 'player_tag': player, 'kind': 'strike',
+                         'revoked_at': {'$exists': False}, 'expires_at': {'$gt': now}}).to_list(length=None)
                 targets.sort(key=lambda item: (utc(item['occurred_at']), item['_id']))
                 if count:
                     targets = targets[:1]

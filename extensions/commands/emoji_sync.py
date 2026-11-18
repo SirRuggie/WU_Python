@@ -4,6 +4,7 @@ Existing application emojis and registry rows remain available to displays.
 This extension performs no emoji uploads, replacements, or deletions.
 """
 from __future__ import annotations
+import pymongo
 
 import hikari
 import lightbulb
@@ -15,7 +16,8 @@ loader = lightbulb.Loader()
 
 
 async def refresh_cache(mongo: MongoClient) -> int:
-    rows = await mongo.emoji_registry.find({"kind": "troop"}).to_list(length=None)
+    with pymongo.timeout(30):
+        rows = await mongo.emoji_registry.find({"kind": "troop"}, {"_id": 0, "slug": 1, "emoji_id": 1, "name": 1}).to_list(length=None)
     return troop_emoji.prime(rows)
 
 

@@ -185,7 +185,8 @@ async def list_open_polls(
         .sort("ends_at", 1)
     )
     if limit is None:
-        return await cursor.to_list(length=None)
+        with pymongo.timeout(30):
+            return await cursor.to_list(length=None)
     length = _limit(limit, DUE_LIST_LIMIT)
     return await cursor.limit(length).to_list(length=length)
 
@@ -220,7 +221,8 @@ async def list_pending_message_sync(
         .sort("updated_at", 1)
     )
     if limit is None:
-        return await cursor.to_list(length=None)
+        with pymongo.timeout(30):
+            return await cursor.to_list(length=None)
     length = _limit(limit, DUE_LIST_LIMIT)
     return await cursor.limit(length).to_list(length=length)
 

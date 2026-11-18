@@ -1,3 +1,4 @@
+import pymongo
 # FWA points monitor.
 #
 # Was shipped DISABLED (DEFAULT_ENABLED = False) while the bot ran on Hetzner:
@@ -124,7 +125,8 @@ async def effective_watch_list(config=None, mongo=None, *, strict=False):
 
     entries: dict[str, dict] = {}
     try:
-        fwa_clans = await client.clans.find({"type": "FWA"}).to_list(length=None)
+        with pymongo.timeout(30):
+            fwa_clans = await client.clans.find({"type": "FWA"}, {"_id": 0, "tag": 1, "name": 1}).to_list(length=None)
     except Exception as e:
         if strict:
             raise
@@ -490,12 +492,13 @@ async def _board_snapshot():
     watch = await effective_watch_list(config)
     tags = [sanitize_tag(clan.get("tag", "")) for clan in watch]
     tags = [tag for tag in tags if tag]
-    records = {
-        str(row.get("_id")): row
-        for row in await mongo_client.fwa_points.find(
-            {"_id": {"$in": tags}},
-        ).to_list(length=None)
-    } if tags else {}
+    with pymongo.timeout(30):
+        records = {
+            str(row.get("_id")): row
+            for row in await mongo_client.fwa_points.find(
+                {"_id": {"$in": tags}},
+            ).to_list(length=None)
+        } if tags else {}
     return config, watch, records
 
 

@@ -1,5 +1,6 @@
 """Private Components V2 strike views and automatic ended-war monitor."""
 from __future__ import annotations
+import pymongo
 
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -731,8 +732,9 @@ def cached_weights(tags):
 
 async def _warm_weight_cache(mongo):
     try:
-        profiles = await mongo.strike_profiles.find(
-            {'guild_id': WARRIORS_UNITED_GUILD_ID}, {'player_tag': 1}).to_list(length=None)
+        with pymongo.timeout(30):
+            profiles = await mongo.strike_profiles.find(
+                {'guild_id': WARRIORS_UNITED_GUILD_ID}, {'player_tag': 1}).to_list(length=None)
         cached_weights([row['player_tag'] for row in profiles])
     except asyncio.CancelledError:
         raise
@@ -844,7 +846,8 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
     tracking = StrikeTracking(mongo)
     await store.ensure_indexes()
     await tracking.ensure_indexes()
-    clans = await mongo.clans.find({'tag': {'$type': 'string'}}, {'tag': 1}).to_list(length=None)
+    with pymongo.timeout(30):
+        clans = await mongo.clans.find({'tag': {'$type': 'string'}}, {'tag': 1}).to_list(length=None)
     tracked_tags = {tag(clan['tag']) for clan in clans}
     for removed in await tracking.abandon_untracked(WARRIORS_UNITED_GUILD_ID, tracked_tags):
         print(f'[strikes] stopped tracking removed clan {removed}')

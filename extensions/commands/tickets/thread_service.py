@@ -2600,7 +2600,8 @@ async def reconcile_thread_names_for_flag(
                         {"player_tag": {"$in": tags}}, {"tag": {"$in": tags}}))
     if not clauses:
         return
-    tickets = await mongo.tickets.find({**store.RUNTIME_FILTER, "$or": clauses}).to_list(length=None)
+    with pymongo.timeout(30):
+        tickets = await mongo.tickets.find({**store.RUNTIME_FILTER, "$or": clauses}).to_list(length=None)
     for ticket in tickets:
         prior = ticket.get("thread_name_reconcile") or {}
         # Do not replace a checkpoint that may be holding the original

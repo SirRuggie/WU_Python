@@ -117,7 +117,11 @@ async def sweep(bot, mongo):
     query = {**store.RUNTIME_FILTER, 'guild_id': gid, 'status': {'$in': list(STATUSES)},
              '$or': [{'location.id': {'$in': ids}}, {'location.staff_space_id': {'$in': ids}}]}
     archived = errors = 0
-    async for ticket in mongo.tickets.find(query):
+    async for ticket in mongo.tickets.find(query, {
+        "_id": 1, "status": 1, "mode": 1, "rev": 1, "location": 1,
+        "created_at": 1, "handled_at": 1, "approved_at": 1,
+        "denied_at": 1, "closed_at": 1,
+    }):
         try:
             archived += bool(await archive_pair(bot, mongo, ticket, config))
         except Exception:

@@ -1,4 +1,5 @@
 """Daily bounded clan history; unusable observations stop only local chains."""
+import pymongo
 
 import asyncio
 import logging
@@ -54,17 +55,18 @@ def barrier_time(row, now):
 
 
 async def _backfill(mongo, fetch, now):
-    from utils.player_activity_polling import active_clan
+    from utils.player_activity_polling import active_clan, CLAN_SCAN_FIELDS
 
     store = PlayerActivityStore(mongo)
     players = await store.all_players(view='history')
     if not players:
         return {"players": 0, "wars": 0, "retryable": 0}
-    clans = [
-        r
-        for r in await mongo.clans.find({}).to_list(length=None)
-        if r.get("tag") and active_clan(r)
-    ]
+    with pymongo.timeout(30):
+        clans = [
+            r
+            for r in await mongo.clans.find({}, CLAN_SCAN_FIELDS).to_list(length=None)
+            if r.get("tag") and active_clan(r)
+        ]
     if len(clans) > 100:
         raise RuntimeError("Activity history clan budget exceeded")
     tags = {tag(r["tag"]) for r in clans}

@@ -60,11 +60,22 @@ public.
 
 ### P1 — reliability and silent failure
 
-No active items.
+- **`REL-006` — Deferred: treat war-reminder provider maintenance as expected.**
+  First-day M observation, recorded by Shaka1118 on 2026-11-18: `coc.Maintenance`
+  during `extensions/tasks/war_reminders.py` `scan_clan` is an expected provider state.
+  Future handling should emit one WARNING per maintenance window without a
+  traceback, while preserving visibility of real failures. Retain M unchanged;
+  this note does not authorize implementation.
 
 ### P2 — deferred validation
 
 - **`TODO-001` — Completed 2026-09-26.** The operator confirmed live Raid Weekend behavior works.
+- **`UI-003` — Deferred: owner `/server` navigation is unreachable.**
+  Shaka1129 source/local-fixture finding (2026-11-18): `allowedView` allows the
+  route, but `visibleNavigationSections` has no Manage item, so `App.tsx`
+  redirects Home (`App.tsx:200–204,456–460`; `SidebarNavigation.tsx:310–328`).
+  This is not a production UI verification. Shaka will check production before
+  a separate prompt; no server guard, navigation or policy fix is authorized here.
 
 ### P2 — future ticket features
 
@@ -76,6 +87,14 @@ No active items.
   and isolation boundaries.
 
 ### P2 — MongoDB organization and test isolation
+
+- **`DB-003` — Deferred: move dashboard sessions and push claims to local SQLite.**
+  Owner decision relayed by Shaka1127 on 2026-11-18 at 16:19 UTC: defer A2/D9
+  (`sessions` and `push_deliveries`). Logout atomicity, migration-aware rollback
+  to prevent duplicate notifications, and missing/corrupt-file startup behavior
+  need decisions; A1 already reduced the benefit. See private plan
+  `.claude/scratch/backend-audit-239/plans/A2-local-tables-plan272.md`.
+  This note does not authorize implementation. Work order: D → J → E → L → 242.
 
 - **`DB-001` — Set up isolated real-Mongo regression testing. Completed
   2026-09-15.** Configured the local ignored `TICKET_TEST_MONGODB_URI` for

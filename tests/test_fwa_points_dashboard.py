@@ -48,17 +48,22 @@ class ClanCollection:
     def __init__(self, clans):
         self.clans = clans
 
-    def find(self, query):
+    def find(self, query, projection=None):
         assert query == {"type": "FWA"}
+        assert projection == {"_id": 0, "tag": 1, "name": 1}
+        self.projected = [{key: value for key, value in clan.items() if projection.get(key)}
+                          for clan in self.clans]
         return self
 
     async def to_list(self, length=None):
-        return self.clans
+        assert length is None
+        return self.projected
 
 
 def fixture(monkeypatch, *, automatic=1):
     mongo = SimpleNamespace(fwa_points=Collection(), clans=ClanCollection([
-        {"type": "FWA", "tag": f"AUTO{i + 1}", "name": f"Auto {i + 1}"}
+        {"type": "FWA", "tag": f"AUTO{i + 1}", "name": f"Auto {i + 1}",
+         "unused_private_field": "not for watch rows"}
         for i in range(automatic)
     ]))
     states = {}
@@ -97,6 +102,7 @@ def test_monitor_loader_keeps_lifecycle_without_public_slash_group():
 def test_status_effective_watch_rows_and_private_navigation(monkeypatch):
     env = fixture(monkeypatch)
     response = run(dashboard._panel(env.mongo, env.state, details=True))
+    assert env.mongo.clans.projected == [{"tag": "AUTO1", "name": "Auto 1"}]
     content = built(response)
     assert "Monitoring: On" in content and "Not running" in content
     assert "Automatic FWA" in content and "Extra" in content

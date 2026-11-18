@@ -132,7 +132,13 @@ async def prepare_storage(mongo):
             name="family_code_expiry",
         )
     rows = []
-    async for row in mongo.button_store.find({"challenge_type": KIND}):
+    cursor = aiter(mongo.button_store.find({'challenge_type': KIND}))
+    while True:
+        try:
+            with pymongo.timeout(30):
+                row = await anext(cursor)
+        except StopAsyncIteration:
+            break
         try:
             created = row["created_at"]
             if not isinstance(created, datetime) or row.get("status") != "pending":

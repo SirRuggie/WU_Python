@@ -4,6 +4,7 @@ Natural keys are preserved. Active progress and completed history have no TTL:
 expiring these could silently lose delivery or role-cleanup obligations. Audit
 arrays are bounded at their write site; ephemeral controls use component_state.
 """
+import pymongo
 
 import logging
 from copy import deepcopy
@@ -75,7 +76,13 @@ async def migrate_early_records(mongo):
         ),
     ]
     for source, target, query in routes:
-        async for original in source.find(query):
+        cursor = aiter(source.find(query))
+        while True:
+            try:
+                with pymongo.timeout(30):
+                    original = await anext(cursor)
+            except StopAsyncIteration:
+                break
             document = normalize(original)
             parts = str(document["_id"]).split(":")
             document.setdefault("guild_id", int(parts[1]))

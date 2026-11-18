@@ -133,7 +133,8 @@ async def active_panels(
             "active": True,
             "refresh_until": {"$gt": now},
         })
-        return True, await cursor.to_list(length=None)
+        with pymongo.timeout(30):
+            return True, await cursor.to_list(length=None)
     except Exception as exc:  # noqa: BLE001
         print(f"[todo-sessions] active-panel read failed for "
               f"user={user_id} channel={channel_id}: {type(exc).__name__}: {exc}")

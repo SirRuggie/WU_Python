@@ -4561,7 +4561,8 @@ async def _queue_open_staff_context_refreshes(
         "status": "open",
         "$or": clauses,
     })
-    tickets = await cursor.sort("_id", 1).to_list(length=None)
+    with pymongo.timeout(30):
+        tickets = await cursor.sort("_id", 1).to_list(length=None)
     for ticket_doc in tickets:
         ticket_id = _ticket_id(ticket_doc)
         staff_id = _location_id(ticket_doc, staff=True)

@@ -191,7 +191,13 @@ async def find(
         cursor = cursor.sort(sort)
     if limit:
         cursor = cursor.limit(limit)
-    raw = await cursor.to_list(length=limit)
+    if limit is None:
+        # Resolution recovery needs every matching durable receipt. Keep the
+        # cursor's maintenance budget local; never cap rows in Python instead.
+        with pymongo.timeout(30):
+            raw = await cursor.to_list(length=None)
+    else:
+        raw = await cursor.to_list(length=limit)
     if include_legacy:
         return raw
     return _normalized_many(raw)
@@ -1252,7 +1258,17 @@ def index_conflicts_for_documents(docs: Iterable[Mapping]) -> dict[str, list]:
 
 
 async def index_conflicts(collection) -> dict[str, list]:
-    docs = await collection.find(RUNTIME_FILTER).to_list(length=None)
+    # Preserve every input validated by normalize_ticket_document, including
+    # malformed audit/answer/revision/source checks; omit unrelated payloads.
+    fields = {name: 1 for name in (
+        "_id", "type", "runtime", "schema_version", "status", "ticket_type",
+        "ticket_number", "venue", "location", "guild_id", "channel_id",
+        "thread_id", "category_id", "user_id", "username", "display_name",
+        "player_tags", "player_tag", "tag", "mentioned_tags", "rev", "audit",
+        "answers", "answer_count", "updated_at", "created_at", "source",
+    )}
+    with pymongo.timeout(30):
+        docs = await collection.find(RUNTIME_FILTER, fields).to_list(length=None)
     return index_conflicts_for_documents(docs)
 
 

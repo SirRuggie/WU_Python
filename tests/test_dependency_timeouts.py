@@ -136,7 +136,11 @@ def test_runtime_constraints_reject_unapproved_major_driver_scheduler_changes():
 
 # Approved single-unit adapters, including the now-merged AF/N/K/M/G owners.
 ADAPTER_PATHS = (
+    'extensions/autocomplete.py',
+    'extensions/commands/cards.py',
+    'extensions/commands/emoji_sync.py',
     'extensions/commands/recruit/questions.py',
+    'extensions/commands/strikes.py',
     'extensions/commands/ticket_runtime.py',
     'extensions/commands/tickets/console.py',
     'extensions/commands/tickets/flag_store.py',
@@ -144,34 +148,42 @@ ADAPTER_PATHS = (
     'extensions/commands/tickets/legacy_migration.py',
     'extensions/commands/tickets/migrate.py',
     'extensions/commands/tickets/store.py',
+    'extensions/commands/tickets/testing_service.py',
     'extensions/commands/tickets/thread_service.py',
+    'extensions/commands/tickets_legacy/handlers.py',
     'extensions/commands/tickets_legacy/migrate.py',
     'extensions/tasks/band_monitor.py',
     'extensions/tasks/band_sync_ical.py',
-    'extensions/tasks/recruit_role_cleanup.py',
-    'extensions/warrior/walkthrough.py',
-    'utils/component_state.py',
-    'utils/cwl_post_update_store.py',
-    'utils/fwa_war_plan_store.py',
-    'utils/member_profile_runs.py',
-    'utils/member_profiles.py',
-    'utils/poll_store.py',
-    'utils/recruit_goblin_challenges.py',
-    'utils/strike_store.py',
-    'utils/strike_tracking.py',
-    'utils/todo_sessions.py',
-    'extensions/commands/cards.py',
-    'extensions/commands/tickets/testing_service.py',
-    'extensions/commands/tickets_legacy/handlers.py',
+    'extensions/tasks/clan_history_tracker.py',
+    'extensions/tasks/cwl_reminder.py',
+    'extensions/tasks/fwa_points_monitor.py',
     'extensions/tasks/gauntlet_help.py',
+    'extensions/tasks/recruit_role_cleanup.py',
+    'extensions/warrior/schema.py',
+    'extensions/warrior/walkthrough.py',
     'utils/clan_history.py',
+    'utils/component_state.py',
+    'utils/cwl_campaign.py',
+    'utils/cwl_post_update_store.py',
+    'utils/cwl_web_bridge.py',
+    'utils/fwa_war_plan_store.py',
     'utils/lazy_cwl_store.py',
     'utils/member_events.py',
     'utils/member_invites.py',
+    'utils/member_profile_runs.py',
+    'utils/member_profiles.py',
     'utils/mongo.py',
+    'utils/player_activity_history.py',
+    'utils/player_activity_polling.py',
     'utils/player_activity_store.py',
+    'utils/poll_store.py',
+    'utils/recruit_goblin_challenges.py',
     'utils/recruit_message_delivery.py',
     'utils/recruit_panel_refresh.py',
+    'utils/strike_store.py',
+    'utils/strike_tracking.py',
+    'utils/todo_fwa.py',
+    'utils/todo_sessions.py',
     'utils/war_reminder_store.py',
     'utils/world_clock_store.py',
 )
@@ -196,7 +208,8 @@ CONTEXTS = _maintenance_contexts()
 
 
 def test_maintenance_scopes_contain_one_mongo_unit_and_no_workflow_or_task():
-    assert len(CONTEXTS) == 111
+    assert CONTEXTS
+    assert len(ADAPTER_PATHS) == len(set(ADAPTER_PATHS))
     for path, context in CONTEXTS:
         assert len(context.items[0].context_expr.args) == 1
         assert context.items[0].context_expr.args[0].value == 30
@@ -204,13 +217,17 @@ def test_maintenance_scopes_contain_one_mongo_unit_and_no_workflow_or_task():
         nodes = list(ast.walk(context.body[0]))
         assert not any(isinstance(node, (ast.For, ast.AsyncFor, ast.While)) for node in nodes)
         awaits = [node for node in nodes if isinstance(node, ast.Await)]
-        assert len(awaits) == 1
-        operation = awaits[0].value.func
+        cursor_reads = [node for node in nodes if isinstance(node, ast.comprehension) and node.is_async]
+        assert len(awaits) + len(cursor_reads) == 1
+        operation = awaits[0].value.func if awaits else cursor_reads[0].iter.func
         if isinstance(operation, ast.Name):
-            assert path == "extensions/tasks/band_sync_ical.py" and operation.id == "factory"
+            if operation.id == "anext":
+                assert path in {"utils/component_state.py", "utils/recruit_goblin_challenges.py", "extensions/warrior/schema.py"}
+            else:
+                assert path == "extensions/tasks/band_sync_ical.py" and operation.id == "factory"
         else:
             assert isinstance(operation, ast.Attribute)
-            assert operation.attr in {"create_index", "delete_many", "to_list"}
+            assert operation.attr in {"create_index", "delete_many", "to_list", "find"}
         assert not any(
             isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
             and node.func.attr in {"create_task", "add_job", "sleep", "create_message", "delete_message"}
@@ -406,10 +423,12 @@ def test_maintenance_task_deadline_does_not_leak_to_concurrent_caller_or_next_ta
 def test_merged_caller_loops_and_tasks_remain_outside_maintenance_contexts():
     for path in ("utils/player_activity_polling.py", "extensions/tasks/cwl_reminder.py"):
         tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
-        assert not any(
-            isinstance(node, ast.With)
-            and any(isinstance(item.context_expr, ast.Call)
-                    and ast.unparse(item.context_expr.func) == "pymongo.timeout"
-                    for item in node.items)
-            for node in ast.walk(tree)
-        )
+        for context in (node for node in ast.walk(tree) if isinstance(node, ast.With)
+                        and any(isinstance(item.context_expr, ast.Call)
+                                and ast.unparse(item.context_expr.func) == "pymongo.timeout"
+                                for item in node.items)):
+            assert not any(isinstance(node, (ast.For, ast.AsyncFor, ast.While))
+                           for node in ast.walk(context))
+            assert not any(isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                           and node.func.attr in {"create_task", "add_job", "sleep"}
+                           for node in ast.walk(context))

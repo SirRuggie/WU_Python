@@ -201,8 +201,8 @@ class RecruitQuestions(
 
     @lightbulb.invoke
     async def invoke(
-        self, 
-        ctx: lightbulb.Context, 
+        self,
+        ctx: lightbulb.Context,
         mongo: MongoClient = lightbulb.di.INJECTED,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED
     ) -> None:
@@ -337,8 +337,8 @@ async def primary_questions(
                 "session_id": session_id,
             })
         raise
-    
-    
+
+
     await refresh_questions_panel(ctx, user_id, mongo)
 
 @register_action("age", no_return=True)
@@ -466,7 +466,7 @@ async def on_shield_basics_button(
             ephemeral=True
         )
         return
-    
+
     receipt = await goblin_storage.claim_shield(
         mongo, message_id=ctx.interaction.message.id, channel_id=ctx.channel_id,
         user_id=user_id, guild_id=ctx.guild_id,
@@ -497,7 +497,7 @@ async def on_shield_basics_button(
             ]
         )
     ]
-    
+
     try:
         async with asyncio.timeout(60):
             await goblin_storage.open_challenge(
@@ -521,7 +521,7 @@ async def on_shield_basics_button(
     # Remove the Shield button only after storage and prompt delivery succeed.
     # Try to get the message ID from the interaction message
     message_id = ctx.interaction.message.id
-    
+
     # Try to edit the message to remove the button
     if message_id:
         try:
@@ -552,7 +552,7 @@ async def on_shield_basics_button(
             )
         except Exception as e:
             print(f"[ShieldBasics] Could not edit message to remove button: {e}")
-    
+
 
 
 ### FWA Questions Section
@@ -609,7 +609,7 @@ async def th_select(
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
     fwa = await get_fwa_base_object(mongo)
-    
+
     # Check if FWA data exists
     if not fwa:
         await respond_error(ctx,
@@ -619,7 +619,7 @@ async def th_select(
             ephemeral=True
         )
         return
-    
+
     # Format display name properly for _new variants
     if choice.endswith('_new'):
         base_th = choice.replace('_new', '')
@@ -630,7 +630,7 @@ async def th_select(
         th_number = choice.lstrip('th')
         display_name = f"TH{th_number}"
         friendly_name = f"Town Hall {th_number}"
-    
+
     base_link = getattr(fwa.fwa_base_links, choice, None)
 
     # Get base information for this TH level
@@ -650,11 +650,11 @@ async def th_select(
             ephemeral=True
         )
         return
-    
+
     # Check if media URLs exist
     war_base_media = FWA_WAR_BASE.get(choice)
     active_war_base_media = FWA_ACTIVE_WAR_BASE.get(choice)
-    
+
     if not war_base_media or not active_war_base_media:
         await respond_error(ctx,
             f"❌ **FWA Base Images Not Found**\n\n"
@@ -663,7 +663,7 @@ async def th_select(
             ephemeral=True
         )
         return
-    
+
     try:
         template = await question_content.load_template(mongo, int(ctx.guild_id), "fwa_bases_upon_approval")
         components = question_content.render_template(
@@ -1027,7 +1027,7 @@ async def prepare_family_code_storage(
     async for challenge in mongo.recruit_challenges.find({
         "type": FAMILY_CODE_TYPE,
         "warning_message_id": {"$exists": True},
-    }):
+    }, {"_id": 1, "channel_id": 1, "warning_message_id": 1}):
         try:
             await bot.rest.delete_message(
                 challenge["channel_id"],

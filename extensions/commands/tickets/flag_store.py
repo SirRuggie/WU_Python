@@ -265,7 +265,8 @@ async def list_for_identity(
     if active_only:
         filt["active"] = True
     cursor = mongo.ticket_flags.find(filt)
-    return await cursor.sort([("checked_at", -1), ("_id", 1)]).to_list(length=None)
+    with pymongo.timeout(30):
+        return await cursor.sort([("checked_at", -1), ("_id", 1)]).to_list(length=None)
 
 
 async def active_identities_for_kind(
@@ -331,10 +332,11 @@ async def extend_matching_flags(
     now = datetime.now(timezone.utc)
     updated_documents: list[dict] = []
     async with identity_guard(mongo, discord_ids=ids, player_tags=tags):
-        matches = await mongo.ticket_flags.find({
-            "active": True,
-            "$or": clauses,
-        }).to_list(length=None)
+        with pymongo.timeout(30):
+            matches = await mongo.ticket_flags.find({
+                "active": True,
+                "$or": clauses,
+            }).to_list(length=None)
         for current in matches:
             if (
                 set(ids).issubset(set(_discord_ids(current.get("discord_ids"))))

@@ -151,9 +151,10 @@ class StrikeTracking:
 
     async def abandon_older(self, guild_id: int, clan_tag: str, current_keys=(), *, now=None):
         now = utc(now or datetime.now(timezone.utc))
-        rows = await self.mongo.strike_war_snapshots.find(
-            {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
-             'status': 'observing'}).to_list(length=None)
+        with pymongo.timeout(30):
+            rows = await self.mongo.strike_war_snapshots.find(
+                {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
+                 'status': 'observing'}).to_list(length=None)
         count = 0
         for row in rows:
             if (row['_id'] not in current_keys and utc(row['end_time']) <= now
@@ -167,8 +168,11 @@ class StrikeTracking:
     async def abandon_untracked(self, guild_id: int, tracked_tags: set[str], *, now=None):
         """Retire open snapshots for clans removed from the tracked roster."""
         now = utc(now or datetime.now(timezone.utc))
-        rows = await self.mongo.strike_war_snapshots.find(
-            {'guild_id': int(guild_id), 'status': 'observing'}).to_list(length=None)
+        with pymongo.timeout(30):
+            rows = await self.mongo.strike_war_snapshots.find(
+                {'guild_id': int(guild_id), 'status': 'observing'},
+                {'_id': 1, 'clan_tag': 1, 'manual_review_required': 1,
+                 'status': 1, 'resolved_at': 1, 'end_time': 1}).to_list(length=None)
         removed = set()
         for row in rows:
             if row['clan_tag'] in tracked_tags:
@@ -188,9 +192,10 @@ class StrikeTracking:
         await self.mongo.strike_tracking.update_one(
             {'_id': self.key(guild_id, clan_tag)},
             {'$set': {'retry_not_before': now + timedelta(minutes=2)}})
-        rows = await self.mongo.strike_war_snapshots.find(
-            {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
-             'status': 'observing'}).to_list(length=None)
+        with pymongo.timeout(30):
+            rows = await self.mongo.strike_war_snapshots.find(
+                {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
+                 'status': 'observing'}).to_list(length=None)
         for row in rows:
             due = row.get('next_check_at')
             if due is None or utc(due) > now:
@@ -203,17 +208,19 @@ class StrikeTracking:
                           'final_check_attempts': attempts}})
 
     async def pending_finals(self, guild_id: int, clan_tag: str):
-        rows = await self.mongo.strike_war_snapshots.find(
-            {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
-             'status': 'observing'}).to_list(length=None)
+        with pymongo.timeout(30):
+            rows = await self.mongo.strike_war_snapshots.find(
+                {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
+                 'status': 'observing'}).to_list(length=None)
         return [row for row in rows if row['war'].get('state') == 'warEnded'
                 and row['war'].get('complete') and row.get('seen_active')]
 
     async def due_clans(self, guild_id: int, *, now=None):
         now = utc(now or datetime.now(timezone.utc))
-        rows = await self.mongo.strike_war_snapshots.find(
-            {'guild_id': int(guild_id), 'status': 'observing',
-             'next_check_at': {'$lte': now}}, {'clan_tag': 1}).to_list(length=None)
+        with pymongo.timeout(30):
+            rows = await self.mongo.strike_war_snapshots.find(
+                {'guild_id': int(guild_id), 'status': 'observing',
+                 'next_check_at': {'$lte': now}}, {'clan_tag': 1}).to_list(length=None)
         return {row['clan_tag'] for row in rows}
 
     async def incomplete_wars(self, guild_id: int, *, clan_tag=None):
@@ -303,9 +310,10 @@ class StrikeTracking:
         return await self.mongo.strike_tracking.find_one({'_id': key})
 
     async def pending(self, guild_id: int):
-        rows = await self.mongo.strike_tracking.find(
-            {'guild_id': guild_id, 'retry_requested_at': {'$ne': None}},
-            {'clan_tag': 1, 'retry_requested_at': 1, 'retry_not_before': 1}).to_list(length=None)
+        with pymongo.timeout(30):
+            rows = await self.mongo.strike_tracking.find(
+                {'guild_id': guild_id, 'retry_requested_at': {'$ne': None}},
+                {'clan_tag': 1, 'retry_requested_at': 1, 'retry_not_before': 1}).to_list(length=None)
         now = datetime.now(timezone.utc)
         return [row for row in rows if not row.get('retry_not_before')
                 or utc(row['retry_not_before']) <= now]
@@ -317,18 +325,21 @@ class StrikeTracking:
 
     async def rows(self, guild_id: int, clans: list[dict]):
         now = datetime.now(timezone.utc)
-        saved = await self.mongo.strike_tracking.find({'guild_id': guild_id}).to_list(length=None)
+        with pymongo.timeout(30):
+            saved = await self.mongo.strike_tracking.find({'guild_id': guild_id}).to_list(length=None)
         indexed = {row.get('clan_tag'): row for row in saved}
         snapshots = getattr(self.mongo, 'strike_war_snapshots', None)
-        ended = (await snapshots.find(
-            {'guild_id': guild_id, 'status': {'$in': ['incomplete', 'finalized']}},
-            {'clan_tag': 1, 'end_time': 1, 'status': 1}).to_list(length=None)) if snapshots is not None else []
+        with pymongo.timeout(30):
+            ended = (await snapshots.find(
+                {'guild_id': guild_id, 'status': {'$in': ['incomplete', 'finalized']}},
+                {'clan_tag': 1, 'end_time': 1, 'status': 1}).to_list(length=None)) if snapshots is not None else []
         latest_ended = {}
         for row in ended:
             prior = latest_ended.get(row['clan_tag'])
             if prior is None or utc(row['end_time']) > utc(prior['end_time']):
                 latest_ended[row['clan_tag']] = row
-        review_rows = (await snapshots.find({'guild_id': guild_id, 'manual_review_required': True}).to_list(length=None)) if snapshots is not None else []
+        with pymongo.timeout(30):
+            review_rows = (await snapshots.find({'guild_id': guild_id, 'manual_review_required': True}, {'clan_tag': 1}).to_list(length=None)) if snapshots is not None else []
         review_clans = {row['clan_tag'] for row in review_rows}
         result = []
         for clan in clans:
