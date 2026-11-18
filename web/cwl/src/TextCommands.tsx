@@ -120,7 +120,7 @@ export default function TextCommands({
     void loadScope();
   }, []);
   const deleteWarning = (error: NonNullable<Command["last_delete_error"]>) =>
-    `Last time the bot could not delete the trigger message in ${scope.channels.find((c) => c.id === error.channel_id) ? "#" + scope.channels.find((c) => c.id === error.channel_id)!.name : "an unavailable channel"} (it needs Manage Messages there).`;
+    `Last time the trigger message in ${scope.channels.find((c) => c.id === error.channel_id) ? "#" + scope.channels.find((c) => c.id === error.channel_id)!.name : "an unavailable channel"} could not be deleted (Manage Messages is needed there).`;
   const [mentionNames, setMentionNames] = useState<MentionNames>({});
   const rememberMention = (key: string, name: string) =>
     setMentionNames((current) =>
@@ -299,8 +299,8 @@ export default function TextCommands({
         title={<h1>Command triggers</h1>}
         description={
           <>
-            Type a command like <strong>!rules</strong> in Discord. The bot
-            posts its reply.
+            Type a command like <strong>!rules</strong> in Discord. The reply
+            posts in the same channel.
           </>
         }
       >

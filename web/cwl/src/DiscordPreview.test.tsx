@@ -104,18 +104,27 @@ describe("Discord preview content safety", () => {
     expect(html).toContain('referrerPolicy="no-referrer"');
     expect(html).toContain('alt="Clan logo"');
   });
-  it("shows custom emoji and human-readable mentions without pinging", () => {
+  it("shows custom emoji and generic mention placeholders without IDs or pinging", () => {
+    const ids = [
+      "123456789012345678",
+      "234567890123456789",
+      "345678901234567890",
+      "456789012345678901",
+    ];
     const text = discordMarkdown(
-      "<:townhall:123> <a:spin:456> <@123> <@&456> <#789>",
+      `<:townhall:123> <a:spin:456> <@${ids[0]}> <@!${ids[1]}> <@&${ids[2]}> <#${ids[3]}>`,
     );
     expect(text).toContain("https://cdn.discordapp.com/emojis/123.png");
     expect(text).toContain("https://cdn.discordapp.com/emojis/456.gif");
     const html = renderToStaticMarkup(<DiscordText text={text} />);
-    expect(html).toContain("@member 123");
-    expect(html).toContain("@role 456");
-    expect(html).toContain("#channel 789");
+    expect(html).toContain("<strong>@Member</strong>");
+    expect(html).toContain("<strong>@Role</strong>");
+    expect(html).toContain("<strong>#Channel</strong>");
+    for (const id of ids) expect(html).not.toContain(id);
+    const visible = html.replace(/<[^>]*>/g, "");
+    expect(visible).not.toMatch(/\b\d{17,20}\b/);
     expect(html).toContain("discord-emoji");
-    expect(html).not.toMatch(/<a\b|href=/);
+    expect(html).not.toMatch(/<a\b|href=|<button|onclick/i);
   });
 });
 
@@ -129,7 +138,7 @@ it("keeps compact reminder owners outside the preceding account quote", () => {
   );
   expect(html.match(/<blockquote>/g)).toHaveLength(2);
   for (const quote of html.match(/<blockquote>[\s\S]*?<\/blockquote>/g) || []) {
-    expect(quote).not.toContain("@member");
+    expect(quote).not.toContain("@Member");
     expect(quote).not.toContain("Not linked");
   }
   expect(html).toMatch(/<small class="discord-subtext">vs Rival/);

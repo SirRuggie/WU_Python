@@ -13,14 +13,14 @@ separately from deployed behavior.
 These are comparisons with published administrative product/design-system patterns,
 not claims of testing private installations of other products.
 
-| Reference | Useful pattern | WU application |
-| --- | --- | --- |
-| [IBM Carbon data tables](https://www.carbondesignsystem.com/building-blocks/core/components/data-table/guidelines) | Keep search, filters, and global actions together; use expansion for secondary detail. | Searchable family index, count filters, explicit row action, separate clan editor. |
-| [Shopify Polaris patterns](https://polaris-site-prod-kit.shopify.prod.shopifyapps.com/patterns) | Resource indexes organize objects and the actions taken on them; loading should preserve context. | Overview to clan editor and back, preserving filters and focus; no duplicate editing system. |
-| [Atlassian empty states](https://atlassian.design/components/empty-state/) | Explain the absence of data and what the user can do next. | Different loading, empty family, unmatched filter, and service-failure states. |
-| [Carbon disclosures](https://www.carbondesignsystem.com/building-blocks/core/patterns/disclosures) | Reveal secondary interactive content when requested. | Testing, verbose history, and explanation sections start collapsed. |
-| [GOV.UK validation recovery](https://design-system.service.gov.uk/patterns/validation/) | Distinguish user input errors from service/permission problems and provide recovery. | Preserve edits after failed saves; service retry does not masquerade as an empty family; revoked access clears overview data. |
-| [WCAG 2.2](https://www.w3.org/TR/WCAG22/) | Keyboard operation, visible/unobscured focus, adequate targets, reflow, and status feedback. | Native controls, manual-activation settings tabs, mobile cards, visible focus, 44px control targets, and short-screen sticky-bar fallback. |
+| Reference                                                                                                          | Useful pattern                                                                                    | WU application                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [IBM Carbon data tables](https://www.carbondesignsystem.com/building-blocks/core/components/data-table/guidelines) | Keep search, filters, and global actions together; use expansion for secondary detail.            | Searchable family index, count filters, explicit row action, separate clan editor.                                                         |
+| [Shopify Polaris patterns](https://polaris-site-prod-kit.shopify.prod.shopifyapps.com/patterns)                    | Resource indexes organize objects and the actions taken on them; loading should preserve context. | Overview to clan editor and back, preserving filters and focus; no duplicate editing system.                                               |
+| [Atlassian empty states](https://atlassian.design/components/empty-state/)                                         | Explain the absence of data and what the user can do next.                                        | Different loading, empty family, unmatched filter, and service-failure states.                                                             |
+| [Carbon disclosures](https://www.carbondesignsystem.com/building-blocks/core/patterns/disclosures)                 | Reveal secondary interactive content when requested.                                              | Testing, verbose history, and explanation sections start collapsed.                                                                        |
+| [GOV.UK validation recovery](https://design-system.service.gov.uk/patterns/validation/)                            | Distinguish user input errors from service/permission problems and provide recovery.              | Preserve edits after failed saves; service retry does not masquerade as an empty family; revoked access clears overview data.              |
+| [WCAG 2.2](https://www.w3.org/TR/WCAG22/)                                                                          | Keyboard operation, visible/unobscured focus, adequate targets, reflow, and status feedback.      | Native controls, manual-activation settings tabs, mobile cards, visible focus, 44px control targets, and short-screen sticky-bar fallback. |
 
 ## Required interaction rules
 
@@ -709,7 +709,6 @@ Frontend regression tests, production build and war-reminder validation run befo
 deployment. This is not a guarantee against every future bug or proof of live
 Discord delivery. Existing frontend bundle-size advisory remains.
 
-
 ### Automatic CWL bonus allowance — October 21
 
 The base + wins breakdown stays visible; the optional staff-confirmed count is a
@@ -1093,7 +1092,6 @@ Validation totals: 256 frontend tests, 46 backend tests and 49 route subtests pa
 TypeScript/Vite build passed. Existing aiohttp warnings and bundle-size warning
 remain. No live messages were sent.
 
-
 ## Ticket browser applicant flags — October 23
 
 Ticket browser results and conversation details show active applicant flag names
@@ -1167,7 +1165,6 @@ explicit search reset. See [journey audit](home-tasks-wars-audit.md) for reviewe
 boundaries, browser evidence and limitations. Signup selections and notifications
 remain outside the new transient view-state helper.
 
-
 ### Home and mobile menu hierarchy — October 26
 
 Keep the collapsible mobile Menu; do not add permanent bottom navigation. Put frequent member destinations before a permission-filtered Staff tools disclosure. Opening a staff destination must expose its active navigation group. Home should emphasize one CWL next action and keep secondary activity links compact. Incomplete, cached, or failed account reads must not appear as settled totals or invite account selection. Keep existing signup review and save boundaries.
@@ -1175,7 +1172,6 @@ Keep the collapsible mobile Menu; do not add permanent bottom navigation. Put fr
 The scoped implementation and usability/accessibility checks are recorded in [the comparative review](clashperk-dashboard-review-2026-10-26.md#homemenu-implementation-review--october-26).
 
 Before validation builds, check the configured static asset directory. On this host the live web service serves web/cwl/dist; use an isolated Vite --outDir under /tmp for testing. Only a deliberate release should replace the served index, after copying its assets and retaining older hashed files for active sessions.
-
 
 ### Member player and clan details — October 26
 
@@ -1259,3 +1255,7 @@ not evidence of live Discord delivery or complete assistive-technology coverage.
 The settings GET currently includes preview payloads before Preview is opened;
 only rendering is deferred, so rule 9's preview-fetch preference remains a
 release-review limitation for this workflow.
+
+## Discord object wording (247)
+
+Deleted Discord objects show "Unknown channel" / "Deleted role" / "Unknown member", never an ID.

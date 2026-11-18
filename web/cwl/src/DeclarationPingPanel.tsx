@@ -424,7 +424,7 @@ export default function DeclarationPingPanel({
         {closing && (
           <ConfirmDialog
             heading="Close interrupted receipt?"
-            text="This sends nothing. Check the confirmed message IDs and the message that is not confirmed in Discord. The bot will not try it again. Wait for the cooldown to end. Then review again before you send a new message."
+            text="This sends nothing. Check the confirmed message IDs and the message that is not confirmed in Discord. It is not sent again automatically. Wait for the cooldown to end. Then review again before you send a new message."
             confirmLabel="Close receipt"
             onCancel={() => setClosing(false)}
             onConfirm={() => {

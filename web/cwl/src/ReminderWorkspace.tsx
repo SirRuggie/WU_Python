@@ -210,16 +210,18 @@ export default function ReminderWorkspace({
   const disabled = busy || archived;
   const schedule = preview?.schedule || state?.schedule || [];
   const destination = (id: string) => {
-    if (!id) return "No channel chosen";
+    if (!id) return "No channel selected";
     return (
-      channels.find((channel) => channel.id === id)?.name || `Channel ${id}`
+      channels.find((channel) => channel.id === id)?.name || "Unknown channel"
     );
   };
   const recipient = (ids: string[]) => {
     if (!ids.length) return "No role mentions";
     const labels = ids
       .slice(0, 2)
-      .map((id) => roles.find((role) => role.id === id)?.name || `Role ${id}`);
+      .map(
+        (id) => roles.find((role) => role.id === id)?.name || "Deleted role",
+      );
     return `${labels.join(", ")}${ids.length > 2 ? ` +${ids.length - 2} more` : ""}`;
   };
   return (

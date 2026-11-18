@@ -15,8 +15,8 @@ export default function AccountLinkHelp({
           <code>/link create</code> command.
         </li>
         <li>
-          Enter your player tag. Follow the instructions from the bot. If the
-          bot asks for verification, find your API token in Clash of Clans under
+          Enter your player tag. Follow the instructions in Discord. If
+          verification is needed, find your API token in Clash of Clans under
           Settings → More Settings.
         </li>
         <li>
@@ -43,8 +43,8 @@ export default function AccountLinkHelp({
       </div>
       <p className="small">
         Already linked but missing here? Check that you used the same Discord
-        account. If the bots show different owners, ask staff to help correct
-        the link.
+        account. If ClashKing and ClashPerk show different owners, ask staff to
+        help correct the link.
       </p>
     </div>
   );

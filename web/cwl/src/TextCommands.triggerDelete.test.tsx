@@ -144,7 +144,7 @@ it("defaults an old row on, toggles it off, and excludes runtime error from save
     expect(
       host.querySelector(".text-command-rows button")?.textContent,
     ).toContain(
-      "Last time the bot could not delete the trigger message in #general",
+      "Last time the trigger message in #general could not be deleted",
     );
     await act(async () => {
       (
@@ -158,9 +158,9 @@ it("defaults an old row on, toggles it off, and excludes runtime error from save
     )!;
     expect(checkbox.checked).toBe(true);
     expect(host.textContent).toContain(
-      "Last time the bot could not delete the trigger message in #general",
+      "Last time the trigger message in #general could not be deleted",
     );
-    expect(host.textContent).toContain("it needs Manage Messages there");
+    expect(host.textContent).toContain("Manage Messages is needed there");
     expect(host.textContent).not.toContain("<script>");
     await act(async () => checkbox.click());
     expect(checkbox.checked).toBe(false);

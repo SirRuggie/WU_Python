@@ -186,7 +186,11 @@ export default function ReminderMessagesTab({
                       <button
                         type="button"
                         key={id}
-                        aria-label={`Remove ${roles.find((role) => role.id === id)?.name || id}`}
+                        aria-label={
+                          roles.find((role) => role.id === id)?.name
+                            ? `Remove ${roles.find((role) => role.id === id)!.name}`
+                            : "Remove deleted role"
+                        }
                         onClick={() => {
                           const next = variant.role_ids.filter(
                             (value) => value !== id,
@@ -196,7 +200,7 @@ export default function ReminderMessagesTab({
                         }}
                       >
                         {roles.find((role) => role.id === id)?.name ||
-                          `Role ${id}`}{" "}
+                          "Deleted role"}{" "}
                         ×
                       </button>
                     ))

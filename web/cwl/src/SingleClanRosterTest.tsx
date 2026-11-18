@@ -220,7 +220,7 @@ export default function SingleClanRosterTest({
       {confirmTest && clan && (
         <ConfirmDialog
           heading="Send test image"
-          text={`Send only ${clan.name} (${clan.pages} image${clan.pages === 1 ? "" : "s"}) to #${channels.find((c) => c.id === channel)?.name || channel}? No pings.`}
+          text={`Send only ${clan.name} (${clan.pages} image${clan.pages === 1 ? "" : "s"}) to #${channels.find((c) => c.id === channel)?.name || "Unknown channel"}? No pings.`}
           disabled={busy}
           onCancel={() => setConfirmTest(false)}
           onConfirm={() => void send()}

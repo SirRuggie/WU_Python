@@ -197,12 +197,12 @@ export function ActionFields({
           />
           <small>
             Anyone can use this control for their own account. Changes are
-            recorded. Only roles the bot can safely manage are listed.
+            recorded. Only roles that can be safely managed are listed.
           </small>
           {!roles.length && (
             <p role="status">
-              No roles available. Check the bot’s Manage Roles permission and
-              role position.
+              No roles available. Check the WU Wizard Manage Roles permission
+              and role position.
             </p>
           )}
         </>

@@ -7,7 +7,7 @@ import type { ManageDelivery } from "./manageBridge";
 import { publicationDate } from "./publicationStatus";
 it.each([
   [null, "Not announced yet"],
-  [{ status: "pending" }, "Queued · waiting for the bot"],
+  [{ status: "pending" }, "Queued · waiting for Discord"],
   [{ status: "sending" }, "Sending…"],
   [{ status: "failed", error: "Channel missing" }, "Failed · Channel missing"],
   [

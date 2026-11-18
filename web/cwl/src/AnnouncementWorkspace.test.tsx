@@ -305,7 +305,7 @@ it("bot unavailable prevents all sends, and loading explains the wait without hi
   bridge.worker_ready = false;
   await mount();
   expect(host.textContent).toContain(
-    "The bot is restarting or offline. Refresh status in a minute.",
+    "Discord actions are restarting or offline. Refresh status in a minute.",
   );
   expect(button("Review and send").disabled).toBe(true);
   expect(host.textContent).not.toContain("Sender ready");
@@ -387,3 +387,19 @@ it.each([null, { status: "failed" } as const])(
     expect(api.mock.calls.filter((c) => c[1] === "POST")).toHaveLength(0);
   },
 );
+
+it("hides saved channel IDs when the channel-name lookup fails", async () => {
+  const original = api.getMockImplementation()!;
+  api.mockImplementation(async (...args) => {
+    const path = String(args[0]);
+    if (path.endsWith("announcement-channels"))
+      throw new Error("Fixture names unavailable");
+    return original(...args);
+  });
+  await mount();
+  expect(host.textContent).toContain("Unknown channel");
+  expect(host.textContent).not.toMatch(/\b\d{17,20}\b/);
+  expect(
+    api.mock.calls.every(([, method]) => !method || method === "GET"),
+  ).toBe(true);
+});

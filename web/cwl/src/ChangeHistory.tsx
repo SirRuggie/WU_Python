@@ -134,7 +134,7 @@ export default function ChangeHistory({
       if (result.status_url) {
         queued = true;
         setPending(result.status_url);
-        setNotice("Waiting for the bot to restore settings…");
+        setNotice("Restoring settings…");
       } else {
         setNotice("Saved version restored.");
         await onRestored();
