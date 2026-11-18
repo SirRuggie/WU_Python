@@ -35,7 +35,7 @@ def load(mongo=None, **kwargs):
 def test_assigned_candidates_normalize_and_filter_to_requested_players_without_mongo():
     result = load(assigned={
         " #player ": [(" #beta ", "Beta"), ("", "Empty")],
-        "#UNLINKED": [("#FOREIGN", "Not this user's linked account")],
+        "#UNLINKED": [("#F0REIGN", "Not this user's linked account")],
     }, raise_errors=True)
 
     assert result == {"#PLAYER": [clan_history.ClanCandidate(
@@ -56,7 +56,7 @@ def test_assigned_candidates_survive_non_raising_history_read_failure():
     )]
 
 
-@pytest.mark.parametrize("assigned", [None, {}, {"#OTHER": [("#B", None)]},
+@pytest.mark.parametrize("assigned", [None, {}, {"#0THER": [("#B", None)]},
                                       {"#PLAYER": [("#BETA", None)]}])
 def test_history_failure_still_raises_when_requested_even_with_assignments(assigned):
     mongo = SimpleNamespace(player_clan_candidates=Collection(
@@ -78,22 +78,22 @@ def test_assignment_does_not_replace_same_clan_history_flags_or_current_first_de
     before = load(mongo, observed_at=now)
     assert load(mongo, observed_at=now, assigned={}) == before
     result = load(mongo, observed_at=now, assigned={
-        "#PLAYER": [("#BETA", "Published"), ("#HOME", "Assigned home")],
+        "#PLAYER": [("#BETA", "Published"), ("#H0ME", "Assigned home")],
     })
     beta = [candidate for candidate in result["#PLAYER"] if candidate.clan_tag == "#BETA"]
     assert [(item.check_war, item.check_cwl) for item in beta] == [(True, False), (False, True)]
-    account = todo_data.Account("#PLAYER", "Player", "#HOME", "Current home")
+    account = todo_data.Account("#PLAYER", "Player", "#H0ME", "Current home")
     war = todo_data._accounts_by_war_clan([account], result, kind="war")
     cwl = todo_data._accounts_by_war_clan([account], result, kind="cwl")
-    assert list(war) == ["#HOME", "#BETA"]
-    assert list(cwl) == ["#HOME", "#BETA"]
-    assert cwl["#HOME"] == [account]
+    assert list(war) == ["#H0ME", "#BETA"]
+    assert list(cwl) == ["#H0ME", "#BETA"]
+    assert cwl["#H0ME"] == [account]
     assert len(cwl["#BETA"]) == 1
     assert cwl["#BETA"][0].clan_name == "Published"
 
 
 def test_assigned_only_clan_never_enters_regular_war_candidates():
-    account = todo_data.Account("#PLAYER", "Player", "#HOME", "Home")
+    account = todo_data.Account("#PLAYER", "Player", "#H0ME", "Home")
     result = load(assigned={"#PLAYER": [("#BETA", "Beta")]})
-    assert list(todo_data._accounts_by_war_clan([account], result, kind="war")) == ["#HOME"]
-    assert list(todo_data._accounts_by_war_clan([account], result, kind="cwl")) == ["#HOME", "#BETA"]
+    assert list(todo_data._accounts_by_war_clan([account], result, kind="war")) == ["#H0ME"]
+    assert list(todo_data._accounts_by_war_clan([account], result, kind="cwl")) == ["#H0ME", "#BETA"]

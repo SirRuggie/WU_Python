@@ -734,6 +734,7 @@ async def run_catchup(clan_entry, coc_opponent_tag, war_key, coc_war_end_time=No
     Defaults to 0 so tests (and a lone catch-up) see no delay.
     """
     our_tag = sanitize_tag(clan_entry.get("tag", ""))
+    coc_opponent_tag = sanitize_tag(coc_opponent_tag)
     name = clan_entry.get("name", our_tag)
     try:
         if stagger_seconds > 0:

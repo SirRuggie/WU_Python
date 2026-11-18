@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+from utils.clash_tags import normalize
+
 
 _TAG_RE = re.compile(r"^[A-Z0-9]{2,15}$")
 
@@ -22,7 +24,8 @@ def normalize_tag(tag: str) -> str:
 
     normalized = str(tag).strip().lstrip("#")
     normalized = re.sub(r"\s+", "", normalized)
-    return normalized.upper()
+    # Remove only this boundary's own prefix, preserving malformed nested hashes.
+    return normalize("#" + normalized).removeprefix("#")
 
 
 def is_valid_tag(tag: str) -> bool:

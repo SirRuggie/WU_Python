@@ -261,10 +261,10 @@ def test_tasks_show_a_war_in_a_clan_outside_the_family(monkeypatch):
     from test_todo_clan_history import _Member, _War, _account
     from utils import todo_data
 
-    war = _War("#HOME", "Not Family", [_Member("#PLAYER", attacks=1)], 2)
+    war = _War("#H0ME", "Not Family", [_Member("#PLAYER", attacks=1)], 2)
 
     async def fake_war(_client, clan_tag):
-        return ("war", war) if clan_tag == "#HOME" else ("none", None)
+        return ("war", war) if clan_tag == "#H0ME" else ("none", None)
 
     async def no_cwl(_client, _clan_tag):
         return "none", None
@@ -273,7 +273,7 @@ def test_tasks_show_a_war_in_a_clan_outside_the_family(monkeypatch):
     monkeypatch.setattr(todo_data, "_get_cwl_round", no_cwl)
     todo_data._cache.clear()
     view = asyncio.run(todo_data.build_war_view(object(), [_account()]))
-    assert [(row.clan_tag, row.used, row.limit) for row in view.rows] == [("#HOME", 1, 2)]
+    assert [(row.clan_tag, row.used, row.limit) for row in view.rows] == [("#H0ME", 1, 2)]
 
 
 class ProductionWiringTests(unittest.TestCase):

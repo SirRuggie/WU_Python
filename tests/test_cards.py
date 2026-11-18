@@ -61,7 +61,7 @@ def _assert_discord_payload(view):
                 assert len(str(option.get("description", ""))) <= 100
 
 
-def _complete_inventory(*, tag="#ME", clan_tag="#HOME", confirmed_at=None):
+def _complete_inventory(*, tag="#ME", clan_tag="#H0ME", confirmed_at=None):
     values = {}
     for category in cards.CATEGORIES:
         values = cards.apply_category_selection(
@@ -153,11 +153,11 @@ def test_matching_prefers_same_clan_reciprocal_and_rejects_stale_inventory():
     requester["cards"]["super_barbarian"] = cards.DUPLICATE
 
     same_clan = _complete_inventory(tag="#SAME", confirmed_at=now - timedelta(hours=2))
-    same_clan.update({"discord_id": 11, "player_name": "Same", "clan_tag": "#HOME"})
+    same_clan.update({"discord_id": 11, "player_name": "Same", "clan_tag": "#H0ME"})
     same_clan["cards"]["root_rider"] = cards.DUPLICATE
     same_clan["cards"]["wizard"] = cards.MISSING
 
-    other_clan = _complete_inventory(tag="#OTHER", clan_tag="#AWAY", confirmed_at=now)
+    other_clan = _complete_inventory(tag="#0THER", clan_tag="#AWAY", confirmed_at=now)
     other_clan.update({"discord_id": 22, "player_name": "Other"})
     other_clan["cards"]["root_rider"] = cards.DUPLICATE
     # This is a need, but it is in the wrong category for Root Rider.
@@ -173,7 +173,7 @@ def test_matching_prefers_same_clan_reciprocal_and_rejects_stale_inventory():
         requester, [other_clan, stale, same_clan], now=now
     )
 
-    assert [match.holder_tag for match in found] == ["#SAME", "#OTHER"]
+    assert [match.holder_tag for match in found] == ["#SAME", "#0THER"]
     assert found[0].offers == ("root_rider",)
     assert found[0].returns == ("wizard",)
     assert found[0].same_clan is True
@@ -191,7 +191,7 @@ def test_specific_card_lookup_lists_fresh_duplicate_holders_only():
     requester["cards"]["ice_hound"] = cards.MISSING
     requester["cards"]["super_wizard"] = cards.DUPLICATE
 
-    holder = _complete_inventory(tag="#HOLDER", confirmed_at=now)
+    holder = _complete_inventory(tag="#H0LDER", confirmed_at=now)
     holder["cards"]["ice_hound"] = cards.DUPLICATE
     holder["cards"]["super_wizard"] = cards.MISSING
 
@@ -202,7 +202,7 @@ def test_specific_card_lookup_lists_fresh_duplicate_holders_only():
         requester, [no_spare, holder], "ice_hound", now=now
     )
     assert len(found) == 1
-    assert found[0].holder_tag == "#HOLDER"
+    assert found[0].holder_tag == "#H0LDER"
     assert found[0].returns == ("super_wizard",)
 
 
@@ -212,7 +212,7 @@ def test_stale_requester_cannot_search_even_when_holder_is_fresh():
         confirmed_at=now - cards.MATCHABLE_FOR - timedelta(seconds=1)
     )
     requester["cards"]["root_rider"] = cards.MISSING
-    holder = _complete_inventory(tag="#HOLDER", confirmed_at=now)
+    holder = _complete_inventory(tag="#H0LDER", confirmed_at=now)
     holder["cards"]["root_rider"] = cards.DUPLICATE
 
     assert cards.find_matches(requester, [holder], now=now) == []
@@ -222,7 +222,7 @@ def test_stale_requester_cannot_search_even_when_holder_is_fresh():
 def test_reciprocal_trade_allows_cross_clan_fresh_four_leg_state():
     now = datetime(2026, 8, 10, 12, tzinfo=timezone.utc)
     requester = _complete_inventory(confirmed_at=now)
-    holder = _complete_inventory(tag="#HOLDER", confirmed_at=now)
+    holder = _complete_inventory(tag="#H0LDER", confirmed_at=now)
     requester["cards"].update({"root_rider": cards.MISSING, "wizard": cards.DUPLICATE})
     holder["cards"].update({"root_rider": cards.DUPLICATE, "wizard": cards.MISSING})
 
@@ -432,7 +432,7 @@ def _trade_document(*, trade_id="trade-a"):
         "_id": trade_id,
         "guild_id": 1,
         "requester_tag": "#ME",
-        "holder_tag": "#HOLDER",
+        "holder_tag": "#H0LDER",
         "wanted_card_id": "root_rider",
         "given_card_id": "wizard",
     }
@@ -490,7 +490,7 @@ def test_trade_reservation_uses_four_unified_card_leases_and_rolls_back_conflict
     mongo = SimpleNamespace(card_trades=collection)
     trade = _trade_document()
     trade["reservation_token"] = "token-a"
-    conflict_id = cards_command._trade_lease_id("supply", "#HOLDER", "root_rider")
+    conflict_id = cards_command._trade_lease_id("supply", "#H0LDER", "root_rider")
     collection.docs[conflict_id] = {
         "_id": conflict_id,
         "kind": "lease",
@@ -518,7 +518,7 @@ def test_unified_lease_id_ignores_need_supply_role():
         cards_command._trade_lease_id("supply", "#ME", "wizard")
     )
     assert cards_command._trade_lease_id("need", "#ME", "wizard") != (
-        cards_command._trade_lease_id("need", "#OTHER", "wizard")
+        cards_command._trade_lease_id("need", "#0THER", "wizard")
     )
 
 
@@ -527,14 +527,14 @@ def test_two_disjoint_accepted_swaps_can_coexist_on_one_account():
     first = _reserved_trade(trade_id="trade-a", token="token-a")
     second = _reserved_trade(trade_id="trade-b", token="token-b")
     second.update({
-        "holder_tag": "#HOLDER2",
+        "holder_tag": "#H0LDER2",
         "wanted_card_id": "archer",
         "given_card_id": "giant",
     })
     inventories = _FakeInventoryCollection([
         dict(_complete_inventory(), guild_id=1),
-        dict(_complete_inventory(tag="#HOLDER"), guild_id=1),
-        dict(_complete_inventory(tag="#HOLDER2"), guild_id=1),
+        dict(_complete_inventory(tag="#H0LDER"), guild_id=1),
+        dict(_complete_inventory(tag="#H0LDER2"), guild_id=1),
     ])
     trades = _FakeTradeCollection()
     mongo = SimpleNamespace(
@@ -570,8 +570,8 @@ def test_two_disjoint_accepted_swaps_can_coexist_on_one_account():
 @pytest.mark.parametrize(
     ("live_clans", "expected_status"),
     [
-        (("#HOME", "#AWAY"), "move_needed"),
-        (("#HOME", "#HOME"), "ready"),
+        (("#H0ME", "#AWAY"), "move_needed"),
+        (("#H0ME", "#H0ME"), "ready"),
     ],
 )
 def test_acceptance_promotes_temporary_resources_before_final_status(
@@ -590,7 +590,7 @@ def test_acceptance_promotes_temporary_resources_before_final_status(
     })
     requester = dict(_complete_inventory(confirmed_at=now), guild_id=1)
     holder = dict(
-        _complete_inventory(tag="#HOLDER", confirmed_at=now),
+        _complete_inventory(tag="#H0LDER", confirmed_at=now),
         guild_id=1,
     )
     requester["cards"].update({
@@ -692,8 +692,8 @@ def test_acceptance_promotes_temporary_resources_before_final_status(
 
 
 def test_cross_clan_proposal_is_indefinite_and_holds_no_reservations():
-    requester = _complete_inventory(clan_tag="#HOME")
-    holder = _complete_inventory(tag="#HOLDER", clan_tag="#AWAY")
+    requester = _complete_inventory(clan_tag="#H0ME")
+    holder = _complete_inventory(tag="#H0LDER", clan_tag="#AWAY")
     requester.update({"guild_id": 1, "discord_id": 111, "player_name": "Shaun"})
     holder.update({"guild_id": 1, "discord_id": 222, "player_name": "Holder"})
     requester["cards"].update({
@@ -718,7 +718,7 @@ def test_cross_clan_proposal_is_indefinite_and_holds_no_reservations():
 
     assert error is None
     assert trade is not None and trade["status"] == "pending"
-    assert trade["requester_clan_tag"] == "#HOME"
+    assert trade["requester_clan_tag"] == "#H0ME"
     assert trade["holder_clan_tag"] == "#AWAY"
     assert "expires_at" not in trade
     assert "reservation_token" not in trade
@@ -732,13 +732,13 @@ def test_cross_clan_proposal_is_indefinite_and_holds_no_reservations():
     ]
     assert [document["_id"] for document in saved_trades] == [trade["_id"]]
     assert len(proposal_slots) == 2
-    assert {slot["player_tag"] for slot in proposal_slots} == {"#ME", "#HOLDER"}
+    assert {slot["player_tag"] for slot in proposal_slots} == {"#ME", "#H0LDER"}
     assert all("lease_expires_at" not in slot for slot in proposal_slots)
 
 
 def test_proposal_creation_caps_each_account_at_twenty_five_open_proposals():
-    requester = _complete_inventory(clan_tag="#HOME")
-    holder = _complete_inventory(tag="#HOLDER", clan_tag="#AWAY")
+    requester = _complete_inventory(clan_tag="#H0ME")
+    holder = _complete_inventory(tag="#H0LDER", clan_tag="#AWAY")
     requester.update({"guild_id": 1, "discord_id": 111})
     holder.update({"guild_id": 1, "discord_id": 222})
     requester["cards"].update({
@@ -757,7 +757,7 @@ def test_proposal_creation_caps_each_account_at_twenty_five_open_proposals():
             "guild_id": 1,
             "status": "pending",
             "requester_tag": "#ME",
-            "holder_tag": f"#OTHER{index}",
+            "holder_tag": f"#0THER{index}",
             "wanted_card_id": "root_rider",
             "given_card_id": "wizard",
         }
@@ -787,13 +787,13 @@ def test_atomic_proposal_slots_enforce_limit_and_roll_back_partial_acquire():
             "guild_id": 1,
             "status": "pending",
         }
-        slot_id = cards_command._proposal_slot_id(1, "#HOLDER", index)
+        slot_id = cards_command._proposal_slot_id(1, "#H0LDER", index)
         trades.docs[slot_id] = {
             "_id": slot_id,
             "kind": "proposal_slot",
             "trade_id": owner_id,
             "guild_id": 1,
-            "player_tag": "#HOLDER",
+            "player_tag": "#H0LDER",
         }
     trade = _trade_document(trade_id="new-proposal")
     trade.update({"kind": "trade", "status": "pending"})
@@ -812,7 +812,7 @@ def test_atomic_proposal_slots_enforce_limit_and_roll_back_partial_acquire():
     assert len([
         document for document in trades.docs.values()
         if document.get("kind") == "proposal_slot"
-        and document.get("player_tag") == "#HOLDER"
+        and document.get("player_tag") == "#H0LDER"
     ]) == cards_command.MAX_OPEN_PROPOSALS_PER_ACCOUNT
 
 
@@ -923,7 +923,7 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
         "requester_discord_id": 111,
         "holder_name": "Holder",
         "holder_discord_id": 222,
-        "requester_clan_tag": "#HOME",
+        "requester_clan_tag": "#H0ME",
         "requester_clan_name": "Morning Woods",
         "requester_town_hall": 17,
         "holder_clan_tag": "#AWAY",
@@ -960,7 +960,7 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
     assert "Shaun needs your duplicate Root Rider" in channel_copy
     assert "Wizard, Dragon" in channel_copy
     # The channel post names both clans and calls neither side "you".
-    assert "`#HOME`" in channel_copy and "`#AWAY`" in channel_copy
+    assert "`#H0ME`" in channel_copy and "`#AWAY`" in channel_copy
     assert "you are in" not in channel_copy
 
     class ClosedRest:
@@ -995,7 +995,7 @@ def test_trade_visual_failure_still_delivers_accessible_text(monkeypatch):
         "requester_discord_id": 111,
         "holder_name": "Holder",
         "holder_discord_id": 222,
-        "requester_clan_tag": "#HOME",
+        "requester_clan_tag": "#H0ME",
         "holder_clan_tag": "#AWAY",
         "compatible_card_ids": ["wizard", "dragon"],
     })
@@ -1048,7 +1048,7 @@ def test_follow_up_status_dm_names_only_the_readers_account():
 
     assert sent is True
     assert len(rest.messages) == 1
-    assert "`#HOLDER`" in rest.messages[0], "the reader's own account"
+    assert "`#H0LDER`" in rest.messages[0], "the reader's own account"
     assert "`#ME`" not in rest.messages[0], "the partner's tag is not listed"
 
 
@@ -1076,7 +1076,7 @@ def test_trade_channel_posts_in_configured_guild_and_mentions_holder_only(monkey
         "requester_discord_id": 111,
         "holder_name": "Holder",
         "holder_discord_id": 222,
-        "requester_clan_tag": "#HOME",
+        "requester_clan_tag": "#H0ME",
         "holder_clan_tag": "#AWAY",
         "compatible_card_ids": ["wizard", "dragon"],
     })
@@ -1285,7 +1285,7 @@ def _standing_post_trade(**overrides):
         "requester_discord_id": 111,
         "holder_name": "Holder Person",
         "holder_discord_id": 222,
-        "requester_clan_tag": "#HOME",
+        "requester_clan_tag": "#H0ME",
         "requester_clan_name": "Morning Woods",
         "requester_town_hall": 17,
         "holder_clan_tag": "#AWAY",
@@ -1639,7 +1639,7 @@ def test_the_spares_share_consent_screen_states_the_stakes(monkeypatch):
 
     async def load(_ctx, _tag, **_kwargs):
         account = Account(
-            tag="#ME", name="Member", clan_tag="#HOME",
+            tag="#ME", name="Member", clan_tag="#H0ME",
             clan_name="Home Clan", town_hall=18,
         )
         return account, inventory, None
@@ -1671,7 +1671,7 @@ def test_the_spares_share_consent_screen_states_the_stakes(monkeypatch):
 
 def test_the_demand_screen_offers_the_share_button(monkeypatch):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -1694,7 +1694,7 @@ def test_an_accepted_post_becomes_the_coordination_point():
     was that the family needs the next tap, not the history. Different clans
     adds the move step; the same clan does not."""
     trade = _standing_post_trade(
-        status="ready", channel_post_v2=True, holder_clan_tag="#HOME",
+        status="ready", channel_post_v2=True, holder_clan_tag="#H0ME",
     )
     text = _view_text(cards_command._trade_post(trade))
     # Mention plus account name: one Discord user can hold both sides with
@@ -2022,7 +2022,7 @@ def _open_request_document(**overrides):
         "requester_name": "Shaun",
         "requester_discord_id": 111,
         "requester_town_hall": 17,
-        "requester_clan_tag": "#HOME",
+        "requester_clan_tag": "#H0ME",
         "requester_clan_name": "Morning Woods",
         "requester_clan_emoji": "",
         "channel_id": None,
@@ -2066,7 +2066,7 @@ def test_open_request_saves_the_spec_document_and_its_unique_key():
     assert saved["requester_discord_id"] == 111
     assert saved["requester_town_hall"] == 17
     # Copied at creation: a channel post must never depend on a later query.
-    assert saved["requester_clan_tag"] == "#HOME"
+    assert saved["requester_clan_tag"] == "#H0ME"
     assert saved["requester_clan_name"] == "Home Clan"
     assert saved["requester_clan_emoji"] == ""
     assert saved["open_request_key"] == "1:#ME:root_rider"
@@ -2302,7 +2302,7 @@ def test_closing_a_want_ad_is_owner_only_and_cas(monkeypatch):
 
 def test_my_trades_lists_open_requests_with_a_close_button():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     view = cards_command._trades_view(
@@ -2321,7 +2321,7 @@ def test_my_trades_pages_requests_and_trades_inside_one_budget():
     """Requests ride in the same paged list, so a full page of both can
     never exceed what the 5-trade page already proved fits."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     requests = [
@@ -2332,7 +2332,7 @@ def test_my_trades_pages_requests_and_trades_inside_one_budget():
         {
             "_id": f"trade{index}",
             "status": "pending",
-            "requester_tag": f"#OTHER{index}",
+            "requester_tag": f"#0THER{index}",
             "requester_name": f"Other {index}",
             "holder_tag": "#ME",
             "holder_name": "Member",
@@ -2410,7 +2410,7 @@ def _fake_linked_accounts(monkeypatch, accounts_by_user):
 
 def _claim_env(monkeypatch, *, offers=("wizard", "dragon"), poster=None,
                claimers=None, accounts_by_user=None,
-               live_clans=("#HOME", "#HOME")):
+               live_clans=("#H0ME", "#H0ME")):
     """A posted want-ad plus (by default) one eligible claimer, on fakes."""
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
     monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
@@ -2619,10 +2619,10 @@ def test_a_clan_lookup_outage_never_blocks_a_claim(monkeypatch):
     ]
     assert len(converted) == 1
     trade = converted[0]
-    # The stored inventory clans carried through: poster in #HOME, claimer
+    # The stored inventory clans carried through: poster in #H0ME, claimer
     # in #AWAY, so the swap waits for the move instead of being refused.
     assert trade["status"] == "move_needed"
-    assert trade["requester_clan_tag"] == "#HOME"
+    assert trade["requester_clan_tag"] == "#H0ME"
     assert trade["holder_clan_tag"] == "#AWAY"
 
 
@@ -2635,7 +2635,7 @@ def test_a_pinned_leader_redirects_the_move_to_the_other_player(monkeypatch):
     the Leader as pinned and the other player as the one who joins them.
     """
     env = _claim_env(monkeypatch, live_clans=(
-        cards_command._LiveClan("#HOME", "Morning Woods", True),
+        cards_command._LiveClan("#H0ME", "Morning Woods", True),
         cards_command._LiveClan("#AWAY", "Edrag Rush", False),
     ))
     text = _view_text(_claim(env))
@@ -2861,7 +2861,7 @@ def test_a_multi_account_claim_gets_a_sections_picker_then_proceeds(
 
 def test_a_forged_or_stale_picker_tag_is_refused_with_the_reason(monkeypatch):
     env = _claim_env(monkeypatch)
-    stranger = _claim(env, claim_tag="#SOMEBODY")
+    stranger = _claim(env, claim_tag="#S0MEB0DY")
     assert "no longer claim" in _view_text(stranger).lower()
     assert env.trades.docs["req-a"]["status"] == "open"
 
@@ -2943,7 +2943,7 @@ def test_the_claimed_note_pings_the_poster_and_escapes_the_name():
 
 def test_holders_view_offers_post_a_request_only_with_a_spare():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     # The headline case: nobody holds the card at all.
@@ -2968,7 +2968,7 @@ def test_holders_view_offers_post_a_request_only_with_a_spare():
     # rides beside the existing guidance, same precondition.
     inventory = _complete_inventory()
     inventory["cards"]["balloon"] = cards.MISSING
-    holder = _complete_inventory(tag="#H", clan_tag="#HOME")
+    holder = _complete_inventory(tag="#H", clan_tag="#H0ME")
     holder["cards"]["balloon"] = cards.DUPLICATE
     holder["discord_id"] = 9
     holders = cards.holders_for_card(inventory, [holder], "balloon")
@@ -2995,7 +2995,7 @@ def test_matches_view_offers_the_request_picker_whenever_a_spare_exists():
     matches it goes grey, because the swap picker is the one primary thing.
     """
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     with_spare = _complete_inventory()
@@ -3012,8 +3012,8 @@ def test_matches_view_offers_the_request_picker_whenever_a_spare_exists():
     assert empty_style == hikari.ButtonStyle.PRIMARY
 
     match = cards.CardMatch(
-        holder_tag="#HOLDER", holder_name="Holder",
-        holder_discord_id=222, holder_clan_tag="#HOME",
+        holder_tag="#H0LDER", holder_name="Holder",
+        holder_discord_id=222, holder_clan_tag="#H0ME",
         holder_clan_name="Home Clan",
         exchanges=(cards.CategoryExchange(
             "elixir", ("root_rider",), ("wizard",),
@@ -3042,7 +3042,7 @@ def test_matches_view_offers_the_request_picker_whenever_a_spare_exists():
 
 def test_the_request_picker_draws_one_menu_per_requestable_category():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -3064,7 +3064,7 @@ def test_the_request_picker_draws_one_menu_per_requestable_category():
 
 def test_a_picker_choice_opens_the_consent_screen_for_that_card(monkeypatch):
     account = Account(
-        tag="#ME", name="Shaun", clan_tag="#HOME",
+        tag="#ME", name="Shaun", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=17,
     )
     box = {"inventory": _open_requester_inventory()}
@@ -3120,7 +3120,7 @@ def test_posting_a_request_delivers_through_the_funnel(monkeypatch):
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
     monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
     account = Account(
-        tag="#ME", name="Shaun", clan_tag="#HOME",
+        tag="#ME", name="Shaun", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=17,
     )
 
@@ -3223,7 +3223,7 @@ class _FakeCategoryCollection:
 def test_final_manual_card_automatically_makes_the_category_matchable():
     """Manual trust opens matching in the same write as the final count."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     elixir_ids = [card.id for card in cards.CATEGORY_CARDS["elixir"]]
@@ -3240,7 +3240,7 @@ def test_final_manual_card_automatically_makes_the_category_matchable():
         "confirmed_at": datetime.now(timezone.utc),
     }
     partner = {
-        "_id": "#YOU",
+        "_id": "#Y0U",
         "player_name": "Partner",
         "cards": {"root_rider": cards.DUPLICATE, "wizard": cards.MISSING},
         "complete_categories": ["elixir"],
@@ -3319,7 +3319,7 @@ def test_legacy_ready_v1_manifest_is_frozen_to_the_launch_catalog():
 
 def test_a_historical_ready_inventory_is_trusted_and_stays_ready_when_edited():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     # No trusted_card_ids: this is the legacy shape already in production.
@@ -3406,7 +3406,7 @@ def test_legacy_ready_hidden_badge_stays_untrusted_and_reopens_its_category():
 def test_legacy_ready_does_not_trust_a_future_catalog_card(monkeypatch):
     """The V1 compatibility boundary must not expand with the live catalog."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document = _complete_inventory()
@@ -3465,7 +3465,7 @@ def test_one_reserved_card_no_longer_locks_the_rest_of_its_category():
     category as it.
     """
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     trade = _trade_document()
@@ -3515,7 +3515,7 @@ def test_the_whole_category_is_visible_on_one_screen():
     thirteen.
     """
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     for category in cards.CATEGORIES:
@@ -3579,7 +3579,7 @@ def test_only_one_set_of_step_buttons_exists_for_the_whole_category():
     phone screen and still showed only six of nineteen cards.
     """
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     view = cards_command._quantity_editor(
@@ -3624,7 +3624,7 @@ def test_only_one_set_of_step_buttons_exists_for_the_whole_category():
 
 def test_the_category_screen_never_renders_a_manual_ready_button():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     done = cards_command._quantity_editor(
@@ -3660,7 +3660,7 @@ def test_every_rendered_custom_id_parses_back_to_what_drew_it():
     this command, both times because the test built the id itself.
     """
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     for category in cards.CATEGORIES:
@@ -3714,7 +3714,7 @@ def test_an_unknown_card_selects_nothing_rather_than_guessing():
     controls the member never aimed at anything.
     """
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     for bogus in (None, "", "not_a_card", "night_witch"):
@@ -3875,7 +3875,7 @@ def test_candidate_search_sanitizes_unopened_legacy_ready_hidden_spare():
     class Clans:
         async def distinct(self, field):
             assert field == "tag"
-            return ["#HOME"]
+            return ["#H0ME"]
 
     class Inventories:
         def __init__(self, document):
@@ -3888,7 +3888,7 @@ def test_candidate_search_sanitizes_unopened_legacy_ready_hidden_spare():
 
     requester = _complete_inventory(tag="#REQUESTER")
     requester["cards"]["wizard"] = cards.MISSING
-    holder = _complete_inventory(tag="#HOLDER")
+    holder = _complete_inventory(tag="#H0LDER")
     holder.update({"guild_id": 123, "discord_id": 222})
     holder["cards"]["wizard"] = cards.DUPLICATE
     holder["scan_duplicate_unverified_card_ids"] = ["wizard"]
@@ -3905,7 +3905,7 @@ def test_candidate_search_sanitizes_unopened_legacy_ready_hidden_spare():
     ))
 
     assert inventories.query["guild_id"] == 123
-    assert inventories.query["clan_tag"] == {"$in": ["#HOME"]}
+    assert inventories.query["clan_tag"] == {"$in": ["#H0ME"]}
     assert len(candidates) == 1
     safe_holder = candidates[0]
     assert "elixir" not in safe_holder["complete_categories"]
@@ -3970,7 +3970,7 @@ def test_missing_or_taken_over_exact_card_token_blocks_every_completion_write():
     ):
         requester = _reserve_inventory(_complete_inventory(), trade)
         requester["card_trade_reservations"] = requester_reservations
-        holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+        holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), trade)
         requester["cards"].update({
             "root_rider": cards.MISSING,
             "wizard": cards.DUPLICATE,
@@ -4004,7 +4004,7 @@ def test_completion_changes_neither_inventory_when_one_side_no_longer_matches():
     now = datetime.now(timezone.utc)
     trade = _reserved_trade()
     requester = _reserve_inventory(_complete_inventory(), trade)
-    holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+    holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), trade)
     requester["cards"].update({"root_rider": cards.MISSING, "wizard": cards.DUPLICATE})
     holder["cards"].update({"root_rider": cards.OWNED, "wizard": cards.MISSING})
     collection = _FakeInventoryCollection([requester, holder])
@@ -4030,7 +4030,7 @@ def test_completion_updates_both_exact_pairs_when_all_four_legs_still_match():
     now = datetime.now(timezone.utc)
     trade = _reserved_trade()
     requester = _reserve_inventory(_complete_inventory(), trade)
-    holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+    holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), trade)
     requester["card_trade_reservations"]["super_barbarian"] = "other-trade:token"
     requester["cards"].update({"root_rider": cards.MISSING, "wizard": cards.DUPLICATE})
     holder["cards"].update({"root_rider": cards.DUPLICATE, "wizard": cards.MISSING})
@@ -4059,7 +4059,7 @@ def test_second_fenced_inventory_write_failure_is_reported_as_partial():
     now = datetime.now(timezone.utc)
     trade = _reserved_trade()
     requester = _reserve_inventory(_complete_inventory(), trade)
-    holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+    holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), trade)
     requester["cards"].update({
         "root_rider": cards.MISSING,
         "wizard": cards.DUPLICATE,
@@ -4070,7 +4070,7 @@ def test_second_fenced_inventory_write_failure_is_reported_as_partial():
     })
     collection = _FakeInventoryCollection(
         [requester, holder],
-        lose_reservation_before_card_write={"#HOLDER"},
+        lose_reservation_before_card_write={"#H0LDER"},
     )
     mongo = SimpleNamespace(card_inventories=collection)
     cards_command._inventory_locks.clear()
@@ -4126,8 +4126,8 @@ def _patch_trade_handler_dependencies(monkeypatch, account):
 
     async def live_clans(*_args, **_kwargs):
         return (
-            cards_command._LiveClan("#HOME", None, False),
-            cards_command._LiveClan("#HOME", None, False),
+            cards_command._LiveClan("#H0ME", None, False),
+            cards_command._LiveClan("#H0ME", None, False),
         )
 
     async def verify(*_args, **_kwargs):
@@ -4147,13 +4147,13 @@ def test_completion_second_write_exception_persists_review_and_releases(
             is_card_write = any(
                 path.startswith("cards.") for path in update.get("$set", {})
             )
-            if query.get("_id") == "#HOLDER" and is_card_write:
+            if query.get("_id") == "#H0LDER" and is_card_write:
                 raise RuntimeError("simulated second-write failure")
             return await super().update_one(query, update, upsert=upsert)
 
     trade = _accepted_trade_for_handler()
     requester = _reserve_inventory(_complete_inventory(), trade)
-    holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+    holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), trade)
     requester["cards"].update({
         "root_rider": cards.MISSING,
         "wizard": cards.DUPLICATE,
@@ -4167,7 +4167,7 @@ def test_completion_second_write_exception_persists_review_and_releases(
     trades.docs[trade["_id"]] = trade
     mongo = SimpleNamespace(card_inventories=inventories, card_trades=trades)
     account = Account(
-        tag="#ME", name="Requester", clan_tag="#HOME",
+        tag="#ME", name="Requester", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     _patch_trade_handler_dependencies(monkeypatch, account)
@@ -4204,7 +4204,7 @@ def test_completion_audit_exception_attempts_conservative_review(monkeypatch):
 
     trade = _accepted_trade_for_handler()
     requester = _reserve_inventory(_complete_inventory(), trade)
-    holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+    holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), trade)
     requester["cards"].update({
         "root_rider": cards.MISSING,
         "wizard": cards.DUPLICATE,
@@ -4218,7 +4218,7 @@ def test_completion_audit_exception_attempts_conservative_review(monkeypatch):
     trades.docs[trade["_id"]] = trade
     mongo = SimpleNamespace(card_inventories=inventories, card_trades=trades)
     account = Account(
-        tag="#ME", name="Requester", clan_tag="#HOME",
+        tag="#ME", name="Requester", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     _patch_trade_handler_dependencies(monkeypatch, account)
@@ -4257,7 +4257,7 @@ def test_needs_review_invalidates_both_categories_before_releasing_reservations(
         "cleanup_requested_at": datetime.now(timezone.utc),
     })
     requester = _reserve_inventory(_complete_inventory(), trade)
-    holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+    holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), trade)
     affected = {trade["wanted_card_id"], trade["given_card_id"]}
     expected_trusted = {card.id for card in cards.CARDS} - affected
     expected_reviewed = sorted(
@@ -4339,7 +4339,7 @@ def test_failed_review_cleanup_stays_queued_and_reconciles_on_retry():
         "cleanup_requested_at": datetime.now(timezone.utc),
     })
     requester = _reserve_inventory(_complete_inventory(), trade)
-    holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+    holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), trade)
     for document in (requester, holder):
         document["reviewed_lists"] = ["elixir:missing", "elixir:duplicates"]
 
@@ -4391,7 +4391,7 @@ def test_verify_trade_reservation_requires_two_token_fences_and_four_leases():
 
     def reservation(*, fence_count, lease_count):
         requester = _reserve_inventory(_complete_inventory(), trade)
-        holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+        holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), trade)
         if fence_count < 2:
             holder["card_trade_reservations"]["wizard"] = "other-trade:token"
         inventories = _FakeInventoryCollection([requester, holder])
@@ -4427,7 +4427,7 @@ def test_legacy_string_markers_still_verify_complete_and_release():
     trade = _reserved_trade()
     requester = _reserve_inventory(_complete_inventory(), trade, legacy=True)
     holder = _reserve_inventory(
-        _complete_inventory(tag="#HOLDER"), trade, legacy=True
+        _complete_inventory(tag="#H0LDER"), trade, legacy=True
     )
     requester["cards"].update({
         "root_rider": cards.MISSING,
@@ -4496,7 +4496,7 @@ def test_late_duplicate_accept_does_not_touch_a_winners_reservations():
         mongo,
         trade,
         user_id=222,
-        live_clans=("#HOME", "#HOME"),
+        live_clans=("#H0ME", "#H0ME"),
         now=datetime.now(timezone.utc),
     ))
 
@@ -4525,7 +4525,7 @@ def test_stalled_reserving_recovery_does_not_clear_a_newer_token():
     trades.docs[stale["_id"]] = dict(stale)
     trades.docs.update(_lease_documents(newer))
     requester = _reserve_inventory(_complete_inventory(), newer)
-    holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), newer)
+    holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), newer)
     inventories = _FakeInventoryCollection([requester, holder])
     mongo = SimpleNamespace(
         card_trades=trades,
@@ -4586,8 +4586,8 @@ def test_pending_move_needed_and_ready_trades_remain_visible_without_deadlines()
     [
         (None, "#ME", True),
         ("requester", "#ME", False),
-        ("requester", "#HOLDER", True),
-        ("holder", "#HOLDER", False),
+        ("requester", "#H0LDER", True),
+        ("holder", "#H0LDER", False),
         ("holder", "#ME", True),
     ],
 )
@@ -4642,7 +4642,7 @@ def test_active_my_trades_keeps_recovery_states_visible_to_both_accounts(status)
         card_inventories=_FakeInventoryCollection([]),
     )
 
-    for viewer_tag in ("#ME", "#HOLDER"):
+    for viewer_tag in ("#ME", "#H0LDER"):
         active = asyncio.run(cards_command._active_trades(
             mongo, tag=viewer_tag, guild_id=1
         ))
@@ -4666,7 +4666,7 @@ def test_completed_trade_remains_out_of_both_active_account_lists():
         card_inventories=_FakeInventoryCollection([]),
     )
 
-    for viewer_tag in ("#ME", "#HOLDER"):
+    for viewer_tag in ("#ME", "#H0LDER"):
         assert asyncio.run(cards_command._active_trades(
             mongo, tag=viewer_tag, guild_id=1
         )) == []
@@ -4807,7 +4807,7 @@ def test_expired_completing_trade_remains_visible_as_needs_review():
         _lease_documents(trade)
     )
     requester = _reserve_inventory(_complete_inventory(), trade)
-    holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+    holder = _reserve_inventory(_complete_inventory(tag="#H0LDER"), trade)
     inventories = _FakeInventoryCollection([requester, holder])
     mongo = SimpleNamespace(
         card_trades=trade_collection,
@@ -4858,7 +4858,7 @@ def test_expired_completion_recovery_drains_more_than_twenty_rows():
 def test_holder_page_action_rebuilds_second_page_with_trade_selector(monkeypatch):
     now = datetime.now(timezone.utc)
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory(confirmed_at=now)
@@ -4868,7 +4868,7 @@ def test_holder_page_action_rebuilds_second_page_with_trade_selector(monkeypatch
     })
     holders = [
         cards.CardMatch(
-            holder_tag=f"#HOLDER{index}",
+            holder_tag=f"#H0LDER{index}",
             holder_name=f"Holder {index}",
             holder_discord_id=20_000 + index,
             holder_clan_tag="#AWAY",
@@ -4913,7 +4913,7 @@ def test_holder_page_action_rebuilds_second_page_with_trade_selector(monkeypatch
     # carries its own Ask button, so the holder tag rides in the custom_id.
     assert not [n for n in nodes if n.get("type") == 3]
     page_size = cards_command.HOLDER_RESULT_LIMIT
-    last = f"#HOLDER{page_size}"
+    last = f"#H0LDER{page_size}"
     assert f"cards_trade_holder:#ME|root_rider|{last}" in custom_ids
     assert "cards_holder_page:#ME|root_rider|0" in custom_ids
     assert "cards_holder_page:#ME|root_rider|1" in custom_ids
@@ -4922,7 +4922,7 @@ def test_holder_page_action_rebuilds_second_page_with_trade_selector(monkeypatch
 
 def test_my_trades_view_paginates_more_than_five_open_proposals():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     trades = []
@@ -4959,7 +4959,7 @@ def test_my_trades_view_paginates_more_than_five_open_proposals():
 
 def test_dashboard_keeps_my_trades_enabled_before_category_setup():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     view = cards_command._dashboard(
@@ -4978,7 +4978,7 @@ def test_dashboard_keeps_my_trades_enabled_before_category_setup():
 
 def test_dashboard_leads_with_the_board_and_carries_every_action():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -5037,7 +5037,7 @@ def test_dashboard_leads_with_the_board_and_carries_every_action():
 def test_dashboard_without_any_recorded_cards_still_shows_the_board():
     """A brand new member sees the collection greyed out, not a text stub."""
     account = Account(
-        tag="#NEW", name="Newcomer", clan_tag="#HOME",
+        tag="#NEW", name="Newcomer", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     view = cards_command._dashboard(
@@ -5060,7 +5060,7 @@ def test_dashboard_without_any_recorded_cards_still_shows_the_board():
 
 def test_runtime_dashboard_renders_the_board_off_the_event_loop(monkeypatch):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -5083,7 +5083,7 @@ def test_runtime_dashboard_renders_the_board_off_the_event_loop(monkeypatch):
 def test_event_links_are_buttons_not_trailing_small_print():
     """Three lines of footer subtext read as leftovers; buttons read as places."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     view = cards_command._dashboard(
@@ -5116,7 +5116,7 @@ def test_card_editor_plus_minus_handlers_apply_one_step_only(
     monkeypatch, handler_name, initial, expected,
 ):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document = _complete_inventory()
@@ -5160,7 +5160,7 @@ def test_possible_spare_editor_yes_no_saves_and_advances(
     monkeypatch, handler_name, expected,
 ):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document = _complete_inventory()
@@ -5206,7 +5206,7 @@ def test_possible_spare_editor_missing_saves_only_that_card_and_advances(
     monkeypatch,
 ):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document = _complete_inventory()
@@ -5262,7 +5262,7 @@ def test_possible_spare_board_state_keeps_proven_ownership():
 
 def test_one_card_quick_update_uses_exact_card_reservation_and_revision_guards():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document = _complete_inventory()
@@ -5318,7 +5318,7 @@ def test_one_card_quick_update_uses_exact_card_reservation_and_revision_guards()
 
 def test_global_hidden_badge_review_saves_one_batch_and_clears_only_that_batch():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document = _complete_inventory()
@@ -5372,7 +5372,7 @@ def test_all_member_views_build_with_discord_component_limits():
     account = Account(
         tag="#ME",
         name="Member",
-        clan_tag="#HOME",
+        clan_tag="#H0ME",
         clan_name="Home Clan",
         town_hall=18,
     )
@@ -5402,7 +5402,7 @@ def test_all_member_views_build_with_discord_component_limits():
             holder_tag=f"#MATCH{index}",
             holder_name=f"Match {index}",
             holder_discord_id=10_000 + index,
-            holder_clan_tag="#HOME",
+            holder_clan_tag="#H0ME",
             holder_clan_name="Home Clan",
             exchanges=worst_exchanges,
             same_clan=True,
@@ -5412,10 +5412,10 @@ def test_all_member_views_build_with_discord_component_limits():
     ]
     specific_matches = [
         cards.CardMatch(
-            holder_tag=f"#HOLDER{index}",
+            holder_tag=f"#H0LDER{index}",
             holder_name=f"Holder {index}",
             holder_discord_id=20_000 + index,
-            holder_clan_tag="#HOME",
+            holder_clan_tag="#H0ME",
             holder_clan_name="Home Clan",
             exchanges=(cards.CategoryExchange(
                 "elixir",
@@ -5437,7 +5437,7 @@ def test_all_member_views_build_with_discord_component_limits():
             "status": "pending" if index % 2 == 0 else "ready",
             "requester_tag": "#ME",
             "requester_name": "Member",
-            "holder_tag": f"#HOLDER{index}",
+            "holder_tag": f"#H0LDER{index}",
             "holder_name": f"Holder {index}",
             "wanted_card_id": "root_rider",
             "given_card_id": "wizard",
@@ -5533,7 +5533,7 @@ def _scan_account(tag="#ME", name="Member"):
     return Account(
         tag=tag,
         name=name,
-        clan_tag="#HOME",
+        clan_tag="#H0ME",
         clan_name="Home Clan",
         town_hall=18,
     )
@@ -5780,7 +5780,7 @@ def test_bound_scan_ignores_failure_on_a_different_linked_account(monkeypatch):
             account=selected,
         ),
         cards_command.AccountEntry(
-            tag="#OTHER",
+            tag="#0THER",
             status=cards_command.STATUS_ERROR,
             account=None,
         ),
@@ -5824,7 +5824,7 @@ def test_dm_upload_accepts_partial_any_order_and_keeps_only_checkpoint(monkeypat
             account=account,
         ),
         cards_command.AccountEntry(
-            tag="#OTHER",
+            tag="#0THER",
             status=cards_command.STATUS_ERROR,
             account=None,
         ),
@@ -6719,7 +6719,7 @@ def test_family_supply_ignores_paused_and_unreviewed_collections():
     it never told them.
     """
     values = {card.id: cards.DUPLICATE for card in cards.CARDS}
-    paused = _supply_document("#OFF", cards_map=values)
+    paused = _supply_document("#0FF", cards_map=values)
     paused["trading_paused"] = True
     unreviewed = _supply_document("#NEW", cards_map=values, complete=[])
 
@@ -6732,14 +6732,14 @@ def test_family_supply_ignores_paused_and_unreviewed_collections():
 def test_family_supply_keeps_an_old_but_active_collection():
     values = {card.id: cards.DUPLICATE for card in cards.CARDS}
     old = _supply_document(
-        "#OLD",
+        "#0LD",
         cards_map=values,
         confirmed_at=datetime.now(timezone.utc) - timedelta(days=20),
     )
 
     supply = cards.family_supply([old])
 
-    assert supply["barbarian"].holders == ("#OLD",)
+    assert supply["barbarian"].holders == ("#0LD",)
 
 
 def test_family_supply_only_counts_reviewed_categories_of_a_partial_member():
@@ -6850,7 +6850,7 @@ def test_achievable_trade_count_is_independent_of_input_order():
 )
 def test_cards_set_writes_the_absolute_state(monkeypatch, initial, target):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document = _complete_inventory()
@@ -6880,7 +6880,7 @@ def test_cards_set_writes_the_absolute_state(monkeypatch, initial, target):
 
 def test_cards_set_refuses_a_reserved_card(monkeypatch):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document = _complete_inventory()
@@ -6938,7 +6938,7 @@ def test_cards_set_rejects_an_unparseable_target(payload):
 )
 def test_cards_step_adjusts_the_copy_count(monkeypatch, initial, delta, expected):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document = _complete_inventory()
@@ -6981,7 +6981,7 @@ def test_a_count_above_two_survives_normalisation_and_still_trades():
 
 def test_card_focus_marks_the_current_state_and_keeps_the_menu():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -7039,7 +7039,7 @@ def test_card_focus_marks_the_current_state_and_keeps_the_menu():
 
 def test_scan_saving_asks_how_many_spares_before_the_dashboard():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -7066,7 +7066,7 @@ def test_scan_saving_asks_how_many_spares_before_the_dashboard():
 
 def test_no_spare_prompt_when_nothing_came_back_as_a_spare():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     assert cards_command._spare_counts_panel(account, _complete_inventory()) is None
@@ -7075,7 +7075,7 @@ def test_no_spare_prompt_when_nothing_came_back_as_a_spare():
 def test_a_refined_count_is_not_asked_about_again():
     """Only the unrefined 2+ entries are worth a question."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -7117,7 +7117,7 @@ def test_giving_away_one_of_several_copies_keeps_the_rest():
 
 def test_used_spare_decrements_instead_of_collapsing_to_one(monkeypatch):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document = _complete_inventory()
@@ -7144,7 +7144,7 @@ def test_used_spare_decrements_instead_of_collapsing_to_one(monkeypatch):
 def test_a_member_confirmed_two_loses_the_plus():
     """The scanner's 2 reads 2+; a member's 2 reads 2."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     scanned = _complete_inventory()
@@ -7177,7 +7177,7 @@ def test_a_member_confirmed_two_loses_the_plus():
 def test_focus_screen_never_repeats_a_custom_id_at_any_count():
     """Discord rejects a message carrying the same custom_id twice."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     for value in (0, 1, 2, 3, 12):
@@ -7215,7 +7215,7 @@ def test_the_tile_and_the_board_never_disagree_about_a_spare():
 
 def test_copy_steppers_are_colour_coded():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -7238,7 +7238,7 @@ def test_account_picker_lists_accounts_in_one_select_with_town_hall_emoji():
     wraps below its text, so 37 linked accounts became seven pages of scrolling.
     """
     accounts = [
-        Account(tag=f"#A{i}", name=f"Member {i}", clan_tag="#HOME",
+        Account(tag=f"#A{i}", name=f"Member {i}", clan_tag="#H0ME",
                 clan_name="Home Clan", town_hall=17 - i)
         for i in range(3)
     ]
@@ -7256,7 +7256,7 @@ def test_account_picker_lists_accounts_in_one_select_with_town_hall_emoji():
 
 def test_account_picker_paginates_without_a_dead_counter_button():
     accounts = [
-        Account(tag=f"#A{i}", name=f"Member {i}", clan_tag="#HOME",
+        Account(tag=f"#A{i}", name=f"Member {i}", clan_tag="#H0ME",
                 clan_name="Home Clan", town_hall=16)
         for i in range(30)
     ]
@@ -7278,7 +7278,7 @@ def test_account_picker_paginates_without_a_dead_counter_button():
 def test_destination_buttons_say_what_is_waiting_there():
     """The count rides in the label, so the row that carried it is not needed."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -7300,7 +7300,7 @@ def test_destination_buttons_say_what_is_waiting_there():
 def test_find_trades_stays_open_on_an_old_collection():
     """Idle is not the same as wrong, and this event runs for weeks."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     old = _complete_inventory(
@@ -7319,7 +7319,7 @@ def test_find_trades_stays_open_on_an_old_collection():
 
 def test_find_trades_is_closed_while_trading_is_paused():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     paused = _complete_inventory()
@@ -7338,7 +7338,7 @@ def test_find_trades_is_closed_while_trading_is_paused():
 def test_board_destinations_are_buttons_not_two_line_rows():
     """Two Sections cost two lines each and wrapped on mobile; buttons do not."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     view = cards_command._dashboard(
@@ -7355,7 +7355,7 @@ def test_board_destinations_are_buttons_not_two_line_rows():
 
 def test_every_scan_button_carries_the_scan_mark():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     views = [
@@ -7375,7 +7375,7 @@ def test_every_scan_button_carries_the_scan_mark():
 
 def test_collection_group_hides_controls_that_would_do_nothing():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     done = cards_command._dashboard(
@@ -7408,7 +7408,7 @@ def test_scan_review_does_not_ask_for_a_retake_once_cards_are_resolved():
     retake a page they had just finished correcting.
     """
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     draft = {
@@ -7430,7 +7430,7 @@ def test_scan_review_does_not_ask_for_a_retake_once_cards_are_resolved():
 
 def test_scan_review_still_asks_when_positions_were_never_seen():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     states = {card.id: cards.OWNED for card in cards.CARDS}
@@ -7481,7 +7481,7 @@ def test_card_name_lists_carry_troop_art_everywhere():
 def test_several_hidden_badges_are_one_question_not_one_each():
     """The reward bar hides a whole row at a time, so ask once."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -7560,7 +7560,7 @@ def _many_holders(inventory, count, missing_ids):
 def test_find_trades_is_card_shaped_so_it_does_not_grow_with_the_family():
     """One block per holder did not survive a hundred-member family."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     missing_ids = ["root_rider", "druid", "cannon_cart"]
@@ -7586,7 +7586,7 @@ def test_find_trades_is_card_shaped_so_it_does_not_grow_with_the_family():
 def test_dashboard_states_each_fact_once():
     """Four representations of the same counts read as thrown together."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -7607,7 +7607,7 @@ def test_dashboard_states_each_fact_once():
 def test_find_trades_absorbs_what_who_has_what_uniquely_showed():
     """Who has what mostly repeated this screen; its one distinct part moved."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -7647,7 +7647,7 @@ def test_find_trades_absorbs_what_who_has_what_uniquely_showed():
 def test_board_controls_wrap_instead_of_dropping_the_sixth():
     """Every control the board decides to show must actually be rendered."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     # The state that produces the most controls at once: some categories set
@@ -7719,7 +7719,7 @@ def _offer_holder(returns):
 def test_a_single_giveable_card_sends_without_a_menu():
     """A one-entry menu asks the member to decide something already decided."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     view = cards_command._trade_offer_view(
@@ -7741,7 +7741,7 @@ def test_a_single_giveable_card_sends_without_a_menu():
 
 def test_several_giveable_cards_still_offer_a_choice_with_art():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     returns = ["electro_dragon", "dragon", "wizard"]
@@ -7772,7 +7772,7 @@ def test_several_giveable_cards_still_offer_a_choice_with_art():
 def test_the_direct_send_custom_id_fits_discords_limit():
     """Four segments in one id; the longest card names must still fit."""
     account = Account(
-        tag="#ME000000000", name="Member", clan_tag="#HOME",
+        tag="#ME000000000", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     longest = max((c.id for c in cards.CARDS), key=len)
@@ -7793,7 +7793,7 @@ def test_the_direct_send_custom_id_fits_discords_limit():
 def test_my_trades_and_switch_account_use_the_uploaded_emoji():
     """The same destination must not be marked differently on different screens."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -7831,7 +7831,7 @@ def test_my_trades_and_switch_account_use_the_uploaded_emoji():
 def test_search_and_cancel_buttons_use_the_uploaded_emoji():
     """Find and cancel are their own kinds of control; each gets one mark."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -8008,7 +8008,7 @@ def test_every_button_back_to_the_collection_names_it():
 def test_no_back_button_is_left_on_a_unicode_arrow():
     """A mix of uploaded and unicode arrows on the same kind of button reads sloppy."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -8057,7 +8057,7 @@ def test_no_back_button_is_left_on_a_unicode_arrow():
 def test_no_control_button_is_left_on_a_stand_in_emoji():
     """A mix of uploaded and unicode marks on the same kind of button reads sloppy."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -8122,7 +8122,7 @@ def test_unknown_category_emoji_degrades_instead_of_raising():
 
 def test_category_headings_carry_the_uploaded_emoji():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     text = _view_text(
@@ -8134,7 +8134,7 @@ def test_category_headings_carry_the_uploaded_emoji():
 def test_select_placeholders_never_carry_custom_emoji_markup():
     """A placeholder is plain text; markup would print as `<:Elixer:123>`."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -8162,7 +8162,7 @@ def test_select_placeholders_never_carry_custom_emoji_markup():
 def test_find_trades_survives_a_hundred_family_accounts():
     """The screen must be bounded by the 60 cards, not by the family size."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -8201,7 +8201,7 @@ def test_find_trades_survives_a_hundred_family_accounts():
 def test_match_lists_page_rather_than_truncate():
     """Silently dropping the tail is what the 25-option menu used to do."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -8236,7 +8236,7 @@ def test_match_lists_page_rather_than_truncate():
 def test_find_trades_explains_a_swap_hidden_by_a_reservation():
     """A perfect swap vanishing with no reason reads as a broken bot."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -8281,7 +8281,7 @@ def test_find_trades_explains_a_swap_hidden_by_a_reservation():
 def test_different_clans_names_both_of_them():
     """"You are in different clans" is useless when somebody has to move."""
     trade = {
-        "requester_clan_name": "Morning Woods", "requester_clan_tag": "#HOME",
+        "requester_clan_name": "Morning Woods", "requester_clan_tag": "#H0ME",
         "holder_clan_name": "Edrag Rush", "holder_clan_tag": "#AWAY",
     }
     holder_view = cards_command._trade_location_line(trade, role="holder")
@@ -8289,7 +8289,7 @@ def test_different_clans_names_both_of_them():
 
     # Both clans named, and "you" points at whoever is reading.
     for text in (holder_view, requester_view):
-        assert "Morning Woods" in text and "#HOME" in text
+        assert "Morning Woods" in text and "#H0ME" in text
         assert "Edrag Rush" in text and "#AWAY" in text
     assert holder_view.startswith("you are in Edrag Rush")
     assert requester_view.startswith("you are in Morning Woods")
@@ -8300,10 +8300,10 @@ def test_different_clans_names_both_of_them():
     assert "Morning Woods" in everyone and "Edrag Rush" in everyone
 
     together = cards_command._trade_location_line(
-        dict(trade, holder_clan_tag="#HOME", holder_clan_name="Morning Woods"),
+        dict(trade, holder_clan_tag="#H0ME", holder_clan_name="Morning Woods"),
         role="holder",
     )
-    assert together == "You are both in Morning Woods • `#HOME`"
+    assert together == "You are both in Morning Woods • `#H0ME`"
 
 
 @pytest.mark.parametrize("stored", [
@@ -8351,7 +8351,7 @@ def test_a_known_town_hall_renders():
 
 def test_who_has_what_destination_is_gone():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     view = cards_command._dashboard(
@@ -8510,11 +8510,11 @@ def test_confirming_settles_only_your_own_account():
         {"_id": "#ME", "cards": {given: 3, wanted: 0},
          "trusted_card_ids": trusted, "complete_categories": ready,
          "card_trade_reservations": {given: owner, wanted: owner}},
-        {"_id": "#HOLDER", "cards": {given: 0, wanted: 2},
+        {"_id": "#H0LDER", "cards": {given: 0, wanted: 2},
          "trusted_card_ids": trusted, "complete_categories": ready,
          "card_trade_reservations": {given: owner, wanted: owner}},
     ])
-    holder_before = copy.deepcopy(inventories.documents["#HOLDER"])
+    holder_before = copy.deepcopy(inventories.documents["#H0LDER"])
     mongo = SimpleNamespace(card_inventories=inventories)
 
     moved, remaining = asyncio.run(cards_command._confirm_swap_leg(
@@ -8533,7 +8533,7 @@ def test_confirming_settles_only_your_own_account():
     assert me["card_trade_reservations"] == {}
     # The partner's document is byte-identical: their side is theirs to
     # settle, with their own tap.
-    assert inventories.documents["#HOLDER"] == holder_before
+    assert inventories.documents["#H0LDER"] == holder_before
 
 
 def test_real_first_leg_hides_only_the_completed_same_owner_account():
@@ -8558,7 +8558,7 @@ def test_real_first_leg_hides_only_the_completed_same_owner_account():
             "card_trade_reservations": {given: owner, wanted: owner},
         },
         {
-            "_id": "#HOLDER",
+            "_id": "#H0LDER",
             "guild_id": 1,
             "cards": {given: cards.MISSING, wanted: cards.DUPLICATE},
             "card_trade_reservations": {given: owner, wanted: owner},
@@ -8589,10 +8589,10 @@ def test_real_first_leg_hides_only_the_completed_same_owner_account():
     assert inventories.documents["#ME"]["cards"][wanted] == cards.OWNED
     assert inventories.documents["#ME"]["card_trade_reservations"] == {}
     # ...and the holder's document was not touched at all.
-    assert inventories.documents["#HOLDER"]["cards"][given] == cards.MISSING
-    assert inventories.documents["#HOLDER"]["cards"][wanted] == cards.DUPLICATE
+    assert inventories.documents["#H0LDER"]["cards"][given] == cards.MISSING
+    assert inventories.documents["#H0LDER"]["cards"][wanted] == cards.DUPLICATE
     assert set(
-        inventories.documents["#HOLDER"]["card_trade_reservations"]
+        inventories.documents["#H0LDER"]["card_trade_reservations"]
     ) == {given, wanted}
     assert len([
         row for row in trades.docs.values() if row.get("kind") == "lease"
@@ -8602,7 +8602,7 @@ def test_real_first_leg_hides_only_the_completed_same_owner_account():
         mongo, tag="#ME", guild_id=1
     ))
     holder_active = asyncio.run(cards_command._active_trades(
-        mongo, tag="#HOLDER", guild_id=1
+        mongo, tag="#H0LDER", guild_id=1
     ))
     unrelated_active = asyncio.run(cards_command._active_trades(
         mongo, tag="#THIRD", guild_id=1
@@ -8615,7 +8615,7 @@ def test_real_first_leg_hides_only_the_completed_same_owner_account():
         str(node.get("custom_id")) for node in _view_nodes(
             cards_command._trades_view(
                 Account(
-                    tag="#HOLDER", name="Holder", clan_tag="#HOME",
+                    tag="#H0LDER", name="Holder", clan_tag="#H0ME",
                     clan_name="Home Clan", town_hall=18,
                 ),
                 holder_active,
@@ -8638,7 +8638,7 @@ def test_confirming_a_card_you_no_longer_hold_moves_nothing():
     inventories = _ConfirmInventories([
         {"_id": "#ME", "cards": {given: 1, wanted: 0},
          "card_trade_reservations": {given: owner, wanted: owner}},
-        {"_id": "#HOLDER", "cards": {given: 0},
+        {"_id": "#H0LDER", "cards": {given: 0},
          "card_trade_reservations": {given: owner}},
     ])
     mongo = SimpleNamespace(card_inventories=inventories)
@@ -8653,7 +8653,7 @@ def test_confirming_a_card_you_no_longer_hold_moves_nothing():
     assert set(me["card_trade_reservations"]) == {given, wanted}, (
         "the locks stay for the retry the member was asked to make"
     )
-    assert inventories.documents["#HOLDER"]["cards"][given] == 0
+    assert inventories.documents["#H0LDER"]["cards"][given] == 0
 
 
 def test_only_the_unanswered_side_is_asked():
@@ -8731,7 +8731,7 @@ def _per_side_swap_env(*, me_cards, holder_cards, me_marks, holder_marks,
     inventories = _FakeInventoryCollection([
         {"_id": "#ME", "guild_id": 1, "cards": dict(me_cards),
          "card_trade_reservations": {c: owner for c in me_marks}},
-        {"_id": "#HOLDER", "guild_id": 1, "cards": dict(holder_cards),
+        {"_id": "#H0LDER", "guild_id": 1, "cards": dict(holder_cards),
          "card_trade_reservations": {c: owner for c in holder_marks}},
     ])
     mongo = SimpleNamespace(card_trades=trades, card_inventories=inventories)
@@ -8773,7 +8773,7 @@ def test_both_taps_settle_their_own_sides_and_close_the_swap():
     assert first_status == "ready", "one answer does not finish a swap"
     assert after_second["status"] == "completed"
     me = inventories.documents["#ME"]
-    holder = inventories.documents["#HOLDER"]
+    holder = inventories.documents["#H0LDER"]
     assert me["cards"] == {given: cards.OWNED, wanted: cards.OWNED}
     assert holder["cards"] == {given: cards.OWNED, wanted: cards.OWNED}
     # Exactly one copy of each card moved across the two accounts.
@@ -8823,7 +8823,7 @@ def test_a_new_style_tap_settles_an_old_style_half_confirmed_trade():
 
     assert outcome == "moved"
     assert updated["status"] == "completed"
-    holder = inventories.documents["#HOLDER"]
+    holder = inventories.documents["#H0LDER"]
     me = inventories.documents["#ME"]
     # The holder's own side settled, and the already-delivered credit was
     # a no-op: the hand-set count is untouched.
@@ -8881,7 +8881,7 @@ def test_simultaneous_taps_serialize_and_both_land(monkeypatch):
     assert outcome == "moved", "the retried claim landed as a real move"
     assert updated["status"] == "completed"
     me = inventories.documents["#ME"]
-    holder = inventories.documents["#HOLDER"]
+    holder = inventories.documents["#H0LDER"]
     # No interference: each side settled its own account exactly once.
     assert me["cards"] == {given: cards.OWNED, wanted: cards.OWNED}
     assert holder["cards"] == {given: cards.OWNED, wanted: cards.OWNED}
@@ -8892,7 +8892,7 @@ def test_simultaneous_taps_serialize_and_both_land(monkeypatch):
 def test_the_two_back_buttons_do_not_wear_the_same_mark():
     """Two identically-marked buttons side by side read as one duplicated."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -9329,7 +9329,7 @@ class _GemInventoryCollection:
 
 
 class _GemClans:
-    def __init__(self, tags=("#HOME",)):
+    def __init__(self, tags=("#H0ME",)):
         self.tags = list(tags)
 
     async def distinct(self, field):
@@ -9340,7 +9340,7 @@ class _GemClans:
 def _gem_handler_env(monkeypatch):
     now = datetime.now(timezone.utc)
     account = Account(
-        tag="#ME", name="Asker", clan_tag="#HOME",
+        tag="#ME", name="Asker", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     requester = _complete_inventory(tag="#ME", confirmed_at=now)
@@ -9398,9 +9398,9 @@ def test_gem_confirmation_revalidates_normal_matching_eligibility(
     elif stale_state == "requester_now_has_a_return":
         requester["cards"]["wizard"] = cards.DUPLICATE
     elif stale_state == "requester_left_family":
-        requester["clan_tag"] = "#OUTSIDE"
+        requester["clan_tag"] = "#0UTSIDE"
     elif stale_state == "holder_left_family":
-        holder["clan_tag"] = "#OUTSIDE"
+        holder["clan_tag"] = "#0UTSIDE"
 
     result = asyncio.run(cards_command.cards_gem_ask(
         _quantity_ctx(), "#ME|balloon|#H",
@@ -9446,9 +9446,9 @@ def test_gem_send_revalidates_a_stale_confirmation_before_dm(
     elif stale_state == "holder_supply_untrusted":
         holder["trusted_card_ids"].remove("balloon")
     elif stale_state == "requester_left_family":
-        requester["clan_tag"] = "#OUTSIDE"
+        requester["clan_tag"] = "#0UTSIDE"
     elif stale_state == "holder_left_family":
-        holder["clan_tag"] = "#OUTSIDE"
+        holder["clan_tag"] = "#0UTSIDE"
 
     dms = []
 
@@ -9793,7 +9793,7 @@ def test_holders_in_your_clan_are_listed_first():
 def test_my_trades_exact_move_needed_state_exposes_canonical_sent_action(monkeypatch):
     """The live different-clan, reserved swap must be finishable here."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     trade = _trade_document()
@@ -9854,7 +9854,7 @@ def test_my_trades_exact_move_needed_state_exposes_canonical_sent_action(monkeyp
 @pytest.mark.parametrize("status", ["ready", "accepted"])
 def test_my_trades_same_clan_live_swap_exposes_the_same_action(status):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     trade = _trade_document()
@@ -9862,8 +9862,8 @@ def test_my_trades_same_clan_live_swap_exposes_the_same_action(status):
         "status": status,
         "requester_discord_id": 111,
         "holder_discord_id": 222,
-        "requester_clan_tag": "#HOME",
-        "holder_clan_tag": "#HOME",
+        "requester_clan_tag": "#H0ME",
+        "holder_clan_tag": "#H0ME",
         "reservation_token": "exact-card-reservation",
     })
 
@@ -9878,7 +9878,7 @@ def test_my_trades_same_clan_live_swap_exposes_the_same_action(status):
 
 def test_my_trades_confirmed_side_waits_while_other_side_is_pending():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     trade = _trade_document()
@@ -9888,7 +9888,7 @@ def test_my_trades_confirmed_side_waits_while_other_side_is_pending():
         "holder_discord_id": 222,
         "requester_name": "Member",
         "holder_name": "Other player",
-        "requester_clan_tag": "#HOME",
+        "requester_clan_tag": "#H0ME",
         "requester_clan_name": "Warriors United",
         "holder_clan_tag": "#AWAY",
         "holder_clan_name": "WONDER WALL",
@@ -9907,7 +9907,7 @@ def test_my_trades_confirmed_side_waits_while_other_side_is_pending():
 
 def test_my_trades_other_confirmation_does_not_hide_my_pending_action():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     trade = _trade_document()
@@ -9934,11 +9934,11 @@ def test_my_trades_nudges_only_the_unconfirmed_side():
     """The owner's prompt: the one side a half-confirmed swap still waits
     on gets a bold nudge; the confirmed side and fresh swaps get none."""
     me = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     holder = Account(
-        tag="#HOLDER", name="Holder", clan_tag="#HOME",
+        tag="#H0LDER", name="Holder", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     trade = _trade_document()
@@ -9971,7 +9971,7 @@ def test_my_trades_nudges_only_the_unconfirmed_side():
 )
 def test_my_trades_never_exposes_confirmation_for_non_live_states(status):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     trade = _trade_document()
@@ -10016,7 +10016,7 @@ def test_same_owner_my_trades_click_records_only_the_selected_account_leg(monkey
         loaded_tags.append(tag)
         return (
             Account(
-                tag=tag, name="Member", clan_tag="#HOME",
+                tag=tag, name="Member", clan_tag="#H0ME",
                 clan_name="Home Clan", town_hall=18,
             ),
             _complete_inventory(tag=tag),
@@ -10039,7 +10039,7 @@ def test_same_owner_my_trades_click_records_only_the_selected_account_leg(monkey
     mongo = SimpleNamespace(card_trades=Trades())
 
     holder_account = Account(
-        tag="#HOLDER", name="Holder", clan_tag="#AWAY",
+        tag="#H0LDER", name="Holder", clan_tag="#AWAY",
         clan_name="Away Clan", town_hall=18,
     )
     holder_view = cards_command._trades_view(holder_account, [trade])
@@ -10064,13 +10064,13 @@ def test_same_owner_my_trades_click_records_only_the_selected_account_leg(monkey
         bot=SimpleNamespace(),
     ))
 
-    assert loaded_tags == ["#HOLDER"]
+    assert loaded_tags == ["#H0LDER"]
     assert recorded_roles == ["holder"]
     assert "holder_confirmed_at" in trade
     assert "requester_confirmed_at" not in trade
 
     requester_account = Account(
-        tag="#ME", name="Requester", clan_tag="#HOME",
+        tag="#ME", name="Requester", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     requester_ids = {
@@ -10138,7 +10138,7 @@ def test_the_clan_check_is_gone_entirely():
 # ---- Looking a player up by name ----------------------------------------
 
 
-def _spare_inventory(tag, *, discord_id, name, clan_tag="#HOME", spares=()):
+def _spare_inventory(tag, *, discord_id, name, clan_tag="#H0ME", spares=()):
     inventory = _complete_inventory(tag=tag, clan_tag=clan_tag)
     inventory["discord_id"] = discord_id
     inventory["player_name"] = name
@@ -10182,12 +10182,12 @@ class _BrowseInventories:
 class _BrowseClans:
     async def distinct(self, field):
         assert field == "tag"
-        return ["#HOME"]
+        return ["#H0ME"]
 
 
 def _run_player_lookup(monkeypatch, documents, picked, *, viewer=None):
     account = Account(
-        tag="#ME", name="Viewer", clan_tag="#HOME",
+        tag="#ME", name="Viewer", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     viewer = viewer or _complete_inventory()
@@ -10235,7 +10235,7 @@ def test_real_player_lookup_handles_the_invokers_seven_linked_accounts(monkeypat
         documents.append(document)
 
     picker = cards_command._browse_picker(
-        "#ME", documents[1:], names={77: "Viewer"}, clan_tag="#HOME",
+        "#ME", documents[1:], names={77: "Viewer"}, clan_tag="#H0ME",
     )
     option = _picker_options(picker)[0]
     assert option["value"] == "d:77"
@@ -10268,7 +10268,7 @@ def test_real_player_lookup_handles_the_invokers_seven_linked_accounts(monkeypat
         "guild_id": 1,
         "trading_paused": {"$ne": True},
         "discord_id": 77,
-        "clan_tag": {"$in": ["#HOME"]},
+        "clan_tag": {"$in": ["#H0ME"]},
     }
     _assert_discord_payload(view)
 
@@ -10312,10 +10312,10 @@ def test_real_player_lookup_handles_one_self_linked_account(monkeypatch):
 def test_real_player_lookup_handles_another_users_multiple_accounts(monkeypatch):
     documents = [
         _spare_inventory(
-            "#OTHER1", discord_id=88, name="Other main", spares=["wizard"],
+            "#0THER1", discord_id=88, name="Other main", spares=["wizard"],
         ),
         _spare_inventory(
-            "#OTHER2", discord_id=88, name="Other alt", spares=["minion"],
+            "#0THER2", discord_id=88, name="Other alt", spares=["minion"],
         ),
     ]
     for document in documents:
@@ -10412,7 +10412,7 @@ def test_real_player_lookup_stale_focused_account_fails_cleanly(monkeypatch):
     })
 
     view, _inventories = _run_player_lookup(
-        monkeypatch, [document], "d:77|a:#GONE", viewer=document,
+        monkeypatch, [document], "d:77|a:#G0NE", viewer=document,
     )
 
     assert "Nothing to show" in _view_text(view)
@@ -10423,7 +10423,7 @@ def test_real_player_lookup_shows_other_player_but_sanitizes_untrusted_spares(
     monkeypatch,
 ):
     document = _spare_inventory(
-        "#OTHER", discord_id=88, name="Other player",
+        "#0THER", discord_id=88, name="Other player",
         spares=["wizard", "minion"],
     )
     document.update({
@@ -10475,7 +10475,7 @@ def test_real_player_lookup_keeps_legacy_tag_values_compatible(monkeypatch):
         ("d:77|bad-focus", "Unknown player"),
         ("d:77|a:", "Unknown player"),
         ("d:999", "Nothing to show"),
-        ("t:#GONE", "Nothing to show"),
+        ("t:#G0NE", "Nothing to show"),
     ],
 )
 def test_real_player_lookup_stale_values_fail_cleanly(
@@ -10502,12 +10502,12 @@ def test_browse_picker_hides_players_who_turned_trading_off():
 
 def test_browse_picker_puts_clanmates_first():
     """Past 25 people the cap decides who survives, so relevance sorts first."""
-    away = _spare_inventory("#A", discord_id=1, name="Aaa", clan_tag="#OTHER")
-    home = _spare_inventory("#B", discord_id=2, name="Zzz", clan_tag="#HOME")
+    away = _spare_inventory("#A", discord_id=1, name="Aaa", clan_tag="#0THER")
+    home = _spare_inventory("#B", discord_id=2, name="Zzz", clan_tag="#H0ME")
 
     options = _picker_options(
         cards_command._browse_picker(
-            "#ME", [away, home], names={}, clan_tag="#HOME"
+            "#ME", [away, home], names={}, clan_tag="#H0ME"
         )
     )
 
@@ -10609,7 +10609,7 @@ def test_player_spares_view_says_so_when_they_have_nothing():
 def test_find_trades_only_says_pick_a_card_when_there_is_a_card_menu():
     """With no even swaps the only menu on screen was the player lookup."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -10638,7 +10638,7 @@ def test_find_trades_only_says_pick_a_card_when_there_is_a_card_menu():
 
 def test_find_trades_still_fits_discord_with_the_lookup_menu():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -10647,7 +10647,7 @@ def test_find_trades_still_fits_discord_with_the_lookup_menu():
     inventory["cards"]["wizard"] = cards.DUPLICATE
     holders = _many_holders(inventory, 40, ["root_rider", "druid", "cannon_cart"])
     browse = cards_command._browse_picker(
-        "#ME", holders, names={}, clan_tag="#HOME"
+        "#ME", holders, names={}, clan_tag="#H0ME"
     )
 
     assert browse, "40 holders should produce a lookup menu"
@@ -10949,7 +10949,7 @@ def test_rebuild_a_category_survives_reviewing_every_category():
     missing cards and a bad scan to redo.
     """
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     reviewed = _complete_inventory()      # all four categories reviewed
@@ -10966,7 +10966,7 @@ def test_rebuild_a_category_survives_reviewing_every_category():
 
 def test_the_admin_button_is_only_drawn_for_admins():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -11058,7 +11058,7 @@ def test_the_board_resolves_admin_itself_on_every_screen(monkeypatch):
         cards_command.bot_data, "data", {"bot": _admin_bot(admin=True)}
     )
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
@@ -11134,7 +11134,7 @@ def _quantity_env(cards_state=None, complete=()):
 def test_the_plus_button_writes_and_keeps_the_card_selected(monkeypatch):
     """End to end through the real dispatcher, on the real rendered id."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document, mongo = _quantity_env()
@@ -11175,7 +11175,7 @@ def test_the_plus_button_writes_and_keeps_the_card_selected(monkeypatch):
 
 def test_the_minus_button_stops_at_missing_and_never_goes_negative(monkeypatch):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document, mongo = _quantity_env({"barbarian": cards.OWNED})
@@ -11196,7 +11196,7 @@ def test_the_minus_button_stops_at_missing_and_never_goes_negative(monkeypatch):
 def test_a_legacy_ready_button_refreshes_without_granting_trust(monkeypatch):
     """Old Discord messages must not bypass the per-card trust invariant."""
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document, mongo = _quantity_env({"root_rider": cards.MISSING, "wizard": 3})
@@ -11222,7 +11222,7 @@ def test_a_legacy_ready_button_refreshes_without_granting_trust(monkeypatch):
 
 def test_choosing_a_card_points_the_controller_at_it(monkeypatch):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document, mongo = _quantity_env()
@@ -11253,7 +11253,7 @@ def test_the_category_screen_stays_far_below_the_component_ceiling():
     the number does not move with the size of the category.
     """
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     worst = 0
@@ -11281,7 +11281,7 @@ def test_the_category_screen_stays_far_below_the_component_ceiling():
 
 def test_set_number_opens_a_modal_for_the_selected_card():
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document, _mongo = _quantity_env()
@@ -11330,7 +11330,7 @@ class _SubmitCtx:
 
 def test_typing_an_exact_number_saves_and_stays_on_the_category(monkeypatch):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document, mongo = _quantity_env()
@@ -11359,7 +11359,7 @@ def test_typing_an_exact_number_saves_and_stays_on_the_category(monkeypatch):
 
 def test_a_number_beyond_the_maximum_is_clamped_not_rejected(monkeypatch):
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     document, mongo = _quantity_env()
@@ -11382,7 +11382,7 @@ def test_the_pencil_marks_only_the_row_being_edited():
     anything - so it has to appear exactly once.
     """
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = {"_id": "#ME", "cards": {"wizard": 3}, "complete_categories": []}
@@ -11415,7 +11415,7 @@ def test_a_selected_card_still_reports_a_clean_count():
     import re
 
     account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = {
@@ -11475,9 +11475,9 @@ def test_an_account_with_no_town_hall_does_not_read_th_none():
 
     for missing in (None, 0):
         data = AccountsData(entries=(AccountEntry(
-            tag="#GHOST",
+            tag="#GH0ST",
             status=cards_command.STATUS_LOADED,
-            account=_switcher_account("Ghost", missing, "Some Clan", "#GHOST"),
+            account=_switcher_account("Ghost", missing, "Some Clan", "#GH0ST"),
         ),))
         option = _switcher_options(cards_command._account_picker(data))[0]
         assert "None" not in option["label"], option["label"]
@@ -11485,19 +11485,19 @@ def test_an_account_with_no_town_hall_does_not_read_th_none():
         assert "TH0" not in option["description"], option["description"]
         # What is known is still shown.
         assert "Some Clan" in option["description"]
-        assert "#GHOST" in option["description"]
+        assert "#GH0ST" in option["description"]
 
 
 def test_a_missing_clan_reads_as_no_clan_not_as_nothing():
     from extensions.commands.linked_accounts import AccountEntry, AccountsData
 
     data = AccountsData(entries=(AccountEntry(
-        tag="#LONE",
+        tag="#L0NE",
         status=cards_command.STATUS_LOADED,
-        account=_switcher_account("Loner", 18, None, "#LONE"),
+        account=_switcher_account("Loner", 18, None, "#L0NE"),
     ),))
     option = _switcher_options(cards_command._account_picker(data))[0]
-    assert option["description"] == "TH18 · No clan · #LONE"
+    assert option["description"] == "TH18 · No clan · #L0NE"
 
 
 def test_long_names_and_clans_stay_inside_discord_limits():
@@ -11505,9 +11505,9 @@ def test_long_names_and_clans_stay_inside_discord_limits():
     from extensions.commands.linked_accounts import AccountEntry, AccountsData
 
     data = AccountsData(entries=(AccountEntry(
-        tag="#LONG",
+        tag="#L0NG",
         status=cards_command.STATUS_LOADED,
-        account=_switcher_account("N" * 200, 17, "C" * 200, "#LONG"),
+        account=_switcher_account("N" * 200, 17, "C" * 200, "#L0NG"),
     ),))
     option = _switcher_options(cards_command._account_picker(data))[0]
     assert len(option["label"]) <= 100
@@ -11757,7 +11757,7 @@ def test_a_partial_scan_with_one_unknown_card_exposes_no_untrusted_match():
     }
     assert updated["confirmed_at"] is not None
 
-    partner = _complete_inventory(tag="#YOU")
+    partner = _complete_inventory(tag="#Y0U")
     partner["cards"][unknown_id] = cards.DUPLICATE
     updated["cards"][unknown_id] = cards.MISSING
     assert cards.find_matches(updated, [partner]) == []
@@ -12510,7 +12510,7 @@ def test_a_partial_scan_cannot_make_a_player_matchable_on_an_unread_category():
     document.pop("confirmed_at")
     wanted = cards.CARDS[12].id            # elixir, row 3, not scanned
     partner = {
-        "_id": "#YOU",
+        "_id": "#Y0U",
         "player_name": "Partner",
         "cards": {card.id: cards.OWNED for card in cards.CARDS}
         | {wanted: cards.DUPLICATE, cards.CARDS[0].id: cards.MISSING},
@@ -12919,7 +12919,7 @@ def test_unseen_cards_from_rejected_rows_stay_ordinary_manual_work():
 
 def _gate_account():
     return Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=18,
     )
 
@@ -13153,7 +13153,7 @@ def test_the_incoming_credit_lands_even_when_its_fence_is_gone():
         {"_id": "#ME", "guild_id": 1,
          "cards": {given: 3, wanted: cards.MISSING},
          "card_trade_reservations": {given: owner}},
-        {"_id": "#HOLDER", "guild_id": 1, "cards": {given: cards.MISSING},
+        {"_id": "#H0LDER", "guild_id": 1, "cards": {given: cards.MISSING},
          "card_trade_reservations": {}},
     ])
     mongo = SimpleNamespace(card_inventories=inventories)
@@ -13165,7 +13165,7 @@ def test_the_incoming_credit_lands_even_when_its_fence_is_gone():
     assert moved is True
     assert remaining == 2
     assert inventories.documents["#ME"]["cards"][wanted] == cards.OWNED
-    assert inventories.documents["#HOLDER"]["cards"][given] == cards.MISSING, (
+    assert inventories.documents["#H0LDER"]["cards"][given] == cards.MISSING, (
         "the partner's account is never written by somebody else's tap"
     )
 
@@ -13180,7 +13180,7 @@ def test_an_already_owned_incoming_card_is_not_credited_twice():
     inventories = _FakeInventoryCollection([
         {"_id": "#ME", "guild_id": 1, "cards": {given: 3, wanted: 4},
          "card_trade_reservations": {given: owner, wanted: owner}},
-        {"_id": "#HOLDER", "guild_id": 1, "cards": {},
+        {"_id": "#H0LDER", "guild_id": 1, "cards": {},
          "card_trade_reservations": {}},
     ])
     mongo = SimpleNamespace(card_inventories=inventories)
@@ -13305,12 +13305,12 @@ def _review_failure_swap_fixture(
                 values={given: giver_spares, wanted: cards.MISSING},
             ),
             _fully_trusted_swap_inventory(
-                "#HOLDER", owner=owner, given=given, wanted=wanted,
+                "#H0LDER", owner=owner, given=given, wanted=wanted,
                 values={given: cards.MISSING, wanted: 3},
             ),
         ],
         giver="#ME",
-        receiver="#HOLDER",
+        receiver="#H0LDER",
         card_id=given,
         other_card_id=wanted,
         expect_debited=expect_debited,
@@ -13357,7 +13357,7 @@ def test_receiver_exception_enters_durable_review_without_a_second_debit():
     assert "requester_confirmed_at" not in saved
 
     requester = mongo.card_inventories.documents["#ME"]
-    holder = mongo.card_inventories.documents["#HOLDER"]
+    holder = mongo.card_inventories.documents["#H0LDER"]
     assert requester["cards"][given] == 2
     assert requester["cards"][wanted] == cards.MISSING, (
         "an exception before the credit write must not invent a credit"
@@ -13467,7 +13467,7 @@ def test_expired_claimed_swap_leg_recovers_to_review_not_ordinary_expiry():
             "role": "requester",
             "card_id": trade["given_card_id"],
             "giver_tag": "#ME",
-            "receiver_tag": "#HOLDER",
+            "receiver_tag": "#H0LDER",
             "previous_status": "ready",
             "phase": "inventory_update_started",
             "started_at": now - timedelta(minutes=2),
@@ -13799,7 +13799,7 @@ def test_player_lookup_refuses_when_the_family_boundary_is_unavailable(monkeypat
     mongo = SimpleNamespace(
         clans=BrokenClans(), card_inventories=Inventories(),
     )
-    ctx = _quantity_ctx(values=["t:#SOMEBODY"])
+    ctx = _quantity_ctx(values=["t:#S0MEB0DY"])
 
     result = asyncio.run(cards_command.cards_browse(
         ctx, "#ME", coc_client=SimpleNamespace(), mongo=mongo,

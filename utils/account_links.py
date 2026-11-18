@@ -7,6 +7,7 @@ import asyncio
 import re
 
 from utils.clash_links import _lookup_shared_links
+from utils.clash_tags import normalize
 from utils.clashperk_links import lookup as _lookup_clashperk_links
 
 
@@ -20,8 +21,7 @@ def normalize_records(results):
         for item in rows:
             if not isinstance(item, dict):
                 continue
-            value = str(item.get('player_tag' if index == 0 else 'tag') or '').strip().upper().replace('O', '0')
-            value = value if value.startswith('#') else '#'+value
+            value = normalize(item.get('player_tag' if index == 0 else 'tag'))
             uid = str(item.get('user_id' if index == 0 else 'userId') or '')
             if re.fullmatch(r'#[0289PYLQGRJCUV]{3,15}', value) and re.fullmatch(r'[0-9]{1,22}', uid):
                 verified = item.get('is_verified' if index == 0 else 'verified') is True

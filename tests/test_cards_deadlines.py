@@ -176,7 +176,7 @@ def _install(monkeypatch, trades, inventories):
     return rest
 
 
-def _pending(trade_id, *, overdue: bool, holder="#HOLDER"):
+def _pending(trade_id, *, overdue: bool, holder="#H0LDER"):
     now = datetime.now(timezone.utc)
     return {
         "_id": trade_id, "kind": "trade", "status": "pending",
@@ -193,13 +193,13 @@ def _pending(trade_id, *, overdue: bool, holder="#HOLDER"):
 
 def test_an_unanswered_proposal_expires_and_counts_against_the_holder(monkeypatch):
     trades = _Trades([_pending("t1", overdue=True)])
-    inventories = _Inventories([{"_id": "#HOLDER", "player_name": "Holder"}])
+    inventories = _Inventories([{"_id": "#H0LDER", "player_name": "Holder"}])
     rest = _install(monkeypatch, trades, inventories)
 
     asyncio.run(sweeper.sweep_once())
 
     assert trades.docs["t1"]["status"] == "expired"
-    assert inventories.docs["#HOLDER"]["ignored_requests"] == 1
+    assert inventories.docs["#H0LDER"]["ignored_requests"] == 1
     # The "expired" policy row: nobody is DMed about a proposal neither
     # player touched for 12 hours - the standing post (when one exists) is
     # the only surface that changes.
@@ -208,26 +208,26 @@ def test_an_unanswered_proposal_expires_and_counts_against_the_holder(monkeypatc
 
 def test_a_proposal_inside_its_window_is_left_alone(monkeypatch):
     trades = _Trades([_pending("t1", overdue=False)])
-    inventories = _Inventories([{"_id": "#HOLDER"}])
+    inventories = _Inventories([{"_id": "#H0LDER"}])
     _install(monkeypatch, trades, inventories)
 
     asyncio.run(sweeper.sweep_once())
 
     assert trades.docs["t1"]["status"] == "pending"
-    assert "ignored_requests" not in inventories.docs["#HOLDER"]
+    assert "ignored_requests" not in inventories.docs["#H0LDER"]
 
 
 def test_the_second_ignored_request_triggers_the_check_in(monkeypatch):
     trades = _Trades([_pending("t1", overdue=True)])
     inventories = _Inventories([
-        {"_id": "#HOLDER", "player_name": "Holder", "ignored_requests": 1},
+        {"_id": "#H0LDER", "player_name": "Holder", "ignored_requests": 1},
     ])
     rest = _install(monkeypatch, trades, inventories)
 
     asyncio.run(sweeper.sweep_once())
 
-    assert inventories.docs["#HOLDER"]["ignored_requests"] == 2
-    assert inventories.docs["#HOLDER"]["checkin_sent_at"] is not None
+    assert inventories.docs["#H0LDER"]["ignored_requests"] == 2
+    assert inventories.docs["#H0LDER"]["checkin_sent_at"] is not None
     text = " ".join(str(dm) for dm in rest.dms)
     assert "still trading" in text.lower()
 
@@ -236,7 +236,7 @@ def test_the_check_in_is_only_ever_sent_once(monkeypatch):
     """Otherwise every later expiry would ask again and never resolve."""
     trades = _Trades([_pending("t1", overdue=True)])
     inventories = _Inventories([{
-        "_id": "#HOLDER", "player_name": "Holder",
+        "_id": "#H0LDER", "player_name": "Holder",
         "ignored_requests": 5,
         "checkin_sent_at": datetime.now(timezone.utc) - timedelta(hours=1),
     }])
@@ -285,7 +285,7 @@ def test_a_quiet_side_is_auto_confirmed_after_seven_days(monkeypatch):
         "wanted_card_id": "balloon", "given_card_id": "electro_dragon",
         "requester_tag": "#ME", "requester_name": "Requester",
         "requester_discord_id": 111,
-        "holder_tag": "#HOLDER", "holder_name": "Holder",
+        "holder_tag": "#H0LDER", "holder_name": "Holder",
         "holder_discord_id": 222,
         "requester_confirmed_at": now - timedelta(days=8),
         "confirm_deadline_at": now - timedelta(days=1),
@@ -294,7 +294,7 @@ def test_a_quiet_side_is_auto_confirmed_after_seven_days(monkeypatch):
         {"_id": "#ME", "guild_id": 1,
          "cards": {"electro_dragon": 2, "balloon": 0},
          "card_trade_reservations": {"balloon": owner}},
-        {"_id": "#HOLDER", "guild_id": 1,
+        {"_id": "#H0LDER", "guild_id": 1,
          "cards": {"balloon": 3, "electro_dragon": 0},
          "card_trade_reservations": {
              "balloon": owner, "electro_dragon": owner,
@@ -306,11 +306,11 @@ def test_a_quiet_side_is_auto_confirmed_after_seven_days(monkeypatch):
 
     # The holder never answered, so their WHOLE side settled for them:
     # their card was deducted and the card they agreed to receive came in.
-    assert inventories.docs["#HOLDER"]["cards"]["balloon"] == 2
-    assert inventories.docs["#HOLDER"]["cards"]["electro_dragon"] == (
+    assert inventories.docs["#H0LDER"]["cards"]["balloon"] == 2
+    assert inventories.docs["#H0LDER"]["cards"]["electro_dragon"] == (
         cards_command.OWNED
     )
-    assert inventories.docs["#HOLDER"]["card_trade_reservations"] == {}
+    assert inventories.docs["#H0LDER"]["card_trade_reservations"] == {}
     # The requester's stuck old-style incoming credit was delivered by the
     # confirmed-side sweeper, and their lock released with it.
     assert inventories.docs["#ME"]["cards"]["balloon"] == cards_command.OWNED
@@ -329,11 +329,11 @@ def test_a_swap_neither_side_confirms_is_closed_and_freed(monkeypatch):
         "wanted_card_id": "balloon", "given_card_id": "electro_dragon",
         "requester_tag": "#ME", "requester_name": "Requester",
         "requester_discord_id": 111,
-        "holder_tag": "#HOLDER", "holder_name": "Holder",
+        "holder_tag": "#H0LDER", "holder_name": "Holder",
         "holder_discord_id": 222,
         "backstop_at": now - timedelta(hours=1),
     }])
-    inventories = _Inventories([{"_id": "#ME"}, {"_id": "#HOLDER"}])
+    inventories = _Inventories([{"_id": "#ME"}, {"_id": "#H0LDER"}])
     rest = _install(monkeypatch, trades, inventories)
 
     asyncio.run(sweeper.sweep_once())
@@ -352,12 +352,12 @@ def test_a_swap_one_side_confirmed_is_not_hit_by_the_backstop(monkeypatch):
         "wanted_card_id": "balloon", "given_card_id": "electro_dragon",
         "requester_tag": "#ME", "requester_name": "R",
         "requester_discord_id": 111,
-        "holder_tag": "#HOLDER", "holder_name": "H", "holder_discord_id": 222,
+        "holder_tag": "#H0LDER", "holder_name": "H", "holder_discord_id": 222,
         "requester_confirmed_at": now - timedelta(days=1),
         "backstop_at": now - timedelta(hours=1),
         "confirm_deadline_at": now + timedelta(days=6),
     }])
-    inventories = _Inventories([{"_id": "#ME"}, {"_id": "#HOLDER"}])
+    inventories = _Inventories([{"_id": "#ME"}, {"_id": "#H0LDER"}])
     _install(monkeypatch, trades, inventories)
 
     asyncio.run(sweeper.sweep_once())
@@ -393,7 +393,7 @@ def test_a_no_spare_auto_settle_still_settles_the_side_and_stays_quiet(
         "wanted_card_id": "balloon", "given_card_id": "electro_dragon",
         "requester_tag": "#ME", "requester_name": "Requester",
         "requester_discord_id": 111,
-        "holder_tag": "#HOLDER", "holder_name": "Holder",
+        "holder_tag": "#H0LDER", "holder_name": "Holder",
         "holder_discord_id": 222,
         "requester_confirmed_at": now - timedelta(days=8),
         "confirm_deadline_at": now - timedelta(days=1),
@@ -403,7 +403,7 @@ def test_a_no_spare_auto_settle_still_settles_the_side_and_stays_quiet(
          "cards": {"electro_dragon": 2, "balloon": 0},
          "card_trade_reservations": {"balloon": owner}},
         # The holder's spare is gone, so the guarded move must refuse.
-        {"_id": "#HOLDER", "guild_id": 1,
+        {"_id": "#H0LDER", "guild_id": 1,
          "cards": {"balloon": 1, "electro_dragon": 0},
          "card_trade_reservations": {
              "balloon": owner, "electro_dragon": owner,
@@ -414,12 +414,12 @@ def test_a_no_spare_auto_settle_still_settles_the_side_and_stays_quiet(
     asyncio.run(sweeper.sweep_once())
 
     # The refused debit: the holder's last copy stays theirs.
-    assert inventories.docs["#HOLDER"]["cards"]["balloon"] == 1
+    assert inventories.docs["#H0LDER"]["cards"]["balloon"] == 1
     # But their side still settles: incoming credit and released locks.
-    assert inventories.docs["#HOLDER"]["cards"]["electro_dragon"] == (
+    assert inventories.docs["#H0LDER"]["cards"]["electro_dragon"] == (
         cards_command.OWNED
     )
-    assert inventories.docs["#HOLDER"]["card_trade_reservations"] == {}
+    assert inventories.docs["#H0LDER"]["card_trade_reservations"] == {}
     # The waiting player's card came from their own confirmation, not from
     # the silent side's spare situation.
     assert inventories.docs["#ME"]["cards"]["balloon"] == cards_command.OWNED
@@ -452,7 +452,7 @@ def _half_confirmed_old_style(trade_id="t11"):
         "wanted_card_id": "balloon", "given_card_id": "electro_dragon",
         "requester_tag": "#ME", "requester_name": "Requester",
         "requester_discord_id": 111,
-        "holder_tag": "#HOLDER", "holder_name": "Holder",
+        "holder_tag": "#H0LDER", "holder_name": "Holder",
         "holder_discord_id": 222,
         "requester_confirmed_at": now - timedelta(hours=2),
         # The partner still has days: only the migration job may act.
@@ -462,7 +462,7 @@ def _half_confirmed_old_style(trade_id="t11"):
         {"_id": "#ME", "guild_id": 1,
          "cards": {"electro_dragon": 2, "balloon": 0},
          "card_trade_reservations": {"balloon": owner}},
-        {"_id": "#HOLDER", "guild_id": 1,
+        {"_id": "#H0LDER", "guild_id": 1,
          "cards": {"balloon": 3, "electro_dragon": 1},
          "card_trade_reservations": {"balloon": owner}},
     ])
@@ -488,9 +488,9 @@ def test_a_stuck_old_style_credit_is_delivered_silently(monkeypatch):
     assert me["card_trade_reservations"] == {}
     assert me["inventory_revision"] == 1
     # The quiet partner is untouched: their deadline has not passed.
-    assert inventories.docs["#HOLDER"]["cards"]["balloon"] == 3
-    assert inventories.docs["#HOLDER"]["cards"]["electro_dragon"] == 1
-    assert "balloon" in inventories.docs["#HOLDER"]["card_trade_reservations"]
+    assert inventories.docs["#H0LDER"]["cards"]["balloon"] == 3
+    assert inventories.docs["#H0LDER"]["cards"]["electro_dragon"] == 1
+    assert "balloon" in inventories.docs["#H0LDER"]["card_trade_reservations"]
     assert trades.docs["t11"]["status"] == "ready"
     # Zero DMs, zero posts: the silent policy.
     assert rest.dms == []
@@ -505,12 +505,12 @@ def test_the_confirmed_side_settle_is_idempotent(monkeypatch):
 
     asyncio.run(sweeper.sweep_once())
     first_me = dict(inventories.docs["#ME"])
-    first_holder = dict(inventories.docs["#HOLDER"])
+    first_holder = dict(inventories.docs["#H0LDER"])
 
     asyncio.run(sweeper.sweep_once())
 
     assert inventories.docs["#ME"] == first_me
-    assert inventories.docs["#HOLDER"] == first_holder
+    assert inventories.docs["#H0LDER"] == first_holder
     assert inventories.docs["#ME"]["inventory_revision"] == 1, (
         "the guarded credit must not re-apply"
     )
@@ -665,7 +665,7 @@ def test_proposal_expiry_edits_the_post_and_dms_nobody(monkeypatch):
     trade = _pending("t1", overdue=True)
     trade.update(channel_id=555, channel_message_id=901, channel_post_v2=True)
     trades = _Trades([trade])
-    inventories = _Inventories([{"_id": "#HOLDER", "player_name": "Holder"}])
+    inventories = _Inventories([{"_id": "#H0LDER", "player_name": "Holder"}])
     rest = _install(monkeypatch, trades, inventories)
 
     asyncio.run(sweeper.sweep_once())
@@ -684,7 +684,7 @@ def test_expiry_still_sends_the_checkin_when_the_threshold_hits(monkeypatch):
     trade.update(channel_id=555, channel_message_id=901, channel_post_v2=True)
     trades = _Trades([trade])
     inventories = _Inventories([
-        {"_id": "#HOLDER", "player_name": "Holder", "ignored_requests": 1},
+        {"_id": "#H0LDER", "player_name": "Holder", "ignored_requests": 1},
     ])
     rest = _install(monkeypatch, trades, inventories)
 

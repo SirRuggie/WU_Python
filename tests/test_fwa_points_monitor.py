@@ -61,7 +61,7 @@ OUR_PAGE_HTML = (
     '<b>Point Balance</b>: 5<br><br><b>Active FWA</b>: Yes<br></p>'
     '<p class="winner-box">Win Calculator for <a href="/war?id=300">War #300</a> in Sync #20<br><br>'
     'Edrag Rush (<a href="/clan?tag=2PPCL2GYP">2PPCL2GYP</a>) vs. Opponent Clan '
-    '(<a href="/clan?tag=OPPONENT">OPPONENT</a>):<br><br>'
+    '(<a href="/clan?tag=0PP0NENT">0PP0NENT</a>):<br><br>'
     '<b>Edrag Rush</b> should win by points (5 &gt; 3)</p>'
 )
 
@@ -116,8 +116,8 @@ def test_terminal_failure_persists_war_key_and_cooldown(monkeypatch):
 
     asyncio.run(monitor.run_catchup(
         {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
-        "OPPONENT",
-        "OPPONENT:WAR-1",
+        "0PP0NENT",
+        "0PP0NENT:WAR-1",
     ))
 
     assert len(collection.updates) == 1
@@ -127,7 +127,7 @@ def test_terminal_failure_persists_war_key_and_cooldown(monkeypatch):
     assert kwargs == {"upsert": True}
     assert fields["status"] == "failed"
     assert fields["last_attempt_status"] == "failed"
-    assert fields["last_attempt_war_key"] == "OPPONENT:WAR-1"
+    assert fields["last_attempt_war_key"] == "0PP0NENT:WAR-1"
     assert datetime.fromisoformat(fields["retry_after"]) > datetime.fromisoformat(fields["last_attempt_at"])
 
 
@@ -143,13 +143,13 @@ def test_unexpected_catchup_error_is_recorded(monkeypatch):
 
     asyncio.run(monitor.run_catchup(
         {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
-        "OPPONENT",
-        "OPPONENT:WAR-2",
+        "0PP0NENT",
+        "0PP0NENT:WAR-2",
     ))
 
     fields = collection.updates[0][1]["$set"]
     assert fields["status"] == "error"
-    assert fields["last_attempt_war_key"] == "OPPONENT:WAR-2"
+    assert fields["last_attempt_war_key"] == "0PP0NENT:WAR-2"
     assert "RuntimeError: boom" in fields["last_attempt_error"]
 
 
@@ -200,8 +200,8 @@ def test_opponent_fetch_failure_stores_none_and_does_not_fail_catchup(monkeypatc
 
     asyncio.run(monitor.run_catchup(
         {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
-        "OPPONENT",
-        "OPPONENT:WAR-3",
+        "0PP0NENT",
+        "0PP0NENT:WAR-3",
         "2026-09-15T12:00:00",
     ))
 
@@ -209,7 +209,7 @@ def test_opponent_fetch_failure_stores_none_and_does_not_fail_catchup(monkeypatc
     query, update, kwargs = points_collection.updates[0]
     fields = update["$set"]
     assert query["_id"] == "2PPCL2GYP"
-    assert {"current_war_key": "OPPONENT:WAR-3"} in query["$or"]
+    assert {"current_war_key": "0PP0NENT:WAR-3"} in query["$or"]
     assert kwargs == {"upsert": True}
     assert fields["status"] == "caught_up"
     assert fields["opponent_active_fwa"] is None
@@ -228,7 +228,7 @@ def test_store_record_captures_opponent_active_fwa_and_end_time(monkeypatch):
     async def fake_fetch(tag):
         if tag == "2PPCL2GYP":
             return OUR_PAGE_HTML
-        if tag == "OPPONENT":
+        if tag == "0PP0NENT":
             return opponent_page_html
         return None
 
@@ -237,8 +237,8 @@ def test_store_record_captures_opponent_active_fwa_and_end_time(monkeypatch):
 
     asyncio.run(monitor.run_catchup(
         {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
-        "OPPONENT",
-        "OPPONENT:WAR-4",
+        "0PP0NENT",
+        "0PP0NENT:WAR-4",
         "2026-09-20T08:00:00",
     ))
 
@@ -270,8 +270,8 @@ def test_store_record_captures_coc_opponent_name(monkeypatch):
 
     asyncio.run(monitor.run_catchup(
         {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
-        "OPPONENT",
-        "OPPONENT:WAR-7",
+        "0PP0NENT",
+        "0PP0NENT:WAR-7",
         coc_opponent_name="Clash Titans",
     ))
 
@@ -303,7 +303,7 @@ def test_store_record_rejects_result_after_war_rollover(monkeypatch):
 
 def test_store_record_flags_opponent_blacklisted(monkeypatch):
     points_collection = _PointsCollection(find_result=None)
-    mongo = _Mongo(points_collection, fwa_blacklist=_BlacklistCollection(["OPPONENT"]))
+    mongo = _Mongo(points_collection, fwa_blacklist=_BlacklistCollection(["0PP0NENT"]))
     monkeypatch.setattr(monitor, "mongo_client", mongo)
     monkeypatch.setattr(monitor, "bot_instance", None)
 
@@ -320,8 +320,8 @@ def test_store_record_flags_opponent_blacklisted(monkeypatch):
 
     asyncio.run(monitor.run_catchup(
         {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
-        "OPPONENT",
-        "OPPONENT:WAR-9",
+        "0PP0NENT",
+        "0PP0NENT:WAR-9",
     ))
 
     fields = points_collection.updates[0][1]["$set"]
@@ -347,8 +347,8 @@ def test_store_record_opponent_not_blacklisted(monkeypatch):
 
     asyncio.run(monitor.run_catchup(
         {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
-        "OPPONENT",
-        "OPPONENT:WAR-10",
+        "0PP0NENT",
+        "0PP0NENT:WAR-10",
     ))
 
     fields = points_collection.updates[0][1]["$set"]
@@ -876,7 +876,7 @@ def test_run_catchup_sleeps_the_computed_stagger_before_first_fetch(monkeypatch)
     with patch.object(monitor.asyncio, "sleep", fake_sleep):
         asyncio.run(monitor.run_catchup(
             {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
-            "OPPONENT", "OPPONENT:WAR-5",
+            "0PP0NENT", "0PP0NENT:WAR-5",
             stagger_seconds=12.5,
         ))
 
@@ -906,7 +906,7 @@ def test_run_catchup_skips_the_sleep_when_stagger_is_zero(monkeypatch):
     with patch.object(monitor.asyncio, "sleep", fake_sleep):
         asyncio.run(monitor.run_catchup(
             {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
-            "OPPONENT", "OPPONENT:WAR-6",
+            "0PP0NENT", "0PP0NENT:WAR-6",
         ))
 
     # Single-attempt failure (MAX_CONSECUTIVE_FAILURES=1) returns before the

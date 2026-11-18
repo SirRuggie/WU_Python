@@ -37,6 +37,7 @@ from extensions.commands.linked_accounts import (
 from extensions.commands.recruit.perms import guild_permissions
 from extensions.components import register_action
 from utils import bot_data
+from utils.clash_tags import normalize
 from utils.card_board import (
     CARD_ARTWORK_DIR,
     CATEGORY_ACCENTS,
@@ -325,10 +326,7 @@ def _card_upload_lock(discord_id: int) -> asyncio.Lock:
 
 
 def _normalize_tag(value: object) -> str:
-    tag = str(value or "").strip().upper()
-    if tag and not tag.startswith("#"):
-        tag = f"#{tag}"
-    return tag
+    return normalize(value)
 
 
 def _guild_id(ctx) -> int | None:

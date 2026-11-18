@@ -74,7 +74,7 @@ class _War:
     def __init__(self, clan_tag, clan_name, members, attacks_per_member):
         self.state = "inWar"
         self.clan = _Side(clan_tag, clan_name, members)
-        self.opponent = _Side("#OPP", "Opponent", [])
+        self.opponent = _Side("#0PP", "Opponent", [])
         self.attacks_per_member = attacks_per_member
         self.end_time = None
         self.start_time = None
@@ -87,7 +87,7 @@ def _account():
     return todo_data.Account(
         tag="#PLAYER",
         name="Player",
-        clan_tag="#HOME",
+        clan_tag="#H0ME",
         clan_name="Home",
         town_hall=17,
     )
@@ -146,11 +146,11 @@ def test_regular_war_and_cwl_can_come_from_different_clans(monkeypatch):
     candidates = {
         "#PLAYER": [clan_history.ClanCandidate("#CWL", "CWL Clan")]
     }
-    home_war = _War("#HOME", "Home", [_Member("#PLAYER", attacks=1)], 2)
+    home_war = _War("#H0ME", "Home", [_Member("#PLAYER", attacks=1)], 2)
     cwl_war = _War("#CWL", "CWL Clan", [_Member("#PLAYER", attacks=0)], 1)
 
     async def fake_war(_client, clan_tag):
-        return ("war", home_war) if clan_tag == "#HOME" else ("none", None)
+        return ("war", home_war) if clan_tag == "#H0ME" else ("none", None)
 
     async def fake_cwl(_client, clan_tag):
         return ("war", cwl_war) if clan_tag == "#CWL" else ("none", None)
@@ -166,7 +166,7 @@ def test_regular_war_and_cwl_can_come_from_different_clans(monkeypatch):
     ))
 
     assert [(row.clan_tag, row.used, row.limit) for row in war_view.rows] == [
-        ("#HOME", 1, 2)
+        ("#H0ME", 1, 2)
     ]
     assert [(row.clan_tag, row.used, row.limit) for row in cwl_view.rows] == [
         ("#CWL", 0, 1)
@@ -174,10 +174,10 @@ def test_regular_war_and_cwl_can_come_from_different_clans(monkeypatch):
 
 
 def test_historical_candidate_not_on_roster_is_not_a_zero_attack_row(monkeypatch):
-    candidate_war = _War("#OLD", "Old Clan", [_Member("#SOMEONE")], 2)
+    candidate_war = _War("#0LD", "Old Clan", [_Member("#S0ME0NE")], 2)
 
     async def fake_war(_client, clan_tag):
-        if clan_tag == "#OLD":
+        if clan_tag == "#0LD":
             return "war", candidate_war
         return "none", None
 
@@ -185,7 +185,7 @@ def test_historical_candidate_not_on_roster_is_not_a_zero_attack_row(monkeypatch
     view = asyncio.run(todo_data.build_war_view(
         object(),
         [_account()],
-        candidates={"#PLAYER": [clan_history.ClanCandidate("#OLD", "Old Clan")]},
+        candidates={"#PLAYER": [clan_history.ClanCandidate("#0LD", "Old Clan")]},
     ))
 
     assert view.rows == []
@@ -193,7 +193,7 @@ def test_historical_candidate_not_on_roster_is_not_a_zero_attack_row(monkeypatch
 
 def test_historical_private_clan_appears_in_private_view(monkeypatch):
     async def fake_war(_client, clan_tag):
-        if clan_tag == "#OLD":
+        if clan_tag == "#0LD":
             return "private", None
         return "none", None
 
@@ -201,11 +201,11 @@ def test_historical_private_clan_appears_in_private_view(monkeypatch):
     view = asyncio.run(todo_data.build_blocked_view(
         object(),
         [_account()],
-        candidates={"#PLAYER": [clan_history.ClanCandidate("#OLD", "Old Clan")]},
+        candidates={"#PLAYER": [clan_history.ClanCandidate("#0LD", "Old Clan")]},
     ))
 
     assert [(row.tag, row.clan_tag, row.reason) for row in view.rows] == [
-        ("#PLAYER", "#OLD", "private")
+        ("#PLAYER", "#0LD", "private")
     ]
 
 
@@ -237,7 +237,7 @@ def test_cwl_only_candidate_is_not_checked_in_private_war_view(monkeypatch):
         object(), [_account()], candidates={"#PLAYER": [candidate]}
     ))
 
-    assert requested == ["#HOME"]
+    assert requested == ["#H0ME"]
 
 
 def test_cwl_roster_candidate_does_not_trigger_regular_war_lookup(monkeypatch):
@@ -255,7 +255,7 @@ def test_cwl_roster_candidate_does_not_trigger_regular_war_lookup(monkeypatch):
         object(), [_account()], candidates={"#PLAYER": [candidate]}
     ))
 
-    assert requested == ["#HOME"]
+    assert requested == ["#H0ME"]
 
 
 def test_tracker_uses_api_not_mongo_type_for_active_cwl_roster(monkeypatch):
@@ -299,11 +299,11 @@ def test_tracker_follows_family_players_linked_alt_into_random_clan(monkeypatch)
     monkeypatch.setattr(clan_history, "_indexes_failed", False)
     mongo = _Mongo(
         clan_documents=[{"tag": "#FAMILY", "type": "FWA"}],
-        roster_documents=[{"_id": "#FAMILY", "members": ["#HOME"]}],
+        roster_documents=[{"_id": "#FAMILY", "members": ["#H0ME"]}],
     )
 
     family_clan = _Side("#FAMILY", "Family", [])
-    random_clan = SimpleNamespace(tag="#RANDOM", name="Random Clan", badge=None)
+    random_clan = SimpleNamespace(tag="#RAND0M", name="Random Clan", badge=None)
 
     class _Client:
         async def get_clan(self, clan_tag):
@@ -311,12 +311,12 @@ def test_tracker_follows_family_players_linked_alt_into_random_clan(monkeypatch)
             return family_clan
 
         async def get_player(self, player_tag):
-            clan = family_clan if player_tag == "#HOME" else random_clan
+            clan = family_clan if player_tag == "#H0ME" else random_clan
             return SimpleNamespace(tag=player_tag, clan=clan)
 
     async def linked_accounts(player_tags):
-        assert player_tags == ["#HOME"]
-        return ["#HOME", "#ALT"]
+        assert player_tags == ["#H0ME"]
+        return ["#H0ME", "#ALT"]
 
     async def no_regular_war(_client, _clan_tag):
         return "none", None
@@ -335,7 +335,7 @@ def test_tracker_follows_family_players_linked_alt_into_random_clan(monkeypatch)
     random_updates = [
         operation
         for operation in mongo.player_clan_candidates.operations
-        if operation._filter == {"_id": "#ALT:#RANDOM"}
+        if operation._filter == {"_id": "#ALT:#RAND0M"}
     ]
     assert len(random_updates) == 1
 
@@ -345,9 +345,9 @@ def test_stable_family_roster_does_not_rewrite_member_history(monkeypatch):
     monkeypatch.setattr(clan_history, "_indexes_failed", False)
     mongo = _Mongo(
         clan_documents=[{"tag": "#FAMILY", "type": "FWA"}],
-        roster_documents=[{"_id": "#FAMILY", "members": ["#HOME"]}],
+        roster_documents=[{"_id": "#FAMILY", "members": ["#H0ME"]}],
     )
-    family_clan = _Side("#FAMILY", "Family", [_Member("#HOME")])
+    family_clan = _Side("#FAMILY", "Family", [_Member("#H0ME")])
 
     class _Client:
         async def get_clan(self, _clan_tag):
@@ -403,11 +403,11 @@ def test_departure_link_failure_is_queued_for_later_retry(monkeypatch):
     mongo = _Mongo(
         clan_documents=[{"tag": "#FAMILY", "type": "FWA"}],
         roster_documents=[{
-            "_id": "#FAMILY", "members": ["#HOME", "#DEPARTED"]
+            "_id": "#FAMILY", "members": ["#H0ME", "#DEPARTED"]
         }],
     )
-    family_clan = _Side("#FAMILY", "Family", [_Member("#HOME")])
-    random_clan = SimpleNamespace(tag="#RANDOM", name="Random Clan", badge=None)
+    family_clan = _Side("#FAMILY", "Family", [_Member("#H0ME")])
+    random_clan = SimpleNamespace(tag="#RAND0M", name="Random Clan", badge=None)
 
     class _Client:
         async def get_clan(self, _clan_tag):
@@ -454,10 +454,10 @@ def test_tracker_retries_link_expansion_after_roster_is_already_stable(monkeypat
             "link_retry_at": now - timedelta(minutes=1),
             "link_retry_count": 1,
         }],
-        roster_documents=[{"_id": "#FAMILY", "members": ["#HOME"]}],
+        roster_documents=[{"_id": "#FAMILY", "members": ["#H0ME"]}],
     )
-    family_clan = _Side("#FAMILY", "Family", [_Member("#HOME")])
-    random_clan = SimpleNamespace(tag="#RANDOM", name="Random Clan", badge=None)
+    family_clan = _Side("#FAMILY", "Family", [_Member("#H0ME")])
+    random_clan = SimpleNamespace(tag="#RAND0M", name="Random Clan", badge=None)
 
     class _Client:
         async def get_clan(self, _clan_tag):
@@ -492,7 +492,7 @@ def test_tracker_retries_link_expansion_after_roster_is_already_stable(monkeypat
         operation._filter["_id"]
         for operation in mongo.player_clan_candidates.operations
     }
-    assert "#ALT:#RANDOM" in random_ids
+    assert "#ALT:#RAND0M" in random_ids
     completion_updates = [
         operation._doc
         for operation in mongo.player_clan_watches.operations

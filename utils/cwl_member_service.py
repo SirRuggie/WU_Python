@@ -9,6 +9,7 @@ import asyncio
 import json
 import re
 
+from utils.clash_tags import normalize as normalize_clash_tag
 from utils.cwl_signup_policy import main_signup_error
 
 
@@ -24,9 +25,7 @@ class MemberError(Exception):
 def player_tag(value):
     if not isinstance(value, str):
         raise MemberError(400, "Invalid player tag")
-    value = value.strip().upper().replace("O", "0")
-    if value and not value.startswith("#"):
-        value = "#" + value
+    value = normalize_clash_tag(value)
     if not TAG.fullmatch(value):
         raise MemberError(400, "Invalid player tag")
     return value
