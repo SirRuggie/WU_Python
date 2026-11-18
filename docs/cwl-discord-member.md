@@ -32,6 +32,9 @@ roster audit, placement clearing, kept-flag removal and staff change alerts. No
 notification is sent by this flow.
 
 The bridge requires an actual loopback TCP peer and a dedicated shared secret.
+The peer check alone does not distinguish a direct local caller from public
+traffic forwarded by the local Caddy process. The public-proxy boundary below
+is additional protection; it does not replace bridge authentication.
 It rechecks Warriors United membership through Discord REST for every request;
 OAuth is not used. Discord components additionally bind the invoking member,
 server, expiring session and component version. Writes require the reviewed
@@ -62,8 +65,150 @@ only with an HTTP loopback IP origin at the dashboard's actual local port. Hostn
 external origins, credentials, paths, queries and redirects are rejected. Both
 processes must share the loopback network namespace. Missing/weak configuration
 leaves the Discord alternative unavailable and keeps the dashboard link usable.
-Block `/api/cwl/discord/member` in the public reverse proxy as defense in depth;
-the shared secret is required even for requests forwarded by a local proxy.
+Shaka's operator record 1097 (2026-11-17) identifies the bot override as
+`http://127.0.0.1:8766`, through the loopback Caddy gateway, with the backend on 8767. Keep that recorded override unchanged for Part J. The default 8767 origin
+remains valid for a direct local deployment. The documentation preparation below
+did not reread production service environments.
+
+### Public-proxy boundary
+
+The Part J gateway configuration must block `/api/cwl/discord/*` only when the
+request also has a `Cf-Connecting-IP` header. Apply this AND matcher before the
+backend proxy in **both** host paths: the legacy `cwl.ruggie.zone` handle and the
+generic API handle. Public traffic passes through the Cloudflare edge, which
+sets/replaces that header before either tunnel reaches Caddy. The direct bot
+request to 127.0.0.1:8766 has no such header and must continue to reach the
+backend. A local process can still reach the bridge HTTP handlers; the shared
+secret and each handler's existing actor/permission checks remain required.
+
+Every backend proxy also overwrites `X-WU-Client-IP` with
+`{http.request.header.Cf-Connecting-IP}`. It must not preserve a client-supplied
+value or use `X-Forwarded-For`/`X-Real-IP` as the source. A missing Cloudflare
+header produces no usable client-IP value: the backend must not combine direct
+local callers into a single 127.0.0.1 rate-limit bucket. A1/F and J can release
+in either order, with releases kept serial.
+
+All four authenticated bridge endpoints derive their origin from the same
+`bridge_config()` contract:
+
+| Path below `/api/cwl/discord/` | Bot caller                                                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `member`                       | `utils/cwl_member_client.py`, used by `extensions/commands/cwl_member.py` and the published-assignment read in `extensions/commands/todo.py` |
+| `weight`                       | `utils/clan_weight_client.py`, used by `extensions/commands/fwa/weight_save.py` and `extensions/commands/tickets/link_account.py`            |
+| `pool-roles`                   | `extensions/tasks/cwl_pool_roles.py`                                                                                                         |
+| `post-updates/validate`        | `extensions/tasks/cwl_post_update_bridge.py`, used by the CWL reminder worker                                                                |
+
+At source revision `12f8bb23719ce7ebfef56403e20c1e63e76c9439`, the complete
+default URLs are:
+
+```text
+http://127.0.0.1:8767/api/cwl/discord/member
+http://127.0.0.1:8767/api/cwl/discord/weight
+http://127.0.0.1:8767/api/cwl/discord/pool-roles
+http://127.0.0.1:8767/api/cwl/discord/post-updates/validate
+```
+
+The operator-recorded gateway URLs are:
+
+```text
+http://127.0.0.1:8766/api/cwl/discord/member
+http://127.0.0.1:8766/api/cwl/discord/weight
+http://127.0.0.1:8766/api/cwl/discord/pool-roles
+http://127.0.0.1:8766/api/cwl/discord/post-updates/validate
+```
+
+The member and weight clients send one POST without redirects or automatic
+transport retries. The pool-role worker sends its actions to the single
+`pool-roles` URL; post-update scope validation uses the single
+`post-updates/validate` URL. This caller inventory is a source check, not a new
+bridge request or a fresh production-environment observation.
+
+Before a J reload, validate an isolated local Caddy using the same routing rules:
+each path with a Cloudflare header must return 404 on both hosts without reaching
+the fixture backend; without it, each path must reach that backend. Prove the
+client-IP overwrite on both proxies, including an absent Cloudflare header and
+forged incoming values. Keep local proof on fixture ports, never 8766/8767.
+After an approved release, use read-only public checks and existing bot journals;
+do not send an extra bridge POST. The proposed Part J headers/configuration are
+not release evidence until the required all-page browser checks and normal
+backup, validation, review and reload steps have completed. Part J activation
+remains held until the Part D production release is complete; releases stay
+serial. No bot environment change or extra bridge POST is part of J activation.
+
+### Part J headers and local verification — 2026-11-18
+
+Ruggie's approval of 239 is recorded in Shaka 1070. D3 and D18 authorize the
+gateway proposal; 1097 refines it to the Cloudflare-header AND path matcher and
+the two proxy-header overwrites. The exact retained proposal has SHA256
+`f4f86f4fcb8fcd852c9c349f1d73d1b07545dc3d580872ba9862a26e02b32c5a`;
+the retained historical before-file has SHA256
+`04629ad49237b0ec559a2a124a3891c98fb4f2df7ce130fd70e6d71c06c19cb5`.
+These are reviewed local inputs, not a fresh reading of the active Caddyfile.
+
+The proposed response headers are `Referrer-Policy: same-origin`,
+`Strict-Transport-Security: max-age=31536000`, and this CSP:
+
+```text
+default-src 'self'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; media-src 'self' https:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'
+```
+
+| CSP source/directive                                             | Existing contract it preserves                                                                                                                                                                                             |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default-src 'self'`, `script-src 'self'`                        | Same-origin application entry, lazy modules and default resource boundary. No inline-script or eval permission.                                                                                                            |
+| `style-src 'self' 'unsafe-inline'`                               | Same-origin stylesheets and existing React style attributes for colors, sizing, positioning and roster controls. This permits inline styles only.                                                                          |
+| `img-src 'self' https:`                                          | Local branding/artwork plus existing arbitrary public HTTPS image-preview contracts, including Discord avatars/emojis, Clash badges and configured media URLs. A finite CDN list would reject already accepted image URLs. |
+| `media-src 'self' https:`                                        | Existing HTTPS video previews in DiscordPreview.                                                                                                                                                                           |
+| `font-src 'self'`                                                | Self-hosted WU Inter WOFF2; its Arial fallback is local. No remote-font host is added.                                                                                                                                     |
+| `connect-src 'self'`                                             | Same-origin application API calls. Browser PushManager plumbing adds no application fetch origin; live push delivery remains unverified.                                                                                   |
+| `worker-src 'self'`, `manifest-src 'self'`                       | Existing `/sw.js` registration and same-origin web manifest.                                                                                                                                                               |
+| `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'` | Anti-framing requirement and restrictions on unused embed/base surfaces.                                                                                                                                                   |
+
+No `data:`, `blob:`, remote-font host, extra API origin or `unsafe-eval` source is
+added. Object-URL downloads do not require permission for blob images or workers.
+
+Reused local evidence is the complete self-contained J294 report, SHA256
+`7e906e55604b6618baec9add57a69e2dc930e36f39131f015ac45c3629141127`.
+Terra299 accepted its saved/static proof; that review did not execute the browser
+again. Under Ruggie's headless-fixture exception 1119 and Shaka 1130, browser
+navigation used literal `http://127.0.0.1` behind isolated Caddy at 360×800 and
+1440×1000. Saved runs used headless Google Chrome157.0.8103.78 through
+playwright-core1.56.1, labelled fixture preview. There was no TLS/NSS trust modification, certificate exception,
+insecure-origin flag or browser Host-header override in the accepted runs.
+
+Accepted candidate coverage is **102 semantic passes and two explicit skips**:
+51 passes plus the known `/server` skip at each width. The completed mobile run
+uses pin `2e01272044bad39a3d5995ebf845f72a0bccdcd462c00edf4484406a314f1979`;
+the final desktop run uses
+`78464f62edff1100f9ab58906ee99b71b29dc37b89ab2caf9c272bdfd5f2b002`.
+Five supplemental mobile panel checks and five desktop tab/panel checks passed
+without captures. The mobile observer gained a panel assertion; there is no
+claim that all cases ran under one observer pin or that mobile was fully rerun.
+
+Shaka1129 keeps `/server` as an existing verification limit: the owner-allowed
+view is absent from visible navigation and redirects Home. Its shared
+`ServerManagement-XuvOcN2x.js` bundle was actually fetched on reachable
+`/server/applications`, SHA256
+`db2fb1ef0142ea28f3224329ab8d33fddebc2bcc2f4d60b15998adbdab9099ab`, with
+the proposed CSP and a clean console. This verifies the shared bundle, not the
+unreachable server-specific UI; the frontend guard is outside Part J.
+
+Each accepted width had zero console/page/CSP/HTTP/abort/write error signals,
+32 bridge-policy cases, all 184 main-site asset hashes matching, exact protected
+SQL counts/full schema and all 75 synthetic Mongo snapshots, and owned-process
+cleanup. The legacy host was checked only by HTTP Host headers: its 159 matching
+and 25 nonmatching asset responses are retained comparisons, not legacy-browser
+or resource-readiness passes. Accepted candidate entries used 117 finite pinned
+offline image fulfillments per width with synthetic favicon bodies; this is not
+live CDN, avatar or TownHall pixel verification.
+
+The 173 original screenshots include accepted runs and preserved failed
+attempts. Physical phone, assistive technology, live Discord/push delivery,
+public TLS and current production behavior remain unverified by this local
+evidence. This documentation-only pass reuses those results without another
+browser matrix or backend suite. Activation still requires the normal verified
+backup, current-head review, Caddy validation/reload and read-only public/journal
+checks after Part D. Historical member-feature release notes below do not expand
+that scope.
 
 Integrate this change against current main before release; this worktree began at
 `77a7ecd` (including `7118462`). Deploy the dashboard service and bot together after
