@@ -1,5 +1,691 @@
 # Release and rollback history
 
+## Reading this record
+
+The latest dated release facts supersede older uses of “current”, “standby” or
+“rollback target” below. Frontend, backend and bot can advance independently.
+These are retained observations from each release boundary, not fresh production
+probes or permission to rerun a completed coordinator. Before any new release or
+rollback, verify the actual process revision/cwd, service identity and served
+asset hashes, then use the newly scoped, reviewed procedure. Roll back code;
+never restore a database to roll back code or reverse approved data corrections.
+
+The latest retained boundary is the completed November 18 M bot-only release:
+bot `4d6c53637d0c38f3fa869203e70ccd3d5d2b6c8e`; backend remains K
+`a8fb4c524c0b84572fc6e28a955dae3fe6a34ad4`; frontend remains
+`14c5e5acc6551f803ca1ae1837c0a57655719de0`. M's retained bot-only fallback is
+K `a8fb4c524c0b84572fc6e28a955dae3fe6a34ad4`. See the dated M record below
+for its failed first attempt, completed retry and ongoing first-day observation.
+These component-specific recorded facts do not replace fresh verification before
+a future release or recovery.
+
+## November 18, 2026 — 239M background health, completed bot-only retry
+
+M PR [#378](https://github.com/SirRuggie/WU_Python/pull/378) completed at
+03:40 EST on November 18. The bot release is
+`4d6c53637d0c38f3fa869203e70ccd3d5d2b6c8e`, tag `background-jobs-health-1`
+(object `8dc2dd873f3cf1ae4212bc0517cb20a6b61432dc`). The parent recorded bot
+PID 3063066, invocation `d8fd9f19d9464d27be7dfd86c6cb1f33`. Backend K
+`a8fb4c524c0b84572fc6e28a955dae3fe6a34ad4` retained PID 3040395 and invocation
+`ce22d702169c4552bd5859eb3bfc1f64`; frontend
+`14c5e5acc6551f803ca1ae1837c0a57655719de0` and gateway PID 307279,
+invocation `25b0336632ea45e59828bcec964a1d3b`, were unchanged. These are saved
+release-boundary facts, not fresh production probes by this documentation update.
+
+The retained **bot-only** code fallback at this boundary is K
+`a8fb4c524c0b84572fc6e28a955dae3fe6a34ad4`. Backend and frontend remain on their
+own dated revisions; this is not a universal rollback target. Before any future
+release or recovery, verify the then-current identities and retained assets.
+
+### First M attempt 203 failed; K recovery was separate
+
+The first attempt checked out M but its parent-account source checker raised
+`PermissionError` on the tracked `.claude/agents/builder.md` before starting the
+M service. No M process or M auth GET started. Immediate independent bot-only
+code recovery restored K after the full 210-second drain; separate readiness,
+all 184 public hashes and the post-rollback protected-data assessment passed.
+The original pre-start proof remained preserved before a new actual recovered-K
+proof bound the rollback capture. Recovery did not retroactively pass the failed
+M attempt. No database restore or backend action occurred.
+
+The failed completion remains accepted:false at
+`.local/239m-release-evidence-203/completion.json`, SHA256
+`827ae8e8d40f2e695d69645a71340649e66d49c45fe678539b184f72ce729749`.
+The original missing-tag preflight failure also remains retained; fetching the
+exact approved tag and a separate fresh preflight did not erase that failure.
+
+Shaka entry 1114 accepted only the source-check function change: read all tracked
+bot files as botrunner through owner-account Git `rev-parse`, clean `status`,
+`ls-tree` and one batch `hash-object`. A real pre-stop check covered all 2597 K
+Git blobs; the M start checked all 2601 M Git blobs. This is Git blob equality to
+the approved tree, **not new production SHA256 proof**. The isolated clean-tag
+2601-file SHA256 source proof remained separate. No permissions were changed,
+no unreadable source was skipped, and no new coordinator or gate bypass was used.
+
+### Retry 216 completed under the existing direct sequence
+
+Shaka entry 1112 approved head
+`6957dce0d8dd5a1886f48dd85837683935510799` on K with exact combined tree
+`c6c40df77f072acf20b8f0181e20ea812138bf15`. His full-suite result was 8614
+passed, 134 skipped and 544 subtests. This is Shaka-attributed evidence, not a
+Codex rerun. Existing private runtime imports passed for 44 bot modules; no new
+backend imports were run. The reviewed operations base had 185 literal checks;
+the single owner-reader increment was accepted directly in 1114 without a new
+review round. No full frontend or backend suite was repeated for this retry.
+
+The parent used the K190/192 individual release steps with backend steps removed:
+verified fresh source and runtime bindings, backup/pre capture, owned bot stop,
+full 210-second drain, fresh history guard, owner-account source verification,
+M startup/readiness, one auth smoke, post capture/binding, assessment, final
+readiness, public hashes and final HOST/journal proof. No backend staging,
+restart, switch or configuration write occurred. Copied inline source bodies
+are retained as executed-inline source, not separately executed files or an
+independent process log; shared presentation labels do not mean independent
+processes.
+
+One immutable ONLINE pre-capture also served as the verified backup; these were
+not independent captures. Pre SQLite SHA256 was
+`725092b9f144ec4b597047f0fad00069da23f9384270a82593695af4cc2676f0`;
+post SHA256 was
+`cda33e145838e3a94b15a506502de1265edd1fb5f8f6a64d4d98aac6ae2c7b38`.
+All 76 SQL table counts, column definitions, schema, pools and six publication
+records matched; strict staff-content checks passed. Main remained 23 signups /
+23 assigned / 23 kept; Lazy remained 147 / 146 / 131. The third number is
+`SUM(kept)`, not an independently measured lock count. Sessions stayed 207→207
+with zero D6 removals. The original comparator actually returned PASS with ten
+permitted clock-related changed rows. Raw digest differences were confined to
+`participation_group_observations` and `participation_sync_settings`; this is
+not an all-raw-digests-exact claim for the release interval.
+
+All 79 Mongo positive staff projections, namespace inventories and index
+metadata matched. Component state changed 6→9; member events 5569→5558 with
+22 eligible removals and 11 additions; world-clock runs 1671→1672 with one
+eligible removal and two additions. Twenty unknown-owner changed namespaces
+were recorded. No TTL causation, unchanged background-data or all-row-content
+claim follows from these observations.
+
+Exactly one signed-out auth GET returned 302 to Discord without following the
+redirect or sending a Cookie. Across that auth window, all 76 raw SQL digests
+and `oauth_states` remained exact. Final bot/backend/gateway invocation journals
+had zero errors. All 184 public asset hashes matched the unchanged frontend;
+the three critical hashes remain those listed in the dated K record below.
+No operator database restore, manual index repair, application data write or
+Discord test post was performed. Ordinary runtime changes are recorded separately.
+
+At 03:31 EST, Shaka entry 1115 independently reported **PASS (runtime)**: bot PID
+3063066 on M, zero tracebacks and zero “Background job failed” entries since
+03:15 EST, and public config 200. These are Shaka's observations, not new Codex
+probes. The existing five-minute handoff's first-day journal observation was
+anchored to the actual M invocation and remains **ACTIVE until
+2026-11-19T08:18:12.915367+00:00**. It is ongoing observation, not a 24-hour PASS;
+no new daemon or configuration was created.
+
+Frozen accepted completion:
+`.local/239m-ownerhash216/runtime/239m-release-evidence-216/completion.json`,
+SHA256 `c1b8e5a424b6a5ce265bbfbbad2657c03ffb1a4d689ea8e23e302a6e895bbb9f`.
+Portable report: `.local/239m-final218/review.html`, SHA256
+`2435f62cc365a332adacbf6a86f03e419309f771d0c6a0599f991827a63c3f4c`.
+Final artifact review 219 accepted saved bytes and safe aggregates STATICALLY;
+it is not independent live, process-log or visual proof. The report retains the
+full failed-attempt and preparation history. Shaka's exact smoke text is retained
+as `shaka-smoke-1115.txt` alongside the completion, SHA256
+`68a481b9f64627ff0a0624cbf3e5458fd1e32ff86b6eb0371cd781cf64f807e6`.
+
+Mongo snapshots are sequential, not transactional. Immutable SQL snapshots
+cannot detect deletion followed by identical reinsertion. No UI, assistive
+technology, physical-device, live OAuth, live Discord delivery or production
+latency proof is claimed. No production probes were repeated for this docs update.
+
+## November 17, 2026 — AF first activation failed; old code recovered
+
+The AF attempt ran on November 18 UTC (November 17 local time). The recorded
+boundary after code recovery at 21:19 EST was:
+
+| Layer    | Recovered revision                         | Recorded process                                                                         |
+| -------- | ------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Frontend | `14c5e5acc6551f803ca1ae1837c0a57655719de0` | External `current` symlink; gateway PID 307279 unchanged                                 |
+| Backend  | `469dafea617498918c2891d203391cd9c93bf688` | PID 2979913, invocation `7942244a768d4950b6b06e0e64ec2aae`, cwd `backend/469dafea…`      |
+| Bot      | `29f9823def09e0d55bb0e7e9a22752ef97515851` | PID 2980779, invocation `f0e30a723c18445b882859d92969e7fe`, cwd `/home/botrunner/wu-bot` |
+
+These are parent-recorded recovery observations, not fresh checks by this docs
+update or a universal standby. They supersede the earlier process identities
+below while retaining G, H and 240's successful dated release facts. AF was
+**not completed**; K remained approved and held for serial release after AF.
+
+AF PR [#376](https://github.com/SirRuggie/WU_Python/pull/376), merged revision
+`47d186440d24ff5ff9f07001acc0b31b37911777`, tag
+`dashboard-store-off-loop-1`, had source approval in Shaka entry 1099. Its
+retained merged suite passed 8495 tests, with 134 skipped and 544 subtests;
+fresh isolated runtime imports passed without repeating that suite. Earlier
+operations drafts 89/95/99/103/112 failed or remained incomplete in review and
+were never executed. The plain 114 integration was the first actual AF
+production activation attempt.
+
+A fresh verified backup recorded all 76 SQLite tables and 79 Mongo namespaces
+with canonical gzip readbacks. The SQLite backup SHA256 was
+`03059d937ad84566e1494455b317eb282257b5fa64fc693ae857f95accf1bd7a`;
+fresh pre/post hashes were
+`bfc1bd9199e3afc5a520a3e17d92c92236e25bb2661f35dd0d510585a5db311c`
+and `36e6968055455f25cc6e37cc5526540b0686609fae9c59f23440c9d952154ac5`.
+The owned bot stop, lease drain, startup and readiness completed before backend
+activation. AF bot PID 2976220 and backend PID 2977455 both passed readiness.
+A first backend attempt was rejected by automatic approval review because its
+state file still showed bot readiness pending. The rejected command did not
+run; the parent supplied the completed readiness proof, corrected that state
+record and retried the same action with approval. No workaround was used.
+
+The single signed-out auth smoke returned 302 to Discord's authorize endpoint
+without following the redirect. Its independent before/after SQL snapshots had
+all 76 counts, raw digests, schema, pools and publications exact, including
+unchanged `oauth_states`. No live OAuth login, production Save or Discord test
+post occurred.
+
+The completed post capture and binding preceded assessment. The original SQL
+comparator returned PASS: all 76 counts, schema, pools and publications matched,
+with raw digest differences limited to the permitted participation group
+observations and sync settings proof. Sessions remained 207→207. Mongo
+namespace and index metadata matched. These are pre/post activation database
+observations taken **before code rollback**; no database snapshot after recovery
+is claimed here.
+
+Post assessment nevertheless exited 1 with “Human configuration or unknown
+document changed”. The redacted diagnostic counted 325 changed identities
+flagged by the conservative human/unknown projections. Source-owner assessment
+was pending; the diagnostic did not settle which changes were ordinary running
+work, unintended release effects or actual human-configuration edits. The
+failure remains a failed gate rather than a completed AF release.
+
+Code recovery immediately attempted backend H first, then independently restored
+bot G after the full 210-second drain. The initial backend readiness HTTP
+assertion failed; its exact HTTP status and cause were not established. Bot
+recovery continued and passed readiness. The aggregate recovery command exited
+1, and that result remains failed. A later read-only backend recheck passed
+without another restart. The parent's subsequent HOST verification confirmed
+both recovered revisions and the process identities above, cwd/argv and pidfd
+ownership, unchanged environment/drop-ins/frontend, config 200 twice, anonymous
+seasons 401 and zero current-invocation journal errors.
+
+Recovery checked three critical public hashes: `index.html`,
+`assets/index-IcPNVMwd.js` and `assets/MembersPage-B-aD7kL5.js` matched the
+unchanged 240 release. The final 184-asset phase was **not run**, because the
+failed assessment had already triggered code rollback. No database restore,
+index change, data repair, environment or unrelated configuration change,
+Discord/provider test write occurred.
+
+Retained evidence is `.local/239af-release-evidence-114/`, particularly
+`parent-assess-post-terminal.json`, `parent-recovery-verified.json`,
+`parent-recovery-public-critical-hashes.json`, the metadata-only
+`backup/pre/post` capture records and `auth-smoke.json`. The redacted field-pattern
+summary is `.local/239af-incident126/pattern-summary.json`; individual identities
+and values are excluded. At this checkpoint, the failed release report/completion were to be bound
+separately, and AF retry/K release facts were pending. The new dated records
+below supersede that pending status; this first failed attempt remains failed.
+
+## November 18, 2026 — 239K shared tag formatter, completed
+
+The latest recorded release boundary is K PR
+[#377](https://github.com/SirRuggie/WU_Python/pull/377), merged revision
+`a8fb4c524c0b84572fc6e28a955dae3fe6a34ad4`, tag `clash-tag-normalize-1`
+(object `7fc9e1ddaaa0a612de786df878cc94519df03327`). Completion was recorded at
+01:38 EST on November 18. The parent recorded bot PID 3040275, invocation
+`50c8a5c56cd642ff96bb46c335a7a5c0`, and backend PID 3040395, invocation
+`ce22d702169c4552bd5859eb3bfc1f64`, both on K. Frontend
+`14c5e5acc6551f803ca1ae1837c0a57655719de0` and gateway PID 307279 stayed
+unchanged. These are saved boundary observations, not fresh production probes.
+
+K retained the prior AF revision
+`47d186440d24ff5ff9f07001acc0b31b37911777` for bot/backend code rollback at
+this boundary. That is a dated fallback, not a universal standby; any subsequent
+M bot release must verify and retain its then-current K bot revision for rollback.
+M has not been released in this record.
+
+The verified backup and pre-capture used the **same immutable capture phase**,
+not two independent captures. All 76 SQLite counts, column definitions, schema,
+pools, six publication records and raw digests matched exactly. The original
+`7b09fc9395b32fcbec230f4d77451b89fdd9398505a74224ffcb3d778bfbccdc`
+comparator returned PASS with zero changed rows; sessions were 207→207, with
+zero D6 expired-session removals. Main was 23 signups / 23 assigned / 23 kept;
+Lazy was 147 / 146 / 131, unchanged before/after. The third number is
+`SUM(kept)`, not an independently measured lock-table count.
+
+All 79 Mongo namespace inventories, index definitions and positive staff
+projections matched. Other recorded count changes were component state 6→9;
+member events 5597→5587 with 21 typed eligible removals and 11 additions;
+player clan candidates 1101→1100 with one eligible removal; and world-clock
+runs 1674→1673 with three eligible removals and two additions. Other counts
+matched. Unknown-owner changes in 20 namespaces were recorded under the
+prospective 1107 contract. Eligibility is not evidence of TTL causation, and
+projection equality is not an all-row-content claim.
+
+The owned stop and full 210-second lease drain, bot/backend startup and readiness,
+one signed-out auth GET, completed post capture/comparison and final public
+checks passed. Auth returned 302 to Discord without following the redirect or
+sending a Cookie; all 76 raw SQL tables and `oauth_states` remained exact across
+that smoke. Current-invocation journals had zero errors. All 184 public assets
+matched the unchanged frontend, including:
+
+| Public asset                        | SHA256                                                             |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| `index.html`                        | `ecd1c27bb1ae9efc1a113e3a39cba1719ef34cd7b45f602bef44bafe91de3d02` |
+| `assets/index-IcPNVMwd.js`           | `9de9242751f43718b9c44d8073206d7ad151434ff119d459124ca08553381f4b` |
+| `assets/MembersPage-B-aD7kL5.js`     | `3b408733b37cb6d8678af1fc01e30e4c67b746fb37f618d4e616679ddaee2384` |
+
+Shaka entry 1110 at 01:39 EST reported **PASS (runtime)**: bot/backend K process
+identities, zero tracebacks in the preceding 25 minutes and config 200.
+A live tag lookup and live Discord link command were skipped; no Discord test
+post was sent. Shaka cleared M to release next; this is not an M completion.
+
+Source validation reused the exact approved K tree's 8551 backend tests
+(134 skipped, 544 subtests) and unchanged frontend 2648 tests/type check/Vite
+build. Fresh isolated actual-runtime imports passed for 36 bot and 75 backend
+modules. These are source/import evidence, distinct from live startup proof.
+No CI checks were reported; no CI pass is claimed. Operations review 191
+accepted 157 literal checks; parent-script review 193 and artifact review 196
+were STATIC reviews, not independent production process logs. The initial
+missing-tag preflight failure and later fetch/retry success remain retained.
+
+Frozen completion: `.local/239k-release-evidence-190/completion.json`, SHA256
+`69486f9c46248a44834d31009633fb2a7361e313a3a31a680acb4e17d7f955bb`.
+Portable report: `.local/239k-final195/review.html`, SHA256
+`32d504410a59588308045d6c924dad8f76f127e23f710cead6c42c51d3580a99`.
+Shaka's observations are retained separately in `shaka-smoke-1110.txt` and
+`closure-1110.json` under the release evidence directory.
+
+## November 18, 2026 — A1+F store off loop, completed third attempt
+
+AF PR [#376](https://github.com/SirRuggie/WU_Python/pull/376), merged revision
+`47d186440d24ff5ff9f07001acc0b31b37911777`, tag
+`dashboard-store-off-loop-1` (object
+`29651ea0faaa3c1670bff318cfd62219ecdfec88`), completed in the separate 177
+release. Shaka's completion smoke was recorded at 00:42 EST on November 18.
+The parent recorded bot PID 3030557, invocation
+`48299bbe14664ac9bd727d449b926188`, and backend PID 3030749, invocation
+`9f3900d47b144a5ba49a0087ff352a90`, both on AF. Frontend 14c5e5ac and
+gateway PID 307279 were unchanged. The old G bot/H backend fallback at this
+boundary is historical; K's later dated record above supersedes it.
+
+The fresh verified immutable ONLINE SQLite backup was also the pre-capture in
+the **same phase**; Mongo's 79 gzip readbacks were sequential, not a transactional
+snapshot. All 76 SQL counts, column definitions, schema, pools, six publication
+records and staff contents matched. The original comparator returned PASS;
+raw digest differences were confined to `participation_group_observations` and
+`participation_sync_settings` under the prospective 1098 automatic-content
+contract (10 clock rows: nine group observations and one sync-settings row).
+Sessions stayed 207→207 with zero D6 removals. Main remained 23 / 23 / 23 and
+Lazy 147 / 146 / 131 for signups / assigned / `SUM(kept)`.
+
+The source-derived positive staff projections and namespace/index definitions
+matched across all 79 Mongo namespaces. Component state increased 6→9;
+member events changed 5608→5598, comprising 21 typed eligible expiry/prune
+removals and 11 additions. Other counts matched. Unknown-owner changes were
+recorded, not silently treated as staff changes or proof of unchanged runtime
+rows. Shaka later reviewed the names in 1109 as runtime bookkeeping with no
+further action. These observations establish neither TTL causation nor a
+blanket all-row-content guarantee.
+
+The full owned 210-second drain, bot/backend readiness, one signed-out auth 302
+(no follow, no Cookie), completed post comparison and all 184 public asset
+checks passed; all 76 raw SQL tables and `oauth_states` stayed exact during
+auth. Current-invocation journals had zero errors. The three critical public
+hashes are the same unchanged frontend hashes listed in K's later record.
+Shaka entry 1108 reported **PASS (runtime)** for AF identities, zero tracebacks,
+config 200 and anonymous seasons 401. Signed-in Chrome, live OAuth login and
+production latency under load were skipped.
+
+The positive 1107 policy was prospective. It did not retroactively pass either
+failed AF attempt retained separately. Failed 181 partial report generation and its separate
+185 variable correction remain preserved. Final review 186 accepted the saved
+artifact STATICALLY, not as independent live or process-log verification.
+No operator database restore, data repair or manual index repair was performed.
+
+Frozen accepted completion: `.local/239af-release-evidence-177/completion.json`,
+SHA256 `b7dbbd0947bb28da0e1b37974a28af227bd037a3db5b5916fdeff7497bee4b37`.
+Portable report: `.local/239af-plain-report185/review.html`, SHA256
+`6b0b607108c7fd21cf7e21c92329fc6b34c9d9b8131effe9bdf2ab1438208313`.
+Shaka's smoke and closure are retained under the 177 release evidence directory.
+
+## November 17, 2026 — AF second attempt failed; separate recovery verified
+
+Attempt 144 activated the same AF revision after the first failed attempt
+retained above. Its completion was recorded at 23:11 EST on November 17
+(`2026-11-18T04:11:53.589294+00:00`). It remains **accepted: false**.
+The negative human/unknown-projection assessment exited 1; the cause of the
+projection changes remains unknown. This is not evidence that staff
+configuration was actually edited. All 76 pre/post SQL counts, schema, pools,
+six publication records and strict staff content checks passed under the
+original comparator. Those database observations preceded code recovery.
+
+Code recovery restored old G bot/H backend. The initial backend readiness HTTP
+assertion failed, with exact HTTP status unrecorded and cause unknown.
+Independent bot readiness passed; the recovery controller still exited 1.
+A later separate read-only check of the same backend passed, followed by a
+fresh separate verification of both recovered services. At that saved boundary,
+bot PID 3012303, invocation `d50fe3483a7d4f58aa3520c910394453`, ran G revision
+`29f9823def09e0d55bb0e7e9a22752ef97515851`; backend PID 3011795,
+invocation `678cbdf26a5e42388badc8aa46709149`, ran H revision
+`469dafea617498918c2891d203391cd9c93bf688`. The later checks do not retroactively
+pass the aggregate recovery command or the failed release.
+
+No after-rollback database snapshot was captured. The full 184-asset final
+phase did not run; recovery checked only the three critical public hashes.
+No operator database restore, data repair or manual index repair was performed.
+Ordinary runtime activity and live Discord delivery were not observed by this
+docs update. The later prospective positive 1107 policy is not a retroactive
+waiver of 144 or the earlier 114 failure.
+
+Frozen failed completion: `.local/239af-release-evidence-144/completion.json`,
+SHA256 `27657ca2bdbe07cf7ce29b9cfc49c595480e06b41812dea13514024fe256b1c2`.
+Failed report: `.local/239af-failed-report167/review.html`, SHA256
+`1db96369253d3d35c68fbe1a8423cd4b2d69a4a917add2019f4fc8843599e593`.
+
+Across these dated records, immutable SQL snapshots cannot detect deletion
+followed by identical reinsertion; Mongo captures are sequential. No UI,
+assistive-technology, physical-device, live OAuth, live Discord delivery or
+production latency proof is claimed. No production probes were repeated for
+this documentation update.
+
+## November 17, 2026 — 239G history retention, completed retry
+
+The recorded boundary after G was frontend
+`14c5e5acc6551f803ca1ae1837c0a57655719de0`, backend
+`469dafea617498918c2891d203391cd9c93bf688` and bot
+`29f9823def09e0d55bb0e7e9a22752ef97515851`. Bot PID 2904052, invocation
+`444e30325ee647a79b7d65e4a063f7e9`, ran the clean detached checkout at
+`/home/botrunner/wu-bot`. Backend PID 2834333 and gateway PID 307279 were
+unchanged. These dated observations supersede the earlier bot boundary below;
+AF and K are not included in these completed-release facts.
+
+PR [#375](https://github.com/SirRuggie/WU_Python/pull/375), tag
+`dashboard-history-retention-365d-1`, used the full head approved by Shaka entry 1096. The first activation **failed** its strict SQL content comparison: seven
+existing `clan_weight_war_lineups` rows changed `captured_at` and
+`lineup_json` while their primary keys and row count stayed the same. Their
+saved state transitions were `inWar` → `warEnded`. All 76 table counts,
+columns, schema, pools and publications still matched. Code rolled back to N
+`bd412179c85e177ded40336080c0f38987b4e657`; the two approved G indexes were
+retained. No database was restored and no index was dropped.
+
+Shaka entry 1098 established a prospective retry contract: record content changes
+in the existing automatic lineup and participation capture tables, while keeping
+all 76 counts, schema, pools, publications and human-edited contents strict. The
+original comparator was unchanged. This did not make the first attempt pass or
+establish the cause of its observed changes. Its frozen completion remains
+`accepted: false`, status `FAILED_STRICT_SQL_CONTENT_CODE_ROLLED_BACK`.
+
+The accepted retry used the same tag and retained verified full backup at
+`.local/239g-release-evidence/bound-before/capture.json`, including 63 canonical
+Mongo archives with verified gzip readbacks. Fresh pre/post SQLite hashes were
+`2ae8e74f4c8e52af9317b878ce2e4ebc0e902915da5e681b323b96baa7614d49`
+and `7f9698f85ac463e42cf45f518d025e12c60ba10fcc82b4d90ac4fcc95869200f`.
+All 76 table counts/columns, schema, pools and publications matched. The actual
+unchanged comparator returned PASS. Raw digest changes were limited to
+`participation_group_observations` and one `last_checked_at` change in
+`participation_sync_settings`, proved by the existing narrow clock rule; no
+lineup digest changed in the retry. Main remained 23/23/23 and Lazy
+147/146/131 (signups/assigned/kept). Human and unclassified table contents stayed
+strict.
+
+Both G indexes were already live before the retry and remained exact afterward:
+`dashboard_history_target_time_partial_v1` on `{kind:1,target:1,at:-1}` and
+`dashboard_history_at_365d_v1` on `{at:1}` with TTL31536000 seconds, both partial
+on `kind: dashboard_history`. The retry did not create them. All 63 namespace
+index inventories matched. The history guard recorded 455 total documents,
+20 history rows, zero history rows older than 365 days and zero array-valued
+history kinds/dates. All kind counts and the 20 history rows' identities and
+contents matched; no history row was added or removed and no other kind count
+dropped. This does not prove live TTL deletion timing.
+
+Mongo count changes were `component_state` 6→9 and `member_events` 5712→5678.
+They were recorded under 1082 without attributing them to G; protected metrics
+had no differences. These sequential captures are not a cross-collection
+transactional snapshot. The owned bot stop, full 210-second lease drain, fresh
+history guard, startup and readiness completed before post checks. The retry
+needed no rollback. Current-invocation startup/import/index checks passed,
+config returned 200 twice and anonymous seasons returned 401.
+
+All 184 public hashes matched the unchanged 240 frontend. Public `index.html`
+SHA256 was
+`ecd1c27bb1ae9efc1a113e3a39cba1719ef34cd7b45f602bef44bafe91de3d02`;
+entry `assets/index-IcPNVMwd.js` was
+`9de9242751f43718b9c44d8073206d7ad151434ff119d459124ca08553381f4b`.
+Shaka entry 1100 independently checked bot PID 2904052/HEAD29f, clean journals
+and config 200. His own production `listIndexes` check was skipped because his
+guard blocked that read; the index conclusion relies on the saved Codex proof.
+There was no signed-in browser, phone, AT, live Discord delivery or production
+latency check.
+
+The corrected validator passed 53 literal-fixture checks and the independent
+reviewer also passed 53. The earlier 47-check validator used saved
+production-derived inputs and is **not** synthetic-only proof; that history is
+preserved. The report generator's final correction passed 55 synthetic checks
+and independent review passed 55. Terra's final artifact review accepted the
+full 16 scripts, hashes, input bindings and failure history; it was a static
+artifact review, not another production verification.
+
+Frozen first-attempt evidence is
+`.local/239g-release-evidence/failed-release-review.html`, SHA256
+`58c615a44df95883801d391c42813cff30231aee940a02507a3538594913bae0`,
+and `completion.json`, SHA256
+`ed15ba7737789fcc3c9afb320898358c8be70b356094511c939014d0fe2ad02b`.
+The accepted retry is `.local/239g-release-evidence-1098-retry/release-review.html`,
+SHA256 `01050e48836381ed593f2981c8fcef0ff37164c73ddfbc1b693ba2517e2730bd`,
+and `completion.json`, SHA256
+`ca2b0233cb2a3bda53d9e7750d0aa539de3e424b170b34a9e7f75c9b8d081db4`.
+DONE1860 and Shaka1100 close G. Retained N bot code is a historical recovery
+asset; any later recovery needs fresh identity checks and a newly scoped code
+rollback. Keep the approved G indexes and never restore a database or recreate
+N's removed 90-day index to roll back code.
+
+## November 17, 2026 — completed 239I/C/N/H and 240 releases
+
+The recorded boundary after 240 was:
+
+| Layer | Revision | Recorded process |
+| --- | --- | --- |
+| Frontend | `14c5e5acc6551f803ca1ae1837c0a57655719de0` | Atomic external `current` symlink; gateway PID 307279 unchanged |
+| Backend | `469dafea617498918c2891d203391cd9c93bf688` | PID 2834333, invocation `73634f361c3f4548993a0d9f276fb4f8`, cwd `backend/469dafea…` |
+| Bot | `bd412179c85e177ded40336080c0f38987b4e657` | PID 2815111, invocation `0ec865d428bd495080ab650fd781510b`, cwd `/home/botrunner/wu-bot` |
+
+At those boundaries the retained code rollback assets were frontend
+`8e1b57c2906ba04c9f06af14a2c31078da61e750`, backend
+`9b7f6be6a02cb0d58378fe1a6ab6199dbadad21d` and bot
+`56ed1f4e76cc86fb5debf8c574cfff64a75aec13`. These are component-specific
+historical recovery assets, not a universal standby or instructions to switch
+them now. In particular, an N bot-code rollback must not recreate the removed
+90-day index; see its scoped restriction below. These earlier facts exclude
+the later G boundary above; AF and K remain outside the completed records.
+
+### 240 — Members save-status polling, frontend only
+
+PR [#374](https://github.com/SirRuggie/WU_Python/pull/374), tag
+`member-save-status-1`, revision `14c5e5acc6551f803ca1ae1837c0a57655719de0`.
+Shaka entry 1092 approved the full source head. Release ran serially after H completed;
+the backend, bot, gateway and backend drop-ins were unchanged, with no restart.
+
+The clean tagged build and atomic frontend switch matched all 184 public manifest
+hashes. Public `index.html` SHA256:
+`ecd1c27bb1ae9efc1a113e3a39cba1719ef34cd7b45f602bef44bafe91de3d02`;
+entry `assets/index-IcPNVMwd.js`:
+`9de9242751f43718b9c44d8073206d7ad151434ff119d459124ca08553381f4b`;
+owning `MembersPage-B-aD7kL5.js`:
+`3b408733b37cb6d8678af1fc01e30e4c67b746fb37f618d4e616679ddaee2384`.
+Config returned 200, anonymous seasons returned 401, and the release-window backend/bot
+journals had no new traceback or import error.
+
+Accepted evidence is `.local/240-release-evidence/bound-before/capture.json`:
+verified SQLite backup SHA256
+`10124c657efc5cebacfc96655a68a09696aab1bfd42b88b8282287657cca4589`
+and 63 Mongo namespace archives with canonical gzip readbacks. It records source
+binding during capture to the exact configuration bytes and effective runtime
+startup inputs. The earlier unbound `before` backup is retained as history, not
+the accepted activation gate. Static operation-guard rework was fixed before
+activation; this was not a failed activation or rollback.
+
+Fresh pre/post SQLite hashes were
+`cb9d1c2f246c5aaaa15f7b32a62d875350291e6403c66f34327938c6e66dee09`
+and `4917ef0a7334e0090ea30afd6ef2abfb1f04c94af4820681547c275f67250a53`.
+All 76 table counts/columns, schema, pools and six publication rows matched.
+Raw row-digest differences were restricted to the existing committed proof for
+ten automatic clock rows; other row content stayed strict. Main remained
+23/23/23 and Lazy 147/146/131 (signups/assigned/kept); signups/roster 170,
+weights 360, weight history 397 and imported winners 82. All 63 Mongo namespace
+counts were recorded: only `member_events` changed 5706→5707. Index metadata and
+protected metrics matched. Under Shaka entry 1082 this unrelated collection change was
+recorded without attributing its cause to the frontend release. Mongo captures
+are sequential, not a cross-collection transactional snapshot.
+
+Source review: 2648 frontend tests/384 files, 17 focused tests plus two independent
+stale-response cases, TypeScript, Vite and scoped formatting passed. Backend
+tests were skipped under the frontend-only prompt. The six screenshots are
+authorized **local fixture** headless captures; Codex did not perform a live
+production Save, production headless check, phone-tap or AT audit. Shaka entry 1094
+independently checked runtime/public hashes. Separately, Shaka entry 1095 relayed
+Ruggie's real live-save result at 21:38 UTC: “confirmed no 404 error”. That owner
+confirmation closed 240; it is not a Codex live-write test.
+
+Frozen evidence: `.local/240-release-evidence/completion.json` and
+`release-review.html`, report SHA256
+`47e0feeec0df5e7ceae5f13fc46f113e2301d60e405aa547eca668f6b808d337`;
+`shaka-smoke-1094.txt` and `owner-live-closure-1095.json`. The report retains
+initial install/binding failures and operation-review limits. No database
+restore, index change, manual Discord post or code rollback occurred.
+
+### 239H — role cache and write rights, backend only
+
+PR [#372](https://github.com/SirRuggie/WU_Python/pull/372), tag
+`dashboard-role-cache-1`, revision
+`469dafea617498918c2891d203391cd9c93bf688`. Shaka entry 1088 approved the full head;
+the normal backend release switch changed the cwd from `backend/9b7f6be6…` and
+started PID 2834333. Bot N and frontend 8e were preserved. Shaka entry 1093 runtime smoke
+passed; signed-in staff access and live role-removal timing were skipped.
+
+The full 63-namespace verified backup is
+`.local/239h-release-evidence/before/capture.json`, SQLite SHA256
+`a9f9dcbf19b67a7c6655d3de391edc44933e6cc6b584ebb3e3394cfa0e47f2c2`.
+Fresh pre/post hashes were
+`37a7ac02952e3ba69270bc0c58c93fa25b50f89fbd654914daa4c38c3a8e6c4e`
+and `8e169daa7e76e760711513c01cd4127f0252d33d4dcea4b1d31763994b690c7c`.
+All 76 counts, raw row digests, schema, pools and publications matched, with zero
+clock changes. All 63 Mongo counts/index metadata and protected metrics matched.
+Config 200, anonymous seasons 401 and the new invocation journal passed.
+
+Frozen evidence: `.local/239h-release-evidence/completion.json` and
+`release-review.html`, SHA256
+`6b926a060255487eeac0eb2f42034dd1a0bac04ea991cd2ad096663d00eb5779`;
+`raw-all76-digest-confirmation.json` and `shaka-smoke-1093.txt`. Static rollback
+temporary-file rework was corrected before activation. No H rollback or data
+restore occurred. Shaka's source-suite run had 8294 passes and one pre-existing
+B isolation-test flake; it was not an all-pass run. Builder and independent
+Terra runs passed 8295 tests, and the flake was fixed separately in PR373.
+
+### 239N — departed-player retention, bot and scoped index replacement
+
+PR [#368](https://github.com/SirRuggie/WU_Python/pull/368), tag
+`player-activity-retention-180d-1`, revision
+`bd412179c85e177ded40336080c0f38987b4e657`. Shaka entry 1085 approved the full head;
+Ruggie's separate scoped replacement approval is recorded in handoff 1818.
+
+After backup verification and the owned bot stop/lease drain, only the old
+`activity_departure_retention` index (`left_at`, TTL7776000, no partial filter)
+was dropped. A separate completed receipt validation preceded bot startup.
+The normal `ensure_indexes` path created `activity_departed_player_180d`
+(`left_at`, TTL15552000, partial filter requiring null/missing `kind`, a string
+`tag`, and an existing date-valued `left_at`). Read-only index evidence
+confirmed the new specification, old index absence and all other indexes
+unchanged. No manual new-index creation, backfill or data repair occurred.
+
+The fresh activity archive SHA256 was
+`5b052722d8db58f0015e470fec728555b1d85c2b686b6310f622b989a28f68ad`:
+621 documents,596 players,25 history rows,39 players with a `left_at` date and
+zero players older than 180 days. Canonical readback and an isolated MongoDB 7
+restore matched; production was observed as 8.0.37. All 25 original history IDs
+and contents survived; zero documents were added or removed. This does not
+prove live TTL deletion timing. One player's existing observer fields changed;
+that was recorded without a release-causation claim.
+
+The SQLite backup in `.local/239n-release-evidence/before/capture.json` had
+SHA256 `24deec46b37d3ce2884052b40dc0f284c75b3fec785bae676c6cd7a030f7391d`.
+All 76 counts/columns, schema, pools and publications matched after release;
+ten permitted automatic clock rows changed. The prior C full 63-namespace
+backup was retained alongside fresh N counts and the fresh activity archive.
+Other Mongo count differences were `component_state` 3→4 and
+`member_events` 5730→5709; protected metrics matched. Backend 9b7 and frontend 8e
+were unchanged. Bot PID 2815111 started cleanly with no index/startup failure.
+
+Shaka entry 1090 runtime smoke passed; his production `listIndexes` read was skipped
+because his guard blocked it, so that part relies on the saved Codex read-only
+proof. Frozen evidence: `.local/239n-release-evidence/completion.json` and
+`release-review.html`, SHA256
+`66e112f0a51a392972663b6831a3e855eeb1395c472f513a4d85e8ba4286866e`.
+The prepared, unexecuted recovery could remove **only** the new 180-day index
+and restore bot code `56ed1f4e…`. Never recreate the old 90-day index or restore a
+database for this code rollback. Static recovery reworks were fixed before the
+production index operation; no live Discord delivery test was performed.
+
+### 239C — ticket welcome nonces, bot only
+
+PR [#371](https://github.com/SirRuggie/WU_Python/pull/371), tag
+`ticket-welcome-nonce-1`, revision
+`56ed1f4e76cc86fb5debf8c574cfff64a75aec13`. Shaka entry 1084 approved the full head;
+bot PID 2789304 ran this revision while backend 9b7/frontend 8e stayed unchanged.
+Shaka entry 1089 runtime smoke passed. The client nonce/enforce-nonce mapping and
+startup were checked; live Discord deduplication was not tested with a post.
+
+Verified backup `.local/239c-release-evidence/before/capture.json`, SQLite
+SHA256 `b2415d408236f7bb12d48ec9fe5b81ca197b6fd62e2d43d603ebf287282cabe5`;
+63 Mongo archives had gzip readbacks. All 76 SQL counts/columns, schema, pools
+and publications matched, with ten permitted automatic clock-row changes.
+All 1630 `initial_delivery` receipt states were unchanged. Five top-level ticket
+refresh records and `component_state`3→6 changed through unchanged paths and
+were recorded under 1082; no unintended changed-diff Mongo effect was found.
+Indexes and protected metrics matched. The retained bot-code rollback was 9b7;
+it was not executed. No data restore or live Discord test post occurred.
+
+Frozen evidence: `.local/239c-release-evidence/completion.json`,
+`shaka-smoke-1089.txt` and `release-review.html`, report SHA256
+`f895b9deebeb2de7b673c81c098b7342bd6f09a2c05d7e64203fee0d0ba15105`.
+
+### 239I — image-fetch safety, bot and backend
+
+PR [#370](https://github.com/SirRuggie/WU_Python/pull/370), tag
+`image-fetch-safety-1`, revision
+`9b7f6be6a02cb0d58378fe1a6ab6199dbadad21d`. The accepted 1082 retry ran bot
+PID 2752217 and backend PID 2754332; frontend 8e stayed unchanged. Shaka entry 1083
+runtime smoke passed. One authorized public Discord-CDN image fetch passed
+real TLS (256×256, 1268 bytes); its first-activation evidence was retained, not
+fetched again. No Discord upload/post or signed-in browser check was made.
+
+Verified full backup `.local/239i-release-evidence/before-r1/capture.json`,
+SQLite SHA256
+`25b6575dcd63c4a59981a40c11bfbef3d1d4bb2d37b2d429f7f7b7d2caadb482`,
+included 63 Mongo namespaces with gzip readbacks. Fresh accepted retry pre/post
+SQL hashes were
+`6e0655b65f019c646b9832d177e4463d970ac0fca6b2fdc89934cfd588671168`
+and `df90e5d60cd406a439b951f1154fd1cc96773c1f462062f18cdbc91008a9d9c3`.
+All 76 table counts, raw row digests, schema, pools and publications matched;
+zero clock changes. Mongo `component_state`2→5 and 153 profile clock-only
+changes were recorded, with no added/removed profiles and unchanged protected
+metrics. The downloader diff writes no collections;1082's assessment did not
+establish a causal explanation for background changes.
+
+The earlier 1080 attempt **failed and rolled back code** because Mongo changes
+fell outside its named list. Its frozen failure evidence remains failed.
+Shaka entry 1082 replaced that list with the recorded-unrelated-collection rule and
+authorized a fresh pre/post retry on the same tag; it did not retroactively pass
+the first attempt. Original code rollback assets were bot
+`c678cb6367ec1f768320010db8b0c17a239fc933` and backend 8e; no database was
+restored. Frozen evidence: `.local/239i-release-evidence/completion.json`,
+`shaka-smoke-1083.txt` and `release-review.html`, report SHA256
+`203e3ac47b4642146d1695635d7d08c541201c5421b164474a210afa8a7bdb7c`.
+
+Across I/C/N/H, the unchanged frontend 8e public entry was
+`assets/index-C-wTAPQ6.js`, SHA256
+`11a3c25025abcb0cfc67a4406ad06daffbac12d4ed5d33371611f424b02ef3fc`;
+public HTML SHA256
+`01466c8c6032b3b247734f8055b419be1742ac600b60df027bfb390590a16982`.
+These values describe those successful boundaries, not the later 240 frontend.
+All Mongo backups/count captures above are sequential rather than transactional
+snapshots; none grants a blanket claim that all live row content stayed fixed.
+
 ## War reminder switches — 2026-11-15 (frontend + backend)
 
 - PR [#366](https://github.com/SirRuggie/WU_Python/pull/366), merge commit
@@ -592,6 +1278,75 @@
   2e041c4d7417d5e8f55854b66525e9e4b8f24752`. Never restore the database for a
   code rollback.
 
+## November 12, 2026 —235 Settings menu retry completed
+
+PR [#319](https://github.com/SirRuggie/WU_Python/pull/319), tag
+`settings-collapsible-retry-1`, frontend
+`2e041c4d7417d5e8f55854b66525e9e4b8f24752`. Shaka entry 1056 approved source
+`59cd1978f19d845a0dce49d8c9ef58d81d90a677`;1058 authorized one fresh
+release retry using the already staged 181 files, without a rebuild, new tag or
+source change. Shaka entry 1059 runtime smoke passed. Shaka entry 1060 separately recorded
+Ruggie's “Pass” after the last FWA Rep account ⋯ phone check (normal tap and a
+small slide), closing 235 without rollback. That is owner physical-phone proof,
+separate from Codex's native mouse smoke.
+
+The opening-pointer rule applies only to menus inside an ActionPanel portal:
+record the trigger's opening pointer, ignore a menu-item pointer-up from that
+same opening pointer, and clear the guard on a new item press, cancellation,
+close or unmount. It uses no timers. Menus outside the sheet retain their
+behavior, and Remove still requires its confirmation. The first and last menus
+stayed visible inside the native dialog at 360×800 and 1440×1000, with no
+unexpected Remove confirmation, overflow or console error. No item selection,
+Save, Add, Remove, CheckClash or Refresh was submitted by Codex in this smoke.
+
+All 181 public hashes matched. HTML SHA256:
+`bd0343da9daf086506f3c42c0486668741aeb0893192e899ffefc1723b0d11fc`;
+entry `index-CCwDSXcv.js`:
+`a5d41fc79709566a0319ecc2d40a99bfe6646d4f5c20610729cf41603dfa0925`;
+`ResultsSettingsSheet-DVe7cwzW.js`:
+`318de889d4146d5289e5057337dc023004c5ee48e7be928d53ea48e7bd16345b`;
+`ActionMenu-iCobXhPB.js`:
+`82da4fcce2cac2b36f5b0c681b8a83ea7f309436e3e342fc36c50699a83668dc`.
+
+Accepted retry evidence is
+`.local/settings-collapsible-retry-release-evidence-235-r2/completion.json`.
+The fresh before/after SQLite backups had SHA256
+`fa20926597ccdbe638cd9739b860972396d0c88141e63fe1899d54eb50c46bfa`
+and `cb49de07029ebcae2299b80d9daff426d6015125bec6fa598f4b4623377986a0`.
+Integrity/readback, all 76 table counts **and raw row digests**, schema, pools
+and six publication versions matched; the unchanged committed clock comparator
+reported zero changed rows. Main 23/23/23 and Lazy 147/146/131
+(signups/assigned/kept), imported winners 82 and Rep accounts 8 were retained.
+Two sequential canonical Mongo checkpoint readbacks matched their own SQL
+phases; this was not a cross-phase transactional snapshot.
+
+Backend PID 146074 stayed on
+`e6477bd9b599461aa7499ecb9ce84fa9219bbe51`; bot PID 3529055 stayed on
+`0a06172621a542bae2ee0864b5ecf251b298614a`. Gateway 307279, invocation IDs,
+drop-ins and environment-file hashes were unchanged, with no service restart,
+configuration change, database restore or manual Discord write. Config 200 and
+anonymous seasons 401 passed. The retained frontend rollback at this boundary
+was 236 `6bb0f41a95ff1c6c17cbeb0ed8259c6c44aeb5a2`; it is historical and
+requires fresh state verification before any future use.
+
+The first PR319 activation **failed and rolled back**: its post command resolved
+the venv Python symlink to a base interpreter, and the `bson` import failed
+before comparing inputs. A later correct recovery comparison did not
+retroactively accept that attempt. Its separate failed completion/report remain
+frozen under `.local/settings-collapsible-retry-release-evidence-235/`.
+The accepted 1058 retry used the exact lexical project-venv command, proved that
+command against saved recovery inputs before switching, and took fresh backup,
+native receipt/binding and post evidence. Earlier 235 failure/revert history also
+remains historical; this record covers the accepted fresh retry only.
+
+Frozen accepted report:
+`.local/settings-collapsible-retry-release-evidence-235-r2/release-review.html`,
+SHA256 `37c105f3792930190607224f9296a21e96bbe67972b67e5c9c231660a93b0120`.
+It retains 56 original JPEGs (historical fixture/failed-attempt and eight fresh
+retry captures), full operation scripts and failure history. Existing Funnies
+upstream 404/stale warning was observed before Settings; no causal claim or
+provider diagnostic was made. No all-pages, AT or live Discord delivery claim.
+
 ## November 12, 2026 —232/233 completed (Shaka1041/1042)
 
 These dated records supersede the older current/standby labels below. Recorded
@@ -636,47 +1391,24 @@ immediate parent runtime/public verification and final232 raw data were exact.
 Per1041 the private233 coordinator/tests were deleted, not repaired or rerun.
 No live workbook/Discord/AT/device/all-pages claim.230–233 closed by1042.
 
-## Current standby and rollback targets
+## Historical November 2 standby boundary (Shaka smoke 466)
 
-`signup-reminders-ack-1`, commit
-`e4f9574ca6243fa4a6c3bf33c70acfb662c0f61f`, is the verified frontend,
-backend **and bot** standby for the next approved release. It passed read-only
-smoke on November 2, 2026 (local time). See
-[`docs/signup-reminders-ack-1-release.md`](signup-reminders-ack-1-release.md)
-for the actual runtime, hashes, backups and testing limits.
+At that boundary, `signup-reminders-ack-1`, commit
+`e4f9574ca6243fa4a6c3bf33c70acfb662c0f61f`, was the verified frontend,
+backend and bot standby after read-only smoke on November 2. See
+[`signup-reminders-ack-1-release.md`](signup-reminders-ack-1-release.md)
+for its runtime, hashes, backups and testing limits. Its own recorded rollback
+was bot `343d961`, backend `e91982d` and frontend `c55c7f0`. These retained
+facts are superseded by later dated release boundaries above; neither this
+commit nor those older snapshots are an assertion about the currently running
+deployment.
 
-The bot rollback target is that same full commit, not the older bot snapshots
-below. A bot rollback requires a newly scoped, reviewed coordinator with actual
+A future bot rollback still needs a newly scoped, reviewed coordinator, actual
 runtime verification, the full 210-second inactive lease drain, import/readiness
-checks and the recorded war-fetch gap. A bare reset/restart is insufficient.
-Backend and immutable frontend targets are also that same commit; preserve their
-retained artifacts and verify served hashes. Never rerun a completed activation
-coordinator, restore databases for a code rollback, or reverse approved data
-corrections. The older entries below are historical snapshots, not the current
-standby targets.
-
-Rollback from the currently running `e4f9574` itself remains bot `343d961`, backend `e91982d` and frontend `c55c7f0`; the standby above is for subsequent releases.
-
-## Verified standby release (Shaka smoke 466)
-
-`signup-reminders-ack-1`, commit
-`e4f9574ca6243fa4a6c3bf33c70acfb662c0f61f`, is the verified frontend,
-backend **and bot** standby for the next approved release. It passed read-only
-smoke on November 2, 2026 (local time). See
-[`docs/signup-reminders-ack-1-release.md`](signup-reminders-ack-1-release.md)
-for the actual runtime, hashes, backups and testing limits.
-
-The bot rollback target is that same full commit, not the older bot snapshots
-below. A bot rollback requires a newly scoped, reviewed coordinator with actual
-runtime verification, the full 210-second inactive lease drain, import/readiness
-checks and the recorded war-fetch gap. A bare reset/restart is insufficient.
-Backend and immutable frontend targets are also that same commit; preserve their
-retained artifacts and verify served hashes. Never rerun a completed activation
-coordinator, restore databases for a code rollback, or reverse approved data
-corrections. The older entries below are historical snapshots, not the current
-standby targets.
-
-Rollback from the currently running `e4f9574` itself remains bot `343d961`, backend `e91982d` and frontend `c55c7f0`; the standby above is for subsequent releases.
+checks and a recorded war-fetch gap. A bare reset/restart is insufficient.
+Preserve retained assets and verify served hashes; never replay a completed
+activation coordinator, restore data to roll back code or reverse approved data
+corrections.
 
 ## Historical deployed snapshot (Claude smoke 131)
 
