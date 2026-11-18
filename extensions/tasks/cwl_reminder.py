@@ -1,3 +1,4 @@
+import pymongo
 import asyncio
 import uuid
 import logging
@@ -1466,7 +1467,8 @@ async def _install_campaign_schedule(guild_id: int, cycle: str) -> None:
         loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
         generation = _campaign_generation(loaded)
 
-    all_pending = await mongo_client.cwl_pending_reminders.find().to_list(length=None)
+    with pymongo.timeout(30):
+        all_pending = await mongo_client.cwl_pending_reminders.find().to_list(length=None)
     scoped = {
         row.get("_id"): row
         for row in all_pending
@@ -2141,9 +2143,10 @@ async def restore_pending_reminders():
     now = pendulum.now(DEFAULT_TIMEZONE)
 
     # Find all pending reminders
-    pending_reminders = (
-        await mongo_client.cwl_pending_reminders.find().to_list(length=None)
-    )
+    with pymongo.timeout(30):
+        pending_reminders = (
+            await mongo_client.cwl_pending_reminders.find().to_list(length=None)
+        )
 
     if not pending_reminders:
         print("[CWL Reminder] No pending reminders found")
@@ -2759,9 +2762,10 @@ async def _reconcile_cwl_startup() -> None:
         ]:
             if scheduler.get_job(job_id):
                 scheduler.remove_job(job_id)
-        pending = await mongo_client.cwl_pending_reminders.find().to_list(
-            length=None
-        )
+        with pymongo.timeout(30):
+            pending = await mongo_client.cwl_pending_reminders.find().to_list(
+                length=None
+            )
         for row in pending:
             if row.get("kind") == "campaign":
                 continue
@@ -2849,10 +2853,11 @@ async def _sync_all_campaigns() -> bool:
     global _campaign_load_scan_complete
     if not hasattr(mongo_client, "bot_config"):
         return False
-    rows = await mongo_client.bot_config.find(
-        {"kind": {"$in": ["cwl_campaign_defaults", "cwl_campaign_cycle"]}, "activated": True},
-        {"_id": 1, "kind": 1, "activated": 1, "guild_id": 1, "cycle": 1},
-    ).to_list(length=None)
+    with pymongo.timeout(30):
+        rows = await mongo_client.bot_config.find(
+            {"kind": {"$in": ["cwl_campaign_defaults", "cwl_campaign_cycle"]}, "activated": True},
+            {"_id": 1, "kind": 1, "activated": 1, "guild_id": 1, "cycle": 1},
+        ).to_list(length=None)
     guilds = {
         int(row["guild_id"])
         for row in rows

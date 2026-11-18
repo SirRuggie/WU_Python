@@ -19,7 +19,9 @@ def test_uploader_is_retired_but_saved_registry_still_loads():
     collection = SimpleNamespace(find=Mock(return_value=SimpleNamespace(to_list=AsyncMock(return_value=rows))))
     try:
         assert asyncio.run(emoji_sync.refresh_cache(SimpleNamespace(emoji_registry=collection))) == 1
-        collection.find.assert_called_once_with({"kind": "troop"})
+        collection.find.assert_called_once_with(
+            {"kind": "troop"}, {"_id": 0, "slug": 1, "emoji_id": 1, "name": 1},
+        )
         assert troop_emoji.markup("barbarian") == "<:troop_barbarian:123456789012345678>"
     finally:
         troop_emoji.clear()

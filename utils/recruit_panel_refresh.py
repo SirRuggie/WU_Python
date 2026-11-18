@@ -182,7 +182,8 @@ async def run_due(mongo, rest, render):
                 {"lease_until": {"$exists": False}},
                 {"lease_until": {"$lte": now}},
             ],
-        }
+        },
+        {"_id": 1, "status": 1, "created_at": 1},
     ):
         claim_id = uuid.uuid4().hex
         claimed = await jobs.find_one_and_update(

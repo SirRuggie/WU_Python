@@ -6,6 +6,7 @@ tests, and the reminder task all use the same stored representation.
 """
 
 from __future__ import annotations
+import pymongo
 
 import copy
 import hashlib
@@ -887,16 +888,17 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
     selected_cycle = cycle or cycle_key(now, base.get("timezone", DEFAULT_TIMEZONE))
     row = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, selected_cycle)})
     override = copy.deepcopy(row.get("campaign")) if row else None
-    recurring_rows = await mongo.bot_config.find(
-        {
-            "kind": "cwl_campaign_cycle",
-            "guild_id": guild_id,
-            "$or": [
-                {"recurring_campaign": {"$exists": True}},
-                {"recurring_roster_copy": {"$exists": True}},
-            ],
-        }
-    ).to_list(length=None)
+    with pymongo.timeout(30):
+        recurring_rows = await mongo.bot_config.find(
+            {
+                "kind": "cwl_campaign_cycle",
+                "guild_id": guild_id,
+                "$or": [
+                    {"recurring_campaign": {"$exists": True}},
+                    {"recurring_roster_copy": {"$exists": True}},
+                ],
+            }
+        ).to_list(length=None)
     recurring_rows = [
         item for item in recurring_rows if item.get("cycle", "") <= selected_cycle
     ]
@@ -928,7 +930,8 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
     previous = []
     has_saved_cycles = False
     if row is None:
-        previous = await mongo.bot_config.find({"kind": "cwl_campaign_cycle", "guild_id": guild_id}).to_list(length=None)
+        with pymongo.timeout(30):
+            previous = await mongo.bot_config.find({"kind": "cwl_campaign_cycle", "guild_id": guild_id}).to_list(length=None)
         has_saved_cycles = bool(previous)
         previous = [item for item in previous if item.get("cycle", "") < selected_cycle and isinstance(item.get("campaign"), dict)]
     if not saved and not legacy and (row or recurring_rows or has_saved_cycles):

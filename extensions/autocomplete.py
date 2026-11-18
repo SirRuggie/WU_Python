@@ -1,3 +1,4 @@
+import pymongo
 from utils.mongo import MongoClient
 import lightbulb
 from utils.classes import Clan
@@ -65,7 +66,8 @@ async def clans(
     # Check cache
     now = time.time()
     if _cache["clans"]["data"] is None or (now - _cache["clans"]["timestamp"]) > CACHE_DURATION:
-        clans_data = await mongo.clans.find().to_list(length=None)
+        with pymongo.timeout(30):
+            clans_data = await mongo.clans.find({}, {"_id": 0, "name": 1, "tag": 1}).to_list(length=None)
         _cache["clans"]["data"] = [Clan(data=data) for data in clans_data]
         _cache["clans"]["timestamp"] = now
 
@@ -84,7 +86,8 @@ async def fwa_clans(
     # Check cache
     now = time.time()
     if _cache["fwa_clans"]["data"] is None or (now - _cache["fwa_clans"]["timestamp"]) > CACHE_DURATION:
-        _cache["fwa_clans"]["data"] = await mongo.clans.find({"type": "FWA"}).to_list(length=None)
+        with pymongo.timeout(30):
+            _cache["fwa_clans"]["data"] = await mongo.clans.find({"type": "FWA"}, {"_id": 0, "name": 1, "tag": 1, "role_id": 1}).to_list(length=None)
         _cache["fwa_clans"]["timestamp"] = now
 
     clans = _cache["fwa_clans"]["data"]
@@ -236,11 +239,13 @@ async def preload_autocomplete_cache(mongo: MongoClient):
     _cache["th_attribute"]["data"] = (await mongo.clans.distinct("th_attribute")) + ["Demo", "Stuff"]
     _cache["th_attribute"]["timestamp"] = time.time()
 
-    clans_data = await mongo.clans.find().to_list(length=None)
+    with pymongo.timeout(30):
+        clans_data = await mongo.clans.find({}, {"_id": 0, "name": 1, "tag": 1}).to_list(length=None)
     _cache["clans"]["data"] = [Clan(data=data) for data in clans_data]
     _cache["clans"]["timestamp"] = time.time()
 
-    _cache["fwa_clans"]["data"] = await mongo.clans.find({"type": "FWA"}).to_list(length=None)
+    with pymongo.timeout(30):
+        _cache["fwa_clans"]["data"] = await mongo.clans.find({"type": "FWA"}, {"_id": 0, "name": 1, "tag": 1, "role_id": 1}).to_list(length=None)
     _cache["fwa_clans"]["timestamp"] = time.time()
 
     print(f"[Autocomplete] Loaded {len(_cache['clans']['data'])} clans, {len(_cache['fwa_clans']['data'])} FWA clans")

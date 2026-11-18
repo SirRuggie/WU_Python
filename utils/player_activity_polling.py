@@ -1,4 +1,5 @@
 """Hourly player polling, spread evenly; failed reads never become observations."""
+import pymongo
 import asyncio
 import logging
 import time
@@ -51,6 +52,12 @@ class RosterSweep:
     complete: bool
 
 
+CLAN_SCAN_FIELDS = {
+    "_id": 0, "tag": 1, "archived": 1, "removed": 1, "deleted": 1,
+    "removed_at": 1, "deleted_at": 1, "active": 1, "status": 1,
+}
+
+
 def active_clan(row):
     return not (row.get('archived') or row.get('removed') or row.get('deleted')
                 or row.get('removed_at') or row.get('deleted_at') or row.get('active') is False
@@ -60,7 +67,8 @@ def active_clan(row):
 async def family_members(mongo, client):
     """A failed clan does not stop healthy polls or authorize departures."""
     from utils.strike_store import tag
-    rows = await mongo.clans.find({'tag': {'$type': 'string'}}).to_list(length=None)
+    with pymongo.timeout(30):
+        rows = await mongo.clans.find({'tag': {'$type': 'string'}}, CLAN_SCAN_FIELDS).to_list(length=None)
     clans = [row for row in rows if active_clan(row)]
     members = {}
     clan_tags = []

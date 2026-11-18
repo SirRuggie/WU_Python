@@ -61,9 +61,10 @@ class PlayerActivityStore:
         return True
 
     async def all_players(self, *, view=None):
-        return await self.collection.find({"kind": {"$ne": "history_clan"}}, player_read_fields(view)).to_list(
-            length=None
-        )
+        with pymongo.timeout(30):
+            return await self.collection.find({"kind": {"$ne": "history_clan"}}, player_read_fields(view)).to_list(
+                length=None
+            )
 
     async def overview(self):
         """Lossless bounded page signals, without per-unit baselines/history cache."""
@@ -127,8 +128,9 @@ class PlayerActivityStore:
         return bool(result.modified_count)
 
     async def known_members(self, clan_tag):
-        rows = await self.collection.find({'current_clan_tag': tag(clan_tag), 'left_at': None},
-                                          {'tag': 1, 'current_clan_tag': 1}).to_list(length=None)
+        with pymongo.timeout(30):
+            rows = await self.collection.find({'current_clan_tag': tag(clan_tag), 'left_at': None},
+                                              {'tag': 1, 'current_clan_tag': 1}).to_list(length=None)
         return {row.get('tag', row['_id']): tag(clan_tag) for row in rows}
 
     async def reconcile_membership(self, members: dict[str, str], *, now=None):
@@ -289,7 +291,8 @@ class PlayerActivityStore:
         raise RuntimeError("Player war history changed concurrently")
 
     async def history_clans(self):
-        return await self.collection.find({"kind": "history_clan"}).to_list(length=None)
+        with pymongo.timeout(30):
+            return await self.collection.find({"kind": "history_clan"}).to_list(length=None)
 
     async def save_history_clan(self, clan_tag, fields, *, now=None):
         """One bounded cache/receipt per clan, in this feature's existing collection."""

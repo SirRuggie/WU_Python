@@ -13,6 +13,7 @@ Mongo retention and query semantics live in utils.clan_history.
 """
 
 from __future__ import annotations
+import pymongo
 
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -106,9 +107,10 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
     now = datetime.now(timezone.utc)
     await clan_history.ensure_indexes(mongo)
 
-    clan_docs = await mongo.clans.find(
-        {"tag": {"$type": "string"}}, {"tag": 1}
-    ).to_list(length=None)
+    with pymongo.timeout(30):
+        clan_docs = await mongo.clans.find(
+            {"tag": {"$type": "string"}}, {"tag": 1}
+        ).to_list(length=None)
     clan_tags = list(dict.fromkeys(
         str(doc.get("tag", "")).strip().upper()
         for doc in clan_docs
@@ -121,11 +123,12 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
     # so correctness does not turn into one request per clan every scan.
     cwl_tags = clan_tags
 
-    watch_docs = await mongo.player_clan_watches.find(
-        {"expires_at": {"$gt": now}},
-        {"_id": 1, "link_expand_pending": 1, "link_retry_at": 1,
-         "link_retry_count": 1},
-    ).to_list(length=None)
+    with pymongo.timeout(30):
+        watch_docs = await mongo.player_clan_watches.find(
+            {"expires_at": {"$gt": now}},
+            {"_id": 1, "link_expand_pending": 1, "link_retry_at": 1,
+             "link_retry_count": 1},
+        ).to_list(length=None)
     watched_tags = list(dict.fromkeys(
         str(doc.get("_id", "")).strip().upper()
         for doc in watch_docs

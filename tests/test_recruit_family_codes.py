@@ -63,10 +63,18 @@ class _Collection:
         self.index_error = index_error
         self.index_calls = []
 
-    def find(self, query):
-        return _Cursor(
-            document for document in self.documents.values() if _matches(document, query)
-        )
+    def find(self, query, projection=None):
+        self.last_projection = deepcopy(projection)
+        rows = [document for document in self.documents.values() if _matches(document, query)]
+        if projection is not None:
+            if any(value for key, value in projection.items() if key != "_id"):
+                rows = [{key: value for key, value in row.items()
+                         if projection.get(key) or key == "_id" and projection.get("_id", 1)}
+                        for row in rows]
+            else:
+                rows = [{key: value for key, value in row.items() if projection.get(key, 1)}
+                        for row in rows]
+        return _Cursor(rows)
 
     async def find_one(self, query):
         for document in self.documents.values():

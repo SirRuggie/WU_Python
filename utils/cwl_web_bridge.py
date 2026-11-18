@@ -1,6 +1,7 @@
 """Durable web-to-bot handoff for native CWL roster announcements."""
 
 from __future__ import annotations
+import pymongo
 
 import re
 import logging
@@ -389,20 +390,21 @@ async def reconcile_campaign_changes(
 
     # Only these active records participate in change detection. Do not fetch
     # unrelated profile manifests, child receipts or campaign bodies every tick.
-    rows = await mongo.bot_config.find(
-        {
-            "guild_id": int(guild_id),
-            "kind": {"$in": ["cwl_campaign_defaults", "cwl_campaign_cycle"]},
-            "activated": True,
-        },
-        {
-            "_id": 1,
-            "revision": 1,
-            "updated_at": 1,
-            "recurring_updated_at": 1,
-            "cycle": 1,
-        },
-    ).to_list(length=None)
+    with pymongo.timeout(30):
+        rows = await mongo.bot_config.find(
+            {
+                "guild_id": int(guild_id),
+                "kind": {"$in": ["cwl_campaign_defaults", "cwl_campaign_cycle"]},
+                "activated": True,
+            },
+            {
+                "_id": 1,
+                "revision": 1,
+                "updated_at": 1,
+                "recurring_updated_at": 1,
+                "cycle": 1,
+            },
+        ).to_list(length=None)
     signature = hashlib.sha256(
         json.dumps(
             sorted(

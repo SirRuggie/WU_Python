@@ -77,8 +77,9 @@ class WarPlanStore:
         """Exact tags/end match; ambiguity or late posts fail open to normal strikes."""
         try:
             ended = instant(war['end_time'])
-            rows = await self.collection.find({'guild_id': int(guild_id),
-                'clan_tag': clan_tag(war['clan_tag']), 'war_end': ended}).to_list(length=None)
+            with pymongo.timeout(30):
+                rows = await self.collection.find({'guild_id': int(guild_id),
+                    'clan_tag': clan_tag(war['clan_tag']), 'war_end': ended}).to_list(length=None)
             if not rows:
                 return None, 'War plan not found'
             opponent = clan_tag(war['opponent_tag'])

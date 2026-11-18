@@ -62,13 +62,13 @@ and 13 full-scan/bulk-delete contexts. After the owner changes merged, D added
 33 single-index contexts in these owners, preserving index definitions, filters,
 await order and existing failure handling:
 
-| Prior owner | Files now included | Single-index contexts |
-| --- | --- | ---: |
-| A1+F | `utils/mongo.py`, `utils/member_events.py`, `utils/member_invites.py`, `utils/recruit_message_delivery.py`, `utils/recruit_panel_refresh.py`, `utils/war_reminder_store.py`, `utils/world_clock_store.py`, `extensions/commands/tickets/testing_service.py` | 18 |
-| N | `utils/player_activity_store.py` | 1 |
-| K | `extensions/commands/cards.py`, `utils/clan_history.py`, `utils/lazy_cwl_store.py` | 9 |
-| M | `extensions/commands/tickets_legacy/handlers.py` | 1 |
-| G | `extensions/tasks/gauntlet_help.py` | 4 |
+| Prior owner | Files now included                                                                                                                                                                                                                                          | Single-index contexts |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------: |
+| A1+F        | `utils/mongo.py`, `utils/member_events.py`, `utils/member_invites.py`, `utils/recruit_message_delivery.py`, `utils/recruit_panel_refresh.py`, `utils/war_reminder_store.py`, `utils/world_clock_store.py`, `extensions/commands/tickets/testing_service.py` |                    18 |
+| N           | `utils/player_activity_store.py`                                                                                                                                                                                                                            |                     1 |
+| K           | `extensions/commands/cards.py`, `utils/clan_history.py`, `utils/lazy_cwl_store.py`                                                                                                                                                                          |                     9 |
+| M           | `extensions/commands/tickets_legacy/handlers.py`                                                                                                                                                                                                            |                     1 |
+| G           | `extensions/tasks/gauntlet_help.py`                                                                                                                                                                                                                         |                     4 |
 
 The recorded dependency order was the unowned batch, then each merged A1+F,
 N, K, M and G owner. All five are now resolved on one current-main base; this
@@ -98,12 +98,12 @@ This source checkpoint does not claim those final checks have run.
 
 The running service uses the `botrunner` account and this checkout:
 
-| | |
-|---|---|
-| Repo | `/home/botrunner/wu-bot`, branch `main` |
-| Python | `/home/botrunner/wu-bot/venv/bin/python` |
-| Entrypoint | `main.py` |
-| Service | `wu-bot.service` |
+|            |                                          |
+| ---------- | ---------------------------------------- |
+| Repo       | `/home/botrunner/wu-bot`, branch `main`  |
+| Python     | `/home/botrunner/wu-bot/venv/bin/python` |
+| Entrypoint | `main.py`                                |
+| Service    | `wu-bot.service`                         |
 
 Use that path for current operator work. The direct official Clash API client
 requires `COC_API_TOKEN`; shared ClashKing link features separately require
@@ -116,16 +116,16 @@ current deployment path or service identity.
 
 Hetzner VPS:
 
-| | |
-|---|---|
-| SSH | `wubot@178.156.187.236` |
-| Hostname | `Arcane` |
-| OS | Ubuntu |
-| User | `wubot` (has sudo) |
-| Repo | `/home/wubot/wu-bot`, branch `main` |
-| Python | `/home/wubot/wu-bot/venv/bin/python` — 3.12.3 |
-| Entrypoint | `main.py` |
-| Service | `wu-bot.service`, enabled |
+|            |                                               |
+| ---------- | --------------------------------------------- |
+| SSH        | `wubot@178.156.187.236`                       |
+| Hostname   | `Arcane`                                      |
+| OS         | Ubuntu                                        |
+| User       | `wubot` (has sudo)                            |
+| Repo       | `/home/wubot/wu-bot`, branch `main`           |
+| Python     | `/home/wubot/wu-bot/venv/bin/python` — 3.12.3 |
+| Entrypoint | `main.py`                                     |
+| Service    | `wu-bot.service`, enabled                     |
 
 On 2026-08-02 the host reported that a restart was pending for a kernel update.
 That is a dated observation, not proof that a restart is still pending. A host
@@ -277,7 +277,7 @@ R2_IMAGE_TRANSFORMS=true        # optional, step 4 below
 One-time setup in the Cloudflare dashboard:
 
 1. **R2 > Create bucket.** Any name; that name is `R2_BUCKET`.
-2. **R2 > Manage API tokens > Create API token** with *Object Read & Write*
+2. **R2 > Manage API tokens > Create API token** with _Object Read & Write_
    scoped to that bucket. The access key and secret it shows once are
    `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`; the account id is on the R2
    overview page.
@@ -538,7 +538,7 @@ instead of the Hetzner VPS.
 ## Database
 
 **MongoDB is remote.** `mongod` is inactive on the box. Driver is pymongo
-`AsyncMongoClient` (native async — *not* motor), configured in `utils/mongo.py`.
+`AsyncMongoClient` (native async — _not_ motor), configured in `utils/mongo.py`.
 
 Collection handles are declared in `utils/mongo.py`, and several are commented
 out — dead collections that may still hold data remotely.
@@ -547,7 +547,7 @@ out — dead collections that may still hold data remotely.
 accesses `mongo_client.database.cwl_reminder` and
 `mongo_client.database.cwl_pending_reminders` at 10+ call sites (lines 258, 269,
 275, 325, 342, 405, 422, 444, …). `AsyncMongoClient.__getattr__` returns a
-*Database*, so `.database` is a second database **literally named `database`** —
+_Database_, so `.database` is a second database **literally named `database`** —
 not the `settings` database where `utils/mongo.py` declares
 `cwl_pending_reminders`. Reads and writes there are self-consistent so nothing is
 losing data, but the declared handle in `utils/mongo.py` is dead code and there
@@ -653,9 +653,9 @@ them.
   `python tools/find_duplicate_clans.py` (read-only), delete the extra
   documents by hand, and restart; the unique index on `clans.tag` builds on
   the next start.
-Steps here are not part of the standard deploy flow above. Each is a single
-run tied to one change; remove the entry once it has been run and is no
-longer relevant.
+  Steps here are not part of the standard deploy flow above. Each is a single
+  run tied to one change; remove the entry once it has been run and is no
+  longer relevant.
 
 ### Reset thread ticket numbering before go-live
 
@@ -679,7 +679,6 @@ the `ticket_rollout` counter document -- it never touches `button_store`,
 of them already hold a destination ticket number the tool reports the count
 and refuses `--confirm` (exit 3), because numbering could not restart at 1.
 Run it before the first legacy migration preview.
-
 
 ## MongoDB collection routing
 
@@ -817,3 +816,15 @@ No Discord posts, pings, or live permission changes used for testing.
 - Preview supports small text, underline, text/media/card/file spoilers, direct video controls, file names/sizes and expandable dropdown choices. Preview is approximate; fonts, media codecs and Discord rendering can differ.
 - Validation: 247 backend tests (including native dispatcher regression and role checks), 106 frontend tests; production's three existing commands validated without edits. Isolated browser verified multiple cards, uploads, action settings and role-dropdown save; 390px layout fits without horizontal overflow. Live Discord role choices were read without changing roles. Actual Discord sends/role mutation were mocked, not performed on members.
 - Deployment copies core renderer, file/actions/role modules, API and central component dispatcher together. Static assets retained; index replaced atomically. Rollback copies are created under `.local/pre-builder-full-*` in workspace and bot deployment.
+
+## Mongo startup and periodic scans (239D rework)
+
+The bot default remains10 seconds. Independently budget full maintenance cursor
+reads/getMore advancement and each index operation with local
+`pymongo.timeout(30)`, preserving original rows, CAS/retention and cancellation.
+Keep processing, delivery and task creation outside those contexts. No row cap
+is a substitute for completing a maintenance scan. Narrow projections retain
+all downstream policy/schema inputs. See [the complete source inventory](mongo-maintenance-scans.md).
+Prior live startup NetworkTimeout failures remain failures; new source fixtures
+and imports do not prove live Atlas latency or readiness. The exact failing
+inner ticket index/preflight operation was not established from the old log.

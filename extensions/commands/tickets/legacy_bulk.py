@@ -658,7 +658,8 @@ async def _publish_migration_overview(
             # Fetch batches after acquiring the shared lease so a concurrent
             # publisher cannot overwrite a newer checkpoint with an old view.
             ids = [_batch_id(guild_id) for guild_id, _label in OVERVIEW_SOURCES]
-            rows = await mongo.ticket_migration_batches.find({"_id": {"$in": ids}}).to_list(length=None)
+            with pymongo.timeout(30):
+                rows = await mongo.ticket_migration_batches.find({"_id": {"$in": ids}}).to_list(length=None)
             batches = {_as_int(row.get("source_guild_id")): row for row in rows}
             recovered_channels = await _recovered_completed_channels(mongo)
             recovered_done = {

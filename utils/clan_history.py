@@ -468,9 +468,10 @@ async def load_roster_snapshots(
     if not tags:
         return {}
     try:
-        documents = await mongo.clan_roster_snapshots.find(
-            {"_id": {"$in": tags}}, {"members": 1}
-        ).to_list(length=None)
+        with pymongo.timeout(30):
+            documents = await mongo.clan_roster_snapshots.find(
+                {"_id": {"$in": tags}}, {"members": 1}
+            ).to_list(length=None)
     except Exception as exc:  # noqa: BLE001
         print(f"[clan-history] roster snapshot read failed: {type(exc).__name__}: {exc}")
         return {}
