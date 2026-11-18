@@ -8,6 +8,7 @@ is an upsert keyed on the unchanged `_id`, safe to re-run any number of times.
 Read docs/ticket-data-model.md before changing anything here.
 """
 
+import pymongo
 from collections import Counter
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -268,7 +269,8 @@ async def activate_canonical_store(
     now: datetime,
 ) -> None:
     """Activate only after an immediate exact canonical dataset verification."""
-    observed_documents = await mongo.tickets.find(store.TICKET_FILTER).to_list(length=None)
+    with pymongo.timeout(30):
+        observed_documents = await mongo.tickets.find(store.TICKET_FILTER).to_list(length=None)
     ensure_exact_canonical_dataset(expected_documents, observed_documents)
     now = _bson_stable(now)
     update = {
@@ -377,7 +379,8 @@ class MigrateStore(
             )
             return
 
-        source = await mongo.button_store.find(store.TICKET_FILTER).to_list(length=None)
+        with pymongo.timeout(30):
+            source = await mongo.button_store.find(store.TICKET_FILTER).to_list(length=None)
         src_counts = _status_counts(source)
         dst_counts = await store.status_counts(mongo.tickets)
         dst_total = sum(dst_counts.values())
@@ -430,7 +433,8 @@ class MigrateStore(
             return
 
         # Preflight the exact post-migration dataset before the first write.
-        destination = await mongo.tickets.find(store.TICKET_FILTER).to_list(length=None)
+        with pymongo.timeout(30):
+            destination = await mongo.tickets.find(store.TICKET_FILTER).to_list(length=None)
         would_be = {str(doc.get("_id")): doc for doc in destination}
         for document in normalized_source:
             would_be[str(document.get("_id"))] = document
@@ -534,7 +538,8 @@ class MigrateStore(
 
         # Refuse the switch if a source write raced the snapshot or a copied
         # document is not readable exactly as prepared. Re-running is safe.
-        current_source = await mongo.button_store.find(store.TICKET_FILTER).to_list(length=None)
+        with pymongo.timeout(30):
+            current_source = await mongo.button_store.find(store.TICKET_FILTER).to_list(length=None)
         expected_source = {document["_id"]: document for document in prepared_source}
         observed_source = {document["_id"]: document for document in current_source}
         copy_verified = True

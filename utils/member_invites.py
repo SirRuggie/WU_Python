@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pymongo
 from pymongo.write_concern import WriteConcern
 
 UNKNOWN = None  # attribute_join result when the diff is empty or ambiguous.
@@ -56,7 +57,8 @@ class MemberInviteStore:
             write_concern=WriteConcern(w="majority")) if hasattr(collection, "with_options") else collection
 
     async def ensure_indexes(self):
-        await self.collection.create_index("guild_id", name="member_invite_guild")
+        with pymongo.timeout(30):
+            await self.collection.create_index("guild_id", name="member_invite_guild")
 
     async def load(self, guild_id: int) -> dict[str, dict]:
         rows = await self.collection.find({"guild_id": guild_id}).to_list(length=1000)

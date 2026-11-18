@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import uuid
 
+import pymongo
 from pymongo.errors import DuplicateKeyError
 
 from utils.strike_store import tag, utc, war_key, StrikeConflict
@@ -48,11 +49,13 @@ class StrikeTracking:
             {'_id': self.snapshot_key(guild_id, war)})
 
     async def ensure_indexes(self):
-        await self.mongo.strike_war_snapshots.create_index(
-            [('guild_id', 1), ('clan_tag', 1), ('end_time', -1)],
-            name='strike_official_clan_wars')
-        await self.mongo.strike_war_snapshots.create_index(
-            [('status', 1), ('next_check_at', 1)], name='strike_official_due')
+        with pymongo.timeout(30):
+            await self.mongo.strike_war_snapshots.create_index(
+                [('guild_id', 1), ('clan_tag', 1), ('end_time', -1)],
+                name='strike_official_clan_wars')
+        with pymongo.timeout(30):
+            await self.mongo.strike_war_snapshots.create_index(
+                [('status', 1), ('next_check_at', 1)], name='strike_official_due')
 
     async def observe(self, guild_id: int, war: dict, *, now=None):
         """Persist an official observation before any strike processing."""

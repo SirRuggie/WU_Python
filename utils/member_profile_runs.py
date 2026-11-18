@@ -9,6 +9,7 @@ import hashlib
 import json
 import time
 import uuid
+import pymongo
 from pymongo.errors import DuplicateKeyError
 from utils.member_profiles import member_id
 
@@ -163,9 +164,10 @@ class ProfileRuns:
             )
         nonce = str(uuid.uuid4())
         at = datetime.now(timezone.utc)
-        await self.mongo.component_state.create_index(
-            "expires_at", name="component_state_expiry", expireAfterSeconds=0
-        )
+        with pymongo.timeout(30):
+            await self.mongo.component_state.create_index(
+                "expires_at", name="component_state_expiry", expireAfterSeconds=0
+            )
         document = dict(
             _id="member-profile-preview:" + actor,
             type="member_profile_preview",
@@ -294,20 +296,22 @@ class ProfileRuns:
         digest = fingerprint(payload)
         key = "member-profile-run:" + fingerprint([actor, request_id])
         # One global paced lane; a second run must wait rather than race members.
-        await self.collection.create_index(
-            "profile_lane",
-            name="member_profile_single_run",
-            unique=True,
-            partialFilterExpression={"kind": KIND, "state": "queued"},
-        )
-        await self.collection.create_index(
-            [("guild_id", 1), ("retry_not_before", -1)],
-            name="member_change_lane_backoff",
-            partialFilterExpression={
-                "kind": "manage_web_request",
-                "retry_not_before": {"$exists": True},
-            },
-        )
+        with pymongo.timeout(30):
+            await self.collection.create_index(
+                "profile_lane",
+                name="member_profile_single_run",
+                unique=True,
+                partialFilterExpression={"kind": KIND, "state": "queued"},
+            )
+        with pymongo.timeout(30):
+            await self.collection.create_index(
+                [("guild_id", 1), ("retry_not_before", -1)],
+                name="member_change_lane_backoff",
+                partialFilterExpression={
+                    "kind": "manage_web_request",
+                    "retry_not_before": {"$exists": True},
+                },
+            )
         await self.prune()
         existing = await self.collection.find_one({"_id": key})
         if existing:
@@ -364,24 +368,26 @@ class ProfileRuns:
         return row["retry_not_before"] if row else 0
 
     async def ensure_work_index(self):
-        await self.collection.create_index(
-            [("guild_id", 1), ("retry_not_before", -1)],
-            name="member_change_lane_backoff",
-            partialFilterExpression={
-                "kind": "manage_web_request",
-                "retry_not_before": {"$exists": True},
-            },
-        )
-        await self.collection.create_index(
-            [("kind", 1), ("status", 1), ("state", 1)],
-            name="management_ready_work",
-            partialFilterExpression={
-                "$or": [
-                    {"kind": "manage_web_request", "status": "pending"},
-                    {"kind": KIND, "state": "queued"},
-                ]
-            },
-        )
+        with pymongo.timeout(30):
+            await self.collection.create_index(
+                [("guild_id", 1), ("retry_not_before", -1)],
+                name="member_change_lane_backoff",
+                partialFilterExpression={
+                    "kind": "manage_web_request",
+                    "retry_not_before": {"$exists": True},
+                },
+            )
+        with pymongo.timeout(30):
+            await self.collection.create_index(
+                [("kind", 1), ("status", 1), ("state", 1)],
+                name="management_ready_work",
+                partialFilterExpression={
+                    "$or": [
+                        {"kind": "manage_web_request", "status": "pending"},
+                        {"kind": KIND, "state": "queued"},
+                    ]
+                },
+            )
 
     async def ready_work(self):
         return await self.collection.find_one(

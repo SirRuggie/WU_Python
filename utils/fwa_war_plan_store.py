@@ -1,6 +1,7 @@
 """Immutable receipts for confirmed staff war-plan posts; never sends messages."""
 from datetime import datetime, timezone
 
+import pymongo
 from pymongo.errors import DuplicateKeyError
 
 from utils.clash_tags import normalize
@@ -62,7 +63,8 @@ class WarPlanStore:
                'guild_id': int(guild_id), 'message_id': int(message_id),
                'channel_id': int(channel_id), 'actor_id': int(actor_id),
                'outcome': outcome, 'posted_at': instant(posted_at)}
-        await self.collection.create_index([('guild_id', 1), ('clan_tag', 1), ('war_end', 1)])
+        with pymongo.timeout(30):
+            await self.collection.create_index([('guild_id', 1), ('clan_tag', 1), ('war_end', 1)])
         try:
             await self.collection.insert_one(row)
         except DuplicateKeyError:

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Iterable
 from uuid import uuid4
 
+import pymongo
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -221,28 +222,30 @@ async def identity_guard(
 
 async def ensure_indexes(mongo: MongoClient) -> list[str]:
     collection = mongo.ticket_flags
-    specs = [
-        await collection.create_index(
+    specs = []
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("kind", 1), ("active", 1), ("checked_at", -1)],
             name="flag_kind_active_checked",
-        ),
-        await collection.create_index(
+        ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("kind", 1), ("discord_ids", 1)],
             unique=True,
             partialFilterExpression={
                 "active": True, "discord_ids.0": {"$exists": True}
             },
             name="active_flag_discord_unique",
-        ),
-        await collection.create_index(
+        ))
+    with pymongo.timeout(30):
+        specs.append(await collection.create_index(
             [("kind", 1), ("player_tags", 1)],
             unique=True,
             partialFilterExpression={
                 "active": True, "player_tags.0": {"$exists": True}
             },
             name="active_flag_player_tag_unique",
-        ),
-    ]
+        ))
     return [str(name) for name in specs]
 
 

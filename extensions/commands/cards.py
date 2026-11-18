@@ -23,6 +23,7 @@ from typing import NamedTuple
 import coc
 import hikari
 import lightbulb
+import pymongo
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands.linked_accounts import (
@@ -11052,7 +11053,8 @@ async def _create_card_index(coll, keys, *, name: str, critical: bool = False, *
     two proposals/requests double-book the same slot.
     """
     try:
-        await coll.create_index(keys, name=name, **kwargs)
+        with pymongo.timeout(30):
+            await coll.create_index(keys, name=name, **kwargs)
     except Exception:
         log = _log.critical if critical else _log.error
         log("card inventory index unavailable: %s", name, exc_info=True)

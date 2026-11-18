@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Mapping
 
+import pymongo
 from pymongo import UpdateOne
 
 from utils.clash_tags import normalize
@@ -89,18 +90,22 @@ async def ensure_indexes(mongo) -> bool:
         return False
 
     try:
-        await mongo.player_clan_candidates.create_index(
-            "purge_at", expireAfterSeconds=0, name="ttl_purge_at"
-        )
-        await mongo.player_clan_candidates.create_index(
-            "player_tag", name="player_tag"
-        )
-        await mongo.player_clan_watches.create_index(
-            "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
-        )
-        await mongo.clan_roster_snapshots.create_index(
-            "purge_at", expireAfterSeconds=0, name="ttl_purge_at"
-        )
+        with pymongo.timeout(30):
+            await mongo.player_clan_candidates.create_index(
+                "purge_at", expireAfterSeconds=0, name="ttl_purge_at"
+            )
+        with pymongo.timeout(30):
+            await mongo.player_clan_candidates.create_index(
+                "player_tag", name="player_tag"
+            )
+        with pymongo.timeout(30):
+            await mongo.player_clan_watches.create_index(
+                "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
+            )
+        with pymongo.timeout(30):
+            await mongo.clan_roster_snapshots.create_index(
+                "purge_at", expireAfterSeconds=0, name="ttl_purge_at"
+            )
         _indexes_ready = True
         _indexes_failed = False
         print("[clan-history] indexes ready")

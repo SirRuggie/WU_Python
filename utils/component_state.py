@@ -7,6 +7,7 @@ legacy panels usable during migration without ever moving ticket records.
 
 from __future__ import annotations
 
+import pymongo
 import copy
 import logging
 from datetime import datetime, timedelta, timezone
@@ -341,11 +342,12 @@ async def migrate_legacy_state(mongo: MongoClient, *, now: datetime | None = Non
 async def prepare_storage(mongo: MongoClient) -> dict | None:
     """Install TTL first; only then move/delete positively classified legacy rows."""
     try:
-        await mongo.component_state.create_index(
-            "expires_at",
-            expireAfterSeconds=0,
-            name=TTL_INDEX_NAME,
-        )
+        with pymongo.timeout(30):
+            await mongo.component_state.create_index(
+                "expires_at",
+                expireAfterSeconds=0,
+                name=TTL_INDEX_NAME,
+            )
     except Exception:
         _log.exception("component-state TTL index unavailable; legacy cleanup skipped")
         return None

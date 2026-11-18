@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from time import perf_counter
 import logging
+import pymongo
 from pymongo.errors import DuplicateKeyError
 
 SOURCES = frozenset({"warrior", "nickname_import", "staff"})
@@ -51,11 +52,12 @@ class MemberProfiles:
         self.collection = mongo.member_profiles
 
     async def ensure_indexes(self):
-        await self.collection.create_index(
-            "left_at",
-            name="member_profile_left_90d",
-            expireAfterSeconds=LEFT_TTL_SECONDS,
-        )
+        with pymongo.timeout(30):
+            await self.collection.create_index(
+                "left_at",
+                name="member_profile_left_90d",
+                expireAfterSeconds=LEFT_TTL_SECONDS,
+            )
 
     async def get(self, discord_id):
         return await self.collection.find_one({"_id": member_id(discord_id)})

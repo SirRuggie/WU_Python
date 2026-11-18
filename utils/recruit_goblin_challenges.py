@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 import uuid
 
+import pymongo
 from pymongo import ReturnDocument
 
 _log = logging.getLogger(__name__)
@@ -124,11 +125,12 @@ async def complete(mongo, challenge, claim_id, message_id):
 async def prepare_storage(mongo):
     # Share the existing family-code expiry index rather than create a duplicate.
     # Never remove legacy records if storage/index preparation fails.
-    await mongo.recruit_challenges.create_index(
-        "expires_at",
-        expireAfterSeconds=0,
-        name="family_code_expiry",
-    )
+    with pymongo.timeout(30):
+        await mongo.recruit_challenges.create_index(
+            "expires_at",
+            expireAfterSeconds=0,
+            name="family_code_expiry",
+        )
     rows = []
     async for row in mongo.button_store.find({"challenge_type": KIND}):
         try:

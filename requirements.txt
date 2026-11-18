@@ -1,5 +1,5 @@
 # Schedules jobs like timers or repeated tasks (e.g. cron jobs)
-APScheduler
+APScheduler>=3,<4
 
 # Main Discord API wrapper for bots.
 # PINNED DELIBERATELY. These two move together: hikari-lightbulb 3.2.6 declares
@@ -18,8 +18,8 @@ hikari-lightbulb==3.2.6
 # Loads .env file contents into environment variables
 python-dotenv
 
-# MongoDB driver (synchronous)
-pymongo
+# MongoDB driver (asynchronous bot/HTTP clients and synchronous durability)
+pymongo==4.17.0
 
 # Handles timezones and datetime formatting (used by APScheduler)
 pendulum
@@ -66,7 +66,7 @@ Pillow>=12
 requests
 
 # Async version of requests (works with async code)
-aiohttp
+aiohttp<4
 
 # S3-compatible client for Cloudflare R2, where uploaded clan logos, banners
 # and FWA base images live (utils/media_store.py, docs/media-hosting.md).

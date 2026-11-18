@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+import pymongo
 from pymongo import ReturnDocument
 from utils.mongo_routes import ticket_test_collection
 
@@ -523,6 +524,7 @@ async def ensure_test_indexes(scoped: TestTicketMongo) -> None:
     await flag_store.ensure_indexes(scoped)
     await thread_service.ensure_creation_indexes(scoped)
     await console.ensure_staff_context_indexes(scoped)
-    await scoped.component_state.create_index(
-        "expires_at", expireAfterSeconds=0, name=TTL_INDEX_NAME,
-    )
+    with pymongo.timeout(30):
+        await scoped.component_state.create_index(
+            "expires_at", expireAfterSeconds=0, name=TTL_INDEX_NAME,
+        )

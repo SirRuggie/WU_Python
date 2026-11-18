@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import pymongo
 from pymongo import ReturnDocument
 
 from utils.mongo import MongoClient
@@ -53,23 +54,27 @@ def _limit(value: int, default: int) -> int:
 async def ensure_indexes(mongo: MongoClient) -> None:
     """Install indexes for guild views, the deadline worker, and retention."""
     collection = _coll(mongo)
-    await collection.create_index(
-        [("guild_id", 1), ("active", 1), ("ends_at", 1)],
-        name=GUILD_ACTIVE_END_INDEX,
-    )
-    await collection.create_index(
-        [("active", 1), ("ends_at", 1)],
-        name=DUE_END_INDEX,
-    )
-    await collection.create_index(
-        "purge_at",
-        expireAfterSeconds=0,
-        name=PURGE_INDEX,
-    )
-    await collection.create_index(
-        [("message_sync_pending", 1), ("updated_at", 1)],
-        name=SYNC_PENDING_INDEX,
-    )
+    with pymongo.timeout(30):
+        await collection.create_index(
+            [("guild_id", 1), ("active", 1), ("ends_at", 1)],
+            name=GUILD_ACTIVE_END_INDEX,
+        )
+    with pymongo.timeout(30):
+        await collection.create_index(
+            [("active", 1), ("ends_at", 1)],
+            name=DUE_END_INDEX,
+        )
+    with pymongo.timeout(30):
+        await collection.create_index(
+            "purge_at",
+            expireAfterSeconds=0,
+            name=PURGE_INDEX,
+        )
+    with pymongo.timeout(30):
+        await collection.create_index(
+            [("message_sync_pending", 1), ("updated_at", 1)],
+            name=SYNC_PENDING_INDEX,
+        )
 
 
 async def create_poll(

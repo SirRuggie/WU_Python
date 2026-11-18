@@ -9,6 +9,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pymongo
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from pymongo.write_concern import WriteConcern
@@ -93,14 +94,20 @@ class MemberEventStore:
         self.test_audit = test_audit.with_options(write_concern=WriteConcern(w="majority")) if hasattr(test_audit, "with_options") else test_audit
 
     async def ensure_indexes(self):
-        await self.collection.create_index("event_key", unique=True, name="member_event_key")
-        await self.collection.create_index([("guild_id", 1), ("_id", -1)], name="member_event_recent")
-        await self.collection.create_index([("guild_id", 1), ("user_id", 1), ("_id", -1)], name="member_event_user")
-        await self.collection.create_index([("guild_id", 1), ("delivery_status", 1), ("_id", 1)], name="member_event_queue")
-        await self.collection.create_index("expires_at", expireAfterSeconds=0, name="member_event_expiry")
-        await self.collection.create_index(
-            [("guild_id", 1), ("audit_entry_id", 1)], name="member_event_audit_entry",
-            partialFilterExpression={"audit_entry_id": {"$type": "string"}})
+        with pymongo.timeout(30):
+            await self.collection.create_index("event_key", unique=True, name="member_event_key")
+        with pymongo.timeout(30):
+            await self.collection.create_index([("guild_id", 1), ("_id", -1)], name="member_event_recent")
+        with pymongo.timeout(30):
+            await self.collection.create_index([("guild_id", 1), ("user_id", 1), ("_id", -1)], name="member_event_user")
+        with pymongo.timeout(30):
+            await self.collection.create_index([("guild_id", 1), ("delivery_status", 1), ("_id", 1)], name="member_event_queue")
+        with pymongo.timeout(30):
+            await self.collection.create_index("expires_at", expireAfterSeconds=0, name="member_event_expiry")
+        with pymongo.timeout(30):
+            await self.collection.create_index(
+                [("guild_id", 1), ("audit_entry_id", 1)], name="member_event_audit_entry",
+                partialFilterExpression={"audit_entry_id": {"$type": "string"}})
 
     @staticmethod
     def default_settings():

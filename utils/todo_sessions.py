@@ -22,6 +22,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pymongo
 from pymongo.errors import DuplicateKeyError
 
 AUTO_REFRESH_ENABLED = True
@@ -66,13 +67,15 @@ async def ensure_indexes(mongo) -> None:
     if _index_failed and time.monotonic() < _index_retry_at:
         return
     try:
-        await _coll(mongo).create_index(
-            "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
-        )
-        await _coll(mongo).create_index(
-            [("active", 1), ("next_refresh_at", 1)],
-            name="due_active_next_refresh",
-        )
+        with pymongo.timeout(30):
+            await _coll(mongo).create_index(
+                "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
+            )
+        with pymongo.timeout(30):
+            await _coll(mongo).create_index(
+                [("active", 1), ("next_refresh_at", 1)],
+                name="due_active_next_refresh",
+            )
         _index_ready = True
         _index_failed = False
         _index_retry_at = 0.0

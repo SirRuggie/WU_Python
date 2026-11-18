@@ -1,5 +1,22 @@
 # Dashboard backend releases
 
+## Dependency installation step (239 Part D)
+
+For an authorized dependency-changing backend/bot release, install the generated
+`requirements.lock` from the clean merged checkout with the target runtime
+venv's pip. Keep package installation separate from fixture-only validation:
+
+```bash
+"$runtime_python" -m pip install -r "$clean_checkout/requirements.lock"
+```
+
+Do not re-resolve `requirements.txt` during release. Verify the lock's exact
+name/version differences against both installed runtimes before switching code,
+and retain the recorded versions for rollback planning. A code-only release
+keeps the existing shared dependencies. All backup, protected-count, atomic
+switch, readiness, smoke and rollback procedures remain unchanged.
+
+
 ## Strikes-activity-1 — October 31, 2026
 
 PR [#109](https://github.com/SirRuggie/WU_Python/pull/109), tag `strikes-activity-1`,

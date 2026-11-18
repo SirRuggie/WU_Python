@@ -7,6 +7,7 @@ from datetime import timedelta
 from uuid import uuid4
 from types import SimpleNamespace
 import hikari
+import pymongo
 from pymongo import ReturnDocument
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -395,17 +396,20 @@ async def loop(bot, mongo):
         try:
             if not indexed:
                 await schema.migrate_early_records(mongo)
-                await mongo.warrior_walkthroughs.create_index(
-                    [("kind", 1), ("state", 1), ("due_at", 1)], name="warrior_progress"
-                )
-                await mongo.warrior_walkthroughs.create_index(
-                    [("kind", 1), ("state", 1), ("cleanup_done", 1), ("cleanup_at", 1)],
-                    name="warrior_cleanup",
-                )
-                await mongo.warrior_history.create_index(
-                    [("guild_id", 1), ("user_id", 1), ("completed_at", -1)],
-                    name="warrior_member_history",
-                )
+                with pymongo.timeout(30):
+                    await mongo.warrior_walkthroughs.create_index(
+                        [("kind", 1), ("state", 1), ("due_at", 1)], name="warrior_progress"
+                    )
+                with pymongo.timeout(30):
+                    await mongo.warrior_walkthroughs.create_index(
+                        [("kind", 1), ("state", 1), ("cleanup_done", 1), ("cleanup_at", 1)],
+                        name="warrior_cleanup",
+                    )
+                with pymongo.timeout(30):
+                    await mongo.warrior_history.create_index(
+                        [("guild_id", 1), ("user_id", 1), ("completed_at", -1)],
+                        name="warrior_member_history",
+                    )
                 indexed = True
                 log.info("Warrior walkthrough worker ready")
             await sweep(bot, mongo)

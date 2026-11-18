@@ -12,6 +12,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 
+import pymongo
 from pymongo.errors import DuplicateKeyError
 
 KIND = "cwl_roster_post_update"
@@ -98,26 +99,29 @@ class PostUpdateStore:
     async def ensure_indexes(self):
         if self.indexes_ready:
             return
-        await self.collection.create_index(
-            [("kind", 1), ("guild_id", 1), ("status", 1), ("created_at", 1)],
-            name=PENDING_INDEX,
-            partialFilterExpression={"kind": KIND, "status": {"$in": list(ACTIVE)}},
-        )
-        await self.collection.create_index(
-            "expires_at",
-            name="cwl_post_update_expiry",
-            expireAfterSeconds=0,
-            partialFilterExpression={"kind": KIND},
-        )
-        await self.collection.create_index(
-            "expires_at",
-            name="cwl_post_update_scratch_expiry",
-            expireAfterSeconds=0,
-            partialFilterExpression={
-                "kind": "cwl_campaign_draft",
-                "purpose": "post_update",
-            },
-        )
+        with pymongo.timeout(30):
+            await self.collection.create_index(
+                [("kind", 1), ("guild_id", 1), ("status", 1), ("created_at", 1)],
+                name=PENDING_INDEX,
+                partialFilterExpression={"kind": KIND, "status": {"$in": list(ACTIVE)}},
+            )
+        with pymongo.timeout(30):
+            await self.collection.create_index(
+                "expires_at",
+                name="cwl_post_update_expiry",
+                expireAfterSeconds=0,
+                partialFilterExpression={"kind": KIND},
+            )
+        with pymongo.timeout(30):
+            await self.collection.create_index(
+                "expires_at",
+                name="cwl_post_update_scratch_expiry",
+                expireAfterSeconds=0,
+                partialFilterExpression={
+                    "kind": "cwl_campaign_draft",
+                    "purpose": "post_update",
+                },
+            )
         self.indexes_ready = True
 
     async def create(

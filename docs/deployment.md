@@ -3,6 +3,97 @@
 The service unit is tracked at `deploy/wu-bot.service`; the runtime venv path
 and host configuration are not discoverable from the code.
 
+## Dependency lock and scoped checks (239 Part D)
+
+`requirements.txt` is the runtime input; `requirements.lock` is the generated,
+fully pinned and hashed installation input. Ordinary releases install the lock
+with the target venv's pip. Do not resolve fresh runtime versions on the release
+host or replace shared dependencies during a code-only release.
+
+Regenerate the lock in a disposable CPython 3.12.3 development venv on Linux
+x86_64, matching both deployed runtimes. Record Python, pip and pip-tools versions
+and review every difference against installed bot and backend package metadata
+before a dependency release. Retain the existing lock's preferred pins; do not
+add `--upgrade` during routine regeneration:
+
+```bash
+python -m piptools compile --resolver=backtracking --generate-hashes --no-emit-index-url --no-emit-trusted-host --index-url https://pypi.org/simple --output-file requirements.lock requirements.txt
+```
+
+Inventory package names with a requirements parser that handles extras such as
+`update-checker[async]`; a bare `name==version` regex can omit a real transitive.
+The initial lock prefers deployed bot versions, except the explicit PyMongo pin.
+
+Runtime constraints: `pymongo==4.17.0`, `APScheduler>=3,<4`, and `aiohttp<4`.
+The existing Hikari/Lightbulb and coc.py pins stay coupled and unchanged. The
+lock contains runtime dependencies; `requirements-dev.txt` adds pytest,
+pip-tools and Ruff for development only. Keep pip and the existing venv workflow;
+this change does not introduce a package-manager migration.
+
+Ruff selects only `F`, `E9` and `B`; it is not a formatter. After installing the
+development requirements in your development venv, check only changed Python
+files (including new untracked files) without fixing or reformatting them:
+
+```bash
+lint_base="$(git merge-base HEAD origin/main)"
+{ git diff --name-only --diff-filter=ACMR -z "$lint_base" -- '*.py'; git ls-files --others --exclude-standard -z -- '*.py'; } |
+  xargs -0 -r .venv/bin/python -m ruff check --no-fix
+```
+
+Pre-existing findings must be reported separately; do not expand a scoped change
+into repository-wide cleanup. The bot's normal Mongo CSOT budget is 10 seconds,
+including server selection; the shorter server-selection setting is not an
+additional cap under CSOT. Any 30-second maintenance exception must enclose a
+bounded database/bootstrap unit, not provider awaits, task creation or an entire
+periodic loop, whose child tasks could inherit an expired deadline.
+
+### Bounded adapter rationale and completed owner order
+
+The D source checkpoint on `cb1def75` has 111 physical 30-second contexts
+across 38 adapter files. Every context contains one awaited Mongo operation.
+Index creation can build or scan an existing collection and wait on catalog work;
+the selected historical full scans and bulk purges have no row-count cap. These
+are operation-type rationales, not measured production sizes. Exact source
+locations and individual rationales are recorded in D's review evidence.
+
+The original unowned batch supplied 78 contexts: 65 index-call contexts
+(including one existing single-index callback used by five index definitions)
+and 13 full-scan/bulk-delete contexts. After the owner changes merged, D added
+33 single-index contexts in these owners, preserving index definitions, filters,
+await order and existing failure handling:
+
+| Prior owner | Files now included | Single-index contexts |
+| --- | --- | ---: |
+| A1+F | `utils/mongo.py`, `utils/member_events.py`, `utils/member_invites.py`, `utils/recruit_message_delivery.py`, `utils/recruit_panel_refresh.py`, `utils/war_reminder_store.py`, `utils/world_clock_store.py`, `extensions/commands/tickets/testing_service.py` | 18 |
+| N | `utils/player_activity_store.py` | 1 |
+| K | `extensions/commands/cards.py`, `utils/clan_history.py`, `utils/lazy_cwl_store.py` | 9 |
+| M | `extensions/commands/tickets_legacy/handlers.py` | 1 |
+| G | `extensions/tasks/gauntlet_help.py` | 4 |
+
+The recorded dependency order was the unowned batch, then each merged A1+F,
+N, K, M and G owner. All five are now resolved on one current-main base; this
+is the ownership plan, not a new chronological merge claim. G has four DDL calls,
+including its two approved partial history indexes. N's player-only partial
+180-day index stays intact; this change does not recreate the old 90-day index.
+No owner remains deferred at this checkpoint.
+
+Only storage/index-owner calls receive the exception. Player activity polling,
+provider waits, reconciliation workflows, sleeps, task/job creation and the CWL
+startup/periodic drivers remain outside the contexts on their normal budgets.
+The existing Lazy CWL `update_many`/old-index-drop workflow remains outside the
+new create-index scopes. No retry, migration or index/data policy is added.
+Cancellation and concurrent/subsequent-task budget regressions must prove
+normal 10 seconds, local 30 seconds, then normal 10 seconds after scope exit.
+
+The retained 52-package lock SHA256 is
+`0afe271abdf4692949ecfea2cf9838a7c6954bd0f787c2e810dd0749c850fa9c`.
+The dated D28 runtime inventory recorded the explicit bot downgrade from PyMongo
+4.18.0 to 4.17.0 and backend boto3/botocore 1.43.89 to 1.43.90; other locked
+versions matched that recorded inventory. Those are historical observations,
+not a new production package inventory. Verify all 52 installed lock versions,
+extras/markers and the bot import/fixture startup on 4.17.0 before release.
+This source checkpoint does not claim those final checks have run.
+
 ## Current runtime
 
 The running service uses the `botrunner` account and this checkout:
@@ -292,7 +383,7 @@ cd ~/wu-bot && ~/.local/bin/uv venv --seed --python 3.12.3 venv
 ```
 
 ```bash
-cd ~/wu-bot && venv/bin/pip install -r requirements.txt
+cd ~/wu-bot && venv/bin/pip install -r requirements.lock
 ```
 
 ```bash
@@ -408,7 +499,7 @@ sudo systemctl enable --now wu-bot.service
 On Ruggie's Zone (this machine):
 
 ```bash
-sudo -iu botrunner bash -c 'cd ~/wu-bot && git pull && venv/bin/pip install -r requirements.txt'
+sudo -iu botrunner bash -c 'cd ~/wu-bot && git pull && venv/bin/pip install -r requirements.lock'
 ```
 
 ```bash
@@ -419,7 +510,7 @@ Optionally, a sudoers rule lets the owner's own user run those without a
 password. Install it with `sudo visudo -f /etc/sudoers.d/wu-bot`:
 
 ```text
-ruggie ALL=(botrunner) NOPASSWD: /usr/bin/git -C /home/botrunner/wu-bot pull, /home/botrunner/wu-bot/venv/bin/pip install -r requirements.txt
+ruggie ALL=(botrunner) NOPASSWD: /usr/bin/git -C /home/botrunner/wu-bot pull, /home/botrunner/wu-bot/venv/bin/pip install -r requirements.lock
 ruggie ALL=(root) NOPASSWD: /usr/bin/systemctl restart wu-bot.service, /usr/bin/systemctl start wu-bot.service, /usr/bin/systemctl stop wu-bot.service, /usr/bin/systemctl status wu-bot.service
 ```
 
@@ -489,7 +580,7 @@ operator when appropriate:
 ```bash
 cd /home/botrunner/wu-bot
 sudo -n -u botrunner -- git pull --ff-only
-sudo -n -u botrunner -- /home/botrunner/wu-bot/venv/bin/pip install -r /home/botrunner/wu-bot/requirements.txt
+sudo -n -u botrunner -- /home/botrunner/wu-bot/venv/bin/pip install -r /home/botrunner/wu-bot/requirements.lock
 sudo /usr/bin/systemctl restart wu-bot.service
 ```
 

@@ -14,6 +14,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import pymongo
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError, OperationFailure
 
@@ -158,12 +159,13 @@ async def ensure_indexes(mongo: MongoClient) -> None:
         # Minimal in-memory fakes used by unit tests do not implement
         # update_many; production collections always do.
         pass
-    await collection.create_index(
-        [("section", 1), ("clan_tag", 1)],
-        unique=True,
-        partialFilterExpression={"status": "active"},
-        name=ONE_ACTIVE_PER_CLAN_INDEX,
-    )
+    with pymongo.timeout(30):
+        await collection.create_index(
+            [("section", 1), ("clan_tag", 1)],
+            unique=True,
+            partialFilterExpression={"status": "active"},
+            name=ONE_ACTIVE_PER_CLAN_INDEX,
+        )
     # Older deployments used a clan-only guard.  Remove it only once the new
     # section+clan guard has been acknowledged, otherwise a failed index build
     # could permit duplicate active rosters.  Missing is normal on fresh DBs.
@@ -177,21 +179,24 @@ async def ensure_indexes(mongo: MongoClient) -> None:
         # reconciliation rather than leave a hidden clan-only guard in place.
         if exc.code != 27:
             raise
-    await collection.create_index(
-        "purge_at",
-        expireAfterSeconds=0,
-        name=TTL_PURGE_INDEX,
-    )
-    await collection.create_index(
-        [("status", 1), ("expires_at", 1)],
-        name=STATUS_EXPIRES_INDEX,
-    )
-    await collection.create_index(
-        "legacy_snapshot_id",
-        unique=True,
-        sparse=True,
-        name=LEGACY_SNAPSHOT_INDEX,
-    )
+    with pymongo.timeout(30):
+        await collection.create_index(
+            "purge_at",
+            expireAfterSeconds=0,
+            name=TTL_PURGE_INDEX,
+        )
+    with pymongo.timeout(30):
+        await collection.create_index(
+            [("status", 1), ("expires_at", 1)],
+            name=STATUS_EXPIRES_INDEX,
+        )
+    with pymongo.timeout(30):
+        await collection.create_index(
+            "legacy_snapshot_id",
+            unique=True,
+            sparse=True,
+            name=LEGACY_SNAPSHOT_INDEX,
+        )
 
 
 def _active_query(clan_tag: str, expected_list_id=None, *, section: str = DEFAULT_SECTION) -> dict:

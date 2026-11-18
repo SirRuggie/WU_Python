@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 import aiohttp
 import hikari
 import lightbulb
+import pymongo
 from pymongo.errors import DuplicateKeyError
 
 from utils.mongo import MongoClient
@@ -594,7 +595,8 @@ async def deliver_outstanding(mongo, event, now=None):
 async def _ensure_one_index(factory, label):
     """One try per index, so one bad index never skips the rest (rule 4)."""
     try:
-        await factory()
+        with pymongo.timeout(30):
+            await factory()
     except Exception as e:
         print(f"[FWA Sync ICS] WARNING: could not create {label} index "
               f"({type(e).__name__}: {e}). Non-fatal; that self-prune/lookup is lost.")
@@ -686,8 +688,10 @@ async def handle_reschedule(mongo, event, existing):
                 print(f"[FWA Sync ICS] reschedule: could not delete DM uid={uid} "
                       f"channel={channel_id} message={message_id}: {type(e).__name__}: {e}")
 
-    await mongo.fwa_sync_responses.delete_many({"uid": uid})
-    await mongo.fwa_sync_deliveries.delete_many({"uid": uid})
+    with pymongo.timeout(30):
+        await mongo.fwa_sync_responses.delete_many({"uid": uid})
+    with pymongo.timeout(30):
+        await mongo.fwa_sync_deliveries.delete_many({"uid": uid})
 
     coll = mongo.fwa_sync_events
     await coll.update_one(
@@ -930,8 +934,10 @@ async def purge_finished_events(mongo, now):
                 print(f"[FWA Sync ICS] purge: could not delete DM uid={uid} "
                       f"channel={channel_id} message={message_id}: {type(e).__name__}: {e}")
 
-        await mongo.fwa_sync_responses.delete_many({"uid": uid})
-        await mongo.fwa_sync_deliveries.delete_many({"uid": uid})
+        with pymongo.timeout(30):
+            await mongo.fwa_sync_responses.delete_many({"uid": uid})
+        with pymongo.timeout(30):
+            await mongo.fwa_sync_deliveries.delete_many({"uid": uid})
         await mongo.fwa_sync_events.delete_one({"_id": event["_id"]})
         print(f"[FWA Sync ICS] purge: removed per-event data for uid={uid}")
 

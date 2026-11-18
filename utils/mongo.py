@@ -1,6 +1,7 @@
 import logging
 import time
 
+import pymongo
 from pymongo import AsyncMongoClient
 from pymongo.errors import DuplicateKeyError
 
@@ -183,7 +184,8 @@ async def ensure_clan_tag_index(mongo: "MongoClient") -> bool:
     if _clan_tag_index_failed and time.monotonic() < _clan_tag_index_retry_at:
         return False
     try:
-        await mongo.clans.create_index("tag", unique=True, name="uniq_clan_tag")
+        with pymongo.timeout(30):
+            await mongo.clans.create_index("tag", unique=True, name="uniq_clan_tag")
         _clan_tag_index_ready = True
         _clan_tag_index_failed = False
         return True

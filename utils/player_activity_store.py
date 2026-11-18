@@ -5,6 +5,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
+import pymongo
 from pymongo.errors import DuplicateKeyError
 
 from utils.player_activity import observe, baseline
@@ -52,7 +53,8 @@ class PlayerActivityStore:
         )
         for field, options in indexes:
             try:
-                await self.collection.create_index(field, **options)
+                with pymongo.timeout(30):
+                    await self.collection.create_index(field, **options)
             except Exception:
                 log.exception('Player activity index unavailable: %s', options['name'])
                 return False
