@@ -4,6 +4,8 @@ import os
 
 import aiohttp
 
+from utils.clash_tags import normalize
+
 LINK_API_URL = "https://api.clashk.ing/v2/links/shared"
 LINK_API_TOKEN_ENV = "CLASHKING_API_TOKEN"
 
@@ -17,10 +19,7 @@ _BATCH_SIZE = 100
 
 
 def _normalize_tag(value: object) -> str:
-    tag = str(value or "").strip().upper().replace("O", "0")
-    if tag and not tag.startswith("#"):
-        tag = f"#{tag}"
-    return tag
+    return normalize(value)
 
 
 async def _lookup_shared_links(

@@ -19,6 +19,7 @@ from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from utils.mongo import MongoClient, LAZYCWL_WRITE_CONCERN
 from utils.lazy_cwl_schema import SCHEMA_VERSION
+from utils.clash_tags import normalize
 
 _log = logging.getLogger(__name__)
 
@@ -84,10 +85,8 @@ def _coll(mongo: MongoClient):
 def _normalize_tag(tag: str) -> str:
     """Strip, upper-case, and prepend '#' if the caller omitted it, so
     "P1" and "#P1" are always the same stored/looked-up tag."""
-    tag = str(tag).strip().upper()
-    if not tag.startswith("#"):
-        tag = "#" + tag
-    return tag
+    # Keep this store's historical empty marker; actual tags use the shared formatter.
+    return normalize(str(tag)) or "#"
 
 
 def normalize_section(section: str | None = None) -> str:

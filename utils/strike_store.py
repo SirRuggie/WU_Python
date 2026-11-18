@@ -14,6 +14,7 @@ from pymongo.errors import DuplicateKeyError
 from utils.strike_retention_policy import RECORD_DAYS
 from utils import recruit_links
 from utils.fwa_war_plan_store import WarPlanStore
+from utils.clash_tags import normalize
 
 DEFAULT_EXEMPT_ROLE = 769130325460254740
 STRIKE_LIMIT = 4
@@ -40,7 +41,7 @@ def utc(value: datetime) -> datetime:
 
 
 def tag(value: str) -> str:
-    cleaned = str(value or '').strip().upper().lstrip('#')
+    cleaned = normalize(value).lstrip('#')
     if not 3 <= len(cleaned) <= 15 or any(char not in '0289PYLQGRJCUV' for char in cleaned):
         raise ValueError('Enter a valid Clash player or clan tag.')
     return '#' + cleaned

@@ -76,18 +76,18 @@ def test_add_blacklisted_keeps_original_added_at_and_source_on_refresh():
 
     asyncio.run(fwa_blacklist.add_blacklisted(
         mongo, "#abc123", "Old Name", 111, "Staffer1", "war-plans",
-        our_clan_tag="OURTAG", war_end_time="2026-09-08T20:00:00",
+        our_clan_tag="0URTAG", war_end_time="2026-09-08T20:00:00",
     ))
     first_added_at = collection.docs["ABC123"]["added_at"]
 
     asyncio.run(fwa_blacklist.add_blacklisted(
         mongo, "abc123", "New Name", 222, "Staffer2", "manual",
-        our_clan_tag="OURTAG2", war_end_time="2026-09-09T20:00:00",
+        our_clan_tag="0URTAG2", war_end_time="2026-09-09T20:00:00",
     ))
 
     doc = collection.docs["ABC123"]
     assert doc["name"] == "New Name"
-    assert doc["last_seen_clan_tag"] == "OURTAG2"
+    assert doc["last_seen_clan_tag"] == "0URTAG2"
     assert doc["last_war_end_time"] == "2026-09-09T20:00:00"
     # Untouched on the second (refresh) call.
     assert doc["added_at"] == first_added_at
@@ -116,7 +116,7 @@ def test_is_blacklisted():
     mongo = _Mongo(collection)
 
     assert asyncio.run(fwa_blacklist.is_blacklisted(mongo, "#ABC123")) is True
-    assert asyncio.run(fwa_blacklist.is_blacklisted(mongo, "#OTHER")) is False
+    assert asyncio.run(fwa_blacklist.is_blacklisted(mongo, "#0THER")) is False
 
 
 def test_blacklisted_tags_returns_only_matching_sanitized_tags():
@@ -165,7 +165,7 @@ class _FakeCocClient:
         return self.war
 
 
-def _fake_war(state, opponent_tag="#OPPONENT", opponent_name="Opponent Clan", end_time=None):
+def _fake_war(state, opponent_tag="#0PP0NENT", opponent_name="Opponent Clan", end_time=None):
     opponent = SimpleNamespace(tag=opponent_tag, name=opponent_name)
     end = SimpleNamespace(time=end_time) if end_time is not None else None
     return SimpleNamespace(state=state, opponent=opponent, end_time=end)
@@ -177,13 +177,13 @@ def test_add_war_opponent_to_blacklist_success_adds_entry():
     coc_client = _FakeCocClient(war=_fake_war("preparation"))
 
     note = asyncio.run(war_plans._add_war_opponent_to_blacklist(
-        coc_client, mongo, "#OURTAG", 111, "Staffer1", "Opponent Clan",
+        coc_client, mongo, "#0URTAG", 111, "Staffer1", "Opponent Clan",
     ))
 
-    assert note == "Added Opponent Clan (#OPPONENT) to the FWA blacklist."
-    assert collection.docs["OPPONENT"]["name"] == "Opponent Clan"
-    assert collection.docs["OPPONENT"]["source"] == "war-plans"
-    assert collection.docs["OPPONENT"]["last_seen_clan_tag"] == "OURTAG"
+    assert note == "Added Opponent Clan (#0PP0NENT) to the FWA blacklist."
+    assert collection.docs["0PP0NENT"]["name"] == "Opponent Clan"
+    assert collection.docs["0PP0NENT"]["source"] == "war-plans"
+    assert collection.docs["0PP0NENT"]["last_seen_clan_tag"] == "0URTAG"
 
 
 def test_add_war_opponent_to_blacklist_get_clan_war_raises():
@@ -192,7 +192,7 @@ def test_add_war_opponent_to_blacklist_get_clan_war_raises():
     coc_client = _FakeCocClient(error=RuntimeError("private war log"))
 
     note = asyncio.run(war_plans._add_war_opponent_to_blacklist(
-        coc_client, mongo, "#OURTAG", 111, "Staffer1", "Opponent Clan",
+        coc_client, mongo, "#0URTAG", 111, "Staffer1", "Opponent Clan",
     ))
 
     assert note == war_plans.BLACKLIST_UNREADABLE_NOTE
@@ -205,7 +205,7 @@ def test_add_war_opponent_to_blacklist_not_in_a_war():
     coc_client = _FakeCocClient(war=_fake_war("warEnded"))
 
     note = asyncio.run(war_plans._add_war_opponent_to_blacklist(
-        coc_client, mongo, "#OURTAG", 111, "Staffer1", "Opponent Clan",
+        coc_client, mongo, "#0URTAG", 111, "Staffer1", "Opponent Clan",
     ))
 
     assert note == war_plans.BLACKLIST_UNREADABLE_NOTE
@@ -220,11 +220,11 @@ def test_add_war_opponent_to_blacklist_name_matches_case_and_whitespace_insensit
     coc_client = _FakeCocClient(war=_fake_war("preparation", opponent_name="Opponent  Clan"))
 
     note = asyncio.run(war_plans._add_war_opponent_to_blacklist(
-        coc_client, mongo, "#OURTAG", 111, "Staffer1", "opponent clan",
+        coc_client, mongo, "#0URTAG", 111, "Staffer1", "opponent clan",
     ))
 
-    assert note == "Added Opponent  Clan (#OPPONENT) to the FWA blacklist."
-    assert "OPPONENT" in collection.docs
+    assert note == "Added Opponent  Clan (#0PP0NENT) to the FWA blacklist."
+    assert "0PP0NENT" in collection.docs
 
 
 def test_add_war_opponent_to_blacklist_name_mismatch_adds_nothing():
@@ -237,7 +237,7 @@ def test_add_war_opponent_to_blacklist_name_mismatch_adds_nothing():
     coc_client = _FakeCocClient(war=_fake_war("inWar", opponent_name="Previous Opponent"))
 
     note = asyncio.run(war_plans._add_war_opponent_to_blacklist(
-        coc_client, mongo, "#OURTAG", 111, "Staffer1", "New Opponent",
+        coc_client, mongo, "#0URTAG", 111, "Staffer1", "New Opponent",
     ))
 
     assert collection.docs == {}

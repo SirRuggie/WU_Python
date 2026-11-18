@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 
 from pymongo.errors import DuplicateKeyError
 
+from utils.clash_tags import normalize
+
 OUTCOMES = frozenset({'win', 'lose', 'blacklisted', 'mismatch'})
 
 
@@ -18,7 +20,8 @@ def instant(value):
 def clan_tag(value):
     if not isinstance(value, str) or not value.strip('# '):
         raise ValueError('Missing clan identity')
-    return '#' + value.strip().lstrip('#').upper()
+    # Preserve existing after-hash whitespace; formatting must not widen validation.
+    return normalize('#' + value.strip().lstrip('#'))
 
 
 async def capture_binding(client, clan, opponent_name):

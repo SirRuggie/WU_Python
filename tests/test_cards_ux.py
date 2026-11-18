@@ -82,7 +82,7 @@ def _containers(view):
 
 def _account():
     return Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
+        tag="#ME", name="Member", clan_tag="#H0ME",
         clan_name="Home Clan", town_hall=17,
     )
 
@@ -99,10 +99,10 @@ def _trade(**overrides):
         "requester_tag": "#REQ",
         "requester_name": "Requester",
         "requester_discord_id": 111,
-        "requester_clan_tag": "#HOME",
+        "requester_clan_tag": "#H0ME",
         "requester_clan_name": "Home Clan",
         "requester_town_hall": 17,
-        "holder_tag": "#HOLD",
+        "holder_tag": "#H0LD",
         "holder_name": "Holder",
         "holder_discord_id": 222,
         "holder_clan_tag": "#AWAY",
@@ -221,7 +221,7 @@ def test_accepted_trade_dm_is_one_main_container_of_blocks():
     )
 
     same_clan = cards_command._accepted_trade_dm(
-        _trade(status="ready", holder_clan_tag="#HOME",
+        _trade(status="ready", holder_clan_tag="#H0ME",
                holder_clan_name="Home Clan"),
         fwa_relevant=False,
     )
@@ -259,7 +259,7 @@ def test_holder_accept_feedback_shares_grammar_and_inline_warning():
         status="ready",
         dm_sent=True,
         fwa_relevant=True,
-        tag="#HOLD",
+        tag="#H0LD",
     )
     boxes = _containers(view)
     assert len(boxes) == 1, "the FWA warning stays inside the one panel"
@@ -287,7 +287,7 @@ def test_holder_accept_feedback_shares_grammar_and_inline_warning():
             channel_message_id=777, pinged=(111,), dm_sent=(111,),
         ),
         fwa_relevant=False,
-        tag="#HOLD",
+        tag="#H0LD",
     )
     pinged_text = _text(pinged)
     assert "I pinged them in" in pinged_text
@@ -299,7 +299,7 @@ def test_holder_accept_feedback_shares_grammar_and_inline_warning():
         status="ready",
         delivery=cards_command._Delivery(channel_message_id=None),
         fwa_relevant=False,
-        tag="#HOLD",
+        tag="#H0LD",
     )
     assert "I could not reach <@111>" in _text(unreachable)
 
@@ -308,7 +308,7 @@ def test_status_dm_is_slim_and_names_only_the_reader():
     trade = _trade()
     line = cards_command._reader_account_line(trade, 111)
     assert line == "-# Account: Requester · `#REQ`"
-    assert cards_command._reader_account_line(trade, 222).endswith("`#HOLD`")
+    assert cards_command._reader_account_line(trade, 222).endswith("`#H0LD`")
     assert cards_command._reader_account_line(trade, 999) == ""
 
     bot = _CaptureBot()
@@ -326,7 +326,7 @@ def test_status_dm_is_slim_and_names_only_the_reader():
     )
     text = _text(view)
     assert "Card proposal expired" in text
-    assert "#REQ" in text and "#HOLD" not in text, (
+    assert "#REQ" in text and "#H0LD" not in text, (
         "only the reader's own account is named"
     )
     assert "Run /cards here or in the server" not in text
@@ -395,7 +395,7 @@ def test_no_cards_screen_mounts_the_decorative_footer():
 
 def _gem_ask():
     return {
-        "_id": "gem:#ME:#HOLD:meteor_golem",
+        "_id": "gem:#ME:#H0LD:meteor_golem",
         "kind": "gem_ask",
         "status": "pending",
         "card_id": "meteor_golem",
@@ -478,7 +478,7 @@ def _open_request():
         "requester_name": "Member",
         "requester_discord_id": 111,
         "requester_town_hall": 17,
-        "requester_clan_tag": "#HOME",
+        "requester_clan_tag": "#H0ME",
         "requester_clan_name": "Home Clan",
         "requester_clan_emoji": "",
         "created_at": created,

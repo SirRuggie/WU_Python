@@ -9,16 +9,20 @@ import re
 from html import unescape
 from bs4 import BeautifulSoup
 
+from utils.clash_tags import normalize
+
 
 class FwaPointsParseError(Exception):
     """Raised when the page has no usable Win Calculator block."""
 
 
 def sanitize_tag(raw: str) -> str:
-    """Normalize a Clash of Clans tag: drop '#', uppercase, keep only [0-9A-Z]."""
+    """Normalize a Clash of Clans tag: extract [0-9A-Z], correct O to 0, omit '#'."""
     if not raw:
         return ""
-    return re.sub(r"[^0-9A-Z]", "", raw.upper())
+    # Preserve the page/parser token extraction and its no-hash storage boundary.
+    token = re.sub(r"[^0-9A-Z]", "", raw.upper())
+    return normalize(token).lstrip("#")
 
 
 def _field_after_bold(soup, label: str):
@@ -109,12 +113,16 @@ def parse_clan_points(html: str, our_tag: str) -> dict:
     vs_segment = next((s for s in br_segments if s.strip().endswith("):")), None)
 
     def _name_before_tag_link(fragment: str, tag: str, start: int = 0):
-        found = re.search(
-            r"([^(]*)\(\s*<a\b[^>]*\bhref=\"[^\"]*clan\?tag=" + re.escape(tag) + r"\b",
+        # Match the source link first, then compare normalized identities. The
+        # source HTML may spell a zero as O even after box_tags corrected it.
+        for found in re.finditer(
+            r"([^(]*)\(\s*<a\b[^>]*\bhref=\"[^\"]*clan\?tag=([0-9A-Za-z]+)\b",
             fragment[start:],
             re.IGNORECASE,
-        )
-        return unescape(found.group(1).strip()) if found else None
+        ):
+            if sanitize_tag(found.group(2)) == tag:
+                return unescape(found.group(1).strip())
+        return None
 
     name_map = {}
     if vs_segment is not None and len(box_tags) >= 2:

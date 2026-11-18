@@ -32,14 +32,15 @@ autocompletes from these same records via `war_plan_opponents` in
 `extensions/autocomplete.py`, which reuses `_board_snapshot()` instead of
 querying `mongo.fwa_points` itself. Which name applies to a record is decided
 by the shared `current_opponent_name_for()` helper in `fwa_points_monitor.py`
+
 - the same rule the board renders from: a caught-up verdict for the current
-war (or no new war noted yet) wins with `coc_opponent_name`/`opponent_name`;
-a merely-noted new war that hasn't caught up yet falls back to
-`current_opponent_name`; otherwise there is no current opponent to offer.
-This keeps the autocomplete from surfacing a previous war's opponent while
-catch-up is still pending. The clan already chosen in the `clan` option is
-listed first; the option stays free text, so a rep can still type a name the
-monitor hasn't recorded yet.
+  war (or no new war noted yet) wins with `coc_opponent_name`/`opponent_name`;
+  a merely-noted new war that hasn't caught up yet falls back to
+  `current_opponent_name`; otherwise there is no current opponent to offer.
+  This keeps the autocomplete from surfacing a previous war's opponent while
+  catch-up is still pending. The clan already chosen in the `clan` option is
+  listed first; the option stays free text, so a rep can still type a name the
+  monitor hasn't recorded yet.
 
 ## Deploy history: why this shipped disabled, and isn't any more
 
@@ -96,21 +97,21 @@ itself, since the opponent's FWA status is supplementary to our own verdict.
 
 ## Stored record (`mongo.fwa_points`, `_id` = our sanitized clan tag)
 
-| Field | Meaning |
-|---|---|
-| `clan_name`, `our_clan_tag` | Our clan. |
-| `scraped_opponent_tag`, `coc_opponent_tag` | Opponent tag as scraped vs. as reported by the CoC API (should match — this is the hard gate). |
-| `opponent_name`, `opponent_name_scraped` | The opponent's scraped name with HTML entities decoded (both keys carry the same value). `/todo` prefers `coc_opponent_name` from the Clash API and falls back to `opponent_name`. |
-| `opponent_active_fwa` | `True`/`False` from the opponent's own page, or `None` if that fetch or field failed. |
-| `war_number`, `sync_number` | From the Win Calculator block. |
-| `point_balance`, `active_fwa` | Our clan's own Point Balance / Active FWA fields. |
-| `raw_verdict` | The full text of the verdict line, e.g. "Edrag Rush should win by points (10 > 9)". |
-| `predicted_winner_name` | The clan name bolded in the verdict. |
-| `our_outcome` | `"win"` if the bolded name matches our clan, `"lose"` if it matches the opponent, else `"unknown"`. |
-| `last_war_state` | The site's own "Last Known War State" field. |
-| `coc_war_key` | `f"{opponent_tag}:{preparation_start_time.raw_time}"` — identifies the CoC war this record is for. |
-| `coc_war_end_time` | ISO string of that same war's `end_time`, from the CoC API. This is what `/todo` compares against `Row.ends_at` to decide whether the record still matches the war being rendered. |
-| `scraped_at`, `attempts`, `status`, `last_attempt_*` | Bookkeeping — see the retry/cooldown logic in the module itself. |
+| Field                                                | Meaning                                                                                                                                                                            |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `clan_name`, `our_clan_tag`                          | Our clan.                                                                                                                                                                          |
+| `scraped_opponent_tag`, `coc_opponent_tag`           | Opponent tag as scraped vs. as reported by the CoC API (should match — this is the hard gate).                                                                                     |
+| `opponent_name`, `opponent_name_scraped`             | The opponent's scraped name with HTML entities decoded (both keys carry the same value). `/todo` prefers `coc_opponent_name` from the Clash API and falls back to `opponent_name`. |
+| `opponent_active_fwa`                                | `True`/`False` from the opponent's own page, or `None` if that fetch or field failed.                                                                                              |
+| `war_number`, `sync_number`                          | From the Win Calculator block.                                                                                                                                                     |
+| `point_balance`, `active_fwa`                        | Our clan's own Point Balance / Active FWA fields.                                                                                                                                  |
+| `raw_verdict`                                        | The full text of the verdict line, e.g. "Edrag Rush should win by points (10 > 9)".                                                                                                |
+| `predicted_winner_name`                              | The clan name bolded in the verdict.                                                                                                                                               |
+| `our_outcome`                                        | `"win"` if the bolded name matches our clan, `"lose"` if it matches the opponent, else `"unknown"`.                                                                                |
+| `last_war_state`                                     | The site's own "Last Known War State" field.                                                                                                                                       |
+| `coc_war_key`                                        | `f"{opponent_tag}:{preparation_start_time.raw_time}"` — identifies the CoC war this record is for.                                                                                 |
+| `coc_war_end_time`                                   | ISO string of that same war's `end_time`, from the CoC API. This is what `/todo` compares against `Row.ends_at` to decide whether the record still matches the war being rendered. |
+| `scraped_at`, `attempts`, `status`, `last_attempt_*` | Bookkeeping — see the retry/cooldown logic in the module itself.                                                                                                                   |
 
 ## Administration (Administrator-only)
 
@@ -137,3 +138,15 @@ Administrator permission.
 - **No ChocolateClash (cc.fwafarm.com) association.** That site is
   Cloudflare-blocked with no API and is not fetched by this monitor or by
   anything else in the bot (see the FWA-sites-access memory note).
+
+## Shared Clash tag formatting
+
+`utils.clash_tags.normalize` owns strip/uppercase/O-to-zero/leading-`#`
+formatting. Feature validators retain their alphabet and length checks. FWA
+points and blacklist keys still omit `#`; parser token extraction and Chocolate
+URL helpers retain their lenient input rules. Clan discovery preserves the
+existing hash-prefix shape of each stored player/clan component, including
+`player:clan` IDs, and never normalizes a composite as one tag. No rows or
+identifiers are migrated.
+
+The member signup service also reuses this formatter after its existing string type check; its Clash alphabet, length, ownership and revision validation remain unchanged.

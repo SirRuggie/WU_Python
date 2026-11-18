@@ -21,7 +21,7 @@ class Collection:
     def __init__(self):
         self.config = {"_id": "config", "enabled": True,
                        "watch_list": [{"tag": "EXTRA1", "name": "Extra One"}]}
-        self.records = {"AUTO1": {"raw_verdict": "Win", "war_number": 4,
+        self.records = {"AUT01": {"raw_verdict": "Win", "war_number": 4,
                                   "sync_number": 7, "point_balance": 0,
                                   "scraped_at": "2026-09-25T12:00:00+00:00"}}
         self.updates = []
@@ -103,7 +103,7 @@ def test_status_effective_watch_rows_and_private_navigation(monkeypatch):
     assert "Win" in content and "War #4" in content
     assert "Sync #7" in content and "Balance 0" in content
     assert "<t:1790337600:R>" in content
-    assert "https://points.fwafarm.com/clan?tag=AUTO1" in content
+    assert "https://points.fwafarm.com/clan?tag=AUT01" in content
     assert "manage_fwa:home" in content and "manage_home:home" in content
     assert len(response[0].build()[0]["components"]) <= 40
 
@@ -155,7 +155,7 @@ def test_add_modal_validates_and_uses_atomic_watch_replacement(monkeypatch):
     form("BAD!!", "Valid")
     run(dashboard.add_submit(env.ctx, "start", mongo=env.mongo))
     assert len(env.mongo.fwa_points.config["watch_list"]) == 1
-    form("#AUTO1", "Duplicate")
+    form("#AUT01", "Duplicate")
     run(dashboard.add_submit(env.ctx, "start", mongo=env.mongo))
     assert len(env.mongo.fwa_points.config["watch_list"]) == 1
     form("#EXTRA2", "Extra Two")
@@ -167,7 +167,7 @@ def test_add_modal_validates_and_uses_atomic_watch_replacement(monkeypatch):
 
 def test_remove_requires_selected_extra_and_automatic_is_protected(monkeypatch):
     env = fixture(monkeypatch)
-    env.ctx.interaction.values = ("AUTO1",)
+    env.ctx.interaction.values = ("AUT01",)
     denied = run(dashboard.select_extra(env.ctx, "start", mongo=env.mongo))
     assert "cannot be removed" in built(denied)
     env.ctx.interaction.values = ("EXTRA1",)
@@ -177,7 +177,7 @@ def test_remove_requires_selected_extra_and_automatic_is_protected(monkeypatch):
     removed = run(dashboard.remove(env.ctx, current["_id"], mongo=env.mongo))
     assert "removed" in built(removed)
     assert not env.mongo.fwa_points.config["watch_list"]
-    assert "AUTO1" in built(run(dashboard._panel(env.mongo, env.state)))
+    assert "AUT01" in built(run(dashboard._panel(env.mongo, env.state)))
 
 
 def test_pagination_caps_watch_rows_and_refresh_rechecks_state(monkeypatch):

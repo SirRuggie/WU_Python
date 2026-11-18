@@ -28,6 +28,7 @@ from utils.mongo import MongoClient
 from utils.constants import WU_GOLD, WU_RED
 from utils import lazy_cwl_store as store
 from utils.manage_ui import breadcrumb, button_emoji
+from utils.clash_tags import normalize
 
 loader = lightbulb.Loader()
 _log = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ def _button(*, label: str, **kwargs: Any) -> Button:
 def _tag(value: str | None) -> str:
     if value == "ALL":
         return "ALL"
-    return store._normalize_tag(value or "") if value else ""
+    return normalize(value) if value else ""
 
 
 def _session(owner: int | None = None, guild: int | None = None) -> str:

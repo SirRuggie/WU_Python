@@ -337,7 +337,7 @@ def test_load_pipeline_preserves_preparation_start_timestamp_to_render(monkeypat
     member = SimpleNamespace(tag="#PLAYER", attacks=[])
 
     class Side:
-        tag = "#HOME"
+        tag = "#H0ME"
         name = "Home"
         badge = None
         members = [member]
@@ -349,7 +349,7 @@ def test_load_pipeline_preserves_preparation_start_timestamp_to_render(monkeypat
     war = SimpleNamespace(
         state="preparation",
         clan=Side(),
-        opponent=SimpleNamespace(tag="#OPPONENT", name="Opponent", members=[]),
+        opponent=SimpleNamespace(tag="#0PP0NENT", name="Opponent", members=[]),
         attacks_per_member=2,
         start_time=SimpleNamespace(time=starts),
         end_time=SimpleNamespace(time=ends),
@@ -360,19 +360,19 @@ def test_load_pipeline_preserves_preparation_start_timestamp_to_render(monkeypat
             assert tag == "#PLAYER"
             return SimpleNamespace(
                 tag=tag, name="Player", town_hall=17,
-                clan=SimpleNamespace(tag="#HOME", name="Home", badge=None),
+                clan=SimpleNamespace(tag="#H0ME", name="Home", badge=None),
             )
 
         async def get_clan_war(self, tag):
-            assert tag == "#HOME"
+            assert tag == "#H0ME"
             return war
 
         async def get_league_group(self, tag):
-            assert tag == "#HOME"
+            assert tag == "#H0ME"
             return SimpleNamespace(state="notInWar", rounds=[])
 
         async def get_raid_log(self, tag, *, limit):
-            assert (tag, limit) == ("#HOME", 1)
+            assert (tag, limit) == ("#H0ME", 1)
             return []
 
     async def linked_tags(discord_id):
@@ -2224,14 +2224,14 @@ def test_load_fwa_records_marks_opponent_blacklisted_added_after_scrape():
     row = _war_row(clan_tag="#2PPCL2GYP")
     record = {
         "_id": "2PPCL2GYP",
-        "scraped_opponent_tag": "OPPONENT",
+        "scraped_opponent_tag": "0PP0NENT",
         "opponent_name": "DevilHarvesters",
         "opponent_active_fwa": True,
         "our_outcome": "win",
     }
     mongo = _FwaMongo(
         _FwaPointsCollection([record]),
-        _FwaBlacklistCollection(["OPPONENT"]),
+        _FwaBlacklistCollection(["0PP0NENT"]),
     )
 
     records = asyncio.run(todo._load_fwa_records(mongo, [row]))
@@ -2243,7 +2243,7 @@ def test_load_fwa_records_leaves_flag_unset_when_opponent_not_blacklisted():
     row = _war_row(clan_tag="#2PPCL2GYP")
     record = {
         "_id": "2PPCL2GYP",
-        "scraped_opponent_tag": "OPPONENT",
+        "scraped_opponent_tag": "0PP0NENT",
         "opponent_name": "DevilHarvesters",
     }
     mongo = _FwaMongo(
@@ -2263,7 +2263,7 @@ def test_load_fwa_records_clears_stale_blacklisted_flag():
     row = _war_row(clan_tag="#2PPCL2GYP")
     record = {
         "_id": "2PPCL2GYP",
-        "scraped_opponent_tag": "OPPONENT",
+        "scraped_opponent_tag": "0PP0NENT",
         "opponent_name": "DevilHarvesters",
         "opponent_active_fwa": True,
         "opponent_blacklisted": True,

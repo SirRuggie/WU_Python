@@ -18,6 +18,8 @@ from typing import Iterable, Mapping
 
 from pymongo import UpdateOne
 
+from utils.clash_tags import normalize
+
 
 HISTORY_WINDOW = timedelta(hours=48)
 RETENTION = timedelta(days=30)
@@ -57,7 +59,11 @@ def _now(value: datetime | None = None) -> datetime:
 
 
 def _tag(value: str | None) -> str:
-    return (value or "").strip().upper()
+    # These legacy discovery keys preserve their existing hash-prefix shape.
+    # Normalize each component, never the complete player:clan composite ID.
+    value = (value or "").strip()
+    normalized = normalize(value)
+    return normalized if value.startswith("#") else normalized.removeprefix("#")
 
 
 def _candidate_id(player_tag: str, clan_tag: str) -> str:
