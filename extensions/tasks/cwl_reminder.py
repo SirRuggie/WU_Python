@@ -25,6 +25,7 @@ from utils.mongo import MongoClient
 from utils import cwl_campaign, cwl_web_bridge
 from utils import cwl_campaign_catchup as catchup_policy
 from utils.startup_reconciler import StartupReconciler
+from utils.background import run_periodic, log_failure, cancel_and_wait
 from utils.constants import WU_GOLD
 
 loader = lightbulb.Loader()
@@ -2510,7 +2511,8 @@ async def _poll_web_roster_bridge() -> None:
     from utils.manage_poll_cache import timed_step
 
     if mongo_client is None or bot_instance is None:
-        return
+        return False
+    complete = True
     try:
         try:
             with timed_step(logging.getLogger(__name__), "reconcile_campaign_changes"):
@@ -2526,7 +2528,8 @@ async def _poll_web_roster_bridge() -> None:
         except Exception as exc:
             # A bad schedule must not block the independent reviewed roster queue.
             # No acknowledgement is written; the next poll retries reconciliation.
-            print(f"[CWL Web Bridge] Schedule sync failed: {type(exc).__name__}")
+            log_failure(logging.getLogger(__name__), "cwl-web-roster-bridge.schedule-sync", exc)
+            complete = False
 
         async def can_send_roster(row):
             from utils.dashboard_access import (
@@ -2558,10 +2561,11 @@ async def _poll_web_roster_bridge() -> None:
         try:
             post_worker = _post_update_worker_for_runtime()
             post_ready = await post_worker.ensure_ready(cwl_campaign.LEGACY_WU_GUILD_ID)
+            if not post_ready:
+                complete = False
         except Exception as exc:
-            logging.getLogger(__name__).warning(
-                "Roster post editor is unavailable (%s)", type(exc).__name__
-            )
+            log_failure(logging.getLogger(__name__), "cwl-web-roster-bridge.post-readiness", exc)
+            complete = False
 
         with timed_step(logging.getLogger(__name__), "process_pending_roster_requests"):
             await cwl_web_bridge.process_pending_roster_requests(
@@ -2592,7 +2596,13 @@ async def _poll_web_roster_bridge() -> None:
     except Exception as exc:
         # Leave pending or sending rows in place for inspection. In particular,
         # never auto-reset a possibly posted sending row after an outage.
-        print(f"[CWL Web Bridge] Poll failed: {type(exc).__name__}")
+        log_failure(logging.getLogger(__name__), "cwl-web-roster-bridge.poll", exc)
+        return False
+    if (_loaded_campaign_generations(cwl_campaign.LEGACY_WU_GUILD_ID) is None
+            or cwl_web_bridge.schedule_repair_pending(
+                cwl_campaign.LEGACY_WU_GUILD_ID, _campaign_runtime_id)):
+        complete = False
+    return complete
 
 
 _post_update_worker = None
@@ -2616,11 +2626,12 @@ def _post_update_worker_for_runtime():
 _roster_driver = None
 
 
-async def _drive_web_roster_requests():
+async def _drive_web_roster_iteration():
     from utils.manage_web_worker import queue_lock, maintain_worker_heartbeat
     from utils.manage_poll_cache import timed_step
 
     logger = logging.getLogger(__name__)
+    complete = True
     heartbeat = asyncio.create_task(maintain_worker_heartbeat(mongo_client))
     try:
         # Preserve the shared side-effect lane. Timing separates waiting for it
@@ -2630,7 +2641,8 @@ async def _drive_web_roster_requests():
             await lock.acquire()
         try:
             with timed_step(logger, "cwl_bridge"):
-                await _poll_web_roster_bridge()
+                if await _poll_web_roster_bridge() is False:
+                    complete = False
         finally:
             lock.release()
         try:
@@ -2639,20 +2651,27 @@ async def _drive_web_roster_requests():
             with timed_step(logger, "management_poll"):
                 await poll_management(bot_instance, mongo_client)
         except Exception as exc:
-            logger.warning("Manage Web Bridge poll failed: %s", type(exc).__name__)
+            log_failure(logger, "cwl-web-roster-bridge.management-poll", exc)
+            complete = False
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        logger.warning("CWL Web Bridge driver failed: %s", type(exc).__name__)
+        log_failure(logger, "cwl-web-roster-bridge.driver", exc)
+        complete = False
     finally:
-        heartbeat.cancel()
-        import contextlib
+        outcomes = await cancel_and_wait([heartbeat])
+        for outcome in outcomes:
+            if isinstance(outcome, Exception):
+                log_failure(logger, "cwl-web-roster-bridge.heartbeat", outcome)
+                complete = False
+    return complete
 
-        try:
-            with contextlib.suppress(asyncio.CancelledError):
-                await heartbeat
-        except Exception as exc:
-            logger.warning("Management heartbeat unavailable: %s", type(exc).__name__)
+
+async def _drive_web_roster_requests():
+    # APScheduler remains the sole ten-second cadence and admission owner.
+    # Observe the actual in-flight work, not merely successful task creation.
+    return await run_periodic("cwl-web-roster-bridge", _drive_web_roster_iteration,
+                              10, once=True, logger=logging.getLogger(__name__))
 
 
 async def _poll_web_roster_requests() -> None:
@@ -2675,7 +2694,7 @@ async def _drive_web_management():
     except asyncio.CancelledError:
         raise
     except Exception as error:
-        print(f"[Manage Fast Poll] {type(error).__name__}")
+        log_failure(logging.getLogger(__name__), "management-fast-poll", error)
 
 
 async def _poll_web_management_fast():

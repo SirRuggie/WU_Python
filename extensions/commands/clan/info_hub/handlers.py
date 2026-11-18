@@ -1,6 +1,10 @@
+import asyncio
+import logging
+import aiohttp
 # extensions/commands/clan/info_hub/handlers.py
 
 import hikari
+from utils.background import log_failure
 import lightbulb
 import coc
 from typing import List, Optional
@@ -25,6 +29,8 @@ from utils.classes import Clan
 from utils.constants import RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT, MAGENTA_ACCENT
 from .helpers import get_clans_by_type, format_th_requirement, get_league_emoji
 from utils.emoji import emojis
+
+_log = logging.getLogger(__name__)
 
 # League order for sorting
 LEAGUE_ORDER = [
@@ -65,8 +71,14 @@ async def build_clan_list_components(
         try:
             api_clan = await coc_client.get_clan(tag=clan.tag)
             clan_api_data[clan.tag] = api_clan
-        except:
+        except asyncio.CancelledError:
+            raise
+        except (coc.HTTPException, aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError, TypeError, KeyError) as error:
+            log_failure(_log, "clan-info-provider", error)
             clan_api_data[clan.tag] = None
+        except Exception as error:
+            log_failure(_log, "clan-info-provider-unexpected", error)
+            raise
 
     # Sort clans by league
     def get_league_rank(clan: Clan) -> int:
@@ -261,8 +273,14 @@ async def show_trial_clans(
         try:
             api_clan = await coc_client.get_clan(tag=clan.tag)
             clan_api_data[clan.tag] = api_clan
-        except:
+        except asyncio.CancelledError:
+            raise
+        except (coc.HTTPException, aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError, TypeError, KeyError) as error:
+            log_failure(_log, "clan-info-provider", error)
             clan_api_data[clan.tag] = None
+        except Exception as error:
+            log_failure(_log, "clan-info-provider-unexpected", error)
+            raise
 
     # Sort by league
     def get_league_rank(clan: Clan) -> int:

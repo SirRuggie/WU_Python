@@ -2,8 +2,12 @@
 Family Links Command - Main server role and clan assignment interface
 """
 
+import asyncio
+import logging
+
 import lightbulb
 import hikari
+from utils.background import log_failure
 from typing import List, Optional
 
 from extensions.components import register_action
@@ -26,6 +30,8 @@ from hikari.impl import (
     SectionComponentBuilder as Section,
     LinkButtonBuilder as LinkButton,
 )
+
+_log = logging.getLogger(__name__)
 
 loader = lightbulb.Loader()
 
@@ -454,8 +460,14 @@ async def family_links_war_clans_handler(
                 from utils.emoji import EmojiType
                 partial_emoji = EmojiType(emoji_str).partial_emoji
                 emoji = partial_emoji
-            except:
+            except asyncio.CancelledError:
+                raise
+            except (ValueError, TypeError, IndexError) as error:
+                log_failure(_log, "family-links-emoji", error)
                 emoji = "⚔️"
+            except Exception as error:
+                log_failure(_log, "family-links-emoji-unexpected", error)
+                raise
         else:
             emoji = emoji_str or "⚔️"
         
@@ -477,8 +489,14 @@ async def family_links_war_clans_handler(
                 from utils.emoji import EmojiType
                 partial_emoji = EmojiType(emoji_str).partial_emoji
                 emoji = partial_emoji
-            except:
+            except asyncio.CancelledError:
+                raise
+            except (ValueError, TypeError, IndexError) as error:
+                log_failure(_log, "family-links-emoji", error)
                 emoji = "🎮"
+            except Exception as error:
+                log_failure(_log, "family-links-emoji-unexpected", error)
+                raise
         else:
             emoji = emoji_str or "🎮"
         
@@ -548,8 +566,14 @@ async def family_links_fwa_clans_handler(
                 from utils.emoji import EmojiType
                 partial_emoji = EmojiType(emoji_str).partial_emoji
                 emoji = partial_emoji
-            except:
+            except asyncio.CancelledError:
+                raise
+            except (ValueError, TypeError, IndexError) as error:
+                log_failure(_log, "family-links-emoji", error)
                 emoji = "🏳️"
+            except Exception as error:
+                log_failure(_log, "family-links-emoji-unexpected", error)
+                raise
         else:
             emoji = emoji_str or "🏳️"
         
@@ -618,8 +642,14 @@ async def family_links_cwl_clans_handler(
                 from utils.emoji import EmojiType
                 partial_emoji = EmojiType(emoji_str).partial_emoji
                 emoji = partial_emoji
-            except:
+            except asyncio.CancelledError:
+                raise
+            except (ValueError, TypeError, IndexError) as error:
+                log_failure(_log, "family-links-emoji", error)
                 emoji = "🏆"
+            except Exception as error:
+                log_failure(_log, "family-links-emoji-unexpected", error)
+                raise
         else:
             emoji = emoji_str or "🏆"
         

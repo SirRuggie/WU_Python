@@ -1819,3 +1819,20 @@ Phases (each its own branch and draft PR): #352 A, #355 B, #354 C, #357 D,
 remaining channel retries, human-readable App.tsx and DiscordPreview source, and
 the shared rules in `docs/roster-ui-patterns.md`. Frontend only, except decision
 2.
+
+## Backend audit239 Part M — background observation (2026-11-17)
+
+Decisions D15/D16 and Shaka1075: named jobs retain successful completion times in
+process memory, report one warning after three unsuccessful intervals and one
+recovery message, and log bounded error signatures with stack frames and
+redacted exception values. War scans retain immediate-first/completion-plus-60s
+scheduling. CWL observes each existing 10s APS-owned in-flight roster iteration;
+the 1s management fast poll, shared lock, claims and uncertain-delivery rules stay
+unchanged. The 11 bare catches use expected operation-specific error families;
+cancellation propagates and unexpected errors remain visible.
+
+Status: implementation candidate for isolated validation and independent review;
+no release or live delivery proof. See `background-jobs.md` for scope and limits.
+Later: expose job health through an explicitly designed public health surface;
+no endpoint, Mongo heartbeat, cross-process transport or moderation-health reuse
+is included in this batch.
