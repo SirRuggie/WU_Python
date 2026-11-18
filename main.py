@@ -102,10 +102,11 @@ if not _mongodb_uri:
 
 mongo_client = MongoClient(
     uri=_mongodb_uri,
-    # CSOT gives ordinary bot operations a 10-second total budget, including
-    # server selection. serverSelectionTimeoutMS is not an additional cap
-    # while CSOT is active. Discord budgets are independent.
-    timeoutMS=10000,
+    # CSOT gives bot operations a 30-second total budget, including server
+    # selection, with headroom for index bootstrap and maintenance cursors.
+    # serverSelectionTimeoutMS is not an additional cap while CSOT is active.
+    # Discord budgets are independent.
+    timeoutMS=30000,
     serverSelectionTimeoutMS=3000,
     maxPoolSize=20,
     appName="wu-bot",

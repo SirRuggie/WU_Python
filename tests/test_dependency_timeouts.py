@@ -35,12 +35,12 @@ def _bot_mongo_options():
     })
 
 
-def test_bot_client_has_ten_second_total_budget_without_starting_main(monkeypatch):
+def test_bot_client_has_thirty_second_total_budget_without_starting_main(monkeypatch):
     monkeypatch.delenv("MONGODB_ROUTES", raising=False)
     options = _bot_mongo_options()
     assert options == {
         "uri": "mongodb://fixture.invalid/wubot_test",
-        "timeoutMS": 10000,
+        "timeoutMS": 30000,
         "serverSelectionTimeoutMS": 3000,
         "maxPoolSize": 20,
         "appName": "wu-bot",
@@ -51,7 +51,7 @@ def test_bot_client_has_ten_second_total_budget_without_starting_main(monkeypatc
         # prevent topology/network startup. Never use an ambient URI.
         client = MongoClient(**options, connect=False)
         try:
-            assert client.options.timeout == 10
+            assert client.options.timeout == 30
             assert client.options.server_selection_timeout == 3
             assert client.options.pool_options.max_pool_size == 20
         finally:

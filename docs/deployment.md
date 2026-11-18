@@ -41,9 +41,9 @@ lint_base="$(git merge-base HEAD origin/main)"
 ```
 
 Pre-existing findings must be reported separately; do not expand a scoped change
-into repository-wide cleanup. The bot's normal Mongo CSOT budget is 10 seconds,
+into repository-wide cleanup. The bot's normal Mongo CSOT budget is 30 seconds,
 including server selection; the shorter server-selection setting is not an
-additional cap under CSOT. Any 30-second maintenance exception must enclose a
+additional cap under CSOT. Each local 30-second maintenance budget must enclose a
 bounded database/bootstrap unit, not provider awaits, task creation or an entire
 periodic loop, whose child tasks could inherit an expired deadline.
 
@@ -82,8 +82,11 @@ provider waits, reconciliation workflows, sleeps, task/job creation and the CWL
 startup/periodic drivers remain outside the contexts on their normal budgets.
 The existing Lazy CWL `update_many`/old-index-drop workflow remains outside the
 new create-index scopes. No retry, migration or index/data policy is added.
-Cancellation and concurrent/subsequent-task budget regressions must prove
-normal 10 seconds, local 30 seconds, then normal 10 seconds after scope exit.
+The bot-constructor regressions separately prove the production 30-second
+CSOT default. Synthetic cancellation and concurrent/subsequent-task probes
+intentionally use a distinct 10-second default, override it locally to 30 seconds,
+then verify restoration to 10 seconds and isolation from other tasks. Keep those
+10 → 30 → 10 probes: equal budgets would not distinguish restoration or leaks.
 
 The retained 52-package lock SHA256 is
 `0afe271abdf4692949ecfea2cf9838a7c6954bd0f787c2e810dd0749c850fa9c`.
@@ -819,7 +822,9 @@ No Discord posts, pings, or live permission changes used for testing.
 
 ## Mongo startup and periodic scans (239D rework)
 
-The bot default remains10 seconds. Independently budget full maintenance cursor
+The bot default is 30 seconds, including server selection, to retain headroom
+for index bootstrap and maintenance cursors. Keep the 3-second server-selection
+setting and pool size 20 unchanged. Independently budget full maintenance cursor
 reads/getMore advancement and each index operation with local
 `pymongo.timeout(30)`, preserving original rows, CAS/retention and cancellation.
 Keep processing, delivery and task creation outside those contexts. No row cap
@@ -828,3 +833,12 @@ all downstream policy/schema inputs. See [the complete source inventory](mongo-m
 Prior live startup NetworkTimeout failures remain failures; new source fixtures
 and imports do not prove live Atlas latency or readiness. The exact failing
 inner ticket index/preflight operation was not established from the old log.
+
+The historical 10-second D default failed live startup and was rolled back.
+Ruggie chose the 30-second bot default in Shaka1133 (2026-11-18). Shaka1133's
+cause is an **inference**, not a proven diagnosis: startup connection checkout
+may wait behind PyMongo's `maxConnecting=2` connections to Atlas, and that wait
+counts inside the total 10-second CSOT budget. The local 30-second wrappers,
+projections, lockfile and dependency pins remain unchanged; those wrappers now
+match the bot default. New isolated suites and fixture imports still do not
+establish live Atlas latency or readiness.
