@@ -275,6 +275,15 @@ credentials and token-like query parameters. Search the bot journal with:
 sudo journalctl -u wu-bot -o cat --since "24 hours ago" | grep -E "startup_reconcile_retry|startup_reconcile_recovered|startup_reconcile_healthy"
 ```
 
+**Deferred logging follow-up (Shaka1134, 2026-11-18):** Before the first
+schedule load, the known `cwl-web-roster-bridge.schedule-sync` condition
+`ValueError: No schedule load completed; nothing was acknowledged` should be
+logged at INFO without a traceback during the first 60 seconds of startup.
+The accepted recovery had this single known case at 21.561497 seconds and no
+other tracebacks; this does not permit suppressing later or unrelated failures.
+This is a deferred logging change, not implemented here. The original failed
+readiness result remains preserved.
+
 ### `CWL-RETRY-001` — Monthly CWL reminder delivery
 
 **Status:** Superseded by the CWL campaign dashboard and its durable delivery
