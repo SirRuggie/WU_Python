@@ -1,4 +1,10 @@
 // @vitest-environment happy-dom
+vi.mock("./townHallRegistry", async () => {
+  const { townHallRegistryTestFixture } = await import(
+    "./townHallRegistryTestFixture"
+  );
+  return townHallRegistryTestFixture();
+});
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -275,8 +281,9 @@ it("omits absent optional detail/status while preserving the existing supplied s
 
 it("shows the chip fade only while local row content remains to the right", async () => {
   let contentWidth = 500;
-  const { default: StrikeActivityRoster } =
-    await import("./StrikeActivityRoster");
+  const { default: StrikeActivityRoster } = await import(
+    "./StrikeActivityRoster"
+  );
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
     function (this: HTMLElement) {
       return this.classList.contains("strike-activity-tabs") ? 200 : 0;

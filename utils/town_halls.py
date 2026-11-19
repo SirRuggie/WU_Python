@@ -54,11 +54,13 @@ def _guild_key(value):
 
 def validate(doc):
     """Validate all registry entries together without changing the input."""
-    if not isinstance(doc, dict) or doc.get("schema_version") != 1:
-        raise ValueError("Use Town Halls registry schema version 1.")
-    if type(doc.get("schema_version")) is not int:
-        raise ValueError("Use Town Halls registry schema version 1.")
+    if not isinstance(doc, dict) or type(doc.get("schema_version")) is not int or doc["schema_version"] not in (1, 2):
+        raise ValueError("Use Town Halls registry schema version 1 or 2.")
+    if not set(doc) <= {"_id", "schema_version", "revision", "lowest_fwa_town_hall", "levels", "updated_by", "updated_at", "nonbase_revision"}:
+        raise ValueError("Unknown Town Halls registry field.")
     _integer(doc.get("revision"), 0, 2**63 - 1, "Use a valid registry revision.")
+    if "nonbase_revision" in doc:
+        _integer(doc["nonbase_revision"], 0, doc["revision"], "Use a valid Town Hall edit revision.")
     entries = doc.get("levels")
     if not isinstance(entries, dict) or not 1 <= len(entries) <= 30:
         raise ValueError("Keep between 1 and 30 Town Hall levels.")
@@ -68,8 +70,12 @@ def validate(doc):
     for key, item in entries.items():
         if not isinstance(key, str) or _LEVEL.fullmatch(key) is None:
             raise ValueError("Use canonical Town Hall level keys from 1 to 99.")
-        if not isinstance(item, dict) or not set(item) <= {"emoji", "weight"}:
-            raise ValueError("Each Town Hall stores only an emoji and optional weight.")
+        if not isinstance(item, dict) or not set(item) <= {"emoji", "weight", "bases"}:
+            raise ValueError("Each Town Hall stores only an emoji, optional weight and bases.")
+        if "bases" in item:
+            if doc["schema_version"] != 2:
+                raise ValueError("Base content requires Town Halls registry schema version 2.")
+            _validate_bases(item["bases"])
         emoji = item.get("emoji", "")
         if not isinstance(emoji, str) or (emoji and _EMOJI.fullmatch(emoji) is None):
             raise ValueError("Select a Discord custom emoji or leave it blank.")
@@ -88,6 +94,29 @@ def validate(doc):
         previous_max = high
     if str(lowest) not in entries or "weight" not in entries[str(lowest)]:
         raise ValueError("The lowest FWA Town Hall must be a listed level with a weight range.")
+
+
+def _validate_bases(bases):
+    # Reuse the established public URL rule without a module-import cycle.
+    from utils.base_bank import https_url
+    if not isinstance(bases, dict) or not set(bases) <= {"war_image", "active_image", "merged", "non_merged"}:
+        raise ValueError("Use shared base images and Merged or Non-merged fields.")
+    for slot in ("war_image", "active_image"):
+        value = bases.get(slot, "")
+        if not isinstance(value, str) or (value and https_url(value) is None):
+            raise ValueError("Use a public HTTPS base image URL or leave it blank.")
+    for variant in ("merged", "non_merged"):
+        values = bases.get(variant, {})
+        if not isinstance(values, dict) or not set(values) <= {"link", "instructions", "upgrade_notes"}:
+            raise ValueError("A base variant stores only its link, instructions and upgrade notes.")
+        for field, value in values.items():
+            if not isinstance(value, str):
+                raise ValueError("Base fields must be text.")
+            if field == "link":
+                if value and https_url(value, clash=True) is None:
+                    raise ValueError("Use a Clash OpenLayout base link or leave it blank.")
+            elif len(value) > 4000:
+                raise ValueError("Keep base instructions and upgrade notes within 4,000 characters.")
 
 
 async def load(mongo, guild_id):
@@ -150,6 +179,8 @@ async def save(mongo, guild_id, doc, user_id, expected_revision):
         updated_by=user_id,
         updated_at=datetime.now(timezone.utc),
     )
+    if replacement['schema_version'] == 2:
+        replacement['nonbase_revision'] = expected_revision + 1
     result = await _collection(mongo).replace_one(
         {"_id": guild, "revision": expected_revision}, replacement, upsert=False
     )

@@ -93,3 +93,9 @@ in prompt 245; the family role mapping moves in prompt 246.
 Add history is recorded as `create`. Its before-side is not restorable: creation
 does not authorize deletion of a level. The saved after-side and ordinary
 level/settings edits retain the existing revision-checked restore behavior.
+
+244 rollback compatibility (1184): schema2 base fields may be read and copied
+unchanged by this release. No base editor or base-writing action is added here.
+An emoji/weight/minimum Save keeps the existing global revision CAS and stamps
+`nonbase_revision` with the new global revision on schema2 documents, preserving
+245's later concurrency distinction. The244 migration still creates schema1.
