@@ -242,7 +242,7 @@ def test_loaded_accounts_sort_by_town_hall_then_name_and_show_required_fields():
 
     assert text.index("#ALPHA") < text.index("#BETA") < text.index("#LOW")
     assert "TH18" in text
-    assert "🏰 TH1" in text
+    assert "TH1" in text
     assert "No clan" in text
     assert "Alpha \\[One\\] @\u200beveryone" in text
     assert "Clan \\*A\\*" in text

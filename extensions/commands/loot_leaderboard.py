@@ -21,6 +21,7 @@ from utils.recruit_links import resolve_players
 from utils.constants import WU_GOLD, WU_RED, WARRIORS_UNITED_GUILD_ID
 from utils.gold_loot import refresh_board, load_town_halls
 from utils.emoji import emojis
+from utils.town_halls import town_hall_emoji
 from utils import bot_data
 from utils.discord_links import profile_label  # noqa: F401  (re-exported)
 
@@ -80,7 +81,7 @@ def render_board(board):
         )
         clan = safe_name(row.get('clan_name') or 'Warriors United')
         level = board.get('town_halls', {}).get(row['tag'])
-        th = str(getattr(emojis, f'TH{level}', f'🏰 TH{level}')) if level else '🏰 TH ?'
+        th = town_hall_emoji(level) or f'TH{level}' if level else '🏰 TH ?'
         lines.append(f"{medal} {th} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# `{row['tag']}` • {linked} • {clan}")
     components = [
         Text(content='## 🏆 Gold Loot Leaderboard\n**Warriors United Family • Top 10**'),

@@ -31,7 +31,7 @@ from utils.strike_official import normalize as normalize_official_war
 from utils.replacement_filters import parse_weight, compact_weight
 from utils.replacement_view import find_slots, member_slot_tags, priority_key, slot_pool
 from utils.dashboard_urls import STRIKES_URL
-from utils.war_weight import emoji_for
+from utils.town_halls import town_hall_emoji
 from cwl_web.providers import LiveProviders, ProviderUnavailable
 
 loader = lightbulb.Loader()
@@ -322,7 +322,7 @@ def replacement_slot_line(row, clan_names, *, index=None, disputed=(), note_limi
     if len(note) > note_limit:
         note = note[:note_limit - 1] + '…' if note_limit > 0 else ''
     prefix = f'{index}. ' if index else ''
-    return (f"{emoji_for(th, {'ranges': {}})} **{prefix}{player}** `{row['player_tag']}`{mention}\n"
+    return (f"{town_hall_emoji(th) or (f'TH{th}' if th else '')} **{prefix}{player}** `{row['player_tag']}`{mention}\n"
             f"{clan}{flags} · {weight}{gap_text} · "
             f"{PRIORITY_LABELS.get(row.get('replacement_priority'), 'Normal')} · "
             f"{strikes} active {'strike' if strikes == 1 else 'strikes'}"

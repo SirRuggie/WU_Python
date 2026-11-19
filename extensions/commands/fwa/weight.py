@@ -1,6 +1,5 @@
 import lightbulb
 import hikari
-import logging
 
 from extensions.commands.fwa import loader, fwa
 from utils.constants import WU_GOLD, WU_GREEN, WU_RED
@@ -13,10 +12,12 @@ from hikari.impl import (
     MediaGalleryItemBuilder as MediaItem,
 )
 
-from utils import war_weight
+from utils import town_halls
 from utils.mongo import MongoClient
 
-WAR_WEIGHT_RANGES = war_weight.DEFAULT_RANGES
+def current_ranges():
+    snapshot = town_halls.snapshot()
+    return town_halls.weight_ranges(snapshot) if snapshot is not None else {}
 
 
 def determine_town_hall(total_weight: int, ranges=None) -> tuple[int | None, str, int]:
@@ -25,7 +26,9 @@ def determine_town_hall(total_weight: int, ranges=None) -> tuple[int | None, str
     Returns: (th_level, status, color)
     Status can be: 'exact', 'below', 'above', 'between'
     """
-    ranges = ranges or WAR_WEIGHT_RANGES
+    ranges = current_ranges() if ranges is None else ranges
+    if not ranges:
+        return None, "unknown", WU_RED
     levels = sorted(ranges)
     # Check configured bounds
     if total_weight < ranges[levels[0]]["min"]:
@@ -49,12 +52,13 @@ def determine_town_hall(total_weight: int, ranges=None) -> tuple[int | None, str
 
 
 def get_th_emoji(th_level, config=None, available=()):
-    return war_weight.emoji_for(th_level, config or war_weight.defaults(), available)
+    return (town_halls.emoji_markup(config, th_level) if config is not None
+            else town_halls.town_hall_emoji(th_level))
 
 
 def calculate_position_in_range(weight: int, th_level: int, ranges=None) -> int:
     """Calculate percentage position within TH range."""
-    ranges = ranges or WAR_WEIGHT_RANGES
+    ranges = current_ranges() if ranges is None else ranges
     if th_level not in ranges:
         return 0
 
@@ -66,12 +70,12 @@ def calculate_position_in_range(weight: int, th_level: int, ranges=None) -> int:
 
 def format_weight_reference_guide(current_weight: int, current_th: int | None, config=None, available=()) -> str:
     """Format the complete weight reference guide."""
-    config = config or war_weight.defaults()
+    config = config if config is not None else town_halls.snapshot()
     lines = []
+    if config is None:
+        return ""
 
-    for th_level, range_data in sorted(war_weight.ranges(config).items(), reverse=True):
-        if th_level < config["minimum_th"]:
-            continue
+    for th_level, range_data in sorted(town_halls.weight_ranges(config).items(), reverse=True):
         emoji = get_th_emoji(th_level, config, available)
         display = range_data["display"]
 
@@ -86,8 +90,8 @@ def format_weight_reference_guide(current_weight: int, current_th: int | None, c
 
 def get_upgrade_info(weight: int, th_level: int | None, ranges=None) -> str:
     """Get information about upgrading to next TH level."""
-    ranges = ranges or WAR_WEIGHT_RANGES
-    if th_level is None or th_level >= max(ranges):
+    ranges = current_ranges() if ranges is None else ranges
+    if not ranges or th_level is None or th_level >= max(ranges):
         return ""
 
     next_th = min(th for th in ranges if th > th_level)
@@ -100,17 +104,11 @@ def get_upgrade_info(weight: int, th_level: int | None, ranges=None) -> str:
     return ""
 
 
-async def load_th_emojis(bot) -> list:
-    """Cached guild emojis plus application emojis, for Town Hall emoji matching."""
-    available = list(bot.cache.get_emojis_view().values())
-    # Application emojis are not in the gateway guild emoji cache.
-    me = bot.get_me() if hasattr(bot, "get_me") else None
-    if me is not None:
-        try:
-            available.extend(await bot.rest.fetch_application_emojis(me.id))
-        except hikari.HTTPError:
-            logging.getLogger(__name__).warning("Application emoji lookup failed; using cached/fallback Town Hall emojis")
-    return available
+async def load_weight_config(mongo, guild_id):
+    config = await town_halls.load(mongo, guild_id)
+    if config is None:
+        raise town_halls.TownHallsMissing(town_halls.MISSING_MESSAGE)
+    return config
 
 
 def assess_weight(loot: int, ranges) -> tuple[int, int | None, str, int]:
@@ -122,7 +120,7 @@ def assess_weight(loot: int, ranges) -> tuple[int, int | None, str, int]:
 
 def build_weight_panel(loot: int, config, available=(), saved_for: str | None = None) -> list:
     """The public calculator panel. ``saved_for`` is pre-escaped "Name #TAG" text."""
-    ranges = war_weight.ranges(config)
+    ranges = town_halls.weight_ranges(config)
     lowest, highest = min(ranges), max(ranges)
 
     # Calculate total weight (multiply by 5) and determine town hall and status
@@ -187,7 +185,7 @@ def build_weight_panel(loot: int, config, available=(), saved_for: str | None = 
         Container(
             accent_color=WU_GOLD,
             components=[
-                Text(content=f"### 📊 **War Weight Reference Guide (TH{config['minimum_th']}–TH{highest})**"),
+                Text(content=f"### 📊 **War Weight Reference Guide (TH{config['lowest_fwa_town_hall']}–TH{highest})**"),
                 Text(content=format_weight_reference_guide(total_weight, th_level, config, available)),
             ]
         )
@@ -243,8 +241,12 @@ class WeightCommand(
     async def invoke(self, ctx: lightbulb.Context, bot: hikari.GatewayBot = lightbulb.di.INJECTED, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
 
-        config = await war_weight.load(mongo, ctx.guild_id)
-        available = await load_th_emojis(bot)
+        try:
+            config = await load_weight_config(mongo, ctx.guild_id)
+        except town_halls.TownHallsMissing:
+            await ctx.respond(town_halls.MISSING_MESSAGE, ephemeral=True)
+            return
+        available = ()
 
         if self.user is not None:
             from extensions.commands.fwa.weight_save import start_save_flow

@@ -51,7 +51,7 @@ Design rules enforced here, each of which cost real investigation to establish:
   .make_icon_url()) raises AttributeError there. ctx.member is None too, so no
   role checks anywhere in this file.
 
-  TH EMOJI COME FROM utils.emoji. TH_EMOJI is built with getattr/hasattr so a
+  TH emojis come from the last-good Town Hall registry snapshot. A
   missing level degrades to no emoji rather than an AttributeError inside a
   render path.
 """
@@ -97,6 +97,7 @@ from utils.constants import (
     WARRIORS_UNITED_GUILD_ID, WU_GOLD, WU_RED,
 )
 from utils.emoji import emojis
+from utils.town_halls import town_hall_emoji
 from utils.fwa_blacklist import blacklisted_tags
 from utils.fwa_points_parser import sanitize_tag
 from utils.mongo import MongoClient
@@ -344,17 +345,13 @@ TTL_LOGOS = 60 * 60   # family clan list changes rarely; a logo upload is rarer
 # Real TH emoji from utils.emoji rather than the text "TH17". Custom emoji are
 # ~28 chars of markup but render one character wide, so the LINE gets shorter
 # while the character budget barely moves (10 rows = ~280 of 4000).
-TH_EMOJI = {
-    level: str(getattr(emojis, f"TH{level}"))
-    for level in range(2, 19)
-    if hasattr(emojis, f"TH{level}")
-}
+
 
 
 def _emoji(name: str) -> str:
     """Markup for a named custom emoji, or "" if it is not defined.
 
-    Same safety as TH_EMOJI: a renamed or removed attribute degrades to nothing
+    A renamed or removed non-Town-Hall attribute degrades to nothing
     rather than raising inside a render path or printing raw markup in a row.
     str() preserves the "<a:" prefix on animated emoji, which is required -
     dropping it renders the emoji broken.
@@ -792,7 +789,7 @@ def _row_line(row) -> str:
     The TH emoji replaces the text "TH17": shorter on the line, and a per-row
     visual anchor, which is what this layout is for.
     """
-    th = TH_EMOJI.get(row.town_hall, "")
+    th = town_hall_emoji(row.town_hall) or f"TH{row.town_hall}"
     # limit == 0 means "there is nothing to count" - the Private War Logs view,
     # where the row is the account itself rather than an outstanding attack.
     lead = f"{row.used}/{row.limit}" if row.limit else ""

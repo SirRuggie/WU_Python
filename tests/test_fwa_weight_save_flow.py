@@ -9,7 +9,8 @@ import hikari
 import pytest
 
 from extensions.commands.fwa import weight, weight_save as flow
-from utils import clashperk_link_writes, war_weight
+from utils import clashperk_link_writes, town_halls
+from town_halls_fixture import weight_registry
 from cwl_web.providers import tag as normalize
 from utils.clan_weight_client import WeightClientError
 
@@ -124,7 +125,7 @@ def custom_ids(components):
 def env(monkeypatch):
     bridge = Bridge()
     monkeypatch.setattr(flow, "bridge", bridge)
-    monkeypatch.setattr(war_weight, "load", AsyncMock(return_value=war_weight.defaults()))
+    monkeypatch.setattr(town_halls, "load", AsyncMock(return_value=weight_registry()))
     links = Links()
     monkeypatch.setattr(flow.clashperk_link_writes, "create_link", links)
     mongo = SimpleNamespace(component_state=Collection(), button_store=Collection())
@@ -497,7 +498,7 @@ def test_weight_outside_ranges_always_confirms_with_warning(env):
 
 
 def test_th_warning_rules():
-    ranges = war_weight.ranges(war_weight.defaults())
+    ranges = town_halls.weight_ranges(weight_registry())
     assert flow.th_warning(15, "exact", ranges, 15) is None
     assert flow.th_warning(15, "exact", ranges, None) is None
     assert flow.th_warning(15, "between", ranges, 16) is None

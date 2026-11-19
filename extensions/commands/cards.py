@@ -77,7 +77,8 @@ from utils.cards import (
 from utils import cards_config
 from utils.component_state import delete_state, get_state, insert_state, update_state
 from utils import troop_emoji
-from utils.emoji import EmojiType, emojis
+from utils.emoji import EmojiType, emojis, town_hall_select_emoji
+from utils.town_halls import town_hall_emoji
 from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 
@@ -769,14 +770,8 @@ def _town_hall_emoji(level: object):
     caller keeps the level in the label so nothing is lost.
     """
     try:
-        obj = getattr(emojis, f"TH{int(level)}", None)
+        return town_hall_select_emoji(int(level))
     except (TypeError, ValueError):
-        return hikari.UNDEFINED
-    if obj is None:
-        return hikari.UNDEFINED
-    try:
-        return obj.partial_emoji
-    except (ValueError, IndexError):
         return hikari.UNDEFINED
 
 
@@ -8790,10 +8785,10 @@ def _th_markup(level: object) -> str:
     because a DM that fails to send is worse than one without a picture.
     """
     try:
-        entry = getattr(emojis, f"TH{int(level)}", None)
+        entry = town_hall_emoji(int(level))
     except (TypeError, ValueError):
         return ""
-    return str(entry) if entry is not None else ""
+    return entry
 
 
 CLAN_FALLBACK_EMOJI = "🛡️"
@@ -8826,6 +8821,12 @@ def _player_line(
 ) -> str:
     """One account on one line: who, where, and how big."""
     th = _th_markup(town_hall)
+    if not th:
+        try:
+            level = int(town_hall)
+            th = f"TH{level}" if 1 <= level <= 99 else ""
+        except (TypeError, ValueError):
+            pass
     head = f"**{label}:** {th + ' ' if th else ''}"
     head += f"{_escape_markdown(name, limit=40)} • `{_normalize_tag(tag)}`"
     clan = str(clan_name or "").strip()

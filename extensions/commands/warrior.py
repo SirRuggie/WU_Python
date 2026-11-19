@@ -20,6 +20,7 @@ from extensions.components import register_action
 from extensions.warrior import core, walkthrough, nickname_setup
 from utils.mongo import MongoClient
 from utils.emoji import emojis
+from utils.town_halls import town_hall_emoji
 from utils.component_state import insert_state, update_state
 from utils.constants import WU_GOLD, WU_RED
 
@@ -114,7 +115,7 @@ async def home(data, c, mongo, note=""):
         for key, (icon, label) in standard.items()
         if int(cfg["roles"][key]) in held
     ]
-    town_halls = [f"{getattr(emojis, 'TH' + str(level))} TH{level}" for level in th]
+    town_halls = [f"{town_hall_emoji(level)} TH{level}" for level in th]
 
     def listing(values, empty, budget=450):
         shown = []

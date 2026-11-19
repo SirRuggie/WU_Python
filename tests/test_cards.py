@@ -16,6 +16,12 @@ from utils.emoji import emojis
 from utils.todo_data import Account
 
 
+@pytest.fixture(autouse=True)
+def town_hall_snapshot(monkeypatch):
+    from town_halls_fixture import install_snapshot
+    return install_snapshot(monkeypatch)
+
+
 def _walk_payload(value):
     if isinstance(value, dict):
         yield value
@@ -8335,7 +8341,7 @@ def test_a_player_line_survives_every_piece_being_missing():
         "<:Elixer:1536777630278357164>",
     )
     assert "Sir UwU" in full and "#ME" in full and "Edrag Rush" in full
-    assert str(cards_command.emojis.TH18) in full
+    assert cards_command.town_hall_emoji(18) in full
     assert "<:Elixer:1536777630278357164>" in full
 
 
@@ -8345,8 +8351,8 @@ def test_an_unknown_town_hall_contributes_nothing(level):
 
 
 def test_a_known_town_hall_renders():
-    assert cards_command._th_markup(18) == str(cards_command.emojis.TH18)
-    assert cards_command._th_markup("17") == str(cards_command.emojis.TH17)
+    assert cards_command._th_markup(18) == cards_command.town_hall_emoji(18)
+    assert cards_command._th_markup("17") == cards_command.town_hall_emoji(17)
 
 
 def test_who_has_what_destination_is_gone():

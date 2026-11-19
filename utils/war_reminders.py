@@ -1,5 +1,6 @@
 """War reminder settings, selection, and standard Discord message rendering."""
 from datetime import datetime, timedelta, timezone
+from utils.town_halls import town_hall_emoji
 from utils.dashboard_urls import TASKS_URL, WARS_URL
 
 import re
@@ -126,7 +127,6 @@ def discord_length(text):
 def messages(war, config, event, owners=None, *, test=False, tester=None, sample_label="Sample players", sample_group="Sample accounts", delayed_at=None):
     """One line per single-account owner; multi-account owners get one mention
     and a quoted row per account. Pages split safely without repeat pings."""
-    from utils.emoji import emojis
     members = pending(war, config['audience'])
     if not members and not test:
         return []
@@ -143,7 +143,7 @@ def messages(war, config, event, owners=None, *, test=False, tester=None, sample
     multis = [(uid, accounts) for uid, accounts in groups.items() if len(accounts) > 1 or uid == 'sample']
 
     def account(member, tag=False):
-        emoji = str(getattr(emojis, f"TH{member['th']}", f"TH{member['th']}"))
+        emoji = town_hall_emoji(member["th"]) or f"TH{member['th']}"
         text = f"{emoji} **{clean(member['name'])}**"
         if tag:
             text += f" `{re.sub(r'[^#A-Z0-9]', '', str(member['tag']).upper())[:24]}`"

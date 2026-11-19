@@ -43,6 +43,9 @@ before changing durable documentation.
 
 ## Features
 
+- [town-halls-registry.md](town-halls-registry.md) — shared levels, emojis, FWA
+  weights, snapshot refresh, migration and rollback limits.
+
 - [dashboard-sign-in.md](dashboard-sign-in.md) — who can sign in to the
   dashboard; only a CWL signup save needs the Warriors United server.
 

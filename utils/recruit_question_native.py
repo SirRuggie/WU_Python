@@ -18,7 +18,8 @@ from hikari.impl import (
     LinkButtonBuilder as LinkButton,
 )
 from utils.constants import WU_GOLD
-from utils.emoji import emojis
+from utils.emoji import fwa_minimum_level, emojis, town_hall_select_emoji, fwa_town_hall_options, fwa_town_hall_menu
+from utils.town_halls import town_hall_emoji
 
 LAZY_CWL_RULES_URL = "https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit"
 
@@ -214,78 +215,78 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                                 content="Select the Town Hall level of the recruit in the menu below."),
                             ActionRow(
                                 components=[
-                                    TextSelectMenu(
+                                    fwa_town_hall_menu(TextSelectMenu(
                                         max_values=1,
                                         custom_id=f"th_select:{action_id}",
                                         placeholder="Select a Base...",
-                                        options=[
+                                        options=fwa_town_hall_options([
                                             SelectOption(
-                                                emoji=emojis.TH18.partial_emoji,
+                                                emoji=town_hall_select_emoji(18),
                                                 label="TH18 New",
                                                 value="th18_new"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH18.partial_emoji,
+                                                emoji=town_hall_select_emoji(18),
                                                 label="TH18",
                                                 value="th18"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH17.partial_emoji,
+                                                emoji=town_hall_select_emoji(17),
                                                 label="TH17",
                                                 value="th17"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH17.partial_emoji,
+                                                emoji=town_hall_select_emoji(17),
                                                 label="TH17 New",
                                                 value="th17_new"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH16.partial_emoji,
+                                                emoji=town_hall_select_emoji(16),
                                                 label="TH16",
                                                 value="th16"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH16.partial_emoji,
+                                                emoji=town_hall_select_emoji(16),
                                                 label="TH16 New",
                                                 value="th16_new"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH15.partial_emoji,
+                                                emoji=town_hall_select_emoji(15),
                                                 label="TH15",
                                                 value="th15"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH14.partial_emoji,
+                                                emoji=town_hall_select_emoji(14),
                                                 label="TH14",
                                                 value="th14"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH13.partial_emoji,
+                                                emoji=town_hall_select_emoji(13),
                                                 label="TH13",
                                                 value="th13"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH12.partial_emoji,
+                                                emoji=town_hall_select_emoji(12),
                                                 label="TH12",
                                                 value="th12"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH11.partial_emoji,
+                                                emoji=town_hall_select_emoji(11),
                                                 label="TH11",
                                                 value="th11"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH10.partial_emoji,
+                                                emoji=town_hall_select_emoji(10),
                                                 label="TH10",
                                                 value="th10"
                                             ),
                                             SelectOption(
-                                                emoji=emojis.TH9.partial_emoji,
+                                                emoji=town_hall_select_emoji(9),
                                                 label="TH9",
                                                 value="th9"
                                             ),
-                                        ],
-                                    ),
+                                        ]),
+                                    )),
                                 ]
                             ),
                             Media(
@@ -305,7 +306,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                             Separator(divider=True),
                             Text(content=(
                                 "## 📌 FWA Clans in Clash of Clans: A Quick Overview\n"
-                                f"> Minimum TH for FWA: TH13 {emojis.TH13}\n\n"
+                                f"> Minimum TH for FWA: TH{fwa_minimum_level()} {town_hall_emoji(fwa_minimum_level())}\n\n"
                                 "FWA, or Farm War Alliance, is a unique concept in Clash of Clans. The goal is to get the most loot and clan XP, not only to win wars.\n\n"
                                 "### **__<a:FWA:1398229188363948055> What are the benefits?__**\n"
                                 "**<a:Gold_Coins:1398229429892808745> Maximized Loot and XP**\n"

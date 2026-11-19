@@ -11,6 +11,12 @@ from utils.constants import WARRIORS_UNITED_GUILD_ID
 from tests.test_goldrush import db, START
 
 
+@pytest.fixture(autouse=True)
+def town_hall_snapshot(monkeypatch):
+    from town_halls_fixture import install_snapshot
+    return install_snapshot(monkeypatch)
+
+
 def test_panel_is_concise_has_join_and_only_entered_accounts(db,monkeypatch):
     event=store.create_event(db,guild_id=WARRIORS_UNITED_GUILD_ID,account_mode='per_account',allow_late_join=True,at=START)
     store.start_event(db,event['id'],at=START)

@@ -9,6 +9,12 @@ from utils import war_reminder_store as storage
 from extensions.tasks.war_reminders import scan_clan
 
 
+@pytest.fixture(autouse=True)
+def town_hall_snapshot(monkeypatch):
+    from town_halls_fixture import install_snapshot
+    return install_snapshot(monkeypatch)
+
+
 def config(**kw):
     return {**r.settings(), 'enabled': True, 'channel_id': '123456789012345678', **kw}
 

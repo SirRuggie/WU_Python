@@ -196,3 +196,40 @@ def test_removed_add_requires_explicit_choice_and_fresh_reminder_revision(setup,
             asyncio.run(api.add(req))
     assert not rows.changes
     store.save_settings.assert_not_awaited()
+
+
+def test_unknown_saved_town_hall_can_be_preserved_without_becoming_new_option(setup,monkeypatch):
+    req,rows,history=setup
+    rows.row['th_requirements']='99'
+    req.json=AsyncMock(return_value={'revision':api.revision(rows.row),'values':{'th_requirements':'99'}})
+    monkeypatch.setattr(api.town_halls,'load',AsyncMock(side_effect=AssertionError('unchanged unknown value does not require a new option')))
+    asyncio.run(api.save(req))
+    assert rows.row['th_requirements']=='99'
+
+
+def test_new_unknown_town_hall_rejected_and_registry_th19_allowed(setup,monkeypatch):
+    from town_halls_fixture import weight_registry
+    req,rows,history=setup
+    monkeypatch.setattr(api.town_halls,'load',AsyncMock(return_value=weight_registry(newest=19)))
+    req.json=AsyncMock(return_value={'revision':api.revision(rows.row),'values':{'th_requirements':'99'}})
+    with pytest.raises(web.HTTPBadRequest):asyncio.run(api.save(req))
+    assert rows.changes==[]
+    req.json=AsyncMock(return_value={'revision':api.revision(rows.row),'values':{'th_requirements':'19'}})
+    asyncio.run(api.save(req))
+    assert rows.row['th_requirements']=='19'
+
+
+def test_clan_options_are_all_registry_levels_newest_first(monkeypatch):
+    import json
+    from town_halls_fixture import weight_registry
+    class Cursor:
+        def sort(self,*args):return self
+        async def to_list(self,**kwargs):return []
+    db=NS(clans=NS(find=lambda _:Cursor()))
+    @asynccontextmanager
+    async def mongo(request):yield db
+    monkeypatch.setattr(api,'mongo',mongo)
+    monkeypatch.setattr(api,'require_manage',AsyncMock())
+    monkeypatch.setattr(api.town_halls,'load',AsyncMock(return_value=weight_registry(newest=19)))
+    response=json.loads(asyncio.run(api.listing(object())).text)
+    assert response['town_halls']==list(map(str,range(19,0,-1)))
