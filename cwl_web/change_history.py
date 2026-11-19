@@ -24,6 +24,29 @@ async def begin(db, target, actor, before, action='edit', raw=None):
     return row['_id']
 
 
+async def record_committed(db, target, actor, before, after, *, event_id,
+                           action='edit', raw_before=None, raw_after=None):
+    """Insert one committed-save history entry; a repeated revision is harmless.
+
+    The caller has already committed its revision-checked edit. This owner does
+    not retry a failed/uncertain insertion or pretend history is atomic with it.
+    """
+    from pymongo.errors import DuplicateKeyError
+    uid=str(actor['user_id'])
+    member=actor.get('member', {})
+    user=member.get('user', {})
+    row={'_id':event_id,'revision':0,'kind':'dashboard_history','target':target,
+         'status':'saved','actor_id':uid,
+         'actor_name':member.get('nick') or user.get('global_name') or user.get('username') or uid,
+         'at':datetime.now(timezone.utc),'action':action,
+         'before':copy.deepcopy(before),'after':copy.deepcopy(after),
+         'raw_before':copy.deepcopy(raw_before),'raw_after':copy.deepcopy(raw_after)}
+    try:
+        await db.bot_config.insert_one(row)
+    except DuplicateKeyError:
+        pass
+
+
 async def finish(db, token, after, raw=None):
     result = await db.bot_config.update_one({'_id':token,'revision':0},{'$set':{'status':'saved','after':copy.deepcopy(after),'raw_after':copy.deepcopy(raw)}})
     if not result.matched_count:
@@ -53,6 +76,8 @@ def target_info(value):
     match=re.fullmatch(r'/manage/operations/(fwa_weight|fwa_bases|fwa_points|fwa_sync)(?:/([a-zA-Z0-9_-]+))?',path)
     if match and match[2]!='new':
         return 'operations',match[1],{'section':match[1],**({'item':match[2]} if match[2] else {})},base+'operations/'+match[1]+('/'+match[2] if match[2] else '')
+    match=re.fullmatch(r'/manage/town-halls/([1-9][0-9]?|settings)',path)
+    if match:return 'town_halls','fwa_weight',{'item':match[1]},base+'town-halls/'+match[1]
     if path.startswith('/manage/text-commands/'):
         from utils.text_commands import command_name
         try: name=command_name(unquote(path.removeprefix('/manage/text-commands/')))
@@ -87,6 +112,9 @@ async def restore(request):
         raise web.HTTPNotFound(text='This saved version is not available.')
     values=copy.deepcopy(row[body['side']])
     proxy=RestoreRequest(request,match,{'revision':body.get('revision'),'values':values,**({'request_id':body['request_id']} if body.get('request_id') else {})},row.get('raw_'+body['side']))
+    if kind=='town_halls':
+        from .town_halls import save
+        return await save(proxy)
     if kind=='content':
         from .manage_content import item_handler
         if proxy.history_template is None: raise web.HTTPConflict(text='This version cannot be restored.')

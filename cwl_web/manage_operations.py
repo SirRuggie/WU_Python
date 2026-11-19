@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from aiohttp import web
 from pymongo.errors import DuplicateKeyError
-from utils import war_weight, fwa_blacklist
+from utils import fwa_blacklist
 from utils.fwa_points_parser import sanitize_tag
 from . import server_management as shared
 from utils.manage_operations_runtime import revision, runtime_snapshot, refresh_base_image_cache, public_band_error
@@ -79,14 +79,9 @@ async def load_document(db, section, item=None, *, source_snapshot=None):
                                  {'id': 'debug_on', 'label': 'Enable debug logging', 'advanced': True},
                                  {'id': 'debug_off', 'label': 'Disable debug logging', 'advanced': True}])
     if section=='fwa_weight':
-        row=await war_weight.load(db,shared.GUILD_ID)
-        if source_snapshot is not None:source_snapshot.update(copy.deepcopy(row))
-        if item and item!='settings':
-            if item!='new' and not re.fullmatch(r'[1-9][0-9]?',item):raise web.HTTPBadRequest(text="Select a Town Hall.")
-            th=int(item) if item!='new' else 19; value=row['ranges'].get(str(th),{'min':1,'max':2,'emoji':''})
-            return document(section,row,[field('th','Town Hall',th,'number',min=1,max=99,readonly=item!='new'),field('min','Minimum weight',value['min'],'number',min=1,max=500000),field('max','Maximum weight',value['max'],'number',min=2,max=500000),field('emoji','Town Hall emoji',value.get('emoji',''))])
-        if item=='settings':return document(section,row,[field('minimum_th','Lowest Town Hall shown',row['minimum_th'],'number',min=1,max=99)])
-        return document(section,row,[field('minimum_th','Lowest Town Hall shown',row['minimum_th'],'number',min=1,max=99)],documents=[{'id':'settings','label':'Lowest Town Hall shown','endpoint':f'/manage/operations/{section}/settings'}]+[{'id':str(th),'label':f'Town Hall {th}','endpoint':f'/manage/operations/{section}/{th}'} for th in sorted(map(int,row['ranges']))]+[{'id':'new','label':'Add Town Hall','endpoint':f'/manage/operations/{section}/new'}])
+        from .town_halls import required, document as town_halls_document
+        row = await required(db)
+        return town_halls_document(row, 'add' if item == 'new' else item)
     if section=='fwa_bases':
         row=await db.fwa_data.find_one({'_id':'fwa_config'}) or {}
         if source_snapshot is not None:source_snapshot.update(copy.deepcopy(row))
@@ -157,12 +152,20 @@ async def check_channel_permissions(request, channel):
 
 async def read(request):
     section=request.match_info['section']; await shared.require_manage(request,section)
+    if section == 'fwa_weight':
+        item = request.match_info.get('item')
+        suffix = '/' + ('add' if item == 'new' else item) if item else ''
+        raise web.HTTPTemporaryRedirect(location='/api/cwl/manage/town-halls' + suffix)
     async with shared.mongo(request) as db: result=await load_document(db,section,request.match_info.get('item'))
     return web.json_response(result)
 
 async def save(request):
     from .app import _json
-    section=request.match_info['section']; item=request.match_info.get('item');actor=await shared.require_manage(request,section,write=True)
+    section=request.match_info['section']
+    if section == 'fwa_weight':
+        await shared.require_manage(request, 'fwa_weight', write=True)
+        raise web.HTTPGone(text='TH weight ranges moved to Town Halls. Refresh this page.')
+    item=request.match_info.get('item');actor=await shared.require_manage(request,section,write=True)
     body=await _json(request)
     async with shared.mongo(request) as db:
         source_snapshot={}
@@ -181,17 +184,7 @@ async def save(request):
         history_target=shared.API+'/operations/'+section+('/'+item if item else '')
         history_id=await begin(db,history_target,actor,history_fields(current),getattr(request,'history_action','edit')) if section!='fwa_blacklist' and item!='new' else None
         try:
-            if section=='fwa_weight':
-                row=copy.deepcopy(source_snapshot)
-                if item and item!='settings':
-                    entry=row['ranges'].get(item,{})
-                    th=int(values.get('th',19)) if item=='new' else int(item)
-                    if item=='new' and str(th) in row['ranges']:raise ValueError('This Town Hall already exists. Open it to edit.')
-                    row=war_weight.edit_entry(row,th,int(values.get('min',entry.get('min',1))),int(values.get('max',entry.get('max',2))),values.get('emoji',entry.get('emoji','')))
-                elif values:row['minimum_th']=int(values['minimum_th'])
-                await war_weight.save(db,shared.GUILD_ID,row,int(actor['user_id']))
-                if item=='new':item=str(th)
-            elif section=='fwa_bases':
+            if section=='fwa_bases':
                 if not item:raise ValueError("Select a Town Hall first.")
                 row=source_snapshot;changes={};baseline={}
                 for key,value in values.items():
