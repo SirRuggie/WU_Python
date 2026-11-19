@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { managementPaths, managementTarget } from "./managementLinks";
+import {
+  managementPaths,
+  managementTarget,
+  townHallManagementPath,
+} from "./managementLinks";
 import { dashboardPath, dashboardTarget } from "./dashboardHistory";
 import { dashboardViews } from "./SidebarNavigation";
 import { loginPath } from "./memberLinks";
@@ -98,4 +102,71 @@ it("canonicalizes old Members links and preserves the person through sign-in", (
   expect(
     loginPath("?member=https://evil.invalid", false, "/server/members"),
   ).toBe("/api/cwl/auth/discord?view=members-settings");
+});
+
+it("preserves exact Town Hall records through sign-in and canonicalizes legacy links", () => {
+  for (const record of ["", "/settings", "/add", "/1", "/19", "/99"]) {
+    const canonical = `/manage/town-halls${record}`;
+    for (const path of [canonical, canonical + "/"]) {
+      expect(townHallManagementPath(path)).toBe(canonical);
+      expect(managementTarget("?view=access", path)).toBe("fwa-settings");
+      const login = new URL(
+        loginPath("?next=https://evil.test&town_hall=add", true, path),
+        "https://fixture",
+      );
+      expect(Object.fromEntries(login.searchParams)).toEqual({
+        view: "fwa-settings",
+        town_hall: record.slice(1) || "list",
+        retry: "1",
+      });
+    }
+  }
+  for (const [old, expected] of [
+    ["/manage/operations/fwa_weight", "/manage/town-halls"],
+    ["/manage/operations/fwa_weight/19", "/manage/town-halls/19"],
+    ["/fwa_weight/19", "/manage/town-halls/19"],
+  ]) {
+    expect(townHallManagementPath(old)).toBe(expected);
+    expect(townHallManagementPath(old + "/")).toBe(expected);
+    expect(loginPath("", false, old)).toBe(loginPath("", false, expected));
+  }
+});
+
+it("rejects malformed Town Hall editor paths and untrusted record query values", () => {
+  for (const prefix of [
+    "/manage/town-halls",
+    "/manage/operations/fwa_weight",
+    "/fwa_weight",
+  ]) {
+    for (const suffix of [
+      "/0",
+      "/01",
+      "/100",
+      "/-1",
+      "/19/x",
+      "/%31",
+      "/19//",
+      "/19?next=x",
+      "/19#x",
+      "/１９",
+    ]) {
+      const path = prefix + suffix;
+      expect(townHallManagementPath(path)).toBeUndefined();
+      expect(managementTarget("", path)).toBeUndefined();
+      expect(loginPath("?town_hall=add", false, path)).toBe(
+        "/api/cwl/auth/discord?view=home",
+      );
+    }
+  }
+  for (const path of [
+    "//evil.test/manage/town-halls/19",
+    "https://evil.test/manage/town-halls",
+    "/manage/town-halls-extra",
+    "/manage/town-halls//",
+  ]) {
+    expect(townHallManagementPath(path)).toBeUndefined();
+  }
+  expect(loginPath("?town_hall=add", false, "/server/fwa")).toBe(
+    "/api/cwl/auth/discord?view=fwa-settings",
+  );
 });

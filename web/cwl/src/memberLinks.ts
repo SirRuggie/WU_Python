@@ -3,7 +3,7 @@ import {
   activityFilterQuery,
   parseActivityFilters,
 } from "./strikeActivityFilters";
-import { managementTarget } from "./managementLinks";
+import { managementTarget, townHallManagementPath } from "./managementLinks";
 import { cwlTarget } from "./staffLinks";
 export type MemberView =
   | "home"
@@ -96,6 +96,9 @@ export function loginPath(
           : target.view),
   });
   const incoming = new URLSearchParams(search);
+  const townHallPath = townHallManagementPath(pathname);
+  if (townHallPath)
+    params.set("town_hall", townHallPath.split("/")[3] || "list");
   if (staffView && /^\d{1,18}$/.test(incoming.get("season") || ""))
     params.set("season", incoming.get("season")!);
   if (

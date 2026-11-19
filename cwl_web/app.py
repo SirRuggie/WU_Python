@@ -299,8 +299,32 @@ MANAGEMENT_PAGE_PATHS = {
 }
 
 
+TOWN_HALL_PAGE = re.compile(r"/manage/town-halls(?:/(settings|add|[1-9][0-9]?))?")
+LEGACY_TOWN_HALL_PAGE = re.compile(r"/manage/operations/fwa_weight(?:/([1-9][0-9]?))?")
+LEGACY_TOWN_HALL_LEVEL_PAGE = re.compile(r"/fwa_weight/([1-9][0-9]?)")
+
+
+def town_hall_page_path(path):
+    """Resolve only known page shapes, never an arbitrary redirect target."""
+    path = path.removesuffix("/")
+    matched = (TOWN_HALL_PAGE.fullmatch(path)
+               or LEGACY_TOWN_HALL_PAGE.fullmatch(path)
+               or LEGACY_TOWN_HALL_LEVEL_PAGE.fullmatch(path))
+    if matched:
+        suffix = matched.group(1)
+        return "/manage/town-halls" + ("/" + suffix if suffix else "")
+    return None
+
+
 def login_destination(query):
     view = query.get("view", "")
+    if view == "fwa-settings" and "town_hall" in query:
+        token = str(query["town_hall"])
+        if token == "list":
+            return "/manage/town-halls"
+        if re.fullmatch(r"settings|add|[1-9][0-9]?", token):
+            return "/manage/town-halls/" + token
+        return ""
     if view == "manage-signups":
         params = {}
         season = str(query.get("season", ""))
@@ -352,6 +376,9 @@ def saved_login_destination(request):
             return login_destination(params)
     if len(value) <= 150:
         path, _, query = value.partition("?")
+        town_hall_path = town_hall_page_path(path)
+        if town_hall_path:
+            return town_hall_path
         if path == '/clan-weights':
             params = {key: values[0] for key, values in parse_qs(query).items()}
             params['view'] = 'weight-trial'
@@ -2345,6 +2372,25 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'bases', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups', *(path.lstrip('/') for path in CWL_PAGE_PATHS.values()), *(path.lstrip('/') for path in MANAGEMENT_PAGE_PATHS.values())):
             app.router.add_get('/' + path, index_page)
             app.router.add_get('/' + path + '/', index_page)
+        async def town_hall_index_page(request):
+            if request.raw_path.partition("?")[0] != request.path:
+                raise web.HTTPNotFound()
+            return await index_page(request)
+
+        async def legacy_town_hall_page(request):
+            if request.raw_path.partition("?")[0] != request.path:
+                raise web.HTTPNotFound()
+            destination = town_hall_page_path(request.path)
+            if destination is None:
+                raise web.HTTPNotFound()
+            raise web.HTTPFound(destination)
+
+        for suffix in ("", "/"):
+            app.router.add_get("/manage/town-halls" + suffix, town_hall_index_page)
+            app.router.add_get(r"/manage/town-halls/{record:settings|add|[1-9][0-9]?}" + suffix, town_hall_index_page)
+            app.router.add_get("/manage/operations/fwa_weight" + suffix, legacy_town_hall_page)
+            app.router.add_get(r"/manage/operations/fwa_weight/{level:[1-9][0-9]?}" + suffix, legacy_town_hall_page)
+            app.router.add_get(r"/fwa_weight/{level:[1-9][0-9]?}" + suffix, legacy_town_hall_page)
         app.router.add_get(r"/server/moderation/member/{user_id:[0-9]{17,20}}", index_page)
         app.router.add_get(r"/server/moderation/member/{user_id:[0-9]{17,20}}/", index_page)
         for page in ("reminders", "history", "strikes", "replacements"):

@@ -20,11 +20,27 @@ export const managementPaths: Record<string, string> = {
   issues: "/settings/issues",
 };
 
+/** Canonical page path only; API authorization is unchanged. */
+export function townHallManagementPath(pathname: string): string | undefined {
+  const path = pathname.replace(/\/$/, "");
+  const current = path.match(
+    /^\/manage\/town-halls(?:\/(settings|add|[1-9][0-9]?))?$/,
+  );
+  if (current) return `/manage/town-halls${current[1] ? `/${current[1]}` : ""}`;
+  const legacy =
+    path.match(/^\/manage\/operations\/fwa_weight(?:\/([1-9][0-9]?))?$/) ||
+    path.match(/^\/fwa_weight\/([1-9][0-9]?)$/);
+  return legacy
+    ? `/manage/town-halls${legacy[1] ? `/${legacy[1]}` : ""}`
+    : undefined;
+}
+
 export function managementTarget(
   search: string,
   pathname: string,
 ): string | undefined {
   const path = pathname.replace(/\/$/, "");
+  if (townHallManagementPath(pathname)) return "fwa-settings";
   if (
     path === "/server/member-activity" ||
     (pathname === "/" &&
