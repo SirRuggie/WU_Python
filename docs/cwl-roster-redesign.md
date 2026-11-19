@@ -1,5 +1,27 @@
 # CWL roster redesign — spec and status
 
+## Town Halls registry (244), November 19, 2026
+
+Status: source prepared for Shaka review; no release claim. One guild-owned
+registry replaces code emoji maps and the legacy weight editor. Town Halls has
+a grouped list, Add, Lowest FWA setting and one level editor with an emoji picker
+and optional weight pair. Other levels remain behind a disclosure; saved unknown
+clan levels remain selectable without inventing new values. Discord editors link
+to the dashboard; readers use the last-good registry snapshot and plain TH text
+when unavailable. Saves use revision CAS, then deterministic history and the
+existing durable refresh queue. Per 1178, a crash between CAS and history can
+lose that one history entry; registry data remains safe. Add is `create` and its
+before-side cannot restore or delete a level (1180).
+
+Ruggie's P0 direction (1179) moves 244 ahead of 249/239 L and permits 245 to
+stack in its own worktree. Validation uses the full backend run already recorded,
+focused corrections, one integrated frontend run with focused correction,
+type/build, scoped formatting, 26/65/125-account migration dry-run counts and two
+local screenshots. No repeated refuter suites, visual matrix or large HTML
+report is required. Later: 245 moves bases into the registry; 246 remains separate.
+Release and migration wait for Shaka's approval naming the final full head SHA;
+1181 records Ruggie's scoped one-time migration authorization.
+
 ## UI audit 3 B2 — page frame and one primary (248), November 19, 2026
 
 Status: implementation under review; no release claim. Ruggie accepted D1/D2 in

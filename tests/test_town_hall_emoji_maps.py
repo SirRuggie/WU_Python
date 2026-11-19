@@ -85,3 +85,11 @@ def test_dynamic_requirement_and_dashboard_helpers_read_th19_and_plain_fallback(
     monkeypatch.setattr(town_halls,'_snapshot',None)
     assert format_th_requirement(19,None)=='TH19+'
     assert get_th_emoji('th19') is None
+
+
+def test_todo_missing_level_does_not_invent_town_hall_zero(monkeypatch):
+    from extensions.commands import todo
+    from types import SimpleNamespace
+    monkeypatch.setattr(town_halls, '_snapshot', None)
+    assert todo._row_line(SimpleNamespace(town_hall=0, used=0, limit=2, account='Member')) == '0/2 Member'
+    assert todo._row_line(SimpleNamespace(town_hall=19, used=0, limit=2, account='Member')) == '0/2 TH19 Member'

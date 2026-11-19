@@ -89,3 +89,7 @@ Code rollback reads the untouched legacy weight record and old code emoji maps.
 Registry edits made after release will therefore be absent from old code after a
 rollback. Never restore a database to roll back code. Base sections/storage move
 in prompt 245; the family role mapping moves in prompt 246.
+
+Add history is recorded as `create`. Its before-side is not restorable: creation
+does not authorize deletion of a level. The saved after-side and ordinary
+level/settings edits retain the existing revision-checked restore behavior.

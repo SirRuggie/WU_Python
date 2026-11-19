@@ -3,7 +3,7 @@ import { clanRoute, clanPath, type ClanRoute } from "./clanManagement/routes";
 import { memberPaths, savedSignupTarget } from "./memberLinks";
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";
 import { cwlPaths } from "./staffLinks";
-import { managementPaths } from "./managementLinks";
+import { managementPaths, townHallManagementPath } from "./managementLinks";
 import { parseResultsState, resultsStateQuery } from "./resultsUrlState";
 import { pageParamQuery } from "./pageUrlState";
 const staffPaths: Record<string, string> = {
@@ -14,6 +14,7 @@ const staffPaths: Record<string, string> = {
 const weightAliases = ["/weight", "/weights", "/weight-trial"];
 export type DashboardRoute = {
   familyClan?: ClanRoute;
+  townHallPath?: string;
   replacementClan?: string;
   replacementTag?: string;
   strikeTag?: string;
@@ -47,6 +48,7 @@ export function dashboardTarget(
       } as Record<string, string>
     )[pathname] || pathname;
   const family = clanRoute(pathname);
+  const townHallPath = townHallManagementPath(pathname);
   const params = new URLSearchParams(search);
   const saved = savedSignupTarget(search, pathname);
   const moderationMember = /^\/server\/moderation\/member\/(\d{17,20})$/.exec(
@@ -56,6 +58,7 @@ export function dashboardTarget(
     ([, path]) => path !== "/" && path === pathname,
   )?.[0];
   const requested =
+    (townHallPath ? "fwa-settings" : undefined) ||
     (family ? "clan-management" : undefined) ||
     (saved ? "signup" : undefined) ||
     (moderationMember ? "moderation" : undefined) ||
@@ -75,6 +78,7 @@ export function dashboardTarget(
     ? (value as DashboardView)
     : "home";
   return {
+    ...(townHallPath ? { townHallPath } : {}),
     ...(family && pathname !== "/clans" ? { familyClan: family } : {}),
     ...(value === "weight-trial"
       ? {
@@ -147,6 +151,10 @@ export const seasonViews = new Set([
   "staff",
 ]);
 export function dashboardPath(route: DashboardRoute) {
+  if (route.view === "fwa-settings" && route.townHallPath) {
+    const path = townHallManagementPath(route.townHallPath);
+    if (path) return path;
+  }
   if (route.view === "clan-management" && route.familyClan)
     return clanPath(route.familyClan);
   if (route.view === "signup" && route.signupPanel === "saved")

@@ -110,7 +110,15 @@ async def restore(request):
         row=await db.bot_config.find_one({'_id':body['id']})
     if not row or row.get('kind')!='dashboard_history' or row.get('target')!=target or row.get('status')!='saved':
         raise web.HTTPNotFound(text='This saved version is not available.')
+    if kind == 'town_halls' and row.get('action') == 'create' and body['side'] == 'before':
+        raise web.HTTPConflict(text='A newly created Town Hall has no prior version to restore.')
     values=copy.deepcopy(row[body['side']])
+    if kind == 'town_halls' and row.get('action') == 'create' and body['side'] == 'after':
+        # Creation records the level as a displayed value; the level is the
+        # immutable target, not an editable field on the saved level document.
+        if values.get('level') != int(match['item']):
+            raise web.HTTPConflict(text='This saved Town Hall version cannot be restored.')
+        values.pop('level')
     proxy=RestoreRequest(request,match,{'revision':body.get('revision'),'values':values,**({'request_id':body['request_id']} if body.get('request_id') else {})},row.get('raw_'+body['side']))
     if kind=='town_halls':
         from .town_halls import save

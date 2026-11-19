@@ -789,7 +789,7 @@ def _row_line(row) -> str:
     The TH emoji replaces the text "TH17": shorter on the line, and a per-row
     visual anchor, which is what this layout is for.
     """
-    th = town_hall_emoji(row.town_hall) or f"TH{row.town_hall}"
+    th = (town_hall_emoji(row.town_hall) or f"TH{row.town_hall}") if row.town_hall else ""
     # limit == 0 means "there is nothing to count" - the Private War Logs view,
     # where the row is the account itself rather than an outstanding attack.
     lead = f"{row.used}/{row.limit}" if row.limit else ""

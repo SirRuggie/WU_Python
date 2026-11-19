@@ -47,7 +47,15 @@ export default function TownHallAddFields({
               <a
                 href={`/manage/town-halls/${level}`}
                 onClick={(event) => {
-                  if (openRecord) {
+                  if (
+                    openRecord &&
+                    !event.defaultPrevented &&
+                    event.button === 0 &&
+                    !event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.shiftKey &&
+                    !event.altKey
+                  ) {
                     event.preventDefault();
                     openRecord(`/manage/town-halls/${level}`);
                   }

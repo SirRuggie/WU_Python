@@ -172,6 +172,7 @@ function App() {
   const [rosterReadiness, setRosterReadiness] =
     useState<ReadinessFilter>("all");
   const [view, setView] = useState<View>(entryTarget.view);
+  const [townHallPath, setTownHallPath] = useState(entryTarget.townHallPath);
   const [rosterBusy, setRosterBusy] = useState(false);
   const [reminderDirty, setReminderDirty] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1147,6 +1148,7 @@ function App() {
       );
       const target = { ...route, ...activityContext(event.state, route.view) };
       setFamilyRoute(target.familyClan);
+      setTownHallPath(target.townHallPath);
       setFamilyVisit((visit) => visit + 1);
       setActivityVisit(event.state?.wuDashboardIndex || 0);
       setActivitySearch(target.activityFilter || "");
@@ -1197,6 +1199,7 @@ function App() {
           ? { strikeState: strikeFilterState }
           : {}),
         ...(destination === "moderation" ? { moderationMember } : {}),
+        ...(destination === "fwa-settings" ? { townHallPath } : {}),
         activityFilter: activitySearch,
         activityKind,
         ...(destination === "signup" ? { signupPanel } : {}),
@@ -1208,6 +1211,7 @@ function App() {
     );
   }, [
     view,
+    townHallPath,
     signupPanel,
     seasonId,
     publicationStep,
@@ -2186,6 +2190,23 @@ function App() {
                 <ServerManagement
                   key={view}
                   area={view}
+                  townHallPath={
+                    view === "fwa-settings" ? townHallPath : undefined
+                  }
+                  onTownHallNavigate={(path) => {
+                    const nextPath = path.startsWith("/manage/town-halls")
+                      ? path
+                      : undefined;
+                    setTownHallPath(nextPath);
+                    navigation.current?.write(
+                      {
+                        view: "fwa-settings",
+                        season: "",
+                        townHallPath: nextPath,
+                      },
+                      true,
+                    );
+                  }}
                   onDirty={setManageDirty}
                   onNavigate={(destination) => changeView(destination as View)}
                 />

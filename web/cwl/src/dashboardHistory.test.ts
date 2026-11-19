@@ -510,3 +510,28 @@ describe("Find slots links", () => {
     expect(params.getAll("slot_clan")).toEqual(["#PQQ", "#PRR"]);
   });
 });
+
+it("round trips Town Hall record paths and safe old weight aliases", () => {
+  for (const suffix of ["", "/settings", "/add", "/1", "/19", "/99"]) {
+    const path = `/manage/town-halls${suffix}`;
+    const target = dashboardTarget("?view=access", path);
+    expect(target.view).toBe("fwa-settings");
+    expect(target.townHallPath).toBe(path);
+    expect(dashboardPath(target)).toBe(path);
+  }
+  for (const old of ["/fwa_weight/19", "/manage/operations/fwa_weight/19"]) {
+    expect(dashboardPath(dashboardTarget("", old))).toBe(
+      "/manage/town-halls/19",
+    );
+  }
+  expect(
+    dashboardTarget("", "/manage/town-halls/01").townHallPath,
+  ).toBeUndefined();
+  expect(
+    dashboardPath({
+      view: "fwa-settings",
+      season: "",
+      townHallPath: "https://evil.test",
+    }),
+  ).toBe("/server/fwa");
+});

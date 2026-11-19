@@ -1,3 +1,7 @@
+import {
+  isTownHallHistoryTarget,
+  townHallHistoryValue,
+} from "./townHallHistory";
 import { formatDateTime } from "./format";
 import { visibleRefresh } from "./visibleRefresh";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
@@ -19,6 +23,7 @@ type Entry = {
 };
 export function supportsHistory(target: string) {
   return (
+    /\/manage\/town-halls\/(?:[1-9][0-9]?|settings)$/.test(target) ||
     /\/manage\/content\/[^/]+$/.test(target) ||
     /\/manage\/operations\/(fwa_weight|fwa_bases|fwa_points|fwa_sync)(\/(?!new$)[\w-]+)?$/.test(
       target,
@@ -66,6 +71,10 @@ export default function ChangeHistory({
   const requestId = useRef(""),
     checking = useRef(false);
   const query = "?target=" + encodeURIComponent(target);
+  const show = (key: string, value: unknown) =>
+    (isTownHallHistoryTarget(target)
+      ? townHallHistoryValue(target, key, value)
+      : null) ?? display(value);
   async function load() {
     setLoading(true);
     setError("");
@@ -219,17 +228,17 @@ export default function ChangeHistory({
                         <section key={key}>
                           <h4>
                             {labels[key] || key.replace(/[_.]/g, " ")}:{" "}
-                            {display(entry.before[key]).slice(0, 80)} →{" "}
-                            {display(entry.after[key]).slice(0, 80)}
+                            {show(key, entry.before[key]).slice(0, 80)} →{" "}
+                            {show(key, entry.after[key]).slice(0, 80)}
                           </h4>
                           <div>
                             <div>
                               <strong>Before</strong>
-                              <pre>{display(entry.before[key])}</pre>
+                              <pre>{show(key, entry.before[key])}</pre>
                             </div>
                             <div>
                               <strong>After</strong>
-                              <pre>{display(entry.after[key])}</pre>
+                              <pre>{show(key, entry.after[key])}</pre>
                             </div>
                           </div>
                         </section>
@@ -240,12 +249,17 @@ export default function ChangeHistory({
                       <p>Save or discard your edits before restoring.</p>
                     )}
                     <div className="history-actions">
-                      <button
-                        disabled={disabled || busy || !!pending}
-                        onClick={() => setConfirmSide("before")}
-                      >
-                        Restore before this change
-                      </button>
+                      {!(
+                        isTownHallHistoryTarget(target) &&
+                        entry.action === "create"
+                      ) && (
+                        <button
+                          disabled={disabled || busy || !!pending}
+                          onClick={() => setConfirmSide("before")}
+                        >
+                          Restore before this change
+                        </button>
+                      )}
                       {entry.action !== "delete" && (
                         <button
                           disabled={disabled || busy || !!pending}

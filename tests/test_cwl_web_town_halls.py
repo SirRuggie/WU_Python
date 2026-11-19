@@ -378,3 +378,36 @@ def test_minimum_select_choices_are_strings_but_draft_value_is_integer():
     add=api.document(fixture(),'add')
     assert [field['key'] for field in add['fields']]==['level','emoji']
     assert add['fields'][0]['required'] is True
+
+
+@run_async
+async def test_add_records_create_and_before_restore_is_never_deletion():
+    doc=fixture();saved=api.registry.add_level(doc,21,'');saved['revision']=8
+    with patch.object(shared,'require_manage',AsyncMock(return_value={'user_id':'123'})),patch.object(shared,'mongo',mongo),patch.object(api,'required',AsyncMock(return_value=doc)),patch.object(api.registry,'save',AsyncMock(return_value=saved)),patch.object(shared,'queue_action',AsyncMock(return_value=web.json_response({'status':'pending'}))),patch.object(change_history,'record_committed',AsyncMock()) as history:
+        assert json.loads((await api.save(request(item='add',values={'level':21,'emoji':''}))).text)['saved']
+        assert history.call_args.kwargs['action']=='create'
+        assert history.call_args.args[3]=={}
+        assert history.call_args.args[4]['level']==21
+        assert history.call_args.args[4]['emoji']==''
+    req=request();req.query={'target':'/manage/town-halls/21'}
+    req.json=AsyncMock(return_value={'revision':8,'side':'before','id':'created'})
+    row=dict(kind='dashboard_history',target='/api/cwl/manage/town-halls/21',status='saved',action='create',before={},after={'level':21,'emoji':'','min':None,'max':None})
+    @asynccontextmanager
+    async def connection(_):yield SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value=row)))
+    with patch.object(change_history,'mongo',connection),patch.object(change_history,'require_manage',AsyncMock()),patch.object(api,'save',AsyncMock()) as write:
+        with pytest.raises(web.HTTPConflict) as rejected:await change_history.restore(req)
+        assert 'no prior version' in rejected.value.text
+        write.assert_not_called()
+
+
+@run_async
+async def test_create_after_restore_keeps_recorded_level_out_of_edit_fields():
+    req=request();req.query={'target':'/manage/town-halls/21'}
+    req.json=AsyncMock(return_value={'revision':8,'side':'after','id':'created'})
+    row=dict(kind='dashboard_history',target='/api/cwl/manage/town-halls/21',status='saved',action='create',before={},after={'level':21,'emoji':'','min':None,'max':None})
+    @asynccontextmanager
+    async def connection(_):yield SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value=row)))
+    with patch.object(change_history,'mongo',connection),patch.object(change_history,'require_manage',AsyncMock()),patch.object(api,'save',AsyncMock(return_value=web.json_response({'saved':True}))) as write:
+        await change_history.restore(req)
+        assert await write.call_args.args[0].json()=={'revision':8,'values':{'emoji':'','min':None,'max':None}}
+        assert write.call_args.args[0].history_action=='restore'

@@ -157,10 +157,14 @@ async def save(request):
             result = document(saved, destination)
             warnings = []
             try:
+                history_before = {} if item == 'add' else change_history.fields(before)
+                history_after = change_history.fields(result)
+                if item == 'add':
+                    history_after['level'] = int(destination)
                 await change_history.record_committed(
-                    db, target, actor, change_history.fields(before), change_history.fields(result),
+                    db, target, actor, history_before, history_after,
                     event_id=f'dashboard-history:town-halls:{shared.GUILD_ID}:{saved["revision"]}',
-                    action=getattr(request, 'history_action', 'edit'),
+                    action='create' if item == 'add' else getattr(request, 'history_action', 'edit'),
                     raw_before=current, raw_after=saved)
                 result['history_saved'] = True
             except Exception:
