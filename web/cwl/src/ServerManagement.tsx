@@ -380,7 +380,7 @@ export default function ServerManagement({
     setError("");
     setNotice("");
     const values =
-      document.id === "town_halls"
+      document.id === "town_halls" && !document.partial_save
         ? fieldValues(
             document.fields.map((field) => ({
               ...field,
@@ -406,6 +406,15 @@ export default function ServerManagement({
         {
           revision: document.revision,
           values,
+          ...(document.partial_save
+            ? {
+                originals: Object.fromEntries(
+                  Object.keys(values)
+                    .filter((key) => key.startsWith("bases."))
+                    .map((key) => [key, document.base_originals?.[key]]),
+                ),
+              }
+            : {}),
           ...(review ? {} : { request_id: requestIds.current.get(requestKey) }),
         },
       );
@@ -740,7 +749,12 @@ export default function ServerManagement({
               target={endpoint(selected)}
               revision={document.revision}
               labels={Object.fromEntries(
-                document.fields.map((field) => [field.key, field.label]),
+                document.fields.map((field) => [
+                  field.key,
+                  field.key.startsWith("bases.")
+                    ? `${field.group} · ${field.label}`
+                    : field.label,
+                ]),
               )}
               disabled={busy || dirty || !!statusUrl}
               onRestored={async () => {

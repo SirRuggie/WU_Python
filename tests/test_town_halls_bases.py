@@ -205,3 +205,30 @@ def test_migration_dry_apply_second_apply_and_legacy_bytes(monkeypatch):
     second = run(migration.migrate(mongo, 123, bases=True, apply=True))
     assert second["status"] == "already migrated" and len(collection.calls) == 1
     assert legacy == before and applied["legacy_document_sha256_before"] == applied["legacy_document_sha256_after"]
+
+
+def test_mixed_admin_and_base_changes_commit_as_one_atomic_save(monkeypatch):
+    collection = install(monkeypatch)
+    draft = store.set_weight(v2(), 19, 182000, 191000)
+    saved = run(store.save(object(), 123, draft, 456, 7, base_level=19,
+                           base_values={"merged.instructions": "Together"},
+                           base_originals={"merged.instructions": {"exists": False}}))
+    assert len(collection.calls) == 1 and saved["revision"] == 8
+    assert saved["levels"]["19"]["weight"]["min"] == 182000
+    assert saved["levels"]["19"]["bases"]["merged"]["instructions"] == "Together"
+    assert saved["nonbase_revision"] == 8
+
+
+@pytest.mark.parametrize("conflict", ["base", "admin"])
+def test_mixed_conflict_never_partially_saves_the_other_section(monkeypatch, conflict):
+    collection = install(monkeypatch)
+    if conflict == "base":
+        run(save_base(collection, "merged.instructions", "Other base manager"))
+    else:
+        run(store.save(object(), 123, store.set_emoji(v2(), 19, ""), 789, 7))
+    before = deepcopy(collection.row)
+    with pytest.raises(store.TownHallsConflict):
+        run(store.save(object(), 123, store.set_weight(v2(), 19, 182000, 191000), 456, 7,
+                       base_level=19, base_values={"merged.instructions": "My stale draft"},
+                       base_originals={"merged.instructions": {"exists": False}}))
+    assert collection.row == before

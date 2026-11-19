@@ -3,8 +3,8 @@
 import asyncio
 import time
 from aiohttp import web
-from utils.base_bank import read_base_bank, FWA_TH_LEVELS
-from utils.town_halls import TownHallsMissing, MISSING_MESSAGE
+from utils.base_bank import read_base_bank
+from utils.town_halls import TownHallsMissing, MISSING_MESSAGE, parse_variant_value
 from .server_management import mongo
 
 GENERATION = web.AppKey('base_bank_cache_generation', int)
@@ -27,10 +27,13 @@ async def read(request):
     if member is None:
         raise web.HTTPServiceUnavailable(text=CHECK_UNAVAILABLE)
     level = request.query.get("level")
-    if set(request.query) - {"level"} or (
-        level is not None and level not in FWA_TH_LEVELS
-    ):
+    if set(request.query) - {"level"}:
         raise web.HTTPBadRequest(text="Select an available base level")
+    if level is not None:
+        try:
+            parse_variant_value(level)
+        except ValueError:
+            raise web.HTTPBadRequest(text="Select an available base level") from None
     cache = request.app.get("base_bank_cache")
     if cache is None or time.monotonic() >= cache[0]:
         try:

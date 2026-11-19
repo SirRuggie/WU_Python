@@ -85,6 +85,7 @@ export default function TownHallRecords({
   const add = records.find((record) => record.list_role === "add");
   const setting = records.find((record) => record.list_role === "setting");
   const fwa = records.filter((record) => record.list_group === "fwa");
+  const bases = records.some((record) => record.bases_meta !== undefined);
   const other = records.filter((record) => record.list_group === "other");
   function rows(items: ManagementSection[], showMeta: boolean) {
     return (
@@ -92,7 +93,7 @@ export default function TownHallRecords({
         {items.map((record) => (
           <a
             key={record.id}
-            className="town-hall-record"
+            className={`town-hall-record ${bases && showMeta ? "has-bases" : ""}`}
             href={record.endpoint}
             onClick={(event) =>
               record.endpoint && follow(event, record.endpoint)
@@ -113,6 +114,11 @@ export default function TownHallRecords({
                 {record.meta}
               </span>
             )}
+            {showMeta && bases && (
+              <span className="town-hall-record-bases">
+                {record.bases_meta}
+              </span>
+            )}
           </a>
         ))}
       </div>
@@ -129,6 +135,12 @@ export default function TownHallRecords({
           Add Town Hall
         </a>
       )}
+      {setting && !setting.endpoint && (
+        <div className="town-hall-setting">
+          <span>Lowest FWA Town Hall</span>
+          <strong>{setting.value}</strong>
+        </div>
+      )}
       {setting?.endpoint && (
         <a
           className="town-hall-setting"
@@ -141,9 +153,13 @@ export default function TownHallRecords({
       )}
       <section aria-label="FWA levels">
         <h2>FWA levels</h2>
-        <div className="town-hall-column-headings" aria-hidden="true">
+        <div
+          className={`town-hall-column-headings ${bases ? "has-bases" : ""}`}
+          aria-hidden="true"
+        >
           <span>Town Hall</span>
           <span>Weight range</span>
+          {bases && <span>Bases</span>}
         </div>
         {rows(fwa, true)}
       </section>

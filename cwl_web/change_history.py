@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from urllib.parse import unquote
 from aiohttp import web
-from .server_management import API, mongo, require_manage
+from .server_management import API, GUILD_ID, mongo, require_manage
 
 
 def fields(document):
@@ -77,7 +77,7 @@ def target_info(value):
     if match and match[2]!='new':
         return 'operations',match[1],{'section':match[1],**({'item':match[2]} if match[2] else {})},base+'operations/'+match[1]+('/'+match[2] if match[2] else '')
     match=re.fullmatch(r'/manage/town-halls/([1-9][0-9]?|settings)',path)
-    if match:return 'town_halls','fwa_weight',{'item':match[1]},base+'town-halls/'+match[1]
+    if match:return 'town_halls','town_halls',{'item':match[1]},base+'town-halls/'+match[1]
     if path.startswith('/manage/text-commands/'):
         from utils.text_commands import command_name
         try: name=command_name(unquote(path.removeprefix('/manage/text-commands/')))
@@ -121,7 +121,15 @@ async def restore(request):
         values.pop('level')
     proxy=RestoreRequest(request,match,{'revision':body.get('revision'),'values':values,**({'request_id':body['request_id']} if body.get('request_id') else {})},row.get('raw_'+body['side']))
     if kind=='town_halls':
+        from utils import town_halls as registry
         from .town_halls import save
+        base_keys = {key for key in values if key.startswith('bases.')}
+        if base_keys:
+            async with mongo(request) as db:
+                current = await registry.load(db, GUILD_ID)
+            if current is None or type(body.get('revision')) is not int or current['revision'] != body['revision']:
+                raise web.HTTPConflict(text=registry.CONFLICT_MESSAGE)
+            proxy._body['originals'] = {key: registry.base_field_snapshot(current, int(match['item']), key[len('bases.'):]) for key in base_keys}
         return await save(proxy)
     if kind=='content':
         from .manage_content import item_handler
@@ -133,11 +141,11 @@ async def restore(request):
         return await save(proxy)
     if kind=='commands':
         from .text_commands import save
-        from utils.text_commands import collection, GUILD_ID
+        from utils.text_commands import collection, GUILD_ID as command_guild_id
         if not values or values.get('command') != match['name']:
             raise web.HTTPBadRequest(text="Select a version containing a command reply.")
         async with mongo(request) as db:
-            current = await collection(db).find_one({'_id': f"{GUILD_ID}:{match['name']}"})
+            current = await collection(db).find_one({'_id': f"{command_guild_id}:{match['name']}"})
         if row.get('action') == 'delete' and body['side'] == 'before':
             if current:
                 raise web.HTTPConflict(text='This command name is already taken. Edit the existing command instead.')

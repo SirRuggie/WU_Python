@@ -225,7 +225,7 @@ async def create_for_migration(mongo, guild_id, doc):
     return True
 
 
-async def save(mongo, guild_id, doc, user_id, expected_revision):
+async def save(mongo, guild_id, doc, user_id, expected_revision, *, base_level=None, base_values=None, base_originals=None):
     """Save admin fields without overwriting bases or excusing another admin edit.
 
     The first CAS uses the client's global revision. A known no-match permits
@@ -240,12 +240,16 @@ async def save(mongo, guild_id, doc, user_id, expected_revision):
         raise ValueError("Town Halls belong to a different server.")
     if doc["revision"] != expected_revision:
         raise TownHallsConflict(CONFLICT_MESSAGE)
+    base_query, base_changes = ({}, {})
+    if base_values is not None:
+        base_query, base_changes = _base_write_parts(doc, base_level, base_values, base_originals)
     revision = expected_revision
     collection = _collection(mongo)
     for attempt in range(2):
         changes = {"lowest_fwa_town_hall": doc["lowest_fwa_town_hall"],
                    "nonbase_revision": revision + 1, "updated_by": user_id,
                    "updated_at": datetime.now(timezone.utc)}
+        changes.update(base_changes)
         unset = {}
         for level, item in doc["levels"].items():
             changes[f"levels.{level}.emoji"] = item.get("emoji", "")
@@ -258,13 +262,15 @@ async def save(mongo, guild_id, doc, user_id, expected_revision):
         if unset:
             update["$unset"] = unset
         saved = await collection.find_one_and_update(
-            {"_id": guild, "revision": revision}, update,
+            {"_id": guild, "revision": revision, **base_query}, update,
             upsert=False, return_document=ReturnDocument.AFTER)
         if saved is not None:
             return deepcopy(saved)
         current = await load(mongo, guild)
         if current is None:
             raise TownHallsMissing(MISSING_MESSAGE)
+        if base_values is not None and any(base_field_snapshot(current, base_level, path) != base_originals[path] for path in base_values):
+            raise TownHallsConflict(BASE_CONFLICT_MESSAGE)
         if (current["revision"] < expected_revision or
                 current.get("nonbase_revision", current["revision"]) > expected_revision or attempt):
             raise TownHallsConflict(CONFLICT_MESSAGE)
@@ -287,19 +293,14 @@ def base_field_snapshot(doc, level, path):
     return {"exists": True, "value": target[parts[-1]]} if parts[-1] in target else {"exists": False}
 
 
-async def save_base_fields(mongo, guild_id, level, values, originals, user_id):
-    """Atomically CAS exactly the edited base fields, independent of admin edits."""
+def _base_write_parts(current, level, values, originals):
     _level_number(level)
-    _integer(user_id, 1, 2**64 - 1, "Use a valid actor ID.")
     if not isinstance(values, dict) or not values or not set(values) <= set(BASE_PATHS) or not isinstance(originals, dict) or set(originals) != set(values):
         raise ValueError("Review the changed base fields before saving.")
-    current = await load(mongo, guild_id)
-    if current is None:
-        raise TownHallsMissing(MISSING_MESSAGE)
     if current["schema_version"] != 2 or "nonbase_revision" not in current:
         raise TownHallsMissing("Town Hall bases not migrated")
     proposed = current
-    query = {"_id": _guild_key(guild_id), "schema_version": 2,
+    query = {"schema_version": 2,
              "nonbase_revision": {"$exists": True},
              "lowest_fwa_town_hall": {"$lte": level}, f"levels.{level}": {"$exists": True}}
     changes = {}
@@ -313,6 +314,17 @@ async def save_base_fields(mongo, guild_id, level, values, originals, user_id):
         field = f"levels.{level}.bases.{path}"
         query[field] = original["value"] if original["exists"] else {"$exists": False}
         changes[field] = value
+    return query, changes
+
+
+async def save_base_fields(mongo, guild_id, level, values, originals, user_id):
+    """Atomically CAS exactly the edited base fields, independent of admin edits."""
+    _integer(user_id, 1, 2**64 - 1, "Use a valid actor ID.")
+    current = await load(mongo, guild_id)
+    if current is None:
+        raise TownHallsMissing(MISSING_MESSAGE)
+    query, changes = _base_write_parts(current, level, values, originals)
+    query["_id"] = _guild_key(guild_id)
     changes.update(updated_by=user_id, updated_at=datetime.now(timezone.utc))
     saved = await _collection(mongo).find_one_and_update(
         query, {"$set": changes, "$inc": {"revision": 1}},

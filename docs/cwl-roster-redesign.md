@@ -1,3 +1,21 @@
+## Town Hall bases (245), November 19, 2026
+
+P0 stacked after 244 (1179–1184): shared war/active images per level; Merged and
+Non-merged keep separate links, instructions and upgrade notes. Saved links gate
+member visibility. Four labelled sections stack below 900px and pair images and
+variants above it. Existing base/admin permissions apply per section; restricted
+values are text. Upload changes a draft URL only; explicit Save commits it.
+
+The registry owner uses per-field base CAS and a last-admin global revision marker;
+mixed saves are one atomic write. The `--bases` migration preserves legacy maps,
+reports image differences and is separately authorized by “release245” (1182),
+after 244 is live and Shaka approves the current full head. Discord edits/uploads
+become dashboard links; member menus and the base bank read linked registry data.
+Status: implementation/checks in progress; no production migration by this batch.
+Minimum P0 review: focused tests, one full backend/frontend run, type/build, scoped
+format/diff, 26/65/125 dry runs and two narrow/wide fixture screenshots. No large
+HTML or screenshot matrix. Later: 246 family roles; 249/239 L remain separate.
+
 # CWL roster redesign — spec and status
 
 ## Town Halls registry (244), November 19, 2026

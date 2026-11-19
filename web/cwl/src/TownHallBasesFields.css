@@ -1,0 +1,59 @@
+.town-hall-bases-groups,
+.town-hall-base-image-grid {
+  display: grid;
+  gap: var(--wu-space-5);
+  min-width: 0;
+}
+.town-hall-bases-groups > fieldset,
+.town-hall-bases-groups .manage-field {
+  min-width: 0;
+}
+.town-hall-bases-groups .manage-field-group > legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wu-space-2);
+}
+.town-hall-base-visibility {
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+  font-weight: var(--wu-weight-regular);
+}
+.town-hall-base-visibility.is-shown {
+  color: var(--wu-success);
+}
+.town-hall-base-preview {
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  min-width: 0;
+  background: var(--wu-surface-raised);
+  color: var(--wu-text-muted);
+  border-radius: var(--roster-radius-control);
+}
+.town-hall-base-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.town-hall-readonly-emoji {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+}
+.town-hall-readonly-field p,
+.town-hall-readonly-field a {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 900px) {
+  .town-hall-bases-groups,
+  .town-hall-base-image-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .town-hall-group-town,
+  .town-hall-group-images {
+    grid-column: 1 / -1;
+  }
+}

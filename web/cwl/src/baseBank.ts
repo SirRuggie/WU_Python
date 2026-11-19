@@ -34,5 +34,5 @@ export function defaultTownHall(
   return available.find((th) => linked?.includes(th)) ?? available[0] ?? null;
 }
 export function variantLabel(base: BankBase) {
-  return base.variant === "merged" ? "Merged defenses" : "Non-merged defenses";
+  return base.variant === "merged" ? "Merged" : "Non-merged";
 }

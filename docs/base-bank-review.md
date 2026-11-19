@@ -7,12 +7,17 @@ copy action, missing images have a reserved neutral placeholder, and empty level
 are omitted. Default selection uses the existing shared linked-account loader,
 independently of a previous CWL signup visit; explicit choices win over late reads.
 
-The one authenticated GET endpoint `/api/cwl/bases` reads existing `fwa_config`
-through an allowlisted projection and caches it for 30 seconds. `?level=th18`
-returns only that base's public information/upgrade notes when Details opens.
-These are rendered as plain text. There are no writes or schema changes. The
-supported key constant moved to a shared utility without changing its values;
-existing Manage and bot labels/behavior are unchanged. No bot restart is needed.
+The authenticated GET endpoint `/api/cwl/bases` now reads the Town Hall registry
+through its single storage owner and caches the member projection for30seconds.
+Only levels at or above Lowest FWA Town Hall and variants with a saved base link
+appear. Labels are “Merged” and “Non-merged”; both variants use their level's shared
+war image. `?level=th19` and old `th19_new` values retain their API shape and return
+only that linked variant's public instructions/upgrade notes. Those details keep
+the shared DiscordText renderer. Registry metadata, active images and staff
+configuration are not returned. Membership is checked even on a warm cache.
+Committed minimum/base changes invalidate completed and in-flight reads with the
+existing generation contract; superseded data cannot refill a cache. Media upload
+is draft-only; the member endpoint itself never writes or reads legacy base maps.
 
 Reused the existing API/error and account-display loaders, dashboard navigation,
 semantic icon renderer, Mongo lifecycle, native disclosures and theme controls.

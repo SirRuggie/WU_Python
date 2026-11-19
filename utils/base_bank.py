@@ -4,27 +4,6 @@ from urllib.parse import urlsplit, parse_qs
 from utils import town_halls
 from utils.constants import WARRIORS_UNITED_GUILD_ID
 
-FWA_TH_LEVELS = [
-    "th18_new",
-    "th18",
-    "th17_new",
-    "th17",
-    "th16_new",
-    "th16",
-    "th15",
-    "th14",
-    "th13",
-    "th12",
-    "th11",
-    "th10",
-    "th9",
-]
-PUBLIC_FIELDS = (
-    "fwa_base_links",
-    "war_base_images",
-    "base_information",
-    "base_upgrade_notes",
-)
 
 
 def https_url(value, *, clash=False):
@@ -56,41 +35,19 @@ def https_url(value, *, clash=False):
     return value
 
 
-def public_bases(document, *, minimum=1):
+def public_bases(document):
+    """Project only linked registry variants, never legacy/staff configuration."""
+    if document is None:
+        return [], {}
     rows, details = [], {}
-    document = document if isinstance(document, dict) else {}
-    fields = {
-        key: document.get(key) if isinstance(document.get(key), dict) else {}
-        for key in PUBLIC_FIELDS
-    }
-    for key in FWA_TH_LEVELS:
-        if int(key[2:].split("_")[0]) < minimum:
-            continue
-        info = {
-            name: (
-                fields[name].get(key)[:4000]
-                if isinstance(fields[name].get(key), str)
-                else ""
-            )
-            for name in ("base_information", "base_upgrade_notes")
-        }
-        info = {name: text if text.strip() else "" for name, text in info.items()}
-        link = https_url(fields["fwa_base_links"].get(key), clash=True)
-        image = https_url(fields["war_base_images"].get(key))
-        if not link and not image:
-            continue
-        rows.append(
-            dict(
-                key=key,
-                town_hall=int(key[2:].split("_")[0]),
-                variant="non-merged" if key.endswith("_new") else "merged",
-                link=link,
-                war_base_image=image,
-                has_details=any(info.values()),
-            )
-        )
-        details[key] = info
-    rows.sort(key=lambda row: (-row["town_hall"], row["variant"] != "merged"))
+    for variant in town_halls.base_variants(document):
+        instructions = variant["instructions"]
+        notes = variant["upgrade_notes"]
+        rows.append({"key": variant["key"], "town_hall": variant["level"],
+                     "variant": "non-merged" if variant["variant"] == "non_merged" else "merged",
+                     "link": variant["link"], "war_base_image": variant["war_image"] or None,
+                     "has_details": bool(instructions.strip() or notes.strip())})
+        details[variant["key"]] = {"base_information": instructions, "base_upgrade_notes": notes}
     return rows, details
 
 
@@ -98,7 +55,4 @@ async def read_base_bank(mongo):
     registry = await town_halls.load(mongo, WARRIORS_UNITED_GUILD_ID)
     if registry is None:
         raise town_halls.TownHallsMissing(town_halls.MISSING_MESSAGE)
-    document = await mongo.fwa_data.find_one(
-        {"_id": "fwa_config"}, {**{field: 1 for field in PUBLIC_FIELDS}, "_id": 0}
-    )
-    return public_bases(document, minimum=registry["lowest_fwa_town_hall"])
+    return public_bases(registry)

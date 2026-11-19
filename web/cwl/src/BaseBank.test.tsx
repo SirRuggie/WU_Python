@@ -77,8 +77,8 @@ it("sorts merged first, shows no copy button for missing link, uses uncropped im
   await mount();
   const cards = [...host.querySelectorAll("article")];
   expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual([
-    "TH18 Merged defenses",
-    "TH18 Non-merged defenses",
+    "TH18 Merged",
+    "TH18 Non-merged",
   ]);
   expect(cards[0].querySelector("a")).toBeNull();
   expect(cards[0].textContent).toContain("Base link not available yet");
@@ -183,16 +183,16 @@ it("keeps Town Hall in accessible names while showing only the variant tag", asy
   });
   await mount();
   expect(host.querySelector("article")?.getAttribute("aria-label")).toBe(
-    "TH18 Non-merged defenses",
+    "TH18 Non-merged",
   );
   expect(
     host.querySelector(".base-bank-copy")?.getAttribute("aria-label"),
-  ).toBe("Copy TH18 non-merged defenses base");
+  ).toBe("Copy TH18 non-merged base");
   expect(
     [...host.querySelectorAll(".base-bank-tags span")].map(
       (tag) => tag.textContent,
     ),
-  ).toEqual(["Non-merged defenses"]);
+  ).toEqual(["Non-merged"]);
   const image = host.querySelector(".base-bank-image img")!;
   expect(image.getAttribute("width")).toBe("480");
   expect(image.getAttribute("height")).toBe("300");

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import TownHallBaseImagePreview from "./TownHallBaseImagePreview";
 import TownHallEmojiPicker from "./TownHallEmojiPicker";
 import MemberPicker, { type MemberOption } from "./MemberPicker";
 import { previewUrl } from "./previewFormatting";
@@ -217,16 +218,24 @@ export default function Field({
           )}
         </>
       )}
-      {field.upload_endpoint && previewUrl(String(value || "")) && (
-        <div className="manage-image-current">
-          <small>Current {field.label.toLowerCase()}</small>
-          <img
-            src={previewUrl(String(value))}
-            alt={field.label}
-            loading="lazy"
-            referrerPolicy="no-referrer"
-          />
-        </div>
+      {field.group === "Base images" ? (
+        <TownHallBaseImagePreview
+          value={String(value || "")}
+          label={field.label}
+        />
+      ) : (
+        field.upload_endpoint &&
+        previewUrl(String(value || "")) && (
+          <div className="manage-image-current">
+            <small>Current {field.label.toLowerCase()}</small>
+            <img
+              src={previewUrl(String(value))}
+              alt={field.label}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        )
       )}
       {field.upload_endpoint && (
         <label className="manage-upload">
