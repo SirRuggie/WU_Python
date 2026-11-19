@@ -96,8 +96,21 @@ it.each([false, true])(
   async (value) => {
     published = value;
     await act(async () =>
-      root.render(<MemberAssignments seasonId="1" seasons={[season]} />),
+      root.render(
+        <MemberAssignments
+          seasonId="1"
+          seasons={[season]}
+          steps={
+            <nav aria-label="Fixture member steps">Sign up · Assignments</nav>
+          }
+        />,
+      ),
     );
+    const header = host.querySelector(".cwl-page-header")!;
+    const steps = host.querySelector('nav[aria-label="Fixture member steps"]')!;
+    expect(
+      header.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(host.querySelector(".member-signup-success")).toBeNull();
     expect(host.querySelector(".member-signup-remaining")).toBeNull();
     expect(host.textContent).toContain(
@@ -117,7 +130,9 @@ it("preserves the empty assignment card", async () => {
   await act(async () =>
     root.render(<MemberAssignments seasonId="1" seasons={[season]} />),
   );
-  expect(host.textContent).toContain("You have not signed up any accounts yet.");
+  expect(host.textContent).toContain(
+    "You have not signed up any accounts yet.",
+  );
   expect(host.textContent).not.toContain("Waiting for a clan");
   expect(host.querySelector(".member-signup-refresh")?.textContent).toBe(
     "Refresh",
@@ -200,7 +215,9 @@ it("does not advertise remaining totals while linked accounts are unavailable", 
   expect(pending?.textContent).toContain("Checking linked accounts…");
   expect(pending?.querySelector("button")).toBeNull();
   expect(pending?.textContent).not.toMatch(/\d+ accounts? not signed up/);
-  expect(pending?.textContent).not.toContain("All linked accounts are signed up");
+  expect(pending?.textContent).not.toContain(
+    "All linked accounts are signed up",
+  );
 });
 it("ignores a publication response after switching seasons", async () => {
   let resolveOld!: (response: Response) => void;

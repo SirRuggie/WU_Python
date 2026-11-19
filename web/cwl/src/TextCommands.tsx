@@ -305,7 +305,7 @@ export default function TextCommands({
         }
       >
         <button
-          className="primary"
+          className={draft ? undefined : "primary"}
           disabled={busy || loading}
           onClick={() => choose(null)}
         >
@@ -687,7 +687,7 @@ export default function TextCommands({
               </span>
               <button
                 type="button"
-                className="primary"
+                className={dirty ? "primary" : undefined}
                 disabled={busy || !dirty || conflict}
                 onClick={() => {
                   setPane("edit");

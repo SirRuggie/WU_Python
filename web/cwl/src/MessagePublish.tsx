@@ -304,7 +304,7 @@ export default function MessagePublish({
           <div className="manage-categories">
             {page.actions.map((action) => (
               <button
-                className={action.id === "update" ? "primary" : ""}
+                className={action.id === "update" && !dirty ? "primary" : ""}
                 key={action.id}
                 disabled={busy || dirty || !!statusUrl || !!channelEditor}
                 onClick={() => void publish(action)}

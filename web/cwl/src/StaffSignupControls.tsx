@@ -25,6 +25,7 @@ type Props = {
   onOpenChange?: (open: boolean) => void;
   disabled?: boolean;
   onAttentionChange?: (attention: boolean) => void;
+  primaryAction?: boolean;
 };
 
 export default function StaffSignupControls({
@@ -35,6 +36,7 @@ export default function StaffSignupControls({
   onOpenChange,
   disabled = false,
   onAttentionChange,
+  primaryAction = false,
 }: Props) {
   const canSignups = useDashboardPermission("cwl_signups");
   const signup = useSignupAction(season, () => onChanged(false));
@@ -251,7 +253,7 @@ export default function StaffSignupControls({
             <button
               ref={addButton}
               type="button"
-              className="roster-ui roster-ui-button is-secondary"
+              className={`roster-ui roster-ui-button ${primaryAction ? "is-primary" : "is-secondary"}`}
               disabled={working || disabled || settingsOpen}
               onClick={() => {
                 setError("");

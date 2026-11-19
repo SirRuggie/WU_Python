@@ -106,7 +106,9 @@ it("marks only the pending refresh and blocks a second native click", async () =
   const root = createRoot(host);
   try {
     await act(async () => root.render(<StaffOverview onNavigate={vi.fn()} />));
-    const refresh = host.querySelector<HTMLButtonElement>(".page-head button")!;
+    const refresh = host.querySelector<HTMLButtonElement>(
+      ".cwl-page-header button",
+    )!;
     expect(refresh.textContent?.trim()).toBe("Refreshing…");
     expect(refresh.disabled).toBe(true);
     expect(refresh.getAttribute("aria-busy")).toBe("true");

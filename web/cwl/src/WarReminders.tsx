@@ -254,7 +254,7 @@ export default function WarReminders({
                 {dirty ? "Unsaved reminder changes" : "Reminder settings saved"}
               </small>
               <button
-                className="primary"
+                className={dirty ? "primary" : undefined}
                 disabled={
                   busy ||
                   testBusy ||

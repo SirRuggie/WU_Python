@@ -114,7 +114,11 @@ export default function AddClan({
             }}
           />
         </label>
-        <button aria-busy={busy || undefined} disabled={disabled || busy}>
+        <button
+          className={!found ? "primary" : undefined}
+          aria-busy={busy || undefined}
+          disabled={disabled || busy}
+        >
           {busy ? "Working…" : "Look up clan"}
         </button>
       </form>
@@ -127,6 +131,7 @@ export default function AddClan({
         <p>
           Already in the family · {found.clan.name}{" "}
           <button
+            className="primary"
             disabled={disabled || busy}
             onClick={() =>
               void run(async () => {
@@ -159,7 +164,11 @@ export default function AddClan({
                 </button>
               </div>
             ) : (
-              <button disabled={disabled || busy} onClick={() => add()}>
+              <button
+                className="primary"
+                disabled={disabled || busy}
+                onClick={() => add()}
+              >
                 Add
               </button>
             )}

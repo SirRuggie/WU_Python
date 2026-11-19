@@ -134,15 +134,17 @@ export default function MemberActivityHistory({
       className="member-activity"
       aria-labelledby="member-activity-title"
     >
-      <header className="member-activity-heading">
-        <div>
-          <h2 id="member-activity-title">Activity history</h2>
-          <p>
+      <CwlPageHeader
+        className="member-activity-heading"
+        title={<h2 id="member-activity-title">Activity history</h2>}
+        description={
+          <>
             Recent joins, leaves, kicks, bans, timeouts, role changes and
             profile changes. A kick or ban can also create a separate leave
             event.
-          </p>
-        </div>
+          </>
+        }
+      >
         <button
           type="button"
           onClick={() => void load(null)}
@@ -150,7 +152,7 @@ export default function MemberActivityHistory({
         >
           Refresh
         </button>
-      </header>
+      </CwlPageHeader>
 
       <form className="member-activity-filters" onSubmit={applyFilters}>
         <label className="member-activity-search">
@@ -279,3 +281,4 @@ export default function MemberActivityHistory({
     </section>
   );
 }
+import CwlPageHeader from "./CwlPageHeader";

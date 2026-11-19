@@ -523,7 +523,7 @@ export default function ParticipationWorkspace({
     : clans.map(([tag, name]) => ({ tag, name }));
 
   return (
-    <div className="participation-workspace roster-ui">
+    <div className="participation-workspace roster-ui page-wide">
       {confirmation}
       <CwlPageHeader
         className="participation-page-head"

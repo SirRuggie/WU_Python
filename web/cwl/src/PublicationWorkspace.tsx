@@ -14,7 +14,13 @@ import PublicationChanges, {
   type ComparisonStatus,
 } from "./PublicationChanges";
 import ConfirmDialog from "./ConfirmDialog";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { api, ApiError, type Season } from "./api";
 import ClanRosterImages from "./ClanRosterImages";
 
@@ -27,6 +33,7 @@ import "./publicationFlow.css";
 
 type Step = "review" | "announce";
 type Props = {
+  steps?: ReactNode;
   onPublication?: (draft: PublicationDraft) => void;
   onDeclaration?: () => void;
   seasonId: string;
@@ -46,6 +53,7 @@ const errorText = (error: unknown) =>
     : "Publication request failed. Try again.";
 
 export default function PublicationWorkspace({
+  steps,
   seasonId,
   seasons,
   onSeasonChange,
@@ -200,15 +208,15 @@ export default function PublicationWorkspace({
   const hasWarnings = checks.some((check) => check.accounts.length > 0);
   const canPublish = Boolean(
     draft &&
-    canManage &&
-    !locked &&
-    !loading &&
-    !error &&
-    !archived &&
-    instructions.length <= 2000 &&
-    changesReady &&
-    draft.preview.accounts.length &&
-    (draft.preview.unassigned_count === 0 || acknowledged),
+      canManage &&
+      !locked &&
+      !loading &&
+      !error &&
+      !archived &&
+      instructions.length <= 2000 &&
+      changesReady &&
+      draft.preview.accounts.length &&
+      (draft.preview.unassigned_count === 0 || acknowledged),
   );
 
   const publishReason = publicationBlockingReason({
@@ -466,6 +474,7 @@ export default function PublicationWorkspace({
           ]}
         />
       </CwlPageHeader>
+      {steps}
       {!seasonId && (
         <div className="card empty">
           <p>Select a season to review its working roster.</p>

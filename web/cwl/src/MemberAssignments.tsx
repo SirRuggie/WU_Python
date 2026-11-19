@@ -10,7 +10,13 @@ import {
 } from "./memberAssignmentLocations";
 import type { LocationRecords } from "./comparisonLocation";
 import JoiningInstructionsCard from "./JoiningInstructionsCard";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { api, ApiError, type Season } from "./api";
 import { groupAssignments } from "./assignmentGroups";
 import {
@@ -22,6 +28,7 @@ import "./MemberAssignments.css";
 import { memberDateLines } from "./MemberSignupStatus";
 
 type Props = {
+  steps?: ReactNode;
   seasonId: string;
   seasons: Season[];
   onSignup?: () => void;
@@ -33,6 +40,7 @@ const errorText = (error: unknown) =>
     : "Assignments could not be loaded. Try again.";
 
 export default function MemberAssignments({
+  steps,
   seasonId,
   seasons,
   onSignup,
@@ -110,15 +118,16 @@ export default function MemberAssignments({
   );
   return (
     <div className="member-assignments roster-ui">
-      <CwlPageHeader title={<h1>My clan assignments</h1>}>
+      <CwlPageHeader
+        title={<h1>My clan assignments</h1>}
+        description="Your accounts, grouped by assigned clan."
+      >
         <p className="cwl-page-header-season" aria-label="Season">
           {seasons.find((item) => String(item.id) === seasonId)?.label ||
             "No CWL season available"}
         </p>
       </CwlPageHeader>
-      <p className="cwl-page-description">
-        Your accounts, grouped by assigned clan.
-      </p>
+      {steps}
       {!seasonId && (
         <div className="card empty">
           <p>Staff will make your CWL season available here.</p>

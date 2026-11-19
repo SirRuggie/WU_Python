@@ -81,26 +81,26 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 Global colors live on `:root` in `web/cwl/src/tokens.css`, imported first by
 `main.tsx`. New code uses `--wu-*`; existing roster consumers retain aliases.
 
-| Token                                                           | Value                             | Use                                         |
-| --------------------------------------------------------------- | --------------------------------- | ------------------------------------------- |
-| `--wu-bg`                                                       | `#0c0c0e`                         | Page background                             |
-| `--wu-surface`                                                  | `#19191d`                         | Cards, sidebar, topbar                      |
-| `--wu-surface-raised`                                           | `#242429`                         | Raised panels, menus                        |
-| `--wu-surface-soft`                                             | `#2d2d33`                         | Inputs, secondary buttons, pills            |
-| `--wu-card`                                                     | `#303037`                         | Roster-style cards                          |
-| `--wu-border`                                                   | `#494950`                         | Default border                              |
-| `--wu-border-subtle`                                            | `#38383e`                         | Dividers, quiet borders                     |
-| `--wu-text`                                                     | `#f5f4f0`                         | Body text                                   |
-| `--wu-text-muted`                                               | `#b9bbc4`                         | Secondary text                              |
-| `--wu-accent`                                                   | `#f4cd64`                         | Primary fill, gold text, selected border    |
-| `--wu-accent-hover`                                             | `#ffdc7b`                         | Primary hover                               |
-| `--wu-accent-ink`                                               | `#241b08`                         | Text on a gold fill                         |
-| `--wu-accent-soft`                                              | `#30291a`                         | Selected or active tint                     |
-| `--wu-focus`                                                    | `#f5d66e`                         | Focus ring only; never selection            |
-| `--wu-success` / `--wu-success-surface` / `--wu-success-border` | `#00d659` / `#2b4b38` / `#00d659` | Success; brand green (bot `WU_GREEN`)       |
-| `--wu-warning` / `--wu-warning-surface` / `--wu-warning-border` | `#efc867` / `#30291c` / `#786435` | Warning; separate from accent               |
+| Token                                                           | Value                                         | Use                                         |
+| --------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------- |
+| `--wu-bg`                                                       | `#0c0c0e`                                     | Page background                             |
+| `--wu-surface`                                                  | `#19191d`                                     | Cards, sidebar, topbar                      |
+| `--wu-surface-raised`                                           | `#242429`                                     | Raised panels, menus                        |
+| `--wu-surface-soft`                                             | `#2d2d33`                                     | Inputs, secondary buttons, pills            |
+| `--wu-card`                                                     | `#303037`                                     | Roster-style cards                          |
+| `--wu-border`                                                   | `#494950`                                     | Default border                              |
+| `--wu-border-subtle`                                            | `#38383e`                                     | Dividers, quiet borders                     |
+| `--wu-text`                                                     | `#f5f4f0`                                     | Body text                                   |
+| `--wu-text-muted`                                               | `#b9bbc4`                                     | Secondary text                              |
+| `--wu-accent`                                                   | `#f4cd64`                                     | Primary fill, gold text, selected border    |
+| `--wu-accent-hover`                                             | `#ffdc7b`                                     | Primary hover                               |
+| `--wu-accent-ink`                                               | `#241b08`                                     | Text on a gold fill                         |
+| `--wu-accent-soft`                                              | `#30291a`                                     | Selected or active tint                     |
+| `--wu-focus`                                                    | `#f5d66e`                                     | Focus ring only; never selection            |
+| `--wu-success` / `--wu-success-surface` / `--wu-success-border` | `#00d659` / `#2b4b38` / `#00d659`             | Success; brand green (bot `WU_GREEN`)       |
+| `--wu-warning` / `--wu-warning-surface` / `--wu-warning-border` | `#efc867` / `#30291c` / `#786435`             | Warning; separate from accent               |
 | `--wu-danger` / `--wu-danger-surface` / `--wu-danger-border`    | `#ff5c5c` / `#2a1215` / `#e00010` (brand red) | Errors, destructive actions                 |
-| `--wu-info` / `--wu-info-surface` / `--wu-info-border`          | `#b9d5ff` / `#1a212b` / `#495563` | Informational notices only; 1b applies this |
+| `--wu-info` / `--wu-info-surface` / `--wu-info-border`          | `#b9d5ff` / `#1a212b` / `#495563`             | Informational notices only; 1b applies this |
 
 Gold means action or selection only. Warning amber is a separate token. Blue is
 for information only; retiring existing navy surfaces belongs to the later 1b
@@ -305,11 +305,11 @@ computed free-space numbers.
 Every group of choices on the dashboard uses one of three patterns. Prompt 191
 introduced A and B; B-6 finished the last groups and added C.
 
-| Pattern | Use | Component | Selected look |
-|---|---|---|---|
-| A. Section tabs | Switch views inside one page (Strikes, Tasks, Tickets, Moderation, Clan settings, roster views) | `SectionTabs`, or `section-tabs section-tabs--flow` on a custom rail | Gold text, gold underline |
-| B. Filter chips | Filter one list (clan type, Town Hall, search kinds) | `FilterChips`, `variant="pill"` for pills | Gold outline, gold text |
-| C. Navigation items | Lists of records or clans that open an item (settings record list, Family clans directory); the sidebar uses the same look | `nav-list` class (`navList.css`) | Gold edge, 3px gold left bar, gold bold text |
+| Pattern             | Use                                                                                                                        | Component                                                            | Selected look                                |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------- |
+| A. Section tabs     | Switch views inside one page (Strikes, Tasks, Tickets, Moderation, Clan settings, roster views)                            | `SectionTabs`, or `section-tabs section-tabs--flow` on a custom rail | Gold text, gold underline                    |
+| B. Filter chips     | Filter one list (clan type, Town Hall, search kinds)                                                                       | `FilterChips`, `variant="pill"` for pills                            | Gold outline, gold text                      |
+| C. Navigation items | Lists of records or clans that open an item (settings record list, Family clans directory); the sidebar uses the same look | `nav-list` class (`navList.css`)                                     | Gold edge, 3px gold left bar, gold bold text |
 
 - No solid-gold selected state and no segmented control. Unselected navigation items keep the normal button look.
 - Every tab and chip rail scrolls inside its own strip and fades the edge that hides items (`useChoiceRail`, `has-horizontal-fades`). The page never scrolls sideways at 320, 360 and 390px.
@@ -975,6 +975,28 @@ not establish a real phone touch result.
 
 ## Shared UI rules from UI audit 2 (2026-11-13)
 
+- **Page frame and primary action (248).** Page content starts at the same
+  sidebar-aligned left edge. The normal width is `--wu-page-width: 1200px`;
+  Build roster, Compare clans, the participation list, Events, and the Strikes
+  and replacements table opt into `--wu-page-width-wide: 1440px` with
+  `page-wide` on the page root. Keep inner reading and form widths. Use
+  `CwlPageHeader` for page and existing section headers: title and optional help,
+  a muted description below the title, and actions on the right or below the
+  title on phones. Tabs and workflow steps follow the title block. Do not add a
+  group eyebrow or repeat an identical breadcrumb and title. At 650px or less,
+  the topbar title appears only after the page h1 leaves view; use
+  IntersectionObserver, without a scroll listener or animation.
+- **One gold primary per page or task panel (248).** Gold fill marks the next
+  task-forward action. Other buttons use the normal style, and messages,
+  warnings and status never use gold fill. Preserve gold titles, Home accents,
+  selected-item text/edges and key links; destructive actions retain danger
+  styling. Scope the primary to the active state: Add clan or New command in
+  the directory, then Save when its editor is dirty. Build uses Add signup;
+  Finalize keeps Publish roster and its existing checkbox/confirmation gate.
+  Seasons highlights Finish when available, otherwise Create. The 241
+  replacements search remains automatic and adds no new Find button. The
+  optional gold outline on secondary buttons is a review-only illustration,
+  not shipped styling.
 - **One page header.** Every page uses `CwlPageHeader` (title, optional help,
   optional description, actions, pickers). At 650 px or less the title takes its
   own row and buttons and pickers wrap below it; at 480 px or less a season or
@@ -1022,5 +1044,5 @@ not establish a real phone touch result.
   - 320 px (5), 350 px, 360 px (2), 370 px (3), 380 px (2), 390 px (2),
     400 px: fixes for very small phones.
   - Height 600 px (7), 500 px (5), 540 px (1): short landscape phones.
-  Merging near-equal values (for example 760/767/768) is a CSS change and is
-  recorded as a later task, not done here.
+    Merging near-equal values (for example 760/767/768) is a CSS change and is
+    recorded as a later task, not done here.

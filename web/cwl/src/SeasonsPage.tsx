@@ -306,6 +306,7 @@ export default function SeasonsPage({
             {canCreate && (
               <Button
                 icon={Plus}
+                variant={canFinish ? "secondary" : "primary"}
                 disabled={working}
                 onClick={() => setCreateLabel(targetName)}
               >
@@ -314,7 +315,7 @@ export default function SeasonsPage({
             )}
             {canFinish && current && (
               <Button
-                variant="secondary"
+                variant="primary"
                 disabled={working}
                 onClick={() => setFinishing(true)}
               >

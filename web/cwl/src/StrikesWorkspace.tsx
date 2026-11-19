@@ -533,7 +533,7 @@ export default function StrikesWorkspace({
     ) : null;
   return (
     <section
-      className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : !selectedWar ? " strikes-activity-overview" : ""}`}
+      className={`strikes-workspace page-wide${selectedAccount ? " strikes-player-detail" : !selectedWar ? " strikes-activity-overview" : ""}`}
     >
       <CwlPageHeader
         title={<h1>Strikes &amp; replacements</h1>}

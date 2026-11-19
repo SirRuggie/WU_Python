@@ -492,27 +492,28 @@ export default function ModerationSettings({
       className="moderation-settings"
       aria-labelledby="moderation-settings-title"
     >
-      <header className="moderation-settings-heading">
-        <div>
+      <CwlPageHeader
+        className="moderation-settings-heading"
+        title={
           <h2 id="moderation-settings-title">
             {view === "invites" ? "Invites" : "Log channels"}
           </h2>
-          <p>
-            {view === "invites"
-              ? "Name invite links so join logs show where members came from."
-              : "Select where member and moderation notices appear. History remains available when posting is off."}
-          </p>
-          {otherTabDirty && (
-            <p className="moderation-other-tab-dirty" role="status">
-              {view === "invites" ? "Log channels" : "Invites"} has unsaved
-              changes.
-            </p>
-          )}
-        </div>
+        }
+        description={
+          view === "invites"
+            ? "Name invite links so join logs show where members came from."
+            : "Select where member and moderation notices appear. History remains available when posting is off."
+        }
+      >
         <button type="button" onClick={reloadLatest} disabled={loading || busy}>
           Refresh settings
         </button>
-      </header>
+      </CwlPageHeader>
+      {otherTabDirty && (
+        <p className="moderation-other-tab-dirty" role="status">
+          {view === "invites" ? "Log channels" : "Invites"} has unsaved changes.
+        </p>
+      )}
 
       {view === "channels" && <ModerationHealth />}
 
@@ -661,7 +662,7 @@ export default function ModerationSettings({
                   Discard
                 </button>
                 <button
-                  className="primary"
+                  className={viewDirty ? "primary" : undefined}
                   type="button"
                   disabled={
                     !viewDirty ||
@@ -706,3 +707,4 @@ export default function ModerationSettings({
     </section>
   );
 }
+import CwlPageHeader from "./CwlPageHeader";

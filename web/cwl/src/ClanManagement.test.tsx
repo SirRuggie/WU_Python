@@ -68,6 +68,29 @@ async function editBoth() {
   );
   await click("+ 12h");
 }
+it("uses Add clan in the directory and only the dirty Save in the editor", async () => {
+  await act(async () => root.render(<ClanManagement onDirty={onDirty} />));
+  const primary = () =>
+    host.querySelectorAll("button.primary, button.is-primary");
+  expect(primary()).toHaveLength(1);
+  expect(primary()[0].textContent?.trim()).toBe("+ Add clan");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".clan-directory button")!.click(),
+  );
+  expect(primary()).toHaveLength(0);
+  const name = host.querySelector<HTMLInputElement>('input[maxlength="120"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(name, "Changed clan");
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(primary()).toHaveLength(1);
+  expect(primary()[0].textContent?.trim()).toBe("Save");
+  expect(vi.mocked(api).mock.calls.filter((call) => call[1])).toHaveLength(0);
+});
+
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.stubGlobal(
@@ -342,7 +365,6 @@ it("returns to the directory route after confirmed removal", async () => {
   expect(host.textContent).toContain("Clan removed from the family directory.");
 });
 
-
 it("Add clan closes the current clean editor", async () => {
   await open();
   expect(host.querySelector('input[maxlength="120"]')).not.toBeNull();
@@ -353,22 +375,41 @@ it("Add clan closes the current clean editor", async () => {
 
 it("legacy Farming does not claim removal from exact-FWA consumers", async () => {
   const fallback = vi.mocked(api).getMockImplementation()!;
-  vi.mocked(api).mockImplementation(async (url, method, body) => url === "/manage/clans"
-    ? {clans: [{...clan, type: "Farming"}], types: ["Farming", "CWL", "FWA"], town_halls: ["16"]} as never
-    : fallback(url, method, body));
+  vi.mocked(api).mockImplementation(async (url, method, body) =>
+    url === "/manage/clans"
+      ? ({
+          clans: [{ ...clan, type: "Farming" }],
+          types: ["Farming", "CWL", "FWA"],
+          town_halls: ["16"],
+        } as never)
+      : fallback(url, method, body),
+  );
   await open();
-  const select = [...host.querySelectorAll<HTMLSelectElement>("select")].find(el => [...el.options].some(option => option.value === "FWA"))!;
-  await act(async () => { select.value = "CWL"; select.dispatchEvent(new Event("change", {bubbles: true})); });
+  const select = [...host.querySelectorAll<HTMLSelectElement>("select")].find(
+    (el) => [...el.options].some((option) => option.value === "FWA"),
+  )!;
+  await act(async () => {
+    select.value = "CWL";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   await click("Save");
-  expect(document.querySelector("dialog")?.textContent).toContain("CWL hosting classification");
-  expect(document.querySelector("dialog")?.textContent).not.toContain("removes this clan from Clan weights");
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "CWL hosting classification",
+  );
+  expect(document.querySelector("dialog")?.textContent).not.toContain(
+    "removes this clan from Clan weights",
+  );
   await click("Cancel");
 });
 
 it("reminder summary pluralizes saved times while off", async () => {
   await open();
   expect(host.textContent).toContain("Off · 1 time saved");
-  await act(async () => [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(b => b.textContent === "War reminders")!.click());
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((b) => b.textContent === "War reminders")!
+      .click(),
+  );
   await click("+ 12h");
   expect(host.textContent).toContain("Off · 2 times saved");
 });

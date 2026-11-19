@@ -42,5 +42,5 @@ it("gives every shared-header title the red title mark", () => {
   const markRule = css.slice(
     css.indexOf("/* Page titles share the helmet bar"),
   );
-  expect(markRule).toContain(".page-head h1");
+  expect(markRule).toContain(".cwl-page-header h1");
 });

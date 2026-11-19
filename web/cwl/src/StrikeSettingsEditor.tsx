@@ -200,7 +200,7 @@ export default function StrikeSettingsEditor({
       />
       <div className="strikes-inline">
         <button
-          className="primary"
+          className={dirty ? "primary" : undefined}
           disabled={
             busy || conflict || !dirty || !/^(?:[1-9]|1[0-9]|20)$/.test(limit)
           }

@@ -53,6 +53,29 @@ async function renderSeasons(seasons: Season[], memberId: number) {
   return { host, onRefresh, cleanup };
 }
 
+it.each([
+  { memberId: 1, label: "Finish November 2026" },
+  { memberId: 0, label: "Create December 2026" },
+])(
+  "highlights only the next season action: $label",
+  async ({ memberId, label }) => {
+    const { host, cleanup } = await renderSeasons(
+      [make(1, "2026-11")],
+      memberId,
+    );
+    try {
+      const primary = host.querySelectorAll(
+        "button.primary, button.is-primary",
+      );
+      expect(primary).toHaveLength(1);
+      expect(primary[0].textContent).toBe(label);
+      expect(writes()).toEqual([]);
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
 it("offers the next month by name and creates it only after confirm", async () => {
   const { host, cleanup } = await renderSeasons([make(1, "2026-11")], 1);
   try {

@@ -60,6 +60,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import {
@@ -70,6 +71,7 @@ import {
 } from "./roster";
 
 type Props = {
+  steps?: ReactNode;
   onFamilyClans?: () => void;
   onPublication?: (draft: import("./publication").PublicationDraft) => void;
   onClanWeights?: (player?: string, clan?: string) => void;
@@ -95,6 +97,7 @@ const errorText = (error: unknown) =>
 const encoded = (value: string) => encodeURIComponent(value);
 
 export default function RosterWorkspace({
+  steps,
   seasonId,
   onClanWeights,
   onFamilyClans,
@@ -877,7 +880,7 @@ export default function RosterWorkspace({
   };
   return (
     <div
-      className={`roster-workspace roster-ui${mode === "assign" ? " roster-workspace-assign" : ""}`}
+      className={`roster-workspace roster-ui page-wide${mode === "assign" ? " roster-workspace-assign" : ""}`}
       onFocusCapture={(event) => {
         if (
           event.target instanceof HTMLInputElement ||
@@ -1129,6 +1132,7 @@ export default function RosterWorkspace({
           season &&
           (canSignups || canSettings) && (
             <StaffSignupControls
+              primaryAction
               onAttentionChange={setSignupAttention}
               key={`${seasonId}:${discardToken}`}
               disabled={
@@ -1151,6 +1155,7 @@ export default function RosterWorkspace({
         }
         onAccessError={(error) => void fail(error)}
       />
+      {steps}
       {!seasonId && (
         <div className="card empty">
           <p>Select a season to build its CWL roster.</p>

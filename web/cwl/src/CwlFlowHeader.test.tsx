@@ -45,14 +45,16 @@ it("Build loads draft state; signup warning and Fix remain in the header on ever
     const [draft, setDraft] = useState<PublicationDraft | null>(null);
     return (
       <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
-        <CwlStepStrip
-          step="build"
-          draft={draft}
-          onBuild={() => {}}
-          onFinalize={() => {}}
-          onAnnounce={() => {}}
-        />
         <RosterWorkspace
+          steps={
+            <CwlStepStrip
+              step="build"
+              draft={draft}
+              onBuild={() => {}}
+              onFinalize={() => {}}
+              onAnnounce={() => {}}
+            />
+          }
           seasonId="1"
           seasons={[season]}
           onSeasonChange={() => {}}
@@ -66,6 +68,11 @@ it("Build loads draft state; signup warning and Fix remain in the header on ever
   const root = createRoot(host);
   try {
     await act(async () => root.render(<Harness />));
+    const header = host.querySelector(".roster-header")!;
+    const steps = host.querySelector(".cwl-step-strip")!;
+    expect(
+      header.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(host.querySelector(".publication-awareness")?.textContent).toContain(
       "Hidden from members · v1 Oct 15",
     );

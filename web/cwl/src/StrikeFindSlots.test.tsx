@@ -161,6 +161,10 @@ afterEach(async () => {
 it("shows an inline section with no opener, modal, primary button or automatic empty search", async () => {
   await mount();
   expect(host.querySelector("h2")?.textContent).toBe("Find slots");
+  // 241 made this an inline auto-search; 248 must not add a new submit action.
+  expect(
+    host.querySelectorAll("button.primary, button.is-primary"),
+  ).toHaveLength(0);
   expect(
     host.querySelector(
       'dialog, [aria-haspopup="dialog"].strike-find-slots-open',
