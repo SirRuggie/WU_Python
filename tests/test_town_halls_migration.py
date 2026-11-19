@@ -244,7 +244,7 @@ def test_cli_without_apply_is_dry_run_and_writes_new_private_report(monkeypatch,
     fake = AsyncMock(return_value={"status": "dry run", "counts_before": {}, "counts_after": {}})
     monkeypatch.setattr(migration, "_run", fake)
     assert migration.main(["--guild-id", "123"]) == 0
-    assert fake.call_args.kwargs == {"apply": False}
+    assert fake.call_args.kwargs == {"apply": False, "bases": False}
     reports = list((tmp_path / ".local").glob("*.json"))
     assert len(reports) == 1 and json.loads(reports[0].read_text())["status"] == "dry run"
     assert reports[0].stat().st_mode & 0o777 == 0o600
